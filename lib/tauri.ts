@@ -1,5 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 
+// Check if running in Tauri environment
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI__' in window;
+}
+
 export interface EnvironmentInfo {
   env_type: string;
   provider: string;

@@ -4,6 +4,9 @@ import { useEffect } from 'react';
 import { EnvironmentCard } from '@/components/environments/environment-card';
 import { AddEnvironmentDialog } from '@/components/environments/add-environment-dialog';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
+import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
+import { EnvironmentDetailsPanel } from '@/components/environments/environment-details-panel';
+import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/lib/hooks/use-environments';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -26,6 +29,15 @@ export default function EnvironmentsPage() {
     detectVersions,
     openAddDialog,
   } = useEnvironments();
+  
+  const {
+    versionBrowserOpen,
+    versionBrowserEnvType,
+    closeVersionBrowser,
+    detailsPanelOpen,
+    detailsPanelEnvType,
+    closeDetailsPanel,
+  } = useEnvironmentStore();
   const { t } = useLocale();
 
   useEffect(() => {
@@ -36,6 +48,14 @@ export default function EnvironmentsPage() {
   const getDetectedForEnv = (envType: string) => {
     return detectedVersions.find((d) => d.env_type === envType) || null;
   };
+
+  const getEnvByType = (envType: string | null) => {
+    if (!envType) return null;
+    return environments.find((e) => e.env_type === envType) || null;
+  };
+
+  const currentBrowserEnv = getEnvByType(versionBrowserEnvType);
+  const currentDetailsEnv = getEnvByType(detailsPanelEnvType);
 
   const handleRefresh = async () => {
     await fetchEnvironments();
@@ -130,6 +150,40 @@ export default function EnvironmentsPage() {
       {/* Dialogs */}
       <AddEnvironmentDialog onAdd={handleAddEnvironment} />
       <InstallationProgressDialog />
+
+      {/* Panels */}
+      {currentBrowserEnv && (
+        <VersionBrowserPanel
+          envType={currentBrowserEnv.env_type}
+          open={versionBrowserOpen}
+          onOpenChange={(open) => !open && closeVersionBrowser()}
+          onInstall={async (version) => {
+            await installVersion(currentBrowserEnv.env_type, version);
+          }}
+          installedVersions={currentBrowserEnv.installed_versions.map((v) => v.version)}
+        />
+      )}
+
+      {currentDetailsEnv && (
+        <EnvironmentDetailsPanel
+          env={currentDetailsEnv}
+          detectedVersion={getDetectedForEnv(currentDetailsEnv.env_type)}
+          open={detailsPanelOpen}
+          onOpenChange={(open) => !open && closeDetailsPanel()}
+          onSetGlobal={async (version) => {
+            await setGlobalVersion(currentDetailsEnv.env_type, version);
+          }}
+          onSetLocal={async (version, projectPath) => {
+            await setLocalVersion(currentDetailsEnv.env_type, version, projectPath);
+          }}
+          onUninstall={async (version) => {
+            await uninstallVersion(currentDetailsEnv.env_type, version);
+          }}
+          onRefresh={async () => {
+            await fetchEnvironments();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -21,15 +21,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { PackageInfo, PackageSummary } from '@/lib/tauri';
-import { ExternalLink, Download, Globe, FileCode, Scale, Calendar } from 'lucide-react';
+import { ExternalLink, Download, Globe, FileCode, Scale, Calendar, RotateCcw, Pin } from 'lucide-react';
 import { toast } from 'sonner';
+import { useLocale } from '@/components/providers/locale-provider';
 
 interface PackageDetailsDialogProps {
   pkg: PackageSummary | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onInstall: (name: string, version?: string) => Promise<void>;
+  onRollback?: (name: string, version: string) => Promise<void>;
+  onPin?: (name: string, version: string) => Promise<void>;
   fetchPackageInfo: (name: string, provider?: string) => Promise<PackageInfo | null>;
+  isInstalled?: boolean;
+  currentVersion?: string;
 }
 
 export function PackageDetailsDialog({
@@ -37,12 +42,18 @@ export function PackageDetailsDialog({
   open,
   onOpenChange,
   onInstall,
+  onRollback,
+  onPin,
   fetchPackageInfo,
+  isInstalled = false,
+  currentVersion,
 }: PackageDetailsDialogProps) {
   const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<string>('');
   const [installing, setInstalling] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
+  const { t } = useLocale();
 
   useEffect(() => {
     if (open && pkg) {
@@ -66,12 +77,36 @@ export function PackageDetailsDialog({
     setInstalling(true);
     try {
       await onInstall(pkg.name, selectedVersion || undefined);
-      toast.success(`Installing ${pkg.name}${selectedVersion ? `@${selectedVersion}` : ''}`);
+      toast.success(t('packages.installing', { name: pkg.name, version: selectedVersion || 'latest' }));
       onOpenChange(false);
     } catch (err) {
-      toast.error(`Failed to install: ${err}`);
+      toast.error(t('packages.installFailed', { error: String(err) }));
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const handleRollback = async () => {
+    if (!pkg || !onRollback || !selectedVersion) return;
+    setRollingBack(true);
+    try {
+      await onRollback(pkg.name, selectedVersion);
+      toast.success(t('packages.rollbackSuccess', { name: pkg.name, version: selectedVersion }));
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(t('packages.rollbackFailed', { error: String(err) }));
+    } finally {
+      setRollingBack(false);
+    }
+  };
+
+  const handlePin = async () => {
+    if (!pkg || !onPin || !selectedVersion) return;
+    try {
+      await onPin(pkg.name, selectedVersion);
+      toast.success(t('packages.pinned', { name: pkg.name }));
+    } catch (err) {
+      toast.error(t('packages.pinFailed', { name: pkg.name, error: String(err) }));
     }
   };
 
@@ -145,10 +180,17 @@ export function PackageDetailsDialog({
               <Separator />
 
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">Select Version</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">{t('packages.selectVersion')}</h4>
+                  {isInstalled && currentVersion && (
+                    <span className="text-xs text-muted-foreground">
+                      {t('packages.currentVersionLabel')}: <span className="font-mono">{currentVersion}</span>
+                    </span>
+                  )}
+                </div>
                 <Select value={selectedVersion} onValueChange={setSelectedVersion}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select a version" />
+                    <SelectValue placeholder={t('packages.selectVersionPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {packageInfo.versions.map((v) => (
@@ -157,12 +199,12 @@ export function PackageDetailsDialog({
                           <span>{v.version}</span>
                           {v.deprecated && (
                             <Badge variant="destructive" className="text-xs">
-                              Deprecated
+                              {t('packages.deprecated')}
                             </Badge>
                           )}
                           {v.yanked && (
                             <Badge variant="secondary" className="text-xs">
-                              Yanked
+                              {t('packages.yanked')}
                             </Badge>
                           )}
                         </div>
@@ -173,7 +215,7 @@ export function PackageDetailsDialog({
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">Version History</h4>
+                <h4 className="text-sm font-medium">{t('packages.versionHistory')}</h4>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {packageInfo.versions.slice(0, 10).map((v) => (
                     <div
@@ -196,7 +238,7 @@ export function PackageDetailsDialog({
                   ))}
                   {packageInfo.versions.length > 10 && (
                     <p className="text-xs text-muted-foreground text-center py-2">
-                      +{packageInfo.versions.length - 10} more versions
+                      {t('packages.moreVersions', { count: packageInfo.versions.length - 10 })}
                     </p>
                   )}
                 </div>
@@ -204,21 +246,46 @@ export function PackageDetailsDialog({
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              Failed to load package details
+              {t('packages.loadFailed')}
             </div>
           )}
         </ScrollArea>
 
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel')}
           </Button>
+          
+          {/* Pin button - only for installed packages */}
+          {isInstalled && onPin && selectedVersion && (
+            <Button
+              variant="outline"
+              onClick={handlePin}
+              disabled={loading || !packageInfo}
+            >
+              <Pin className="h-4 w-4 mr-2" />
+              {t('packages.pinVersion')}
+            </Button>
+          )}
+
+          {/* Rollback button - only for installed packages with version different from current */}
+          {isInstalled && onRollback && selectedVersion && selectedVersion !== currentVersion && (
+            <Button
+              variant="secondary"
+              onClick={handleRollback}
+              disabled={rollingBack || loading || !packageInfo}
+            >
+              <RotateCcw className="h-4 w-4 mr-2" />
+              {rollingBack ? t('packages.rollingBack') : t('packages.rollback')}
+            </Button>
+          )}
+          
           <Button
             onClick={handleInstall}
             disabled={installing || loading || !packageInfo}
           >
             <Download className="h-4 w-4 mr-2" />
-            {installing ? 'Installing...' : `Install ${selectedVersion || 'Latest'}`}
+            {installing ? t('packages.installing', { name: '', version: '' }) : t('packages.installVersion', { version: selectedVersion || t('packages.latest') })}
           </Button>
         </div>
       </DialogContent>

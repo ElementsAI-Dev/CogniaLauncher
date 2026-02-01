@@ -19,6 +19,7 @@ import {
   XCircle, Loader2, Package, ChevronDown, ChevronRight,
   Clock, AlertTriangle, Info
 } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { BatchResult } from '@/lib/tauri';
 
 interface BatchOperationsProps {
@@ -45,6 +46,7 @@ export function BatchOperations({
   const [dryRun, setDryRun] = useState(false);
   const [force, setForce] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const { t } = useLocale();
 
   const handleOperation = useCallback(async () => {
     setIsProcessing(true);
@@ -92,9 +94,9 @@ export function BatchOperations({
 
   const getOperationLabel = () => {
     switch (operationType) {
-      case 'install': return 'Install';
-      case 'uninstall': return 'Uninstall';
-      case 'update': return 'Update';
+      case 'install': return t('common.install');
+      case 'uninstall': return t('common.uninstall');
+      case 'update': return t('common.update');
     }
   };
 
@@ -117,7 +119,7 @@ export function BatchOperations({
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-card border rounded-lg shadow-lg p-3 flex items-center gap-4 z-50">
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{selectedPackages.length} selected</span>
+            <span className="font-medium">{t('packages.selected', { count: selectedPackages.length })}</span>
           </div>
           
           <div className="h-6 w-px bg-border" />
@@ -129,7 +131,7 @@ export function BatchOperations({
               onClick={() => openDialog('install')}
             >
               <Download className="h-4 w-4 mr-1" />
-              Install
+              {t('common.install')}
             </Button>
             <Button 
               size="sm" 
@@ -137,7 +139,7 @@ export function BatchOperations({
               onClick={() => openDialog('update')}
             >
               <RefreshCw className="h-4 w-4 mr-1" />
-              Update
+              {t('common.update')}
             </Button>
             <Button 
               size="sm" 
@@ -145,7 +147,7 @@ export function BatchOperations({
               onClick={() => openDialog('uninstall')}
             >
               <Trash2 className="h-4 w-4 mr-1" />
-              Uninstall
+              {t('common.uninstall')}
             </Button>
           </div>
           
@@ -156,7 +158,7 @@ export function BatchOperations({
             variant="ghost"
             onClick={onClearSelection}
           >
-            Clear
+            {t('common.clear')}
           </Button>
         </div>
       )}
@@ -171,8 +173,8 @@ export function BatchOperations({
             </DialogTitle>
             <DialogDescription>
               {result 
-                ? `Operation completed in ${(result.total_time_ms / 1000).toFixed(2)}s`
-                : `${getOperationLabel()} ${selectedPackages.length} package(s)`
+                ? t('packages.batchCompleted', { time: (result.total_time_ms / 1000).toFixed(2) })
+                : t('packages.batchDescription', { action: getOperationLabel(), count: selectedPackages.length })
               }
             </DialogDescription>
           </DialogHeader>
@@ -181,7 +183,7 @@ export function BatchOperations({
             {/* Package List */}
             {!result && selectedPackages.length > 0 && (
               <div className="space-y-2">
-                <div className="text-sm font-medium">Packages:</div>
+                <div className="text-sm font-medium">{t('packages.packagesLabel')}:</div>
                 <ScrollArea className="h-[200px] border rounded-md p-2">
                   <div className="space-y-1">
                     {selectedPackages.map((pkg) => (
@@ -208,7 +210,7 @@ export function BatchOperations({
                     onCheckedChange={(checked) => setDryRun(checked === true)}
                   />
                   <label htmlFor="dryRun" className="text-sm cursor-pointer">
-                    Dry run (preview only)
+                    {t('packages.dryRun')}
                   </label>
                 </div>
                 <div className="flex items-center gap-2">
@@ -218,7 +220,7 @@ export function BatchOperations({
                     onCheckedChange={(checked) => setForce(checked === true)}
                   />
                   <label htmlFor="force" className="text-sm cursor-pointer">
-                    Force (reinstall/overwrite)
+                    {t('packages.forceOption')}
                   </label>
                 </div>
               </div>
@@ -230,9 +232,9 @@ export function BatchOperations({
                 <div className="flex flex-col items-center gap-4">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <div className="text-center">
-                    <div className="font-medium">Processing...</div>
+                    <div className="font-medium">{t('packages.processing')}</div>
                     <div className="text-sm text-muted-foreground">
-                      This may take a few moments
+                      {t('packages.processingDesc')}
                     </div>
                   </div>
                 </div>
@@ -249,21 +251,21 @@ export function BatchOperations({
                     <div className="text-2xl font-bold text-green-600">
                       {result.successful.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">Successful</div>
+                    <div className="text-xs text-muted-foreground">{t('packages.successful')}</div>
                   </div>
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center">
                     <XCircle className="h-5 w-5 text-red-500 mx-auto mb-1" />
                     <div className="text-2xl font-bold text-red-600">
                       {result.failed.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">Failed</div>
+                    <div className="text-xs text-muted-foreground">{t('packages.failed')}</div>
                   </div>
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-center">
                     <Clock className="h-5 w-5 text-yellow-500 mx-auto mb-1" />
                     <div className="text-2xl font-bold text-yellow-600">
                       {result.skipped.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">Skipped</div>
+                    <div className="text-xs text-muted-foreground">{t('packages.skipped')}</div>
                   </div>
                 </div>
 
@@ -277,7 +279,7 @@ export function BatchOperations({
                   ) : (
                     <ChevronRight className="h-4 w-4" />
                   )}
-                  Show details
+                  {t('packages.showDetails')}
                 </button>
 
                 {/* Detailed Results */}
@@ -301,7 +303,7 @@ export function BatchOperations({
                             <XCircle className="h-4 w-4 text-red-500" />
                             <span className="flex-1 text-sm font-medium">{item.name}</span>
                             {item.recoverable && (
-                              <Badge variant="outline">Retry possible</Badge>
+                              <Badge variant="outline">{t('packages.retryPossible')}</Badge>
                             )}
                           </div>
                           <div className="text-xs text-red-500 ml-6">{item.error}</div>
@@ -330,21 +332,19 @@ export function BatchOperations({
                 {result.failed.length > 0 && result.failed.some(f => f.recoverable) && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>Some operations failed</AlertTitle>
+                    <AlertTitle>{t('packages.someOperationsFailed')}</AlertTitle>
                     <AlertDescription className="flex items-center justify-between">
                       <span>
-                        {result.failed.filter(f => f.recoverable).length} operation(s) can be retried.
+                        {t('packages.operationsCanRetry', { count: result.failed.filter(f => f.recoverable).length })}
                       </span>
                       <Button 
                         size="sm" 
                         variant="outline"
                         onClick={() => {
-                          // Clear selection and allow user to retry
                           onClearSelection();
-                          // TODO: Implement retry logic
                         }}
                       >
-                        Retry Failed
+                        {t('packages.retryFailed')}
                       </Button>
                     </AlertDescription>
                   </Alert>
@@ -357,19 +357,19 @@ export function BatchOperations({
             {!result && !isProcessing && (
               <>
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button onClick={handleOperation}>
                   {getOperationIcon()}
                   <span className="ml-2">
-                    {dryRun ? 'Preview' : getOperationLabel()}
+                    {dryRun ? t('packages.preview') : getOperationLabel()}
                   </span>
                 </Button>
               </>
             )}
             {(result || isProcessing) && (
               <Button onClick={() => setIsDialogOpen(false)}>
-                {result ? 'Done' : 'Cancel'}
+                {result ? t('packages.done') : t('common.cancel')}
               </Button>
             )}
           </DialogFooter>

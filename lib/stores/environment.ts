@@ -26,6 +26,12 @@ interface EnvironmentState {
   progressDialogOpen: boolean;
   installationProgress: InstallationProgress | null;
   
+  // Panel states
+  versionBrowserOpen: boolean;
+  versionBrowserEnvType: string | null;
+  detailsPanelOpen: boolean;
+  detailsPanelEnvType: string | null;
+  
   // Actions
   setEnvironments: (envs: EnvironmentInfo[]) => void;
   setSelectedEnv: (envType: string | null) => void;
@@ -41,6 +47,12 @@ interface EnvironmentState {
   openProgressDialog: (progress: InstallationProgress) => void;
   closeProgressDialog: () => void;
   updateInstallationProgress: (progress: Partial<InstallationProgress>) => void;
+  
+  // Panel actions
+  openVersionBrowser: (envType: string) => void;
+  closeVersionBrowser: () => void;
+  openDetailsPanel: (envType: string) => void;
+  closeDetailsPanel: () => void;
 }
 
 export const useEnvironmentStore = create<EnvironmentState>((set) => ({
@@ -55,6 +67,12 @@ export const useEnvironmentStore = create<EnvironmentState>((set) => ({
   addDialogOpen: false,
   progressDialogOpen: false,
   installationProgress: null,
+  
+  // Panel states
+  versionBrowserOpen: false,
+  versionBrowserEnvType: null,
+  detailsPanelOpen: false,
+  detailsPanelEnvType: null,
 
   setEnvironments: (environments) => set({ environments }),
   setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
@@ -93,4 +111,10 @@ export const useEnvironmentStore = create<EnvironmentState>((set) => ({
       ? { ...state.installationProgress, ...progress }
       : null
   })),
+  
+  // Panel actions
+  openVersionBrowser: (envType) => set({ versionBrowserOpen: true, versionBrowserEnvType: envType }),
+  closeVersionBrowser: () => set({ versionBrowserOpen: false, versionBrowserEnvType: null }),
+  openDetailsPanel: (envType) => set({ detailsPanelOpen: true, detailsPanelEnvType: envType }),
+  closeDetailsPanel: () => set({ detailsPanelOpen: false, detailsPanelEnvType: null }),
 }));

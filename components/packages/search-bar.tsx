@@ -200,14 +200,14 @@ export function SearchBar({
               }
             }}
             onFocus={() => setShowDropdown(true)}
-            className="pl-9 pr-9"
+            className="h-10 pl-9 pr-9 bg-background border-border"
           />
           {query && (
             <button
               onClick={() => { setQuery(''); inputRef.current?.focus(); }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              title="Clear search"
-              aria-label="Clear search"
+              title={t('common.clear')}
+              aria-label={t('common.clear')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -220,7 +220,7 @@ export function SearchBar({
               {isPending && (
                 <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading suggestions...
+                  {t('packages.loadingSuggestions')}
                 </div>
               )}
               
@@ -228,7 +228,7 @@ export function SearchBar({
                 <div className="border-b">
                   <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-1">
                     <Sparkles className="h-3 w-3" />
-                    Suggestions
+                    {t('packages.suggestions')}
                   </div>
                   {suggestions.map((suggestion, index) => (
                     <button
@@ -258,13 +258,13 @@ export function SearchBar({
                   <div className="flex items-center justify-between px-3 py-2 border-b">
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      Recent Searches
+                      {t('packages.recentSearches')}
                     </span>
                     <button
                       onClick={clearHistory}
                       className="text-xs text-muted-foreground hover:text-foreground"
                     >
-                      Clear
+                      {t('common.clear')}
                     </button>
                   </div>
                   <div className="py-1">
@@ -288,20 +288,20 @@ export function SearchBar({
         {/* Provider Filter */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Server className="h-4 w-4" />
+            <Button variant="outline" className="h-10 gap-2">
+              <Server className="h-4 w-4 text-muted-foreground" />
               {selectedProviders.length > 0 ? (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-1 text-xs">
                   {selectedProviders.length}
                 </Badge>
               ) : (
-                <span>Providers</span>
+                <span>{t('packages.providers')}</span>
               )}
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Filter by Provider</DropdownMenuLabel>
+            <DropdownMenuLabel>{t('packages.filterByProvider')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {providers.filter(p => p.capabilities.includes('Search')).map((p) => (
               <DropdownMenuCheckboxItem
@@ -318,52 +318,56 @@ export function SearchBar({
         {/* Filters */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Filter className="h-4 w-4" />
+            <Button variant="outline" className="h-10 gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
               {activeFilterCount > 0 && (
-                <Badge variant="secondary">{activeFilterCount}</Badge>
+                <Badge variant="secondary" className="text-xs">{activeFilterCount}</Badge>
               )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Filters</DropdownMenuLabel>
+            <DropdownMenuLabel>{t('packages.filters')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem
               checked={filters.installedOnly}
               onCheckedChange={(checked) => toggleFilter('installedOnly', checked)}
             >
-              Installed only
+              {t('packages.installedOnly')}
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={filters.notInstalled}
               onCheckedChange={(checked) => toggleFilter('notInstalled', checked)}
             >
-              Not installed
+              {t('packages.notInstalledFilter')}
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={filters.hasUpdates}
               onCheckedChange={(checked) => toggleFilter('hasUpdates', checked)}
             >
-              Has updates
+              {t('packages.hasUpdatesFilter')}
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         {/* Sort */}
         <Select value={sortBy} onValueChange={setSortBy}>
-          <SelectTrigger className="w-[140px]">
-            <ArrowUpDown className="h-4 w-4 mr-2" />
+          <SelectTrigger className="h-10 w-[140px]">
+            <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="relevance">Relevance</SelectItem>
-            <SelectItem value="name">Name</SelectItem>
-            <SelectItem value="provider">Provider</SelectItem>
+            <SelectItem value="relevance">{t('packages.sortRelevance')}</SelectItem>
+            <SelectItem value="name">{t('packages.sortName')}</SelectItem>
+            <SelectItem value="provider">{t('packages.sortProvider')}</SelectItem>
           </SelectContent>
         </Select>
         
         {/* Search Button */}
-        <Button onClick={handleSearch} disabled={loading || !query.trim()}>
+        <Button 
+          onClick={handleSearch} 
+          disabled={loading || !query.trim()}
+          className="h-10 w-10 p-0"
+        >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
@@ -375,43 +379,43 @@ export function SearchBar({
       {/* Active Filters Display */}
       {(selectedProviders.length > 0 || Object.keys(filters).some(k => filters[k as keyof SearchFilters])) && (
         <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs text-muted-foreground">Active filters:</span>
+          <span className="text-xs text-muted-foreground">{t('packages.activeFilters')}:</span>
           {selectedProviders.map(p => (
             <Badge 
               key={p} 
               variant="secondary" 
-              className="cursor-pointer"
+              className="cursor-pointer gap-1"
               onClick={() => toggleProvider(p)}
             >
               {providers.find(pr => pr.id === p)?.display_name || p}
-              <X className="h-3 w-3 ml-1" />
+              <X className="h-3 w-3" />
             </Badge>
           ))}
           {filters.installedOnly && (
             <Badge 
               variant="secondary" 
-              className="cursor-pointer"
+              className="cursor-pointer gap-1"
               onClick={() => toggleFilter('installedOnly', false)}
             >
-              Installed <X className="h-3 w-3 ml-1" />
+              {t('packages.installedOnly')} <X className="h-3 w-3" />
             </Badge>
           )}
           {filters.notInstalled && (
             <Badge 
               variant="secondary" 
-              className="cursor-pointer"
+              className="cursor-pointer gap-1"
               onClick={() => toggleFilter('notInstalled', false)}
             >
-              Not Installed <X className="h-3 w-3 ml-1" />
+              {t('packages.notInstalledFilter')} <X className="h-3 w-3" />
             </Badge>
           )}
           {filters.hasUpdates && (
             <Badge 
               variant="secondary" 
-              className="cursor-pointer"
+              className="cursor-pointer gap-1"
               onClick={() => toggleFilter('hasUpdates', false)}
             >
-              Has Updates <X className="h-3 w-3 ml-1" />
+              {t('packages.hasUpdatesFilter')} <X className="h-3 w-3" />
             </Badge>
           )}
           <button 
@@ -421,7 +425,7 @@ export function SearchBar({
               setFilters({});
             }}
           >
-            Clear all
+            {t('packages.clearAllFilters')}
           </button>
         </div>
       )}

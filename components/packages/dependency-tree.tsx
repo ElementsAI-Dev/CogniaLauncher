@@ -15,8 +15,9 @@ import {
 import { 
   GitBranch, ChevronRight, ChevronDown, Package, 
   Search, AlertCircle, Check, AlertTriangle,
-  Layers, ArrowRight
+  Layers, ArrowRight, Loader2
 } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
 
 interface DependencyNode {
   name: string;
@@ -66,6 +67,7 @@ function DependencyNodeItem({
   onToggle: () => void;
   searchTerm: string;
 }) {
+  const { t } = useLocale();
   const hasChildren = node.dependencies.length > 0;
   const isMatch = searchTerm && node.name.toLowerCase().includes(searchTerm.toLowerCase());
   
@@ -126,14 +128,14 @@ function DependencyNodeItem({
             <Check className="h-4 w-4 text-green-500" />
           ) : (
             <Badge variant="default" className="text-xs">
-              To install
+              {t('packages.toInstall')}
             </Badge>
           )}
 
           {node.is_conflict && (
             <Badge variant="destructive" className="gap-1">
               <AlertTriangle className="h-3 w-3" />
-              Conflict
+              {t('packages.conflict')}
             </Badge>
           )}
 
@@ -175,6 +177,7 @@ export function DependencyTree({
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [inputPackage, setInputPackage] = useState(packageId || '');
+  const { t } = useLocale();
 
   const toggleNode = useCallback((nodeId: string) => {
     setExpandedNodes(prev => {
@@ -228,23 +231,28 @@ export function DependencyTree({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <GitBranch className="h-5 w-5" />
-          Dependency Tree
+          {t('packages.dependencyTree')}
         </CardTitle>
         <CardDescription>
-          Visualize package dependencies and resolve conflicts
+          {t('packages.dependencyTreeDesc')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Package Input */}
         <div className="flex gap-2">
           <Input
-            placeholder="Enter package name..."
+            placeholder={t('packages.enterPackageName')}
             value={inputPackage}
             onChange={(e) => setInputPackage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleResolve()}
           />
           <Button onClick={handleResolve} disabled={loading || !inputPackage}>
-            {loading ? 'Resolving...' : 'Resolve'}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            <span className="ml-2">{t('packages.resolve')}</span>
           </Button>
         </div>
 
@@ -253,7 +261,7 @@ export function DependencyTree({
           <div className="space-y-3 py-4">
             <div className="flex items-center gap-2 text-muted-foreground">
               <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-              Resolving dependencies...
+              {t('packages.resolvingDependencies')}
             </div>
             {[1, 2, 3, 4].map(i => (
               <Skeleton key={i} className="h-8 ml-4" style={{ width: `${100 - i * 15}%` }} />
@@ -268,25 +276,25 @@ export function DependencyTree({
             <div className="grid grid-cols-4 gap-4">
               <div className="p-3 border rounded-lg text-center">
                 <div className="text-2xl font-bold">{resolution.total_packages}</div>
-                <div className="text-xs text-muted-foreground">Total Packages</div>
+                <div className="text-xs text-muted-foreground">{t('packages.totalPackages')}</div>
               </div>
               <div className="p-3 border rounded-lg text-center">
                 <div className="text-2xl font-bold text-green-600">
                   {resolution.tree.filter(n => n.is_installed).length}
                 </div>
-                <div className="text-xs text-muted-foreground">Installed</div>
+                <div className="text-xs text-muted-foreground">{t('packages.installed')}</div>
               </div>
               <div className="p-3 border rounded-lg text-center">
                 <div className="text-2xl font-bold text-blue-600">
                   {resolution.tree.filter(n => !n.is_installed).length}
                 </div>
-                <div className="text-xs text-muted-foreground">To Install</div>
+                <div className="text-xs text-muted-foreground">{t('packages.toInstall')}</div>
               </div>
               <div className="p-3 border rounded-lg text-center">
                 <div className="text-2xl font-bold text-destructive">
                   {resolution.conflicts.length}
                 </div>
-                <div className="text-xs text-muted-foreground">Conflicts</div>
+                <div className="text-xs text-muted-foreground">{t('packages.conflicts')}</div>
               </div>
             </div>
 
@@ -294,17 +302,17 @@ export function DependencyTree({
             {resolution.success ? (
               <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-700 dark:text-green-400">
                 <Check className="h-5 w-5" />
-                <span>Resolution successful!</span>
+                <span>{t('packages.resolutionSuccessful')}</span>
                 {resolution.total_size && (
                   <span className="ml-auto text-sm">
-                    Total download: {formatSize(resolution.total_size)}
+                    {t('packages.totalDownload')} {formatSize(resolution.total_size)}
                   </span>
                 )}
               </div>
             ) : (
               <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-700 dark:text-red-400">
                 <AlertCircle className="h-5 w-5" />
-                <span>Resolution failed due to conflicts</span>
+                <span>{t('packages.resolutionFailed')}</span>
               </div>
             )}
 
@@ -313,20 +321,20 @@ export function DependencyTree({
               <div className="space-y-2">
                 <h4 className="font-medium flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                  Dependency Conflicts
+                  {t('packages.dependencyConflicts')}
                 </h4>
                 {resolution.conflicts.map((conflict, i) => (
                   <div key={i} className="p-3 border border-destructive/30 bg-destructive/5 rounded-lg">
                     <div className="font-medium">{conflict.package_name}</div>
                     <div className="text-sm text-muted-foreground mt-1">
-                      Required versions: {conflict.versions.join(', ')}
+                      {t('packages.requiredVersions')} {conflict.versions.join(', ')}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Required by: {conflict.required_by.join(', ')}
+                      {t('packages.requiredBy')} {conflict.required_by.join(', ')}
                     </div>
                     {conflict.resolution && (
                       <div className="text-sm text-primary mt-2">
-                        Suggestion: {conflict.resolution}
+                        {t('packages.suggestion')} {conflict.resolution}
                       </div>
                     )}
                   </div>
@@ -339,17 +347,17 @@ export function DependencyTree({
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search dependencies..."
+                  placeholder={t('packages.searchDependencies')}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-8"
                 />
               </div>
               <Button variant="outline" size="sm" onClick={expandAll}>
-                Expand All
+                {t('packages.expandAll')}
               </Button>
               <Button variant="outline" size="sm" onClick={collapseAll}>
-                Collapse All
+                {t('packages.collapseAll')}
               </Button>
             </div>
 
@@ -358,7 +366,7 @@ export function DependencyTree({
               {resolution.tree.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <Layers className="h-12 w-12 mb-4 opacity-50" />
-                  <span>No dependencies found</span>
+                  <span>{t('packages.noDependenciesFound')}</span>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -380,7 +388,7 @@ export function DependencyTree({
               <div className="space-y-2">
                 <h4 className="font-medium flex items-center gap-2">
                   <ArrowRight className="h-4 w-4" />
-                  Installation Order
+                  {t('packages.installationOrder')}
                 </h4>
                 <div className="flex flex-wrap items-center gap-1">
                   {resolution.install_order.map((pkg, i) => (

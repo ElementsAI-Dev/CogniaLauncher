@@ -134,7 +134,7 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                   key={lang.id}
                   onClick={() => handleLanguageSelect(lang.id)}
                   className={cn(
-                    'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
+                    'relative flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
                     'hover:bg-accent',
                     selectedLanguage === lang.id
                       ? lang.color + ' border-2'

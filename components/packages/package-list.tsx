@@ -15,52 +15,115 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Download, Trash2, Info, Loader2 } from 'lucide-react';
+import { Download, Trash2, Info, Loader2, Package, Pin } from 'lucide-react';
 import { usePackageStore } from '@/lib/stores/packages';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { PackageSummary, InstalledPackage } from '@/lib/tauri';
 
 interface PackageListProps {
   packages: (PackageSummary | InstalledPackage)[];
   type: 'search' | 'installed';
   installing?: string[];
+  pinnedPackages?: string[];
   onInstall?: (name: string) => void;
   onUninstall?: (name: string) => void;
   onSelect?: (pkg: PackageSummary | InstalledPackage) => void;
+  onPin?: (name: string) => void;
+  onUnpin?: (name: string) => void;
   selectable?: boolean;
+  showSelectAll?: boolean;
 }
 
 export function PackageList({ 
   packages, 
   type, 
   installing = [], 
+  pinnedPackages = [],
   onInstall, 
   onUninstall, 
   onSelect,
+  onPin,
+  onUnpin,
   selectable = true,
+  showSelectAll = true,
 }: PackageListProps) {
-  const { selectedPackages, togglePackageSelection } = usePackageStore();
+  const { selectedPackages, togglePackageSelection, selectAllPackages, clearPackageSelection } = usePackageStore();
+  const { t } = useLocale();
+
+  const allSelected = packages.length > 0 && packages.every(p => selectedPackages.includes(p.name));
+  const someSelected = packages.some(p => selectedPackages.includes(p.name));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      clearPackageSelection();
+    } else {
+      selectAllPackages(packages.map(p => p.name));
+    }
+  };
 
   if (packages.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        {type === 'search' ? 'No packages found' : 'No packages installed'}
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <div className="p-3 bg-muted rounded-full mb-4">
+          <Package className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="font-medium mb-1">
+          {type === 'search' ? t('packages.noResults') : t('packages.noPackagesInstalled')}
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          {type === 'search' 
+            ? t('packages.searchTips')
+            : t('packages.description')
+          }
+        </p>
       </div>
     );
   }
 
   return (
-    <ScrollArea className="h-[500px]">
-      <div className="space-y-2 pr-4">
+    <div className="space-y-4">
+      {/* Select All Header */}
+      {selectable && showSelectAll && packages.length > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+              onCheckedChange={handleSelectAll}
+            />
+            <span className="text-sm text-muted-foreground">
+              {selectedPackages.length > 0 
+                ? t('packages.selected', { count: selectedPackages.length })
+                : t('packages.selectAll')
+              }
+            </span>
+          </div>
+          {selectedPackages.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearPackageSelection}>
+              {t('packages.deselectAll')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      <ScrollArea className="h-[500px]">
+        <div className="space-y-2 pr-4">
         {packages.map((pkg) => {
           const isInstalled = type === 'installed';
           const isInstalling = installing.includes(pkg.name);
           const version = isInstalled ? (pkg as InstalledPackage).version : (pkg as PackageSummary).latest_version;
           const isSelected = selectedPackages.includes(pkg.name);
 
+          const isPinned = pinnedPackages.includes(pkg.name);
+
           return (
             <div
               key={pkg.name}
-              className="flex items-center justify-between p-4 bg-card border border-border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors"
+              className={`
+                flex items-center justify-between p-4 
+                bg-card border rounded-lg cursor-pointer 
+                hover:bg-accent/50 transition-colors
+                ${isSelected ? 'border-primary bg-accent/30' : 'border-border'}
+              `}
               onClick={() => onSelect?.(pkg)}
             >
               {/* Left side - checkbox and info */}
@@ -74,11 +137,16 @@ export function PackageList({
                   />
                 )}
                 <div className="flex flex-col gap-1 min-w-0">
-                  <span className="text-base font-medium text-foreground truncate">
-                    {pkg.name}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-medium text-foreground truncate">
+                      {pkg.name}
+                    </span>
+                    {isPinned && (
+                      <Pin className="h-3 w-3 text-muted-foreground" />
+                    )}
+                  </div>
                   {'description' in pkg && pkg.description && (
-                    <span className="text-sm text-muted-foreground truncate">
+                    <span className="text-sm text-muted-foreground line-clamp-1">
                       {pkg.description}
                     </span>
                   )}
@@ -96,8 +164,7 @@ export function PackageList({
                   </Badge>
                 )}
                 <Badge 
-                  variant="secondary" 
-                  className="text-xs px-2 py-1"
+                  className="text-xs px-2 py-1 bg-muted text-muted-foreground hover:bg-muted"
                 >
                   {pkg.provider}
                 </Badge>
@@ -110,9 +177,30 @@ export function PackageList({
                     e.stopPropagation();
                     onSelect?.(pkg);
                   }}
+                  title={t('common.info')}
                 >
                   <Info className="h-4 w-4 text-muted-foreground" />
                 </Button>
+
+                {/* Pin/Unpin button for installed packages */}
+                {isInstalled && onPin && onUnpin && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isPinned) {
+                        onUnpin(pkg.name);
+                      } else {
+                        onPin(pkg.name);
+                      }
+                    }}
+                    title={isPinned ? t('packages.unpinVersion') : t('packages.pinVersion')}
+                  >
+                    <Pin className={`h-4 w-4 ${isPinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
+                  </Button>
+                )}
                 
                 {isInstalled ? (
                   <AlertDialog>
@@ -122,24 +210,25 @@ export function PackageList({
                         variant="destructive"
                         className="h-8 w-8"
                         onClick={(e) => e.stopPropagation()}
+                        title={t('common.uninstall')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Uninstall Package</AlertDialogTitle>
+                        <AlertDialogTitle>{t('common.uninstall')} {pkg.name}</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to uninstall {pkg.name}? This action cannot be undone.
+                          {t('packages.uninstallConfirm', { name: pkg.name })}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() => onUninstall?.(pkg.name)}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          Uninstall
+                          {t('common.uninstall')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -153,6 +242,7 @@ export function PackageList({
                       e.stopPropagation();
                       onInstall?.(pkg.name);
                     }}
+                    title={t('common.install')}
                   >
                     {isInstalling ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -165,7 +255,8 @@ export function PackageList({
             </div>
           );
         })}
-      </div>
-    </ScrollArea>
+        </div>
+      </ScrollArea>
+    </div>
   );
 }

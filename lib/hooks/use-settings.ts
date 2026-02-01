@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useSettingsStore } from '../stores/settings';
 import * as tauri from '../tauri';
+import type { CacheSettings } from '../tauri';
 
 export function useSettings() {
   const store = useSettingsStore();
@@ -92,6 +93,62 @@ export function useSettings() {
     }
   }, [store]);
 
+  const fetchCacheSettings = useCallback(async () => {
+    try {
+      const settings = await tauri.getCacheSettings();
+      store.setCacheSettings(settings);
+      return settings;
+    } catch (err) {
+      store.setError(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }, [store]);
+
+  const updateCacheSettings = useCallback(async (settings: CacheSettings) => {
+    store.setLoading(true);
+    store.setError(null);
+    try {
+      await tauri.setCacheSettings(settings);
+      store.setCacheSettings(settings);
+    } catch (err) {
+      store.setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store]);
+
+  const verifyCacheIntegrity = useCallback(async () => {
+    store.setLoading(true);
+    store.setError(null);
+    try {
+      const result = await tauri.cacheVerify();
+      store.setCacheVerification(result);
+      return result;
+    } catch (err) {
+      store.setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store]);
+
+  const repairCache = useCallback(async () => {
+    store.setLoading(true);
+    store.setError(null);
+    try {
+      const result = await tauri.cacheRepair();
+      store.setCacheVerification(null);
+      await fetchCacheInfo();
+      return result;
+    } catch (err) {
+      store.setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store, fetchCacheInfo]);
+
   return {
     ...store,
     fetchConfig,
@@ -100,5 +157,9 @@ export function useSettings() {
     fetchCacheInfo,
     cleanCache,
     fetchPlatformInfo,
+    fetchCacheSettings,
+    updateCacheSettings,
+    verifyCacheIntegrity,
+    repairCache,
   };
 }

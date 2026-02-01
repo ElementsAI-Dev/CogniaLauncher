@@ -20,7 +20,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import type { EnvironmentInfo, DetectedEnvironment } from '@/lib/tauri';
-import { Download, Trash2, Check, FolderOpen, Scan } from 'lucide-react';
+import { useEnvironmentStore } from '@/lib/stores/environment';
+import { Download, Trash2, Check, FolderOpen, Scan, ChevronDown, List, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -32,6 +33,8 @@ interface EnvironmentCardProps {
   onSetGlobal?: (version: string) => Promise<void>;
   onSetLocal?: (version: string, projectPath: string) => Promise<void>;
   loading?: boolean;
+  availableProviders?: { id: string; name: string }[];
+  onProviderChange?: (providerId: string) => void;
 }
 
 export function EnvironmentCard({ 
@@ -41,9 +44,12 @@ export function EnvironmentCard({
   onUninstall, 
   onSetGlobal,
   onSetLocal,
-  loading 
+  loading,
+  availableProviders = [],
+  onProviderChange,
 }: EnvironmentCardProps) {
   const { t } = useLocale();
+  const { openVersionBrowser, openDetailsPanel } = useEnvironmentStore();
   const [customVersion, setCustomVersion] = useState('');
   const [localProjectPath, setLocalProjectPath] = useState('');
   const [isInstalling, setIsInstalling] = useState(false);
@@ -135,7 +141,23 @@ export function EnvironmentCard({
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>{t('environments.provider')}:</span>
-                <span className="px-2 py-0.5 rounded bg-muted text-xs font-medium">{env.provider}</span>
+                {availableProviders.length > 1 && onProviderChange ? (
+                  <Select value={env.provider} onValueChange={onProviderChange}>
+                    <SelectTrigger className="h-6 w-auto gap-1 px-2 py-0 text-xs font-medium bg-muted border-0">
+                      <SelectValue />
+                      <ChevronDown className="h-3 w-3" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableProviders.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-muted text-xs font-medium">{env.provider}</span>
+                )}
               </div>
             </div>
             
@@ -297,6 +319,28 @@ export function EnvironmentCard({
               </p>
             </div>
           )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-2 pt-3 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-2"
+              onClick={() => openVersionBrowser(env.env_type)}
+            >
+              <List className="h-4 w-4" />
+              {t('environments.browseVersions')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-2"
+              onClick={() => openDetailsPanel(env.env_type)}
+            >
+              <Settings2 className="h-4 w-4" />
+              {t('environments.viewDetails')}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </TooltipProvider>
