@@ -120,3 +120,32 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Tauri frameless window - default everything to no-drag */
+body,
+body * {
+  -webkit-app-region: no-drag;
+}
+
+/* Only the titlebar drag region should be draggable */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+/* Exclude all interactive elements from drag region */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] textarea,
+[data-tauri-drag-region] [role="button"],
+[data-tauri-drag-region] [role="link"],
+[data-tauri-drag-region] [role="menuitem"],
+[data-tauri-drag-region] [role="option"],
+[data-tauri-drag-region] [role="tab"],
+[data-tauri-drag-region] [tabindex]:not([tabindex="-1"]),
+[data-tauri-drag-region] label,
+[data-tauri-drag-region] svg,
+[data-tauri-drag-region] > * > * {
+  -webkit-app-region: no-drag;
+}

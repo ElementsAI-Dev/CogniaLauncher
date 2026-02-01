@@ -1,87 +1,115 @@
-import { render, screen } from "@testing-library/react";
-import Home from "./page";
+import { render, screen, waitFor } from "@testing-library/react";
+import DashboardPage from "./page";
+import { LocaleProvider } from "@/components/providers/locale-provider";
 
-describe("Home Page", () => {
-  it("renders the Next.js logo", () => {
-    render(<Home />);
-    const logo = screen.getByAltText("Next.js logo");
-    expect(logo).toBeInTheDocument();
+// Mock the Tauri API with all required functions
+jest.mock("@/lib/tauri", () => ({
+  envList: jest.fn().mockResolvedValue([]),
+  envGet: jest.fn().mockResolvedValue(null),
+  packageSearch: jest.fn().mockResolvedValue([]),
+  packageList: jest.fn().mockResolvedValue([]),
+  providerList: jest.fn().mockResolvedValue([]),
+  configList: jest.fn().mockResolvedValue([]),
+  cacheInfo: jest.fn().mockResolvedValue({
+    download_cache: { entry_count: 0, size: 0, size_human: "0 B", location: "" },
+    metadata_cache: { entry_count: 0, size: 0, size_human: "0 B", location: "" },
+    total_size: 0,
+    total_size_human: "0 B",
+  }),
+  getPlatformInfo: jest.fn().mockResolvedValue({ os: "Test OS", arch: "x64" }),
+  getCogniaDir: jest.fn().mockResolvedValue("/mock/cognia/dir"),
+}));
+
+// Mock messages
+const mockMessages = {
+  en: {
+    dashboard: {
+      title: "Dashboard",
+      description: "Overview of your development environment",
+      environments: "Environments",
+      versionsInstalled: "{count} versions installed",
+      packages: "Packages",
+      fromProviders: "from {count} providers",
+      cache: "Cache",
+      cachedItems: "{count} cached items",
+      platform: "Platform",
+      activeEnvironments: "Active Environments",
+      activeEnvironmentsDesc: "Currently available environment managers",
+      noEnvironments: "No environments detected",
+      recentPackages: "Recent Packages",
+      recentPackagesDesc: "Recently installed packages",
+      noPackages: "No packages installed",
+      viewAll: "View All",
+    },
+    common: {
+      unknown: "Unknown",
+      none: "None",
+    },
+    environments: {},
+    packages: {},
+  },
+  zh: {
+    dashboard: {
+      title: "仪表板",
+      description: "开发环境概览",
+    },
+    common: {},
+    environments: {},
+    packages: {},
+  },
+};
+
+// Wrapper component with providers
+function TestWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <LocaleProvider messages={mockMessages as never}>
+      {children}
+    </LocaleProvider>
+  );
+}
+
+function renderWithProviders(ui: React.ReactElement) {
+  return render(ui, { wrapper: TestWrapper });
+}
+
+describe("Dashboard Page", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  it("renders the main heading", () => {
-    render(<Home />);
-    const heading = screen.getByRole("heading", {
-      name: /to get started, edit the page\.tsx file/i,
+  it("renders the dashboard title", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
     });
-    expect(heading).toBeInTheDocument();
   });
 
-  it("renders the description text", () => {
-    render(<Home />);
-    const description = screen.getByText(/looking for a starting point/i);
-    expect(description).toBeInTheDocument();
+  it("renders the dashboard description", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByText(/overview of your development environment/i)).toBeInTheDocument();
+    });
   });
 
-  it("renders the Templates link", () => {
-    render(<Home />);
-    const templatesLink = screen.getByRole("link", { name: /templates/i });
-    expect(templatesLink).toBeInTheDocument();
-    expect(templatesLink).toHaveAttribute(
-      "href",
-      expect.stringContaining("vercel.com/templates")
-    );
+  it("renders stats cards section", async () => {
+    const { container } = renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
+    });
+    
+    // Check for the stats grid
+    const statsGrid = container.querySelector(".grid");
+    expect(statsGrid).toBeInTheDocument();
   });
 
-  it("renders the Learning link", () => {
-    render(<Home />);
-    const learningLink = screen.getByRole("link", { name: /learning/i });
-    expect(learningLink).toBeInTheDocument();
-    expect(learningLink).toHaveAttribute(
-      "href",
-      expect.stringContaining("nextjs.org/learn")
-    );
-  });
-
-  it("renders the Deploy Now button", () => {
-    render(<Home />);
-    const deployButton = screen.getByRole("link", { name: /deploy now/i });
-    expect(deployButton).toBeInTheDocument();
-    expect(deployButton).toHaveAttribute(
-      "href",
-      expect.stringContaining("vercel.com/new")
-    );
-    expect(deployButton).toHaveAttribute("target", "_blank");
-    expect(deployButton).toHaveAttribute("rel", "noopener noreferrer");
-  });
-
-  it("renders the Documentation button", () => {
-    render(<Home />);
-    const docsButton = screen.getByRole("link", { name: /documentation/i });
-    expect(docsButton).toBeInTheDocument();
-    expect(docsButton).toHaveAttribute(
-      "href",
-      expect.stringContaining("nextjs.org/docs")
-    );
-    expect(docsButton).toHaveAttribute("target", "_blank");
-    expect(docsButton).toHaveAttribute("rel", "noopener noreferrer");
-  });
-
-  it("renders the Vercel logomark", () => {
-    render(<Home />);
-    const vercelLogo = screen.getByAltText("Vercel logomark");
-    expect(vercelLogo).toBeInTheDocument();
-  });
-
-  it("has correct layout structure", () => {
-    const { container } = render(<Home />);
-    const main = container.querySelector("main");
-    expect(main).toBeInTheDocument();
-    expect(main).toHaveClass("flex", "min-h-screen");
-  });
-
-  it("applies dark mode classes", () => {
-    const { container } = render(<Home />);
-    const wrapper = container.firstChild as HTMLElement;
-    expect(wrapper).toHaveClass("dark:bg-black");
+  it("displays platform information", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByText("Test OS")).toBeInTheDocument();
+    });
   });
 });

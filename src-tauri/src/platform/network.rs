@@ -1,0 +1,333 @@
+use futures::StreamExt;
+use reqwest::{Client, Response, StatusCode};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+
+#[derive(Error, Debug)]
+pub enum NetworkError {
+    #[error("Request failed: {0}")]
+    Request(#[from] reqwest::Error),
+    #[error("HTTP error {0}: {1}")]
+    HttpStatus(u16, String),
+    #[error("Timeout after {0:?}")]
+    Timeout(Duration),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Rate limited, retry after {0} seconds")]
+    RateLimited(u64),
+    #[error("Download interrupted")]
+    Interrupted,
+}
+
+pub type NetworkResult<T> = Result<T, NetworkError>;
+
+#[derive(Debug, Clone)]
+pub struct DownloadProgress {
+    pub downloaded: u64,
+    pub total: Option<u64>,
+    pub speed: f64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RequestOptions {
+    pub timeout: Option<Duration>,
+    pub headers: Vec<(String, String)>,
+    pub max_retries: u32,
+    pub retry_delay: Duration,
+}
+
+impl RequestOptions {
+    pub fn new() -> Self {
+        Self {
+            timeout: Some(Duration::from_secs(30)),
+            max_retries: 3,
+            retry_delay: Duration::from_secs(1),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.push((key.into(), value.into()));
+        self
+    }
+
+    pub fn with_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct HttpClient {
+    client: Client,
+    default_options: RequestOptions,
+}
+
+impl Default for HttpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HttpClient {
+    pub fn new() -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("CogniaLauncher/0.1.0")
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self {
+            client,
+            default_options: RequestOptions::new(),
+        }
+    }
+
+    pub fn with_options(mut self, options: RequestOptions) -> Self {
+        self.default_options = options;
+        self
+    }
+
+    pub async fn get(&self, url: &str) -> NetworkResult<Response> {
+        self.get_with_options(url, None).await
+    }
+
+    pub async fn get_with_options(
+        &self,
+        url: &str,
+        options: Option<RequestOptions>,
+    ) -> NetworkResult<Response> {
+        let options = options.unwrap_or_else(|| self.default_options.clone());
+        let mut attempts = 0;
+
+        loop {
+            let mut request = self.client.get(url);
+
+            if let Some(timeout) = options.timeout {
+                request = request.timeout(timeout);
+            }
+
+            for (key, value) in &options.headers {
+                request = request.header(key.as_str(), value.as_str());
+            }
+
+            match request.send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        return Ok(response);
+                    }
+
+                    if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                        let retry_after = response
+                            .headers()
+                            .get("retry-after")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(60);
+                        return Err(NetworkError::RateLimited(retry_after));
+                    }
+
+                    if response.status().is_server_error() && attempts < options.max_retries {
+                        attempts += 1;
+                        let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
+
+                    return Err(NetworkError::HttpStatus(
+                        response.status().as_u16(),
+                        response.status().to_string(),
+                    ));
+                }
+                Err(e) if e.is_timeout() => {
+                    if attempts < options.max_retries {
+                        attempts += 1;
+                        let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
+                    return Err(NetworkError::Timeout(options.timeout.unwrap_or_default()));
+                }
+                Err(e) if e.is_connect() && attempts < options.max_retries => {
+                    attempts += 1;
+                    let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                Err(e) => return Err(NetworkError::Request(e)),
+            }
+        }
+    }
+
+    pub async fn get_json<T: for<'de> Deserialize<'de>>(&self, url: &str) -> NetworkResult<T> {
+        let response = self.get(url).await?;
+        let json = response.json().await?;
+        Ok(json)
+    }
+
+    pub async fn post_json<T: Serialize, R: for<'de> Deserialize<'de>>(
+        &self,
+        url: &str,
+        body: &T,
+    ) -> NetworkResult<R> {
+        let response = self.client.post(url).json(body).send().await?;
+
+        if !response.status().is_success() {
+            return Err(NetworkError::HttpStatus(
+                response.status().as_u16(),
+                response.status().to_string(),
+            ));
+        }
+
+        let json = response.json().await?;
+        Ok(json)
+    }
+
+    pub async fn download<P, F>(
+        &self,
+        url: &str,
+        dest: P,
+        on_progress: Option<F>,
+    ) -> NetworkResult<u64>
+    where
+        P: AsRef<Path>,
+        F: FnMut(DownloadProgress),
+    {
+        self.download_with_resume(url, dest, None, on_progress)
+            .await
+    }
+
+    pub async fn download_with_resume<P, F>(
+        &self,
+        url: &str,
+        dest: P,
+        resume_from: Option<u64>,
+        mut on_progress: Option<F>,
+    ) -> NetworkResult<u64>
+    where
+        P: AsRef<Path>,
+        F: FnMut(DownloadProgress),
+    {
+        let dest = dest.as_ref();
+
+        if let Some(parent) = dest.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let mut request = self.client.get(url);
+
+        let (mut file, start_pos) = if let Some(pos) = resume_from {
+            request = request.header("Range", format!("bytes={}-", pos));
+            let file = tokio::fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(dest)
+                .await?;
+            (file, pos)
+        } else {
+            let file = File::create(dest).await?;
+            (file, 0)
+        };
+
+        let response = request.send().await?;
+
+        if !response.status().is_success() && response.status() != StatusCode::PARTIAL_CONTENT {
+            return Err(NetworkError::HttpStatus(
+                response.status().as_u16(),
+                response.status().to_string(),
+            ));
+        }
+
+        let total_size = response.content_length().map(|len| len + start_pos);
+        let mut downloaded = start_pos;
+        let start_time = std::time::Instant::now();
+
+        let mut stream = response.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            file.write_all(&chunk).await?;
+            downloaded += chunk.len() as u64;
+
+            if let Some(ref mut callback) = on_progress {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let speed = if elapsed > 0.0 {
+                    (downloaded - start_pos) as f64 / elapsed
+                } else {
+                    0.0
+                };
+
+                callback(DownloadProgress {
+                    downloaded,
+                    total: total_size,
+                    speed,
+                });
+            }
+        }
+
+        file.flush().await?;
+
+        Ok(downloaded)
+    }
+
+    pub async fn head(&self, url: &str) -> NetworkResult<Response> {
+        let response = self.client.head(url).send().await?;
+
+        if !response.status().is_success() {
+            return Err(NetworkError::HttpStatus(
+                response.status().as_u16(),
+                response.status().to_string(),
+            ));
+        }
+
+        Ok(response)
+    }
+
+    pub async fn supports_resume(&self, url: &str) -> bool {
+        if let Ok(response) = self.head(url).await {
+            response
+                .headers()
+                .get("accept-ranges")
+                .map(|v| v.to_str().unwrap_or("") == "bytes")
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    }
+}
+
+pub fn create_client() -> HttpClient {
+    HttpClient::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_client() {
+        let client = create_client();
+        assert!(client.client.get("https://example.com").build().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_request_options() {
+        let options = RequestOptions::new()
+            .with_timeout(Duration::from_secs(60))
+            .with_header("Accept", "application/json")
+            .with_retries(5);
+
+        assert_eq!(options.timeout, Some(Duration::from_secs(60)));
+        assert_eq!(options.max_retries, 5);
+        assert_eq!(options.headers.len(), 1);
+    }
+}

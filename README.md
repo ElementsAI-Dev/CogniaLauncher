@@ -1,20 +1,19 @@
-# React Quick Starter
+# CogniaLauncher
 
-A modern, full-stack starter template combining **Next.js 16** with **React 19** for web applications and **Tauri 2.9** for cross-platform desktop applications. Built with TypeScript, Tailwind CSS v4, and shadcn/ui components.
+A cross-platform environment and package manager with a modern graphical interface. Built with **Next.js 16**, **React 19**, and **Tauri 2.9** for native desktop performance.
 
 [中文文档](./README_zh.md)
 
 ## Features
 
-- ⚡️ **Next.js 16** with App Router and React 19
-- 🖥️ **Tauri 2.9** for native desktop applications (Windows, macOS, Linux)
-- 🎨 **Tailwind CSS v4** with CSS variables and dark mode support
-- 🧩 **shadcn/ui** component library with Radix UI primitives
-- 📦 **Zustand** for lightweight state management
-- 🔤 **Geist Font** optimized with next/font
-- 🎯 **TypeScript** for type safety
-- 🎭 **Lucide Icons** for beautiful iconography
-- 📱 Dual deployment: Web app OR Desktop app from the same codebase
+- 🔧 **Environment Management** - Manage Node.js (nvm), Python (pyenv), and Rust (rustup) versions
+- 📦 **Package Management** - Search, install, and update packages from multiple providers
+- 🔌 **Multi-Provider Support** - npm, pnpm, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, vcpkg, Docker, PSGallery, GitHub Releases
+- 💾 **Cache Management** - Download and metadata caching with cleanup tools
+- ⚙️ **Configuration System** - Network settings, proxies, mirrors, security options
+- 🖥️ **Cross-Platform** - Native desktop app for Windows, macOS, and Linux
+- 🎨 **Modern UI** - Beautiful interface built with shadcn/ui and Tailwind CSS
+- 🔄 **Update Checking** - Check for package updates across all providers
 
 ## Prerequisites
 
@@ -50,7 +49,7 @@ Before you begin, ensure you have the following installed:
 
    ```bash
    git clone <your-repo-url>
-   cd react-quick-starter
+   cd CogniaLauncher
    ```
 
 2. **Install dependencies**
@@ -89,11 +88,15 @@ This starts the Next.js development server at [http://localhost:3000](http://loc
 
 #### Key Development Files
 
-- `app/page.tsx` - Main landing page
-- `app/layout.tsx` - Root layout with global configuration
-- `app/globals.css` - Global styles and Tailwind configuration
+- `app/page.tsx` - Dashboard with environment and package overview
+- `app/environments/page.tsx` - Environment version management
+- `app/packages/page.tsx` - Package search and installation
+- `app/providers/page.tsx` - Provider configuration
+- `app/cache/page.tsx` - Cache management interface
+- `app/settings/page.tsx` - Application settings
 - `components/ui/` - Reusable UI components (shadcn/ui)
-- `lib/utils.ts` - Utility functions
+- `lib/tauri.ts` - Tauri API bindings for Rust backend
+- `lib/hooks/` - React hooks for state management
 
 ### Desktop Application Development
 
@@ -150,31 +153,44 @@ pnpm dlx shadcn@latest add button card dialog
 
 ## Project Structure
 
-```
-react-quick-starter/
+```text
+CogniaLauncher/
 ├── app/                      # Next.js App Router
-│   ├── layout.tsx           # Root layout with fonts and metadata
-│   ├── page.tsx             # Main landing page
-│   ├── globals.css          # Global styles and Tailwind config
-│   └── favicon.ico          # App favicon
+│   ├── page.tsx             # Dashboard overview
+│   ├── environments/        # Environment management page
+│   ├── packages/            # Package management page
+│   ├── providers/           # Provider configuration page
+│   ├── cache/               # Cache management page
+│   ├── settings/            # Settings page
+│   ├── layout.tsx           # Root layout with sidebar
+│   └── globals.css          # Global styles
 ├── components/              # React components
-│   └── ui/                  # shadcn/ui components (Button, etc.)
-├── lib/                     # Utility functions
-│   └── utils.ts            # Helper functions (cn, etc.)
-├── public/                  # Static assets (images, SVGs)
-├── src-tauri/              # Tauri desktop application
+│   ├── dashboard/           # Dashboard-specific components
+│   ├── environments/        # Environment cards and controls
+│   ├── packages/            # Package list and search components
+│   ├── layout/              # Sidebar and navigation
+│   └── ui/                  # shadcn/ui components
+├── lib/                     # Utilities and state
+│   ├── hooks/               # React hooks (use-environments, use-packages, etc.)
+│   ├── stores/              # Zustand stores
+│   ├── tauri.ts             # Tauri API bindings
+│   └── utils.ts             # Helper functions
+├── src-tauri/               # Tauri/Rust backend
 │   ├── src/
-│   │   ├── main.rs         # Rust main entry point
-│   │   └── lib.rs          # Rust library code
-│   ├── icons/              # Desktop app icons
-│   ├── tauri.conf.json     # Tauri configuration
-│   └── Cargo.toml          # Rust dependencies
+│   │   ├── commands/        # Tauri command handlers
+│   │   ├── cache/           # Cache management
+│   │   ├── config/          # Configuration system
+│   │   ├── core/            # Core environment/package logic
+│   │   ├── provider/        # Provider implementations
+│   │   ├── resolver/        # Dependency resolution
+│   │   └── lib.rs           # Main Tauri setup
+│   ├── icons/               # Desktop app icons
+│   └── tauri.conf.json      # Tauri configuration
+├── openspec/                # OpenSpec change management
 ├── components.json          # shadcn/ui configuration
-├── next.config.ts          # Next.js configuration
-├── tailwind.config.ts      # Tailwind CSS configuration
-├── tsconfig.json           # TypeScript configuration
-├── eslint.config.mjs       # ESLint configuration
-└── package.json            # Node.js dependencies and scripts
+├── next.config.ts           # Next.js configuration
+├── tsconfig.json            # TypeScript configuration
+└── package.json             # Node.js dependencies
 ```
 
 ## Configuration
@@ -205,18 +221,18 @@ Edit `src-tauri/tauri.conf.json` to customize your desktop app:
 
 ```json
 {
-  "productName": "react-quick-starter",    // App name
+  "productName": "CogniaLauncher",         // App name
   "version": "0.1.0",                      // App version
-  "identifier": "com.tauri.dev",          // Unique app identifier
+  "identifier": "com.cognia.launcher",     // Unique app identifier
   "build": {
     "frontendDist": "../out",              // Next.js build output
     "devUrl": "http://localhost:3000"      // Dev server URL
   },
   "app": {
     "windows": [{
-      "title": "react-quick-starter",      // Window title
-      "width": 800,                        // Default width
-      "height": 600,                       // Default height
+      "title": "CogniaLauncher",           // Window title
+      "width": 1024,                       // Default width
+      "height": 768,                       // Default height
       "resizable": true,                   // Allow resizing
       "fullscreen": false                  // Start fullscreen
     }]
@@ -382,9 +398,10 @@ See [Tauri Distribution Guide](https://tauri.app/v1/guides/distribution/) for de
 - **Code Style**: Follow ESLint rules (`pnpm lint`)
 - **Commits**: Use conventional commits (feat:, fix:, docs:, etc.)
 - **Components**: Keep components small and reusable
-- **State**: Use Zustand for global state, React hooks for local state
+- **State**: Use Zustand stores in `lib/stores/` for global state
+- **Hooks**: Use custom hooks in `lib/hooks/` for Tauri API interactions
+- **Backend**: Add new Rust commands in `src-tauri/src/commands/`
 - **Styling**: Use Tailwind utility classes, avoid custom CSS when possible
-- **Types**: Leverage TypeScript for type safety
 
 ## Troubleshooting
 

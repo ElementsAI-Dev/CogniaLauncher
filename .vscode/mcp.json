@@ -6,6 +6,16 @@
         "shadcn@latest",
         "mcp"
       ]
+    },
+    "serena": {
+      "command": "C:\\Users\\Max Qian\\.local\\bin\\uv.exe",
+      "args": [
+        "run",
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena-mcp-server",
+        "D:\\Project\\CogniaLauncher\\.serena\\project.yml"
+      ]
     }
   }
 }

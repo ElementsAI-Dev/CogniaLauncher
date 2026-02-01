@@ -1,0 +1,231 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-01-15T00:00:00.000Z",
+  "projectName": "CogniaLauncher",
+  "projectDescription": "Cross-platform environment and package manager with modern GUI",
+  "techStack": {
+    "frontend": ["Next.js 16", "React 19", "TypeScript", "Tailwind CSS v4", "shadcn/ui", "Zustand"],
+    "backend": ["Tauri 2.9", "Rust 1.77+"],
+    "testing": ["Jest 30", "Testing Library", "jsdom"],
+    "tooling": ["pnpm", "ESLint", "TypeScript 5.9"]
+  },
+  "modules": [
+    {
+      "name": "frontend",
+      "path": ".",
+      "type": "nextjs-app",
+      "language": "TypeScript",
+      "entryPoints": [
+        "app/layout.tsx",
+        "app/page.tsx"
+      ],
+      "keyDirectories": [
+        "app/",
+        "components/",
+        "lib/",
+        "hooks/",
+        "i18n/",
+        "messages/"
+      ],
+      "interfaces": [
+        "app/environments/page.tsx - Environment management UI",
+        "app/packages/page.tsx - Package management UI",
+        "app/providers/page.tsx - Provider configuration UI",
+        "app/cache/page.tsx - Cache management UI",
+        "app/settings/page.tsx - Application settings UI"
+      ],
+      "dependencies": {
+        "key": ["@tauri-apps/api", "next-intl", "zustand", "@tanstack/react-query"],
+        "dev": ["jest", "@testing-library/react", "eslint"]
+      },
+      "testing": {
+        "framework": "Jest",
+        "config": "jest.config.ts",
+        "setup": "jest.setup.ts",
+        "coverage": {
+          "enabled": true,
+          "threshold": {
+            "branches": 60,
+            "functions": 60,
+            "lines": 70,
+            "statements": 70
+          }
+        }
+      },
+      "qualityTools": {
+        "linting": "ESLint with eslint-config-next",
+        "typeCheck": "tsc --noEmit"
+      },
+      "coverage": {
+        "scanned": true,
+        "details": "Scanned app/, components/, lib/, hooks/ directories"
+      }
+    },
+    {
+      "name": "tauri-backend",
+      "path": "src-tauri",
+      "type": "rust-lib",
+      "language": "Rust",
+      "entryPoints": [
+        "src/main.rs",
+        "src/lib.rs"
+      ],
+      "keyDirectories": [
+        "src/commands/",
+        "src/core/",
+        "src/provider/",
+        "src/cache/",
+        "src/config/",
+        "src/platform/",
+        "src/resolver/"
+      ],
+      "interfaces": [
+        "commands::environment - Environment management commands",
+        "commands::package - Package management commands",
+        "commands::config - Configuration commands",
+        "commands::cache - Cache management commands",
+        "commands::batch - Batch operations",
+        "commands::search - Search operations"
+      ],
+      "dependencies": {
+        "key": ["tauri 2.9", "tokio", "sqlx", "reqwest", "serde", "thiserror"],
+        "features": ["custom-protocol"]
+      },
+      "testing": {
+        "framework": "None configured",
+        "recommendation": "Add Rust unit tests with cargo test"
+      },
+      "qualityTools": {
+        "rustfmt": true,
+        "clippy": "Recommended"
+      },
+      "coverage": {
+        "scanned": true,
+        "details": "Scanned src/ directory with all Rust modules"
+      }
+    },
+    {
+      "name": "openspec",
+      "path": "openspec",
+      "type": "documentation",
+      "language": "Markdown",
+      "keyDirectories": [
+        "specs/",
+        "changes/"
+      ],
+      "specs": [
+        "platform-abstraction",
+        "provider-system",
+        "environment-management",
+        "package-installation",
+        "dependency-resolution",
+        "configuration-system",
+        "cache-management",
+        "ui-interface"
+      ],
+      "coverage": {
+        "scanned": true,
+        "details": "Scanned all specification files"
+      }
+    },
+    {
+      "name": "docs",
+      "path": "docs",
+      "type": "documentation",
+      "language": "Markdown",
+      "coverage": {
+        "scanned": true,
+        "details": "Contains index.md documentation"
+      }
+    }
+  ],
+  "architecture": {
+    "runtimeModel": "dual",
+    "modes": {
+      "web": {
+        "command": "pnpm dev",
+        "url": "http://localhost:3000",
+        "description": "Next.js development server"
+      },
+      "desktop": {
+        "command": "pnpm tauri dev",
+        "description": "Tauri wraps Next.js in native window"
+      }
+    },
+    "communication": "Tauri invoke_handler for Rust-frontend IPC",
+    "stateManagement": "Zustand for global state, React hooks for local state",
+    "styling": "Tailwind CSS v4 with CSS variables, class-based dark mode"
+  },
+  "fileStats": {
+    "totalEstimated": 150,
+    "scanned": 120,
+    "coveragePercentage": 80,
+    "byLanguage": {
+      "TypeScript/TSX": 60,
+      "Rust": 35,
+      "Markdown": 20,
+      "JSON": 15,
+      "CSS": 10
+    }
+  },
+  "ignoredPatterns": [
+    "node_modules/**",
+    ".git/**",
+    ".github/**",
+    ".next/**",
+    "out/**",
+    "build/**",
+    "dist/**",
+    "coverage/**",
+    "src-tauri/target/**",
+    "*.lock",
+    "*.log",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.mp4",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    ".DS_Store",
+    ".windsurf/",
+    ".obsidian/",
+    ".serena/"
+  ],
+  "gaps": [
+    {
+      "area": "Rust Testing",
+      "description": "No Rust unit tests found",
+      "recommendation": "Add cargo test infrastructure in src-tauri/src/"
+    },
+    {
+      "area": "E2E Testing",
+      "description": "No end-to-end tests configured",
+      "recommendation": "Consider Playwright for E2E testing"
+    },
+    {
+      "area": "CI/CD",
+      "description": "GitHub Actions workflow not found",
+      "recommendation": "Add .github/workflows/ for CI/CD automation"
+    }
+  ],
+  "nextSteps": [
+    "Add Rust unit tests in src-tauri/src/ with proper module structure",
+    "Consider adding E2E tests with Playwright for critical user flows",
+    "Set up GitHub Actions workflow for automated testing and linting",
+    "Document provider implementation patterns in openspec/",
+    "Add API documentation for Tauri commands"
+  ],
+  "truncated": false,
+  "scanMetadata": {
+    "scanDate": "2026-01-15T00:00:00.000Z",
+    "scanMethod": "adaptive-architecture-init",
+    "phases": [
+      "phase-a-inventory",
+      "phase-b-module-scan",
+      "phase-c-targeted-deep-dive"
+    ]
+  }
+}

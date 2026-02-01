@@ -1,14 +1,12 @@
 [package]
-name = "app"
+name = "cognia-launcher"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "CogniaLauncher - Unified Environment and Package Manager"
+authors = ["Max Qian"]
+license = "MIT"
+repository = "https://github.com/AstroAir/CogniaLauncher"
 edition = "2021"
 rust-version = "1.77.2"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
@@ -18,8 +16,56 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.0", features = [] }
 
 [dependencies]
-serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-log = "0.4"
+# Tauri
 tauri = { version = "2.9.0", features = [] }
 tauri-plugin-log = "2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
+
+# Async runtime
+tokio = { version = "1.45", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+# Version parsing
+semver = { version = "1.0", features = ["serde"] }
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Crypto/checksums
+sha2 = "0.10"
+hex = "0.4"
+
+# Cross-platform paths
+directories = "6.0"
+
+# Logging
+log = "0.4"
+tracing = "0.1"
+
+# Utilities
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+futures = "0.3"
+async-trait = "0.1"
+tempfile = "3.20"
+walkdir = "2.5"
+regex = "1.11"
+urlencoding = "2.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

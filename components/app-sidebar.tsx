@@ -1,0 +1,134 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Home, Package, Settings, HardDrive, Layers, Server, Info } from 'lucide-react';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from '@/components/ui/sidebar';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
+import { useLocale } from '@/components/providers/locale-provider';
+
+const navItems = [
+  { href: '/', labelKey: 'nav.dashboard', icon: Home },
+  { href: '/environments', labelKey: 'nav.environments', icon: Layers },
+  { href: '/packages', labelKey: 'nav.packages', icon: Package },
+  { href: '/providers', labelKey: 'nav.providers', icon: Server },
+  { href: '/cache', labelKey: 'nav.cache', icon: HardDrive },
+  { href: '/settings', labelKey: 'nav.settings', icon: Settings },
+  { href: '/about', labelKey: 'nav.about', icon: Info },
+];
+
+export function AppSidebar() {
+  const pathname = usePathname();
+  const { t } = useLocale();
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className="flex items-center gap-2 px-2 py-1">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Layers className="h-4 w-4" />
+          </div>
+          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+            <span className="text-sm font-semibold">{t('common.appName')}</span>
+            <span className="text-xs text-muted-foreground">{t('common.appDescription')}</span>
+          </div>
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>{t('nav.dashboard')}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.slice(0, 1).map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        <span>{t(item.labelKey)}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>{t('nav.environments')}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.slice(1, 5).map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        <span>{t(item.labelKey)}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>{t('nav.settings')}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navItems.slice(5).map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                      <Link href={item.href}>
+                        <Icon className="h-4 w-4" />
+                        <span>{t(item.labelKey)}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border">
+        <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:justify-center">
+          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            {t('common.version')}
+          </span>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <LanguageToggle />
+          </div>
+        </div>
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
+  );
+}

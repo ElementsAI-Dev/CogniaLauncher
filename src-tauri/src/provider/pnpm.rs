@@ -1,0 +1,307 @@
+use super::traits::*;
+use crate::error::{CogniaError, CogniaResult};
+use crate::platform::{env::Platform, process};
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+pub struct PnpmProvider;
+
+impl PnpmProvider {
+    pub fn new() -> Self {
+        Self
+    }
+
+    async fn run_pnpm(&self, args: &[&str]) -> CogniaResult<String> {
+        let out = process::execute("pnpm", args, None).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn get_global_dir(&self) -> Option<PathBuf> {
+        if let Ok(out) = self.run_pnpm(&["root", "-g"]).await {
+            return Some(PathBuf::from(out.trim()));
+        }
+        None
+    }
+}
+
+impl Default for PnpmProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Provider for PnpmProvider {
+    fn id(&self) -> &str {
+        "pnpm"
+    }
+    fn display_name(&self) -> &str {
+        "pnpm (Performant npm)"
+    }
+    fn capabilities(&self) -> HashSet<Capability> {
+        HashSet::from([
+            Capability::Install,
+            Capability::Uninstall,
+            Capability::Search,
+            Capability::List,
+            Capability::Update,
+        ])
+    }
+    fn supported_platforms(&self) -> Vec<Platform> {
+        vec![Platform::Windows, Platform::MacOS, Platform::Linux]
+    }
+    fn priority(&self) -> i32 {
+        86
+    }
+
+    async fn is_available(&self) -> bool {
+        process::which("pnpm").await.is_some()
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
+        let out = process::execute("npm", &["search", query, "--json"], None).await?;
+        if !out.success {
+            return Ok(vec![]);
+        }
+
+        let limit = options.limit.unwrap_or(20);
+
+        if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&out.stdout) {
+            return Ok(packages
+                .iter()
+                .take(limit)
+                .filter_map(|p| {
+                    Some(PackageSummary {
+                        name: p["name"].as_str()?.into(),
+                        description: p["description"].as_str().map(|s| s.into()),
+                        latest_version: p["version"].as_str().map(|s| s.into()),
+                        provider: self.id().into(),
+                    })
+                })
+                .collect());
+        }
+        Ok(vec![])
+    }
+
+    async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
+        let out = process::execute("npm", &["view", name, "--json"], None).await?;
+        if !out.success {
+            return Err(CogniaError::Provider(format!("Package {} not found", name)));
+        }
+
+        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&out.stdout) {
+            let versions = if let Some(v) = pkg["versions"].as_array() {
+                v.iter()
+                    .filter_map(|ver| {
+                        Some(VersionInfo {
+                            version: ver.as_str()?.into(),
+                            release_date: None,
+                            deprecated: false,
+                            yanked: false,
+                        })
+                    })
+                    .collect()
+            } else if let Some(v) = pkg["version"].as_str() {
+                vec![VersionInfo {
+                    version: v.into(),
+                    release_date: None,
+                    deprecated: pkg["deprecated"].as_str().is_some(),
+                    yanked: false,
+                }]
+            } else {
+                vec![]
+            };
+
+            let homepage = pkg["homepage"].as_str().map(|s| s.into());
+            let repository = pkg["repository"]["url"]
+                .as_str()
+                .or_else(|| pkg["repository"].as_str())
+                .map(|s| s.into());
+
+            return Ok(PackageInfo {
+                name: name.into(),
+                display_name: pkg["name"].as_str().map(|s| s.into()),
+                description: pkg["description"].as_str().map(|s| s.into()),
+                homepage,
+                license: pkg["license"].as_str().map(|s| s.into()),
+                repository,
+                versions,
+                provider: self.id().into(),
+            });
+        }
+
+        Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
+
+    async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
+        let out = process::execute("npm", &["view", name, "versions", "--json"], None).await?;
+        if !out.success {
+            return Ok(vec![]);
+        }
+
+        if let Ok(versions) = serde_json::from_str::<Vec<String>>(&out.stdout) {
+            return Ok(versions
+                .into_iter()
+                .map(|v| VersionInfo {
+                    version: v,
+                    release_date: None,
+                    deprecated: false,
+                    yanked: false,
+                })
+                .collect());
+        }
+
+        if let Ok(version) = serde_json::from_str::<String>(&out.stdout) {
+            return Ok(vec![VersionInfo {
+                version,
+                release_date: None,
+                deprecated: false,
+                yanked: false,
+            }]);
+        }
+
+        Ok(vec![])
+    }
+
+    async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+        let pkg = if let Some(v) = &req.version {
+            format!("{}@{}", req.name, v)
+        } else {
+            req.name.clone()
+        };
+
+        let args = if req.global {
+            vec!["add", "-g", &pkg]
+        } else {
+            vec!["add", &pkg]
+        };
+
+        self.run_pnpm(&args).await?;
+
+        let install_path = if req.global {
+            self.get_global_dir().await.unwrap_or_default()
+        } else {
+            PathBuf::from("node_modules").join(&req.name)
+        };
+
+        Ok(InstallReceipt {
+            name: req.name,
+            version: req.version.unwrap_or_default(),
+            provider: self.id().into(),
+            install_path,
+            files: vec![],
+            installed_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        let args = vec!["remove", "-g", &req.name];
+        self.run_pnpm(&args).await?;
+        Ok(())
+    }
+
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        let args = vec!["list", "-g", "--depth=0", "--json"];
+        let out = self.run_pnpm(&args).await?;
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            let global_dir = self.get_global_dir().await.unwrap_or_default();
+
+            if let Some(deps) = json[0]["dependencies"]
+                .as_object()
+                .or_else(|| json["dependencies"].as_object())
+            {
+                let packages: Vec<InstalledPackage> = deps
+                    .iter()
+                    .filter_map(|(name, info)| {
+                        if let Some(name_filter) = &filter.name_filter {
+                            if !name.contains(name_filter) {
+                                return None;
+                            }
+                        }
+
+                        let version = info["version"].as_str().unwrap_or("unknown").to_string();
+
+                        Some(InstalledPackage {
+                            name: name.clone(),
+                            version,
+                            provider: self.id().into(),
+                            install_path: global_dir.join(name),
+                            installed_at: String::new(),
+                            is_global: true,
+                        })
+                    })
+                    .collect();
+
+                return Ok(packages);
+            }
+        }
+
+        Ok(vec![])
+    }
+
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        let out = self.run_pnpm(&["outdated", "-g", "--json"]).await;
+
+        let out_str = match out {
+            Ok(s) => s,
+            Err(_) => return Ok(vec![]),
+        };
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out_str) {
+            if let Some(obj) = json.as_object() {
+                let updates: Vec<UpdateInfo> = obj
+                    .iter()
+                    .filter_map(|(name, info)| {
+                        if !packages.is_empty() && !packages.contains(name) {
+                            return None;
+                        }
+
+                        let current = info["current"].as_str()?;
+                        let latest = info["latest"].as_str()?;
+
+                        if current != latest {
+                            Some(UpdateInfo {
+                                name: name.clone(),
+                                current_version: current.into(),
+                                latest_version: latest.into(),
+                                provider: self.id().into(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                return Ok(updates);
+            }
+        }
+
+        Ok(vec![])
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for PnpmProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let out = self.run_pnpm(&["list", "-g", name, "--depth=0"]).await;
+        Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+}

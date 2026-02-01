@@ -1,0 +1,266 @@
+use std::collections::HashMap;
+use std::process::Stdio;
+use std::time::Duration;
+use thiserror::Error;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+
+#[derive(Error, Debug)]
+pub enum ProcessError {
+    #[error("Process failed to start: {0}")]
+    StartFailed(#[from] std::io::Error),
+    #[error("Process timed out after {0:?}")]
+    Timeout(Duration),
+    #[error("Process exited with code {0}")]
+    ExitCode(i32),
+    #[error("Process terminated by signal")]
+    Signal,
+}
+
+pub type ProcessResult<T> = Result<T, ProcessError>;
+
+#[derive(Debug, Clone)]
+pub struct ProcessOutput {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub success: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcessOptions {
+    pub cwd: Option<String>,
+    pub env: HashMap<String, String>,
+    pub timeout: Option<Duration>,
+    pub capture_output: bool,
+}
+
+impl Default for ProcessOptions {
+    fn default() -> Self {
+        Self {
+            cwd: None,
+            env: HashMap::new(),
+            timeout: None,
+            capture_output: true,
+        }
+    }
+}
+
+impl ProcessOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_cwd(mut self, cwd: impl Into<String>) -> Self {
+        self.cwd = Some(cwd.into());
+        self
+    }
+
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    pub fn with_capture(mut self, capture: bool) -> Self {
+        self.capture_output = capture;
+        self
+    }
+}
+
+pub async fn execute(
+    program: &str,
+    args: &[&str],
+    options: Option<ProcessOptions>,
+) -> ProcessResult<ProcessOutput> {
+    let options = options.unwrap_or_default();
+
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+
+    if let Some(cwd) = &options.cwd {
+        cmd.current_dir(cwd);
+    }
+
+    for (key, value) in &options.env {
+        cmd.env(key, value);
+    }
+
+    if options.capture_output {
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+    }
+
+    let child = cmd.spawn()?;
+
+    let output = if let Some(timeout) = options.timeout {
+        match tokio::time::timeout(timeout, child.wait_with_output()).await {
+            Ok(result) => result?,
+            Err(_) => return Err(ProcessError::Timeout(timeout)),
+        }
+    } else {
+        child.wait_with_output().await?
+    };
+
+    let exit_code = output.status.code().unwrap_or(-1);
+    let success = output.status.success();
+
+    Ok(ProcessOutput {
+        exit_code,
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        success,
+    })
+}
+
+pub async fn execute_shell(
+    command: &str,
+    options: Option<ProcessOptions>,
+) -> ProcessResult<ProcessOutput> {
+    #[cfg(windows)]
+    let (shell, flag) = ("cmd", "/C");
+
+    #[cfg(not(windows))]
+    let (shell, flag) = ("sh", "-c");
+
+    execute(shell, &[flag, command], options).await
+}
+
+pub async fn execute_with_streaming<F>(
+    program: &str,
+    args: &[&str],
+    options: Option<ProcessOptions>,
+    mut on_stdout: F,
+) -> ProcessResult<ProcessOutput>
+where
+    F: FnMut(&str),
+{
+    let options = options.unwrap_or_default();
+
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+
+    if let Some(cwd) = &options.cwd {
+        cmd.current_dir(cwd);
+    }
+
+    for (key, value) in &options.env {
+        cmd.env(key, value);
+    }
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    let mut child = cmd.spawn()?;
+
+    let stdout = child.stdout.take().expect("stdout not captured");
+    let stderr = child.stderr.take().expect("stderr not captured");
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut stdout_output = String::new();
+    let mut stderr_output = String::new();
+
+    loop {
+        tokio::select! {
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        on_stdout(&line);
+                        stdout_output.push_str(&line);
+                        stdout_output.push('\n');
+                    }
+                    Ok(None) => break,
+                    Err(e) => return Err(ProcessError::StartFailed(e)),
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        stderr_output.push_str(&line);
+                        stderr_output.push('\n');
+                    }
+                    Ok(None) => {}
+                    Err(e) => return Err(ProcessError::StartFailed(e)),
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await?;
+    let exit_code = status.code().unwrap_or(-1);
+
+    Ok(ProcessOutput {
+        exit_code,
+        stdout: stdout_output,
+        stderr: stderr_output,
+        success: status.success(),
+    })
+}
+
+pub async fn which(program: &str) -> Option<String> {
+    #[cfg(windows)]
+    let result = execute("where", &[program], None).await;
+
+    #[cfg(not(windows))]
+    let result = execute("which", &[program], None).await;
+
+    result.ok().and_then(|output| {
+        if output.success {
+            output.stdout.lines().next().map(|s| s.trim().to_string())
+        } else {
+            None
+        }
+    })
+}
+
+pub fn is_program_available(program: &str) -> bool {
+    std::process::Command::new(program)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_execute_echo() {
+        #[cfg(windows)]
+        let output = execute("cmd", &["/C", "echo", "hello"], None)
+            .await
+            .unwrap();
+
+        #[cfg(not(windows))]
+        let output = execute("echo", &["hello"], None).await.unwrap();
+
+        assert!(output.success);
+        assert!(output.stdout.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_shell() {
+        let output = execute_shell("echo test", None).await.unwrap();
+        assert!(output.success);
+        assert!(output.stdout.contains("test"));
+    }
+
+    #[tokio::test]
+    async fn test_which() {
+        #[cfg(windows)]
+        let result = which("cmd").await;
+
+        #[cfg(not(windows))]
+        let result = which("sh").await;
+
+        assert!(result.is_some());
+    }
+}

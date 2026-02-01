@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "react-quick-starter",
+  "productName": "CogniaLauncher",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.cognia.launcher",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -12,11 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "react-quick-starter",
-        "width": 800,
-        "height": 600,
+        "title": "CogniaLauncher",
+        "width": 1024,
+        "height": 768,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false
       }
     ],
     "security": {

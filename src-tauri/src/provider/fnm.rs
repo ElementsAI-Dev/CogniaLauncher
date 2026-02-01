@@ -1,0 +1,383 @@
+use super::traits::*;
+use crate::error::{CogniaError, CogniaResult};
+use crate::platform::{
+    env::{EnvModifications, Platform},
+    process::{self, ProcessOptions},
+};
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// fnm (Fast Node Manager) - A fast and simple Node.js version manager
+/// Written in Rust, faster than nvm
+pub struct FnmProvider {
+    fnm_dir: Option<PathBuf>,
+}
+
+impl FnmProvider {
+    pub fn new() -> Self {
+        Self {
+            fnm_dir: Self::detect_fnm_dir(),
+        }
+    }
+
+    fn detect_fnm_dir() -> Option<PathBuf> {
+        // Check FNM_DIR environment variable first
+        if let Ok(dir) = std::env::var("FNM_DIR") {
+            return Some(PathBuf::from(dir));
+        }
+
+        // Default locations
+        if cfg!(windows) {
+            std::env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("fnm"))
+        } else {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".fnm"))
+                .or_else(|| {
+                    std::env::var("XDG_DATA_HOME")
+                        .ok()
+                        .map(|p| PathBuf::from(p).join("fnm"))
+                })
+        }
+    }
+
+    fn fnm_dir(&self) -> CogniaResult<PathBuf> {
+        self.fnm_dir
+            .clone()
+            .ok_or_else(|| CogniaError::Provider("FNM directory not found".into()))
+    }
+
+    async fn run_fnm(&self, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let output = process::execute("fnm", args, Some(opts)).await?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            Err(CogniaError::Provider(output.stderr))
+        }
+    }
+}
+
+impl Default for FnmProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Provider for FnmProvider {
+    fn id(&self) -> &str {
+        "fnm"
+    }
+
+    fn display_name(&self) -> &str {
+        "fnm (Fast Node Manager)"
+    }
+
+    fn capabilities(&self) -> HashSet<Capability> {
+        HashSet::from([
+            Capability::Install,
+            Capability::Uninstall,
+            Capability::Search,
+            Capability::List,
+            Capability::VersionSwitch,
+            Capability::MultiVersion,
+            Capability::ProjectLocal,
+        ])
+    }
+
+    fn supported_platforms(&self) -> Vec<Platform> {
+        vec![Platform::Windows, Platform::MacOS, Platform::Linux]
+    }
+
+    fn priority(&self) -> i32 {
+        88
+    } // Higher than nvm
+
+    async fn is_available(&self) -> bool {
+        process::which("fnm").await.is_some()
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        _options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
+        // fnm ls-remote lists all available Node.js versions
+        let output = self.run_fnm(&["ls-remote"]).await?;
+
+        let versions: Vec<PackageSummary> = output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .filter(|line| line.contains(query) || query.is_empty())
+            .take(20)
+            .map(|version| PackageSummary {
+                name: format!("node@{}", version),
+                description: Some("Node.js JavaScript runtime".into()),
+                latest_version: Some(version.to_string()),
+                provider: self.id().to_string(),
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
+        let version = name.strip_prefix("node@").unwrap_or(name);
+
+        Ok(PackageInfo {
+            name: name.into(),
+            display_name: Some(format!("Node.js {}", version)),
+            description: Some("Node.js JavaScript runtime".into()),
+            homepage: Some("https://nodejs.org".into()),
+            license: Some("MIT".into()),
+            repository: Some("https://github.com/nodejs/node".into()),
+            versions: vec![VersionInfo {
+                version: version.to_string(),
+                release_date: None,
+                deprecated: false,
+                yanked: false,
+            }],
+            provider: self.id().into(),
+        })
+    }
+
+    async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
+        let output = self.run_fnm(&["ls-remote"]).await?;
+
+        Ok(output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(|version| VersionInfo {
+                version: version.to_string(),
+                release_date: None,
+                deprecated: false,
+                yanked: false,
+            })
+            .collect())
+    }
+
+    async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+        let version = req.version.as_deref().unwrap_or("--lts");
+
+        self.run_fnm(&["install", version]).await?;
+
+        let fnm_dir = self.fnm_dir()?;
+        let install_path = fnm_dir.join("node-versions").join(version);
+
+        Ok(InstallReceipt {
+            name: "node".to_string(),
+            version: version.to_string(),
+            provider: self.id().to_string(),
+            install_path,
+            files: vec![],
+            installed_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        let version = req
+            .version
+            .ok_or_else(|| CogniaError::Provider("Version required for uninstall".into()))?;
+
+        self.run_fnm(&["uninstall", &version]).await?;
+        Ok(())
+    }
+
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        let output = self.run_fnm(&["list"]).await?;
+        let fnm_dir = self.fnm_dir()?;
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return None;
+                }
+
+                // Parse fnm list output: "* v18.17.0 default" or "v16.20.0"
+                let version = line.split_whitespace().find(|s| s.starts_with('v'))?;
+
+                let name = format!("node@{}", version);
+
+                if let Some(ref name_filter) = filter.name_filter {
+                    if !name.contains(name_filter) {
+                        return None;
+                    }
+                }
+
+                Some(InstalledPackage {
+                    name,
+                    version: version.to_string(),
+                    provider: self.id().into(),
+                    install_path: fnm_dir.join("node-versions").join(version),
+                    installed_at: String::new(),
+                    is_global: true,
+                })
+            })
+            .collect();
+
+        Ok(packages)
+    }
+
+    async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // fnm doesn't have built-in update checking
+        // Would need to compare installed with latest LTS
+        Ok(vec![])
+    }
+}
+
+#[async_trait]
+impl EnvironmentProvider for FnmProvider {
+    async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
+        let output = self.run_fnm(&["list"]).await?;
+        let current = self.get_current_version().await?.unwrap_or_default();
+        let fnm_dir = self.fnm_dir()?;
+
+        let versions: Vec<InstalledVersion> = output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return None;
+                }
+
+                let version = line
+                    .split_whitespace()
+                    .find(|s| s.starts_with('v'))?
+                    .to_string();
+
+                Some(InstalledVersion {
+                    version: version.clone(),
+                    install_path: fnm_dir.join("node-versions").join(&version),
+                    size: None,
+                    installed_at: None,
+                    is_current: version == current,
+                })
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn get_current_version(&self) -> CogniaResult<Option<String>> {
+        let output = self.run_fnm(&["current"]).await?;
+        let version = output.trim();
+
+        if version == "none" || version == "system" || version.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(version.to_string()))
+        }
+    }
+
+    async fn set_global_version(&self, version: &str) -> CogniaResult<()> {
+        self.run_fnm(&["default", version]).await?;
+        Ok(())
+    }
+
+    async fn set_local_version(&self, project_path: &Path, version: &str) -> CogniaResult<()> {
+        let version_file = project_path.join(self.version_file_name());
+        crate::platform::fs::write_file_string(&version_file, version).await?;
+        Ok(())
+    }
+
+    async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
+        // Check for .node-version or .nvmrc file
+        let version_files = [".node-version", ".nvmrc"];
+
+        let mut current = start_path.to_path_buf();
+        loop {
+            for file_name in &version_files {
+                let version_file = current.join(file_name);
+                if version_file.exists() {
+                    if let Ok(content) = crate::platform::fs::read_file_string(&version_file).await
+                    {
+                        let version = content.trim().to_string();
+                        if !version.is_empty() {
+                            return Ok(Some(VersionDetection {
+                                version,
+                                source: VersionSource::LocalFile,
+                                source_path: Some(version_file),
+                            }));
+                        }
+                    }
+                }
+            }
+
+            if !current.pop() {
+                break;
+            }
+        }
+
+        // Check package.json engines field
+        let package_json = start_path.join("package.json");
+        if package_json.exists() {
+            if let Ok(content) = crate::platform::fs::read_file_string(&package_json).await {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(node_version) = json["engines"]["node"].as_str() {
+                        return Ok(Some(VersionDetection {
+                            version: node_version.to_string(),
+                            source: VersionSource::Manifest,
+                            source_path: Some(package_json),
+                        }));
+                    }
+                }
+            }
+        }
+
+        // Fall back to current version
+        if let Some(version) = self.get_current_version().await? {
+            return Ok(Some(VersionDetection {
+                version,
+                source: VersionSource::SystemDefault,
+                source_path: None,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
+        let fnm_dir = self.fnm_dir()?;
+        let node_path = fnm_dir
+            .join("node-versions")
+            .join(version)
+            .join("installation");
+
+        #[cfg(windows)]
+        let bin_path = node_path;
+
+        #[cfg(not(windows))]
+        let bin_path = node_path.join("bin");
+
+        Ok(EnvModifications::new().prepend_path(bin_path))
+    }
+
+    fn version_file_name(&self) -> &str {
+        ".node-version"
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for FnmProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let versions = self.list_installed_versions().await?;
+        Ok(versions.iter().any(|v| v.version == name))
+    }
+}

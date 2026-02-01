@@ -1,20 +1,19 @@
-# React Quick Starter
+# CogniaLauncher
 
-一个现代化的全栈启动模板，结合了用于 Web 应用的 **Next.js 16** 和 **React 19**，以及用于跨平台桌面应用的 **Tauri 2.9**。使用 TypeScript、Tailwind CSS v4 和 shadcn/ui 组件构建。
+一个现代化的跨平台环境和包管理器，具有图形化界面。基于 **Next.js 16**、**React 19** 和 **Tauri 2.9** 构建，提供原生桌面性能。
 
 [English Documentation](./README.md)
 
 ## 特性
 
-- ⚡️ **Next.js 16** 配合 App Router 和 React 19
-- 🖥️ **Tauri 2.9** 用于原生桌面应用（Windows、macOS、Linux）
-- 🎨 **Tailwind CSS v4** 支持 CSS 变量和暗色模式
-- 🧩 **shadcn/ui** 组件库，基于 Radix UI 原语
-- 📦 **Zustand** 轻量级状态管理
-- 🔤 **Geist 字体** 通过 next/font 优化
-- 🎯 **TypeScript** 提供类型安全
-- 🎭 **Lucide Icons** 精美的图标库
-- 📱 双重部署：从同一代码库部署 Web 应用或桌面应用
+- 🔧 **环境管理** - 管理 Node.js (nvm)、Python (pyenv) 和 Rust (rustup) 版本
+- 📦 **包管理** - 从多个提供者搜索、安装和更新包
+- 🔌 **多提供者支持** - npm、pnpm、uv、Cargo、Chocolatey、Scoop、winget、Homebrew、apt、vcpkg、Docker、PSGallery、GitHub Releases
+- 💾 **缓存管理** - 下载和元数据缓存，支持清理工具
+- ⚙️ **配置系统** - 网络设置、代理、镜像源、安全选项
+- 🖥️ **跨平台** - 支持 Windows、macOS 和 Linux 的原生桌面应用
+- 🎨 **现代 UI** - 基于 shadcn/ui 和 Tailwind CSS 构建的精美界面
+- 🔄 **更新检查** - 检查所有提供者的包更新
 
 ## 前置要求
 
@@ -50,7 +49,7 @@
 
    ```bash
    git clone <your-repo-url>
-   cd react-quick-starter
+   cd CogniaLauncher
    ```
 
 2. **安装依赖**
@@ -89,11 +88,15 @@ npm run dev
 
 #### 关键开发文件
 
-- `app/page.tsx` - 主着陆页
-- `app/layout.tsx` - 根布局及全局配置
-- `app/globals.css` - 全局样式和 Tailwind 配置
+- `app/page.tsx` - 仪表板，显示环境和包概览
+- `app/environments/page.tsx` - 环境版本管理
+- `app/packages/page.tsx` - 包搜索和安装
+- `app/providers/page.tsx` - 提供者配置
+- `app/cache/page.tsx` - 缓存管理界面
+- `app/settings/page.tsx` - 应用设置
 - `components/ui/` - 可复用的 UI 组件（shadcn/ui）
-- `lib/utils.ts` - 工具函数
+- `lib/tauri.ts` - Tauri API 绑定（与 Rust 后端通信）
+- `lib/hooks/` - React 状态管理钩子
 
 ### 桌面应用开发
 
@@ -150,31 +153,44 @@ pnpm dlx shadcn@latest add button card dialog
 
 ## 项目结构
 
-```
-react-quick-starter/
+```text
+CogniaLauncher/
 ├── app/                      # Next.js App Router
-│   ├── layout.tsx           # 根布局，包含字体和元数据
-│   ├── page.tsx             # 主着陆页
-│   ├── globals.css          # 全局样式和 Tailwind 配置
-│   └── favicon.ico          # 应用图标
+│   ├── page.tsx             # 仪表板概览
+│   ├── environments/        # 环境管理页面
+│   ├── packages/            # 包管理页面
+│   ├── providers/           # 提供者配置页面
+│   ├── cache/               # 缓存管理页面
+│   ├── settings/            # 设置页面
+│   ├── layout.tsx           # 带侧边栏的根布局
+│   └── globals.css          # 全局样式
 ├── components/              # React 组件
-│   └── ui/                  # shadcn/ui 组件（Button 等）
-├── lib/                     # 工具函数
-│   └── utils.ts            # 辅助函数（cn 等）
-├── public/                  # 静态资源（图片、SVG）
-├── src-tauri/              # Tauri 桌面应用
+│   ├── dashboard/           # 仪表板相关组件
+│   ├── environments/        # 环境卡片和控件
+│   ├── packages/            # 包列表和搜索组件
+│   ├── layout/              # 侧边栏和导航
+│   └── ui/                  # shadcn/ui 组件
+├── lib/                     # 工具和状态
+│   ├── hooks/               # React 钩子（use-environments、use-packages 等）
+│   ├── stores/              # Zustand 状态存储
+│   ├── tauri.ts             # Tauri API 绑定
+│   └── utils.ts             # 辅助函数
+├── src-tauri/               # Tauri/Rust 后端
 │   ├── src/
-│   │   ├── main.rs         # Rust 主入口点
-│   │   └── lib.rs          # Rust 库代码
-│   ├── icons/              # 桌面应用图标
-│   ├── tauri.conf.json     # Tauri 配置
-│   └── Cargo.toml          # Rust 依赖
+│   │   ├── commands/        # Tauri 命令处理器
+│   │   ├── cache/           # 缓存管理
+│   │   ├── config/          # 配置系统
+│   │   ├── core/            # 核心环境/包逻辑
+│   │   ├── provider/        # 提供者实现
+│   │   ├── resolver/        # 依赖解析
+│   │   └── lib.rs           # 主 Tauri 设置
+│   ├── icons/               # 桌面应用图标
+│   └── tauri.conf.json      # Tauri 配置
+├── openspec/                # OpenSpec 变更管理
 ├── components.json          # shadcn/ui 配置
-├── next.config.ts          # Next.js 配置
-├── tailwind.config.ts      # Tailwind CSS 配置
-├── tsconfig.json           # TypeScript 配置
-├── eslint.config.mjs       # ESLint 配置
-└── package.json            # Node.js 依赖和脚本
+├── next.config.ts           # Next.js 配置
+├── tsconfig.json            # TypeScript 配置
+└── package.json             # Node.js 依赖
 ```
 
 ## 配置
@@ -205,18 +221,18 @@ API_SECRET_KEY=your-secret-key
 
 ```json
 {
-  "productName": "react-quick-starter",    // 应用名称
+  "productName": "CogniaLauncher",         // 应用名称
   "version": "0.1.0",                      // 应用版本
-  "identifier": "com.tauri.dev",          // 唯一应用标识符
+  "identifier": "com.cognia.launcher",     // 唯一应用标识符
   "build": {
     "frontendDist": "../out",              // Next.js 构建输出
     "devUrl": "http://localhost:3000"      // 开发服务器 URL
   },
   "app": {
     "windows": [{
-      "title": "react-quick-starter",      // 窗口标题
-      "width": 800,                        // 默认宽度
-      "height": 600,                       // 默认高度
+      "title": "CogniaLauncher",           // 窗口标题
+      "width": 1024,                       // 默认宽度
+      "height": 768,                       // 默认高度
       "resizable": true,                   // 允许调整大小
       "fullscreen": false                  // 全屏启动
     }]
@@ -382,9 +398,10 @@ out
 - **代码风格**：遵循 ESLint 规则（`pnpm lint`）
 - **提交**：使用约定式提交（feat:、fix:、docs: 等）
 - **组件**：保持组件小而可复用
-- **状态**：使用 Zustand 管理全局状态，使用 React hooks 管理局部状态
+- **状态**：在 `lib/stores/` 中使用 Zustand 存储管理全局状态
+- **钩子**：在 `lib/hooks/` 中使用自定义钩子处理 Tauri API 交互
+- **后端**：在 `src-tauri/src/commands/` 中添加新的 Rust 命令
 - **样式**：使用 Tailwind 工具类，尽可能避免自定义 CSS
-- **类型**：利用 TypeScript 实现类型安全
 
 ## 故障排除
 

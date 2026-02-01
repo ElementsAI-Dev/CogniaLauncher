@@ -1,0 +1,332 @@
+use super::traits::*;
+use crate::error::{CogniaError, CogniaResult};
+use crate::platform::{
+    env::Platform,
+    process::{self, ProcessOptions},
+};
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::time::Duration;
+
+/// Zypper - Package manager for openSUSE and SUSE Linux Enterprise
+pub struct ZypperProvider;
+
+impl ZypperProvider {
+    pub fn new() -> Self {
+        Self
+    }
+
+    async fn run_zypper(&self, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let out = process::execute("zypper", args, Some(opts)).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+}
+
+impl Default for ZypperProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Provider for ZypperProvider {
+    fn id(&self) -> &str {
+        "zypper"
+    }
+
+    fn display_name(&self) -> &str {
+        "Zypper (openSUSE)"
+    }
+
+    fn capabilities(&self) -> HashSet<Capability> {
+        HashSet::from([
+            Capability::Install,
+            Capability::Uninstall,
+            Capability::Search,
+            Capability::List,
+            Capability::Update,
+            Capability::Upgrade,
+            Capability::UpdateIndex,
+        ])
+    }
+
+    fn supported_platforms(&self) -> Vec<Platform> {
+        vec![Platform::Linux]
+    }
+
+    fn priority(&self) -> i32 {
+        80
+    }
+
+    async fn is_available(&self) -> bool {
+        process::which("zypper").await.is_some()
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
+        let limit = options.limit.unwrap_or(20);
+        let out = self.run_zypper(&["search", query]).await?;
+
+        Ok(out
+            .lines()
+            .skip(4)
+            .filter(|l| !l.is_empty() && !l.starts_with('-'))
+            .take(limit)
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 3 {
+                    let name = parts[1].trim();
+                    let summary = parts.get(2).map(|s| s.trim().to_string());
+
+                    Some(PackageSummary {
+                        name: name.into(),
+                        description: summary,
+                        latest_version: None,
+                        provider: self.id().into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
+    async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
+        let out = self.run_zypper(&["info", name]).await?;
+
+        let mut description = None;
+        let mut version = None;
+        let mut license = None;
+        let mut homepage = None;
+
+        for line in out.lines() {
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                let value = parts[1].trim();
+
+                match key {
+                    "Version" => version = Some(value.into()),
+                    "Description" | "Summary" => description = Some(value.into()),
+                    "License" => license = Some(value.into()),
+                    "URL" => homepage = Some(value.into()),
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(PackageInfo {
+            name: name.into(),
+            display_name: Some(name.into()),
+            description,
+            homepage,
+            license,
+            repository: None,
+            versions: version
+                .map(|v| {
+                    vec![VersionInfo {
+                        version: v,
+                        release_date: None,
+                        deprecated: false,
+                        yanked: false,
+                    }]
+                })
+                .unwrap_or_default(),
+            provider: self.id().into(),
+        })
+    }
+
+    async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
+        let info = self.get_package_info(name).await?;
+        Ok(info.versions)
+    }
+
+    async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+        let pkg = if let Some(v) = &req.version {
+            format!("{}={}", req.name, v)
+        } else {
+            req.name.clone()
+        };
+
+        let out = process::execute(
+            "sudo",
+            &["zypper", "--non-interactive", "install", &pkg],
+            None,
+        )
+        .await?;
+        if !out.success {
+            return Err(CogniaError::Installation(out.stderr));
+        }
+
+        Ok(InstallReceipt {
+            name: req.name,
+            version: req.version.unwrap_or_default(),
+            provider: self.id().into(),
+            install_path: PathBuf::from("/usr"),
+            files: vec![],
+            installed_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        let out = process::execute(
+            "sudo",
+            &["zypper", "--non-interactive", "remove", &req.name],
+            None,
+        )
+        .await?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        let out = self.run_zypper(&["search", "--installed-only"]).await?;
+
+        Ok(out
+            .lines()
+            .skip(4)
+            .filter(|l| !l.is_empty() && !l.starts_with('-'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 4 {
+                    let name = parts[1].trim().to_string();
+
+                    if let Some(ref name_filter) = filter.name_filter {
+                        if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                            return None;
+                        }
+                    }
+
+                    let version = parts
+                        .get(3)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default();
+
+                    Some(InstalledPackage {
+                        name,
+                        version,
+                        provider: self.id().into(),
+                        install_path: PathBuf::from("/usr"),
+                        installed_at: String::new(),
+                        is_global: true,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        let out = self.run_zypper(&["list-updates"]).await;
+
+        if let Ok(output) = out {
+            return Ok(output
+                .lines()
+                .skip(4)
+                .filter(|l| !l.is_empty() && !l.starts_with('-'))
+                .filter_map(|line| {
+                    let parts: Vec<&str> = line.split('|').collect();
+                    if parts.len() >= 5 {
+                        let name = parts[2].trim().to_string();
+
+                        if !packages.is_empty() && !packages.contains(&name) {
+                            return None;
+                        }
+
+                        Some(UpdateInfo {
+                            name,
+                            current_version: parts[3].trim().into(),
+                            latest_version: parts[4].trim().into(),
+                            provider: self.id().into(),
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect());
+        }
+
+        Ok(vec![])
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for ZypperProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, op: &str) -> bool {
+        matches!(op, "install" | "uninstall" | "update" | "upgrade")
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let out = self.run_zypper(&["--version"]).await?;
+        let version = out.split_whitespace().last().unwrap_or("").to_string();
+        Ok(version)
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("zypper")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("zypper not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("Zypper is the default package manager on openSUSE and SUSE Linux Enterprise. It should be pre-installed.".into())
+    }
+
+    async fn update_index(&self) -> CogniaResult<()> {
+        let out = process::execute("sudo", &["zypper", "refresh"], None).await?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        let out = process::execute(
+            "sudo",
+            &["zypper", "--non-interactive", "update", name],
+            None,
+        )
+        .await?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        let out =
+            process::execute("sudo", &["zypper", "--non-interactive", "update"], None).await?;
+        if out.success {
+            Ok(vec!["All packages upgraded".into()])
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let out = self
+            .run_zypper(&["search", "--installed-only", "--match-exact", name])
+            .await;
+        Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+}

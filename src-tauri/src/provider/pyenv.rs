@@ -1,0 +1,291 @@
+use super::traits::*;
+use crate::error::{CogniaError, CogniaResult};
+use crate::platform::{
+    env::{dirs_home, EnvModifications, Platform},
+    process,
+};
+use async_trait::async_trait;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+pub struct PyenvProvider {
+    pyenv_root: Option<PathBuf>,
+}
+
+impl PyenvProvider {
+    pub fn new() -> Self {
+        let pyenv_root = std::env::var("PYENV_ROOT")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs_home().map(|h| h.join(".pyenv")));
+
+        Self { pyenv_root }
+    }
+
+    fn pyenv_root(&self) -> CogniaResult<&PathBuf> {
+        self.pyenv_root
+            .as_ref()
+            .ok_or_else(|| CogniaError::Provider("PYENV_ROOT not found".into()))
+    }
+
+    async fn run_pyenv(&self, args: &[&str]) -> CogniaResult<String> {
+        let output = process::execute("pyenv", args, None).await?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            Err(CogniaError::Provider(output.stderr))
+        }
+    }
+}
+
+impl Default for PyenvProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Provider for PyenvProvider {
+    fn id(&self) -> &str {
+        "pyenv"
+    }
+
+    fn display_name(&self) -> &str {
+        "Python Version Manager"
+    }
+
+    fn capabilities(&self) -> HashSet<Capability> {
+        HashSet::from([
+            Capability::Install,
+            Capability::Uninstall,
+            Capability::List,
+            Capability::VersionSwitch,
+            Capability::MultiVersion,
+            Capability::ProjectLocal,
+        ])
+    }
+
+    fn supported_platforms(&self) -> Vec<Platform> {
+        vec![Platform::Linux, Platform::MacOS, Platform::Windows]
+    }
+
+    fn priority(&self) -> i32 {
+        100
+    }
+
+    async fn is_available(&self) -> bool {
+        process::which("pyenv").await.is_some()
+    }
+
+    async fn search(
+        &self,
+        query: &str,
+        _options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
+        let output = self.run_pyenv(&["install", "--list"]).await?;
+
+        let versions: Vec<PackageSummary> = output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .filter(|line| line.contains(query) || query.is_empty())
+            .filter(|line| {
+                line.chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+            })
+            .map(|version| PackageSummary {
+                name: format!("python@{}", version),
+                description: Some("Python programming language".into()),
+                latest_version: Some(version.to_string()),
+                provider: self.id().to_string(),
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn get_package_info(&self, _name: &str) -> CogniaResult<PackageInfo> {
+        let versions = self.get_versions("python").await?;
+
+        Ok(PackageInfo {
+            name: "python".to_string(),
+            display_name: Some("Python".to_string()),
+            description: Some("Python programming language".to_string()),
+            homepage: Some("https://python.org".to_string()),
+            license: Some("PSF".to_string()),
+            repository: Some("https://github.com/python/cpython".to_string()),
+            versions,
+            provider: self.id().to_string(),
+        })
+    }
+
+    async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
+        let output = self.run_pyenv(&["install", "--list"]).await?;
+
+        let versions: Vec<VersionInfo> = output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .filter(|line| {
+                line.chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+            })
+            .map(|version| VersionInfo {
+                version: version.to_string(),
+                release_date: None,
+                deprecated: false,
+                yanked: false,
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn install(&self, request: InstallRequest) -> CogniaResult<InstallReceipt> {
+        let version = request
+            .version
+            .ok_or_else(|| CogniaError::Provider("Version required for install".into()))?;
+
+        self.run_pyenv(&["install", &version]).await?;
+
+        let pyenv_root = self.pyenv_root()?;
+        let install_path = pyenv_root.join("versions").join(&version);
+
+        Ok(InstallReceipt {
+            name: "python".to_string(),
+            version,
+            provider: self.id().to_string(),
+            install_path,
+            files: vec![],
+            installed_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    async fn uninstall(&self, request: UninstallRequest) -> CogniaResult<()> {
+        let version = request
+            .version
+            .ok_or_else(|| CogniaError::Provider("Version required for uninstall".into()))?;
+
+        self.run_pyenv(&["uninstall", "-f", &version]).await?;
+        Ok(())
+    }
+
+    async fn list_installed(
+        &self,
+        _filter: InstalledFilter,
+    ) -> CogniaResult<Vec<InstalledPackage>> {
+        let output = self.run_pyenv(&["versions", "--bare"]).await?;
+        let pyenv_root = self.pyenv_root()?;
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(|version| InstalledPackage {
+                name: "python".to_string(),
+                version: version.to_string(),
+                provider: self.id().to_string(),
+                install_path: pyenv_root.join("versions").join(version),
+                installed_at: String::new(),
+                is_global: true,
+            })
+            .collect();
+
+        Ok(packages)
+    }
+
+    async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        Ok(vec![])
+    }
+}
+
+#[async_trait]
+impl EnvironmentProvider for PyenvProvider {
+    async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
+        let output = self.run_pyenv(&["versions", "--bare"]).await?;
+        let current = self.get_current_version().await?.unwrap_or_default();
+        let pyenv_root = self.pyenv_root()?;
+
+        let versions: Vec<InstalledVersion> = output
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(|version| InstalledVersion {
+                version: version.to_string(),
+                install_path: pyenv_root.join("versions").join(version),
+                size: None,
+                installed_at: None,
+                is_current: version == current,
+            })
+            .collect();
+
+        Ok(versions)
+    }
+
+    async fn get_current_version(&self) -> CogniaResult<Option<String>> {
+        let output = self.run_pyenv(&["version-name"]).await?;
+        let version = output.trim();
+
+        if version == "system" || version.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(version.to_string()))
+        }
+    }
+
+    async fn set_global_version(&self, version: &str) -> CogniaResult<()> {
+        self.run_pyenv(&["global", version]).await?;
+        Ok(())
+    }
+
+    async fn set_local_version(&self, project_path: &Path, version: &str) -> CogniaResult<()> {
+        let version_file = project_path.join(self.version_file_name());
+        crate::platform::fs::write_file_string(&version_file, version).await?;
+        Ok(())
+    }
+
+    async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
+        let mut current = start_path.to_path_buf();
+
+        loop {
+            let version_file = current.join(self.version_file_name());
+            if version_file.exists() {
+                let version = crate::platform::fs::read_file_string(&version_file).await?;
+                return Ok(Some(VersionDetection {
+                    version: version.trim().to_string(),
+                    source: VersionSource::LocalFile,
+                    source_path: Some(version_file),
+                }));
+            }
+
+            if !current.pop() {
+                break;
+            }
+        }
+
+        if let Some(version) = self.get_current_version().await? {
+            return Ok(Some(VersionDetection {
+                version,
+                source: VersionSource::SystemDefault,
+                source_path: None,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
+        let pyenv_root = self.pyenv_root()?;
+        let python_path = pyenv_root.join("versions").join(version).join("bin");
+
+        Ok(EnvModifications::new().prepend_path(python_path))
+    }
+
+    fn version_file_name(&self) -> &str {
+        ".python-version"
+    }
+}
