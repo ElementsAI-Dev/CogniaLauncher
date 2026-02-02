@@ -130,14 +130,16 @@ pub async fn execute_shell(
     execute(shell, &[flag, command], options).await
 }
 
-pub async fn execute_with_streaming<F>(
+pub async fn execute_with_streaming<F, G>(
     program: &str,
     args: &[&str],
     options: Option<ProcessOptions>,
     mut on_stdout: F,
+    mut on_stderr: G,
 ) -> ProcessResult<ProcessOutput>
 where
     F: FnMut(&str),
+    G: FnMut(&str),
 {
     let options = options.unwrap_or_default();
 
@@ -182,6 +184,7 @@ where
             line = stderr_reader.next_line() => {
                 match line {
                     Ok(Some(line)) => {
+                        on_stderr(&line);
                         stderr_output.push_str(&line);
                         stderr_output.push('\n');
                     }

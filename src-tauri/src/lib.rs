@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 
@@ -34,20 +35,32 @@ pub fn is_initialized() -> bool {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            // Setup logging
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Debug)
-                        .build(),
-                )?;
+            // Setup logging with enhanced configuration
+            // - Stdout: Console output for development
+            // - Webview: Forward logs to frontend for log panel display
+            // - LogDir: Persistent log files with rotation
+            let log_level = if cfg!(debug_assertions) {
+                log::LevelFilter::Debug
             } else {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+                log::LevelFilter::Info
+            };
+
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .targets([
+                        Target::new(TargetKind::Stdout),
+                        Target::new(TargetKind::Webview),
+                        Target::new(TargetKind::LogDir { file_name: None }),
+                    ])
+                    .rotation_strategy(RotationStrategy::KeepSome(5))
+                    .max_file_size(10_000_000) // 10MB per log file
+                    .level(log_level)
+                    .level_for("hyper", log::LevelFilter::Info)
+                    .level_for("reqwest", log::LevelFilter::Info)
+                    .level_for("tao", log::LevelFilter::Info)
+                    .level_for("wry", log::LevelFilter::Info)
+                    .build(),
+            )?;
 
             // Initialize provider registry with defaults asynchronously
             let registry = app.state::<SharedRegistry>().inner().clone();
@@ -182,7 +195,13 @@ pub fn run() {
             // Updater commands
             commands::updater::self_check_update,
             commands::updater::self_update,
+            // Log commands
+            commands::log::log_list_files,
+            commands::log::log_query,
+            commands::log::log_clear,
+            commands::log::log_get_dir,
         ])
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

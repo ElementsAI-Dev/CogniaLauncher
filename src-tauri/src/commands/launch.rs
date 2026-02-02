@@ -2,12 +2,14 @@ use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
 use crate::platform::process::{self, ProcessOptions, ProcessOutput};
 use crate::provider::ProviderRegistry;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 
@@ -39,6 +41,15 @@ impl From<ProcessOutput> for LaunchResult {
             success: output.success,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandOutputEvent {
+    pub command_id: String,
+    pub stream: String,
+    pub data: String,
+    pub timestamp: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,15 +141,110 @@ pub async fn launch_with_env(
     Ok(output.into())
 }
 
-/// Launch a program and capture streaming output
+/// Launch a program and capture streaming output via Tauri events
 #[tauri::command]
 pub async fn launch_with_streaming(
     request: LaunchRequest,
+    app: AppHandle,
     registry: State<'_, SharedRegistry>,
 ) -> Result<LaunchResult, String> {
-    // For now, use the same implementation as launch_with_env
-    // TODO: Implement streaming via Tauri events
-    launch_with_env(request, registry).await
+    let command_id = Uuid::new_v4().to_string();
+    let mut opts = ProcessOptions::new();
+
+    // Set working directory if specified
+    if let Some(cwd) = &request.cwd {
+        opts = opts.with_cwd(cwd);
+    }
+
+    // Set timeout if specified
+    if let Some(timeout) = request.timeout_secs {
+        opts = opts.with_timeout(Duration::from_secs(timeout));
+    }
+
+    // Apply environment modifications if env_type is specified
+    if let Some(env_type) = &request.env_type {
+        let manager = EnvironmentManager::new(registry.inner().clone());
+
+        // Detect version if not specified
+        let version = if let Some(v) = &request.env_version {
+            v.clone()
+        } else if let Some(cwd) = &request.cwd {
+            manager
+                .detect_version(env_type, std::path::Path::new(cwd))
+                .await
+                .map_err(|e| e.to_string())?
+                .map(|d| d.version)
+                .ok_or_else(|| format!("No {} version detected for project", env_type))?
+        } else {
+            return Err("Either env_version or cwd must be specified".into());
+        };
+
+        // Get environment modifications
+        let env_mods = manager
+            .get_env_modifications(env_type, &version)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Apply PATH modifications
+        for path in &env_mods.path_prepend {
+            if let Some(path_str) = path.to_str() {
+                let current_path = std::env::var("PATH").unwrap_or_default();
+                let separator = if cfg!(windows) { ";" } else { ":" };
+                opts = opts.with_env("PATH", format!("{}{}{}", path_str, separator, current_path));
+            }
+        }
+
+        // Apply environment variables
+        for (key, value) in &env_mods.set_variables {
+            opts = opts.with_env(key, value);
+        }
+    }
+
+    // Apply extra environment variables
+    if let Some(extra_env) = &request.extra_env {
+        for (key, value) in extra_env {
+            opts = opts.with_env(key, value);
+        }
+    }
+
+    // Execute the program with streaming output
+    let args: Vec<&str> = request.args.iter().map(|s| s.as_str()).collect();
+    let app_handle_stdout = app.clone();
+    let app_handle_stderr = app.clone();
+    let cmd_id_stdout = command_id.clone();
+    let cmd_id_stderr = command_id.clone();
+
+    let output = process::execute_with_streaming(
+        &request.program,
+        &args,
+        Some(opts),
+        move |line| {
+            let _ = app_handle_stdout.emit(
+                "command-output",
+                CommandOutputEvent {
+                    command_id: cmd_id_stdout.clone(),
+                    stream: "stdout".to_string(),
+                    data: line.to_string(),
+                    timestamp: Utc::now().timestamp_millis(),
+                },
+            );
+        },
+        move |line| {
+            let _ = app_handle_stderr.emit(
+                "command-output",
+                CommandOutputEvent {
+                    command_id: cmd_id_stderr.clone(),
+                    stream: "stderr".to_string(),
+                    data: line.to_string(),
+                    timestamp: Utc::now().timestamp_millis(),
+                },
+            );
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(output.into())
 }
 
 /// Get shell activation script for a specific environment

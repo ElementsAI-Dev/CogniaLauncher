@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { LocaleProvider } from "@/components/providers/locale-provider";
+import { LogProvider } from "@/components/providers/log-provider";
 import en from "@/messages/en.json";
 import zh from "@/messages/zh.json";
 
@@ -38,7 +39,9 @@ export default function RootLayout({
           enableColorScheme
         >
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
-            <AppShell>{children}</AppShell>
+            <LogProvider>
+              <AppShell>{children}</AppShell>
+            </LogProvider>
           </LocaleProvider>
         </ThemeProvider>
         <Toaster position="bottom-right" richColors />

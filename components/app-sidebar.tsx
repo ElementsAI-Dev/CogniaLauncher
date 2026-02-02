@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Package, Settings, HardDrive, Layers, Server, Info } from 'lucide-react';
+import { Home, Package, Settings, HardDrive, Layers, Server, Info, ScrollText } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +26,7 @@ const navItems = [
   { href: '/packages', labelKey: 'nav.packages', icon: Package },
   { href: '/providers', labelKey: 'nav.providers', icon: Server },
   { href: '/cache', labelKey: 'nav.cache', icon: HardDrive },
+  { href: '/logs', labelKey: 'nav.logs', icon: ScrollText },
   { href: '/settings', labelKey: 'nav.settings', icon: Settings },
   { href: '/about', labelKey: 'nav.about', icon: Info },
 ];

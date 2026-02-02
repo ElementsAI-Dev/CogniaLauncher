@@ -179,3 +179,34 @@ body * {
 [data-tauri-drag-region] > * > * {
   -webkit-app-region: no-drag;
 }
+
+/* Log level colors */
+.log-level-trace {
+  @apply text-slate-500;
+}
+.log-level-debug {
+  @apply text-blue-500;
+}
+.log-level-info {
+  @apply text-green-500;
+}
+.log-level-warn {
+  @apply text-yellow-600 dark:text-yellow-400;
+}
+.log-level-error {
+  @apply text-red-500;
+}
+
+/* Log panel styles */
+.log-entry {
+  @apply font-mono text-xs;
+}
+.log-entry:hover {
+  @apply bg-muted/50;
+}
+.log-timestamp {
+  @apply text-muted-foreground tabular-nums;
+}
+.log-message {
+  @apply break-all whitespace-pre-wrap;
+}

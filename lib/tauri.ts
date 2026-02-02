@@ -535,3 +535,54 @@ export interface ManifestInfo {
 
 export const manifestRead = (projectPath?: string) => invoke<ManifestInfo | null>('manifest_read', { projectPath });
 export const manifestInit = (projectPath?: string) => invoke<void>('manifest_init', { projectPath });
+
+// Log operations
+export interface LogFileInfo {
+  name: string;
+  path: string;
+  size: number;
+  modified: number;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  target: string;
+  message: string;
+  lineNumber: number;
+}
+
+export interface LogQueryOptions {
+  fileName?: string;
+  levelFilter?: string[];
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface LogQueryResult {
+  entries: LogEntry[];
+  totalCount: number;
+  hasMore: boolean;
+}
+
+export const logListFiles = () => invoke<LogFileInfo[]>('log_list_files');
+export const logQuery = (options: LogQueryOptions) => invoke<LogQueryResult>('log_query', { options });
+export const logClear = (fileName?: string) => invoke<void>('log_clear', { fileName });
+export const logGetDir = () => invoke<string>('log_get_dir');
+
+// Command output streaming event
+export interface CommandOutputEvent {
+  commandId: string;
+  stream: 'stdout' | 'stderr';
+  data: string;
+  timestamp: number;
+}
+
+export async function listenCommandOutput(
+  callback: (event: CommandOutputEvent) => void
+): Promise<UnlistenFn> {
+  return listen<CommandOutputEvent>('command-output', (event) => {
+    callback(event.payload);
+  });
+}

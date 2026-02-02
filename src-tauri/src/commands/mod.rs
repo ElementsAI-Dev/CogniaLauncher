@@ -3,6 +3,7 @@ pub mod cache;
 pub mod config;
 pub mod environment;
 pub mod launch;
+pub mod log;
 pub mod package;
 pub mod search;
 pub mod shim;
@@ -38,3 +39,4 @@ pub use shim::{
     shim_list, shim_regenerate_all, shim_remove, shim_update,
 };
 pub use updater::{self_check_update, self_update};
+pub use log::{log_clear, log_get_dir, log_list_files, log_query};
