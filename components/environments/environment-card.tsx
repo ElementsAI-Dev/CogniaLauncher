@@ -24,6 +24,7 @@ import { useEnvironmentStore } from '@/lib/stores/environment';
 import { Download, Trash2, Check, FolderOpen, Scan, ChevronDown, List, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useLocale } from '@/components/providers/locale-provider';
+import { formatSize } from '@/lib/utils';
 
 interface EnvironmentCardProps {
   env: EnvironmentInfo;
@@ -60,9 +61,9 @@ export function EnvironmentCard({
     setIsInstalling(true);
     try {
       await onInstall(version);
-      toast.success(`Installing ${env.env_type} ${version}`);
+      toast.success(t('environments.toast.installing', { type: env.env_type, version }));
     } catch (err) {
-      toast.error(`Failed to install: ${err}`);
+      toast.error(t('environments.toast.installFailed', { error: String(err) }));
     } finally {
       setIsInstalling(false);
     }
@@ -72,9 +73,9 @@ export function EnvironmentCard({
     if (!onUninstall) return;
     try {
       await onUninstall(version);
-      toast.success(`Uninstalled ${env.env_type} ${version}`);
+      toast.success(t('environments.toast.uninstalled', { type: env.env_type, version }));
     } catch (err) {
-      toast.error(`Failed to uninstall: ${err}`);
+      toast.error(t('environments.toast.uninstallFailed', { error: String(err) }));
     }
     setSelectedUninstall(null);
   };
@@ -83,9 +84,9 @@ export function EnvironmentCard({
     if (!onSetGlobal) return;
     try {
       await onSetGlobal(version);
-      toast.success(`Set ${env.env_type} ${version} as global`);
+      toast.success(t('environments.toast.globalSet', { type: env.env_type, version }));
     } catch (err) {
-      toast.error(`Failed to set global version: ${err}`);
+      toast.error(t('environments.toast.globalFailed', { error: String(err) }));
     }
   };
 
@@ -93,24 +94,11 @@ export function EnvironmentCard({
     if (!onSetLocal || !localProjectPath || !env.current_version) return;
     try {
       await onSetLocal(env.current_version, localProjectPath);
-      toast.success(`Set local version for ${localProjectPath}`);
+      toast.success(t('environments.toast.localSet', { path: localProjectPath }));
       setLocalProjectPath('');
     } catch (err) {
-      toast.error(`Failed to set local version: ${err}`);
+      toast.error(t('environments.toast.localFailed', { error: String(err) }));
     }
-  };
-
-
-  const formatSize = (bytes: number | null) => {
-    if (!bytes) return 'Unknown';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
   };
 
   return (

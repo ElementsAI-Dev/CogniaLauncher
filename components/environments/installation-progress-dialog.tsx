@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore, type InstallationProgress } from '@/lib/stores/environment';
+import { useEnvironments } from '@/lib/hooks/use-environments';
 import { cn } from '@/lib/utils';
 import { Download, Check, Loader2, AlertCircle, Minimize2 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ const STEPS: InstallationProgress['step'][] = ['fetching', 'downloading', 'extra
 export function InstallationProgressDialog() {
   const { t } = useLocale();
   const { progressDialogOpen, installationProgress, closeProgressDialog } = useEnvironmentStore();
+  const { cancelInstallation } = useEnvironments();
 
   if (!installationProgress) return null;
 
@@ -106,7 +108,7 @@ export function InstallationProgressDialog() {
           {/* Steps */}
           <div className="space-y-3">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Installation Steps
+              {t('environments.progress.steps')}
             </span>
             <div className="space-y-2">
               {STEPS.map((s, index) => {
@@ -151,7 +153,7 @@ export function InstallationProgressDialog() {
             </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={closeProgressDialog}>
+              <Button variant="outline" onClick={cancelInstallation}>
                 {t('environments.progress.cancel')}
               </Button>
               <Button variant="secondary" className="gap-2">

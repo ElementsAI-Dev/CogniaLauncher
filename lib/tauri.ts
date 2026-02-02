@@ -1,9 +1,39 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // Check if running in Tauri environment
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window;
 }
+
+// Environment installation progress event payload
+export interface EnvInstallProgressEvent {
+  envType: string;
+  version: string;
+  step: 'fetching' | 'downloading' | 'extracting' | 'configuring' | 'done' | 'error';
+  progress: number;
+  downloadedSize?: number;
+  totalSize?: number;
+  speed?: number;
+  error?: string;
+}
+
+// Listen for environment install progress events
+export async function listenEnvInstallProgress(
+  callback: (progress: EnvInstallProgressEvent) => void
+): Promise<UnlistenFn> {
+  return listen<EnvInstallProgressEvent>('env-install-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// Cancel an ongoing environment installation
+export const envInstallCancel = (envType: string, version: string) => 
+  invoke<boolean>('env_install_cancel', { envType, version });
+
+// Resolve a version alias (lts, latest, stable) to an actual version number
+export const envResolveAlias = (envType: string, alias: string) =>
+  invoke<string>('env_resolve_alias', { envType, alias });
 
 export interface EnvironmentInfo {
   env_type: string;
@@ -128,10 +158,16 @@ export const getPlatformInfo = () => invoke<PlatformInfo>('get_platform_info');
 // Cache commands
 export const cacheInfo = () => invoke<CacheInfo>('cache_info');
 export const cacheClean = (cleanType?: string) => invoke<{ freed_bytes: number; freed_human: string }>('cache_clean', { cleanType });
+export const cacheCleanPreview = (cleanType?: string) => invoke<CleanPreview>('cache_clean_preview', { cleanType });
+export const cacheCleanEnhanced = (cleanType?: string, useTrash?: boolean) => 
+  invoke<EnhancedCleanResult>('cache_clean_enhanced', { cleanType, useTrash });
 export const cacheVerify = () => invoke<CacheVerificationResult>('cache_verify');
 export const cacheRepair = () => invoke<CacheRepairResult>('cache_repair');
 export const getCacheSettings = () => invoke<CacheSettings>('get_cache_settings');
 export const setCacheSettings = (settings: CacheSettings) => invoke<void>('set_cache_settings', { newSettings: settings });
+export const getCleanupHistory = (limit?: number) => invoke<CleanupRecord[]>('get_cleanup_history', { limit });
+export const clearCleanupHistory = () => invoke<number>('clear_cleanup_history');
+export const getCleanupSummary = () => invoke<CleanupHistorySummary>('get_cleanup_summary');
 
 export interface CacheVerificationResult {
   valid_entries: number;
@@ -161,6 +197,60 @@ export interface CacheSettings {
   auto_clean: boolean;
 }
 
+// Clean preview types
+export interface CleanPreviewItem {
+  path: string;
+  size: number;
+  size_human: string;
+  entry_type: string;
+  created_at: string;
+}
+
+export interface CleanPreview {
+  files: CleanPreviewItem[];
+  total_count: number;
+  total_size: number;
+  total_size_human: string;
+}
+
+// Enhanced clean result
+export interface EnhancedCleanResult {
+  freed_bytes: number;
+  freed_human: string;
+  deleted_count: number;
+  use_trash: boolean;
+  history_id: string;
+}
+
+// Cleanup history types
+export interface CleanedFileInfo {
+  path: string;
+  size: number;
+  size_human: string;
+  entry_type: string;
+}
+
+export interface CleanupRecord {
+  id: string;
+  timestamp: string;
+  clean_type: string;
+  use_trash: boolean;
+  freed_bytes: number;
+  freed_human: string;
+  file_count: number;
+  files: CleanedFileInfo[];
+  files_truncated: boolean;
+}
+
+export interface CleanupHistorySummary {
+  total_cleanups: number;
+  total_freed_bytes: number;
+  total_freed_human: string;
+  total_files_cleaned: number;
+  trash_cleanups: number;
+  permanent_cleanups: number;
+}
+
 // Provider management commands
 export const providerEnable = (providerId: string) => invoke<void>('provider_enable', { providerId });
 export const providerDisable = (providerId: string) => invoke<void>('provider_disable', { providerId });
@@ -182,6 +272,24 @@ export interface BatchInstallOptions {
   parallel?: boolean;
   force?: boolean;
   global?: boolean;
+}
+
+// Batch progress events
+export type BatchProgress =
+  | { type: 'starting'; total: number }
+  | { type: 'resolving'; package: string; current: number; total: number }
+  | { type: 'downloading'; package: string; progress: number; current: number; total: number }
+  | { type: 'installing'; package: string; current: number; total: number }
+  | { type: 'item_completed'; package: string; success: boolean; current: number; total: number }
+  | { type: 'completed'; result: BatchResult };
+
+// Listen for batch progress events
+export async function listenBatchProgress(
+  callback: (progress: BatchProgress) => void
+): Promise<UnlistenFn> {
+  return listen<BatchProgress>('batch-progress', (event) => {
+    callback(event.payload);
+  });
 }
 
 export interface BatchResult {

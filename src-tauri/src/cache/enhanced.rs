@@ -6,12 +6,16 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+const FLUSH_INTERVAL_SECS: u64 = 30;
+
 /// Enhanced download cache with resumption and LRU eviction
 pub struct EnhancedCache {
     cache_dir: PathBuf,
     max_size: u64,
     max_age: Duration,
     entries: HashMap<String, EnhancedCacheEntry>,
+    dirty: bool,
+    last_flush: std::time::Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +40,8 @@ impl EnhancedCache {
             max_size,
             max_age,
             entries: HashMap::new(),
+            dirty: false,
+            last_flush: std::time::Instant::now(),
         };
 
         cache.load_index().await?;
@@ -56,6 +62,26 @@ impl EnhancedCache {
         let content = serde_json::to_string_pretty(&self.entries)
             .map_err(|e| CogniaError::Internal(e.to_string()))?;
         fs::write_file_string(&index_path, &content).await?;
+        Ok(())
+    }
+
+    fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    async fn flush_if_needed(&mut self) -> CogniaResult<()> {
+        if self.dirty && self.last_flush.elapsed().as_secs() >= FLUSH_INTERVAL_SECS {
+            self.flush().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn flush(&mut self) -> CogniaResult<()> {
+        if self.dirty {
+            self.save_index().await?;
+            self.dirty = false;
+            self.last_flush = std::time::Instant::now();
+        }
         Ok(())
     }
 
@@ -93,8 +119,8 @@ impl EnhancedCache {
         if let Some(entry) = self.entries.get_mut(key) {
             entry.last_accessed = now;
             entry.access_count += 1;
+            self.mark_dirty();
         }
-        let _ = self.save_index().await;
 
         Some(file_path)
     }
@@ -105,7 +131,8 @@ impl EnhancedCache {
         self.evict_if_needed(entry.size).await?;
 
         self.entries.insert(entry.key.clone(), entry);
-        self.save_index().await?;
+        self.mark_dirty();
+        self.flush_if_needed().await?;
         Ok(())
     }
 
@@ -115,7 +142,8 @@ impl EnhancedCache {
             if fs::exists(&entry.file_path).await {
                 fs::remove_file(&entry.file_path).await?;
             }
-            self.save_index().await?;
+            self.mark_dirty();
+            self.flush_if_needed().await?;
             return Ok(true);
         }
         Ok(false)
@@ -189,6 +217,11 @@ impl EnhancedCache {
 
     /// Clean expired entries
     pub async fn clean_expired(&mut self) -> CogniaResult<u64> {
+        self.clean_expired_with_option(false).await
+    }
+
+    /// Clean expired entries with option to use trash
+    pub async fn clean_expired_with_option(&mut self, use_trash: bool) -> CogniaResult<u64> {
         let now = chrono::Utc::now().timestamp();
         let max_age_secs = self.max_age.as_secs() as i64;
 
@@ -203,7 +236,7 @@ impl EnhancedCache {
         for key in expired {
             if let Some(entry) = self.entries.remove(&key) {
                 if fs::exists(&entry.file_path).await {
-                    let _ = fs::remove_file(&entry.file_path).await;
+                    let _ = fs::remove_file_with_option(&entry.file_path, use_trash).await;
                 }
                 freed += entry.size;
             }
@@ -215,6 +248,11 @@ impl EnhancedCache {
 
     /// Clean entries of a specific type
     pub async fn clean_type(&mut self, entry_type: CacheEntryType) -> CogniaResult<u64> {
+        self.clean_type_with_option(entry_type, false).await
+    }
+
+    /// Clean entries of a specific type with option to use trash
+    pub async fn clean_type_with_option(&mut self, entry_type: CacheEntryType, use_trash: bool) -> CogniaResult<u64> {
         let to_remove: Vec<_> = self
             .entries
             .iter()
@@ -226,7 +264,7 @@ impl EnhancedCache {
         for key in to_remove {
             if let Some(entry) = self.entries.remove(&key) {
                 if fs::exists(&entry.file_path).await {
-                    let _ = fs::remove_file(&entry.file_path).await;
+                    let _ = fs::remove_file_with_option(&entry.file_path, use_trash).await;
                 }
                 freed += entry.size;
             }
@@ -238,11 +276,16 @@ impl EnhancedCache {
 
     /// Clean all entries
     pub async fn clean_all(&mut self) -> CogniaResult<u64> {
+        self.clean_all_with_option(false).await
+    }
+
+    /// Clean all entries with option to use trash
+    pub async fn clean_all_with_option(&mut self, use_trash: bool) -> CogniaResult<u64> {
         let mut freed = 0u64;
 
         for entry in self.entries.values() {
             if fs::exists(&entry.file_path).await {
-                let _ = fs::remove_file(&entry.file_path).await;
+                let _ = fs::remove_file_with_option(&entry.file_path, use_trash).await;
             }
             freed += entry.size;
         }
@@ -250,6 +293,30 @@ impl EnhancedCache {
         self.entries.clear();
         self.save_index().await?;
         Ok(freed)
+    }
+
+    /// Get list of all entries for preview
+    pub fn preview_all(&self) -> Vec<&EnhancedCacheEntry> {
+        self.entries.values().collect()
+    }
+
+    /// Get list of expired entries for preview
+    pub fn preview_expired(&self) -> Vec<&EnhancedCacheEntry> {
+        let now = chrono::Utc::now().timestamp();
+        let max_age_secs = self.max_age.as_secs() as i64;
+        
+        self.entries
+            .values()
+            .filter(|e| now - e.created_at > max_age_secs)
+            .collect()
+    }
+
+    /// Get list of entries by type for preview
+    pub fn preview_type(&self, entry_type: CacheEntryType) -> Vec<&EnhancedCacheEntry> {
+        self.entries
+            .values()
+            .filter(|e| e.entry_type == entry_type)
+            .collect()
     }
 
     /// Verify cache integrity
@@ -296,13 +363,16 @@ impl EnhancedCache {
 
         // Remove missing files
         for key in &verification.missing {
-            self.entries.remove(key);
-            result.removed += 1;
+            if let Some(entry) = self.entries.remove(key) {
+                result.freed_bytes += entry.size;
+                result.removed += 1;
+            }
         }
 
         // Remove size mismatched files
         for (key, _, _) in &verification.size_mismatch {
             if let Some(entry) = self.entries.remove(key) {
+                result.freed_bytes += entry.size;
                 let _ = fs::remove_file(&entry.file_path).await;
                 result.removed += 1;
             }
@@ -311,6 +381,7 @@ impl EnhancedCache {
         // Remove checksum mismatched files
         for key in &verification.checksum_mismatch {
             if let Some(entry) = self.entries.remove(key) {
+                result.freed_bytes += entry.size;
                 let _ = fs::remove_file(&entry.file_path).await;
                 result.removed += 1;
             }
@@ -362,6 +433,7 @@ impl VerificationResult {
 pub struct RepairResult {
     pub removed: usize,
     pub recovered: usize,
+    pub freed_bytes: u64,
 }
 
 /// Download resumption support
@@ -534,6 +606,7 @@ fn format_size(size: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn test_format_size() {
@@ -542,5 +615,514 @@ mod tests {
         assert_eq!(format_size(1536), "1.50 KB");
         assert_eq!(format_size(1048576), "1.00 MB");
         assert_eq!(format_size(1073741824), "1.00 GB");
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_cache_put_get() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024, // 1MB
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        // Create a test file
+        let test_file = cache_dir.join("test-file.txt");
+        fs::create_dir_all(&cache_dir).await.unwrap();
+        fs::write_file_string(&test_file, "test content").await.unwrap();
+
+        let entry = EnhancedCacheEntry {
+            key: "test-key".to_string(),
+            file_path: test_file.clone(),
+            size: 12,
+            checksum: Some("abc123".to_string()),
+            created_at: chrono::Utc::now().timestamp(),
+            last_accessed: chrono::Utc::now().timestamp(),
+            access_count: 0,
+            entry_type: CacheEntryType::Download,
+            metadata: HashMap::new(),
+        };
+
+        cache.put(entry).await.unwrap();
+
+        let result = cache.get("test-key").await;
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), test_file);
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_cache_dirty_flag() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        // Create a test file
+        let test_file = cache_dir.join("dirty-test.txt");
+        fs::create_dir_all(&cache_dir).await.unwrap();
+        fs::write_file_string(&test_file, "dirty content").await.unwrap();
+
+        let entry = EnhancedCacheEntry {
+            key: "dirty-key".to_string(),
+            file_path: test_file,
+            size: 13,
+            checksum: None,
+            created_at: chrono::Utc::now().timestamp(),
+            last_accessed: chrono::Utc::now().timestamp(),
+            access_count: 0,
+            entry_type: CacheEntryType::Download,
+            metadata: HashMap::new(),
+        };
+
+        cache.put(entry).await.unwrap();
+        cache.flush().await.unwrap();
+
+        // Reopen and verify persistence
+        let mut cache2 = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        let result = cache2.get("dirty-key").await;
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_cache_verification() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        // Create valid file
+        let valid_file = cache_dir.join("valid.txt");
+        fs::create_dir_all(&cache_dir).await.unwrap();
+        fs::write_file_string(&valid_file, "valid").await.unwrap();
+
+        let valid_entry = EnhancedCacheEntry {
+            key: "valid-key".to_string(),
+            file_path: valid_file,
+            size: 5,
+            checksum: None,
+            created_at: chrono::Utc::now().timestamp(),
+            last_accessed: chrono::Utc::now().timestamp(),
+            access_count: 0,
+            entry_type: CacheEntryType::Download,
+            metadata: HashMap::new(),
+        };
+        cache.put(valid_entry).await.unwrap();
+
+        // Add entry with missing file
+        let missing_entry = EnhancedCacheEntry {
+            key: "missing-key".to_string(),
+            file_path: cache_dir.join("nonexistent.txt"),
+            size: 100,
+            checksum: None,
+            created_at: chrono::Utc::now().timestamp(),
+            last_accessed: chrono::Utc::now().timestamp(),
+            access_count: 0,
+            entry_type: CacheEntryType::Download,
+            metadata: HashMap::new(),
+        };
+        cache.entries.insert("missing-key".to_string(), missing_entry);
+        cache.flush().await.unwrap();
+
+        let result = cache.verify().await.unwrap();
+        assert_eq!(result.valid, 1);
+        assert_eq!(result.missing.len(), 1);
+        assert!(result.missing.contains(&"missing-key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_cache_repair() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        // Add entry with missing file
+        let missing_entry = EnhancedCacheEntry {
+            key: "repair-missing".to_string(),
+            file_path: cache_dir.join("missing-for-repair.txt"),
+            size: 500,
+            checksum: None,
+            created_at: chrono::Utc::now().timestamp(),
+            last_accessed: chrono::Utc::now().timestamp(),
+            access_count: 0,
+            entry_type: CacheEntryType::Download,
+            metadata: HashMap::new(),
+        };
+        cache.entries.insert("repair-missing".to_string(), missing_entry);
+        cache.flush().await.unwrap();
+
+        let repair_result = cache.repair().await.unwrap();
+        assert_eq!(repair_result.removed, 1);
+        assert_eq!(repair_result.freed_bytes, 500);
+
+        // Verify entry is removed
+        assert!(cache.entries.get("repair-missing").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_cache_lru_eviction() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        // Small max size to trigger eviction
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            200, // 200 bytes max
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        // Add 3 files of 100 bytes each
+        for i in 0..3 {
+            let file = cache_dir.join(format!("evict-{}.txt", i));
+            fs::write_file_string(&file, &"x".repeat(100)).await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("evict-key-{}", i),
+                file_path: file,
+                size: 100,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp() - (2 - i) as i64, // Older entries first
+                last_accessed: chrono::Utc::now().timestamp() - (2 - i) as i64,
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        // Should have evicted at least one entry
+        assert!(cache.total_size() <= 200);
+    }
+
+    #[tokio::test]
+    async fn test_verification_result_helpers() {
+        let result = VerificationResult {
+            valid: 10,
+            missing: vec!["a".to_string(), "b".to_string()],
+            size_mismatch: vec![("c".to_string(), 100, 200)],
+            checksum_mismatch: vec!["d".to_string()],
+        };
+
+        assert!(!result.is_valid());
+        assert_eq!(result.total_errors(), 4);
+
+        let valid_result = VerificationResult {
+            valid: 5,
+            missing: vec![],
+            size_mismatch: vec![],
+            checksum_mismatch: vec![],
+        };
+        assert!(valid_result.is_valid());
+    }
+
+    #[tokio::test]
+    async fn test_preview_expired() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        // Use very short max_age so entries are immediately expired
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(0), // 0 seconds = immediately expired
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        // Add entries that will be expired
+        for i in 0..3 {
+            let file = cache_dir.join(format!("preview-expired-{}.txt", i));
+            fs::write_file_string(&file, &format!("content {}", i)).await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("preview-expired-{}", i),
+                file_path: file,
+                size: 10,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp() - 100, // Created 100 seconds ago
+                last_accessed: chrono::Utc::now().timestamp() - 100,
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        let preview = cache.preview_expired();
+        assert_eq!(preview.len(), 3);
+
+        // Verify entries still exist
+        assert_eq!(cache.entries.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_preview_type() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        // Add mixed type entries
+        for i in 0..2 {
+            let file = cache_dir.join(format!("download-{}.txt", i));
+            fs::write_file_string(&file, "download").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("download-{}", i),
+                file_path: file,
+                size: 8,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp(),
+                last_accessed: chrono::Utc::now().timestamp(),
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        for i in 0..3 {
+            let file = cache_dir.join(format!("metadata-{}.txt", i));
+            fs::write_file_string(&file, "metadata").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("metadata-{}", i),
+                file_path: file,
+                size: 8,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp(),
+                last_accessed: chrono::Utc::now().timestamp(),
+                access_count: 0,
+                entry_type: CacheEntryType::Metadata,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        let download_preview = cache.preview_type(CacheEntryType::Download);
+        assert_eq!(download_preview.len(), 2);
+
+        let metadata_preview = cache.preview_type(CacheEntryType::Metadata);
+        assert_eq!(metadata_preview.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_with_option_permanent() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(0),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        for i in 0..2 {
+            let file = cache_dir.join(format!("expired-perm-{}.txt", i));
+            fs::write_file_string(&file, "content").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("expired-perm-{}", i),
+                file_path: file,
+                size: 7,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp() - 100,
+                last_accessed: chrono::Utc::now().timestamp() - 100,
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        let freed = cache.clean_expired_with_option(false).await.unwrap();
+        assert!(freed > 0);
+        assert_eq!(cache.entries.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(0),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        for i in 0..2 {
+            let file = cache_dir.join(format!("expired-trash-{}.txt", i));
+            fs::write_file_string(&file, "content").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("expired-trash-{}", i),
+                file_path: file,
+                size: 7,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp() - 100,
+                last_accessed: chrono::Utc::now().timestamp() - 100,
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        let freed = cache.clean_expired_with_option(true).await.unwrap();
+        assert!(freed > 0);
+        assert_eq!(cache.entries.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_clean_type_with_option() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        // Add Download entries
+        for i in 0..2 {
+            let file = cache_dir.join(format!("clean-type-dl-{}.txt", i));
+            fs::write_file_string(&file, "download").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("clean-type-dl-{}", i),
+                file_path: file,
+                size: 8,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp(),
+                last_accessed: chrono::Utc::now().timestamp(),
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        // Add Metadata entries
+        for i in 0..3 {
+            let file = cache_dir.join(format!("clean-type-md-{}.txt", i));
+            fs::write_file_string(&file, "metadata").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("clean-type-md-{}", i),
+                file_path: file,
+                size: 8,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp(),
+                last_accessed: chrono::Utc::now().timestamp(),
+                access_count: 0,
+                entry_type: CacheEntryType::Metadata,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        // Clean only Download type
+        let freed = cache.clean_type_with_option(CacheEntryType::Download, false).await.unwrap();
+        assert!(freed > 0);
+
+        // Only Metadata entries should remain
+        assert_eq!(cache.entries.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_clean_all_with_option() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("cache");
+
+        let mut cache = EnhancedCache::open(
+            &cache_dir,
+            1024 * 1024,
+            Duration::from_secs(3600),
+        )
+        .await
+        .unwrap();
+
+        fs::create_dir_all(&cache_dir).await.unwrap();
+
+        for i in 0..3 {
+            let file = cache_dir.join(format!("clean-all-{}.txt", i));
+            fs::write_file_string(&file, "content").await.unwrap();
+
+            let entry = EnhancedCacheEntry {
+                key: format!("clean-all-{}", i),
+                file_path: file,
+                size: 7,
+                checksum: None,
+                created_at: chrono::Utc::now().timestamp(),
+                last_accessed: chrono::Utc::now().timestamp(),
+                access_count: 0,
+                entry_type: CacheEntryType::Download,
+                metadata: HashMap::new(),
+            };
+            cache.put(entry).await.unwrap();
+        }
+
+        let freed = cache.clean_all_with_option(false).await.unwrap();
+        assert!(freed > 0);
+        assert_eq!(cache.entries.len(), 0);
     }
 }

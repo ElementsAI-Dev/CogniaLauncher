@@ -6,6 +6,7 @@ pub mod launch;
 pub mod package;
 pub mod search;
 pub mod shim;
+pub mod updater;
 
 pub use batch::{
     batch_install, batch_uninstall, batch_update, check_updates, clear_install_history,
@@ -19,8 +20,8 @@ pub use config::{
     config_get, config_list, config_reset, config_set, get_cognia_dir, get_platform_info,
 };
 pub use environment::{
-    env_detect, env_detect_all, env_get, env_install, env_list, env_uninstall, env_use_global,
-    env_use_local,
+    env_available_versions, env_detect, env_detect_all, env_get, env_install, env_install_cancel,
+    env_list, env_resolve_alias, env_uninstall, env_use_global, env_use_local,
 };
 pub use launch::{
     env_activate, env_get_info, exec_shell_with_env, launch_with_env, launch_with_streaming,
@@ -36,3 +37,4 @@ pub use shim::{
     path_check, path_get_add_command, path_remove, path_setup, path_status, shim_create,
     shim_list, shim_regenerate_all, shim_remove, shim_update,
 };
+pub use updater::{self_check_update, self_update};

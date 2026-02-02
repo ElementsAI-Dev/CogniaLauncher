@@ -11,14 +11,92 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// pip - Python package installer (direct, not via uv)
-pub struct PipProvider;
+/// 
+/// Supports custom PyPI mirror configuration via `--index-url` and `--extra-index-url` flags.
+pub struct PipProvider {
+    /// Primary index URL (replaces default PyPI)
+    index_url: Option<String>,
+    /// Additional index URLs to search
+    extra_index_urls: Vec<String>,
+    /// Trusted hosts for HTTP connections
+    trusted_hosts: Vec<String>,
+}
 
 impl PipProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            index_url: None,
+            extra_index_urls: Vec::new(),
+            trusted_hosts: Vec::new(),
+        }
+    }
+
+    /// Set the primary index URL (PyPI mirror)
+    pub fn with_index_url(mut self, url: impl Into<String>) -> Self {
+        self.index_url = Some(url.into());
+        self
+    }
+
+    /// Set the primary index URL from an Option
+    pub fn with_index_url_opt(mut self, url: Option<String>) -> Self {
+        self.index_url = url;
+        self
+    }
+
+    /// Add an extra index URL
+    pub fn with_extra_index_url(mut self, url: impl Into<String>) -> Self {
+        self.extra_index_urls.push(url.into());
+        self
+    }
+
+    /// Add a trusted host for HTTP connections
+    pub fn with_trusted_host(mut self, host: impl Into<String>) -> Self {
+        self.trusted_hosts.push(host.into());
+        self
+    }
+
+    /// Update the index URL at runtime
+    pub fn set_index_url(&mut self, url: Option<String>) {
+        self.index_url = url;
+    }
+
+    /// Build pip arguments with mirror configuration
+    fn build_pip_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
+        let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+        
+        if let Some(ref url) = self.index_url {
+            args.push("-i".to_string());
+            args.push(url.clone());
+        }
+        
+        for url in &self.extra_index_urls {
+            args.push("--extra-index-url".to_string());
+            args.push(url.clone());
+        }
+        
+        for host in &self.trusted_hosts {
+            args.push("--trusted-host".to_string());
+            args.push(host.clone());
+        }
+        
+        args
     }
 
     async fn run_pip(&self, args: &[&str]) -> CogniaResult<String> {
+        let full_args = self.build_pip_args(args);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let output = process::execute("pip", &args_refs, Some(opts)).await?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            Err(CogniaError::Provider(output.stderr))
+        }
+    }
+
+    /// Run pip without mirror arguments (for commands that don't need them)
+    async fn run_pip_raw(&self, args: &[&str]) -> CogniaResult<String> {
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let output = process::execute("pip", args, Some(opts)).await?;
         if output.success {
@@ -28,9 +106,6 @@ impl PipProvider {
         }
     }
 
-    #[allow(dead_code)]
-    #[allow(dead_code)]
-    #[allow(dead_code)]
     #[allow(dead_code)]
     fn get_site_packages() -> Option<PathBuf> {
         // Get Python site-packages directory
@@ -279,7 +354,8 @@ impl Provider for PipProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        let output = self.run_pip(&["list", "--format", "json"]).await?;
+        // list doesn't need mirror args
+        let output = self.run_pip_raw(&["list", "--format", "json"]).await?;
 
         if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&output) {
             return Ok(packages
@@ -311,8 +387,9 @@ impl Provider for PipProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // check_updates doesn't need mirror args for listing
         let output = self
-            .run_pip(&["list", "--outdated", "--format", "json"])
+            .run_pip_raw(&["list", "--outdated", "--format", "json"])
             .await;
 
         if let Ok(out_str) = output {
@@ -355,7 +432,49 @@ impl SystemPackageProvider for PipProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_pip(&["show", name]).await;
+        // show doesn't need mirror args
+        let out = self.run_pip_raw(&["show", name]).await;
         Ok(out.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pip_provider_builder() {
+        let provider = PipProvider::new()
+            .with_index_url("https://pypi.tuna.tsinghua.edu.cn/simple")
+            .with_extra_index_url("https://pypi.org/simple")
+            .with_trusted_host("pypi.tuna.tsinghua.edu.cn");
+        
+        assert_eq!(provider.index_url, Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string()));
+        assert_eq!(provider.extra_index_urls.len(), 1);
+        assert_eq!(provider.trusted_hosts.len(), 1);
+    }
+
+    #[test]
+    fn test_build_pip_args() {
+        let provider = PipProvider::new()
+            .with_index_url("https://mirror.example.com/simple")
+            .with_trusted_host("mirror.example.com");
+        
+        let args = provider.build_pip_args(&["install", "requests"]);
+        
+        assert!(args.contains(&"install".to_string()));
+        assert!(args.contains(&"requests".to_string()));
+        assert!(args.contains(&"-i".to_string()));
+        assert!(args.contains(&"https://mirror.example.com/simple".to_string()));
+        assert!(args.contains(&"--trusted-host".to_string()));
+        assert!(args.contains(&"mirror.example.com".to_string()));
+    }
+
+    #[test]
+    fn test_pip_provider_no_mirror() {
+        let provider = PipProvider::new();
+        let args = provider.build_pip_args(&["install", "requests"]);
+        
+        assert_eq!(args, vec!["install".to_string(), "requests".to_string()]);
     }
 }

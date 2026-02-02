@@ -5,14 +5,57 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-pub struct PnpmProvider;
+/// pnpm - Performant npm
+///
+/// Supports custom npm registry configuration via `--registry` flag.
+pub struct PnpmProvider {
+    /// Custom registry URL
+    registry_url: Option<String>,
+}
 
 impl PnpmProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            registry_url: None,
+        }
+    }
+
+    /// Set the registry URL
+    pub fn with_registry(mut self, url: impl Into<String>) -> Self {
+        self.registry_url = Some(url.into());
+        self
+    }
+
+    /// Set the registry URL from an Option
+    pub fn with_registry_opt(mut self, url: Option<String>) -> Self {
+        self.registry_url = url;
+        self
+    }
+
+    /// Build pnpm arguments with registry configuration
+    fn build_pnpm_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
+        let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+        
+        if let Some(ref url) = self.registry_url {
+            args.push(format!("--registry={}", url));
+        }
+        
+        args
     }
 
     async fn run_pnpm(&self, args: &[&str]) -> CogniaResult<String> {
+        let full_args = self.build_pnpm_args(args);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        
+        let out = process::execute("pnpm", &args_refs, None).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn run_pnpm_raw(&self, args: &[&str]) -> CogniaResult<String> {
         let out = process::execute("pnpm", args, None).await?;
         if out.success {
             Ok(out.stdout)
@@ -22,7 +65,7 @@ impl PnpmProvider {
     }
 
     async fn get_global_dir(&self) -> Option<PathBuf> {
-        if let Ok(out) = self.run_pnpm(&["root", "-g"]).await {
+        if let Ok(out) = self.run_pnpm_raw(&["root", "-g"]).await {
             return Some(PathBuf::from(out.trim()));
         }
         None
@@ -211,7 +254,7 @@ impl Provider for PnpmProvider {
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let args = vec!["list", "-g", "--depth=0", "--json"];
-        let out = self.run_pnpm(&args).await?;
+        let out = self.run_pnpm_raw(&args).await?;
 
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
             let global_dir = self.get_global_dir().await.unwrap_or_default();
@@ -250,7 +293,7 @@ impl Provider for PnpmProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_pnpm(&["outdated", "-g", "--json"]).await;
+        let out = self.run_pnpm_raw(&["outdated", "-g", "--json"]).await;
 
         let out_str = match out {
             Ok(s) => s,
@@ -301,7 +344,32 @@ impl SystemPackageProvider for PnpmProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_pnpm(&["list", "-g", name, "--depth=0"]).await;
+        let out = self.run_pnpm_raw(&["list", "-g", name, "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pnpm_provider_builder() {
+        let provider = PnpmProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        assert_eq!(provider.registry_url, Some("https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_build_pnpm_args() {
+        let provider = PnpmProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        let args = provider.build_pnpm_args(&["add", "lodash"]);
+        
+        assert!(args.contains(&"add".to_string()));
+        assert!(args.contains(&"lodash".to_string()));
+        assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
     }
 }

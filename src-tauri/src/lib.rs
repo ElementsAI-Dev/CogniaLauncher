@@ -7,16 +7,20 @@ pub mod platform;
 pub mod provider;
 pub mod resolver;
 
+use cache::{DownloadCache, MetadataCache};
 use config::Settings;
 use log::info;
 use provider::ProviderRegistry;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tokio::sync::RwLock;
+use tokio::time::{interval, Duration};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
+pub type CancellationTokens = Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>;
 
 /// Flag to indicate if initialization is complete
 pub static INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -63,14 +67,17 @@ pub fn run() {
                     }
                 }
 
-                // Initialize providers with defaults
-                match ProviderRegistry::with_defaults().await {
+                // Initialize providers with settings (including mirror configuration)
+                let settings_guard = settings.read().await;
+                match ProviderRegistry::with_settings(&settings_guard).await {
                     Ok(initialized_registry) => {
+                        drop(settings_guard); // Release read lock before acquiring write lock
                         let mut registry_guard = registry.write().await;
                         *registry_guard = initialized_registry;
-                        info!("Provider registry initialized with defaults");
+                        info!("Provider registry initialized with settings");
                     }
                     Err(e) => {
+                        drop(settings_guard);
                         info!("Provider registry initialization error: {}", e);
                     }
                 }
@@ -80,10 +87,17 @@ pub fn run() {
                 info!("Application initialization complete");
             });
 
+            // Start background cache cleanup task
+            let cleanup_settings = app.state::<SharedSettings>().inner().clone();
+            tauri::async_runtime::spawn(async move {
+                cache_cleanup_task(cleanup_settings).await;
+            });
+
             Ok(())
         })
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())) as SharedRegistry)
         .manage(Arc::new(RwLock::new(Settings::default())) as SharedSettings)
+        .manage(Arc::new(RwLock::new(HashMap::new())) as CancellationTokens)
         .invoke_handler(tauri::generate_handler![
             // Environment commands
             commands::environment::env_list,
@@ -96,6 +110,8 @@ pub fn run() {
             commands::environment::env_detect_all,
             commands::environment::env_available_versions,
             commands::environment::env_list_providers,
+            commands::environment::env_resolve_alias,
+            commands::environment::env_install_cancel,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -118,10 +134,15 @@ pub fn run() {
             // Cache commands
             commands::cache::cache_info,
             commands::cache::cache_clean,
+            commands::cache::cache_clean_preview,
+            commands::cache::cache_clean_enhanced,
             commands::cache::cache_verify,
             commands::cache::cache_repair,
             commands::cache::get_cache_settings,
             commands::cache::set_cache_settings,
+            commands::cache::get_cleanup_history,
+            commands::cache::clear_cleanup_history,
+            commands::cache::get_cleanup_summary,
             // Batch operations
             commands::batch::batch_install,
             commands::batch::batch_uninstall,
@@ -158,7 +179,59 @@ pub fn run() {
             commands::shim::path_remove,
             commands::shim::path_check,
             commands::shim::path_get_add_command,
+            // Updater commands
+            commands::updater::self_check_update,
+            commands::updater::self_update,
         ])
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Background task for automatic cache cleanup
+async fn cache_cleanup_task(settings: SharedSettings) {
+    const CLEANUP_INTERVAL_HOURS: u64 = 1;
+    let mut cleanup_interval = interval(Duration::from_secs(CLEANUP_INTERVAL_HOURS * 3600));
+
+    loop {
+        cleanup_interval.tick().await;
+
+        let s = settings.read().await;
+        if !s.general.auto_clean_cache {
+            continue;
+        }
+
+        let cache_dir = s.get_cache_dir();
+        let max_size = s.general.cache_max_size;
+        drop(s);
+
+        // Clean expired metadata entries
+        if let Ok(mut metadata_cache) = MetadataCache::open(&cache_dir).await {
+            match metadata_cache.clean_expired().await {
+                Ok(count) if count > 0 => {
+                    info!("Auto-cleanup: removed {} expired metadata entries", count);
+                }
+                Err(e) => {
+                    info!("Auto-cleanup metadata error: {}", e);
+                }
+                _ => {}
+            }
+        }
+
+        // Clean download cache if over size limit
+        if let Ok(mut download_cache) = DownloadCache::open(&cache_dir).await {
+            let stats = download_cache.stats().await;
+            if stats.total_size > max_size {
+                match download_cache.evict_to_size(max_size).await {
+                    Ok(count) if count > 0 => {
+                        info!("Auto-cleanup: evicted {} download entries to meet size limit", count);
+                    }
+                    Err(e) => {
+                        info!("Auto-cleanup download error: {}", e);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }

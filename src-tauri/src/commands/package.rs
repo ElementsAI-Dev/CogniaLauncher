@@ -4,6 +4,7 @@ use crate::platform::env::Platform;
 use crate::provider::{
     InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry, SearchOptions,
 };
+use futures::future::join_all;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -19,6 +20,7 @@ pub async fn package_search(
 ) -> Result<Vec<PackageSummary>, String> {
     let reg = registry.read().await;
 
+    // Single provider search
     if let Some(provider_id) = provider {
         if let Some(p) = reg.get(&provider_id) {
             return p
@@ -29,25 +31,43 @@ pub async fn package_search(
         return Err(format!("Provider not found: {}", provider_id));
     }
 
-    let mut results = Vec::new();
-    for provider_id in reg.list() {
-        if let Some(p) = reg.get(provider_id) {
-            if p.is_available().await {
-                if let Ok(mut r) = p
-                    .search(
-                        &query,
-                        SearchOptions {
-                            limit: Some(5),
-                            page: None,
-                        },
-                    )
-                    .await
-                {
-                    results.append(&mut r);
+    // Parallel search across all available providers
+    let providers: Vec<_> = reg
+        .list()
+        .iter()
+        .filter_map(|id| reg.get(id))
+        .collect();
+
+    let search_futures: Vec<_> = providers
+        .iter()
+        .map(|p| {
+            let query = query.clone();
+            let provider = Arc::clone(p);
+            async move {
+                if provider.is_available().await {
+                    provider
+                        .search(
+                            &query,
+                            SearchOptions {
+                                limit: Some(5),
+                                page: None,
+                            },
+                        )
+                        .await
+                        .ok()
+                } else {
+                    None
                 }
             }
-        }
-    }
+        })
+        .collect();
+
+    let all_results = join_all(search_futures).await;
+    let results: Vec<PackageSummary> = all_results
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
 
     Ok(results)
 }

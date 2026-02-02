@@ -18,6 +18,7 @@ import {
   Layers, ArrowRight, Loader2
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { formatSize } from '@/lib/utils';
 
 interface DependencyNode {
   name: string;
@@ -213,18 +214,6 @@ export function DependencyTree({
       await onResolve(inputPackage);
     }
   }, [inputPackage, onResolve]);
-
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return null;
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
 
   return (
     <Card>

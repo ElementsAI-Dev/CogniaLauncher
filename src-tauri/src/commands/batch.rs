@@ -1,14 +1,19 @@
 use crate::config::Settings;
-use crate::core::{BatchInstallRequest, BatchManager, BatchResult, HistoryManager};
+use crate::core::{BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager};
 use crate::provider::ProviderRegistry;
 use crate::resolver::{Dependency, Package, Resolver, Version, VersionConstraint};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
+
+/// Emit batch progress events to the frontend
+fn emit_batch_progress(app_handle: &AppHandle, progress: &BatchProgress) {
+    let _ = app_handle.emit("batch-progress", progress);
+}
 
 /// Batch install packages with progress tracking
 #[tauri::command]
@@ -18,6 +23,7 @@ pub async fn batch_install(
     parallel: Option<bool>,
     force: Option<bool>,
     global: Option<bool>,
+    app_handle: AppHandle,
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
@@ -33,8 +39,8 @@ pub async fn batch_install(
     };
 
     manager
-        .batch_install(request, |_progress| {
-            // Progress events could be emitted via Tauri events here
+        .batch_install(request, |progress| {
+            emit_batch_progress(&app_handle, &progress);
         })
         .await
         .map_err(|e| e.to_string())
@@ -45,6 +51,7 @@ pub async fn batch_install(
 pub async fn batch_uninstall(
     packages: Vec<String>,
     force: Option<bool>,
+    app_handle: AppHandle,
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
@@ -52,7 +59,9 @@ pub async fn batch_uninstall(
     let manager = BatchManager::new(registry.inner().clone(), settings);
 
     manager
-        .batch_uninstall(packages, force.unwrap_or(false), |_progress| {})
+        .batch_uninstall(packages, force.unwrap_or(false), |progress| {
+            emit_batch_progress(&app_handle, &progress);
+        })
         .await
         .map_err(|e| e.to_string())
 }
@@ -61,6 +70,7 @@ pub async fn batch_uninstall(
 #[tauri::command]
 pub async fn batch_update(
     packages: Option<Vec<String>>,
+    app_handle: AppHandle,
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
@@ -68,7 +78,9 @@ pub async fn batch_update(
     let manager = BatchManager::new(registry.inner().clone(), settings);
 
     manager
-        .batch_update(packages, |_progress| {})
+        .batch_update(packages, |progress| {
+            emit_batch_progress(&app_handle, &progress);
+        })
         .await
         .map_err(|e| e.to_string())
 }

@@ -10,14 +10,63 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub struct NpmProvider;
+/// npm - Node Package Manager
+///
+/// Supports custom npm registry configuration via `--registry` flag.
+pub struct NpmProvider {
+    /// Custom registry URL (replaces default npm registry)
+    registry_url: Option<String>,
+}
 
 impl NpmProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            registry_url: None,
+        }
+    }
+
+    /// Set the registry URL
+    pub fn with_registry(mut self, url: impl Into<String>) -> Self {
+        self.registry_url = Some(url.into());
+        self
+    }
+
+    /// Set the registry URL from an Option
+    pub fn with_registry_opt(mut self, url: Option<String>) -> Self {
+        self.registry_url = url;
+        self
+    }
+
+    /// Update the registry URL at runtime
+    pub fn set_registry_url(&mut self, url: Option<String>) {
+        self.registry_url = url;
+    }
+
+    /// Build npm arguments with registry configuration
+    fn build_npm_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
+        let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+        
+        if let Some(ref url) = self.registry_url {
+            args.push(format!("--registry={}", url));
+        }
+        
+        args
     }
 
     async fn run_npm(&self, args: &[&str]) -> CogniaResult<String> {
+        let full_args = self.build_npm_args(args);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        
+        let out = process::execute("npm", &args_refs, None).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    /// Run npm without registry arguments (for commands that don't need them)
+    async fn run_npm_raw(&self, args: &[&str]) -> CogniaResult<String> {
         let out = process::execute("npm", args, None).await?;
         if out.success {
             Ok(out.stdout)
@@ -231,9 +280,10 @@ impl Provider for NpmProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        // list doesn't need registry args
         let args = vec!["list", "-g", "--depth=0", "--json"];
 
-        let out = self.run_npm(&args).await?;
+        let out = self.run_npm_raw(&args).await?;
 
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
             if let Some(deps) = json["dependencies"].as_object() {
@@ -268,7 +318,8 @@ impl Provider for NpmProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_npm(&["outdated", "-g", "--json"]).await;
+        // outdated doesn't need registry args
+        let out = self.run_npm_raw(&["outdated", "-g", "--json"]).await;
 
         let out_str = match out {
             Ok(s) => s,
@@ -319,7 +370,41 @@ impl SystemPackageProvider for NpmProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_npm(&["list", "-g", name, "--depth=0"]).await;
+        // list doesn't need registry args
+        let out = self.run_npm_raw(&["list", "-g", name, "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_npm_provider_builder() {
+        let provider = NpmProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        assert_eq!(provider.registry_url, Some("https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_build_npm_args() {
+        let provider = NpmProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        let args = provider.build_npm_args(&["install", "lodash"]);
+        
+        assert!(args.contains(&"install".to_string()));
+        assert!(args.contains(&"lodash".to_string()));
+        assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_npm_provider_no_mirror() {
+        let provider = NpmProvider::new();
+        let args = provider.build_npm_args(&["install", "lodash"]);
+        
+        assert_eq!(args, vec!["install".to_string(), "lodash".to_string()]);
     }
 }

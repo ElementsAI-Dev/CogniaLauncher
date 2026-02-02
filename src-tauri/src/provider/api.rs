@@ -1,11 +1,57 @@
 use crate::error::{CogniaError, CogniaResult};
 use reqwest::Client;
 use serde::Deserialize;
+use std::sync::RwLock;
 use std::time::Duration;
+
+/// Default registry URLs
+pub const DEFAULT_PYPI_URL: &str = "https://pypi.org";
+pub const DEFAULT_NPM_REGISTRY: &str = "https://registry.npmjs.org";
+pub const DEFAULT_CRATES_REGISTRY: &str = "https://crates.io";
+
+/// Configuration for API client mirrors
+#[derive(Debug, Clone)]
+pub struct ApiClientConfig {
+    pub pypi_base_url: String,
+    pub npm_registry_url: String,
+    pub crates_registry_url: String,
+}
+
+impl Default for ApiClientConfig {
+    fn default() -> Self {
+        Self {
+            pypi_base_url: DEFAULT_PYPI_URL.into(),
+            npm_registry_url: DEFAULT_NPM_REGISTRY.into(),
+            crates_registry_url: DEFAULT_CRATES_REGISTRY.into(),
+        }
+    }
+}
+
+impl ApiClientConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_pypi_url(mut self, url: impl Into<String>) -> Self {
+        self.pypi_base_url = url.into();
+        self
+    }
+
+    pub fn with_npm_registry(mut self, url: impl Into<String>) -> Self {
+        self.npm_registry_url = url.into();
+        self
+    }
+
+    pub fn with_crates_registry(mut self, url: impl Into<String>) -> Self {
+        self.crates_registry_url = url.into();
+        self
+    }
+}
 
 /// HTTP API client for package registries
 pub struct PackageApiClient {
     client: Client,
+    config: RwLock<ApiClientConfig>,
 }
 
 impl PackageApiClient {
@@ -16,7 +62,76 @@ impl PackageApiClient {
             .build()
             .unwrap_or_default();
 
-        Self { client }
+        Self {
+            client,
+            config: RwLock::new(ApiClientConfig::default()),
+        }
+    }
+
+    /// Create a new client with custom configuration
+    pub fn with_config(config: ApiClientConfig) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("CogniaLauncher/0.1.0")
+            .build()
+            .unwrap_or_default();
+
+        Self {
+            client,
+            config: RwLock::new(config),
+        }
+    }
+
+    /// Update the configuration at runtime
+    pub fn update_config(&self, config: ApiClientConfig) {
+        if let Ok(mut guard) = self.config.write() {
+            *guard = config;
+        }
+    }
+
+    /// Set PyPI base URL
+    pub fn set_pypi_url(&self, url: &str) {
+        if let Ok(mut guard) = self.config.write() {
+            guard.pypi_base_url = url.to_string();
+        }
+    }
+
+    /// Set npm registry URL
+    pub fn set_npm_registry(&self, url: &str) {
+        if let Ok(mut guard) = self.config.write() {
+            guard.npm_registry_url = url.to_string();
+        }
+    }
+
+    /// Set crates.io registry URL
+    pub fn set_crates_registry(&self, url: &str) {
+        if let Ok(mut guard) = self.config.write() {
+            guard.crates_registry_url = url.to_string();
+        }
+    }
+
+    /// Get the current PyPI base URL
+    fn get_pypi_url(&self) -> String {
+        self.config
+            .read()
+            .map(|c| c.pypi_base_url.clone())
+            .unwrap_or_else(|_| DEFAULT_PYPI_URL.into())
+    }
+
+    /// Get the current npm registry URL
+    fn get_npm_registry(&self) -> String {
+        self.config
+            .read()
+            .map(|c| c.npm_registry_url.clone())
+            .unwrap_or_else(|_| DEFAULT_NPM_REGISTRY.into())
+    }
+
+    /// Get the current crates.io registry URL
+    fn get_crates_registry(&self) -> String {
+        self.config
+            .read()
+            .map(|c| c.crates_registry_url.clone())
+            .unwrap_or_else(|_| DEFAULT_CRATES_REGISTRY.into())
     }
 
     /// Search PyPI packages using JSON API
@@ -25,7 +140,8 @@ impl PackageApiClient {
         // For search functionality, we'll use the XML-RPC API or simple index
         // Here we implement a direct package lookup that works well for exact matches
 
-        let url = format!("https://pypi.org/pypi/{}/json", query);
+        let base_url = self.get_pypi_url();
+        let url = format!("{}/pypi/{}/json", base_url, query);
 
         match self.client.get(&url).send().await {
             Ok(response) => {
@@ -60,7 +176,8 @@ impl PackageApiClient {
 
     /// Get detailed package info from PyPI
     pub async fn get_pypi_package(&self, name: &str) -> CogniaResult<PyPIPackage> {
-        let url = format!("https://pypi.org/pypi/{}/json", name);
+        let base_url = self.get_pypi_url();
+        let url = format!("{}/pypi/{}/json", base_url, name);
 
         let response = self
             .client
@@ -91,8 +208,10 @@ impl PackageApiClient {
 
     /// Search npm packages using registry API
     pub async fn search_npm(&self, query: &str, limit: usize) -> CogniaResult<Vec<NpmPackage>> {
+        let registry_url = self.get_npm_registry();
         let url = format!(
-            "https://registry.npmjs.org/-/v1/search?text={}&size={}",
+            "{}/-/v1/search?text={}&size={}",
+            registry_url,
             urlencoding::encode(query),
             limit
         );
@@ -133,7 +252,8 @@ impl PackageApiClient {
 
     /// Get detailed npm package info
     pub async fn get_npm_package(&self, name: &str) -> CogniaResult<NpmPackageInfo> {
-        let url = format!("https://registry.npmjs.org/{}", urlencoding::encode(name));
+        let registry_url = self.get_npm_registry();
+        let url = format!("{}/{}", registry_url, urlencoding::encode(name));
 
         let response = self.client.get(&url).send().await.map_err(|e| {
             CogniaError::Provider(format!("npm registry API request failed: {}", e))
@@ -167,8 +287,10 @@ impl PackageApiClient {
         query: &str,
         limit: usize,
     ) -> CogniaResult<Vec<CratesPackage>> {
+        let registry_url = self.get_crates_registry();
         let url = format!(
-            "https://crates.io/api/v1/crates?q={}&per_page={}",
+            "{}/api/v1/crates?q={}&per_page={}",
+            registry_url,
             urlencoding::encode(query),
             limit
         );
@@ -211,8 +333,10 @@ impl PackageApiClient {
 
     /// Get detailed crate info
     pub async fn get_crate(&self, name: &str) -> CogniaResult<CrateInfo> {
+        let registry_url = self.get_crates_registry();
         let url = format!(
-            "https://crates.io/api/v1/crates/{}",
+            "{}/api/v1/crates/{}",
+            registry_url,
             urlencoding::encode(name)
         );
 
@@ -457,6 +581,42 @@ pub fn get_api_client() -> &'static PackageApiClient {
     API_CLIENT.get_or_init(PackageApiClient::new)
 }
 
+/// Update the global API client configuration from Settings
+pub fn update_api_client_from_settings(settings: &crate::config::Settings) {
+    let client = get_api_client();
+    
+    if let Some(pypi_url) = settings.get_mirror_url("pypi") {
+        client.set_pypi_url(&pypi_url);
+    }
+    
+    if let Some(npm_url) = settings.get_mirror_url("npm") {
+        client.set_npm_registry(&npm_url);
+    }
+    
+    if let Some(crates_url) = settings.get_mirror_url("crates") {
+        client.set_crates_registry(&crates_url);
+    }
+}
+
+/// Build an ApiClientConfig from Settings
+pub fn config_from_settings(settings: &crate::config::Settings) -> ApiClientConfig {
+    let mut config = ApiClientConfig::default();
+    
+    if let Some(pypi_url) = settings.get_mirror_url("pypi") {
+        config.pypi_base_url = pypi_url;
+    }
+    
+    if let Some(npm_url) = settings.get_mirror_url("npm") {
+        config.npm_registry_url = npm_url;
+    }
+    
+    if let Some(crates_url) = settings.get_mirror_url("crates") {
+        config.crates_registry_url = crates_url;
+    }
+    
+    config
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +640,31 @@ mod tests {
         let client = PackageApiClient::new();
         let results = client.search_crates("serde", 10).await;
         assert!(results.is_ok());
+    }
+
+    #[test]
+    fn test_api_client_config_builder() {
+        let config = ApiClientConfig::new()
+            .with_pypi_url("https://pypi.tuna.tsinghua.edu.cn")
+            .with_npm_registry("https://registry.npmmirror.com")
+            .with_crates_registry("https://rsproxy.cn");
+        
+        assert_eq!(config.pypi_base_url, "https://pypi.tuna.tsinghua.edu.cn");
+        assert_eq!(config.npm_registry_url, "https://registry.npmmirror.com");
+        assert_eq!(config.crates_registry_url, "https://rsproxy.cn");
+    }
+
+    #[test]
+    fn test_api_client_config_update() {
+        let client = PackageApiClient::new();
+        
+        client.set_pypi_url("https://custom.pypi.org");
+        assert_eq!(client.get_pypi_url(), "https://custom.pypi.org");
+        
+        client.set_npm_registry("https://custom.npm.org");
+        assert_eq!(client.get_npm_registry(), "https://custom.npm.org");
+        
+        client.set_crates_registry("https://custom.crates.io");
+        assert_eq!(client.get_crates_registry(), "https://custom.crates.io");
     }
 }

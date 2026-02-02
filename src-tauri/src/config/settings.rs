@@ -14,6 +14,27 @@ pub struct Settings {
     pub paths: PathSettings,
     pub security: SecuritySettings,
     pub provider_settings: GlobalProviderSettings,
+    pub appearance: AppearanceSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppearanceSettings {
+    pub theme: String,
+    pub accent_color: String,
+    pub language: String,
+    pub reduced_motion: bool,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            theme: "system".into(),
+            accent_color: "blue".into(),
+            language: "en".into(),
+            reduced_motion: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -83,9 +104,42 @@ impl Default for NetworkSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MirrorConfig {
     pub url: String,
     pub priority: i32,
+    pub enabled: bool,
+    pub verify_ssl: bool,
+}
+
+impl Default for MirrorConfig {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            priority: 0,
+            enabled: true,
+            verify_ssl: true,
+        }
+    }
+}
+
+impl MirrorConfig {
+    pub fn new(url: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            ..Default::default()
+        }
+    }
+
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.enabled = false;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,6 +268,22 @@ impl Settings {
             ["security", "verify_certificates"] => {
                 Some(self.security.verify_certificates.to_string())
             }
+            ["appearance", "theme"] => Some(self.appearance.theme.clone()),
+            ["appearance", "accent_color"] => Some(self.appearance.accent_color.clone()),
+            ["appearance", "language"] => Some(self.appearance.language.clone()),
+            ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
+            ["mirrors", provider] => {
+                self.mirrors.get(*provider).map(|m| m.url.clone())
+            }
+            ["mirrors", provider, "enabled"] => {
+                self.mirrors.get(*provider).map(|m| m.enabled.to_string())
+            }
+            ["mirrors", provider, "priority"] => {
+                self.mirrors.get(*provider).map(|m| m.priority.to_string())
+            }
+            ["mirrors", provider, "verify_ssl"] => {
+                self.mirrors.get(*provider).map(|m| m.verify_ssl.to_string())
+            }
             _ => None,
         }
     }
@@ -258,10 +328,85 @@ impl Settings {
                     Some(value.to_string())
                 };
             }
+            ["appearance", "theme"] => {
+                if !["light", "dark", "system"].contains(&value) {
+                    return Err(CogniaError::Config("Invalid theme value".into()));
+                }
+                self.appearance.theme = value.to_string();
+            }
+            ["appearance", "accent_color"] => {
+                if !["zinc", "blue", "green", "purple", "orange", "rose"].contains(&value) {
+                    return Err(CogniaError::Config("Invalid accent color value".into()));
+                }
+                self.appearance.accent_color = value.to_string();
+            }
+            ["appearance", "language"] => {
+                if !["en", "zh"].contains(&value) {
+                    return Err(CogniaError::Config("Invalid language value".into()));
+                }
+                self.appearance.language = value.to_string();
+            }
+            ["appearance", "reduced_motion"] => {
+                self.appearance.reduced_motion = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["mirrors", provider] => {
+                let config = self.mirrors.entry(provider.to_string()).or_default();
+                config.url = value.to_string();
+            }
+            ["mirrors", provider, "enabled"] => {
+                let config = self.mirrors.entry(provider.to_string()).or_default();
+                config.enabled = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value for mirror enabled".into()))?;
+            }
+            ["mirrors", provider, "priority"] => {
+                let config = self.mirrors.entry(provider.to_string()).or_default();
+                config.priority = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid priority value".into()))?;
+            }
+            ["mirrors", provider, "verify_ssl"] => {
+                let config = self.mirrors.entry(provider.to_string()).or_default();
+                config.verify_ssl = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value for verify_ssl".into()))?;
+            }
             _ => return Err(CogniaError::Config(format!("Unknown config key: {}", key))),
         }
 
         Ok(())
+    }
+
+    /// Get mirror URL for a specific provider, returning None if not configured or disabled
+    pub fn get_mirror_url(&self, provider: &str) -> Option<String> {
+        self.mirrors.get(provider).and_then(|m| {
+            if m.enabled && !m.url.is_empty() {
+                Some(m.url.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Get all configured and enabled mirrors sorted by priority (higher priority first)
+    pub fn get_enabled_mirrors(&self) -> Vec<(&String, &MirrorConfig)> {
+        let mut mirrors: Vec<_> = self
+            .mirrors
+            .iter()
+            .filter(|(_, m)| m.enabled && !m.url.is_empty())
+            .collect();
+        mirrors.sort_by(|a, b| b.1.priority.cmp(&a.1.priority));
+        mirrors
+    }
+
+    /// Check if SSL verification should be performed for a specific mirror
+    pub fn should_verify_ssl(&self, provider: &str) -> bool {
+        self.mirrors
+            .get(provider)
+            .map(|m| m.verify_ssl)
+            .unwrap_or(self.security.verify_certificates)
     }
 }
 
@@ -304,5 +449,77 @@ mod tests {
             settings.general.parallel_downloads,
             parsed.general.parallel_downloads
         );
+    }
+
+    #[test]
+    fn test_mirror_get_set() {
+        let mut settings = Settings::default();
+
+        // Set mirror URL
+        settings
+            .set_value("mirrors.npm", "https://registry.npmmirror.com")
+            .unwrap();
+        assert_eq!(
+            settings.get_value("mirrors.npm"),
+            Some("https://registry.npmmirror.com".to_string())
+        );
+
+        // Set mirror enabled
+        settings.set_value("mirrors.npm.enabled", "true").unwrap();
+        assert_eq!(
+            settings.get_value("mirrors.npm.enabled"),
+            Some("true".to_string())
+        );
+
+        // Set mirror priority
+        settings.set_value("mirrors.npm.priority", "10").unwrap();
+        assert_eq!(
+            settings.get_value("mirrors.npm.priority"),
+            Some("10".to_string())
+        );
+
+        // Test get_mirror_url helper
+        assert_eq!(
+            settings.get_mirror_url("npm"),
+            Some("https://registry.npmmirror.com".to_string())
+        );
+
+        // Disable mirror and check get_mirror_url returns None
+        settings.set_value("mirrors.npm.enabled", "false").unwrap();
+        assert_eq!(settings.get_mirror_url("npm"), None);
+    }
+
+    #[test]
+    fn test_mirror_config_builder() {
+        let config = MirrorConfig::new("https://pypi.tuna.tsinghua.edu.cn/simple")
+            .with_priority(5);
+        assert_eq!(config.url, "https://pypi.tuna.tsinghua.edu.cn/simple");
+        assert_eq!(config.priority, 5);
+        assert!(config.enabled);
+        assert!(config.verify_ssl);
+
+        let disabled = MirrorConfig::new("https://example.com").disabled();
+        assert!(!disabled.enabled);
+    }
+
+    #[test]
+    fn test_get_enabled_mirrors() {
+        let mut settings = Settings::default();
+
+        settings
+            .set_value("mirrors.npm", "https://registry.npmmirror.com")
+            .unwrap();
+        settings.set_value("mirrors.npm.priority", "5").unwrap();
+
+        settings
+            .set_value("mirrors.pypi", "https://pypi.tuna.tsinghua.edu.cn/simple")
+            .unwrap();
+        settings.set_value("mirrors.pypi.priority", "10").unwrap();
+
+        let enabled = settings.get_enabled_mirrors();
+        assert_eq!(enabled.len(), 2);
+        // Higher priority first
+        assert_eq!(enabled[0].0, "pypi");
+        assert_eq!(enabled[1].0, "npm");
     }
 }

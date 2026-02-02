@@ -200,6 +200,13 @@ const config: Config = {
   // The test environment that will be used for testing
   testEnvironment: "jsdom",
 
+  // Force exit after tests complete to prevent hanging from open handles
+  // (e.g., Zustand persist middleware, uncleared timers)
+  forceExit: true,
+
+  // Timeout for individual tests (in milliseconds)
+  testTimeout: 10000,
+
   // Options that will be passed to the testEnvironment
   // testEnvironmentOptions: {},
 

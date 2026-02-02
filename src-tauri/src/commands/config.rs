@@ -25,12 +25,22 @@ pub async fn config_set(
     s.save().await.map_err(|e| e.to_string())
 }
 
+/// Default mirror keys that are always included in config_list
+const DEFAULT_MIRROR_KEYS: &[&str] = &[
+    "mirrors.npm",
+    "mirrors.pypi",
+    "mirrors.crates",
+    "mirrors.go",
+];
+
 #[tauri::command]
 pub async fn config_list(
     settings: State<'_, SharedSettings>,
 ) -> Result<Vec<(String, String)>, String> {
     let s = settings.read().await;
-    let keys = vec![
+    
+    // Static configuration keys
+    let static_keys = vec![
         "general.parallel_downloads",
         "general.resolve_strategy",
         "general.auto_update_metadata",
@@ -40,12 +50,32 @@ pub async fn config_list(
         "network.proxy",
         "security.allow_http",
         "security.verify_certificates",
+        "appearance.theme",
+        "appearance.accent_color",
+        "appearance.language",
+        "appearance.reduced_motion",
     ];
 
-    Ok(keys
+    let mut result: Vec<(String, String)> = static_keys
         .into_iter()
         .filter_map(|k| s.get_value(k).map(|v| (k.to_string(), v)))
-        .collect())
+        .collect();
+
+    // Add default mirror keys (even if empty, frontend expects them)
+    for key in DEFAULT_MIRROR_KEYS {
+        let value = s.get_value(key).unwrap_or_default();
+        result.push((key.to_string(), value));
+    }
+
+    // Add any additional configured mirrors that aren't in defaults
+    for (provider, config) in &s.mirrors {
+        let key = format!("mirrors.{}", provider);
+        if !DEFAULT_MIRROR_KEYS.contains(&key.as_str()) && !config.url.is_empty() {
+            result.push((key, config.url.clone()));
+        }
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]

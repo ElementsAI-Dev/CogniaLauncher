@@ -11,6 +11,7 @@ pub mod fnm;
 pub mod github;
 pub mod goenv;
 pub mod macports;
+pub mod node_base;
 pub mod npm;
 pub mod nvm;
 pub mod pacman;
@@ -30,5 +31,6 @@ pub mod yarn;
 pub mod zypper;
 
 pub use api::*;
+pub use node_base::NodeProviderUtils;
 pub use registry::*;
 pub use traits::*;

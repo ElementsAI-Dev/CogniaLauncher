@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { EnvironmentInfo, DetectedEnvironment } from '@/lib/tauri';
+import { useEnvironmentStore } from '@/lib/stores/environment';
 import { 
   Check, 
   Globe, 
@@ -38,6 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
+import { formatSize } from '@/lib/utils';
 
 interface EnvironmentDetailsPanelProps {
   env: EnvironmentInfo | null;
@@ -50,10 +52,6 @@ interface EnvironmentDetailsPanelProps {
   onRefresh?: () => Promise<void>;
 }
 
-interface EnvVariable {
-  key: string;
-  value: string;
-}
 
 const DETECTION_FILES: Record<string, string[]> = {
   node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
@@ -79,9 +77,11 @@ export function EnvironmentDetailsPanel({
   const [selectedLocalVersion, setSelectedLocalVersion] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(null);
-  const [envVariables, setEnvVariables] = useState<EnvVariable[]>([
-    { key: 'NODE_OPTIONS', value: '--max-old-space-size=4096' },
-  ]);
+  // Get persisted environment settings from store
+  const { getEnvSettings, addEnvVariable, removeEnvVariable, toggleDetectionFile } = useEnvironmentStore();
+  const envSettings = env ? getEnvSettings(env.env_type) : null;
+  const envVariables = envSettings?.envVariables || [];
+  const detectionFileSettings = envSettings?.detectionFiles || [];
   const [newVarKey, setNewVarKey] = useState('');
   const [newVarValue, setNewVarValue] = useState('');
 
@@ -95,7 +95,16 @@ export function EnvironmentDetailsPanel({
 
   if (!env) return null;
 
-  const detectionFiles = DETECTION_FILES[env.env_type.toLowerCase()] || [];
+  // Fallback to constant if store doesn't have settings yet
+  const detectionFilesFromConstant = DETECTION_FILES[env.env_type.toLowerCase()] || [];
+  // Use store settings if available, otherwise create from constant
+  // Always normalize to { fileName, enabled } format
+  const detectionFiles: { fileName: string; enabled: boolean }[] = detectionFileSettings.length > 0 
+    ? detectionFileSettings 
+    : detectionFilesFromConstant.map((fileName, idx) => ({
+        fileName,
+        enabled: idx < 2, // Enable first two by default
+      }));
 
   const handleSetGlobal = async (version: string) => {
     try {
@@ -117,28 +126,17 @@ export function EnvironmentDetailsPanel({
     }
   };
 
-  const addEnvVariable = () => {
-    if (!newVarKey.trim()) return;
-    setEnvVariables([...envVariables, { key: newVarKey, value: newVarValue }]);
+  const handleAddEnvVariable = () => {
+    if (!newVarKey.trim() || !env) return;
+    addEnvVariable(env.env_type, { key: newVarKey, value: newVarValue, enabled: true });
     setNewVarKey('');
     setNewVarValue('');
     toast.success(t('environments.details.envVarAdded'));
   };
 
-  const removeEnvVariable = (index: number) => {
-    setEnvVariables(envVariables.filter((_, i) => i !== index));
-  };
-
-  const formatSize = (bytes: number | null) => {
-    if (!bytes) return t('common.unknown');
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
+  const handleRemoveEnvVariable = (key: string) => {
+    if (!env) return;
+    removeEnvVariable(env.env_type, key);
   };
 
   const totalSize = env.installed_versions.reduce((acc, v) => acc + (v.size || 0), 0);
@@ -482,7 +480,7 @@ export function EnvironmentDetailsPanel({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      onClick={() => removeEnvVariable(index)}
+                      onClick={() => handleRemoveEnvVariable(envVar.key)}
                     >
                       <X className="h-3 w-3" />
                     </Button>
@@ -505,7 +503,7 @@ export function EnvironmentDetailsPanel({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={addEnvVariable}
+                    onClick={handleAddEnvVariable}
                     disabled={!newVarKey.trim()}
                     className="gap-1"
                   >
@@ -538,9 +536,12 @@ export function EnvironmentDetailsPanel({
                   >
                     <div className="flex items-center gap-2">
                       <FileCode className="h-4 w-4 text-muted-foreground" />
-                      <code className="font-mono text-sm">{file}</code>
+                      <code className="font-mono text-sm">{file.fileName}</code>
                     </div>
-                    <Switch defaultChecked={index < 2} />
+                    <Switch 
+                      checked={file.enabled}
+                      onCheckedChange={(checked) => toggleDetectionFile(env.env_type, file.fileName, checked)}
+                    />
                   </div>
                 ))}
               </div>

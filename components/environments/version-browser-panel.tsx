@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,31 +77,57 @@ export function VersionBrowserPanel({
     }
   };
 
-  const filteredVersions = versions.filter((v) => {
-    if (searchQuery && !v.version.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
+  // Helper to check if a Node.js version is LTS (even major versions)
+  const isNodeLtsVersion = useCallback((version: string): boolean => {
+    const match = version.match(/^v?(\d+)/);
+    if (!match) return false;
+    const majorVersion = parseInt(match[1], 10);
+    // Node.js LTS versions are even-numbered major versions >= 4
+    return majorVersion >= 4 && majorVersion % 2 === 0;
+  }, []);
+
+  // Helper to check if version is LTS for any environment type
+  const isLtsVersion = useCallback((version: string): boolean => {
+    // Check if version string explicitly contains 'lts'
+    if (version.toLowerCase().includes('lts')) return true;
+    
+    // For Node.js, LTS versions are even major versions
+    if (envType.toLowerCase() === 'node') {
+      return isNodeLtsVersion(version);
     }
-    switch (filter) {
-      case 'stable':
-        if (v.deprecated || v.yanked) return false;
-        break;
-      case 'lts':
-        if (v.deprecated || v.yanked) return false;
-        if (!v.version.includes('lts') && !v.version.match(/^\d+\.\d+\.\d+$/)) return false;
-        break;
-      case 'latest':
-        return false;
-    }
+    
+    // For Python, LTS-like versions are typically x.x.0 releases with extended support
+    // For now, treat all stable versions as potentially LTS for other languages
     return true;
-  });
+  }, [envType, isNodeLtsVersion]);
 
-  const latestVersion = filter === 'latest' 
-    ? versions.find(v => !v.deprecated && !v.yanked) 
-    : null;
+  // Memoized filtered versions with clear logic for each filter type
+  const displayVersions = useMemo(() => {
+    // Handle 'latest' filter - return only the first non-deprecated/yanked version
+    if (filter === 'latest') {
+      const latest = versions.find(v => !v.deprecated && !v.yanked);
+      return latest ? [latest] : [];
+    }
 
-  const displayVersions = filter === 'latest' && latestVersion 
-    ? [latestVersion] 
-    : filteredVersions;
+    // Filter versions based on search query and filter type
+    return versions.filter((v) => {
+      // Apply search query filter
+      if (searchQuery && !v.version.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
+      }
+
+      // Apply status-based filters
+      switch (filter) {
+        case 'stable':
+          return !v.deprecated && !v.yanked;
+        case 'lts':
+          return !v.deprecated && !v.yanked && isLtsVersion(v.version);
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [versions, searchQuery, filter, isLtsVersion]);
 
   const isInstalled = (version: string) => installedVersions.includes(version);
 
@@ -190,8 +216,10 @@ export function VersionBrowserPanel({
                 </Button>
               </div>
             ) : loading ? (
-              Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-lg border">
+              // Dynamic skeleton count based on estimated visible items
+              // Each item is approximately 72px, viewport estimate ~400px
+              Array.from({ length: Math.max(4, Math.min(10, Math.floor(400 / 72))) }).map((_, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-lg border animate-pulse">
                   <div className="space-y-2">
                     <Skeleton className="h-5 w-24" />
                     <Skeleton className="h-3 w-32" />

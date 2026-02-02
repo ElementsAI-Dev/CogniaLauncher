@@ -44,9 +44,37 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Eye,
+  History,
+  Recycle,
+  Clock,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { CacheSettings } from '@/lib/tauri';
+import { isTauri } from '@/lib/tauri';
+import type { 
+  CacheSettings, 
+  CleanPreview, 
+  CleanupRecord, 
+  CleanupHistorySummary 
+} from '@/lib/tauri';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type CleanType = 'downloads' | 'metadata' | 'all';
 type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
@@ -74,6 +102,17 @@ export default function CachePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [localSettings, setLocalSettings] = useState<CacheSettings | null>(null);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  
+  // New state for enhanced cache cleaning features
+  const [useTrash, setUseTrash] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<CleanPreview | null>(null);
+  const [previewType, setPreviewType] = useState<CleanType>('all');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [cleanupHistory, setCleanupHistory] = useState<CleanupRecord[]>([]);
+  const [historySummary, setHistorySummary] = useState<CleanupHistorySummary | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     fetchCacheInfo();
@@ -98,6 +137,75 @@ export default function CachePage() {
     } finally {
       setCleaningType(null);
       setOperationLoading(null);
+    }
+  };
+
+  const handlePreview = async (type: CleanType) => {
+    if (!isTauri()) return;
+    setPreviewType(type);
+    setPreviewLoading(true);
+    setPreviewOpen(true);
+    try {
+      const { cacheCleanPreview } = await import('@/lib/tauri');
+      const preview = await cacheCleanPreview(type);
+      setPreviewData(preview);
+    } catch (err) {
+      toast.error(`${t('cache.previewFailed')}: ${err}`);
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleEnhancedClean = async () => {
+    if (!isTauri()) return;
+    setCleaningType(previewType);
+    setOperationLoading('clean');
+    setPreviewOpen(false);
+    try {
+      const { cacheCleanEnhanced } = await import('@/lib/tauri');
+      const result = await cacheCleanEnhanced(previewType, useTrash);
+      const method = useTrash ? t('cache.movedToTrash') : t('cache.permanentlyDeleted');
+      toast.success(`${t('cache.freed', { size: result.freed_human })} (${method})`);
+      await fetchCacheInfo();
+      await fetchCleanupHistory();
+    } catch (err) {
+      toast.error(`${t('cache.clearing')}: ${err}`);
+    } finally {
+      setCleaningType(null);
+      setOperationLoading(null);
+      setPreviewData(null);
+    }
+  };
+
+  const fetchCleanupHistory = async () => {
+    if (!isTauri()) return;
+    setHistoryLoading(true);
+    try {
+      const { getCleanupHistory, getCleanupSummary } = await import('@/lib/tauri');
+      const [history, summary] = await Promise.all([
+        getCleanupHistory(10),
+        getCleanupSummary(),
+      ]);
+      setCleanupHistory(history);
+      setHistorySummary(summary);
+    } catch (err) {
+      console.error('Failed to fetch cleanup history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    if (!isTauri()) return;
+    try {
+      const { clearCleanupHistory } = await import('@/lib/tauri');
+      const count = await clearCleanupHistory();
+      toast.success(t('cache.historyCleared', { count }));
+      setCleanupHistory([]);
+      setHistorySummary(null);
+    } catch (err) {
+      toast.error(`${t('cache.historyClearFailed')}: ${err}`);
     }
   };
 
@@ -298,35 +406,46 @@ export default function CachePage() {
                   </>
                 )}
               </div>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isLoading || (cacheInfo?.download_cache.entry_count || 0) === 0}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {isCleaning && cleaningType === 'downloads' ? t('cache.clearing') : t('cache.clearCache')}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>{t('cache.clearDownload')}</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {t('cache.clearDownloadConfirmDesc')}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => handleClean('downloads')}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isLoading || (cacheInfo?.download_cache.entry_count || 0) === 0}
+                  onClick={() => handlePreview('downloads')}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  {t('cache.preview')}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoading || (cacheInfo?.download_cache.entry_count || 0) === 0}
                     >
-                      {t('cache.clearCache')}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {isCleaning && cleaningType === 'downloads' ? t('cache.clearing') : t('cache.clearCache')}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('cache.clearDownload')}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('cache.clearDownloadConfirmDesc')}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleClean('downloads')}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t('cache.clearCache')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -354,35 +473,46 @@ export default function CachePage() {
                   </>
                 )}
               </div>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isLoading || (cacheInfo?.metadata_cache.entry_count || 0) === 0}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {isCleaning && cleaningType === 'metadata' ? t('cache.clearing') : t('cache.clearCache')}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>{t('cache.clearMetadata')}</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {t('cache.clearMetadataConfirmDesc')}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => handleClean('metadata')}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isLoading || (cacheInfo?.metadata_cache.entry_count || 0) === 0}
+                  onClick={() => handlePreview('metadata')}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  {t('cache.preview')}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoading || (cacheInfo?.metadata_cache.entry_count || 0) === 0}
                     >
-                      {t('cache.clearCache')}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {isCleaning && cleaningType === 'metadata' ? t('cache.clearing') : t('cache.clearCache')}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('cache.clearMetadata')}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('cache.clearMetadataConfirmDesc')}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleClean('metadata')}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t('cache.clearCache')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -601,6 +731,224 @@ export default function CachePage() {
           </CollapsibleContent>
         </Collapsible>
       </Card>
+      {/* Row 5: Cleanup History */}
+      <Card>
+        <Collapsible open={historyOpen} onOpenChange={(open) => {
+          setHistoryOpen(open);
+          if (open && cleanupHistory.length === 0) {
+            fetchCleanupHistory();
+          }
+        }}>
+          <CardHeader className="pb-2">
+            <CollapsibleTrigger asChild>
+              <div className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <History className="h-5 w-5" />
+                  <CardTitle className="text-base">{t('cache.cleanupHistory')}</CardTitle>
+                  {historySummary && historySummary.total_cleanups > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {historySummary.total_cleanups} {t('cache.cleanups')}
+                    </Badge>
+                  )}
+                </div>
+                <ChevronDown className={`h-4 w-4 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+              </div>
+            </CollapsibleTrigger>
+            <CardDescription>{t('cache.cleanupHistoryDesc')}</CardDescription>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <Separator />
+              
+              {historyLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ) : cleanupHistory.length > 0 ? (
+                <>
+                  {historySummary && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{historySummary.total_cleanups}</p>
+                        <p className="text-xs text-muted-foreground">{t('cache.totalCleanups')}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{historySummary.total_freed_human}</p>
+                        <p className="text-xs text-muted-foreground">{t('cache.totalFreed')}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{historySummary.trash_cleanups}</p>
+                        <p className="text-xs text-muted-foreground">{t('cache.trashCleanups')}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold">{historySummary.permanent_cleanups}</p>
+                        <p className="text-xs text-muted-foreground">{t('cache.permanentCleanups')}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <ScrollArea className="h-64">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('cache.date')}</TableHead>
+                          <TableHead>{t('cache.type')}</TableHead>
+                          <TableHead>{t('cache.filesCount')}</TableHead>
+                          <TableHead>{t('cache.freedSize')}</TableHead>
+                          <TableHead>{t('cache.method')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cleanupHistory.map((record) => (
+                          <TableRow key={record.id}>
+                            <TableCell className="whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-muted-foreground" />
+                                {new Date(record.timestamp).toLocaleString()}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{record.clean_type}</Badge>
+                            </TableCell>
+                            <TableCell>{record.file_count}</TableCell>
+                            <TableCell>{record.freed_human}</TableCell>
+                            <TableCell>
+                              {record.use_trash ? (
+                                <Badge variant="secondary" className="gap-1">
+                                  <Recycle className="h-3 w-3" />
+                                  {t('cache.trash')}
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive" className="gap-1">
+                                  <Trash2 className="h-3 w-3" />
+                                  {t('cache.permanent')}
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                  
+                  <div className="flex justify-end">
+                    <Button variant="outline" size="sm" onClick={handleClearHistory}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {t('cache.clearHistory')}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  {t('cache.noHistory')}
+                </p>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
+      </Card>
+
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              {t('cache.previewTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('cache.previewDesc', { type: previewType })}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {previewLoading ? (
+            <div className="space-y-2 py-4">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : previewData ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                <div>
+                  <p className="text-sm text-muted-foreground">{t('cache.filesToClean')}</p>
+                  <p className="text-2xl font-bold">{previewData.total_count}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">{t('cache.spaceToFree')}</p>
+                  <p className="text-2xl font-bold">{previewData.total_size_human}</p>
+                </div>
+              </div>
+              
+              {previewData.files.length > 0 && (
+                <ScrollArea className="h-48 rounded-md border">
+                  <div className="p-2 space-y-1">
+                    {previewData.files.slice(0, 20).map((file, index) => (
+                      <div key={index} className="flex items-center justify-between text-sm p-2 hover:bg-muted/50 rounded">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate" title={file.path}>
+                            {file.path.split(/[/\\]/).pop()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge variant="outline" className="text-xs">{file.entry_type}</Badge>
+                          <span className="text-muted-foreground">{file.size_human}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {previewData.files.length > 20 && (
+                      <p className="text-center text-sm text-muted-foreground py-2">
+                        ... {t('cache.andMore', { count: previewData.files.length - 20 })}
+                      </p>
+                    )}
+                  </div>
+                </ScrollArea>
+              )}
+              
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Recycle className="h-4 w-4" />
+                  <Label htmlFor="useTrash">{t('cache.useTrash')}</Label>
+                </div>
+                <Switch
+                  id="useTrash"
+                  checked={useTrash}
+                  onCheckedChange={setUseTrash}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {useTrash ? t('cache.useTrashDesc') : t('cache.permanentDeleteDesc')}
+              </p>
+            </div>
+          ) : null}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleEnhancedClean}
+              disabled={!previewData || previewData.total_count === 0 || operationLoading === 'clean'}
+            >
+              {operationLoading === 'clean' ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  {t('cache.clearing')}
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t('cache.confirmClean')}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

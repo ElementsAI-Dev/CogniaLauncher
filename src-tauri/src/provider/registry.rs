@@ -1,8 +1,10 @@
+use super::api::update_api_client_from_settings;
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
     apk, apt, brew, cargo, chocolatey, dnf, docker, flatpak, fnm, github, goenv, macports, npm,
     nvm, pacman, pip, pnpm, psgallery, pyenv, rustup, scoop, snap, uv, vcpkg, winget, yarn, zypper,
 };
+use crate::config::Settings;
 use crate::error::CogniaResult;
 use crate::platform::env::{current_platform, Platform};
 use std::collections::HashMap;
@@ -23,7 +25,20 @@ impl ProviderRegistry {
     }
 
     pub async fn with_defaults() -> CogniaResult<Self> {
+        Self::with_settings(&Settings::default()).await
+    }
+
+    /// Create a registry with providers configured from settings
+    pub async fn with_settings(settings: &Settings) -> CogniaResult<Self> {
         let mut registry = Self::new();
+
+        // Update the global API client with mirror settings
+        update_api_client_from_settings(settings);
+
+        // Get mirror URLs from settings
+        let npm_mirror = settings.get_mirror_url("npm");
+        let pypi_mirror = settings.get_mirror_url("pypi");
+        let crates_mirror = settings.get_mirror_url("crates");
 
         // Node.js version managers - prefer fnm over nvm
         let fnm_provider = Arc::new(fnm::FnmProvider::new());
@@ -57,26 +72,34 @@ impl ProviderRegistry {
         let github_provider = Arc::new(github::GitHubProvider::new());
         registry.register_provider(github_provider);
 
-        // Register npm provider (cross-platform)
-        let npm_provider = Arc::new(npm::NpmProvider::new());
+        // Register npm provider with mirror configuration
+        let npm_provider = Arc::new(
+            npm::NpmProvider::new().with_registry_opt(npm_mirror.clone())
+        );
         if npm_provider.is_available().await {
             registry.register_provider(npm_provider);
         }
 
-        // Register pnpm provider (cross-platform)
-        let pnpm_provider = Arc::new(pnpm::PnpmProvider::new());
+        // Register pnpm provider with mirror configuration
+        let pnpm_provider = Arc::new(
+            pnpm::PnpmProvider::new().with_registry_opt(npm_mirror.clone())
+        );
         if pnpm_provider.is_available().await {
             registry.register_provider(pnpm_provider);
         }
 
-        // Register yarn provider (cross-platform)
-        let yarn_provider = Arc::new(yarn::YarnProvider::new());
+        // Register yarn provider with mirror configuration
+        let yarn_provider = Arc::new(
+            yarn::YarnProvider::new().with_registry_opt(npm_mirror)
+        );
         if yarn_provider.is_available().await {
             registry.register_provider(yarn_provider);
         }
 
-        // Register pip provider (cross-platform Python)
-        let pip_provider = Arc::new(pip::PipProvider::new());
+        // Register pip provider with mirror configuration
+        let pip_provider = Arc::new(
+            pip::PipProvider::new().with_index_url_opt(pypi_mirror.clone())
+        );
         if pip_provider.is_available().await {
             registry.register_provider(pip_provider);
         }
@@ -99,14 +122,18 @@ impl ProviderRegistry {
             registry.register_provider(docker_provider);
         }
 
-        // Register uv provider (cross-platform Python)
-        let uv_provider = Arc::new(uv::UvProvider::new());
+        // Register uv provider with mirror configuration
+        let uv_provider = Arc::new(
+            uv::UvProvider::new().with_index_url_opt(pypi_mirror)
+        );
         if uv_provider.is_available().await {
             registry.register_provider(uv_provider);
         }
 
-        // Register cargo provider (cross-platform Rust)
-        let cargo_provider = Arc::new(cargo::CargoProvider::new());
+        // Register cargo provider with mirror configuration
+        let cargo_provider = Arc::new(
+            cargo::CargoProvider::new().with_registry_opt(crates_mirror)
+        );
         if cargo_provider.is_available().await {
             registry.register_provider(cargo_provider);
         }
@@ -346,6 +373,12 @@ pub fn create_shared_registry() -> SharedRegistry {
 
 pub async fn create_shared_registry_with_defaults() -> CogniaResult<SharedRegistry> {
     let registry = ProviderRegistry::with_defaults().await?;
+    Ok(Arc::new(RwLock::new(registry)))
+}
+
+/// Create a shared registry with providers configured from settings
+pub async fn create_shared_registry_with_settings(settings: &Settings) -> CogniaResult<SharedRegistry> {
+    let registry = ProviderRegistry::with_settings(settings).await?;
     Ok(Arc::new(RwLock::new(registry)))
 }
 

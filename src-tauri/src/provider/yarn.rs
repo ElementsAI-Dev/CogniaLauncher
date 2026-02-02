@@ -11,14 +11,57 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// Yarn package manager for Node.js
-pub struct YarnProvider;
+///
+/// Supports custom npm registry configuration via `--registry` flag.
+pub struct YarnProvider {
+    /// Custom registry URL
+    registry_url: Option<String>,
+}
 
 impl YarnProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            registry_url: None,
+        }
+    }
+
+    /// Set the registry URL
+    pub fn with_registry(mut self, url: impl Into<String>) -> Self {
+        self.registry_url = Some(url.into());
+        self
+    }
+
+    /// Set the registry URL from an Option
+    pub fn with_registry_opt(mut self, url: Option<String>) -> Self {
+        self.registry_url = url;
+        self
+    }
+
+    /// Build yarn arguments with registry configuration
+    fn build_yarn_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
+        let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+        
+        if let Some(ref url) = self.registry_url {
+            args.push(format!("--registry={}", url));
+        }
+        
+        args
     }
 
     async fn run_yarn(&self, args: &[&str]) -> CogniaResult<String> {
+        let full_args = self.build_yarn_args(args);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let output = process::execute("yarn", &args_refs, Some(opts)).await?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            Err(CogniaError::Provider(output.stderr))
+        }
+    }
+
+    async fn run_yarn_raw(&self, args: &[&str]) -> CogniaResult<String> {
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let output = process::execute("yarn", args, Some(opts)).await?;
         if output.success {
@@ -189,7 +232,7 @@ impl Provider for YarnProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        let output = self.run_yarn(&["global", "list", "--json"]).await?;
+        let output = self.run_yarn_raw(&["global", "list", "--json"]).await?;
 
         let mut packages = Vec::new();
 
@@ -231,7 +274,7 @@ impl Provider for YarnProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let output = self.run_yarn(&["outdated", "--json"]).await;
+        let output = self.run_yarn_raw(&["outdated", "--json"]).await;
 
         let Ok(out_str) = output else {
             return Ok(vec![]);
@@ -282,7 +325,32 @@ impl SystemPackageProvider for YarnProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_yarn(&["global", "list", "--depth=0"]).await;
+        let out = self.run_yarn_raw(&["global", "list", "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_yarn_provider_builder() {
+        let provider = YarnProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        assert_eq!(provider.registry_url, Some("https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_build_yarn_args() {
+        let provider = YarnProvider::new()
+            .with_registry("https://registry.npmmirror.com");
+        
+        let args = provider.build_yarn_args(&["add", "lodash"]);
+        
+        assert!(args.contains(&"add".to_string()));
+        assert!(args.contains(&"lodash".to_string()));
+        assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
     }
 }

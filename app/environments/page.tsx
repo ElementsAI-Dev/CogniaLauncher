@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { EnvironmentCard } from '@/components/environments/environment-card';
 import { AddEnvironmentDialog } from '@/components/environments/add-environment-dialog';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { EnvironmentDetailsPanel } from '@/components/environments/environment-details-panel';
+import { EnvironmentErrorBoundary, EnvironmentCardErrorBoundary } from '@/components/environments/environment-error-boundary';
+import { EmptyState } from '@/components/environments/empty-state';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/lib/hooks/use-environments';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -40,9 +42,15 @@ export default function EnvironmentsPage() {
   } = useEnvironmentStore();
   const { t } = useLocale();
 
+  // Track initialization to prevent duplicate fetches on re-renders
+  const initializedRef = useRef(false);
+
   useEffect(() => {
-    fetchEnvironments();
-    detectVersions('.');
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      fetchEnvironments();
+      detectVersions('.');
+    }
   }, [fetchEnvironments, detectVersions]);
 
   const getDetectedForEnv = (envType: string) => {
@@ -57,18 +65,39 @@ export default function EnvironmentsPage() {
   const currentBrowserEnv = getEnvByType(versionBrowserEnvType);
   const currentDetailsEnv = getEnvByType(detailsPanelEnvType);
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     await fetchEnvironments();
     await detectVersions('.');
-  };
+  }, [fetchEnvironments, detectVersions]);
 
-  const handleAddEnvironment = async (language: string, provider: string, version: string) => {
+  const handleAddEnvironment = useCallback(async (language: string, _provider: string, version: string) => {
     await installVersion(language, version);
-  };
+  }, [installVersion]);
+
+  // Memoized handlers to prevent unnecessary re-renders
+  const handleInstallVersion = useCallback(async (envType: string, version: string) => {
+    await installVersion(envType, version);
+  }, [installVersion]);
+
+  const handleUninstallVersion = useCallback(async (envType: string, version: string) => {
+    await uninstallVersion(envType, version);
+  }, [uninstallVersion]);
+
+  const handleSetGlobalVersion = useCallback(async (envType: string, version: string) => {
+    await setGlobalVersion(envType, version);
+  }, [setGlobalVersion]);
+
+  const handleSetLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
+    await setLocalVersion(envType, version, projectPath);
+  }, [setLocalVersion]);
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      {/* Page Header */}
+    <EnvironmentErrorBoundary
+      fallbackTitle="Environment Page Error"
+      fallbackDescription="An error occurred while loading the environments page. Please try refreshing."
+    >
+      <div className="p-4 md:p-6 space-y-6">
+        {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">{t('environments.title')}</h1>
@@ -115,34 +144,21 @@ export default function EnvironmentsPage() {
           ))}
         </div>
       ) : environments.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <p className="mb-4">{t('environments.noEnvironments')}</p>
-          <Button onClick={openAddDialog} className="gap-2">
-            <Plus className="h-4 w-4" />
-            {t('environments.addEnvironment')}
-          </Button>
-        </div>
+        <EmptyState onAddEnvironment={openAddDialog} t={t} />
       ) : (
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
           {environments.map((env) => (
-            <EnvironmentCard
-              key={env.env_type}
-              env={env}
-              detectedVersion={getDetectedForEnv(env.env_type)}
-              onInstall={async (version) => {
-                await installVersion(env.env_type, version);
-              }}
-              onUninstall={async (version) => {
-                await uninstallVersion(env.env_type, version);
-              }}
-              onSetGlobal={async (version) => {
-                await setGlobalVersion(env.env_type, version);
-              }}
-              onSetLocal={async (version, projectPath) => {
-                await setLocalVersion(env.env_type, version, projectPath);
-              }}
-              loading={loading}
-            />
+            <EnvironmentCardErrorBoundary key={env.env_type} envType={env.env_type} t={t}>
+              <EnvironmentCard
+                env={env}
+                detectedVersion={getDetectedForEnv(env.env_type)}
+                onInstall={(version) => handleInstallVersion(env.env_type, version)}
+                onUninstall={(version) => handleUninstallVersion(env.env_type, version)}
+                onSetGlobal={(version) => handleSetGlobalVersion(env.env_type, version)}
+                onSetLocal={(version, projectPath) => handleSetLocalVersion(env.env_type, version, projectPath)}
+                loading={loading}
+              />
+            </EnvironmentCardErrorBoundary>
           ))}
         </div>
       )}
@@ -157,9 +173,7 @@ export default function EnvironmentsPage() {
           envType={currentBrowserEnv.env_type}
           open={versionBrowserOpen}
           onOpenChange={(open) => !open && closeVersionBrowser()}
-          onInstall={async (version) => {
-            await installVersion(currentBrowserEnv.env_type, version);
-          }}
+          onInstall={(version) => handleInstallVersion(currentBrowserEnv.env_type, version)}
           installedVersions={currentBrowserEnv.installed_versions.map((v) => v.version)}
         />
       )}
@@ -170,20 +184,15 @@ export default function EnvironmentsPage() {
           detectedVersion={getDetectedForEnv(currentDetailsEnv.env_type)}
           open={detailsPanelOpen}
           onOpenChange={(open) => !open && closeDetailsPanel()}
-          onSetGlobal={async (version) => {
-            await setGlobalVersion(currentDetailsEnv.env_type, version);
-          }}
-          onSetLocal={async (version, projectPath) => {
-            await setLocalVersion(currentDetailsEnv.env_type, version, projectPath);
-          }}
-          onUninstall={async (version) => {
-            await uninstallVersion(currentDetailsEnv.env_type, version);
-          }}
+          onSetGlobal={(version) => handleSetGlobalVersion(currentDetailsEnv.env_type, version)}
+          onSetLocal={(version, projectPath) => handleSetLocalVersion(currentDetailsEnv.env_type, version, projectPath)}
+          onUninstall={(version) => handleUninstallVersion(currentDetailsEnv.env_type, version)}
           onRefresh={async () => {
             await fetchEnvironments();
           }}
         />
       )}
-    </div>
+      </div>
+    </EnvironmentErrorBoundary>
   );
 }

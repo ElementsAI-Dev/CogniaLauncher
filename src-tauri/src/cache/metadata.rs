@@ -144,6 +144,11 @@ impl MetadataCache {
     }
 
     pub async fn clean_expired(&mut self) -> CogniaResult<usize> {
+        self.clean_expired_with_option(false).await
+    }
+
+    /// Clean expired metadata entries with option to use trash
+    pub async fn clean_expired_with_option(&mut self, use_trash: bool) -> CogniaResult<usize> {
         let expired: Vec<_> = self
             .db
             .get_expired()
@@ -156,7 +161,7 @@ impl MetadataCache {
 
         for entry in expired {
             if fs::exists(&entry.file_path).await {
-                let _ = fs::remove_file(&entry.file_path).await;
+                let _ = fs::remove_file_with_option(&entry.file_path, use_trash).await;
             }
             self.db.remove(&entry.key).await?;
         }
@@ -165,10 +170,15 @@ impl MetadataCache {
     }
 
     pub async fn clean_all(&mut self) -> CogniaResult<usize> {
-        let entries: Vec<_> = self
+        self.clean_all_with_option(false).await
+    }
+
+    /// Clean all metadata entries with option to use trash
+    pub async fn clean_all_with_option(&mut self, use_trash: bool) -> CogniaResult<usize> {
+        let entries: Vec<CacheEntry> = self
             .db
             .list()
-            .iter()
+            .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
             .cloned()
             .collect();
@@ -177,7 +187,7 @@ impl MetadataCache {
 
         for entry in entries {
             if fs::exists(&entry.file_path).await {
-                let _ = fs::remove_file(&entry.file_path).await;
+                let _ = fs::remove_file_with_option(&entry.file_path, use_trash).await;
             }
             self.db.remove(&entry.key).await?;
         }
@@ -185,10 +195,27 @@ impl MetadataCache {
         Ok(count)
     }
 
-    pub fn stats(&self) -> MetadataCacheStats {
-        let entries: Vec<_> = self
-            .db
+    /// Get list of entries that would be cleaned (for preview)
+    pub fn preview_clean(&self) -> Vec<&CacheEntry> {
+        self.db
             .list()
+            .into_iter()
+            .filter(|e| e.entry_type == CacheEntryType::Metadata)
+            .collect()
+    }
+
+    /// Get list of expired entries (for preview)
+    pub fn preview_expired(&self) -> Vec<&CacheEntry> {
+        self.db
+            .get_expired()
+            .into_iter()
+            .filter(|e| e.entry_type == CacheEntryType::Metadata)
+            .collect()
+    }
+
+    pub fn stats(&self) -> MetadataCacheStats {
+        let binding = self.db.list();
+        let entries: Vec<_> = binding
             .iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
             .collect();
@@ -277,5 +304,116 @@ mod tests {
 
         cache.remove("to-remove").await.unwrap();
         assert!(cache.get::<String>("to-remove").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_preview_clean() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        // Add some metadata
+        for i in 0..3 {
+            cache.set(&format!("preview-key-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        // Preview should return all entries without deleting
+        let entries = cache.preview_clean();
+        assert_eq!(entries.len(), 3);
+
+        // Entries should still exist
+        let stats = cache.stats();
+        assert_eq!(stats.entry_count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_preview_expired() {
+        let dir = tempdir().unwrap();
+        // Create cache with negative TTL so entries are immediately expired
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        // Add expired entries
+        for i in 0..2 {
+            cache.set(&format!("expired-key-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        // Preview expired should return all entries (since TTL is -1)
+        let entries = cache.preview_expired();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_with_option_permanent() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        for i in 0..2 {
+            cache.set(&format!("expired-perm-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        let count = cache.clean_expired_with_option(false).await.unwrap();
+        assert_eq!(count, 2);
+
+        let stats = cache.stats();
+        assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        for i in 0..2 {
+            cache.set(&format!("expired-trash-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        let count = cache.clean_expired_with_option(true).await.unwrap();
+        assert_eq!(count, 2);
+
+        let stats = cache.stats();
+        assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_clean_all_with_option_permanent() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        for i in 0..3 {
+            cache.set(&format!("all-perm-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        let count = cache.clean_all_with_option(false).await.unwrap();
+        assert_eq!(count, 3);
+
+        let stats = cache.stats();
+        assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_clean_all_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        for i in 0..3 {
+            cache.set(&format!("all-trash-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        let count = cache.clean_all_with_option(true).await.unwrap();
+        assert_eq!(count, 3);
+
+        let stats = cache.stats();
+        assert_eq!(stats.entry_count, 0);
     }
 }

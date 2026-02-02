@@ -10,14 +10,78 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub struct UvProvider;
+/// uv - Fast Python Package Manager
+///
+/// Supports custom PyPI mirror configuration via `--index-url` and `--extra-index-url` flags.
+pub struct UvProvider {
+    /// Primary index URL (replaces default PyPI)
+    index_url: Option<String>,
+    /// Additional index URLs to search
+    extra_index_urls: Vec<String>,
+}
 
 impl UvProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            index_url: None,
+            extra_index_urls: Vec::new(),
+        }
+    }
+
+    /// Set the primary index URL (PyPI mirror)
+    pub fn with_index_url(mut self, url: impl Into<String>) -> Self {
+        self.index_url = Some(url.into());
+        self
+    }
+
+    /// Set the primary index URL from an Option
+    pub fn with_index_url_opt(mut self, url: Option<String>) -> Self {
+        self.index_url = url;
+        self
+    }
+
+    /// Add an extra index URL
+    pub fn with_extra_index_url(mut self, url: impl Into<String>) -> Self {
+        self.extra_index_urls.push(url.into());
+        self
+    }
+
+    /// Update the index URL at runtime
+    pub fn set_index_url(&mut self, url: Option<String>) {
+        self.index_url = url;
+    }
+
+    /// Build uv arguments with mirror configuration
+    fn build_uv_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
+        let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
+        
+        if let Some(ref url) = self.index_url {
+            args.push("--index-url".to_string());
+            args.push(url.clone());
+        }
+        
+        for url in &self.extra_index_urls {
+            args.push("--extra-index-url".to_string());
+            args.push(url.clone());
+        }
+        
+        args
     }
 
     async fn run_uv(&self, args: &[&str]) -> CogniaResult<String> {
+        let full_args = self.build_uv_args(args);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        
+        let out = process::execute("uv", &args_refs, None).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    /// Run uv without mirror arguments (for commands that don't need them)
+    async fn run_uv_raw(&self, args: &[&str]) -> CogniaResult<String> {
         let out = process::execute("uv", args, None).await?;
         if out.success {
             Ok(out.stdout)
@@ -26,9 +90,6 @@ impl UvProvider {
         }
     }
 
-    #[allow(dead_code)]
-    #[allow(dead_code)]
-    #[allow(dead_code)]
     #[allow(dead_code)]
     fn get_cache_dir() -> Option<PathBuf> {
         std::env::var("UV_CACHE_DIR")
@@ -277,7 +338,8 @@ impl Provider for UvProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        let out = self.run_uv(&["pip", "list", "--format", "json"]).await?;
+        // list doesn't need mirror args
+        let out = self.run_uv_raw(&["pip", "list", "--format", "json"]).await?;
 
         if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&out) {
             return Ok(packages
@@ -309,8 +371,9 @@ impl Provider for UvProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // check_updates doesn't need mirror args for listing
         let out = self
-            .run_uv(&["pip", "list", "--outdated", "--format", "json"])
+            .run_uv_raw(&["pip", "list", "--outdated", "--format", "json"])
             .await;
 
         if let Ok(output) = out {
@@ -353,7 +416,45 @@ impl SystemPackageProvider for UvProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_uv(&["pip", "show", name]).await;
+        // show doesn't need mirror args
+        let out = self.run_uv_raw(&["pip", "show", name]).await;
         Ok(out.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uv_provider_builder() {
+        let provider = UvProvider::new()
+            .with_index_url("https://pypi.tuna.tsinghua.edu.cn/simple")
+            .with_extra_index_url("https://pypi.org/simple");
+        
+        assert_eq!(provider.index_url, Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string()));
+        assert_eq!(provider.extra_index_urls.len(), 1);
+    }
+
+    #[test]
+    fn test_build_uv_args() {
+        let provider = UvProvider::new()
+            .with_index_url("https://mirror.example.com/simple");
+        
+        let args = provider.build_uv_args(&["pip", "install", "requests"]);
+        
+        assert!(args.contains(&"pip".to_string()));
+        assert!(args.contains(&"install".to_string()));
+        assert!(args.contains(&"requests".to_string()));
+        assert!(args.contains(&"--index-url".to_string()));
+        assert!(args.contains(&"https://mirror.example.com/simple".to_string()));
+    }
+
+    #[test]
+    fn test_uv_provider_no_mirror() {
+        let provider = UvProvider::new();
+        let args = provider.build_uv_args(&["pip", "install", "requests"]);
+        
+        assert_eq!(args, vec!["pip".to_string(), "install".to_string(), "requests".to_string()]);
     }
 }

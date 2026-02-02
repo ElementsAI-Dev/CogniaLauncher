@@ -25,6 +25,7 @@ import {
   Package, AlertCircle, Scale
 } from 'lucide-react';
 import type { PackageComparison } from '@/lib/tauri';
+import { formatSize } from '@/lib/utils';
 
 interface PackageComparisonDialogProps {
   open: boolean;
@@ -81,18 +82,6 @@ export function PackageComparisonDialog({
       loadComparison();
     }
   }, [open, loadComparison, packageIds.length]);
-
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return 'Unknown';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Unknown';

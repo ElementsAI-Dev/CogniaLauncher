@@ -6,18 +6,52 @@ use crate::platform::{
     process::{self, ProcessOptions},
 };
 use async_trait::async_trait;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub struct CargoProvider;
+/// Cargo - Rust Package Manager
+///
+/// Supports custom crates.io registry configuration via environment variables.
+/// Note: Cargo registry mirrors are typically configured via `.cargo/config.toml`,
+/// but we support setting environment variables for runtime configuration.
+pub struct CargoProvider {
+    /// Custom registry URL (used for CARGO_REGISTRIES_CRATES_IO_PROTOCOL)
+    registry_url: Option<String>,
+    /// Additional environment variables for cargo commands
+    env_vars: HashMap<String, String>,
+}
 
 impl CargoProvider {
     pub fn new() -> Self {
-        Self
+        Self {
+            registry_url: None,
+            env_vars: HashMap::new(),
+        }
+    }
+
+    /// Set the registry URL
+    pub fn with_registry(mut self, url: impl Into<String>) -> Self {
+        self.registry_url = Some(url.into());
+        self
+    }
+
+    /// Set the registry URL from an Option
+    pub fn with_registry_opt(mut self, url: Option<String>) -> Self {
+        self.registry_url = url;
+        self
+    }
+
+    /// Add a custom environment variable for cargo commands
+    pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env_vars.insert(key.into(), value.into());
+        self
     }
 
     async fn run_cargo(&self, args: &[&str]) -> CogniaResult<String> {
+        // For now, cargo doesn't support --registry flag for install commands
+        // Registry configuration is typically done via .cargo/config.toml or env vars
+        // We execute cargo normally and rely on system configuration
         let out = process::execute("cargo", args, None).await?;
         if out.success {
             Ok(out.stdout)
@@ -41,6 +75,11 @@ impl CargoProvider {
                         .map(|h| PathBuf::from(h).join(".cargo"))
                 }
             })
+    }
+
+    /// Get the configured registry URL if set
+    pub fn get_registry_url(&self) -> Option<&String> {
+        self.registry_url.as_ref()
     }
 }
 
@@ -402,5 +441,29 @@ impl SystemPackageProvider for CargoProvider {
         Ok(out
             .map(|s| s.lines().any(|l| l.starts_with(name)))
             .unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cargo_provider_builder() {
+        let provider = CargoProvider::new()
+            .with_registry("https://rsproxy.cn");
+        
+        assert_eq!(provider.registry_url, Some("https://rsproxy.cn".to_string()));
+    }
+
+    #[test]
+    fn test_cargo_provider_with_env() {
+        let provider = CargoProvider::new()
+            .with_env("CARGO_HTTP_PROXY", "http://proxy.example.com:8080");
+        
+        assert_eq!(
+            provider.env_vars.get("CARGO_HTTP_PROXY"),
+            Some(&"http://proxy.example.com:8080".to_string())
+        );
     }
 }

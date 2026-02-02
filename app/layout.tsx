@@ -35,7 +35,7 @@ export default function RootLayout({
           attribute="class"
           defaultTheme="system"
           enableSystem
-          disableTransitionOnChange
+          enableColorScheme
         >
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
             <AppShell>{children}</AppShell>

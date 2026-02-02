@@ -1,7 +1,8 @@
 use crate::config::Settings;
-use crate::error::CogniaResult;
+use crate::error::{CogniaError, CogniaResult};
 use crate::provider::{InstallRequest, ProviderRegistry, UninstallRequest};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -92,6 +93,36 @@ pub enum BatchProgress {
     },
 }
 
+/// Cancellation token for batch operations
+#[derive(Debug, Clone, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    /// Create a new cancellation token
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Check if the operation has been cancelled
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// Cancel the operation
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    /// Reset the cancellation state
+    pub fn reset(&self) {
+        self.cancelled.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Batch operations manager
 pub struct BatchManager {
     registry: Arc<RwLock<ProviderRegistry>>,
@@ -99,6 +130,7 @@ pub struct BatchManager {
     settings: Settings,
     max_parallel: usize,
     max_retries: u32,
+    cancel_token: Option<CancellationToken>,
 }
 
 impl BatchManager {
@@ -110,7 +142,22 @@ impl BatchManager {
             settings,
             max_parallel: if max_parallel > 0 { max_parallel } else { 4 },
             max_retries,
+            cancel_token: None,
         }
+    }
+
+    /// Set a cancellation token for this batch manager
+    pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
+        self.cancel_token = Some(token);
+        self
+    }
+
+    /// Check if the operation should be cancelled
+    fn should_cancel(&self) -> bool {
+        self.cancel_token
+            .as_ref()
+            .map(|t| t.is_cancelled())
+            .unwrap_or(false)
     }
 
     /// Install multiple packages with optional parallelization
@@ -190,6 +237,11 @@ impl BatchManager {
             }
         } else {
             for (idx, spec) in to_install.iter().enumerate() {
+                // Check for cancellation before each package
+                if self.should_cancel() {
+                    return Err(CogniaError::Cancelled);
+                }
+
                 on_progress(BatchProgress::Installing {
                     package: spec.name.clone(),
                     current: idx + 1,
@@ -765,5 +817,147 @@ mod tests {
         let spec = PackageSpec::parse("@types/node@18.0.0");
         assert_eq!(spec.name, "@types/node");
         assert_eq!(spec.version, Some("18.0.0".into()));
+    }
+
+    #[test]
+    fn test_cancellation_token_new() {
+        let token = CancellationToken::new();
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_cancel() {
+        let token = CancellationToken::new();
+        assert!(!token.is_cancelled());
+        
+        token.cancel();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_reset() {
+        let token = CancellationToken::new();
+        token.cancel();
+        assert!(token.is_cancelled());
+        
+        token.reset();
+        assert!(!token.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancellation_token_clone() {
+        let token = CancellationToken::new();
+        let cloned = token.clone();
+        
+        token.cancel();
+        
+        // Both should be cancelled since they share the same Arc
+        assert!(token.is_cancelled());
+        assert!(cloned.is_cancelled());
+    }
+
+    #[test]
+    fn test_batch_install_request_default() {
+        let request = BatchInstallRequest::default();
+        assert!(request.packages.is_empty());
+        assert!(!request.dry_run);
+        assert!(request.parallel);
+        assert!(!request.force);
+        assert!(request.global);
+    }
+
+    #[test]
+    fn test_batch_result_empty() {
+        let result = BatchResult {
+            successful: vec![],
+            failed: vec![],
+            skipped: vec![],
+            total_time_ms: 0,
+        };
+        assert!(result.successful.is_empty());
+        assert!(result.failed.is_empty());
+        assert!(result.skipped.is_empty());
+    }
+
+    #[test]
+    fn test_batch_item_result() {
+        let item = BatchItemResult {
+            name: "lodash".to_string(),
+            version: "4.17.21".to_string(),
+            provider: "npm".to_string(),
+            action: "install".to_string(),
+        };
+        assert_eq!(item.name, "lodash");
+        assert_eq!(item.version, "4.17.21");
+        assert_eq!(item.provider, "npm");
+        assert_eq!(item.action, "install");
+    }
+
+    #[test]
+    fn test_batch_item_error() {
+        let error = BatchItemError {
+            name: "broken-pkg".to_string(),
+            error: "Installation failed".to_string(),
+            recoverable: true,
+            suggestion: Some("Try again later".to_string()),
+        };
+        assert_eq!(error.name, "broken-pkg");
+        assert!(error.recoverable);
+        assert!(error.suggestion.is_some());
+    }
+
+    #[test]
+    fn test_batch_item_skipped() {
+        let skipped = BatchItemSkipped {
+            name: "lodash".to_string(),
+            reason: "Already installed".to_string(),
+        };
+        assert_eq!(skipped.name, "lodash");
+        assert_eq!(skipped.reason, "Already installed");
+    }
+
+    #[test]
+    fn test_batch_progress_starting() {
+        let progress = BatchProgress::Starting { total: 5 };
+        match progress {
+            BatchProgress::Starting { total } => assert_eq!(total, 5),
+            _ => panic!("Expected Starting variant"),
+        }
+    }
+
+    #[test]
+    fn test_batch_progress_installing() {
+        let progress = BatchProgress::Installing {
+            package: "lodash".to_string(),
+            current: 1,
+            total: 5,
+        };
+        match progress {
+            BatchProgress::Installing { package, current, total } => {
+                assert_eq!(package, "lodash");
+                assert_eq!(current, 1);
+                assert_eq!(total, 5);
+            }
+            _ => panic!("Expected Installing variant"),
+        }
+    }
+
+    #[test]
+    fn test_batch_progress_item_completed() {
+        let progress = BatchProgress::ItemCompleted {
+            package: "lodash".to_string(),
+            success: true,
+            current: 1,
+            total: 5,
+        };
+        match progress {
+            BatchProgress::ItemCompleted { package, success, current, total } => {
+                assert_eq!(package, "lodash");
+                assert!(success);
+                assert_eq!(current, 1);
+                assert_eq!(total, 5);
+            }
+            _ => panic!("Expected ItemCompleted variant"),
+        }
     }
 }

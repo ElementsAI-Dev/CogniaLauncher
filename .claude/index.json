@@ -1,20 +1,20 @@
 {
-  "version": "1.0.0",
-  "lastUpdated": "2026-01-15T00:00:00.000Z",
+  "version": "1.1.0",
+  "lastUpdated": "2026-02-02T00:00:00.000Z",
   "projectName": "CogniaLauncher",
   "projectDescription": "Cross-platform environment and package manager with modern GUI",
   "techStack": {
-    "frontend": ["Next.js 16", "React 19", "TypeScript", "Tailwind CSS v4", "shadcn/ui", "Zustand"],
-    "backend": ["Tauri 2.9", "Rust 1.77+"],
-    "testing": ["Jest 30", "Testing Library", "jsdom"],
-    "tooling": ["pnpm", "ESLint", "TypeScript 5.9"]
+    "frontend": ["Next.js 16.0.10", "React 19.2.0", "TypeScript 5.9.3", "Tailwind CSS 4.1.18", "shadcn/ui", "Zustand 5.0.10", "next-intl 4.7.0", "next-themes 0.4.6"],
+    "backend": ["Tauri 2.9.0", "Rust 1.77.2+", "Tokio 1.45", "SQLx 0.8"],
+    "testing": ["Jest 30.2.0", "Testing Library 16.3.1", "jsdom 30.2.0"],
+    "tooling": ["pnpm", "ESLint 9.39.2", "TypeScript 5.9.3", "PostCSS", "tw-animate-css"]
   },
   "modules": [
     {
       "name": "frontend",
       "path": ".",
       "type": "nextjs-app",
-      "language": "TypeScript",
+      "language": "TypeScript/TSX",
       "entryPoints": [
         "app/layout.tsx",
         "app/page.tsx"
@@ -23,23 +23,24 @@
         "app/",
         "components/",
         "lib/",
-        "hooks/",
-        "i18n/",
-        "messages/"
+        "hooks/"
       ],
       "interfaces": [
+        "app/page.tsx - Dashboard overview",
         "app/environments/page.tsx - Environment management UI",
         "app/packages/page.tsx - Package management UI",
         "app/providers/page.tsx - Provider configuration UI",
-        "app/cache/page.tsx - Cache management UI",
-        "app/settings/page.tsx - Application settings UI"
+        "app/cache/page.tsx - Cache management interface",
+        "app/settings/page.tsx - Application settings",
+        "app/about/page.tsx - About page with system info"
       ],
       "dependencies": {
-        "key": ["@tauri-apps/api", "next-intl", "zustand", "@tanstack/react-query"],
-        "dev": ["jest", "@testing-library/react", "eslint"]
+        "key": ["@tauri-apps/api 2.9.1", "next-intl 4.7.0", "zustand 5.0.10", "@tanstack/react-query 5.90.16", "next-themes 0.4.6"],
+        "ui": ["@radix-ui/react-*", "lucide-react 0.546.0", "sonner 2.0.7", "class-variance-authority 0.7.1"],
+        "dev": ["jest 30.2.0", "@testing-library/react 16.3.1", "eslint 9.39.2", "@tailwindcss/postcss 4.1.18"]
       },
       "testing": {
-        "framework": "Jest",
+        "framework": "Jest 30",
         "config": "jest.config.ts",
         "setup": "jest.setup.ts",
         "coverage": {
@@ -49,16 +50,64 @@
             "functions": 60,
             "lines": 70,
             "statements": 70
-          }
-        }
+          },
+          "reporters": ["json", "text", "lcov", "html", "clover", "cobertura", "junit"]
+        },
+        "testFiles": [
+          "app/page.test.tsx",
+          "app/about/page.test.tsx",
+          "components/theme-toggle.test.tsx",
+          "components/providers/theme-provider.test.tsx",
+          "components/providers/locale-provider.test.tsx",
+          "components/settings/**/*.test.tsx",
+          "lib/__tests__/*.test.ts",
+          "lib/stores/__tests__/*.test.ts",
+          "lib/hooks/__tests__/*.test.ts"
+        ]
       },
       "qualityTools": {
-        "linting": "ESLint with eslint-config-next",
-        "typeCheck": "tsc --noEmit"
+        "linting": "ESLint 9.39.2 with eslint-config-next",
+        "typeCheck": "tsc --noEmit",
+        "formatting": "Tailwind CSS 4.1.18 with PostCSS"
       },
       "coverage": {
         "scanned": true,
-        "details": "Scanned app/, components/, lib/, hooks/ directories"
+        "details": "Scanned app/, components/, lib/, hooks/ directories with comprehensive test coverage"
+      },
+      "routes": {
+        "dashboard": "app/page.tsx",
+        "environments": "app/environments/page.tsx",
+        "packages": "app/packages/page.tsx",
+        "providers": "app/providers/page.tsx",
+        "cache": "app/cache/page.tsx",
+        "settings": "app/settings/page.tsx",
+        "about": "app/about/page.tsx"
+      },
+      "stateManagement": {
+        "stores": [
+          "lib/stores/packages.ts - Package state",
+          "lib/stores/environment.ts - Environment state",
+          "lib/stores/settings.ts - Settings state",
+          "lib/stores/appearance.ts - Appearance/theme state"
+        ],
+        "hooks": [
+          "lib/hooks/use-packages.ts",
+          "lib/hooks/use-environments.ts",
+          "lib/hooks/use-settings.ts",
+          "lib/hooks/use-keyboard-shortcuts.ts",
+          "lib/hooks/use-version-cache.ts",
+          "lib/hooks/use-auto-version.ts",
+          "lib/hooks/use-settings-shortcuts.ts"
+        ]
+      },
+      "components": {
+        "ui": "components/ui/ - shadcn/ui components (26 components)",
+        "dashboard": "components/dashboard/ - Dashboard components",
+        "environments": "components/environments/ - Environment management components",
+        "packages": "components/packages/ - Package management components",
+        "settings": "components/settings/ - Settings components",
+        "layout": "components/layout/ - Layout components",
+        "providers": "components/providers/ - Context providers"
       }
     },
     {
@@ -79,29 +128,104 @@
         "src/platform/",
         "src/resolver/"
       ],
-      "interfaces": [
-        "commands::environment - Environment management commands",
-        "commands::package - Package management commands",
-        "commands::config - Configuration commands",
-        "commands::cache - Cache management commands",
-        "commands::batch - Batch operations",
-        "commands::search - Search operations"
-      ],
+      "interfaces": {
+        "environment": [
+          "env_list",
+          "env_get",
+          "env_install",
+          "env_uninstall",
+          "env_use_global",
+          "env_use_local",
+          "env_detect",
+          "env_detect_all",
+          "env_available_versions",
+          "env_list_providers",
+          "env_resolve_alias",
+          "env_install_cancel"
+        ],
+        "package": [
+          "package_search",
+          "package_info",
+          "package_install",
+          "package_uninstall",
+          "package_list",
+          "provider_list",
+          "provider_check",
+          "provider_system_list",
+          "provider_status_all",
+          "package_check_installed",
+          "package_versions"
+        ],
+        "config": [
+          "config_get",
+          "config_set",
+          "config_list",
+          "config_reset",
+          "get_cognia_dir",
+          "get_platform_info"
+        ],
+        "cache": [
+          "cache_info",
+          "cache_clean",
+          "cache_verify",
+          "cache_repair",
+          "get_cache_settings",
+          "set_cache_settings"
+        ],
+        "batch": [
+          "batch_install",
+          "batch_uninstall",
+          "batch_update",
+          "resolve_dependencies",
+          "check_updates",
+          "package_pin",
+          "package_unpin",
+          "get_pinned_packages",
+          "package_rollback",
+          "get_install_history"
+        ],
+        "search": [
+          "advanced_search",
+          "search_suggestions",
+          "compare_packages"
+        ],
+        "updater": [
+          "self_check_update",
+          "self_update"
+        ]
+      },
       "dependencies": {
-        "key": ["tauri 2.9", "tokio", "sqlx", "reqwest", "serde", "thiserror"],
+        "core": ["tauri 2.9", "tokio 1.45", "serde 1.0", "serde_json 1.0"],
+        "database": ["sqlx 0.8 with sqlite"],
+        "network": ["reqwest 0.12"],
+        "error": ["thiserror 2.0", "anyhow 1.0"],
         "features": ["custom-protocol"]
       },
       "testing": {
         "framework": "None configured",
-        "recommendation": "Add Rust unit tests with cargo test"
+        "recommendation": "Add Rust unit tests with cargo test infrastructure"
       },
       "qualityTools": {
-        "rustfmt": true,
+        "rustfmt": "Available",
         "clippy": "Recommended"
       },
       "coverage": {
         "scanned": true,
-        "details": "Scanned src/ directory with all Rust modules"
+        "details": "Scanned src/ directory with 70+ Rust modules across commands, core, provider, cache, config, platform, and resolver"
+      },
+      "providers": [
+        "nvm", "fnm", "pyenv", "rustup", "npm", "pnpm", "yarn", "pip", "uv", "cargo",
+        "brew", "apt", "dnf", "pacman", "zypper", "snap", "flatpak", "winget", "chocolatey",
+        "scoop", "vcpkg", "docker", "github", "registry", "psgallery"
+      ],
+      "modules": {
+        "commands": "commands/ - Tauri IPC command handlers (8 modules)",
+        "core": "core/ - Business logic (6 modules)",
+        "provider": "provider/ - 30+ package provider implementations",
+        "cache": "cache/ - SQLite + JSON dual-backend caching (6 modules)",
+        "config": "config/ - Configuration management (4 modules)",
+        "platform": "platform/ - Cross-platform abstraction (5 modules)",
+        "resolver": "resolver/ - Dependency resolution (4 modules)"
       }
     },
     {
@@ -125,17 +249,51 @@
       ],
       "coverage": {
         "scanned": true,
-        "details": "Scanned all specification files"
+        "details": "All OpenSpec specifications scanned"
       }
     },
     {
-      "name": "docs",
-      "path": "docs",
+      "name": "llmdoc",
+      "path": "llmdoc",
       "type": "documentation",
       "language": "Markdown",
+      "structure": {
+        "overview": [
+          "testing-infrastructure.md",
+          "settings-and-theme-system.md",
+          "batch-operations.md"
+        ],
+        "guides": [
+          "testing-guide.md",
+          "implementing-environment-installation-cancellation.md",
+          "batch-progress-integration.md",
+          "add-settings-section.md",
+          "add-accent-color.md"
+        ],
+        "architecture": [
+          "testing-architecture.md",
+          "cache-system.md",
+          "batch-operations-system.md",
+          "settings-system.md",
+          "settings-ui-components.md",
+          "self-update-system.md",
+          "environment-installation-progress.md"
+        ],
+        "reference": [
+          "error-handling.md",
+          "keyboard-shortcuts.md",
+          "theme-system.md",
+          "version-caching.md",
+          "auto-version-detection.md",
+          "cache-commands.md",
+          "environment-version-alias-resolution.md",
+          "batch-api.md",
+          "settings-and-theme-apis.md"
+        ]
+      },
       "coverage": {
         "scanned": true,
-        "details": "Contains index.md documentation"
+        "details": "Comprehensive documentation system with 23 md files"
       }
     }
   ],
@@ -145,27 +303,47 @@
       "web": {
         "command": "pnpm dev",
         "url": "http://localhost:3000",
-        "description": "Next.js development server"
+        "description": "Next.js 16 development server"
       },
       "desktop": {
         "command": "pnpm tauri dev",
-        "description": "Tauri wraps Next.js in native window"
+        "description": "Tauri 2.9 wraps Next.js in native window",
+        "config": "src-tauri/tauri.conf.json"
       }
     },
-    "communication": "Tauri invoke_handler for Rust-frontend IPC",
-    "stateManagement": "Zustand for global state, React hooks for local state",
-    "styling": "Tailwind CSS v4 with CSS variables, class-based dark mode"
+    "communication": "Tauri invoke_handler for Rust-frontend IPC with 40+ commands",
+    "stateManagement": "Zustand 5.0.10 for global state, React hooks for local state",
+    "styling": {
+      "framework": "Tailwind CSS 4.1.18 with PostCSS",
+      "theme": "CSS variables with oklch color space",
+      "darkMode": "Class-based (.dark)",
+      "components": "shadcn/ui (new-york style, RSC mode)"
+    },
+    "internationalization": "next-intl 4.7.0 with messages/en.json and messages/zh.json",
+    "build": {
+      "frontend": "Static export to out/ directory",
+      "desktop": "Tauri bundles for Windows (MSI), macOS (DMG), Linux (AppImage)"
+    }
   },
   "fileStats": {
-    "totalEstimated": 150,
-    "scanned": 120,
+    "totalEstimated": 200,
+    "scanned": 160,
     "coveragePercentage": 80,
     "byLanguage": {
-      "TypeScript/TSX": 60,
-      "Rust": 35,
-      "Markdown": 20,
+      "TypeScript/TSX": 75,
+      "Rust": 70,
+      "Markdown": 30,
       "JSON": 15,
       "CSS": 10
+    },
+    "byDirectory": {
+      "app/": 10,
+      "components/": 60,
+      "lib/": 25,
+      "hooks/": 5,
+      "src-tauri/src/": 70,
+      "llmdoc/": 23,
+      "openspec/": 15
     }
   },
   "ignoredPatterns": [
@@ -180,6 +358,7 @@
     "src-tauri/target/**",
     "*.lock",
     "*.log",
+    "*.bin",
     "*.pdf",
     "*.png",
     "*.jpg",
@@ -192,40 +371,78 @@
     ".DS_Store",
     ".windsurf/",
     ".obsidian/",
-    ".serena/"
+    ".serena/",
+    ".ace-tool/"
   ],
   "gaps": [
     {
       "area": "Rust Testing",
       "description": "No Rust unit tests found",
-      "recommendation": "Add cargo test infrastructure in src-tauri/src/"
+      "recommendation": "Add cargo test infrastructure in src-tauri/src/ with proper module structure"
     },
     {
       "area": "E2E Testing",
       "description": "No end-to-end tests configured",
-      "recommendation": "Consider Playwright for E2E testing"
+      "recommendation": "Consider Playwright for E2E testing of critical user flows"
     },
     {
       "area": "CI/CD",
       "description": "GitHub Actions workflow not found",
-      "recommendation": "Add .github/workflows/ for CI/CD automation"
+      "recommendation": "Add .github/workflows/ for automated testing, linting, and build validation"
+    },
+    {
+      "area": "API Documentation",
+      "description": "Tauri commands not fully documented",
+      "recommendation": "Add comprehensive API docs for all 40+ Tauri commands"
     }
   ],
   "nextSteps": [
     "Add Rust unit tests in src-tauri/src/ with proper module structure",
     "Consider adding E2E tests with Playwright for critical user flows",
     "Set up GitHub Actions workflow for automated testing and linting",
-    "Document provider implementation patterns in openspec/",
-    "Add API documentation for Tauri commands"
+    "Document all Tauri commands with detailed API documentation",
+    "Add integration tests for provider implementations",
+    "Create developer guide for adding new providers"
   ],
   "truncated": false,
   "scanMetadata": {
-    "scanDate": "2026-01-15T00:00:00.000Z",
+    "scanDate": "2026-02-02T00:00:00.000Z",
     "scanMethod": "adaptive-architecture-init",
     "phases": [
-      "phase-a-inventory",
-      "phase-b-module-scan",
-      "phase-c-targeted-deep-dive"
+      "phase-a-inventory - Complete file enumeration",
+      "phase-b-module-scan - All modules scanned",
+      "phase-c-targeted-deep-dive - Key modules analyzed"
+    ],
+    "toolsUsed": [
+      "Glob for file discovery",
+      "Read for content analysis",
+      "Grep for pattern matching"
+    ]
+  },
+  "documentationIndex": "llmdoc/index.md",
+  "keyFiles": {
+    "config": [
+      "package.json",
+      "src-tauri/Cargo.toml",
+      "src-tauri/tauri.conf.json",
+      "next.config.ts",
+      "tsconfig.json",
+      "jest.config.ts",
+      "components.json",
+      "eslint.config.mjs",
+      "postcss.config.mjs"
+    ],
+    "documentation": [
+      "CLAUDE.md",
+      "README.md",
+      "llmdoc/index.md",
+      "openspec/AGENTS.md"
+    ],
+    "entryPoints": [
+      "app/layout.tsx",
+      "app/page.tsx",
+      "src-tauri/src/main.rs",
+      "src-tauri/src/lib.rs"
     ]
   }
 }

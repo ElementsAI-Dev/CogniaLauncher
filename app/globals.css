@@ -121,6 +121,36 @@
   }
 }
 
+/* Theme transition animations */
+html:not(.no-transitions) *,
+html:not(.no-transitions) *::before,
+html:not(.no-transitions) *::after {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Exclude elements that should not have transitions */
+html:not(.no-transitions) .no-transition,
+html:not(.no-transitions) [data-radix-portal] *,
+html:not(.no-transitions) .animate-pulse,
+html:not(.no-transitions) .animate-spin,
+html:not(.no-transitions) [data-state="open"],
+html:not(.no-transitions) [data-state="closed"] {
+  transition-property: none !important;
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html *,
+  html *::before,
+  html *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* Tauri frameless window - default everything to no-drag */
 body,
 body * {

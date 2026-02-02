@@ -1,8 +1,18 @@
 # cache-management Specification
 
 ## Purpose
-TBD - created by archiving change implement-cognialauncher-core. Update Purpose after archive.
+
+The Cache Management system provides efficient storage and retrieval of downloaded artifacts and package metadata to minimize redundant network requests and improve application performance. It implements content-addressed storage for downloads, TTL-based caching for metadata, and automatic cleanup policies to manage disk usage.
+
+### Key Goals
+
+- **Performance**: O(1) cache lookups using HashMap indexing
+- **Reliability**: Atomic writes with integrity verification and repair capabilities  
+- **Efficiency**: LRU eviction, batch I/O operations, and configurable size limits
+- **Observability**: Hit rate statistics and cache health monitoring
+
 ## Requirements
+
 ### Requirement: Download Cache
 
 The system SHALL cache downloaded artifacts using content-addressed storage to avoid redundant downloads.

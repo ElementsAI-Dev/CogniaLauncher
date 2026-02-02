@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-01-15
+> Last Updated: 2026-02-02
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -44,6 +44,7 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())))
         .manage(Arc::new(RwLock::new(Settings::default())))
         .invoke_handler(tauri::generate_handler![ /* commands */ ])
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -53,6 +54,7 @@ pub fn run() {
 
 - **ProviderRegistry**: `Arc<RwLock<ProviderRegistry>>` - Available package providers
 - **Settings**: `Arc<RwLock<Settings>>` - Application configuration
+- **CancellationTokens**: `Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>` - Installation cancellation tokens
 
 ---
 
@@ -66,12 +68,19 @@ All commands are registered in `src/lib.rs` and organized by module.
 |---------|---------|
 | `env_list` | List all environment types |
 | `env_get` | Get details for an environment |
-| `env_install` | Install a runtime version |
+| `env_install` | Install a runtime version with progress events |
 | `env_uninstall` | Uninstall a runtime version |
 | `env_use_global` | Set global version |
 | `env_use_local` | Set local (project) version |
 | `env_detect` | Detect installed versions |
 | `env_detect_all` | Detect all environments |
+| `env_available_versions` | Get available versions for an environment |
+| `env_list_providers` | List environment providers |
+| `env_resolve_alias` | Resolve version alias (lts, latest, stable) to actual version |
+| `env_install_cancel` | Cancel an ongoing environment installation |
+
+**Progress Events:**
+- `env-install-progress`: Emitted during installation with steps (fetching, downloading, extracting, configuring, done, error)
 
 ### Package Commands (`commands::package`)
 
@@ -133,6 +142,13 @@ All commands are registered in `src/lib.rs` and organized by module.
 | `advanced_search` | Advanced package search with filters |
 | `search_suggestions` | Get search suggestions |
 | `compare_packages` | Compare multiple packages |
+
+### Updater Commands (`commands::updater`)
+
+| Command | Purpose |
+|---------|---------|
+| `self_check_update` | Check for application updates |
+| `self_update` | Install available update |
 
 ---
 
@@ -285,6 +301,7 @@ pub trait EnvironmentProvider: Provider {
 # Tauri
 tauri = "2.9"
 tauri-plugin-log = "2"
+tauri-plugin-updater = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -370,6 +387,10 @@ pub enum CogniaError {
   }
 }
 ```
+
+**File:** `capabilities/default.json`
+
+Defines permissions including `updater:default` for self-update functionality.
 
 ### Build Configuration
 
@@ -502,7 +523,8 @@ src-tauri/
 │   │   ├── config.rs
 │   │   ├── cache.rs
 │   │   ├── batch.rs
-│   │   └── search.rs
+│   │   ├── search.rs
+│   │   └── updater.rs
 │   ├── core/                # Core business logic
 │   │   ├── mod.rs
 │   │   ├── environment.rs

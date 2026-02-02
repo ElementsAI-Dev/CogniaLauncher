@@ -1,0 +1,108 @@
+'use client';
+
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Settings,
+  RefreshCw,
+  Github,
+  BookOpen,
+  Bug,
+  MessageSquarePlus,
+  FileText,
+} from 'lucide-react';
+
+interface ActionsCardProps {
+  loading: boolean;
+  onCheckUpdate: () => void;
+  onOpenChangelog: () => void;
+  t: (key: string) => string;
+}
+
+export function ActionsCard({ loading, onCheckUpdate, onOpenChangelog, t }: ActionsCardProps) {
+  return (
+    <Card className="rounded-xl border bg-card" role="region" aria-labelledby="actions-heading">
+      <CardContent className="p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Settings className="h-5 w-5 text-foreground" aria-hidden="true" />
+          <span id="actions-heading" className="text-base font-semibold text-foreground">
+            {t('about.actions')}
+          </span>
+        </div>
+        
+        <div className="flex flex-wrap gap-3">
+          {/* Check for Updates */}
+          <Button
+            onClick={onCheckUpdate}
+            disabled={loading}
+            className="bg-blue-500 hover:bg-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          >
+            <RefreshCw 
+              className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} 
+              aria-hidden="true" 
+            />
+            {t('about.checkForUpdates')}
+          </Button>
+
+          {/* Changelog */}
+          <Button variant="outline" onClick={onOpenChangelog}>
+            <FileText className="h-4 w-4 mr-2" aria-hidden="true" />
+            {t('about.changelog')}
+          </Button>
+
+          {/* GitHub */}
+          <Button variant="outline" asChild>
+            <a
+              href="https://github.com/ElementAstro/CogniaLauncher"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`GitHub - ${t('about.openInNewTab')}`}
+            >
+              <Github className="h-4 w-4 mr-2" aria-hidden="true" />
+              GitHub
+            </a>
+          </Button>
+
+          {/* Documentation */}
+          <Button variant="outline" asChild>
+            <a
+              href="https://cognia.dev/docs"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${t('about.documentation')} - ${t('about.openInNewTab')}`}
+            >
+              <BookOpen className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t('about.documentation')}
+            </a>
+          </Button>
+
+          {/* Report Bug */}
+          <Button variant="outline" asChild>
+            <a
+              href="https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${t('about.reportBug')} - ${t('about.openInNewTab')}`}
+            >
+              <Bug className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t('about.reportBug')}
+            </a>
+          </Button>
+
+          {/* Feature Request */}
+          <Button variant="outline" asChild>
+            <a
+              href="https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${t('about.featureRequest')} - ${t('about.openInNewTab')}`}
+            >
+              <MessageSquarePlus className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t('about.featureRequest')}
+            </a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore } from '@/lib/stores/environment';
+import { useEnvironments } from '@/lib/hooks/use-environments';
 import { cn } from '@/lib/utils';
 import { X, Check } from 'lucide-react';
 
@@ -69,20 +70,50 @@ interface AddEnvironmentDialogProps {
 
 export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
   const { t } = useLocale();
-  const { addDialogOpen, closeAddDialog } = useEnvironmentStore();
+  const { addDialogOpen, closeAddDialog, availableProviders } = useEnvironmentStore();
+  const { fetchProviders } = useEnvironments();
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [versionType, setVersionType] = useState<'lts' | 'latest' | 'specific'>('lts');
   const [specificVersion, setSpecificVersion] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Fetch providers when dialog opens
+  useEffect(() => {
+    if (addDialogOpen && availableProviders.length === 0) {
+      fetchProviders();
+    }
+  }, [addDialogOpen, availableProviders.length, fetchProviders]);
+
+  // Get providers for selected language - use dynamic providers if available, fallback to static
+  const currentProviders = useMemo(() => {
+    if (!selectedLanguage) return [];
+    
+    // First try to get dynamic providers from the store
+    const dynamicProviders = availableProviders
+      .filter(p => p.env_type.toLowerCase() === selectedLanguage.toLowerCase())
+      .map(p => ({ id: p.id, name: p.display_name, description: p.description }));
+    
+    // If dynamic providers are available, use them; otherwise fallback to static
+    if (dynamicProviders.length > 0) {
+      return dynamicProviders;
+    }
+    
+    return PROVIDERS[selectedLanguage] || [];
+  }, [selectedLanguage, availableProviders]);
+
   const handleLanguageSelect = (langId: string) => {
     setSelectedLanguage(langId);
-    const providers = PROVIDERS[langId];
-    if (providers && providers.length > 0) {
-      setSelectedProvider(providers[0].id);
-    }
+    // Reset provider when language changes - will be set after currentProviders updates
+    setSelectedProvider('');
   };
+
+  // Auto-select first provider when currentProviders changes
+  useEffect(() => {
+    if (currentProviders.length > 0 && !selectedProvider) {
+      setSelectedProvider(currentProviders[0].id);
+    }
+  }, [currentProviders, selectedProvider]);
 
   const handleSubmit = async () => {
     if (!selectedLanguage || !selectedProvider) return;
@@ -107,7 +138,8 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
     closeAddDialog();
   };
 
-  const providers = selectedLanguage ? PROVIDERS[selectedLanguage] || [] : [];
+  // Use dynamic providers (currentProviders) which falls back to static PROVIDERS
+  const providers = currentProviders;
 
   return (
     <Dialog open={addDialogOpen} onOpenChange={(open) => !open && handleClose()}>
@@ -127,24 +159,56 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
         <div className="space-y-6 py-4">
           {/* Language Selection */}
           <div className="space-y-3">
-            <Label className="text-sm font-medium">{t('environments.addDialog.selectLanguage')}</Label>
-            <div className="grid grid-cols-4 gap-3">
-              {LANGUAGES.map((lang) => (
+            <Label id="language-label" className="text-sm font-medium">
+              {t('environments.addDialog.selectLanguage')}
+            </Label>
+            <div 
+              role="radiogroup" 
+              aria-labelledby="language-label"
+              className="grid grid-cols-4 gap-3"
+            >
+              {LANGUAGES.map((lang, index) => (
                 <button
                   key={lang.id}
+                  role="radio"
+                  aria-checked={selectedLanguage === lang.id}
+                  tabIndex={selectedLanguage === lang.id || (selectedLanguage === null && index === 0) ? 0 : -1}
                   onClick={() => handleLanguageSelect(lang.id)}
+                  onKeyDown={(e) => {
+                    const totalItems = LANGUAGES.length;
+                    let nextIndex = index;
+                    
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      nextIndex = (index + 1) % totalItems;
+                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      nextIndex = (index - 1 + totalItems) % totalItems;
+                    } else if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleLanguageSelect(lang.id);
+                      return;
+                    } else {
+                      return;
+                    }
+                    
+                    handleLanguageSelect(LANGUAGES[nextIndex].id);
+                    // Focus the next button
+                    const buttons = e.currentTarget.parentElement?.querySelectorAll('[role="radio"]');
+                    (buttons?.[nextIndex] as HTMLElement)?.focus();
+                  }}
                   className={cn(
                     'relative flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'hover:bg-accent',
+                    'hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
                     selectedLanguage === lang.id
                       ? lang.color + ' border-2'
                       : 'border-border bg-background'
                   )}
                 >
-                  <span className="text-2xl">{lang.icon}</span>
+                  <span className="text-2xl" aria-hidden="true">{lang.icon}</span>
                   <span className="text-sm font-medium">{lang.name}</span>
                   {selectedLanguage === lang.id && (
-                    <Check className="h-4 w-4 text-primary absolute top-2 right-2" />
+                    <Check className="h-4 w-4 text-primary absolute top-2 right-2" aria-hidden="true" />
                   )}
                 </button>
               ))}

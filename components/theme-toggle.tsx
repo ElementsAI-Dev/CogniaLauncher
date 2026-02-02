@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
-import { Moon, Sun, Monitor } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
+import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,11 +10,32 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale } from '@/components/providers/locale-provider';
 
+const emptySubscribe = () => () => {};
+
+function useMounted() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
+}
+
 export function ThemeToggle() {
-  const { setTheme } = useTheme();
+  const mounted = useMounted();
+  const { theme, setTheme } = useTheme();
   const { t } = useLocale();
+
+  if (!mounted) {
+    return (
+      <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+        <Skeleton className="h-4 w-4 rounded-full" />
+        <span className="sr-only">{t('theme.toggle')}</span>
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu>
@@ -29,14 +50,17 @@ export function ThemeToggle() {
         <DropdownMenuItem onClick={() => setTheme('light')}>
           <Sun className="mr-2 h-4 w-4" />
           {t('theme.light')}
+          {theme === 'light' && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme('dark')}>
           <Moon className="mr-2 h-4 w-4" />
           {t('theme.dark')}
+          {theme === 'dark' && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme('system')}>
           <Monitor className="mr-2 h-4 w-4" />
           {t('theme.system')}
+          {theme === 'system' && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

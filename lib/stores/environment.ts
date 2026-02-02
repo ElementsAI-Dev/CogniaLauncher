@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { EnvironmentInfo, DetectedEnvironment, VersionInfo } from '../tauri';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import type { EnvironmentInfo, DetectedEnvironment, VersionInfo, EnvironmentProviderInfo } from '../tauri';
 
 export interface InstallationProgress {
   envType: string;
@@ -13,13 +14,37 @@ export interface InstallationProgress {
   error?: string;
 }
 
+// Environment variable configuration
+export interface EnvVariable {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+// Detection file configuration
+export interface DetectionFileConfig {
+  fileName: string;
+  enabled: boolean;
+}
+
+// Persisted settings per environment type
+export interface EnvironmentSettings {
+  envVariables: EnvVariable[];
+  detectionFiles: DetectionFileConfig[];
+  autoSwitch: boolean;
+}
+
 interface EnvironmentState {
   environments: EnvironmentInfo[];
   selectedEnv: string | null;
   detectedVersions: DetectedEnvironment[];
   availableVersions: Record<string, VersionInfo[]>;
+  availableProviders: EnvironmentProviderInfo[];
   loading: boolean;
   error: string | null;
+  
+  // Persisted settings per environment type
+  envSettings: Record<string, EnvironmentSettings>;
   
   // Dialog states
   addDialogOpen: boolean;
@@ -37,9 +62,31 @@ interface EnvironmentState {
   setSelectedEnv: (envType: string | null) => void;
   setDetectedVersions: (versions: DetectedEnvironment[]) => void;
   setAvailableVersions: (envType: string, versions: VersionInfo[]) => void;
+  setAvailableProviders: (providers: EnvironmentProviderInfo[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   updateEnvironment: (env: EnvironmentInfo) => void;
+  
+  // Environment settings actions
+  getEnvSettings: (envType: string) => EnvironmentSettings;
+  setEnvVariables: (envType: string, variables: EnvVariable[]) => void;
+  addEnvVariable: (envType: string, variable: EnvVariable) => void;
+  removeEnvVariable: (envType: string, key: string) => void;
+  updateEnvVariable: (envType: string, key: string, updates: Partial<EnvVariable>) => void;
+  setDetectionFiles: (envType: string, files: DetectionFileConfig[]) => void;
+  toggleDetectionFile: (envType: string, fileName: string, enabled: boolean) => void;
+  setAutoSwitch: (envType: string, enabled: boolean) => void;
+  
+  // Installation state
+  currentInstallation: { envType: string; version: string } | null;
+  setCurrentInstallation: (installation: { envType: string; version: string } | null) => void;
+  
+  // Batch operations
+  selectedVersions: { envType: string; version: string }[];
+  toggleVersionSelection: (envType: string, version: string) => void;
+  clearVersionSelection: () => void;
+  selectAllVersions: (envType: string, versions: string[]) => void;
+  isVersionSelected: (envType: string, version: string) => boolean;
   
   // Dialog actions
   openAddDialog: () => void;
@@ -55,66 +102,236 @@ interface EnvironmentState {
   closeDetailsPanel: () => void;
 }
 
-export const useEnvironmentStore = create<EnvironmentState>((set) => ({
-  environments: [],
-  selectedEnv: null,
-  detectedVersions: [],
-  availableVersions: {},
-  loading: false,
-  error: null,
-  
-  // Dialog states
-  addDialogOpen: false,
-  progressDialogOpen: false,
-  installationProgress: null,
-  
-  // Panel states
-  versionBrowserOpen: false,
-  versionBrowserEnvType: null,
-  detailsPanelOpen: false,
-  detailsPanelEnvType: null,
+// Default detection files per environment type
+const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
+  node: ['.nvmrc', '.node-version', 'package.json', '.tool-versions'],
+  python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
+  go: ['.go-version', 'go.mod', '.tool-versions'],
+  rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
+  ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
+  java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
+};
 
-  setEnvironments: (environments) => set({ environments }),
-  setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
-  setDetectedVersions: (detectedVersions) => set({ detectedVersions }),
-  setAvailableVersions: (envType, versions) => set((state) => ({
-    availableVersions: { ...state.availableVersions, [envType]: versions }
-  })),
-  setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
+// Helper to get default settings for an environment type
+function getDefaultEnvSettings(envType: string): EnvironmentSettings {
+  const detectionFiles = (DEFAULT_DETECTION_FILES[envType.toLowerCase()] || []).map((fileName, idx) => ({
+    fileName,
+    enabled: idx < 2, // Enable first two by default
+  }));
   
-  updateEnvironment: (env) => set((state) => {
-    const exists = state.environments.some((e) => e.env_type === env.env_type);
-    if (exists) {
-      return {
-        environments: state.environments.map((e) =>
-          e.env_type === env.env_type ? env : e
-        ),
-      };
+  return {
+    envVariables: [],
+    detectionFiles,
+    autoSwitch: false,
+  };
+}
+
+export const useEnvironmentStore = create<EnvironmentState>()(
+  persist(
+    (set, get) => ({
+      environments: [],
+      selectedEnv: null,
+      detectedVersions: [],
+      availableVersions: {},
+      availableProviders: [],
+      loading: false,
+      error: null,
+      
+      // Persisted settings
+      envSettings: {},
+      
+      // Installation state
+      currentInstallation: null,
+      
+      // Batch operations
+      selectedVersions: [],
+      
+      // Dialog states
+      addDialogOpen: false,
+      progressDialogOpen: false,
+      installationProgress: null,
+      
+      // Panel states
+      versionBrowserOpen: false,
+      versionBrowserEnvType: null,
+      detailsPanelOpen: false,
+      detailsPanelEnvType: null,
+
+      setEnvironments: (environments) => set({ environments }),
+      setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
+      setDetectedVersions: (detectedVersions) => set({ detectedVersions }),
+      setAvailableVersions: (envType, versions) => set((state) => ({
+        availableVersions: { ...state.availableVersions, [envType]: versions }
+      })),
+      setAvailableProviders: (providers) => set({ availableProviders: providers }),
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
+      
+      updateEnvironment: (env) => set((state) => {
+        const exists = state.environments.some((e) => e.env_type === env.env_type);
+        if (exists) {
+          return {
+            environments: state.environments.map((e) =>
+              e.env_type === env.env_type ? env : e
+            ),
+          };
+        }
+        return { environments: [...state.environments, env] };
+      }),
+      
+      // Environment settings actions
+      getEnvSettings: (envType: string) => {
+        const state = get();
+        return state.envSettings[envType] || getDefaultEnvSettings(envType);
+      },
+      
+      setEnvVariables: (envType, variables) => set((state) => ({
+        envSettings: {
+          ...state.envSettings,
+          [envType]: {
+            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+            envVariables: variables,
+          },
+        },
+      })),
+      
+      addEnvVariable: (envType, variable) => set((state) => {
+        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
+        return {
+          envSettings: {
+            ...state.envSettings,
+            [envType]: {
+              ...current,
+              envVariables: [...current.envVariables, variable],
+            },
+          },
+        };
+      }),
+      
+      removeEnvVariable: (envType, key) => set((state) => {
+        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
+        return {
+          envSettings: {
+            ...state.envSettings,
+            [envType]: {
+              ...current,
+              envVariables: current.envVariables.filter((v) => v.key !== key),
+            },
+          },
+        };
+      }),
+      
+      updateEnvVariable: (envType, key, updates) => set((state) => {
+        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
+        return {
+          envSettings: {
+            ...state.envSettings,
+            [envType]: {
+              ...current,
+              envVariables: current.envVariables.map((v) =>
+                v.key === key ? { ...v, ...updates } : v
+              ),
+            },
+          },
+        };
+      }),
+      
+      setDetectionFiles: (envType, files) => set((state) => ({
+        envSettings: {
+          ...state.envSettings,
+          [envType]: {
+            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+            detectionFiles: files,
+          },
+        },
+      })),
+      
+      toggleDetectionFile: (envType, fileName, enabled) => set((state) => {
+        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
+        return {
+          envSettings: {
+            ...state.envSettings,
+            [envType]: {
+              ...current,
+              detectionFiles: current.detectionFiles.map((f) =>
+                f.fileName === fileName ? { ...f, enabled } : f
+              ),
+            },
+          },
+        };
+      }),
+      
+      setAutoSwitch: (envType, enabled) => set((state) => ({
+        envSettings: {
+          ...state.envSettings,
+          [envType]: {
+            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+            autoSwitch: enabled,
+          },
+        },
+      })),
+      
+      // Installation state
+      setCurrentInstallation: (installation) => set({ currentInstallation: installation }),
+      
+      // Batch operations
+      toggleVersionSelection: (envType, version) => set((state) => {
+        const exists = state.selectedVersions.some(
+          (v) => v.envType === envType && v.version === version
+        );
+        return {
+          selectedVersions: exists
+            ? state.selectedVersions.filter(
+                (v) => !(v.envType === envType && v.version === version)
+              )
+            : [...state.selectedVersions, { envType, version }],
+        };
+      }),
+      
+      clearVersionSelection: () => set({ selectedVersions: [] }),
+      
+      selectAllVersions: (envType, versions) => set((state) => {
+        const otherSelections = state.selectedVersions.filter((v) => v.envType !== envType);
+        const newSelections = versions.map((version) => ({ envType, version }));
+        return { selectedVersions: [...otherSelections, ...newSelections] };
+      }),
+      
+      isVersionSelected: (envType: string, version: string) => {
+        const state = get();
+        return state.selectedVersions.some(
+          (v) => v.envType === envType && v.version === version
+        );
+      },
+      
+      // Dialog actions
+      openAddDialog: () => set({ addDialogOpen: true }),
+      closeAddDialog: () => set({ addDialogOpen: false }),
+      openProgressDialog: (progress) => set({ 
+        progressDialogOpen: true, 
+        installationProgress: progress 
+      }),
+      closeProgressDialog: () => set({ 
+        progressDialogOpen: false, 
+        installationProgress: null 
+      }),
+      updateInstallationProgress: (progress) => set((state) => ({
+        installationProgress: state.installationProgress 
+          ? { ...state.installationProgress, ...progress }
+          : null
+      })),
+      
+      // Panel actions
+      openVersionBrowser: (envType) => set({ versionBrowserOpen: true, versionBrowserEnvType: envType }),
+      closeVersionBrowser: () => set({ versionBrowserOpen: false, versionBrowserEnvType: null }),
+      openDetailsPanel: (envType) => set({ detailsPanelOpen: true, detailsPanelEnvType: envType }),
+      closeDetailsPanel: () => set({ detailsPanelOpen: false, detailsPanelEnvType: null }),
+    }),
+    {
+      name: 'cognia-environment-settings',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        envSettings: state.envSettings,
+      }),
     }
-    return { environments: [...state.environments, env] };
-  }),
-  
-  // Dialog actions
-  openAddDialog: () => set({ addDialogOpen: true }),
-  closeAddDialog: () => set({ addDialogOpen: false }),
-  openProgressDialog: (progress) => set({ 
-    progressDialogOpen: true, 
-    installationProgress: progress 
-  }),
-  closeProgressDialog: () => set({ 
-    progressDialogOpen: false, 
-    installationProgress: null 
-  }),
-  updateInstallationProgress: (progress) => set((state) => ({
-    installationProgress: state.installationProgress 
-      ? { ...state.installationProgress, ...progress }
-      : null
-  })),
-  
-  // Panel actions
-  openVersionBrowser: (envType) => set({ versionBrowserOpen: true, versionBrowserEnvType: envType }),
-  closeVersionBrowser: () => set({ versionBrowserOpen: false, versionBrowserEnvType: null }),
-  openDetailsPanel: (envType) => set({ detailsPanelOpen: true, detailsPanelEnvType: envType }),
-  closeDetailsPanel: () => set({ detailsPanelOpen: false, detailsPanelEnvType: null }),
-}));
+  )
+);
