@@ -26,7 +26,7 @@ describe('useEnvironmentStore', () => {
   describe('environments', () => {
     it('should set environments', () => {
       const mockEnvs = [
-        { env_type: 'node', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true },
+        { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true },
       ];
 
       useEnvironmentStore.getState().setEnvironments(mockEnvs);
@@ -34,8 +34,8 @@ describe('useEnvironmentStore', () => {
     });
 
     it('should update existing environment', () => {
-      const initialEnv = { env_type: 'node', provider: 'fnm', current_version: '18.0.0', installed_versions: [], available: true };
-      const updatedEnv = { env_type: 'node', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true };
+      const initialEnv = { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '18.0.0', installed_versions: [], available: true };
+      const updatedEnv = { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true };
 
       useEnvironmentStore.getState().setEnvironments([initialEnv]);
       useEnvironmentStore.getState().updateEnvironment(updatedEnv);
@@ -46,8 +46,8 @@ describe('useEnvironmentStore', () => {
     });
 
     it('should add new environment if not exists', () => {
-      const nodeEnv = { env_type: 'node', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true };
-      const pythonEnv = { env_type: 'python', provider: 'pyenv', current_version: '3.11.0', installed_versions: [], available: true };
+      const nodeEnv = { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true };
+      const pythonEnv = { env_type: 'python', provider_id: 'pyenv', provider: 'pyenv', current_version: '3.11.0', installed_versions: [], available: true };
 
       useEnvironmentStore.getState().setEnvironments([nodeEnv]);
       useEnvironmentStore.getState().updateEnvironment(pythonEnv);

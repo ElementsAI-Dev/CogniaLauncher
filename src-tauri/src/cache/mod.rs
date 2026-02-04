@@ -1,5 +1,6 @@
 pub mod db;
 pub mod download;
+pub mod download_history;
 pub mod enhanced;
 pub mod history;
 pub mod metadata;
@@ -8,6 +9,7 @@ pub mod sqlite_db;
 // Re-export main types (avoiding glob conflicts)
 pub use db::{CacheDb, CacheEntry, CacheEntryType, CacheIndex, CacheStats};
 pub use download::DownloadCache;
+pub use download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
 pub use enhanced::{
     DownloadResumer, EnhancedCache, EnhancedCacheEntry, EnhancedCacheStats, PartialDownload,
     RepairResult, VerificationResult,

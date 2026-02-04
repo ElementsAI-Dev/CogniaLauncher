@@ -5,6 +5,9 @@ import * as tauri from "@/lib/tauri";
 
 // Mock the Tauri API
 jest.mock("@/lib/tauri", () => ({
+  isTauri: jest.fn().mockReturnValue(true),
+  listenSelfUpdateProgress: jest.fn().mockResolvedValue(() => undefined),
+  openExternal: jest.fn(),
   selfCheckUpdate: jest.fn().mockResolvedValue({
     current_version: "0.1.0",
     latest_version: "0.1.0",
@@ -46,6 +49,7 @@ const mockMessages = {
       updateStarted: "Update started!",
       updateDescription: "Download and install the latest version",
       downloading: "Downloading...",
+      installing: "Installing...",
       downloadProgress: "Download progress",
       releaseNotes: "Release Notes",
       systemInfo: "System Information",
@@ -56,6 +60,8 @@ const mockMessages = {
       copySystemInfo: "Copy system information",
       copiedToClipboard: "Copied to clipboard",
       copyFailed: "Failed to copy",
+      systemInfoFailed: "Failed to load system info",
+      systemInfoRetry: "Retry system info",
       buildDependencies: "Build Dependencies",
       openInNewTab: "Opens in new tab",
       licenseCertificates: "License & Certificates",
@@ -77,6 +83,7 @@ const mockMessages = {
       networkError: "Network error",
       timeoutError: "Timeout error",
       updateCheckFailed: "Update check failed",
+      updateDesktopOnly: "Desktop only",
     },
   },
   zh: {
@@ -192,40 +199,40 @@ describe("About Page", () => {
       });
     });
 
-    it("renders GitHub link", async () => {
+    it("renders GitHub button", async () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
-        expect(screen.getByRole("link", { name: /github/i })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: /github/i })).toBeInTheDocument();
       });
     });
 
-    it("renders documentation link", async () => {
+    it("renders documentation button", async () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
         expect(
-          screen.getByRole("link", { name: /documentation/i })
+          screen.getByRole("button", { name: /documentation/i })
         ).toBeInTheDocument();
       });
     });
 
-    it("renders report bug link", async () => {
+    it("renders report bug button", async () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
         expect(
-          screen.getByRole("link", { name: /report bug/i })
+          screen.getByRole("button", { name: /report bug/i })
         ).toBeInTheDocument();
       });
     });
 
-    it("renders feature request link", async () => {
+    it("renders feature request button", async () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
         expect(
-          screen.getByRole("link", { name: /feature request/i })
+          screen.getByRole("button", { name: /feature request/i })
         ).toBeInTheDocument();
       });
     });

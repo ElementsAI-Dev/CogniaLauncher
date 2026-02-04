@@ -156,7 +156,7 @@ export function InstallationProgressDialog() {
               <Button variant="outline" onClick={cancelInstallation}>
                 {t('environments.progress.cancel')}
               </Button>
-              <Button variant="secondary" className="gap-2">
+              <Button variant="secondary" className="gap-2" onClick={closeProgressDialog}>
                 <Minimize2 className="h-4 w-4" />
                 {t('environments.progress.runInBackground')}
               </Button>

@@ -75,6 +75,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { PageHeader } from '@/components/layout/page-header';
 
 type CleanType = 'downloads' | 'metadata' | 'all';
 type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
@@ -269,8 +270,8 @@ export default function CachePage() {
     }
   };
 
-  const maxSize = cacheSettings?.max_size || 10 * 1024 * 1024 * 1024;
-  const usagePercent = cacheInfo ? Math.min(100, (cacheInfo.total_size / maxSize) * 100) : 0;
+  const maxSize = cacheInfo?.max_size ?? cacheSettings?.max_size ?? 10 * 1024 * 1024 * 1024;
+  const usagePercent = cacheInfo?.usage_percent ?? (cacheInfo ? Math.min(100, (cacheInfo.total_size / maxSize) * 100) : 0);
 
   const isLoading = loading || operationLoading !== null;
   const isCleaning = operationLoading === 'clean';
@@ -284,44 +285,43 @@ export default function CachePage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold">{t('cache.title')}</h1>
-          <p className="text-muted-foreground">{t('cache.description')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="destructive" size="sm" disabled={isLoading}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                {isCleaning && cleaningType === 'all' ? t('cache.clearing') : t('cache.clearAll')}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('cache.clearConfirmTitle')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('cache.clearAllConfirmDesc')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => handleClean('all')}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  {t('cache.clearAll')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            {t('common.refresh')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('cache.title')}
+        description={t('cache.description')}
+        actions={(
+          <>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" disabled={isLoading}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {isCleaning && cleaningType === 'all' ? t('cache.clearing') : t('cache.clearAll')}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('cache.clearConfirmTitle')}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t('cache.clearAllConfirmDesc')}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => handleClean('all')}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {t('cache.clearAll')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              {t('common.refresh')}
+            </Button>
+          </>
+        )}
+      />
 
       {/* Error Alert */}
       {error && (
@@ -657,7 +657,7 @@ export default function CachePage() {
                 </div>
               ) : localSettings ? (
                 <>
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-6 md:grid-cols-3">
                     <div className="space-y-2">
                       <Label htmlFor="maxSize">{t('cache.maxSize')}</Label>
                       <div className="flex items-center gap-2">
@@ -700,6 +700,28 @@ export default function CachePage() {
                         <span className="text-sm text-muted-foreground">days</span>
                       </div>
                       <p className="text-xs text-muted-foreground">{t('cache.maxAgeDesc')}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="metadataCacheTtl">{t('cache.metadataCacheTtl')}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="metadataCacheTtl"
+                          type="number"
+                          min={60}
+                          max={604800}
+                          value={localSettings.metadata_cache_ttl}
+                          onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 60) {
+                            handleSettingsChange('metadata_cache_ttl', val);
+                          }
+                        }}
+                          className="w-32"
+                        />
+                        <span className="text-sm text-muted-foreground">{t('cache.ttlSeconds')}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{t('cache.metadataCacheTtlDesc')}</p>
                     </div>
                   </div>
 

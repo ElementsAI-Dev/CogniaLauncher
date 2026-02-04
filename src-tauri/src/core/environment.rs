@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentInfo {
     pub env_type: String,
+    pub provider_id: String,
     pub provider: String,
     pub current_version: Option<String>,
     pub installed_versions: Vec<InstalledVersion>,
@@ -50,6 +51,7 @@ impl EnvironmentManager {
 
                 envs.push(EnvironmentInfo {
                     env_type: provider_id.to_string(),
+                    provider_id: provider_id.to_string(),
                     provider: provider.display_name().to_string(),
                     current_version: current,
                     installed_versions: installed,
@@ -81,6 +83,7 @@ impl EnvironmentManager {
 
         Ok(EnvironmentInfo {
             env_type: env_type.to_string(),
+            provider_id: env_type.to_string(),
             provider: provider.display_name().to_string(),
             current_version: current,
             installed_versions: installed,
@@ -88,11 +91,17 @@ impl EnvironmentManager {
         })
     }
 
-    pub async fn install_version(&self, env_type: &str, version: &str) -> CogniaResult<()> {
+    pub async fn install_version(
+        &self,
+        env_type: &str,
+        version: &str,
+        provider_id: Option<&str>,
+    ) -> CogniaResult<()> {
         let registry = self.registry.read().await;
+        let provider_key = provider_id.unwrap_or(env_type);
         let provider = registry
-            .get_environment_provider(env_type)
-            .ok_or_else(|| CogniaError::ProviderNotFound(env_type.into()))?;
+            .get_environment_provider(provider_key)
+            .ok_or_else(|| CogniaError::ProviderNotFound(provider_key.into()))?;
 
         provider
             .install(crate::provider::InstallRequest {

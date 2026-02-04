@@ -48,6 +48,17 @@ export function BatchOperations({
   const [showDetails, setShowDetails] = useState(false);
   const { t } = useLocale();
 
+  const parsePackageSpec = (pkg: string) => {
+    const colonIndex = pkg.indexOf(':');
+    if (colonIndex > 0 && !pkg.slice(0, colonIndex).includes('@')) {
+      return {
+        provider: pkg.slice(0, colonIndex),
+        name: pkg.slice(colonIndex + 1),
+      };
+    }
+    return { provider: null, name: pkg };
+  };
+
   const handleOperation = useCallback(async () => {
     setIsProcessing(true);
     setResult(null);
@@ -187,13 +198,23 @@ export function BatchOperations({
                 <ScrollArea className="h-[200px] border rounded-md p-2">
                   <div className="space-y-1">
                     {selectedPackages.map((pkg) => (
+                      (() => {
+                        const parsed = parsePackageSpec(pkg);
+                        return (
                       <div 
                         key={pkg} 
                         className="flex items-center gap-2 p-2 rounded hover:bg-accent"
                       >
                         <Package className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{pkg}</span>
+                        <span className="text-sm">{parsed.name}</span>
+                        {parsed.provider && (
+                          <Badge variant="secondary" className="text-xs">
+                            {parsed.provider}
+                          </Badge>
+                        )}
                       </div>
+                        );
+                      })()
                     ))}
                   </div>
                 </ScrollArea>

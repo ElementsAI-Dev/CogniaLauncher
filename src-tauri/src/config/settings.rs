@@ -261,6 +261,9 @@ impl Settings {
                 Some(self.general.auto_update_metadata.to_string())
             }
             ["general", "metadata_cache_ttl"] => Some(self.general.metadata_cache_ttl.to_string()),
+            ["general", "cache_max_size"] => Some(self.general.cache_max_size.to_string()),
+            ["general", "cache_max_age_days"] => Some(self.general.cache_max_age_days.to_string()),
+            ["general", "auto_clean_cache"] => Some(self.general.auto_clean_cache.to_string()),
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
             ["network", "proxy"] => self.network.proxy.clone(),
@@ -268,6 +271,34 @@ impl Settings {
             ["security", "verify_certificates"] => {
                 Some(self.security.verify_certificates.to_string())
             }
+            ["security", "allow_self_signed"] => {
+                Some(self.security.allow_self_signed.to_string())
+            }
+            ["paths", "root"] => Some(
+                self.paths
+                    .root
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+            ),
+            ["paths", "cache"] => Some(
+                self.paths
+                    .cache
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+            ),
+            ["paths", "environments"] => Some(
+                self.paths
+                    .environments
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default(),
+            ),
+            ["provider_settings", "disabled_providers"] => Some(
+                serde_json::to_string(&self.provider_settings.disabled_providers)
+                    .unwrap_or_else(|_| "[]".to_string()),
+            ),
             ["appearance", "theme"] => Some(self.appearance.theme.clone()),
             ["appearance", "accent_color"] => Some(self.appearance.accent_color.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
@@ -311,6 +342,21 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["general", "cache_max_size"] => {
+                self.general.cache_max_size = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for cache_max_size".into()))?;
+            }
+            ["general", "cache_max_age_days"] => {
+                self.general.cache_max_age_days = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for cache_max_age_days".into()))?;
+            }
+            ["general", "auto_clean_cache"] => {
+                self.general.auto_clean_cache = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
             ["network", "timeout"] => {
                 self.network.timeout = value
                     .parse()
@@ -327,6 +373,58 @@ impl Settings {
                 } else {
                     Some(value.to_string())
                 };
+            }
+            ["security", "allow_http"] => {
+                self.security.allow_http = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["security", "verify_certificates"] => {
+                self.security.verify_certificates = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["security", "allow_self_signed"] => {
+                self.security.allow_self_signed = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["paths", "root"] => {
+                self.paths.root = if value.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(value))
+                };
+            }
+            ["paths", "cache"] => {
+                self.paths.cache = if value.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(value))
+                };
+            }
+            ["paths", "environments"] => {
+                self.paths.environments = if value.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(value))
+                };
+            }
+            ["provider_settings", "disabled_providers"] => {
+                let trimmed = value.trim();
+                let parsed = if trimmed.is_empty() {
+                    Vec::new()
+                } else if trimmed.starts_with('[') {
+                    serde_json::from_str(trimmed)
+                        .map_err(|_| CogniaError::Config("Invalid disabled providers list".into()))?
+                } else {
+                    trimmed
+                        .split(',')
+                        .map(|item| item.trim().to_string())
+                        .filter(|item| !item.is_empty())
+                        .collect()
+                };
+                self.provider_settings.disabled_providers = parsed;
             }
             ["appearance", "theme"] => {
                 if !["light", "dark", "system"].contains(&value) {

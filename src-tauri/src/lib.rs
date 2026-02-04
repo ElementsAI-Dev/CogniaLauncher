@@ -2,12 +2,13 @@ pub mod cache;
 pub mod commands;
 pub mod config;
 pub mod core;
+pub mod download;
 pub mod error;
 pub mod platform;
 pub mod provider;
 pub mod resolver;
 
-use cache::{DownloadCache, MetadataCache};
+use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use config::Settings;
 use log::info;
 use provider::ProviderRegistry;
@@ -125,6 +126,8 @@ pub fn run() {
             commands::environment::env_list_providers,
             commands::environment::env_resolve_alias,
             commands::environment::env_install_cancel,
+            commands::environment::env_save_settings,
+            commands::environment::env_load_settings,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -137,6 +140,8 @@ pub fn run() {
             commands::package::provider_status_all,
             commands::package::package_check_installed,
             commands::package::package_versions,
+            commands::package::provider_enable,
+            commands::package::provider_disable,
             // Config commands
             commands::config::config_get,
             commands::config::config_set,
@@ -200,9 +205,40 @@ pub fn run() {
             commands::log::log_query,
             commands::log::log_clear,
             commands::log::log_get_dir,
+            commands::log::log_export,
+            // Manifest commands
+            commands::manifest::manifest_read,
+            commands::manifest::manifest_init,
+            // Download commands
+            commands::download::download_add,
+            commands::download::download_get,
+            commands::download::download_list,
+            commands::download::download_stats,
+            commands::download::download_pause,
+            commands::download::download_resume,
+            commands::download::download_cancel,
+            commands::download::download_remove,
+            commands::download::download_pause_all,
+            commands::download::download_resume_all,
+            commands::download::download_cancel_all,
+            commands::download::download_clear_finished,
+            commands::download::download_retry_failed,
+            commands::download::download_set_speed_limit,
+            commands::download::download_get_speed_limit,
+            commands::download::download_set_max_concurrent,
+            // Download history commands
+            commands::download::download_history_list,
+            commands::download::download_history_search,
+            commands::download::download_history_stats,
+            commands::download::download_history_clear,
+            commands::download::download_history_remove,
+            // Disk space commands
+            commands::download::disk_space_get,
+            commands::download::disk_space_check,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -222,10 +258,12 @@ async fn cache_cleanup_task(settings: SharedSettings) {
 
         let cache_dir = s.get_cache_dir();
         let max_size = s.general.cache_max_size;
+        let max_age_days = s.general.cache_max_age_days;
+        let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
         drop(s);
 
         // Clean expired metadata entries
-        if let Ok(mut metadata_cache) = MetadataCache::open(&cache_dir).await {
+        if let Ok(mut metadata_cache) = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await {
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
                     info!("Auto-cleanup: removed {} expired metadata entries", count);
@@ -239,17 +277,49 @@ async fn cache_cleanup_task(settings: SharedSettings) {
 
         // Clean download cache if over size limit
         if let Ok(mut download_cache) = DownloadCache::open(&cache_dir).await {
-            let stats = download_cache.stats().await;
-            if stats.total_size > max_size {
-                match download_cache.evict_to_size(max_size).await {
-                    Ok(count) if count > 0 => {
-                        info!("Auto-cleanup: evicted {} download entries to meet size limit", count);
-                    }
-                    Err(e) => {
-                        info!("Auto-cleanup download error: {}", e);
-                    }
-                    _ => {}
+            let max_age = Duration::from_secs(max_age_days as u64 * 86400);
+            match download_cache.clean_expired(max_age).await {
+                Ok(freed) if freed > 0 => {
+                    info!("Auto-cleanup: removed {} bytes of expired downloads", freed);
                 }
+                Err(e) => {
+                    info!("Auto-cleanup download expiry error: {}", e);
+                }
+                _ => {}
+            }
+            match download_cache.stats().await {
+                Ok(stats) => {
+                    if stats.total_size > max_size {
+                        match download_cache.evict_to_size(max_size).await {
+                            Ok(count) if count > 0 => {
+                                info!(
+                                    "Auto-cleanup: evicted {} download entries to meet size limit",
+                                    count
+                                );
+                            }
+                            Err(e) => {
+                                info!("Auto-cleanup download error: {}", e);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(e) => {
+                    info!("Auto-cleanup download stats error: {}", e);
+                }
+            }
+        }
+
+        if let Ok(mut resumer) = DownloadResumer::new(&cache_dir.join("downloads")).await {
+            let max_age = Duration::from_secs(max_age_days as u64 * 86400);
+            match resumer.clean_stale(max_age).await {
+                Ok(count) if count > 0 => {
+                    info!("Auto-cleanup: removed {} stale partial downloads", count);
+                }
+                Err(e) => {
+                    info!("Auto-cleanup partial download error: {}", e);
+                }
+                _ => {}
             }
         }
     }

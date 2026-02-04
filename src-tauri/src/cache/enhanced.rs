@@ -554,6 +554,18 @@ impl DownloadResumer {
         Ok(())
     }
 
+    /// Cancel and remove a partial download with option to use trash
+    pub async fn cancel_with_option(&mut self, url: &str, use_trash: bool) -> CogniaResult<()> {
+        let key = Self::url_key(url);
+        if let Some(partial) = self.partials.remove(&key) {
+            if fs::exists(&partial.file_path).await {
+                fs::remove_file_with_option(&partial.file_path, use_trash).await?;
+            }
+        }
+        self.save().await?;
+        Ok(())
+    }
+
     /// Get all stale partial downloads (older than max_age)
     pub fn get_stale(&self, max_age: Duration) -> Vec<&PartialDownload> {
         let now = chrono::Utc::now().timestamp();
@@ -567,11 +579,20 @@ impl DownloadResumer {
 
     /// Clean stale partial downloads
     pub async fn clean_stale(&mut self, max_age: Duration) -> CogniaResult<usize> {
+        self.clean_stale_with_option(max_age, false).await
+    }
+
+    /// Clean stale partial downloads with option to use trash
+    pub async fn clean_stale_with_option(
+        &mut self,
+        max_age: Duration,
+        use_trash: bool,
+    ) -> CogniaResult<usize> {
         let stale: Vec<_> = self.get_stale(max_age).iter().map(|p| p.url.clone()).collect();
         let count = stale.len();
 
         for url in stale {
-            self.cancel(&url).await?;
+            self.cancel_with_option(&url, use_trash).await?;
         }
 
         Ok(count)

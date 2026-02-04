@@ -1,4 +1,5 @@
 use crate::error::CogniaResult;
+use crate::resolver::Dependency;
 use crate::platform::env::{Architecture, EnvModifications, Platform};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -118,6 +119,10 @@ pub trait Provider: Send + Sync {
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo>;
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>>;
+
+    async fn get_dependencies(&self, _name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        Ok(vec![])
+    }
 
     async fn install(&self, request: InstallRequest) -> CogniaResult<InstallReceipt>;
 

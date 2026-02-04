@@ -9,6 +9,9 @@ jest.mock('@/components/providers/locale-provider', () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
         'common.copy': 'Copy',
+        'logs.copyEntry': 'Copy log entry',
+        'logs.expand': 'Expand',
+        'logs.collapse': 'Collapse',
       };
       return translations[key] || key;
     },
@@ -50,7 +53,7 @@ describe('LogEntry', () => {
 
   it('displays level badge', () => {
     render(<LogEntry entry={mockEntry} />);
-    expect(screen.getByText('INFO')).toBeInTheDocument();
+    expect(screen.getByText('INF')).toBeInTheDocument();
   });
 
   it('displays target when provided', () => {
@@ -68,30 +71,30 @@ describe('LogEntry', () => {
     it('renders trace level with correct styling', () => {
       const traceEntry = { ...mockEntry, level: 'trace' as const };
       render(<LogEntry entry={traceEntry} />);
-      expect(screen.getByText('TRACE')).toBeInTheDocument();
+      expect(screen.getByText('TRC')).toBeInTheDocument();
     });
 
     it('renders debug level with correct styling', () => {
       const debugEntry = { ...mockEntry, level: 'debug' as const };
       render(<LogEntry entry={debugEntry} />);
-      expect(screen.getByText('DEBUG')).toBeInTheDocument();
+      expect(screen.getByText('DBG')).toBeInTheDocument();
     });
 
     it('renders info level with correct styling', () => {
       render(<LogEntry entry={mockEntry} />);
-      expect(screen.getByText('INFO')).toBeInTheDocument();
+      expect(screen.getByText('INF')).toBeInTheDocument();
     });
 
     it('renders warn level with correct styling', () => {
       const warnEntry = { ...mockEntry, level: 'warn' as const };
       render(<LogEntry entry={warnEntry} />);
-      expect(screen.getByText('WARN')).toBeInTheDocument();
+      expect(screen.getByText('WRN')).toBeInTheDocument();
     });
 
     it('renders error level with correct styling', () => {
       const errorEntry = { ...mockEntry, level: 'error' as const };
       render(<LogEntry entry={errorEntry} />);
-      expect(screen.getByText('ERROR')).toBeInTheDocument();
+      expect(screen.getByText('ERR')).toBeInTheDocument();
     });
   });
 
@@ -117,7 +120,44 @@ describe('LogEntry', () => {
       const copyButton = screen.getByRole('button');
       await user.click(copyButton);
 
-      expect(mockWriteText).toHaveBeenCalledWith('Test log message');
+      expect(mockWriteText).toHaveBeenCalledWith(
+        expect.stringContaining('Test log message')
+      );
+      expect(mockWriteText).toHaveBeenCalledWith(
+        expect.stringContaining('[INFO]')
+      );
+      expect(mockWriteText).toHaveBeenCalledWith(
+        expect.stringContaining('[app]')
+      );
+    });
+  });
+
+  describe('highlight and collapse', () => {
+    it('highlights matching text', () => {
+      render(
+        <LogEntry
+          entry={mockEntry}
+          highlightText="log"
+          highlightRegex={false}
+        />
+      );
+
+      expect(screen.getByText('log', { selector: 'mark' })).toBeInTheDocument();
+    });
+
+    it('toggles collapse for long messages', async () => {
+      const user = userEvent.setup();
+      const longMessage = 'A'.repeat(200);
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: longMessage }}
+          allowCollapse
+        />
+      );
+
+      const toggleButton = screen.getByRole('button', { name: /expand/i });
+      await user.click(toggleButton);
+      expect(screen.getByRole('button', { name: /collapse/i })).toBeInTheDocument();
     });
   });
 

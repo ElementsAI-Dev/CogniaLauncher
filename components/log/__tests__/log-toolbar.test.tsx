@@ -16,6 +16,19 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.autoScrollOn': 'Auto-scroll enabled',
         'logs.autoScrollOff': 'Auto-scroll disabled',
         'logs.export': 'Export logs',
+        'logs.exportTxt': 'Export TXT',
+        'logs.exportJson': 'Export JSON',
+        'logs.timeRange': 'Time range',
+        'logs.timeRangeAll': 'All time',
+        'logs.timeRangeLastHour': 'Last hour',
+        'logs.timeRangeLast24Hours': 'Last 24 hours',
+        'logs.timeRangeLast7Days': 'Last 7 days',
+        'logs.timeRangeCustom': 'Custom range',
+        'logs.timeRangeStart': 'Start time',
+        'logs.timeRangeEnd': 'End time',
+        'logs.timeRangeTo': 'to',
+        'logs.regex': 'Regex',
+        'logs.maxLogs': 'Max logs',
         'logs.clear': 'Clear logs',
         'logs.total': 'Total',
         'logs.paused': 'Paused',
@@ -35,6 +48,9 @@ describe('LogToolbar', () => {
       filter: {
         levels: ['info', 'warn', 'error'],
         search: '',
+        useRegex: false,
+        startTime: null,
+        endTime: null,
       },
       autoScroll: true,
       paused: false,
@@ -62,6 +78,17 @@ describe('LogToolbar', () => {
   it('renders export button', () => {
     render(<LogToolbar />);
     expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument();
+  });
+
+  it('shows export format menu', async () => {
+    const user = userEvent.setup();
+    render(<LogToolbar />);
+
+    const exportButton = screen.getByRole('button', { name: /export/i });
+    await user.click(exportButton);
+
+    expect(screen.getByText('Export TXT')).toBeInTheDocument();
+    expect(screen.getByText('Export JSON')).toBeInTheDocument();
   });
 
   it('renders clear button', () => {

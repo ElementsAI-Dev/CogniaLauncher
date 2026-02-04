@@ -29,13 +29,14 @@ import { formatSize } from '@/lib/utils';
 interface EnvironmentCardProps {
   env: EnvironmentInfo;
   detectedVersion?: DetectedEnvironment | null;
-  onInstall?: (version: string) => Promise<void>;
+  onInstall?: (version: string, providerId?: string) => Promise<void>;
   onUninstall?: (version: string) => Promise<void>;
   onSetGlobal?: (version: string) => Promise<void>;
   onSetLocal?: (version: string, projectPath: string) => Promise<void>;
   loading?: boolean;
   availableProviders?: { id: string; name: string }[];
   onProviderChange?: (providerId: string) => void;
+  selectedProviderId?: string;
 }
 
 export function EnvironmentCard({ 
@@ -48,6 +49,7 @@ export function EnvironmentCard({
   loading,
   availableProviders = [],
   onProviderChange,
+  selectedProviderId,
 }: EnvironmentCardProps) {
   const { t } = useLocale();
   const { openVersionBrowser, openDetailsPanel } = useEnvironmentStore();
@@ -56,11 +58,13 @@ export function EnvironmentCard({
   const [isInstalling, setIsInstalling] = useState(false);
   const [selectedUninstall, setSelectedUninstall] = useState<string | null>(null);
 
+  const currentProviderId = selectedProviderId || env.provider_id || env.env_type;
+
   const handleInstall = async (version: string) => {
     if (!onInstall) return;
     setIsInstalling(true);
     try {
-      await onInstall(version);
+      await onInstall(version, currentProviderId);
       toast.success(t('environments.toast.installing', { type: env.env_type, version }));
     } catch (err) {
       toast.error(t('environments.toast.installFailed', { error: String(err) }));
@@ -130,7 +134,7 @@ export function EnvironmentCard({
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>{t('environments.provider')}:</span>
                 {availableProviders.length > 1 && onProviderChange ? (
-                  <Select value={env.provider} onValueChange={onProviderChange}>
+                  <Select value={currentProviderId} onValueChange={onProviderChange}>
                     <SelectTrigger className="h-6 w-auto gap-1 px-2 py-0 text-xs font-medium bg-muted border-0">
                       <SelectValue />
                       <ChevronDown className="h-3 w-3" />

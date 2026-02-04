@@ -71,10 +71,20 @@ impl SqliteCacheDb {
         .await
         .map_err(|e| CogniaError::Internal(format!("Failed to create indexes: {}", e)))?;
 
-        Ok(Self {
+        let db = Self {
             pool,
             cache_dir: cache_dir.to_path_buf(),
-        })
+        };
+
+        let json_path = db.cache_dir.join("cache-index.json");
+        if fs::exists(&json_path).await {
+            let stats = db.stats().await?;
+            if stats.entry_count == 0 {
+                let _ = db.migrate_from_json(&json_path).await?;
+            }
+        }
+
+        Ok(db)
     }
 
     /// Migrate from JSON-based cache index to SQLite

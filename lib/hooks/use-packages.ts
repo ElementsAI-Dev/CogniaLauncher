@@ -3,6 +3,32 @@
 import { useCallback } from 'react';
 import { usePackageStore } from '../stores/packages';
 import * as tauri from '../tauri';
+import { formatError } from '../errors';
+
+const normalizePackageId = (pkg: string) => {
+  const colonIndex = pkg.indexOf(':');
+  let provider: string | null = null;
+  let rest = pkg;
+
+  if (colonIndex > 0) {
+    const candidate = pkg.slice(0, colonIndex);
+    if (!candidate.includes('@') && !candidate.includes('/')) {
+      provider = candidate;
+      rest = pkg.slice(colonIndex + 1);
+    }
+  }
+
+  const versionIndex = rest.lastIndexOf('@');
+  if (versionIndex > 0) {
+    const potentialVersion = rest.slice(versionIndex + 1);
+    const looksLikeVersion = /^[0-9~^*]/.test(potentialVersion);
+    if (looksLikeVersion) {
+      rest = rest.slice(0, versionIndex);
+    }
+  }
+
+  return provider ? `${provider}:${rest}` : rest;
+};
 
 export function usePackages() {
   const store = usePackageStore();
@@ -16,7 +42,7 @@ export function usePackages() {
       store.setSearchResults(results);
       return results;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     } finally {
       store.setLoading(false);
@@ -38,7 +64,7 @@ export function usePackages() {
       });
       return result;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return null;
     } finally {
       store.setLoading(false);
@@ -62,7 +88,7 @@ export function usePackages() {
       store.setSelectedPackage(info);
       return info;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return null;
     } finally {
       store.setLoading(false);
@@ -77,7 +103,7 @@ export function usePackages() {
       store.setInstalledPackages(packages);
       return packages;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     } finally {
       store.setLoading(false);
@@ -86,31 +112,33 @@ export function usePackages() {
 
   const installPackages = useCallback(async (packages: string[]) => {
     store.setError(null);
-    packages.forEach((p) => store.addInstalling(p));
+    const normalized = packages.map(normalizePackageId);
+    normalized.forEach((p) => store.addInstalling(p));
     try {
       const installed = await tauri.packageInstall(packages);
       await fetchInstalledPackages();
       return installed;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     } finally {
-      packages.forEach((p) => store.removeInstalling(p));
+      normalized.forEach((p) => store.removeInstalling(p));
     }
   }, [store, fetchInstalledPackages]);
 
   const batchInstall = useCallback(async (packages: string[], dryRun?: boolean, force?: boolean) => {
     store.setError(null);
-    packages.forEach((p) => store.addInstalling(p));
+    const normalized = packages.map(normalizePackageId);
+    normalized.forEach((p) => store.addInstalling(p));
     try {
       const result = await tauri.batchInstall(packages, { dryRun, force });
       await fetchInstalledPackages();
       return result;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     } finally {
-      packages.forEach((p) => store.removeInstalling(p));
+      normalized.forEach((p) => store.removeInstalling(p));
     }
   }, [store, fetchInstalledPackages]);
 
@@ -122,7 +150,7 @@ export function usePackages() {
       await fetchInstalledPackages();
       return result;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     } finally {
       store.setLoading(false);
@@ -135,7 +163,7 @@ export function usePackages() {
       await tauri.packageUninstall(packages);
       await fetchInstalledPackages();
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store, fetchInstalledPackages]);
@@ -147,7 +175,7 @@ export function usePackages() {
       await fetchInstalledPackages();
       return result;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store, fetchInstalledPackages]);
@@ -158,7 +186,7 @@ export function usePackages() {
       store.setProviders(providers);
       return providers;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -171,7 +199,7 @@ export function usePackages() {
       store.setAvailableUpdates(updates);
       return updates;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     } finally {
       store.setLoading(false);
@@ -183,7 +211,7 @@ export function usePackages() {
       await tauri.packagePin(name, version);
       store.addPinnedPackage(name);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);
@@ -193,7 +221,7 @@ export function usePackages() {
       await tauri.packageUnpin(name);
       store.removePinnedPackage(name);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);
@@ -204,7 +232,7 @@ export function usePackages() {
       await tauri.packageRollback(name, toVersion);
       await fetchInstalledPackages();
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     } finally {
       store.removeInstalling(name);
@@ -216,7 +244,7 @@ export function usePackages() {
     try {
       return await tauri.resolveDependencies([packageName]);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return null;
     } finally {
       store.setLoading(false);
@@ -225,11 +253,18 @@ export function usePackages() {
 
   const comparePackages = useCallback(async (packageIds: string[]) => {
     try {
-      // Convert simple IDs to the expected format
-      const packages: [string, string | null][] = packageIds.map(id => [id, null]);
+      // Convert IDs into (name, provider) pairs
+      const packages: [string, string | null][] = packageIds.map((id) => {
+        const normalized = normalizePackageId(id);
+        const colonIndex = normalized.indexOf(':');
+        if (colonIndex > 0) {
+          return [normalized.slice(colonIndex + 1), normalized.slice(0, colonIndex)];
+        }
+        return [normalized, null];
+      });
       return await tauri.comparePackages(packages);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);
@@ -238,7 +273,7 @@ export function usePackages() {
     try {
       return await tauri.getInstallHistory(limit);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -247,7 +282,7 @@ export function usePackages() {
     try {
       return await tauri.getPackageHistory(name);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -256,7 +291,7 @@ export function usePackages() {
     try {
       await tauri.clearInstallHistory();
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);

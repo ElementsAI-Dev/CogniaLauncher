@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { ChangelogDialog } from "../changelog-dialog";
+import { getChangelog } from "../../_constants/changelog";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
@@ -10,8 +11,11 @@ const mockT = (key: string) => {
     "about.changelogFixed": "Fixed",
     "about.changelogRemoved": "Removed",
   };
+
   return translations[key] || key;
 };
+
+const mockEntries = getChangelog("en");
 
 describe("ChangelogDialog", () => {
   const mockOnOpenChange = jest.fn();
@@ -23,7 +27,12 @@ describe("ChangelogDialog", () => {
   describe("visibility", () => {
     it("renders dialog when open is true", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -31,7 +40,12 @@ describe("ChangelogDialog", () => {
 
     it("does not render dialog when open is false", () => {
       render(
-        <ChangelogDialog open={false} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={false}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -41,7 +55,12 @@ describe("ChangelogDialog", () => {
   describe("content", () => {
     it("displays changelog title", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       expect(screen.getByText("Changelog")).toBeInTheDocument();
@@ -49,7 +68,12 @@ describe("ChangelogDialog", () => {
 
     it("displays changelog description", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       expect(screen.getByText("View all version updates and changes")).toBeInTheDocument();
@@ -57,7 +81,12 @@ describe("ChangelogDialog", () => {
 
     it("displays version entries", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       // Should display at least one version
@@ -66,7 +95,12 @@ describe("ChangelogDialog", () => {
 
     it("displays change type badges", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       // Should have Added badges for initial release
@@ -77,7 +111,12 @@ describe("ChangelogDialog", () => {
   describe("accessibility", () => {
     it("has dialog role", () => {
       render(
-        <ChangelogDialog open={true} onOpenChange={mockOnOpenChange} t={mockT} />
+        <ChangelogDialog
+          open={true}
+          onOpenChange={mockOnOpenChange}
+          entries={mockEntries}
+          t={mockT}
+        />
       );
 
       expect(screen.getByRole("dialog")).toBeInTheDocument();

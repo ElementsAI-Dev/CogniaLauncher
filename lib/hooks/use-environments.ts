@@ -1,14 +1,42 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { useEnvironmentStore } from '../stores/environment';
+import { useEnvironmentStore, type EnvironmentSettings } from '../stores/environment';
 import * as tauri from '../tauri';
 import { formatSize, formatSpeed } from '../utils';
+import { formatError } from '../errors';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export function useEnvironments() {
   const store = useEnvironmentStore();
   const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  const toSettings = useCallback((settings: tauri.EnvironmentSettingsConfig): EnvironmentSettings => ({
+    envVariables: settings.env_variables.map((variable) => ({
+      key: variable.key,
+      value: variable.value,
+      enabled: variable.enabled,
+    })),
+    detectionFiles: settings.detection_files.map((file) => ({
+      fileName: file.file_name,
+      enabled: file.enabled,
+    })),
+    autoSwitch: settings.auto_switch,
+  }), []);
+
+  const toSettingsConfig = useCallback((envType: string, settings: EnvironmentSettings): tauri.EnvironmentSettingsConfig => ({
+    env_type: envType,
+    env_variables: settings.envVariables.map((variable) => ({
+      key: variable.key,
+      value: variable.value,
+      enabled: variable.enabled,
+    })),
+    detection_files: settings.detectionFiles.map((file) => ({
+      file_name: file.fileName,
+      enabled: file.enabled,
+    })),
+    auto_switch: settings.autoSwitch,
+  }), []);
 
   const fetchEnvironments = useCallback(async () => {
     store.setLoading(true);
@@ -16,25 +44,72 @@ export function useEnvironments() {
     try {
       const envs = await tauri.envList();
       store.setEnvironments(envs);
+      if (tauri.isTauri()) {
+        await Promise.all(envs.map(async (env) => {
+          const settings = await tauri.envLoadSettings(env.env_type);
+          if (settings) {
+            store.setEnvSettings(env.env_type, toSettings(settings));
+          }
+        }));
+      }
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  }, [store, toSettings]);
 
-  const installVersion = useCallback(async (envType: string, version: string) => {
+  const loadEnvSettings = useCallback(async (envType: string) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const settings = await tauri.envLoadSettings(envType);
+      if (settings) {
+        const normalized = toSettings(settings);
+        store.setEnvSettings(envType, normalized);
+        return normalized;
+      }
+      return null;
+    } catch (err) {
+      store.setError(formatError(err));
+      return null;
+    }
+  }, [store, toSettings]);
+
+  const saveEnvSettings = useCallback(async (envType: string, settings: EnvironmentSettings) => {
+    const config = toSettingsConfig(envType, settings);
+    if (tauri.isTauri()) {
+      try {
+        await tauri.envSaveSettings(config);
+      } catch (err) {
+        store.setError(formatError(err));
+        throw err;
+      }
+    }
+    store.setEnvSettings(envType, settings);
+  }, [store, toSettingsConfig]);
+
+  const installVersion = useCallback(async (envType: string, version: string, providerId?: string) => {
     const env = store.environments.find(e => e.env_type === envType);
-    const provider = env?.provider || envType;
+    const resolvedProviderId = providerId || env?.provider_id || envType;
+    const providerInfo = store.availableProviders.find((item) => item.id === resolvedProviderId);
+    const providerLabel = providerInfo?.display_name || env?.provider || resolvedProviderId;
+    const aliasEnvType = providerInfo?.env_type || envType;
+    const aliasKey = version.trim().toLowerCase();
+    const shouldResolveAlias = ['latest', 'newest', 'current', 'lts', 'stable'].includes(aliasKey);
+    let resolvedVersion = version;
+
+    if (shouldResolveAlias && tauri.isTauri()) {
+      resolvedVersion = await tauri.envResolveAlias(aliasEnvType, aliasKey);
+    }
     
     // Track current installation for cancellation support
-    store.setCurrentInstallation({ envType, version });
+    store.setCurrentInstallation({ envType, version: resolvedVersion });
     
     // Open progress dialog
     store.openProgressDialog({
       envType,
-      version,
-      provider,
+      version: resolvedVersion,
+      provider: providerLabel,
       step: 'fetching',
       progress: 0,
     });
@@ -47,7 +122,7 @@ export function useEnvironments() {
       try {
         unlistenRef.current = await tauri.listenEnvInstallProgress((progress) => {
           // Only update if it's for the current installation
-          if (progress.envType === envType && progress.version === version) {
+          if (progress.envType === envType && progress.version === resolvedVersion) {
             store.updateInstallationProgress({
               step: progress.step,
               progress: progress.progress,
@@ -74,7 +149,7 @@ export function useEnvironments() {
     }
     
     try {
-      await tauri.envInstall(envType, version);
+      await tauri.envInstall(envType, resolvedVersion, resolvedProviderId);
       
       // Refresh environment data after successful install
       const updatedEnv = await tauri.envGet(envType);
@@ -89,11 +164,12 @@ export function useEnvironments() {
         }, 1500);
       }
     } catch (err) {
+      const errorMsg = formatError(err);
       store.updateInstallationProgress({ 
         step: 'error', 
-        error: err instanceof Error ? err.message : String(err) 
+        error: errorMsg 
       });
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(errorMsg);
       
       // Cleanup listener and installation state on error
       store.setCurrentInstallation(null);
@@ -111,7 +187,7 @@ export function useEnvironments() {
       const env = await tauri.envGet(envType);
       store.updateEnvironment(env);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     } finally {
       store.setLoading(false);
@@ -125,7 +201,7 @@ export function useEnvironments() {
       const env = await tauri.envGet(envType);
       store.updateEnvironment(env);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);
@@ -135,7 +211,7 @@ export function useEnvironments() {
     try {
       await tauri.envUseLocal(envType, version, projectPath);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       throw err;
     }
   }, [store]);
@@ -146,7 +222,7 @@ export function useEnvironments() {
       store.setDetectedVersions(detected);
       return detected;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -157,7 +233,7 @@ export function useEnvironments() {
       store.setAvailableVersions(envType, versions);
       return versions;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -168,7 +244,7 @@ export function useEnvironments() {
       store.setAvailableProviders(providers);
       return providers;
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      store.setError(formatError(err));
       return [];
     }
   }, [store]);
@@ -192,6 +268,8 @@ export function useEnvironments() {
   return {
     ...store,
     fetchEnvironments,
+    loadEnvSettings,
+    saveEnvSettings,
     installVersion,
     uninstallVersion,
     setGlobalVersion,

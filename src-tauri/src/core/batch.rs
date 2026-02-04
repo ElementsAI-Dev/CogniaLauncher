@@ -1,6 +1,7 @@
 use crate::config::Settings;
 use crate::error::{CogniaError, CogniaResult};
-use crate::provider::{InstallRequest, ProviderRegistry, UninstallRequest};
+use crate::core::HistoryManager;
+use crate::provider::{InstallRequest, InstalledFilter, ProviderRegistry, UninstallRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -229,10 +230,32 @@ impl BatchManager {
             let results = self
                 .install_parallel(to_install, &mut on_progress, request.global, request.force)
                 .await;
-            for result in results {
+            for (spec, result) in results {
                 match result {
-                    Ok(item) => successful.push(item),
-                    Err(item) => failed.push(item),
+                    Ok(item) => {
+                        let _ = HistoryManager::record_install(
+                            &item.name,
+                            &item.version,
+                            &item.provider,
+                            true,
+                            None,
+                        )
+                        .await;
+                        successful.push(item);
+                    }
+                    Err(item) => {
+                        let version = spec.version.unwrap_or_else(|| "latest".into());
+                        let provider = spec.provider.unwrap_or_else(|| "unknown".into());
+                        let _ = HistoryManager::record_install(
+                            &spec.name,
+                            &version,
+                            &provider,
+                            false,
+                            Some(item.error.clone()),
+                        )
+                        .await;
+                        failed.push(item);
+                    }
                 }
             }
         } else {
@@ -259,6 +282,14 @@ impl BatchManager {
                             current: idx + 1,
                             total,
                         });
+                        let _ = HistoryManager::record_install(
+                            &item.name,
+                            &item.version,
+                            &item.provider,
+                            true,
+                            None,
+                        )
+                        .await;
                         successful.push(item);
                     }
                     Err(item) => {
@@ -268,6 +299,16 @@ impl BatchManager {
                             current: idx + 1,
                             total,
                         });
+                        let version = spec.version.clone().unwrap_or_else(|| "latest".into());
+                        let provider = spec.provider.clone().unwrap_or_else(|| "unknown".into());
+                        let _ = HistoryManager::record_install(
+                            &spec.name,
+                            &version,
+                            &provider,
+                            false,
+                            Some(item.error.clone()),
+                        )
+                        .await;
                         failed.push(item);
                     }
                 }
@@ -299,7 +340,8 @@ impl BatchManager {
         F: FnMut(BatchProgress) + Send,
     {
         let start_time = std::time::Instant::now();
-        let total = packages.len();
+        let specs: Vec<PackageSpec> = packages.iter().map(|p| PackageSpec::parse(p)).collect();
+        let total = specs.len();
 
         on_progress(BatchProgress::Starting { total });
 
@@ -307,30 +349,47 @@ impl BatchManager {
         let mut failed = Vec::new();
         let skipped = Vec::new();
 
-        for (idx, name) in packages.iter().enumerate() {
+        for (idx, spec) in specs.iter().enumerate() {
             on_progress(BatchProgress::Installing {
-                package: name.clone(),
+                package: spec.name.clone(),
                 current: idx + 1,
                 total,
             });
 
-            match self.uninstall_single(name, force).await {
+            match self.uninstall_single(spec, force).await {
                 Ok(item) => {
                     on_progress(BatchProgress::ItemCompleted {
-                        package: name.clone(),
+                        package: spec.name.clone(),
                         success: true,
                         current: idx + 1,
                         total,
                     });
+                    let _ = HistoryManager::record_uninstall(
+                        &item.name,
+                        &item.version,
+                        &item.provider,
+                        true,
+                        None,
+                    )
+                    .await;
                     successful.push(item);
                 }
                 Err(item) => {
                     on_progress(BatchProgress::ItemCompleted {
-                        package: name.clone(),
+                        package: spec.name.clone(),
                         success: false,
                         current: idx + 1,
                         total,
                     });
+                    let provider = spec.provider.clone().unwrap_or_else(|| "unknown".into());
+                    let _ = HistoryManager::record_uninstall(
+                        &spec.name,
+                        "unknown",
+                        &provider,
+                        false,
+                        Some(item.error.clone()),
+                    )
+                    .await;
                     failed.push(item);
                 }
             }
@@ -363,8 +422,8 @@ impl BatchManager {
         let registry = self.registry.read().await;
 
         // Get list of packages to update
-        let to_update: Vec<String> = if let Some(pkgs) = packages {
-            pkgs
+        let to_update: Vec<PackageSpec> = if let Some(pkgs) = packages {
+            pkgs.iter().map(|p| PackageSpec::parse(p)).collect()
         } else {
             // Get all installed packages
             let mut all_installed = Vec::new();
@@ -375,7 +434,11 @@ impl BatchManager {
                             .list_installed(crate::provider::InstalledFilter::default())
                             .await
                         {
-                            all_installed.extend(installed.into_iter().map(|i| i.name));
+                            all_installed.extend(installed.into_iter().map(|i| PackageSpec {
+                                name: i.name,
+                                version: None,
+                                provider: Some(i.provider),
+                            }));
                         }
                     }
                 }
@@ -392,28 +455,30 @@ impl BatchManager {
         let mut failed = Vec::new();
         let mut skipped = Vec::new();
 
-        for (idx, name) in to_update.iter().enumerate() {
+        for (idx, spec) in to_update.iter().enumerate() {
             on_progress(BatchProgress::Resolving {
-                package: name.clone(),
+                package: spec.name.clone(),
                 current: idx + 1,
                 total,
             });
 
             // Check if update is available
             let registry = self.registry.read().await;
-            let update_available = self.check_update_available(&registry, name).await;
+            let update_available = self
+                .check_update_available(&registry, &spec.name, spec.provider.as_deref())
+                .await;
             drop(registry);
 
             match update_available {
                 Ok(Some((current, latest, provider))) => {
                     on_progress(BatchProgress::Installing {
-                        package: name.clone(),
+                        package: spec.name.clone(),
                         current: idx + 1,
                         total,
                     });
 
                     let spec = PackageSpec {
-                        name: name.clone(),
+                        name: spec.name.clone(),
                         version: Some(latest.clone()),
                         provider: Some(provider.clone()),
                     };
@@ -421,20 +486,40 @@ impl BatchManager {
                     match self.install_single(&spec, true, true).await {
                         Ok(mut item) => {
                             item.action = format!("updated {} -> {}", current, latest);
+                            let _ = HistoryManager::record_update(
+                                &spec.name,
+                                &current,
+                                &latest,
+                                &provider,
+                                true,
+                                None,
+                            )
+                            .await;
                             successful.push(item);
                         }
-                        Err(item) => failed.push(item),
+                        Err(item) => {
+                            let _ = HistoryManager::record_update(
+                                &spec.name,
+                                &current,
+                                &latest,
+                                &provider,
+                                false,
+                                Some(item.error.clone()),
+                            )
+                            .await;
+                            failed.push(item);
+                        }
                     }
                 }
                 Ok(None) => {
                     skipped.push(BatchItemSkipped {
-                        name: name.clone(),
+                        name: spec.name.clone(),
                         reason: "Already at latest version".into(),
                     });
                 }
                 Err(e) => {
                     failed.push(BatchItemError {
-                        name: name.clone(),
+                        name: spec.name.clone(),
                         error: e,
                         recoverable: false,
                         suggestion: None,
@@ -463,7 +548,7 @@ impl BatchManager {
         on_progress: &mut F,
         global: bool,
         force: bool,
-    ) -> Vec<Result<BatchItemResult, BatchItemError>>
+    ) -> Vec<(PackageSpec, Result<BatchItemResult, BatchItemError>)>
     where
         F: FnMut(BatchProgress) + Send,
     {
@@ -479,7 +564,7 @@ impl BatchManager {
                 async move {
                     let result =
                         Self::install_with_retry(registry, &spec, global, force, max_retries).await;
-                    (idx, spec.name.clone(), result)
+                    (idx, spec, result)
                 }
             })
             .buffer_unordered(self.max_parallel)
@@ -493,14 +578,14 @@ impl BatchManager {
         sorted_results
             .into_iter()
             .enumerate()
-            .map(|(current, (_, name, result))| {
+            .map(|(current, (_, spec, result))| {
                 on_progress(BatchProgress::ItemCompleted {
-                    package: name,
+                    package: spec.name.clone(),
                     success: result.is_ok(),
                     current: current + 1,
                     total,
                 });
-                result
+                (spec, result)
             })
             .collect()
     }
@@ -594,46 +679,65 @@ impl BatchManager {
 
     async fn uninstall_single(
         &self,
-        name: &str,
+        spec: &PackageSpec,
         force: bool,
     ) -> Result<BatchItemResult, BatchItemError> {
         let registry = self.registry.read().await;
 
-        let provider = match registry.find_for_package(name).await {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                return Err(BatchItemError {
-                    name: name.into(),
-                    error: format!("No provider found for package: {}", name),
-                    recoverable: false,
-                    suggestion: None,
-                });
-            }
-            Err(e) => {
-                return Err(BatchItemError {
-                    name: name.into(),
-                    error: e.to_string(),
-                    recoverable: false,
-                    suggestion: None,
-                });
+        let provider = if let Some(ref provider_id) = spec.provider {
+            registry.get(provider_id).ok_or_else(|| BatchItemError {
+                name: spec.name.clone(),
+                error: format!("Provider not found: {}", provider_id),
+                recoverable: false,
+                suggestion: None,
+            })?
+        } else {
+            match registry.find_for_package(&spec.name).await {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    return Err(BatchItemError {
+                        name: spec.name.clone(),
+                        error: format!("No provider found for package: {}", spec.name),
+                        recoverable: false,
+                        suggestion: None,
+                    });
+                }
+                Err(e) => {
+                    return Err(BatchItemError {
+                        name: spec.name.clone(),
+                        error: e.to_string(),
+                        recoverable: false,
+                        suggestion: None,
+                    });
+                }
             }
         };
 
+        let installed_version = provider
+            .list_installed(InstalledFilter {
+                name_filter: Some(spec.name.clone()),
+                ..Default::default()
+            })
+            .await
+            .ok()
+            .and_then(|packages| packages.first().map(|pkg| pkg.version.clone()))
+            .unwrap_or_else(|| "unknown".to_string());
+
         let request = UninstallRequest {
-            name: name.into(),
+            name: spec.name.clone(),
             version: None,
             force,
         };
 
         match provider.uninstall(request).await {
             Ok(_) => Ok(BatchItemResult {
-                name: name.into(),
-                version: String::new(),
+                name: spec.name.clone(),
+                version: installed_version,
                 provider: provider.id().to_string(),
                 action: "uninstalled".into(),
             }),
             Err(e) => Err(BatchItemError {
-                name: name.into(),
+                name: spec.name.clone(),
                 error: e.to_string(),
                 recoverable: false,
                 suggestion: None,
@@ -663,9 +767,16 @@ impl BatchManager {
         &self,
         registry: &ProviderRegistry,
         name: &str,
+        provider_override: Option<&str>,
     ) -> Result<Option<(String, String, String)>, String> {
-        for provider_id in registry.list() {
-            if let Some(p) = registry.get(provider_id) {
+        let provider_ids: Vec<String> = if let Some(provider) = provider_override {
+            vec![provider.to_string()]
+        } else {
+            registry.list().iter().map(|id| id.to_string()).collect()
+        };
+
+        for provider_id in provider_ids {
+            if let Some(p) = registry.get(&provider_id) {
                 if p.is_available().await {
                     if let Ok(installed) = p
                         .list_installed(crate::provider::InstalledFilter::default())

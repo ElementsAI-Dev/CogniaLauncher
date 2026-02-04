@@ -18,8 +18,12 @@ import { Progress } from '@/components/ui/progress';
 import { useSettings } from '@/lib/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
-import { useAppearanceStore } from '@/lib/stores/appearance';
+import { useAppearanceStore, type AccentColor } from '@/lib/stores/appearance';
+import { useSettingsStore } from '@/lib/stores/settings';
+import { isTauri } from '@/lib/tauri';
+import { isThemeMode } from '@/lib/theme';
 import { useSettingsShortcuts } from '@/lib/hooks/use-settings-shortcuts';
+import { useUnsavedChanges } from '@/lib/hooks/use-unsaved-changes';
 import {
   validateField,
   GeneralSettings,
@@ -27,9 +31,13 @@ import {
   SecuritySettings,
   MirrorsSettings,
   AppearanceSettings,
+  UpdateSettings,
+  PathsSettings,
+  ProviderSettings,
   SystemInfo,
   SettingsSkeleton,
 } from '@/components/settings';
+import { PageHeader } from '@/components/layout/page-header';
 import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -40,9 +48,10 @@ interface SaveProgress {
 
 export default function SettingsPage() {
   const { config, loading, error, fetchConfig, updateConfigValue, resetConfig, platformInfo, fetchPlatformInfo } = useSettings();
+  const { appSettings, setAppSettings } = useSettingsStore();
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({});
@@ -51,17 +60,24 @@ export default function SettingsPage() {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useUnsavedChanges('settings-page', hasChanges);
+
   useEffect(() => {
     const loadData = async () => {
-      await Promise.all([fetchConfig(), fetchPlatformInfo()]);
+      const shouldFetchConfig = Object.keys(config).length === 0;
+      await Promise.all([
+        shouldFetchConfig ? fetchConfig() : Promise.resolve(config),
+        fetchPlatformInfo(),
+      ]);
       setInitialLoadComplete(true);
     };
     loadData();
-  }, [fetchConfig, fetchPlatformInfo]);
+  }, [config, fetchConfig, fetchPlatformInfo]);
 
   useEffect(() => {
     setLocalConfig(config);
   }, [config]);
+
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -161,6 +177,7 @@ export default function SettingsPage() {
       version: '1.0',
       exportedAt: new Date().toISOString(),
       settings: localConfig,
+      appSettings,
     };
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -172,7 +189,7 @@ export default function SettingsPage() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success(t('settings.exportSuccess'));
-  }, [localConfig, t]);
+  }, [localConfig, appSettings, t]);
 
   const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -192,6 +209,10 @@ export default function SettingsPage() {
         setLocalConfig((prev) => ({ ...prev, ...data.settings }));
         setHasChanges(true);
 
+        if (data.appSettings && typeof data.appSettings === 'object') {
+          setAppSettings(data.appSettings);
+        }
+
         const errors: Record<string, string | null> = {};
         for (const [key, value] of Object.entries(data.settings)) {
           if (typeof value === 'string') {
@@ -210,7 +231,7 @@ export default function SettingsPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [t]);
+  }, [setAppSettings, t]);
 
   const handleDiscardChanges = useCallback(() => {
     setLocalConfig(config);
@@ -218,83 +239,125 @@ export default function SettingsPage() {
     setHasChanges(false);
   }, [config]);
 
+  // Appearance settings handlers with backend sync
+  const handleThemeChange = useCallback(async (newTheme: string) => {
+    if (!isThemeMode(newTheme)) {
+      toast.error(t('settings.invalidTheme'));
+      return;
+    }
+
+    setTheme(newTheme);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.theme', newTheme);
+      } catch (err) {
+        console.error('Failed to sync theme to backend:', err);
+      }
+    }
+  }, [setTheme, updateConfigValue, t]);
+
+  const handleLocaleChange = useCallback(async (newLocale: 'en' | 'zh') => {
+    setLocale(newLocale);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.language', newLocale);
+      } catch (err) {
+        console.error('Failed to sync language to backend:', err);
+      }
+    }
+  }, [setLocale, updateConfigValue]);
+
+  const handleAccentColorChange = useCallback(async (color: AccentColor) => {
+    setAccentColor(color);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.accent_color', color);
+      } catch (err) {
+        console.error('Failed to sync accent color to backend:', err);
+      }
+    }
+  }, [setAccentColor, updateConfigValue]);
+
+  const handleReducedMotionChange = useCallback(async (reduced: boolean) => {
+    setReducedMotion(reduced);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.reduced_motion', String(reduced));
+      } catch (err) {
+        console.error('Failed to sync reduced motion to backend:', err);
+      }
+    }
+  }, [setReducedMotion, updateConfigValue]);
+
   useSettingsShortcuts({
     onSave: handleSave,
+    onReset: handleReset,
     onEscape: hasChanges ? handleDiscardChanges : undefined,
     enabled: true,
     hasChanges,
     isLoading: loading || saving,
   });
 
+  const handleAppSettingsChange = useCallback((key: keyof typeof appSettings, value: boolean) => {
+    setAppSettings({ [key]: value });
+  }, [setAppSettings]);
+
   const canSave = hasChanges && !loading && !saving && !hasValidationErrors();
+  const canReset = !loading && !saving;
 
   return (
     <main className="p-4 md:p-6 space-y-6" aria-labelledby="settings-title">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 id="settings-title" className="text-2xl md:text-3xl font-bold">
-            {t('settings.title')}
-          </h1>
-          <p className="text-muted-foreground">{t('settings.description')}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleImport}
-            className="hidden"
-            aria-label={t('settings.importSettings')}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading || saving}
-          >
-            <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t('settings.import')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            disabled={loading || saving}
-          >
-            <Download className="h-4 w-4 mr-2" aria-hidden="true" />
-            {t('settings.export')}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={loading || saving}>
-                <RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
-                {t('common.reset')}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('settings.resetConfirmTitle')}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t('settings.resetConfirmDesc')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleReset}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
+      <PageHeader
+        title={<span id="settings-title">{t('settings.title')}</span>}
+        description={t('settings.description')}
+        actions={(
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImport}
+              className="hidden"
+              aria-label={t('settings.importSettings')}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
+              <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t('settings.import')}
+            </Button>
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t('settings.export')}
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" disabled={!canReset}>
+                  <RotateCcw className="h-4 w-4 mr-2" aria-hidden="true" />
                   {t('common.reset')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <Button onClick={handleSave} disabled={!canSave}>
-            <Save className="h-4 w-4 mr-2" aria-hidden="true" />
-            {saving ? t('settings.saving') : t('settings.saveChanges')}
-          </Button>
-        </div>
-      </header>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('settings.resetConfirmTitle')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('settings.resetConfirmDesc')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleReset}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {t('common.reset')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button onClick={handleSave} disabled={!canSave}>
+              <Save className="h-4 w-4 mr-2" aria-hidden="true" />
+              {saving ? t('settings.saving') : t('settings.saveChanges')}
+            </Button>
+          </>
+        )}
+      />
 
       {saveProgress && (
         <div className="space-y-2" role="status" aria-live="polite">
@@ -358,11 +421,33 @@ export default function SettingsPage() {
 
           <AppearanceSettings
             theme={theme}
-            setTheme={setTheme}
+            setTheme={handleThemeChange}
             locale={locale}
-            setLocale={setLocale}
+            setLocale={handleLocaleChange}
+            accentColor={accentColor}
+            setAccentColor={handleAccentColorChange}
             reducedMotion={reducedMotion}
-            setReducedMotion={setReducedMotion}
+            setReducedMotion={handleReducedMotionChange}
+            t={t}
+          />
+
+          <UpdateSettings
+            appSettings={appSettings}
+            onValueChange={handleAppSettingsChange}
+            t={t}
+          />
+
+          <PathsSettings
+            localConfig={localConfig}
+            errors={validationErrors}
+            onValueChange={handleChange}
+            t={t}
+          />
+
+          <ProviderSettings
+            localConfig={localConfig}
+            errors={validationErrors}
+            onValueChange={handleChange}
             t={t}
           />
 

@@ -1,23 +1,48 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/layout/page-header';
 import { usePackages } from '@/lib/hooks/use-packages';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import * as tauri from '@/lib/tauri';
+import { toast } from 'sonner';
 
 export default function ProvidersPage() {
   const { providers, loading, error, fetchProviders } = usePackages();
   const { t } = useLocale();
+  const [togglingProvider, setTogglingProvider] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProviders();
   }, [fetchProviders]);
+
+  const handleToggleProvider = useCallback(async (providerId: string, enabled: boolean) => {
+    setTogglingProvider(providerId);
+    try {
+      if (enabled) {
+        await tauri.providerEnable(providerId);
+        toast.success(t('providers.enableSuccess').replace('{name}', providerId));
+      } else {
+        await tauri.providerDisable(providerId);
+        toast.success(t('providers.disableSuccess').replace('{name}', providerId));
+      }
+      await fetchProviders();
+    } catch {
+      toast.error(enabled 
+        ? t('providers.enableError').replace('{name}', providerId)
+        : t('providers.disableError').replace('{name}', providerId)
+      );
+    } finally {
+      setTogglingProvider(null);
+    }
+  }, [fetchProviders, t]);
 
   const getCapabilityBadge = (capability: string) => {
     const colors: Record<string, string> = {
@@ -73,12 +98,7 @@ export default function ProvidersPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold">{t('providers.title')}</h1>
-        <p className="text-muted-foreground">
-          {t('providers.description')}
-        </p>
-      </div>
+      <PageHeader title={t('providers.title')} description={t('providers.description')} />
 
       {error && (
         <Alert variant="destructive">
@@ -169,13 +189,17 @@ export default function ProvidersPage() {
                 <div className="flex items-center justify-between pt-2 border-t">
                   <div className="flex items-center gap-2">
                     <Label htmlFor={`enabled-${provider.id}`} className="text-sm">
-                      Enabled
+                      {t('providers.enabled')}
                     </Label>
+                    {togglingProvider === provider.id && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
                   </div>
                   <Switch
                     id={`enabled-${provider.id}`}
-                    defaultChecked={true}
-                    disabled
+                    checked={provider.enabled}
+                    onCheckedChange={(checked) => handleToggleProvider(provider.id, checked)}
+                    disabled={togglingProvider === provider.id}
                   />
                 </div>
               </CardContent>

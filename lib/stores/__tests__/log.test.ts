@@ -9,6 +9,9 @@ describe('useLogStore', () => {
       filter: {
         levels: ['info', 'warn', 'error'],
         search: '',
+        useRegex: false,
+        startTime: null,
+        endTime: null,
       },
       autoScroll: true,
       paused: false,
@@ -123,6 +126,18 @@ describe('useLogStore', () => {
       useLogStore.getState().setSearch('error');
       expect(useLogStore.getState().filter.search).toBe('error');
     });
+
+    it('should toggle regex mode', () => {
+      expect(useLogStore.getState().filter.useRegex).toBe(false);
+      useLogStore.getState().toggleRegex();
+      expect(useLogStore.getState().filter.useRegex).toBe(true);
+    });
+
+    it('should set time range', () => {
+      useLogStore.getState().setTimeRange(100, 200);
+      expect(useLogStore.getState().filter.startTime).toBe(100);
+      expect(useLogStore.getState().filter.endTime).toBe(200);
+    });
   });
 
   describe('getFilteredLogs', () => {
@@ -168,6 +183,24 @@ describe('useLogStore', () => {
 
       expect(filtered.length).toBe(1);
       expect(filtered[0].level).toBe('error');
+    });
+
+    it('should filter by regex when enabled', () => {
+      useLogStore.getState().setFilter({
+        levels: ['info', 'warn', 'error'],
+        search: 'Error|Warning',
+        useRegex: true,
+      });
+
+      const filtered = useLogStore.getState().getFilteredLogs();
+      expect(filtered.length).toBe(2);
+      expect(filtered.map((log) => log.level)).toEqual(['warn', 'error']);
+    });
+
+    it('should filter by time range', () => {
+      useLogStore.getState().setTimeRange(2, 4);
+      const filtered = useLogStore.getState().getFilteredLogs();
+      expect(filtered.map((log) => log.timestamp)).toEqual([3, 4]);
     });
   });
 

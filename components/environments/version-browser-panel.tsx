@@ -7,11 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import type { VersionInfo } from '@/lib/tauri';
 import * as tauri from '@/lib/tauri';
-import { Search, Download, Calendar, AlertTriangle, X, Filter, RefreshCw, AlertCircle } from 'lucide-react';
+import { Search, Download, Calendar, AlertTriangle, X, Filter, RefreshCw, AlertCircle, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -19,8 +20,10 @@ interface VersionBrowserPanelProps {
   envType: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onInstall: (version: string) => Promise<void>;
+  onInstall: (version: string, providerId?: string) => Promise<void>;
+  onUninstall?: (version: string) => Promise<void>;
   installedVersions: string[];
+  providerId?: string;
 }
 
 type VersionFilter = 'all' | 'stable' | 'lts' | 'latest';
@@ -30,17 +33,124 @@ export function VersionBrowserPanel({
   open,
   onOpenChange,
   onInstall,
+  onUninstall,
   installedVersions,
+  providerId,
 }: VersionBrowserPanelProps) {
   const { t } = useLocale();
-  const { availableVersions, setAvailableVersions } = useEnvironmentStore();
+  const { availableVersions, setAvailableVersions, selectedVersions, toggleVersionSelection, clearVersionSelection } = useEnvironmentStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<VersionFilter>('all');
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
 
-  const versions = availableVersions[envType] || [];
+  // Get selected versions for this environment type
+  const selectedForEnv = useMemo(() => 
+    selectedVersions.filter(sv => sv.envType === envType).map(sv => sv.version),
+    [selectedVersions, envType]
+  );
+
+  const isVersionSelected = useCallback((version: string) => 
+    selectedForEnv.includes(version),
+    [selectedForEnv]
+  );
+
+  const handleToggleSelection = useCallback((version: string) => {
+    toggleVersionSelection(envType, version);
+  }, [envType, toggleVersionSelection]);
+
+  // Batch install selected versions
+  const handleBatchInstall = useCallback(async () => {
+    const toInstall = selectedForEnv.filter(v => !installedVersions.includes(v));
+    if (toInstall.length === 0) return;
+
+    setBatchProcessing(true);
+    const successful: string[] = [];
+    const failed: string[] = [];
+
+    try {
+      for (const version of toInstall) {
+        setInstallingVersion(version);
+        try {
+          await onInstall(version, providerId);
+          successful.push(version);
+        } catch {
+          failed.push(version);
+        }
+      }
+
+      if (successful.length > 0) {
+        toast.success(t('environments.batchInstallSuccess', { count: successful.length }));
+      }
+      if (failed.length > 0) {
+        toast.error(t('environments.batchInstallError', { count: failed.length }));
+      }
+
+      if (failed.length === 0) {
+        clearVersionSelection();
+      } else {
+        successful.forEach((version) => {
+          toggleVersionSelection(envType, version);
+        });
+      }
+    } finally {
+      setBatchProcessing(false);
+      setInstallingVersion(null);
+    }
+  }, [selectedForEnv, installedVersions, onInstall, clearVersionSelection, t, providerId, toggleVersionSelection, envType]);
+
+  // Batch uninstall selected versions
+  const handleBatchUninstall = useCallback(async () => {
+    if (!onUninstall) return;
+    const toUninstall = selectedForEnv.filter(v => installedVersions.includes(v));
+    if (toUninstall.length === 0) return;
+
+    setBatchProcessing(true);
+    const successful: string[] = [];
+    const failed: string[] = [];
+
+    try {
+      for (const version of toUninstall) {
+        try {
+          await onUninstall(version);
+          successful.push(version);
+        } catch {
+          failed.push(version);
+        }
+      }
+
+      if (successful.length > 0) {
+        toast.success(t('environments.batchUninstallSuccess', { count: successful.length }));
+      }
+      if (failed.length > 0) {
+        toast.error(t('environments.batchUninstallError', { count: failed.length }));
+      }
+
+      if (failed.length === 0) {
+        clearVersionSelection();
+      } else {
+        successful.forEach((version) => {
+          toggleVersionSelection(envType, version);
+        });
+      }
+    } finally {
+      setBatchProcessing(false);
+    }
+  }, [selectedForEnv, installedVersions, onUninstall, clearVersionSelection, t, toggleVersionSelection, envType]);
+
+  // Count installable and uninstallable selected versions
+  const installableCount = useMemo(() => 
+    selectedForEnv.filter(v => !installedVersions.includes(v)).length,
+    [selectedForEnv, installedVersions]
+  );
+  const uninstallableCount = useMemo(() => 
+    selectedForEnv.filter(v => installedVersions.includes(v)).length,
+    [selectedForEnv, installedVersions]
+  );
+
+  const versions = useMemo(() => availableVersions[envType] || [], [availableVersions, envType]);
 
   const fetchVersions = useCallback(async (force = false) => {
     if (versions.length > 0 && !force) return;
@@ -71,7 +181,7 @@ export function VersionBrowserPanel({
   const handleInstall = async (version: string) => {
     setInstallingVersion(version);
     try {
-      await onInstall(version);
+      await onInstall(version, providerId);
     } finally {
       setInstallingVersion(null);
     }
@@ -238,7 +348,9 @@ export function VersionBrowserPanel({
                   version={version}
                   installed={isInstalled(version.version)}
                   installing={installingVersion === version.version}
+                  selected={isVersionSelected(version.version)}
                   onInstall={() => handleInstall(version.version)}
+                  onToggleSelect={() => handleToggleSelection(version.version)}
                   formatDate={formatDate}
                   t={t}
                 />
@@ -252,6 +364,49 @@ export function VersionBrowserPanel({
             {t('environments.versionBrowser.totalVersions').replace('{count}', String(displayVersions.length))}
           </p>
         </div>
+
+        {/* Batch Operations Floating Bar */}
+        {selectedForEnv.length > 0 && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-card border rounded-lg shadow-lg p-3 flex items-center gap-3 z-50">
+            <span className="text-sm font-medium">
+              {t('environments.selectedVersions').replace('{count}', String(selectedForEnv.length))}
+            </span>
+            <div className="h-4 w-px bg-border" />
+            {installableCount > 0 && (
+              <Button
+                size="sm"
+                disabled={batchProcessing}
+                onClick={handleBatchInstall}
+              >
+                {batchProcessing ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <Download className="h-4 w-4 mr-1" />
+                )}
+                {t('common.install')} ({installableCount})
+              </Button>
+            )}
+            {uninstallableCount > 0 && onUninstall && (
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={batchProcessing}
+                onClick={handleBatchUninstall}
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                {t('common.uninstall')} ({uninstallableCount})
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={clearVersionSelection}
+              disabled={batchProcessing}
+            >
+              {t('common.clear')}
+            </Button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -261,22 +416,31 @@ interface VersionItemProps {
   version: VersionInfo;
   installed: boolean;
   installing: boolean;
+  selected: boolean;
   onInstall: () => void;
+  onToggleSelect: () => void;
   formatDate: (date: string | null) => string | null;
   t: (key: string) => string;
 }
 
-function VersionItem({ version, installed, installing, onInstall, formatDate, t }: VersionItemProps) {
+function VersionItem({ version, installed, installing, selected, onInstall, onToggleSelect, formatDate, t }: VersionItemProps) {
   return (
     <div
       className={cn(
         'flex items-center justify-between p-3 rounded-lg border transition-colors',
         installed && 'bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800',
+        selected && 'border-primary bg-primary/5',
         version.deprecated && 'opacity-60',
         version.yanked && 'opacity-40'
       )}
     >
-      <div className="space-y-1">
+      <div className="flex items-center gap-3">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onToggleSelect}
+          disabled={version.yanked}
+        />
+        <div className="space-y-1">
         <div className="flex items-center gap-2">
           <span className="font-mono font-medium">{version.version}</span>
           {installed && (
@@ -296,12 +460,13 @@ function VersionItem({ version, installed, installing, onInstall, formatDate, t 
             </Badge>
           )}
         </div>
-        {version.release_date && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Calendar className="h-3 w-3" />
-            <span>{formatDate(version.release_date)}</span>
-          </div>
-        )}
+          {version.release_date && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Calendar className="h-3 w-3" />
+              <span>{formatDate(version.release_date)}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <Button

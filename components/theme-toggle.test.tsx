@@ -14,6 +14,16 @@ jest.mock('next-themes', () => ({
   }),
 }));
 
+jest.mock('@/lib/tauri', () => ({
+  isTauri: jest.fn(),
+  configSet: jest.fn(),
+}));
+
+const tauriMocks = jest.requireMock('@/lib/tauri') as {
+  isTauri: jest.Mock;
+  configSet: jest.Mock;
+};
+
 // Mock locale provider
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -33,6 +43,8 @@ describe('ThemeToggle', () => {
   beforeEach(() => {
     mockSetTheme.mockClear();
     mockTheme = 'light';
+    tauriMocks.isTauri.mockReturnValue(false);
+    tauriMocks.configSet.mockResolvedValue(undefined);
   });
 
   it('renders without crashing', () => {
@@ -77,6 +89,18 @@ describe('ThemeToggle', () => {
     await user.click(darkOption);
     
     expect(mockSetTheme).toHaveBeenCalledWith('dark');
+  });
+
+  it('syncs theme to backend when running in Tauri', async () => {
+    tauriMocks.isTauri.mockReturnValue(true);
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+
+    await user.click(screen.getByRole('button'));
+    const darkOption = await screen.findByRole('menuitem', { name: /dark/i });
+    await user.click(darkOption);
+
+    expect(tauriMocks.configSet).toHaveBeenCalledWith('appearance.theme', 'dark');
   });
 
   it('calls setTheme when system option is clicked', async () => {

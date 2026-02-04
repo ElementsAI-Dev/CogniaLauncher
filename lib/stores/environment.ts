@@ -69,6 +69,7 @@ interface EnvironmentState {
   
   // Environment settings actions
   getEnvSettings: (envType: string) => EnvironmentSettings;
+  setEnvSettings: (envType: string, settings: EnvironmentSettings) => void;
   setEnvVariables: (envType: string, variables: EnvVariable[]) => void;
   addEnvVariable: (envType: string, variable: EnvVariable) => void;
   removeEnvVariable: (envType: string, key: string) => void;
@@ -104,7 +105,7 @@ interface EnvironmentState {
 
 // Default detection files per environment type
 const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
-  node: ['.nvmrc', '.node-version', 'package.json', '.tool-versions'],
+  node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
   python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
   go: ['.go-version', 'go.mod', '.tool-versions'],
   rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
@@ -112,9 +113,18 @@ const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
 };
 
+const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
+  fnm: 'node',
+  nvm: 'node',
+  pyenv: 'python',
+  goenv: 'go',
+  rustup: 'rust',
+};
+
 // Helper to get default settings for an environment type
 function getDefaultEnvSettings(envType: string): EnvironmentSettings {
-  const detectionFiles = (DEFAULT_DETECTION_FILES[envType.toLowerCase()] || []).map((fileName, idx) => ({
+  const normalizedEnvType = PROVIDER_ENV_TYPE_MAP[envType.toLowerCase()] || envType.toLowerCase();
+  const detectionFiles = (DEFAULT_DETECTION_FILES[normalizedEnvType] || []).map((fileName, idx) => ({
     fileName,
     enabled: idx < 2, // Enable first two by default
   }));
@@ -184,6 +194,13 @@ export const useEnvironmentStore = create<EnvironmentState>()(
         const state = get();
         return state.envSettings[envType] || getDefaultEnvSettings(envType);
       },
+
+      setEnvSettings: (envType, settings) => set((state) => ({
+        envSettings: {
+          ...state.envSettings,
+          [envType]: settings,
+        },
+      })),
       
       setEnvVariables: (envType, variables) => set((state) => ({
         envSettings: {

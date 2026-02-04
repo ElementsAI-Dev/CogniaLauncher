@@ -10,6 +10,16 @@ const mockT = (key: string) => {
     'settings.npmRegistryDesc': 'NPM package registry URL',
     'settings.pypiIndex': 'PyPI Index',
     'settings.pypiIndexDesc': 'Python package index URL',
+    'settings.cratesRegistry': 'Crates Registry',
+    'settings.cratesRegistryDesc': 'Rust crates registry URL',
+    'settings.goProxy': 'Go Proxy',
+    'settings.goProxyDesc': 'Go module proxy URL',
+    'settings.mirrorEnabled': 'Enabled',
+    'settings.mirrorEnabledDesc': 'Use this mirror for requests',
+    'settings.mirrorPriority': 'Priority',
+    'settings.mirrorPriorityDesc': 'Higher priority mirrors are preferred',
+    'settings.mirrorVerifySsl': 'Verify SSL',
+    'settings.mirrorVerifySslDesc': 'Verify TLS certificates',
   };
   return translations[key] || key;
 };
@@ -18,7 +28,21 @@ describe('MirrorsSettings', () => {
   const defaultProps = {
     localConfig: {
       'mirrors.npm': 'https://registry.npmjs.org',
+      'mirrors.npm.enabled': 'true',
+      'mirrors.npm.priority': '0',
+      'mirrors.npm.verify_ssl': 'true',
       'mirrors.pypi': 'https://pypi.org/simple',
+      'mirrors.pypi.enabled': 'true',
+      'mirrors.pypi.priority': '0',
+      'mirrors.pypi.verify_ssl': 'true',
+      'mirrors.crates': 'https://crates.io',
+      'mirrors.crates.enabled': 'true',
+      'mirrors.crates.priority': '0',
+      'mirrors.crates.verify_ssl': 'true',
+      'mirrors.go': 'https://proxy.golang.org',
+      'mirrors.go.enabled': 'true',
+      'mirrors.go.priority': '0',
+      'mirrors.go.verify_ssl': 'true',
     },
     errors: {},
     onValueChange: jest.fn(),
@@ -51,20 +75,26 @@ describe('MirrorsSettings', () => {
     expect(screen.getByText('PyPI Index')).toBeInTheDocument();
   });
 
+  it('should render Go proxy setting', () => {
+    render(<MirrorsSettings {...defaultProps} />);
+
+    expect(screen.getByText('Go Proxy')).toBeInTheDocument();
+  });
+
   it('should display current mirror URLs', () => {
     render(<MirrorsSettings {...defaultProps} />);
 
-    const inputs = screen.getAllByRole('textbox');
-    expect(inputs[0]).toHaveValue('https://registry.npmjs.org');
-    expect(inputs[1]).toHaveValue('https://pypi.org/simple');
+    expect(screen.getByLabelText('NPM Registry')).toHaveValue('https://registry.npmjs.org');
+    expect(screen.getByLabelText('PyPI Index')).toHaveValue('https://pypi.org/simple');
+    expect(screen.getByLabelText('Crates Registry')).toHaveValue('https://crates.io');
+    expect(screen.getByLabelText('Go Proxy')).toHaveValue('https://proxy.golang.org');
   });
 
   it('should call onValueChange when NPM registry is changed', () => {
     const onValueChange = jest.fn();
     render(<MirrorsSettings {...defaultProps} onValueChange={onValueChange} />);
 
-    const inputs = screen.getAllByRole('textbox');
-    fireEvent.change(inputs[0], {
+    fireEvent.change(screen.getByLabelText('NPM Registry'), {
       target: { value: 'https://registry.npmmirror.com' },
     });
 
@@ -78,8 +108,7 @@ describe('MirrorsSettings', () => {
     const onValueChange = jest.fn();
     render(<MirrorsSettings {...defaultProps} onValueChange={onValueChange} />);
 
-    const inputs = screen.getAllByRole('textbox');
-    fireEvent.change(inputs[1], {
+    fireEvent.change(screen.getByLabelText('PyPI Index'), {
       target: { value: 'https://pypi.tuna.tsinghua.edu.cn/simple' },
     });
 

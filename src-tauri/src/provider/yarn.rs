@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -174,6 +175,43 @@ impl Provider for YarnProvider {
             }
             Err(e) => Err(e),
         }
+    }
+
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        let pkg = if version.is_empty() { name.to_string() } else { format!("{}@{}", name, version) };
+        let out = self.run_yarn(&["info", &pkg, "dependencies", "--json"]).await?;
+
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
+        let data = value.get("data").cloned().unwrap_or(value);
+        let parsed = if let Some(data_str) = data.as_str() {
+            serde_json::from_str::<serde_json::Value>(data_str).unwrap_or(serde_json::Value::Null)
+        } else {
+            data
+        };
+
+        let deps_obj = parsed
+            .get("dependencies")
+            .and_then(|deps| deps.as_object())
+            .or_else(|| parsed.as_object());
+
+        let deps = deps_obj
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(dep_name, constraint)| {
+                        let constraint_str = constraint.as_str()?;
+                        let parsed = constraint_str
+                            .parse::<VersionConstraint>()
+                            .unwrap_or(VersionConstraint::Any);
+                        Some(Dependency {
+                            name: dep_name.to_string(),
+                            constraint: parsed,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new);
+
+        Ok(deps)
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {

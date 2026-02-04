@@ -45,6 +45,16 @@ const mockUpdateInfo = {
   release_notes: null,
 };
 
+const getProps = (overrides: Partial<React.ComponentProps<typeof SystemInfoCard>> = {}) => ({
+  systemInfo: mockSystemInfo,
+  systemLoading: false,
+  updateInfo: mockUpdateInfo,
+  systemError: null,
+  onRetry: jest.fn(),
+  t: mockT,
+  ...overrides,
+});
+
 // Wrapper with TooltipProvider
 function renderWithTooltip(ui: React.ReactElement) {
   return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -58,12 +68,7 @@ describe("SystemInfoCard", () => {
   describe("rendering", () => {
     it("displays system info heading", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByText("System Information")).toBeInTheDocument();
@@ -71,12 +76,7 @@ describe("SystemInfoCard", () => {
 
     it("displays operating system", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByText("Windows")).toBeInTheDocument();
@@ -84,12 +84,7 @@ describe("SystemInfoCard", () => {
 
     it("displays architecture", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByText("x64")).toBeInTheDocument();
@@ -97,12 +92,7 @@ describe("SystemInfoCard", () => {
 
     it("displays home directory", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByText("C:\\Users\\Test\\.cognia")).toBeInTheDocument();
@@ -110,12 +100,7 @@ describe("SystemInfoCard", () => {
 
     it("displays locale", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByText("en-US")).toBeInTheDocument();
@@ -125,12 +110,7 @@ describe("SystemInfoCard", () => {
   describe("loading state", () => {
     it("shows skeleton loaders when loading", () => {
       const { container } = renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={null}
-          systemLoading={true}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps({ systemInfo: null, systemLoading: true })} />
       );
 
       const skeletons = container.querySelectorAll('[class*="animate-pulse"]');
@@ -141,12 +121,7 @@ describe("SystemInfoCard", () => {
   describe("copy functionality", () => {
     it("renders copy button", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(
@@ -156,12 +131,7 @@ describe("SystemInfoCard", () => {
 
     it("copies system info to clipboard when button is clicked", async () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       const copyButton = screen.getByRole("button", { name: /copy system information/i });
@@ -176,12 +146,7 @@ describe("SystemInfoCard", () => {
       const { toast } = jest.requireMock<{ toast: { success: jest.Mock } }>("sonner");
 
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       const copyButton = screen.getByRole("button", { name: /copy system information/i });
@@ -196,12 +161,7 @@ describe("SystemInfoCard", () => {
   describe("accessibility", () => {
     it("has region role", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       expect(screen.getByRole("region")).toBeInTheDocument();
@@ -209,12 +169,7 @@ describe("SystemInfoCard", () => {
 
     it("has aria-labelledby for heading", () => {
       renderWithTooltip(
-        <SystemInfoCard
-          systemInfo={mockSystemInfo}
-          systemLoading={false}
-          updateInfo={mockUpdateInfo}
-          t={mockT}
-        />
+        <SystemInfoCard {...getProps()} />
       );
 
       const region = screen.getByRole("region");

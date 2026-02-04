@@ -6,9 +6,15 @@ import { Separator } from '@/components/ui/separator';
 import { Titlebar } from '@/components/layout/titlebar';
 import { LogDrawer } from '@/components/log/log-drawer';
 import { Button } from '@/components/ui/button';
+import { Breadcrumb } from '@/components/layout/breadcrumb';
+import { CommandPalette } from '@/components/command-palette';
+import { useLocale } from '@/components/providers/locale-provider';
 import { useLogStore } from '@/lib/stores/log';
-import { ScrollText } from 'lucide-react';
-import { ReactNode, useEffect } from 'react';
+import { useSettings } from '@/lib/hooks/use-settings';
+import { useAppearanceConfigSync } from '@/lib/hooks/use-appearance-config-sync';
+import { isTauri } from '@/lib/tauri';
+import { ScrollText, Search } from 'lucide-react';
+import { ReactNode, useEffect, useState } from 'react';
 
 interface AppShellProps {
   children: ReactNode;
@@ -16,8 +22,18 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const { toggleDrawer, getLogStats } = useLogStore();
+  const { config, fetchConfig } = useSettings();
+  const { t } = useLocale();
+  const [commandOpen, setCommandOpen] = useState(false);
   const stats = getLogStats();
   const hasErrors = stats.byLevel.error > 0;
+
+  useAppearanceConfigSync(config);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    fetchConfig();
+  }, [fetchConfig]);
 
   // Keyboard shortcut for opening log drawer (Ctrl+Shift+L)
   useEffect(() => {
@@ -42,7 +58,17 @@ export function AppShell({ children }: AppShellProps) {
             <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6">
               <SidebarTrigger className="-ml-1" />
               <Separator orientation="vertical" className="mr-2 h-4" />
+              <Breadcrumb />
               <div className="flex-1" />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setCommandOpen(true)}
+                title={t('commandPalette.buttonLabel')}
+              >
+                <Search className="h-4 w-4" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -62,6 +88,7 @@ export function AppShell({ children }: AppShellProps) {
           </SidebarInset>
         </SidebarProvider>
       </div>
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
       <LogDrawer />
     </div>
   );

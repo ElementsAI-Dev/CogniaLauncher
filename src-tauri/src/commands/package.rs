@@ -291,3 +291,65 @@ pub async fn package_versions(
 
     Ok(vec![])
 }
+
+#[tauri::command]
+pub async fn provider_enable(
+    provider_id: String,
+    registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    // Check if provider exists
+    {
+        let reg = registry.read().await;
+        if reg.get(&provider_id).is_none() {
+            return Err(format!("Provider not found: {}", provider_id));
+        }
+    }
+    
+    // Update settings to enable the provider (remove from disabled list)
+    let mut settings_guard = settings.write().await;
+    settings_guard
+        .provider_settings
+        .disabled_providers
+        .retain(|p| p != &provider_id);
+    settings_guard.save().await.map_err(|e| e.to_string())?;
+
+    let mut reg = registry.write().await;
+    reg.set_provider_enabled(&provider_id, true);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn provider_disable(
+    provider_id: String,
+    registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    // Check if provider exists
+    {
+        let reg = registry.read().await;
+        if reg.get(&provider_id).is_none() {
+            return Err(format!("Provider not found: {}", provider_id));
+        }
+    }
+    
+    // Update settings to disable the provider (add to disabled list)
+    let mut settings_guard = settings.write().await;
+    if !settings_guard
+        .provider_settings
+        .disabled_providers
+        .contains(&provider_id)
+    {
+        settings_guard
+            .provider_settings
+            .disabled_providers
+            .push(provider_id.clone());
+    }
+    settings_guard.save().await.map_err(|e| e.to_string())?;
+
+    let mut reg = registry.write().await;
+    reg.set_provider_enabled(&provider_id, false);
+
+    Ok(())
+}

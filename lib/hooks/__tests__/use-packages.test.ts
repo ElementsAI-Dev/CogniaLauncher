@@ -174,8 +174,24 @@ describe('usePackages', () => {
   describe('fetchProviders', () => {
     it('should fetch available providers', async () => {
       const mockProviders = [
-        { id: 'npm', display_name: 'npm', capabilities: ['install'], platforms: ['windows', 'macos', 'linux'], priority: 100, is_environment_provider: false },
-        { id: 'cargo', display_name: 'Cargo', capabilities: ['install'], platforms: ['windows', 'macos', 'linux'], priority: 80, is_environment_provider: false },
+        {
+          id: 'npm',
+          display_name: 'npm',
+          capabilities: ['install'],
+          platforms: ['windows', 'macos', 'linux'],
+          priority: 100,
+          is_environment_provider: false,
+          enabled: true,
+        },
+        {
+          id: 'cargo',
+          display_name: 'Cargo',
+          capabilities: ['install'],
+          platforms: ['windows', 'macos', 'linux'],
+          priority: 80,
+          is_environment_provider: false,
+          enabled: true,
+        },
       ];
       mockedTauri.providerList.mockResolvedValue(mockProviders);
 

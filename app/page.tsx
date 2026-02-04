@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { StatsCard } from '@/components/dashboard/stats-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/layout/page-header';
 import { useEnvironments } from '@/lib/hooks/use-environments';
 import { usePackages } from '@/lib/hooks/use-packages';
 import { useSettings } from '@/lib/hooks/use-settings';
@@ -28,10 +29,7 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold">{t('dashboard.title')}</h1>
-        <p className="text-muted-foreground">{t('dashboard.description')}</p>
-      </div>
+      <PageHeader title={t('dashboard.title')} description={t('dashboard.description')} />
 
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard

@@ -7,13 +7,14 @@ use super::{
 use crate::config::Settings;
 use crate::error::CogniaResult;
 use crate::platform::env::{current_platform, Platform};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub struct ProviderRegistry {
     providers: HashMap<String, Arc<dyn Provider>>,
     environment_providers: HashMap<String, Arc<dyn EnvironmentProvider>>,
+    disabled_providers: HashSet<String>,
 }
 
 impl ProviderRegistry {
@@ -21,6 +22,7 @@ impl ProviderRegistry {
         Self {
             providers: HashMap::new(),
             environment_providers: HashMap::new(),
+            disabled_providers: HashSet::new(),
         }
     }
 
@@ -31,6 +33,13 @@ impl ProviderRegistry {
     /// Create a registry with providers configured from settings
     pub async fn with_settings(settings: &Settings) -> CogniaResult<Self> {
         let mut registry = Self::new();
+
+        registry.disabled_providers = settings
+            .provider_settings
+            .disabled_providers
+            .iter()
+            .cloned()
+            .collect();
 
         // Update the global API client with mirror settings
         update_api_client_from_settings(settings);
@@ -251,12 +260,17 @@ impl ProviderRegistry {
     }
 
     pub fn list(&self) -> Vec<&str> {
-        self.providers.keys().map(|s| s.as_str()).collect()
+        self.providers
+            .keys()
+            .filter(|id| self.is_provider_enabled(id))
+            .map(|s| s.as_str())
+            .collect()
     }
 
     pub fn list_environment_providers(&self) -> Vec<&str> {
         self.environment_providers
             .keys()
+            .filter(|id| self.is_provider_enabled(id))
             .map(|s| s.as_str())
             .collect()
     }
@@ -268,7 +282,8 @@ impl ProviderRegistry {
             .providers
             .values()
             .filter(|p| {
-                p.capabilities().contains(&capability)
+                self.is_provider_enabled(p.id())
+                    && p.capabilities().contains(&capability)
                     && p.supported_platforms().contains(&platform)
             })
             .cloned()
@@ -288,6 +303,7 @@ impl ProviderRegistry {
             .providers
             .values()
             .filter(|p| p.supported_platforms().contains(&platform))
+            .filter(|p| self.is_provider_enabled(p.id()))
             .cloned()
             .collect();
 
@@ -314,6 +330,7 @@ impl ProviderRegistry {
             platforms: p.supported_platforms(),
             priority: p.priority(),
             is_environment_provider: self.environment_providers.contains_key(id),
+            enabled: self.is_provider_enabled(id),
         })
     }
 
@@ -341,11 +358,27 @@ impl ProviderRegistry {
     }
 
     pub async fn check_provider_available(&self, id: &str) -> bool {
+        if !self.is_provider_enabled(id) {
+            return false;
+        }
+
         if let Some(provider) = self.providers.get(id) {
             provider.is_available().await
         } else {
             false
         }
+    }
+
+    pub fn set_provider_enabled(&mut self, id: &str, enabled: bool) {
+        if enabled {
+            self.disabled_providers.remove(id);
+        } else {
+            self.disabled_providers.insert(id.to_string());
+        }
+    }
+
+    pub fn is_provider_enabled(&self, id: &str) -> bool {
+        !self.disabled_providers.contains(id)
     }
 }
 
@@ -363,6 +396,7 @@ pub struct ProviderInfo {
     pub platforms: Vec<Platform>,
     pub priority: i32,
     pub is_environment_provider: bool,
+    pub enabled: bool,
 }
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
@@ -390,5 +424,16 @@ mod tests {
     fn test_registry_creation() {
         let registry = ProviderRegistry::new();
         assert!(registry.list().is_empty());
+    }
+
+    #[test]
+    fn test_provider_enabled_state() {
+        let mut registry = ProviderRegistry::new();
+
+        registry.set_provider_enabled("npm", false);
+        assert!(!registry.is_provider_enabled("npm"));
+
+        registry.set_provider_enabled("npm", true);
+        assert!(registry.is_provider_enabled("npm"));
     }
 }

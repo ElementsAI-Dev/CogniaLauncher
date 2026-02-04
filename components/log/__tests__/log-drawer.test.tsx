@@ -5,7 +5,7 @@ import { useLogStore } from '@/lib/stores/log';
 
 // Mock tauri module
 jest.mock('@/lib/tauri', () => ({
-  isTauri: jest.fn(() => false),
+  isTauri: jest.fn(() => true),
 }));
 
 // Mock locale provider
@@ -21,7 +21,20 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.resume': 'Resume',
         'logs.autoScrollOn': 'Auto-scroll enabled',
         'logs.autoScrollOff': 'Auto-scroll disabled',
+        'logs.timeRange': 'Time range',
+        'logs.timeRangeAll': 'All time',
+        'logs.timeRangeLastHour': 'Last hour',
+        'logs.timeRangeLast24Hours': 'Last 24 hours',
+        'logs.timeRangeLast7Days': 'Last 7 days',
+        'logs.timeRangeCustom': 'Custom range',
+        'logs.timeRangeStart': 'Start time',
+        'logs.timeRangeEnd': 'End time',
+        'logs.timeRangeTo': 'to',
+        'logs.regex': 'Regex',
+        'logs.maxLogs': 'Max logs',
         'logs.export': 'Export logs',
+        'logs.exportTxt': 'Export TXT',
+        'logs.exportJson': 'Export JSON',
         'logs.clear': 'Clear logs',
         'logs.total': 'Total',
         'logs.paused': 'Paused',
@@ -30,6 +43,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.noLogsDescription': 'Logs will appear here as the application runs',
         'logs.notAvailable': 'Logs not available',
         'logs.notAvailableDescription': 'Log viewer is only available in the desktop application',
+        'logs.expand': 'Expand',
+        'logs.collapse': 'Collapse',
         'common.copy': 'Copy',
         'common.close': 'Close',
       };
@@ -47,6 +62,9 @@ describe('LogDrawer', () => {
       filter: {
         levels: ['info', 'warn', 'error'],
         search: '',
+        useRegex: false,
+        startTime: null,
+        endTime: null,
       },
       autoScroll: true,
       paused: false,

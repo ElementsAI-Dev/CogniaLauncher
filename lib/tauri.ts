@@ -6,6 +6,38 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window;
 }
 
+export async function getAppVersion(): Promise<string | null> {
+  if (typeof window === 'undefined' || !isTauri()) {
+    return null;
+  }
+
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app');
+    return await getVersion();
+  } catch (error) {
+    console.error('Failed to get app version:', error);
+    return null;
+  }
+}
+
+export async function openExternal(url: string): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!isTauri()) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+  } catch (error) {
+    console.error('Failed to open external link:', error);
+  }
+}
+
 // Environment installation progress event payload
 export interface EnvInstallProgressEvent {
   envType: string;
@@ -37,6 +69,7 @@ export const envResolveAlias = (envType: string, alias: string) =>
 
 export interface EnvironmentInfo {
   env_type: string;
+  provider_id: string;
   provider: string;
   current_version: string | null;
   installed_versions: InstalledVersion[];
@@ -99,6 +132,7 @@ export interface ProviderInfo {
   platforms: string[];
   priority: number;
   is_environment_provider: boolean;
+  enabled: boolean;
 }
 
 export interface CacheInfo {
@@ -106,6 +140,9 @@ export interface CacheInfo {
   metadata_cache: CacheStats;
   total_size: number;
   total_size_human: string;
+  max_size?: number;
+  max_size_human?: string;
+  usage_percent?: number;
 }
 
 export interface CacheStats {
@@ -123,7 +160,7 @@ export interface PlatformInfo {
 // Environment commands
 export const envList = () => invoke<EnvironmentInfo[]>('env_list');
 export const envGet = (envType: string) => invoke<EnvironmentInfo>('env_get', { envType });
-export const envInstall = (envType: string, version: string) => invoke<void>('env_install', { envType, version });
+export const envInstall = (envType: string, version: string, providerId?: string) => invoke<void>('env_install', { envType, version, providerId });
 export const envUninstall = (envType: string, version: string) => invoke<void>('env_uninstall', { envType, version });
 export const envUseGlobal = (envType: string, version: string) => invoke<void>('env_use_global', { envType, version });
 export const envUseLocal = (envType: string, version: string, projectPath: string) => invoke<void>('env_use_local', { envType, version, projectPath });
@@ -131,6 +168,31 @@ export const envDetect = (envType: string, startPath: string) => invoke<Detected
 export const envDetectAll = (startPath: string) => invoke<DetectedEnvironment[]>('env_detect_all', { startPath });
 export const envAvailableVersions = (envType: string) => invoke<VersionInfo[]>('env_available_versions', { envType });
 export const envListProviders = () => invoke<EnvironmentProviderInfo[]>('env_list_providers');
+
+// Environment settings commands
+export interface EnvVariableConfig {
+  key: string;
+  value: string;
+  enabled: boolean;
+}
+
+export interface DetectionFileConfig {
+  file_name: string;
+  enabled: boolean;
+}
+
+export interface EnvironmentSettingsConfig {
+  env_type: string;
+  env_variables: EnvVariableConfig[];
+  detection_files: DetectionFileConfig[];
+  auto_switch: boolean;
+}
+
+export const envSaveSettings = (settings: EnvironmentSettingsConfig) => 
+  invoke<void>('env_save_settings', { settings });
+
+export const envLoadSettings = (envType: string) => 
+  invoke<EnvironmentSettingsConfig | null>('env_load_settings', { envType });
 
 export interface EnvironmentProviderInfo {
   id: string;
@@ -194,6 +256,7 @@ export interface CacheRepairResult {
 export interface CacheSettings {
   max_size: number;
   max_age_days: number;
+  metadata_cache_ttl: number;
   auto_clean: boolean;
 }
 
@@ -509,10 +572,6 @@ export interface FeatureComparison {
 export const comparePackages = (packages: [string, string | null][]) =>
   invoke<PackageComparison>('compare_packages', { packages });
 
-// Environment creation
-export const envCreate = (name: string, envType: string, version: string) => 
-  invoke<void>('env_create', { name, envType, version });
-
 // Self update
 export interface SelfUpdateInfo {
   current_version: string;
@@ -521,8 +580,21 @@ export interface SelfUpdateInfo {
   release_notes: string | null;
 }
 
+export interface SelfUpdateProgressEvent {
+  progress: number | null;
+  status: 'downloading' | 'installing' | 'done' | 'error';
+}
+
 export const selfCheckUpdate = () => invoke<SelfUpdateInfo>('self_check_update');
 export const selfUpdate = () => invoke<void>('self_update');
+
+export async function listenSelfUpdateProgress(
+  callback: (progress: SelfUpdateProgressEvent) => void
+): Promise<UnlistenFn> {
+  return listen<SelfUpdateProgressEvent>('self-update-progress', (event) => {
+    callback(event.payload);
+  });
+}
 
 // Manifest operations
 export interface ManifestInfo {
@@ -556,6 +628,9 @@ export interface LogQueryOptions {
   fileName?: string;
   levelFilter?: string[];
   search?: string;
+  useRegex?: boolean;
+  startTime?: number | null;
+  endTime?: number | null;
   limit?: number;
   offset?: number;
 }
@@ -566,10 +641,26 @@ export interface LogQueryResult {
   hasMore: boolean;
 }
 
+export interface LogExportOptions {
+  fileName?: string;
+  levelFilter?: string[];
+  search?: string;
+  useRegex?: boolean;
+  startTime?: number | null;
+  endTime?: number | null;
+  format?: 'txt' | 'json';
+}
+
+export interface LogExportResult {
+  content: string;
+  fileName: string;
+}
+
 export const logListFiles = () => invoke<LogFileInfo[]>('log_list_files');
 export const logQuery = (options: LogQueryOptions) => invoke<LogQueryResult>('log_query', { options });
 export const logClear = (fileName?: string) => invoke<void>('log_clear', { fileName });
 export const logGetDir = () => invoke<string>('log_get_dir');
+export const logExport = (options: LogExportOptions) => invoke<LogExportResult>('log_export', { options });
 
 // Command output streaming event
 export interface CommandOutputEvent {
@@ -584,5 +675,258 @@ export async function listenCommandOutput(
 ): Promise<UnlistenFn> {
   return listen<CommandOutputEvent>('command-output', (event) => {
     callback(event.payload);
+  });
+}
+
+// ===== Download Manager Types and Commands =====
+
+export interface DownloadProgress {
+  downloadedBytes: number;
+  totalBytes: number | null;
+  speed: number;
+  speedHuman: string;
+  percent: number;
+  etaSecs: number | null;
+  etaHuman: string | null;
+  downloadedHuman: string;
+  totalHuman: string | null;
+}
+
+export interface DownloadTask {
+  id: string;
+  url: string;
+  name: string;
+  destination: string;
+  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed';
+  progress: DownloadProgress;
+  error: string | null;
+  provider: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface DownloadQueueStats {
+  totalTasks: number;
+  queued: number;
+  downloading: number;
+  paused: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  totalBytes: number;
+  downloadedBytes: number;
+  totalHuman: string;
+  downloadedHuman: string;
+  overallProgress: number;
+}
+
+export interface DownloadHistoryRecord {
+  id: string;
+  url: string;
+  filename: string;
+  destination: string;
+  size: number;
+  sizeHuman: string;
+  checksum: string | null;
+  startedAt: string;
+  completedAt: string;
+  durationSecs: number;
+  durationHuman: string;
+  averageSpeed: number;
+  speedHuman: string;
+  status: 'completed' | 'failed' | 'cancelled';
+  error: string | null;
+  provider: string | null;
+}
+
+export interface DownloadHistoryStats {
+  totalCount: number;
+  completedCount: number;
+  failedCount: number;
+  cancelledCount: number;
+  totalBytes: number;
+  totalBytesHuman: string;
+  averageSpeed: number;
+  averageSpeedHuman: string;
+  successRate: number;
+}
+
+export interface DiskSpaceInfo {
+  total: number;
+  available: number;
+  used: number;
+  usagePercent: number;
+  totalHuman: string;
+  availableHuman: string;
+  usedHuman: string;
+}
+
+export interface DownloadRequest {
+  url: string;
+  destination: string;
+  name: string;
+  checksum?: string;
+  priority?: number;
+  provider?: string;
+}
+
+// Download event types
+export type DownloadEvent =
+  | { type: 'task_added'; task_id: string }
+  | { type: 'task_started'; task_id: string }
+  | { type: 'task_progress'; task_id: string; progress: DownloadProgress }
+  | { type: 'task_completed'; task_id: string }
+  | { type: 'task_failed'; task_id: string; error: string }
+  | { type: 'task_paused'; task_id: string }
+  | { type: 'task_resumed'; task_id: string }
+  | { type: 'task_cancelled'; task_id: string }
+  | { type: 'queue_updated'; stats: DownloadQueueStats };
+
+// Download commands
+export const downloadAdd = (request: DownloadRequest) =>
+  invoke<string>('download_add', { request });
+
+export const downloadGet = (taskId: string) =>
+  invoke<DownloadTask | null>('download_get', { taskId });
+
+export const downloadList = () =>
+  invoke<DownloadTask[]>('download_list');
+
+export const downloadStats = () =>
+  invoke<DownloadQueueStats>('download_stats');
+
+export const downloadPause = (taskId: string) =>
+  invoke<void>('download_pause', { taskId });
+
+export const downloadResume = (taskId: string) =>
+  invoke<void>('download_resume', { taskId });
+
+export const downloadCancel = (taskId: string) =>
+  invoke<void>('download_cancel', { taskId });
+
+export const downloadRemove = (taskId: string) =>
+  invoke<boolean>('download_remove', { taskId });
+
+export const downloadPauseAll = () =>
+  invoke<number>('download_pause_all');
+
+export const downloadResumeAll = () =>
+  invoke<number>('download_resume_all');
+
+export const downloadCancelAll = () =>
+  invoke<number>('download_cancel_all');
+
+export const downloadClearFinished = () =>
+  invoke<number>('download_clear_finished');
+
+export const downloadRetryFailed = () =>
+  invoke<number>('download_retry_failed');
+
+export const downloadSetSpeedLimit = (bytesPerSecond: number) =>
+  invoke<void>('download_set_speed_limit', { bytesPerSecond });
+
+export const downloadGetSpeedLimit = () =>
+  invoke<number>('download_get_speed_limit');
+
+export const downloadSetMaxConcurrent = (max: number) =>
+  invoke<void>('download_set_max_concurrent', { max });
+
+// Download history commands
+export const downloadHistoryList = (limit?: number) =>
+  invoke<DownloadHistoryRecord[]>('download_history_list', { limit });
+
+export const downloadHistorySearch = (query: string) =>
+  invoke<DownloadHistoryRecord[]>('download_history_search', { query });
+
+export const downloadHistoryStats = () =>
+  invoke<DownloadHistoryStats>('download_history_stats');
+
+export const downloadHistoryClear = (days?: number) =>
+  invoke<number>('download_history_clear', { days });
+
+export const downloadHistoryRemove = (id: string) =>
+  invoke<boolean>('download_history_remove', { id });
+
+// Disk space commands
+export const diskSpaceGet = (path: string) =>
+  invoke<DiskSpaceInfo>('disk_space_get', { path });
+
+export const diskSpaceCheck = (path: string, required: number) =>
+  invoke<boolean>('disk_space_check', { path, required });
+
+// Download event listeners
+export async function listenDownloadTaskAdded(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-added', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskStarted(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-started', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskProgress(
+  callback: (taskId: string, progress: DownloadProgress) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string; progress: DownloadProgress }>(
+    'download-task-progress',
+    (event) => {
+      callback(event.payload.task_id, event.payload.progress);
+    }
+  );
+}
+
+export async function listenDownloadTaskCompleted(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-completed', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskFailed(
+  callback: (taskId: string, error: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string; error: string }>('download-task-failed', (event) => {
+    callback(event.payload.task_id, event.payload.error);
+  });
+}
+
+export async function listenDownloadTaskPaused(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-paused', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskResumed(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-resumed', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskCancelled(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-cancelled', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadQueueUpdated(
+  callback: (stats: DownloadQueueStats) => void
+): Promise<UnlistenFn> {
+  return listen<{ stats: DownloadQueueStats }>('download-queue-updated', (event) => {
+    callback(event.payload.stats);
   });
 }

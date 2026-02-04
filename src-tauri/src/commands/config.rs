@@ -45,15 +45,23 @@ pub async fn config_list(
         "general.resolve_strategy",
         "general.auto_update_metadata",
         "general.metadata_cache_ttl",
+        "general.cache_max_size",
+        "general.cache_max_age_days",
+        "general.auto_clean_cache",
         "network.timeout",
         "network.retries",
         "network.proxy",
         "security.allow_http",
         "security.verify_certificates",
+        "security.allow_self_signed",
         "appearance.theme",
         "appearance.accent_color",
         "appearance.language",
         "appearance.reduced_motion",
+        "paths.root",
+        "paths.cache",
+        "paths.environments",
+        "provider_settings.disabled_providers",
     ];
 
     let mut result: Vec<(String, String)> = static_keys
@@ -63,16 +71,24 @@ pub async fn config_list(
 
     // Add default mirror keys (even if empty, frontend expects them)
     for key in DEFAULT_MIRROR_KEYS {
-        let value = s.get_value(key).unwrap_or_default();
-        result.push((key.to_string(), value));
+        let provider = key.split('.').nth(1).unwrap_or_default();
+        let config = s.mirrors.get(provider).cloned().unwrap_or_default();
+        result.push((key.to_string(), config.url));
+        result.push((format!("{}.enabled", key), config.enabled.to_string()));
+        result.push((format!("{}.priority", key), config.priority.to_string()));
+        result.push((format!("{}.verify_ssl", key), config.verify_ssl.to_string()));
     }
 
     // Add any additional configured mirrors that aren't in defaults
     for (provider, config) in &s.mirrors {
         let key = format!("mirrors.{}", provider);
-        if !DEFAULT_MIRROR_KEYS.contains(&key.as_str()) && !config.url.is_empty() {
-            result.push((key, config.url.clone()));
+        if DEFAULT_MIRROR_KEYS.contains(&key.as_str()) || config.url.is_empty() {
+            continue;
         }
+        result.push((key.clone(), config.url.clone()));
+        result.push((format!("{}.enabled", key), config.enabled.to_string()));
+        result.push((format!("{}.priority", key), config.priority.to_string()));
+        result.push((format!("{}.verify_ssl", key), config.verify_ssl.to_string()));
     }
 
     Ok(result)

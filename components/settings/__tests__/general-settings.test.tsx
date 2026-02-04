@@ -11,6 +11,14 @@ const mockT = (key: string) => {
     'settings.parallelDownloadsDesc': 'Number of concurrent downloads',
     'settings.metadataCacheTtl': 'Metadata Cache TTL',
     'settings.metadataCacheTtlDesc': 'Seconds before metadata cache expires',
+    'settings.resolveStrategy': 'Resolve Strategy',
+    'settings.resolveStrategyDesc': 'How package versions are resolved',
+    'settings.resolveLatest': 'Latest',
+    'settings.resolveMinimal': 'Minimal',
+    'settings.resolveLocked': 'Locked',
+    'settings.resolvePreferLocked': 'Prefer Locked',
+    'settings.autoUpdateMetadata': 'Auto Update Metadata',
+    'settings.autoUpdateMetadataDesc': 'Automatically refresh metadata',
   };
   return translations[key] || key;
 };
@@ -20,6 +28,8 @@ describe('GeneralSettings', () => {
     localConfig: {
       'general.parallel_downloads': '4',
       'general.metadata_cache_ttl': '3600',
+      'general.resolve_strategy': 'latest',
+      'general.auto_update_metadata': 'true',
     },
     errors: {},
     onValueChange: jest.fn(),
@@ -50,6 +60,19 @@ describe('GeneralSettings', () => {
     expect(screen.getByText('Metadata Cache TTL')).toBeInTheDocument();
   });
 
+  it('should render resolve strategy setting', () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText('Resolve Strategy')).toBeInTheDocument();
+    expect(screen.getByText('Latest')).toBeInTheDocument();
+  });
+
+  it('should render auto update metadata toggle', () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText('Auto Update Metadata')).toBeInTheDocument();
+  });
+
   it('should call onValueChange when parallel downloads is changed', () => {
     const onValueChange = jest.fn();
     render(<GeneralSettings {...defaultProps} onValueChange={onValueChange} />);
@@ -58,6 +81,27 @@ describe('GeneralSettings', () => {
     fireEvent.change(inputs[0], { target: { value: '8' } });
 
     expect(onValueChange).toHaveBeenCalledWith('general.parallel_downloads', '8');
+  });
+
+  it('should call onValueChange when resolve strategy changes', () => {
+    const onValueChange = jest.fn();
+    render(<GeneralSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    const trigger = screen.getByRole('combobox');
+    fireEvent.mouseDown(trigger);
+    fireEvent.click(screen.getByText('Minimal'));
+
+    expect(onValueChange).toHaveBeenCalledWith('general.resolve_strategy', 'minimal');
+  });
+
+  it('should call onValueChange when auto update metadata toggles', () => {
+    const onValueChange = jest.fn();
+    render(<GeneralSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    const switches = screen.getAllByRole('switch');
+    fireEvent.click(switches[0]);
+
+    expect(onValueChange).toHaveBeenCalledWith('general.auto_update_metadata', 'false');
   });
 
   it('should display validation errors', () => {

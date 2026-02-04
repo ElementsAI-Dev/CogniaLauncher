@@ -1,14 +1,16 @@
-use super::db::{CacheDb, CacheEntry, CacheEntryType};
+use super::{CacheEntry, CacheEntryType, SqliteCacheDb};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     fs,
     network::{DownloadProgress, HttpClient},
 };
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub struct DownloadCache {
     cache_dir: PathBuf,
-    db: CacheDb,
+    db: SqliteCacheDb,
 }
 
 impl DownloadCache {
@@ -16,7 +18,7 @@ impl DownloadCache {
         let downloads_dir = cache_dir.join("downloads");
         fs::create_dir_all(&downloads_dir).await?;
 
-        let db = CacheDb::open(cache_dir).await?;
+        let db = SqliteCacheDb::open(cache_dir).await?;
 
         Ok(Self {
             cache_dir: downloads_dir,
@@ -24,18 +26,22 @@ impl DownloadCache {
         })
     }
 
-    pub fn get_by_checksum(&mut self, checksum: &str) -> Option<PathBuf> {
-        self.db
+    pub async fn get_by_checksum(&self, checksum: &str) -> CogniaResult<Option<PathBuf>> {
+        Ok(self
+            .db
             .get_by_checksum(checksum)
+            .await?
             .filter(|entry| !entry.is_expired())
-            .map(|entry| entry.file_path.clone())
+            .map(|entry| entry.file_path.clone()))
     }
 
-    pub fn get(&mut self, key: &str) -> Option<PathBuf> {
-        self.db
+    pub async fn get(&self, key: &str) -> CogniaResult<Option<PathBuf>> {
+        Ok(self
+            .db
             .get(key)
+            .await?
             .filter(|entry| !entry.is_expired())
-            .map(|entry| entry.file_path.clone())
+            .map(|entry| entry.file_path.clone()))
     }
 
     pub async fn download<F>(
@@ -48,7 +54,7 @@ impl DownloadCache {
         F: FnMut(DownloadProgress),
     {
         if let Some(checksum) = expected_checksum {
-            if let Some(cached_path) = self.get_by_checksum(checksum) {
+            if let Some(cached_path) = self.get_by_checksum(checksum).await? {
                 if fs::exists(&cached_path).await {
                     self.db.touch(&format!("checksum:{}", checksum)).await?;
                     return Ok(cached_path);
@@ -115,7 +121,7 @@ impl DownloadCache {
     }
 
     pub async fn verify(&mut self, checksum: &str) -> CogniaResult<bool> {
-        if let Some(path) = self.get_by_checksum(checksum) {
+        if let Some(path) = self.get_by_checksum(checksum).await? {
             if fs::exists(&path).await {
                 let actual = fs::calculate_sha256(&path).await?;
                 return Ok(actual == checksum);
@@ -127,7 +133,7 @@ impl DownloadCache {
     pub async fn remove(&mut self, checksum: &str) -> CogniaResult<bool> {
         let key = format!("checksum:{}", checksum);
 
-        if let Some(entry) = self.db.get(&key) {
+        if let Some(entry) = self.db.get(&key).await? {
             let path = entry.file_path.clone();
             if fs::exists(&path).await {
                 fs::remove_file(&path).await?;
@@ -148,9 +154,9 @@ impl DownloadCache {
         let entries: Vec<CacheEntry> = self
             .db
             .list()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Download)
-            .cloned()
             .collect();
 
         for entry in entries {
@@ -165,21 +171,93 @@ impl DownloadCache {
     }
 
     /// Get list of entries that would be cleaned (for preview)
-    pub fn preview_clean(&self) -> Vec<&CacheEntry> {
-        self.db
+    pub async fn preview_clean(&self) -> CogniaResult<Vec<CacheEntry>> {
+        Ok(self
+            .db
             .list()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Download)
-            .collect()
+            .collect())
+    }
+
+    /// Get list of expired download entries (for preview)
+    pub async fn preview_expired(&self, max_age: Duration) -> CogniaResult<Vec<CacheEntry>> {
+        let entries = self.db.list().await?;
+        Ok(entries
+            .into_iter()
+            .filter(|entry| entry.entry_type == CacheEntryType::Download)
+            .filter(|entry| is_entry_expired(entry, max_age))
+            .collect())
+    }
+
+    pub async fn clean_expired(&mut self, max_age: Duration) -> CogniaResult<u64> {
+        self.clean_expired_with_option(max_age, false).await
+    }
+
+    /// Clean expired download entries with option to use trash
+    pub async fn clean_expired_with_option(
+        &mut self,
+        max_age: Duration,
+        use_trash: bool,
+    ) -> CogniaResult<u64> {
+        let entries = self.db.list().await?;
+        let mut total_freed = 0u64;
+
+        for entry in entries
+            .into_iter()
+            .filter(|e| e.entry_type == CacheEntryType::Download)
+            .filter(|e| is_entry_expired(e, max_age))
+        {
+            if fs::exists(&entry.file_path).await {
+                total_freed += entry.size;
+                fs::remove_file_with_option(&entry.file_path, use_trash).await?;
+            }
+            self.db.remove(&entry.key).await?;
+        }
+
+        Ok(total_freed)
     }
 
     pub async fn evict_to_size(&mut self, max_size: u64) -> CogniaResult<usize> {
-        self.db.evict_to_size(max_size).await
+        let mut entries: Vec<_> = self
+            .db
+            .list()
+            .await?
+            .into_iter()
+            .filter(|e| e.entry_type == CacheEntryType::Download)
+            .collect();
+
+        let total_download_size: u64 = entries.iter().map(|entry| entry.size).sum();
+        if total_download_size <= max_size {
+            return Ok(0);
+        }
+
+        let mut remaining = total_download_size;
+        let mut removed = 0usize;
+
+        entries.sort_by_key(|entry| entry.last_accessed.unwrap_or(entry.created_at));
+
+        for entry in entries {
+            if remaining <= max_size {
+                break;
+            }
+
+            if fs::exists(&entry.file_path).await {
+                let _ = fs::remove_file(&entry.file_path).await;
+            }
+            if self.db.remove(&entry.key).await? {
+                removed += 1;
+                remaining = remaining.saturating_sub(entry.size);
+            }
+        }
+
+        Ok(removed)
     }
 
-    pub async fn stats(&self) -> DownloadCacheStats {
-        let binding = self.db.list();
-        let entries: Vec<_> = binding
+    pub async fn stats(&self) -> CogniaResult<DownloadCacheStats> {
+        let entries = self.db.list().await?;
+        let entries: Vec<_> = entries
             .iter()
             .filter(|e| e.entry_type == CacheEntryType::Download)
             .collect();
@@ -187,12 +265,18 @@ impl DownloadCache {
         let total_size = entries.iter().map(|e| e.size).sum();
         let entry_count = entries.len();
 
-        DownloadCacheStats {
+        Ok(DownloadCacheStats {
             total_size,
             entry_count,
             location: self.cache_dir.clone(),
-        }
+        })
     }
+}
+
+fn is_entry_expired(entry: &CacheEntry, max_age: Duration) -> bool {
+    let max_age = ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
+    let cutoff: DateTime<Utc> = Utc::now() - max_age;
+    entry.created_at < cutoff
 }
 
 #[derive(Debug, Clone)]
@@ -240,7 +324,7 @@ mod tests {
         let cached_path = cache.add_file(&test_file, &checksum).await.unwrap();
         assert!(fs::exists(&cached_path).await);
 
-        let retrieved = cache.get_by_checksum(&checksum);
+        let retrieved = cache.get_by_checksum(&checksum).await.unwrap();
         assert!(retrieved.is_some());
     }
 
@@ -276,7 +360,7 @@ mod tests {
 
         // Get by key format used internally
         let key = format!("checksum:{}", checksum);
-        let retrieved = cache.get(&key);
+        let retrieved = cache.get(&key).await.unwrap();
         assert!(retrieved.is_some());
     }
 
@@ -324,7 +408,7 @@ mod tests {
         assert!(!fs::exists(&cached_path).await);
 
         // Get should return None
-        assert!(cache.get_by_checksum(&checksum).is_none());
+        assert!(cache.get_by_checksum(&checksum).await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -343,14 +427,43 @@ mod tests {
             cache.add_file(&test_file, &checksum).await.unwrap();
         }
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 3);
 
         // Clean all
         let freed = cache.clean().await.unwrap();
         assert!(freed > 0);
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
+        assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_preview_and_clean_expired() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("expired-download.txt");
+        fs::write_file_string(&test_file, "expired content")
+            .await
+            .unwrap();
+
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        let preview = cache
+            .preview_expired(Duration::from_secs(0))
+            .await
+            .unwrap();
+        assert_eq!(preview.len(), 1);
+
+        let freed = cache
+            .clean_expired(Duration::from_secs(0))
+            .await
+            .unwrap();
+        assert!(freed > 0);
+
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 
@@ -371,7 +484,7 @@ mod tests {
             cache.add_file(&test_file, &checksum).await.unwrap();
         }
 
-        let stats_before = cache.stats().await;
+        let stats_before = cache.stats().await.unwrap();
         assert!(stats_before.entry_count >= 3, "Expected at least 3 entries, got {}", stats_before.entry_count);
         assert!(stats_before.total_size > 0);
 
@@ -380,7 +493,7 @@ mod tests {
         let evicted = cache.evict_to_size(target_size).await.unwrap();
         assert!(evicted > 0);
 
-        let stats_after = cache.stats().await;
+        let stats_after = cache.stats().await.unwrap();
         assert!(stats_after.total_size <= target_size);
     }
 
@@ -389,7 +502,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut cache = DownloadCache::open(dir.path()).await.unwrap();
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
         assert_eq!(stats.total_size, 0);
 
@@ -401,7 +514,7 @@ mod tests {
         let checksum = fs::calculate_sha256(&test_file).await.unwrap();
         cache.add_file(&test_file, &checksum).await.unwrap();
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 1);
         assert!(stats.total_size > 0);
     }
@@ -423,11 +536,11 @@ mod tests {
         }
 
         // Preview should return all files without deleting
-        let entries = cache.preview_clean();
+        let entries = cache.preview_clean().await.unwrap();
         assert_eq!(entries.len(), 3);
 
         // Files should still exist
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 3);
     }
 
@@ -451,7 +564,7 @@ mod tests {
         let freed = cache.clean_with_option(false).await.unwrap();
         assert!(freed > 0);
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 
@@ -475,7 +588,7 @@ mod tests {
         let freed = cache.clean_with_option(true).await.unwrap();
         assert!(freed > 0);
 
-        let stats = cache.stats().await;
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 }

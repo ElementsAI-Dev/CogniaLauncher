@@ -2,16 +2,20 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import { useAboutData } from "../use-about-data";
 
 // Mock the Tauri API
+const mockIsTauri = jest.fn();
 const mockSelfCheckUpdate = jest.fn();
 const mockSelfUpdate = jest.fn();
 const mockGetPlatformInfo = jest.fn();
 const mockGetCogniaDir = jest.fn();
+const mockListenSelfUpdateProgress = jest.fn();
 
 jest.mock("@/lib/tauri", () => ({
+  isTauri: () => mockIsTauri(),
   selfCheckUpdate: () => mockSelfCheckUpdate(),
   selfUpdate: () => mockSelfUpdate(),
   getPlatformInfo: () => mockGetPlatformInfo(),
   getCogniaDir: () => mockGetCogniaDir(),
+  listenSelfUpdateProgress: () => mockListenSelfUpdateProgress(),
 }));
 
 // Mock sonner toast
@@ -25,6 +29,8 @@ jest.mock("sonner", () => ({
 describe("useAboutData hook", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(true);
+    mockListenSelfUpdateProgress.mockResolvedValue(() => undefined);
     mockSelfCheckUpdate.mockResolvedValue({
       current_version: "0.1.0",
       latest_version: "0.1.0",
@@ -78,6 +84,16 @@ describe("useAboutData hook", () => {
 
       expect(result.current.systemInfo?.locale).toBe("zh-CN");
     });
+
+    it("should set desktop flag based on tauri", async () => {
+      const { result } = renderHook(() => useAboutData("en"));
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      expect(result.current.isDesktop).toBe(true);
+    });
   });
 
   describe("error handling", () => {
@@ -92,6 +108,7 @@ describe("useAboutData hook", () => {
 
       // Hook categorizes errors - generic errors become "update_check_failed"
       expect(result.current.error).toBe("update_check_failed");
+      expect(result.current.updateInfo?.update_available).toBe(false);
     });
 
     it("should categorize network errors", async () => {
@@ -139,6 +156,7 @@ describe("useAboutData hook", () => {
         homeDir: "~/.cognia",
         locale: "en-US",
       });
+      expect(result.current.systemError).toBe("system_info_failed");
     });
   });
 
@@ -208,6 +226,21 @@ describe("useAboutData hook", () => {
       expect(mockSelfUpdate).toHaveBeenCalledTimes(1);
     });
 
+    it("should not call selfUpdate when not in tauri", async () => {
+      mockIsTauri.mockReturnValue(false);
+      const sonner = jest.requireMock<{ toast: { success: jest.Mock; error: jest.Mock } }>("sonner");
+      const mockT = jest.fn().mockReturnValue("Desktop only");
+
+      const { result } = renderHook(() => useAboutData("en"));
+
+      await act(async () => {
+        await result.current.handleUpdate(mockT);
+      });
+
+      expect(mockSelfUpdate).not.toHaveBeenCalled();
+      expect(sonner.toast.error).toHaveBeenCalled();
+    });
+
     it("should set updating state during update", async () => {
       mockSelfUpdate.mockImplementation(
         () => new Promise((resolve) => setTimeout(resolve, 100))
@@ -263,6 +296,20 @@ describe("useAboutData hook", () => {
 
       // Progress starts at 0, not null
       expect(result.current.updateProgress).toBe(0);
+    });
+
+    it("should listen to update progress events", async () => {
+      mockListenSelfUpdateProgress.mockImplementation(async (handler: (event: { status: string; progress: number }) => void) => {
+        handler({ status: "downloading", progress: 42 });
+        return () => undefined;
+      });
+
+      const { result } = renderHook(() => useAboutData("en"));
+
+      await waitFor(() => {
+        expect(result.current.updateProgress).toBe(42);
+      });
+      expect(result.current.updateStatus).toBe("downloading");
     });
   });
 });

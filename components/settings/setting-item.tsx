@@ -20,6 +20,7 @@ const VALIDATION_RULES: Record<string, ValidationRule> = {
   'mirrors.npm': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
   'mirrors.pypi': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
   'mirrors.crates': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
+  'mirrors.go': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
 };
 
 export function validateField(key: string, value: string, t: (key: string, params?: Record<string, string | number>) => string): string | null {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEnvironmentStore } from '../stores/environment';
 import { useEnvironments } from './use-environments';
 import * as tauri from '../tauri';
@@ -115,17 +115,31 @@ export function useAutoVersionSwitch({
 }
 
 /**
- * Hook to get project path from current working directory or user selection.
- * This is a placeholder that can be enhanced with actual directory detection.
+ * Hook to get project path from user selection with localStorage persistence.
  */
 export function useProjectPath() {
-  // This could be enhanced to:
-  // 1. Detect the current working directory
-  // 2. Watch for directory changes
-  // 3. Store user's preferred project path
+  const [projectPath, setProjectPathState] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('cognia-project-path');
+  });
+
+  const setProjectPath = useCallback((path: string | null) => {
+    setProjectPathState(path);
+    if (path) {
+      localStorage.setItem('cognia-project-path', path);
+    } else {
+      localStorage.removeItem('cognia-project-path');
+    }
+  }, []);
+
+  const clearProjectPath = useCallback(() => {
+    setProjectPathState(null);
+    localStorage.removeItem('cognia-project-path');
+  }, []);
+
   return {
-    projectPath: null as string | null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    setProjectPath: (_path: string) => { /* placeholder */ },
+    projectPath,
+    setProjectPath,
+    clearProjectPath,
   };
 }

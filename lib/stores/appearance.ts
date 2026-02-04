@@ -1,24 +1,21 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { AccentColor } from '@/lib/theme/types';
 
-export type AccentColor = 'zinc' | 'blue' | 'green' | 'purple' | 'orange' | 'rose';
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type { AccentColor } from '@/lib/theme/types';
 
 interface AppearanceState {
   // State
-  themeMode: ThemeMode;
   accentColor: AccentColor;
   reducedMotion: boolean;
   
   // Actions
-  setThemeMode: (mode: ThemeMode) => void;
   setAccentColor: (color: AccentColor) => void;
   setReducedMotion: (reduced: boolean) => void;
   reset: () => void;
 }
 
 const defaultState = {
-  themeMode: 'system' as ThemeMode,
   accentColor: 'blue' as AccentColor,
   reducedMotion: false,
 };
@@ -28,7 +25,6 @@ export const useAppearanceStore = create<AppearanceState>()(
     (set) => ({
       ...defaultState,
       
-      setThemeMode: (themeMode) => set({ themeMode }),
       setAccentColor: (accentColor) => set({ accentColor }),
       setReducedMotion: (reducedMotion) => set({ reducedMotion }),
       reset: () => set(defaultState),
@@ -36,9 +32,8 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: 'cognia-appearance',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => ({
-        themeMode: state.themeMode,
         accentColor: state.accentColor,
         reducedMotion: state.reducedMotion,
       }),

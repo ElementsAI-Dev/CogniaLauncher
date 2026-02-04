@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { LogPanel } from '@/components/log';
+import { LogFileViewer } from '@/components/log/log-file-viewer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useLogStore } from '@/lib/stores/log';
 import { isTauri, logListFiles, logGetDir } from '@/lib/tauri';
@@ -26,7 +28,7 @@ function formatDate(timestamp: number): string {
 
 export default function LogsPage() {
   const { t } = useLocale();
-  const { logFiles, setLogFiles, getLogStats } = useLogStore();
+  const { logFiles, setLogFiles, getLogStats, selectedLogFile, setSelectedLogFile } = useLogStore();
   const [logDir, setLogDir] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const stats = getLogStats();
@@ -66,39 +68,43 @@ export default function LogsPage() {
     }
   };
 
+  const handleCloseViewer = useCallback(() => setSelectedLogFile(null), [setSelectedLogFile]);
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-6 pb-4 border-b">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ScrollText className="h-6 w-6" />
-            {t('logs.title')}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {t('logs.description')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={loadLogFiles}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            {t('common.refresh')}
-          </Button>
-          {logDir && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenLogDir}
-            >
-              <FolderOpen className="h-4 w-4 mr-2" />
-              {t('logs.openDir')}
-            </Button>
+      <div className="p-6 pb-4 border-b">
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              <ScrollText className="h-6 w-6" />
+              {t('logs.title')}
+            </span>
+          }
+          description={t('logs.description')}
+          actions={(
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadLogFiles}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                {t('common.refresh')}
+              </Button>
+              {logDir && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenLogDir}
+                >
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  {t('logs.openDir')}
+                </Button>
+              )}
+            </>
           )}
-        </div>
+        />
       </div>
 
       <Tabs defaultValue="realtime" className="flex-1 flex flex-col">
@@ -167,10 +173,8 @@ export default function LogsPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => {
-                              // TODO: Implement file viewer
-                              toast.info(t('logs.viewerComingSoon'));
-                            }}
+                            onClick={() => setSelectedLogFile(file.name)}
+                            title={t('logs.viewFile')}
                           >
                             <FolderOpen className="h-4 w-4" />
                           </Button>
@@ -184,6 +188,14 @@ export default function LogsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <LogFileViewer
+        open={Boolean(selectedLogFile)}
+        fileName={selectedLogFile}
+        onOpenChange={(open) => {
+          if (!open) handleCloseViewer();
+        }}
+      />
     </div>
   );
 }

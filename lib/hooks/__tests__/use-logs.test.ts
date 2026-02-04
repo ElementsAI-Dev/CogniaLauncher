@@ -10,6 +10,7 @@ jest.mock('../../tauri', () => ({
   logQuery: jest.fn(),
   logClear: jest.fn(),
   logGetDir: jest.fn(),
+  logExport: jest.fn(),
 }));
 
 // Import after mocking
@@ -28,6 +29,9 @@ describe('useLogs', () => {
       filter: {
         levels: ['info', 'warn', 'error'],
         search: '',
+        useRegex: false,
+        startTime: null,
+        endTime: null,
       },
       autoScroll: true,
       paused: false,
@@ -273,6 +277,24 @@ describe('useLogs', () => {
 
       expect(mockedTauri.logGetDir).toHaveBeenCalled();
       expect(logDir).toBe('/path/to/logs');
+    });
+
+    it('should export log file', async () => {
+      mockedTauri.isTauri.mockReturnValue(true);
+      mockedTauri.logExport.mockResolvedValue({
+        content: 'log content',
+        fileName: 'app.log',
+      });
+
+      const { result } = renderHook(() => useLogs());
+
+      let exportResult;
+      await act(async () => {
+        exportResult = await result.current.exportLogFile({ fileName: 'app.log', format: 'txt' });
+      });
+
+      expect(mockedTauri.logExport).toHaveBeenCalledWith({ fileName: 'app.log', format: 'txt' });
+      expect(exportResult).toEqual({ content: 'log content', fileName: 'app.log' });
     });
   });
 

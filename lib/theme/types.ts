@@ -2,6 +2,10 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 
 export type AccentColor = 'zinc' | 'blue' | 'green' | 'purple' | 'orange' | 'rose';
 
+export const THEME_MODES: ThemeMode[] = ['light', 'dark', 'system'];
+
+export const ACCENT_COLORS: AccentColor[] = ['zinc', 'blue', 'green', 'purple', 'orange', 'rose'];
+
 export interface ThemeConfig {
   mode: ThemeMode;
   accentColor: AccentColor;
@@ -43,3 +47,11 @@ export const ACCENT_COLOR_CSS_CLASSES: Record<AccentColor, string> = {
   orange: 'bg-orange-600',
   rose: 'bg-rose-600',
 };
+
+export function isThemeMode(value?: string): value is ThemeMode {
+  return typeof value === 'string' && (THEME_MODES as readonly string[]).includes(value);
+}
+
+export function isAccentColor(value?: string): value is AccentColor {
+  return typeof value === 'string' && (ACCENT_COLORS as readonly string[]).includes(value);
+}

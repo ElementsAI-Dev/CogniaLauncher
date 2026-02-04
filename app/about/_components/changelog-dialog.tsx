@@ -10,34 +10,12 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Calendar, Tag } from 'lucide-react';
-
-interface ChangelogEntry {
-  version: string;
-  date: string;
-  changes: {
-    type: 'added' | 'changed' | 'fixed' | 'removed';
-    description: string;
-  }[];
-}
-
-const CHANGELOG: ChangelogEntry[] = [
-  {
-    version: '0.1.0',
-    date: '2025-01-15',
-    changes: [
-      { type: 'added', description: 'Initial release' },
-      { type: 'added', description: 'Environment management for Python, Node.js, Rust, and Go' },
-      { type: 'added', description: 'Package search and installation from multiple providers' },
-      { type: 'added', description: 'Cache management with automatic cleanup' },
-      { type: 'added', description: 'Cross-platform support for Windows, macOS, and Linux' },
-      { type: 'added', description: 'Dark mode and internationalization (English/Chinese)' },
-    ],
-  },
-];
+import type { ChangelogEntry } from '../_constants/changelog';
 
 interface ChangelogDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  entries: ChangelogEntry[];
   t: (key: string) => string;
 }
 
@@ -71,7 +49,7 @@ function getTypeLabel(type: string, t: (key: string) => string): string {
   }
 }
 
-export function ChangelogDialog({ open, onOpenChange, t }: ChangelogDialogProps) {
+export function ChangelogDialog({ open, onOpenChange, entries, t }: ChangelogDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh]">
@@ -87,7 +65,7 @@ export function ChangelogDialog({ open, onOpenChange, t }: ChangelogDialogProps)
 
         <ScrollArea className="h-[50vh] pr-4">
           <div className="space-y-6">
-            {CHANGELOG.map((entry) => (
+            {entries.map((entry) => (
               <article key={entry.version} className="space-y-3">
                 <header className="flex items-center gap-3 pb-2 border-b">
                   <div className="flex items-center gap-1.5">

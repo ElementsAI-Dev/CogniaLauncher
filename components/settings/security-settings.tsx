@@ -56,6 +56,23 @@ export function SecuritySettings({ localConfig, onValueChange, t }: SecuritySett
             }}
           />
         </div>
+        <Separator />
+        <div className="flex items-center justify-between py-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="allow-self-signed">{t('settings.allowSelfSigned')}</Label>
+            <p id="allow-self-signed-desc" className="text-sm text-muted-foreground">
+              {t('settings.allowSelfSignedDesc')}
+            </p>
+          </div>
+          <Switch
+            id="allow-self-signed"
+            aria-describedby="allow-self-signed-desc"
+            checked={localConfig['security.allow_self_signed'] === 'true'}
+            onCheckedChange={(checked) => {
+              onValueChange('security.allow_self_signed', checked.toString());
+            }}
+          />
+        </div>
       </CardContent>
     </Card>
   );

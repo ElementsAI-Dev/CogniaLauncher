@@ -13,12 +13,15 @@ import {
 } from '@/components/ui/select';
 import { Palette } from 'lucide-react';
 import { AccentColorPicker } from './accent-color-picker';
+import type { AccentColor } from '@/lib/theme/types';
 
 interface AppearanceSettingsProps {
   theme: string | undefined;
   setTheme: (theme: string) => void;
   locale: string;
   setLocale: (locale: 'en' | 'zh') => void;
+  accentColor: AccentColor;
+  setAccentColor: (color: AccentColor) => void;
   reducedMotion: boolean;
   setReducedMotion: (reduced: boolean) => void;
   t: (key: string) => string;
@@ -29,6 +32,8 @@ export function AppearanceSettings({
   setTheme,
   locale,
   setLocale,
+  accentColor,
+  setAccentColor,
   reducedMotion,
   setReducedMotion,
   t,
@@ -87,7 +92,12 @@ export function AppearanceSettings({
               {t('settings.accentColorDesc')}
             </p>
           </div>
-          <AccentColorPicker aria-labelledby="accent-color-label" aria-describedby="accent-color-desc" />
+          <AccentColorPicker
+            accentColor={accentColor}
+            onAccentColorChange={setAccentColor}
+            aria-labelledby="accent-color-label"
+            aria-describedby="accent-color-desc"
+          />
         </div>
         <Separator />
         <div className="flex items-center justify-between py-2">

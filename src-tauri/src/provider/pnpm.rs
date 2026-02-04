@@ -1,6 +1,7 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -133,6 +134,34 @@ impl Provider for PnpmProvider {
                 .collect());
         }
         Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        let pkg = if version.is_empty() { name.to_string() } else { format!("{}@{}", name, version) };
+        let out = self
+            .run_pnpm(&["view", &pkg, "dependencies", "--json"])
+            .await?;
+
+        let value: serde_json::Value = serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
+        let deps = value
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(dep_name, constraint)| {
+                        let constraint_str = constraint.as_str()?;
+                        let parsed = constraint_str
+                            .parse::<VersionConstraint>()
+                            .unwrap_or(VersionConstraint::Any);
+                        Some(Dependency {
+                            name: dep_name.to_string(),
+                            constraint: parsed,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new);
+
+        Ok(deps)
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {

@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { openExternal } from '@/lib/tauri';
 import {
   Settings,
   RefreshCw,
@@ -20,6 +21,10 @@ interface ActionsCardProps {
 }
 
 export function ActionsCard({ loading, onCheckUpdate, onOpenChangelog, t }: ActionsCardProps) {
+  const handleOpen = (url: string) => () => {
+    void openExternal(url);
+  };
+
   return (
     <Card className="rounded-xl border bg-card" role="region" aria-labelledby="actions-heading">
       <CardContent className="p-5 space-y-4">
@@ -51,55 +56,43 @@ export function ActionsCard({ loading, onCheckUpdate, onOpenChangelog, t }: Acti
           </Button>
 
           {/* GitHub */}
-          <Button variant="outline" asChild>
-            <a
-              href="https://github.com/ElementAstro/CogniaLauncher"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`GitHub - ${t('about.openInNewTab')}`}
-            >
-              <Github className="h-4 w-4 mr-2" aria-hidden="true" />
-              GitHub
-            </a>
+          <Button
+            variant="outline"
+            onClick={handleOpen('https://github.com/ElementAstro/CogniaLauncher')}
+            aria-label={`GitHub - ${t('about.openInNewTab')}`}
+          >
+            <Github className="h-4 w-4 mr-2" aria-hidden="true" />
+            GitHub
           </Button>
 
           {/* Documentation */}
-          <Button variant="outline" asChild>
-            <a
-              href="https://cognia.dev/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('about.documentation')} - ${t('about.openInNewTab')}`}
-            >
-              <BookOpen className="h-4 w-4 mr-2" aria-hidden="true" />
-              {t('about.documentation')}
-            </a>
+          <Button
+            variant="outline"
+            onClick={handleOpen('https://cognia.dev/docs')}
+            aria-label={`${t('about.documentation')} - ${t('about.openInNewTab')}`}
+          >
+            <BookOpen className="h-4 w-4 mr-2" aria-hidden="true" />
+            {t('about.documentation')}
           </Button>
 
           {/* Report Bug */}
-          <Button variant="outline" asChild>
-            <a
-              href="https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('about.reportBug')} - ${t('about.openInNewTab')}`}
-            >
-              <Bug className="h-4 w-4 mr-2" aria-hidden="true" />
-              {t('about.reportBug')}
-            </a>
+          <Button
+            variant="outline"
+            onClick={handleOpen('https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md')}
+            aria-label={`${t('about.reportBug')} - ${t('about.openInNewTab')}`}
+          >
+            <Bug className="h-4 w-4 mr-2" aria-hidden="true" />
+            {t('about.reportBug')}
           </Button>
 
           {/* Feature Request */}
-          <Button variant="outline" asChild>
-            <a
-              href="https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`${t('about.featureRequest')} - ${t('about.openInNewTab')}`}
-            >
-              <MessageSquarePlus className="h-4 w-4 mr-2" aria-hidden="true" />
-              {t('about.featureRequest')}
-            </a>
+          <Button
+            variant="outline"
+            onClick={handleOpen('https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas')}
+            aria-label={`${t('about.featureRequest')} - ${t('about.openInNewTab')}`}
+          >
+            <MessageSquarePlus className="h-4 w-4 mr-2" aria-hidden="true" />
+            {t('about.featureRequest')}
           </Button>
         </div>
       </CardContent>

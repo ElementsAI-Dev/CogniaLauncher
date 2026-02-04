@@ -17,6 +17,9 @@ export interface LogFilter {
   levels: LogLevel[];
   search: string;
   target?: string;
+  useRegex?: boolean;
+  startTime?: number | null;
+  endTime?: number | null;
 }
 
 export interface LogFileInfo {
@@ -43,6 +46,8 @@ interface LogState {
   setFilter: (filter: Partial<LogFilter>) => void;
   toggleLevel: (level: LogLevel) => void;
   setSearch: (search: string) => void;
+  setTimeRange: (startTime: number | null, endTime: number | null) => void;
+  toggleRegex: () => void;
   toggleAutoScroll: () => void;
   togglePaused: () => void;
   setMaxLogs: (max: number) => void;
@@ -73,6 +78,9 @@ export const useLogStore = create<LogState>()(
       filter: {
         levels: ['info', 'warn', 'error'],
         search: '',
+        useRegex: false,
+        startTime: null,
+        endTime: null,
       },
       autoScroll: true,
       paused: false,
@@ -115,6 +123,21 @@ export const useLogStore = create<LogState>()(
         filter: { ...state.filter, search },
       })),
 
+      setTimeRange: (startTime, endTime) => set((state) => ({
+        filter: {
+          ...state.filter,
+          startTime,
+          endTime,
+        },
+      })),
+
+      toggleRegex: () => set((state) => ({
+        filter: {
+          ...state.filter,
+          useRegex: !state.filter.useRegex,
+        },
+      })),
+
       toggleAutoScroll: () => set((state) => ({
         autoScroll: !state.autoScroll,
       })),
@@ -137,18 +160,44 @@ export const useLogStore = create<LogState>()(
 
       getFilteredLogs: () => {
         const state = get();
+        const { search, useRegex, startTime, endTime } = state.filter;
+        let regex: RegExp | null = null;
+
+        if (useRegex && search) {
+          try {
+            regex = new RegExp(search, 'i');
+          } catch {
+            regex = null;
+          }
+        }
+
         return state.logs.filter((log) => {
           // Level filter
           if (!state.filter.levels.includes(log.level)) {
             return false;
           }
+          // Time range filter
+          if (startTime && log.timestamp < startTime) {
+            return false;
+          }
+          if (endTime && log.timestamp > endTime) {
+            return false;
+          }
           // Search filter
-          if (state.filter.search) {
-            const searchLower = state.filter.search.toLowerCase();
-            const messageMatch = log.message.toLowerCase().includes(searchLower);
-            const targetMatch = log.target?.toLowerCase().includes(searchLower);
-            if (!messageMatch && !targetMatch) {
-              return false;
+          if (search) {
+            if (regex) {
+              const messageMatch = regex.test(log.message);
+              const targetMatch = log.target ? regex.test(log.target) : false;
+              if (!messageMatch && !targetMatch) {
+                return false;
+              }
+            } else {
+              const searchLower = search.toLowerCase();
+              const messageMatch = log.message.toLowerCase().includes(searchLower);
+              const targetMatch = log.target?.toLowerCase().includes(searchLower);
+              if (!messageMatch && !targetMatch) {
+                return false;
+              }
             }
           }
           // Target filter
@@ -184,6 +233,9 @@ export const useLogStore = create<LogState>()(
         filter: {
           levels: state.filter.levels,
           search: '',
+          useRegex: false,
+          startTime: null,
+          endTime: null,
         },
         autoScroll: state.autoScroll,
       }),

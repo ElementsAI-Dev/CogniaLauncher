@@ -49,7 +49,7 @@ export function LogPanel({
   maxHeight = '100%',
 }: LogPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { autoScroll, getFilteredLogs } = useLogStore();
+  const { autoScroll, getFilteredLogs, filter } = useLogStore();
 
   const filteredLogs = getFilteredLogs();
 
@@ -81,7 +81,13 @@ export function LogPanel({
         ) : (
           <div className="divide-y divide-border/50">
             {filteredLogs.map((entry) => (
-              <LogEntry key={entry.id} entry={entry} />
+              <LogEntry
+                key={entry.id}
+                entry={entry}
+                highlightText={filter.search}
+                highlightRegex={Boolean(filter.useRegex)}
+                allowCollapse
+              />
             ))}
           </div>
         )}

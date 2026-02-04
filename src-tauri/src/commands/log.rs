@@ -1,3 +1,5 @@
+use chrono::{DateTime, NaiveDateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::AppHandle;
@@ -11,6 +13,94 @@ pub struct LogFileInfo {
     pub path: String,
     pub size: u64,
     pub modified: i64,
+}
+
+#[tauri::command]
+pub async fn log_export(app: AppHandle, options: LogExportOptions) -> Result<LogExportResult, String> {
+    let log_path = resolve_log_path(&app, &options.file_name).await?;
+
+    if !log_path.exists() {
+        return Err("Log file does not exist".to_string());
+    }
+
+    let file = fs::File::open(&log_path)
+        .await
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+
+    let reader = tokio::io::BufReader::new(file);
+    let mut lines = reader.lines();
+    let mut entries: Vec<LogEntry> = Vec::new();
+    let mut line_number = 0;
+
+    let query_options = LogQueryOptions {
+        file_name: options.file_name.clone(),
+        level_filter: options.level_filter.clone(),
+        search: options.search.clone(),
+        use_regex: options.use_regex,
+        start_time: options.start_time,
+        end_time: options.end_time,
+        limit: None,
+        offset: None,
+    };
+    let regex = build_search_regex(&query_options.search, query_options.use_regex.unwrap_or(false));
+
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|e| format!("Failed to read line: {}", e))?
+    {
+        line_number += 1;
+        if let Some(entry) = parse_log_line(&line, line_number) {
+            if matches_filters(&entry, &query_options, regex.as_ref()) {
+                entries.push(entry);
+            }
+        }
+    }
+
+    let format = options
+        .format
+        .unwrap_or_else(|| "txt".to_string())
+        .to_lowercase();
+    let content = if format == "json" {
+        serde_json::to_string_pretty(&entries)
+            .map_err(|e| format!("Failed to serialize log export: {}", e))?
+    } else {
+        entries
+            .iter()
+            .map(|entry| {
+                if entry.target.is_empty() {
+                    format!(
+                        "[{}][{}] {}",
+                        entry.timestamp,
+                        entry.level.to_uppercase(),
+                        entry.message
+                    )
+                } else {
+                    format!(
+                        "[{}][{}][{}] {}",
+                        entry.timestamp,
+                        entry.level.to_uppercase(),
+                        entry.target,
+                        entry.message
+                    )
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+    };
+
+    let base_name = options
+        .file_name
+        .clone()
+        .unwrap_or_else(|| format!("cognia-logs-{}", Utc::now().format("%Y-%m-%d")));
+    let extension = if format == "json" { "json" } else { "txt" };
+    let file_name = if base_name.ends_with(&format!(".{extension}")) {
+        base_name
+    } else {
+        format!("{base_name}.{extension}")
+    };
+
+    Ok(LogExportResult { content, file_name })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +119,9 @@ pub struct LogQueryOptions {
     pub file_name: Option<String>,
     pub level_filter: Option<Vec<String>>,
     pub search: Option<String>,
+    pub use_regex: Option<bool>,
+    pub start_time: Option<i64>,
+    pub end_time: Option<i64>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
@@ -41,8 +134,135 @@ pub struct LogQueryResult {
     pub has_more: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogExportOptions {
+    pub file_name: Option<String>,
+    pub level_filter: Option<Vec<String>>,
+    pub search: Option<String>,
+    pub use_regex: Option<bool>,
+    pub start_time: Option<i64>,
+    pub end_time: Option<i64>,
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogExportResult {
+    pub content: String,
+    pub file_name: String,
+}
+
 fn get_log_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_log_dir().ok()
+}
+
+async fn resolve_log_path(app: &AppHandle, file_name: &Option<String>) -> Result<PathBuf, String> {
+    let log_dir = get_log_dir(app).ok_or("Failed to get log directory")?;
+
+    let log_path = if let Some(file_name) = file_name {
+        log_dir.join(file_name)
+    } else {
+        let files = log_list_files(app.clone()).await?;
+        if files.is_empty() {
+            return Err("No log files available".to_string());
+        }
+        PathBuf::from(&files[0].path)
+    };
+
+    Ok(log_path)
+}
+
+fn parse_timestamp_ms(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(ms) = trimmed.parse::<i64>() {
+        if ms > 1_000_000_000 {
+            return Some(ms);
+        }
+    }
+
+    if let Ok(dt) = DateTime::parse_from_rfc3339(trimmed) {
+        return Some(dt.timestamp_millis());
+    }
+
+    let formats = [
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S%.f",
+        "%Y-%m-%dT%H:%M:%S",
+    ];
+
+    for format in formats {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(trimmed, format) {
+            return Some(DateTime::<Utc>::from_utc(dt, Utc).timestamp_millis());
+        }
+    }
+
+    None
+}
+
+fn build_search_regex(search: &Option<String>, use_regex: bool) -> Option<Regex> {
+    if !use_regex {
+        return None;
+    }
+
+    let pattern = search.as_ref()?;
+    if pattern.is_empty() {
+        return None;
+    }
+
+    Regex::new(pattern).ok()
+}
+
+fn matches_filters(entry: &LogEntry, options: &LogQueryOptions, regex: Option<&Regex>) -> bool {
+    if let Some(ref level_filter) = options.level_filter {
+        if !level_filter.is_empty() {
+            let entry_level = entry.level.to_uppercase();
+            if !level_filter.iter().any(|l| l.to_uppercase() == entry_level) {
+                return false;
+            }
+        }
+    }
+
+    if let Some(ref search) = options.search {
+        if !search.is_empty() {
+            if let Some(regex) = regex {
+                let matches = regex.is_match(&entry.message)
+                    || (!entry.target.is_empty() && regex.is_match(&entry.target));
+                if !matches {
+                    return false;
+                }
+            } else {
+                let search_lower = search.to_lowercase();
+                let matches = entry.message.to_lowercase().contains(&search_lower)
+                    || entry.target.to_lowercase().contains(&search_lower);
+                if !matches {
+                    return false;
+                }
+            }
+        }
+    }
+
+    if options.start_time.is_some() || options.end_time.is_some() {
+        if let Some(timestamp_ms) = parse_timestamp_ms(&entry.timestamp) {
+            if let Some(start_time) = options.start_time {
+                if timestamp_ms < start_time {
+                    return false;
+                }
+            }
+            if let Some(end_time) = options.end_time {
+                if timestamp_ms > end_time {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
 }
 
 fn parse_log_line(line: &str, line_number: usize) -> Option<LogEntry> {
@@ -166,22 +386,15 @@ pub async fn log_query(
     app: AppHandle,
     options: LogQueryOptions,
 ) -> Result<LogQueryResult, String> {
-    let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
-    
-    // Determine which log file to read
-    let log_path = if let Some(file_name) = &options.file_name {
-        log_dir.join(file_name)
-    } else {
-        // Find the most recent log file
-        let files = log_list_files(app.clone()).await?;
-        if files.is_empty() {
+    let log_path = match resolve_log_path(&app, &options.file_name).await {
+        Ok(path) => path,
+        Err(_) => {
             return Ok(LogQueryResult {
                 entries: Vec::new(),
                 total_count: 0,
                 has_more: false,
             });
         }
-        PathBuf::from(&files[0].path)
     };
 
     if !log_path.exists() {
@@ -202,6 +415,8 @@ pub async fn log_query(
     let mut all_entries = Vec::new();
     let mut line_number = 0;
 
+    let regex = build_search_regex(&options.search, options.use_regex.unwrap_or(false));
+
     while let Some(line) = lines
         .next_line()
         .await
@@ -210,29 +425,9 @@ pub async fn log_query(
         line_number += 1;
         
         if let Some(entry) = parse_log_line(&line, line_number) {
-            // Apply level filter
-            if let Some(ref level_filter) = options.level_filter {
-                if !level_filter.is_empty() {
-                    let entry_level = entry.level.to_uppercase();
-                    if !level_filter.iter().any(|l| l.to_uppercase() == entry_level) {
-                        continue;
-                    }
-                }
+            if matches_filters(&entry, &options, regex.as_ref()) {
+                all_entries.push(entry);
             }
-
-            // Apply search filter
-            if let Some(ref search) = options.search {
-                if !search.is_empty() {
-                    let search_lower = search.to_lowercase();
-                    let matches = entry.message.to_lowercase().contains(&search_lower)
-                        || entry.target.to_lowercase().contains(&search_lower);
-                    if !matches {
-                        continue;
-                    }
-                }
-            }
-
-            all_entries.push(entry);
         }
     }
 

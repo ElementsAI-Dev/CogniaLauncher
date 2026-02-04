@@ -3,6 +3,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,24 +31,28 @@ const MIRROR_PRESETS = {
     npm: 'https://registry.npmjs.org',
     pypi: 'https://pypi.org/simple',
     crates: 'https://crates.io',
+    go: 'https://proxy.golang.org',
   },
   china: {
     name: 'China (淘宝/清华)',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     crates: 'https://rsproxy.cn',
+    go: 'https://goproxy.cn',
   },
   aliyun: {
     name: 'Aliyun (阿里云)',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://mirrors.aliyun.com/pypi/simple',
     crates: 'https://rsproxy.cn',
+    go: 'https://mirrors.aliyun.com/goproxy/',
   },
   ustc: {
     name: 'USTC (中科大)',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://pypi.mirrors.ustc.edu.cn/simple',
     crates: 'https://rsproxy.cn',
+    go: 'https://goproxy.cn',
   },
 } as const;
 
@@ -57,6 +64,50 @@ export function MirrorsSettings({ localConfig, errors, onValueChange, t }: Mirro
     onValueChange('mirrors.npm', preset.npm);
     onValueChange('mirrors.pypi', preset.pypi);
     onValueChange('mirrors.crates', preset.crates);
+    onValueChange('mirrors.go', preset.go);
+  };
+
+  const renderAdvancedOptions = (key: string) => {
+    const enabledKey = `${key}.enabled`;
+    const priorityKey = `${key}.priority`;
+    const verifyKey = `${key}.verify_ssl`;
+
+    return (
+      <div className="grid gap-4 md:grid-cols-3 py-2">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <Label htmlFor={`${key}-enabled`}>{t('settings.mirrorEnabled')}</Label>
+            <Switch
+              id={`${key}-enabled`}
+              checked={localConfig[enabledKey] !== 'false'}
+              onCheckedChange={(checked) => onValueChange(enabledKey, checked.toString())}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">{t('settings.mirrorEnabledDesc')}</p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${key}-priority`}>{t('settings.mirrorPriority')}</Label>
+          <Input
+            id={`${key}-priority`}
+            type="number"
+            value={localConfig[priorityKey] || '0'}
+            onChange={(event) => onValueChange(priorityKey, event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">{t('settings.mirrorPriorityDesc')}</p>
+        </div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <Label htmlFor={`${key}-verify`}>{t('settings.mirrorVerifySsl')}</Label>
+            <Switch
+              id={`${key}-verify`}
+              checked={localConfig[verifyKey] !== 'false'}
+              onCheckedChange={(checked) => onValueChange(verifyKey, checked.toString())}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">{t('settings.mirrorVerifySslDesc')}</p>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -102,6 +153,7 @@ export function MirrorsSettings({ localConfig, errors, onValueChange, t }: Mirro
           placeholder="https://registry.npmjs.org"
           error={errors['mirrors.npm']}
         />
+        {renderAdvancedOptions('mirrors.npm')}
         <Separator />
         <SettingItem
           id="mirrors-pypi"
@@ -112,6 +164,7 @@ export function MirrorsSettings({ localConfig, errors, onValueChange, t }: Mirro
           placeholder="https://pypi.org/simple"
           error={errors['mirrors.pypi']}
         />
+        {renderAdvancedOptions('mirrors.pypi')}
         <Separator />
         <SettingItem
           id="mirrors-crates"
@@ -122,6 +175,18 @@ export function MirrorsSettings({ localConfig, errors, onValueChange, t }: Mirro
           placeholder="https://crates.io"
           error={errors['mirrors.crates']}
         />
+        {renderAdvancedOptions('mirrors.crates')}
+        <Separator />
+        <SettingItem
+          id="mirrors-go"
+          label={t('settings.goProxy')}
+          description={t('settings.goProxyDesc')}
+          value={localConfig['mirrors.go'] || 'https://proxy.golang.org'}
+          onChange={(v) => onValueChange('mirrors.go', v)}
+          placeholder="https://proxy.golang.org"
+          error={errors['mirrors.go']}
+        />
+        {renderAdvancedOptions('mirrors.go')}
       </CardContent>
     </Card>
   );

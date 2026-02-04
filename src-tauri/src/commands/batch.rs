@@ -1,7 +1,8 @@
 use crate::config::Settings;
-use crate::core::{BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager};
+use crate::core::{BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager, PackageSpec};
 use crate::provider::ProviderRegistry;
 use crate::resolver::{Dependency, Package, Resolver, Version, VersionConstraint};
+use futures::future::{BoxFuture, join_all};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -138,21 +139,16 @@ pub async fn resolve_dependencies(
 ) -> Result<ResolutionResult, String> {
     let reg = registry.read().await;
 
-    // Parse package specifications
-    let deps: Vec<Dependency> = packages
+    let specs: Vec<PackageSpec> = packages.iter().map(|p| PackageSpec::parse(p)).collect();
+    let deps: Vec<Dependency> = specs
         .iter()
-        .map(|p| {
-            let (name, constraint) = if let Some(idx) = p.find('@') {
-                let name = &p[..idx];
-                let version = &p[idx + 1..];
-                (
-                    name.to_string(),
-                    version.parse::<VersionConstraint>().unwrap_or(VersionConstraint::Any),
-                )
-            } else {
-                (p.clone(), VersionConstraint::Any)
-            };
-            Dependency { name, constraint }
+        .map(|spec| Dependency {
+            name: spec.name.clone(),
+            constraint: spec
+                .version
+                .as_ref()
+                .map(|v| v.parse::<VersionConstraint>().unwrap_or(VersionConstraint::Any))
+                .unwrap_or(VersionConstraint::Any),
         })
         .collect();
 
@@ -179,24 +175,50 @@ pub async fn resolve_dependencies(
         }
     }
 
-    // Fetch available versions from providers
-    for dep in &deps {
-        for provider_id in reg.list() {
-            if let Some(provider) = reg.get(provider_id) {
+    let provider_ids: Vec<String> = reg.list().iter().map(|id| id.to_string()).collect();
+    let mut queue: std::collections::VecDeque<(String, Option<String>)> = specs
+        .iter()
+        .map(|spec| (spec.name.clone(), spec.provider.clone()))
+        .collect();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    while let Some((name, provider_hint)) = queue.pop_front() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+
+        let providers_to_check: Vec<String> = if let Some(provider) = provider_hint.clone() {
+            vec![provider]
+        } else {
+            provider_ids.clone()
+        };
+
+        for provider_id in providers_to_check {
+            if let Some(provider) = reg.get(&provider_id) {
                 if provider.is_available().await {
-                    if let Ok(versions) = provider.get_versions(&dep.name).await {
+                    if let Ok(versions) = provider.get_versions(&name).await {
                         if !versions.is_empty() {
-                            // Track which provider has this package
                             package_providers
-                                .entry(dep.name.clone())
+                                .entry(name.clone())
                                 .or_insert_with(|| provider_id.to_string());
                         }
                         for v in versions {
                             if let Ok(version) = v.version.parse::<Version>() {
+                                let dependencies = provider
+                                    .get_dependencies(&name, &v.version)
+                                    .await
+                                    .unwrap_or_default();
+
+                                for dep in &dependencies {
+                                    if !seen.contains(&dep.name) {
+                                        queue.push_back((dep.name.clone(), None));
+                                    }
+                                }
+
                                 let pkg = Package {
-                                    name: dep.name.clone(),
+                                    name: name.clone(),
                                     version,
-                                    dependencies: vec![], // Provider doesn't return deps yet
+                                    dependencies,
                                 };
                                 resolver.add_package(pkg);
                             }
@@ -219,32 +241,75 @@ pub async fn resolve_dependencies(
                 })
                 .collect();
 
-            // Build tree with is_installed information
-            let tree: Vec<DependencyNode> = deps
-                .iter()
-                .map(|d| {
-                    let name_lower = d.name.to_lowercase();
+            fn build_node<'a>(
+                dep: Dependency,
+                resolution: &'a crate::resolver::Resolution,
+                providers: &'a std::collections::HashMap<String, String>,
+                installed: &'a std::collections::HashMap<String, String>,
+                registry: &'a ProviderRegistry,
+                depth: usize,
+            ) -> BoxFuture<'a, DependencyNode> {
+                Box::pin(async move {
+                    let name_lower = dep.name.to_lowercase();
                     let resolved_version = resolution
-                        .get(&d.name)
+                        .get(&dep.name)
                         .map(|v| v.to_string())
                         .unwrap_or_default();
-                    let is_installed = installed_packages.contains_key(&name_lower);
-                    let provider = package_providers.get(&d.name).cloned();
-                    
+                    let is_installed = installed.contains_key(&name_lower);
+                    let provider_id = providers.get(&dep.name).cloned();
+
+                    let child_nodes = if let Some(ref provider_id) = provider_id {
+                        if let Some(provider) = registry.get(provider_id) {
+                            if let Ok(dependencies) =
+                                provider.get_dependencies(&dep.name, &resolved_version).await
+                            {
+                                let futures = dependencies.into_iter().map(|child| {
+                                    build_node(
+                                        child,
+                                        resolution,
+                                        providers,
+                                        installed,
+                                        registry,
+                                        depth + 1,
+                                    )
+                                });
+                                join_all(futures).await
+                            } else {
+                                vec![]
+                            }
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    };
+
                     DependencyNode {
-                        name: d.name.clone(),
+                        name: dep.name,
                         version: resolved_version,
-                        constraint: d.constraint.to_string(),
-                        provider,
-                        dependencies: vec![],
-                        is_direct: true,
+                        constraint: dep.constraint.to_string(),
+                        provider: provider_id,
+                        dependencies: child_nodes,
+                        is_direct: depth == 0,
                         is_installed,
                         is_conflict: false,
                         conflict_reason: None,
-                        depth: 0,
+                        depth,
                     }
                 })
-                .collect();
+            }
+
+            let tree_futures = deps.iter().cloned().map(|dep| {
+                build_node(
+                    dep,
+                    &resolution,
+                    &package_providers,
+                    &installed_packages,
+                    &reg,
+                    0,
+                )
+            });
+            let tree: Vec<DependencyNode> = join_all(tree_futures).await;
 
             // Calculate install order (packages not yet installed)
             let install_order: Vec<String> = resolved_packages
@@ -404,28 +469,61 @@ pub async fn package_rollback(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("No provider found for: {}", name))?;
 
-    // First uninstall current
-    provider
+    let provider_id = provider.id().to_string();
+
+    let uninstall_result = provider
         .uninstall(crate::provider::UninstallRequest {
             name: name.clone(),
             version: None,
             force: true,
         })
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
 
-    // Then install specific version
-    provider
+    if let Err(err) = uninstall_result {
+        let _ = HistoryManager::record_rollback(
+            &name,
+            &to_version,
+            &provider_id,
+            false,
+            Some(err.to_string()),
+        )
+        .await;
+        return Err(err.to_string());
+    }
+
+    let install_result = provider
         .install(crate::provider::InstallRequest {
-            name,
-            version: Some(to_version),
+            name: name.clone(),
+            version: Some(to_version.clone()),
             global: true,
             force: true,
         })
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
 
-    Ok(())
+    match install_result {
+        Ok(_) => {
+            let _ = HistoryManager::record_rollback(
+                &name,
+                &to_version,
+                &provider_id,
+                true,
+                None,
+            )
+            .await;
+            Ok(())
+        }
+        Err(err) => {
+            let _ = HistoryManager::record_rollback(
+                &name,
+                &to_version,
+                &provider_id,
+                false,
+                Some(err.to_string()),
+            )
+            .await;
+            Err(err.to_string())
+        }
+    }
 }
 
 /// Get package installation history

@@ -6,6 +6,7 @@ import {
   logQuery,
   logClear,
   logGetDir,
+  logExport,
 } from '@/lib/tauri';
 
 /**
@@ -28,12 +29,15 @@ export function useLogs() {
     setFilter,
     toggleLevel,
     setSearch,
+    setTimeRange,
+    toggleRegex,
     toggleAutoScroll,
     togglePaused,
     openDrawer,
     closeDrawer,
     toggleDrawer,
     setLogFiles,
+    setMaxLogs,
     getFilteredLogs,
     getLogStats,
   } = useLogStore();
@@ -55,6 +59,9 @@ export function useLogs() {
     fileName?: string;
     levelFilter?: string[];
     search?: string;
+    useRegex?: boolean;
+    startTime?: number | null;
+    endTime?: number | null;
     limit?: number;
     offset?: number;
   }) => {
@@ -127,6 +134,26 @@ export function useLogs() {
     URL.revokeObjectURL(url);
   }, [getFilteredLogs]);
 
+  // Export a log file from backend
+  const exportLogFile = useCallback(async (options: {
+    fileName?: string;
+    levelFilter?: string[];
+    search?: string;
+    useRegex?: boolean;
+    startTime?: number | null;
+    endTime?: number | null;
+    format?: 'txt' | 'json';
+  }) => {
+    if (!isTauri()) return null;
+
+    try {
+      return await logExport(options);
+    } catch (error) {
+      console.error('Failed to export log file:', error);
+      return null;
+    }
+  }, []);
+
   return {
     // State
     logs,
@@ -142,8 +169,11 @@ export function useLogs() {
     setFilter,
     toggleLevel,
     setSearch,
+    setTimeRange,
+    toggleRegex,
     toggleAutoScroll,
     togglePaused,
+    setMaxLogs,
     openDrawer,
     closeDrawer,
     toggleDrawer,
@@ -158,5 +188,6 @@ export function useLogs() {
     clearLogFile,
     getLogDirectory,
     exportLogs,
+    exportLogFile,
   };
 }

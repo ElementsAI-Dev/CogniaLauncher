@@ -1,8 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Copy, Check } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { LogEntry as LogEntryType, LogLevel } from '@/lib/stores/log';
 
@@ -46,12 +46,28 @@ interface LogEntryProps {
   entry: LogEntryType;
   showTimestamp?: boolean;
   showTarget?: boolean;
+  highlightText?: string;
+  highlightRegex?: boolean;
+  allowCollapse?: boolean;
 }
 
-export function LogEntry({ entry, showTimestamp = true, showTarget = true }: LogEntryProps) {
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function LogEntry({
+  entry,
+  showTimestamp = true,
+  showTarget = true,
+  highlightText,
+  highlightRegex = false,
+  allowCollapse = false,
+}: LogEntryProps) {
   const { t } = useLocale();
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const style = LEVEL_STYLES[entry.level];
+  const isExpandable = allowCollapse && (entry.message.length > 160 || entry.message.includes('\n'));
 
   const formatTimestamp = useCallback((timestamp: number) => {
     const date = new Date(timestamp);
@@ -74,6 +90,53 @@ export function LogEntry({ entry, showTimestamp = true, showTarget = true }: Log
       // Ignore clipboard errors
     }
   }, [entry, formatTimestamp]);
+
+  const highlightNodes = useMemo(() => {
+    if (!highlightText) return entry.message;
+
+    const pattern = highlightRegex ? highlightText : escapeRegExp(highlightText);
+    let regex: RegExp | null = null;
+
+    try {
+      regex = new RegExp(pattern, 'gi');
+    } catch {
+      regex = null;
+    }
+
+    if (!regex) return entry.message;
+
+    const nodes: ReactNode[] = [];
+    let lastIndex = 0;
+    const matches = entry.message.matchAll(regex);
+
+    for (const match of matches) {
+      if (match.index === undefined) {
+        break;
+      }
+
+      if (match[0].length === 0) {
+        break;
+      }
+
+      const start = match.index;
+      const end = start + match[0].length;
+      if (start > lastIndex) {
+        nodes.push(entry.message.slice(lastIndex, start));
+      }
+      nodes.push(
+        <mark key={`${entry.id}-${start}`} className="rounded bg-yellow-200/60 px-0.5 text-yellow-900 dark:bg-yellow-400/20 dark:text-yellow-200">
+          {match[0]}
+        </mark>
+      );
+      lastIndex = end;
+    }
+
+    if (lastIndex < entry.message.length) {
+      nodes.push(entry.message.slice(lastIndex));
+    }
+
+    return nodes.length > 0 ? nodes : entry.message;
+  }, [entry.id, entry.message, highlightRegex, highlightText]);
 
   return (
     <div
@@ -100,11 +163,32 @@ export function LogEntry({ entry, showTimestamp = true, showTarget = true }: Log
 
       {showTarget && entry.target && (
         <span className="shrink-0 text-muted-foreground max-w-[120px] truncate">
-          {entry.target}
+          [{entry.target}]
         </span>
       )}
 
-      <span className="flex-1 break-all whitespace-pre-wrap">{entry.message}</span>
+      <span
+        className={cn(
+          'flex-1 break-all whitespace-pre-wrap',
+          isExpandable && !expanded && 'max-h-[3.5rem] overflow-hidden'
+        )}
+      >
+        {highlightNodes}
+      </span>
+
+      {isExpandable && (
+        <button
+          onClick={() => setExpanded((prev) => !prev)}
+          className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+          aria-label={expanded ? t('logs.collapse') : t('logs.expand')}
+        >
+          {expanded ? (
+            <ChevronUp className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
 
       <button
         onClick={handleCopy}

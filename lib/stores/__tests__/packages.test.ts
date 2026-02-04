@@ -144,7 +144,15 @@ describe('usePackageStore', () => {
   describe('providers', () => {
     it('should set providers', () => {
       const mockProviders = [
-        { id: 'npm', display_name: 'npm', capabilities: ['install'], platforms: ['windows'], priority: 100, is_environment_provider: false },
+        {
+          id: 'npm',
+          display_name: 'npm',
+          capabilities: ['install'],
+          platforms: ['windows'],
+          priority: 100,
+          is_environment_provider: false,
+          enabled: true,
+        },
       ];
 
       usePackageStore.getState().setProviders(mockProviders);

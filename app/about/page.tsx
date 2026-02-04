@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { PageHeader } from '@/components/layout/page-header';
 import { useAboutData } from './_hooks/use-about-data';
+import { getChangelog } from './_constants/changelog';
 import {
   VersionCards,
   UpdateBanner,
@@ -23,23 +25,26 @@ export default function AboutPage() {
     loading,
     updating,
     updateProgress,
+    updateStatus,
     error,
+    systemError,
     systemInfo,
     systemLoading,
+    isDesktop,
     checkForUpdate,
+    reloadSystemInfo,
     handleUpdate,
     clearError,
   } = useAboutData(locale);
 
+  const changelogEntries = getChangelog(locale);
+
   return (
     <main className="p-6 space-y-6" aria-labelledby="about-page-title">
-      {/* Page Header */}
-      <header className="space-y-1">
-        <h1 id="about-page-title" className="text-[28px] font-bold text-foreground">
-          {t('about.pageTitle')}
-        </h1>
-        <p className="text-sm text-muted-foreground">{t('about.pageDescription')}</p>
-      </header>
+      <PageHeader
+        title={<span id="about-page-title">{t('about.pageTitle')}</span>}
+        description={t('about.pageDescription')}
+      />
 
       {/* Error Alert */}
       <ErrorAlert 
@@ -59,6 +64,8 @@ export default function AboutPage() {
         updateInfo={updateInfo}
         updating={updating}
         updateProgress={updateProgress}
+        updateStatus={updateStatus}
+        isDesktop={isDesktop}
         onUpdate={() => handleUpdate(t)}
         t={t}
       />
@@ -69,6 +76,8 @@ export default function AboutPage() {
           systemInfo={systemInfo}
           systemLoading={systemLoading}
           updateInfo={updateInfo}
+          systemError={systemError}
+          onRetry={reloadSystemInfo}
           t={t}
         />
       </section>
@@ -97,6 +106,7 @@ export default function AboutPage() {
       <ChangelogDialog
         open={changelogOpen}
         onOpenChange={setChangelogOpen}
+        entries={changelogEntries}
         t={t}
       />
     </main>

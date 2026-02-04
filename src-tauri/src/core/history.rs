@@ -260,6 +260,40 @@ impl HistoryManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
+    use std::sync::Mutex;
+    use tempfile::tempdir;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        old_home: Option<String>,
+        old_userprofile: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let old_home = env::var("HOME").ok();
+            let old_userprofile = env::var("USERPROFILE").ok();
+            Self {
+                old_home,
+                old_userprofile,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.old_home {
+                Some(value) => env::set_var("HOME", value),
+                None => env::remove_var("HOME"),
+            }
+            match &self.old_userprofile {
+                Some(value) => env::set_var("USERPROFILE", value),
+                None => env::remove_var("USERPROFILE"),
+            }
+        }
+    }
 
     #[test]
     fn test_history_entry_creation() {
@@ -296,5 +330,28 @@ mod tests {
         }
 
         assert_eq!(history.entries.len(), MAX_HISTORY_ENTRIES);
+    }
+
+    #[tokio::test]
+    async fn test_history_manager_recording() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = tempdir().unwrap();
+        let _env_guard = EnvGuard::new();
+
+        env::set_var("HOME", dir.path());
+        env::set_var("USERPROFILE", dir.path());
+
+        HistoryManager::record_install("lodash", "1.0.0", "npm", true, None)
+            .await
+            .unwrap();
+        HistoryManager::record_uninstall("lodash", "1.0.0", "npm", false, Some("error".into()))
+            .await
+            .unwrap();
+
+        let entries = HistoryManager::get_history(Some(2)).await.unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].action, HistoryAction::Uninstall);
+        assert_eq!(entries[1].action, HistoryAction::Install);
+
     }
 }

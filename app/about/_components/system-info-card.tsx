@@ -2,13 +2,15 @@
 
 import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Monitor, Copy, Check } from 'lucide-react';
+import { Monitor, Copy, Check, RefreshCw, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { SystemInfo } from '../_hooks/use-about-data';
 import type { SelfUpdateInfo } from '@/lib/tauri';
+import { APP_VERSION } from '@/lib/app-version';
 
 interface InfoRowProps {
   label: string;
@@ -47,17 +49,26 @@ interface SystemInfoCardProps {
   systemInfo: SystemInfo | null;
   systemLoading: boolean;
   updateInfo: SelfUpdateInfo | null;
+  systemError: string | null;
+  onRetry: () => void;
   t: (key: string) => string;
 }
 
-export function SystemInfoCard({ systemInfo, systemLoading, updateInfo, t }: SystemInfoCardProps) {
+export function SystemInfoCard({
+  systemInfo,
+  systemLoading,
+  updateInfo,
+  systemError,
+  onRetry,
+  t,
+}: SystemInfoCardProps) {
   const [copied, setCopied] = useState(false);
 
   const copySystemInfo = async () => {
     const info = `
 CogniaLauncher System Information
 ================================
-Version: v${updateInfo?.current_version || '0.1.0'}
+Version: v${updateInfo?.current_version || APP_VERSION}
 OS: ${systemInfo?.os || 'Unknown'}
 Architecture: ${systemInfo?.arch || 'Unknown'}
 Home Directory: ${systemInfo?.homeDir || '~/.cognia'}
@@ -103,6 +114,24 @@ Locale: ${systemInfo?.locale || 'en-US'}
             <TooltipContent>{t('about.copySystemInfo')}</TooltipContent>
           </Tooltip>
         </div>
+
+        {systemError && (
+          <Alert variant="destructive" role="alert" className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+              <AlertDescription>{t('about.systemInfoFailed')}</AlertDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRetry}
+              className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" aria-hidden="true" />
+              {t('about.systemInfoRetry')}
+            </Button>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">

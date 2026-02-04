@@ -226,6 +226,7 @@ describe('Tauri Types', () => {
         platforms: ['windows', 'macos', 'linux'],
         priority: 100,
         is_environment_provider: false,
+        enabled: true,
       };
       expect(provider.id).toBe('npm');
       expect(provider.capabilities).toContain('install');

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import * as tauri from '@/lib/tauri';
+import { APP_VERSION } from '@/lib/app-version';
 import { toast } from 'sonner';
 
 export interface SystemInfo {
@@ -16,10 +17,14 @@ export interface UseAboutDataReturn {
   loading: boolean;
   updating: boolean;
   updateProgress: number;
+  updateStatus: 'idle' | 'downloading' | 'installing' | 'done' | 'error';
   error: string | null;
+  systemError: string | null;
   systemInfo: SystemInfo | null;
   systemLoading: boolean;
+  isDesktop: boolean;
   checkForUpdate: () => Promise<void>;
+  reloadSystemInfo: () => Promise<void>;
   handleUpdate: (t: (key: string) => string) => Promise<void>;
   clearError: () => void;
 }
@@ -29,16 +34,34 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'downloading' | 'installing' | 'done' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [systemError, setSystemError] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemLoading, setSystemLoading] = useState(true);
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const checkForUpdate = useCallback(async () => {
+    if (!tauri.isTauri()) {
+      setUpdateInfo({
+        current_version: APP_VERSION,
+        latest_version: APP_VERSION,
+        update_available: false,
+        release_notes: null,
+      });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const info = await tauri.selfCheckUpdate();
-      setUpdateInfo(info);
+      setUpdateInfo({
+        ...info,
+        current_version: info.current_version || APP_VERSION,
+        latest_version: info.latest_version || info.current_version || APP_VERSION,
+      });
     } catch (err) {
       const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
       if (message.includes('network') || message.includes('fetch') || message.includes('failed to fetch')) {
@@ -48,12 +71,30 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       } else {
         setError('update_check_failed');
       }
+      setUpdateInfo({
+        current_version: APP_VERSION,
+        latest_version: APP_VERSION,
+        update_available: false,
+        release_notes: null,
+      });
     } finally {
       setLoading(false);
     }
   }, []);
 
   const loadSystemInfo = useCallback(async () => {
+    setSystemError(null);
+    if (!tauri.isTauri()) {
+      setSystemInfo({
+        os: 'Web',
+        arch: 'Browser',
+        homeDir: '~/.cognia',
+        locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+      });
+      setSystemLoading(false);
+      return;
+    }
+
     setSystemLoading(true);
     try {
       const [platformInfo, cogniaDir] = await Promise.all([
@@ -68,6 +109,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       });
     } catch (err) {
       console.error('Failed to load system info:', err);
+      setSystemError('system_info_failed');
       setSystemInfo({
         os: 'Unknown',
         arch: 'Unknown',
@@ -81,6 +123,8 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   // Check for updates only once on mount (not affected by locale changes)
   useEffect(() => {
+    const desktop = tauri.isTauri();
+    setIsDesktop(desktop);
     checkForUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -91,17 +135,54 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   }, [loadSystemInfo]);
 
   const handleUpdate = useCallback(async (t: (key: string) => string) => {
+    if (!tauri.isTauri()) {
+      toast.error(t('about.updateDesktopOnly'));
+      return;
+    }
+
     setUpdating(true);
     setUpdateProgress(0);
+    setUpdateStatus('downloading');
     try {
       await tauri.selfUpdate();
+      setUpdateStatus('done');
       toast.success(t('about.updateStarted') || 'Update started! The application will restart shortly.');
     } catch (err) {
+      setUpdateStatus('error');
       toast.error(`${t('common.error')}: ${err}`);
     } finally {
       setUpdating(false);
-      setUpdateProgress(0);
     }
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setupListener = async () => {
+      if (!tauri.isTauri()) return;
+      try {
+        const handler = await tauri.listenSelfUpdateProgress((event) => {
+          setUpdateStatus(event.status);
+          if (typeof event.progress === 'number') {
+            setUpdateProgress(event.progress);
+          }
+          if (event.status === 'done') {
+            setUpdateProgress(100);
+          }
+        });
+        unlisten = handler;
+      } catch (err) {
+        console.error('Failed to listen for update progress:', err);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   }, []);
 
   const clearError = useCallback(() => {
@@ -113,10 +194,14 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     loading,
     updating,
     updateProgress,
+    updateStatus,
     error,
+    systemError,
     systemInfo,
     systemLoading,
+    isDesktop,
     checkForUpdate,
+    reloadSystemInfo: loadSystemInfo,
     handleUpdate,
     clearError,
   };

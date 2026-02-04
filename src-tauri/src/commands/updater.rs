@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Serialize)]
@@ -8,6 +8,23 @@ pub struct SelfUpdateInfo {
     pub latest_version: Option<String>,
     pub update_available: bool,
     pub release_notes: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SelfUpdateProgressEvent {
+    pub progress: Option<u32>,
+    pub status: String,
+}
+
+fn emit_update_progress(app: &AppHandle, status: &str, progress: Option<u32>) {
+    let _ = app.emit(
+        "self-update-progress",
+        SelfUpdateProgressEvent {
+            progress,
+            status: status.to_string(),
+        },
+    );
 }
 
 #[tauri::command]
@@ -66,23 +83,34 @@ pub async fn self_update(app: AppHandle) -> Result<(), String> {
         .ok_or_else(|| "No update available".to_string())?;
 
     // Download and install the update
+    emit_update_progress(&app, "downloading", Some(0));
     let mut downloaded: u64 = 0;
 
-    update
+    let result = update
         .download_and_install(
             |chunk_length, content_length| {
                 downloaded += chunk_length as u64;
                 if let Some(total) = content_length {
                     let progress = (downloaded as f64 / total as f64 * 100.0) as u32;
+                    emit_update_progress(&app, "downloading", Some(progress));
                     log::info!("Download progress: {}%", progress);
                 }
             },
             || {
+                emit_update_progress(&app, "installing", None);
                 log::info!("Download finished, preparing to install...");
             },
         )
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
 
-    Ok(())
+    match result {
+        Ok(_) => {
+            emit_update_progress(&app, "done", Some(100));
+            Ok(())
+        }
+        Err(e) => {
+            emit_update_progress(&app, "error", None);
+            Err(e.to_string())
+        }
+    }
 }

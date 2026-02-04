@@ -9,11 +9,6 @@ describe('useAppearanceStore', () => {
   });
 
   describe('initial state', () => {
-    it('has default theme mode as system', () => {
-      const { themeMode } = useAppearanceStore.getState();
-      expect(themeMode).toBe('system');
-    });
-
     it('has default accent color as blue', () => {
       const { accentColor } = useAppearanceStore.getState();
       expect(accentColor).toBe('blue');
@@ -22,24 +17,6 @@ describe('useAppearanceStore', () => {
     it('has reduced motion disabled by default', () => {
       const { reducedMotion } = useAppearanceStore.getState();
       expect(reducedMotion).toBe(false);
-    });
-  });
-
-  describe('setThemeMode', () => {
-    it('updates theme mode to light', () => {
-      useAppearanceStore.getState().setThemeMode('light');
-      expect(useAppearanceStore.getState().themeMode).toBe('light');
-    });
-
-    it('updates theme mode to dark', () => {
-      useAppearanceStore.getState().setThemeMode('dark');
-      expect(useAppearanceStore.getState().themeMode).toBe('dark');
-    });
-
-    it('updates theme mode to system', () => {
-      useAppearanceStore.getState().setThemeMode('light');
-      useAppearanceStore.getState().setThemeMode('system');
-      expect(useAppearanceStore.getState().themeMode).toBe('system');
     });
   });
 
@@ -86,7 +63,6 @@ describe('useAppearanceStore', () => {
   describe('reset', () => {
     it('resets all values to defaults', () => {
       // Change all values
-      useAppearanceStore.getState().setThemeMode('dark');
       useAppearanceStore.getState().setAccentColor('rose');
       useAppearanceStore.getState().setReducedMotion(true);
 
@@ -95,7 +71,6 @@ describe('useAppearanceStore', () => {
 
       // Verify defaults
       const state = useAppearanceStore.getState();
-      expect(state.themeMode).toBe('system');
       expect(state.accentColor).toBe('blue');
       expect(state.reducedMotion).toBe(false);
     });

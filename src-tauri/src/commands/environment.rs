@@ -52,6 +52,7 @@ pub async fn env_get(
 pub async fn env_install(
     env_type: String,
     version: String,
+    provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -70,6 +71,10 @@ pub async fn env_install(
     });
     
     // Emit downloading progress
+    // TODO: Implement real download progress by:
+    // 1. Adding progress callback to EnvironmentProvider trait
+    // 2. Using platform::network::DownloadProgress in provider implementations
+    // 3. Emitting progress events from the callback
     let _ = app.emit("env-install-progress", EnvInstallProgress {
         env_type: env_type.clone(),
         version: version.clone(),
@@ -83,7 +88,7 @@ pub async fn env_install(
     
     // Perform the actual installation
     let result = manager
-        .install_version(&env_type, &version)
+        .install_version(&env_type, &version, provider_id.as_deref())
         .await;
     
     match &result {
@@ -208,39 +213,39 @@ pub async fn env_available_versions(
 }
 
 #[tauri::command]
-pub async fn env_list_providers() -> Result<Vec<EnvironmentProviderInfo>, String> {
-    Ok(vec![
-        EnvironmentProviderInfo {
-            id: "fnm".to_string(),
-            display_name: "fnm (Fast Node Manager)".to_string(),
-            env_type: "node".to_string(),
-            description: "Fast and simple Node.js version manager, built in Rust".to_string(),
-        },
-        EnvironmentProviderInfo {
-            id: "nvm".to_string(),
-            display_name: "nvm (Node Version Manager)".to_string(),
-            env_type: "node".to_string(),
-            description: "Node Version Manager - POSIX-compliant bash script".to_string(),
-        },
-        EnvironmentProviderInfo {
-            id: "pyenv".to_string(),
-            display_name: "pyenv".to_string(),
-            env_type: "python".to_string(),
-            description: "Simple Python version management".to_string(),
-        },
-        EnvironmentProviderInfo {
-            id: "rustup".to_string(),
-            display_name: "rustup".to_string(),
-            env_type: "rust".to_string(),
-            description: "The Rust toolchain installer".to_string(),
-        },
-        EnvironmentProviderInfo {
-            id: "goenv".to_string(),
-            display_name: "goenv".to_string(),
-            env_type: "go".to_string(),
-            description: "Go version management".to_string(),
-        },
-    ])
+pub async fn env_list_providers(
+    registry: State<'_, SharedRegistry>,
+) -> Result<Vec<EnvironmentProviderInfo>, String> {
+    let registry_guard = registry.inner().read().await;
+    let mut providers = Vec::new();
+
+    for provider_id in registry_guard.list_environment_providers() {
+        if let Some(provider) = registry_guard.get_environment_provider(provider_id) {
+            let (env_type, description) = match provider_id {
+                "fnm" => (
+                    "node",
+                    "Fast and simple Node.js version manager, built in Rust",
+                ),
+                "nvm" => (
+                    "node",
+                    "Node Version Manager - POSIX-compliant bash script",
+                ),
+                "pyenv" => ("python", "Simple Python version management"),
+                "rustup" => ("rust", "The Rust toolchain installer"),
+                "goenv" => ("go", "Go version management"),
+                _ => (provider_id, provider.display_name()),
+            };
+
+            providers.push(EnvironmentProviderInfo {
+                id: provider_id.to_string(),
+                display_name: provider.display_name().to_string(),
+                env_type: env_type.to_string(),
+                description: description.to_string(),
+            });
+        }
+    }
+
+    Ok(providers)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -265,6 +270,13 @@ pub async fn env_resolve_alias(
         .map_err(|e| e.to_string())?;
     
     let alias_lower = alias.to_lowercase();
+    let alias_env_type = match env_type.as_str() {
+        "fnm" | "nvm" => "node",
+        "pyenv" => "python",
+        "goenv" => "go",
+        "rustup" => "rust",
+        _ => env_type.as_str(),
+    };
     
     match alias_lower.as_str() {
         "latest" | "newest" | "current" => {
@@ -275,7 +287,7 @@ pub async fn env_resolve_alias(
         }
         "lts" => {
             // For Node.js, LTS versions are even major versions
-            if env_type.to_lowercase() == "node" {
+            if alias_env_type == "node" {
                 versions
                     .iter()
                     .find(|v| {
@@ -317,6 +329,60 @@ pub async fn env_resolve_alias(
                     .ok_or_else(|| format!("Version '{}' not found", alias))
             }
         }
+    }
+}
+
+/// Environment settings structure for persistence
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EnvironmentSettings {
+    pub env_type: String,
+    pub env_variables: Vec<EnvVariableConfig>,
+    pub detection_files: Vec<DetectionFileConfig>,
+    pub auto_switch: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EnvVariableConfig {
+    pub key: String,
+    pub value: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DetectionFileConfig {
+    pub file_name: String,
+    pub enabled: bool,
+}
+
+/// Save environment settings (env variables, detection files, auto-switch)
+#[tauri::command]
+pub async fn env_save_settings(
+    settings: EnvironmentSettings,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<(), String> {
+    let key = format!("env_settings.{}", settings.env_type);
+    let value = serde_json::to_string(&settings).map_err(|e| e.to_string())?;
+    
+    let mut s = config.write().await;
+    s.set_value(&key, &value).map_err(|e| e.to_string())?;
+    s.save().await.map_err(|e| e.to_string())
+}
+
+/// Load environment settings for a specific environment type
+#[tauri::command]
+pub async fn env_load_settings(
+    env_type: String,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<Option<EnvironmentSettings>, String> {
+    let key = format!("env_settings.{}", env_type);
+    let s = config.read().await;
+    
+    if let Some(value) = s.get_value(&key) {
+        let settings: EnvironmentSettings = serde_json::from_str(&value)
+            .map_err(|e| e.to_string())?;
+        Ok(Some(settings))
+    } else {
+        Ok(None)
     }
 }
 

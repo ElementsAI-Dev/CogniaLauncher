@@ -23,6 +23,7 @@ interface PackageState {
   pinnedPackages: string[];
   selectedPackages: string[];
   searchMeta: SearchMeta | null;
+  bookmarkedPackages: string[];
 
   setSearchResults: (results: PackageSummary[]) => void;
   setInstalledPackages: (packages: InstalledPackage[]) => void;
@@ -41,6 +42,7 @@ interface PackageState {
   clearPackageSelection: () => void;
   selectAllPackages: (names: string[]) => void;
   setSearchMeta: (meta: SearchMeta | null) => void;
+  toggleBookmark: (name: string) => void;
 }
 
 export const usePackageStore = create<PackageState>()(
@@ -59,6 +61,7 @@ export const usePackageStore = create<PackageState>()(
       pinnedPackages: [],
       selectedPackages: [],
       searchMeta: null,
+      bookmarkedPackages: [],
 
       setSearchResults: (searchResults) => set({ searchResults }),
       setInstalledPackages: (installedPackages) => set({ installedPackages }),
@@ -87,6 +90,11 @@ export const usePackageStore = create<PackageState>()(
       clearPackageSelection: () => set({ selectedPackages: [] }),
       selectAllPackages: (names) => set({ selectedPackages: names }),
       setSearchMeta: (searchMeta) => set({ searchMeta }),
+      toggleBookmark: (name) => set((state) => ({
+        bookmarkedPackages: state.bookmarkedPackages.includes(name)
+          ? state.bookmarkedPackages.filter((n) => n !== name)
+          : [...state.bookmarkedPackages, name]
+      })),
     }),
     {
       name: 'cognia-packages',
@@ -94,6 +102,7 @@ export const usePackageStore = create<PackageState>()(
         pinnedPackages: state.pinnedPackages,
         selectedProvider: state.selectedProvider,
         searchQuery: state.searchQuery,
+        bookmarkedPackages: state.bookmarkedPackages,
       }),
     }
   )

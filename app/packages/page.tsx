@@ -13,6 +13,7 @@ import { PackageDetailsDialog } from '@/components/packages/package-details-dial
 import { BatchOperations } from '@/components/packages/batch-operations';
 import { DependencyTree } from '@/components/packages/dependency-tree';
 import { PackageComparisonDialog } from '@/components/packages/package-comparison-dialog';
+import { PageHeader } from '@/components/layout/page-header';
 import { usePackages } from '@/lib/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -44,6 +45,7 @@ export default function PackagesPage() {
     comparePackages,
     pinPackage,
     unpinPackage,
+    rollbackPackage,
     getInstallHistory,
   } = usePackages();
   
@@ -114,7 +116,9 @@ export default function PackagesPage() {
 
   const handleUpdatePackage = async (name: string, version: string) => {
     try {
-      await installPackages([`${name}@${version}`]);
+      const provider = updates.find((update) => update.name === name)?.provider;
+      const packageId = provider ? `${provider}:${name}` : name;
+      await installPackages([`${packageId}@${version}`]);
       toast.success(t('packages.updateSuccess', { name, version }));
       setUpdates(prev => prev.filter(u => u.name !== name));
       await fetchInstalledPackages();
@@ -142,7 +146,7 @@ export default function PackagesPage() {
   };
 
   const handleUpdateAll = async () => {
-    const packageNames = availableUpdates.map(u => u.name);
+    const packageNames = availableUpdates.map(u => `${u.provider}:${u.name}`);
     if (packageNames.length === 0) return;
     
     try {
@@ -260,25 +264,22 @@ export default function PackagesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page Header - matches design */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-[28px] font-bold text-foreground">{t('packages.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('packages.description')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {selectedPackages.length >= 2 && (
+      <PageHeader
+        title={t('packages.title')}
+        description={t('packages.description')}
+        actions={
+          selectedPackages.length >= 2 ? (
             <Button
               variant="outline"
               size="sm"
               onClick={() => setComparisonOpen(true)}
             >
               <GitCompare className="h-4 w-4 mr-1" />
-              Compare ({selectedPackages.length})
+              {t('packages.compare', { count: selectedPackages.length })}
             </Button>
-          )}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       {error && (
         <Alert variant="destructive">
@@ -612,12 +613,14 @@ export default function PackagesPage() {
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
         onInstall={async (name, version) => {
-          const pkgWithVersion = version ? `${name}@${version}` : name;
+          const provider = selectedPackage?.provider;
+          const packageId = provider ? `${provider}:${name}` : name;
+          const pkgWithVersion = version ? `${packageId}@${version}` : packageId;
           await installPackages([pkgWithVersion]);
         }}
         onRollback={async (name, version) => {
           try {
-            await installPackages([`${name}@${version}`]);
+            await rollbackPackage(name, version);
             toast.success(t('packages.rollbackSuccess', { name, version }));
             await fetchInstalledPackages();
           } catch (err) {

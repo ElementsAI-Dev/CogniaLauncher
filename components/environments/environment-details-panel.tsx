@@ -10,7 +10,8 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { EnvironmentInfo, DetectedEnvironment } from '@/lib/tauri';
-import { useEnvironmentStore } from '@/lib/stores/environment';
+import { useEnvironmentStore, type EnvironmentSettings } from '@/lib/stores/environment';
+import { useEnvironments } from '@/lib/hooks/use-environments';
 import { 
   Check, 
   Globe, 
@@ -53,15 +54,6 @@ interface EnvironmentDetailsPanelProps {
 }
 
 
-const DETECTION_FILES: Record<string, string[]> = {
-  node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
-  python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
-  go: ['.go-version', 'go.mod', '.tool-versions'],
-  rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
-  ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
-  java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
-};
-
 export function EnvironmentDetailsPanel({
   env,
   detectedVersion,
@@ -78,7 +70,8 @@ export function EnvironmentDetailsPanel({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(null);
   // Get persisted environment settings from store
-  const { getEnvSettings, addEnvVariable, removeEnvVariable, toggleDetectionFile } = useEnvironmentStore();
+  const { getEnvSettings } = useEnvironmentStore();
+  const { loadEnvSettings, saveEnvSettings } = useEnvironments();
   const envSettings = env ? getEnvSettings(env.env_type) : null;
   const envVariables = envSettings?.envVariables || [];
   const detectionFileSettings = envSettings?.detectionFiles || [];
@@ -93,18 +86,24 @@ export function EnvironmentDetailsPanel({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (open && env) {
+      void loadEnvSettings(env.env_type);
+    }
+  }, [open, env, loadEnvSettings]);
+
   if (!env) return null;
 
-  // Fallback to constant if store doesn't have settings yet
-  const detectionFilesFromConstant = DETECTION_FILES[env.env_type.toLowerCase()] || [];
-  // Use store settings if available, otherwise create from constant
-  // Always normalize to { fileName, enabled } format
-  const detectionFiles: { fileName: string; enabled: boolean }[] = detectionFileSettings.length > 0 
-    ? detectionFileSettings 
-    : detectionFilesFromConstant.map((fileName, idx) => ({
-        fileName,
-        enabled: idx < 2, // Enable first two by default
-      }));
+  const detectionFiles = detectionFileSettings;
+
+  const updateSettings = async (nextSettings: EnvironmentSettings) => {
+    if (!env) return;
+    try {
+      await saveEnvSettings(env.env_type, nextSettings);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
 
   const handleSetGlobal = async (version: string) => {
     try {
@@ -126,17 +125,41 @@ export function EnvironmentDetailsPanel({
     }
   };
 
-  const handleAddEnvVariable = () => {
-    if (!newVarKey.trim() || !env) return;
-    addEnvVariable(env.env_type, { key: newVarKey, value: newVarValue, enabled: true });
+  const handleAddEnvVariable = async () => {
+    if (!newVarKey.trim() || !envSettings || !env) return;
+    await updateSettings({
+      ...envSettings,
+      envVariables: [...envSettings.envVariables, { key: newVarKey, value: newVarValue, enabled: true }],
+    });
     setNewVarKey('');
     setNewVarValue('');
     toast.success(t('environments.details.envVarAdded'));
   };
 
-  const handleRemoveEnvVariable = (key: string) => {
-    if (!env) return;
-    removeEnvVariable(env.env_type, key);
+  const handleRemoveEnvVariable = async (key: string) => {
+    if (!envSettings || !env) return;
+    await updateSettings({
+      ...envSettings,
+      envVariables: envSettings.envVariables.filter((variable) => variable.key !== key),
+    });
+  };
+
+  const handleToggleDetectionFile = async (fileName: string, enabled: boolean) => {
+    if (!envSettings || !env) return;
+    await updateSettings({
+      ...envSettings,
+      detectionFiles: envSettings.detectionFiles.map((file) =>
+        file.fileName === fileName ? { ...file, enabled } : file
+      ),
+    });
+  };
+
+  const handleToggleAutoSwitch = async (enabled: boolean) => {
+    if (!envSettings || !env) return;
+    await updateSettings({
+      ...envSettings,
+      autoSwitch: enabled,
+    });
   };
 
   const totalSize = env.installed_versions.reduce((acc, v) => acc + (v.size || 0), 0);
@@ -528,6 +551,23 @@ export function EnvironmentDetailsPanel({
                 </p>
               </div>
 
+              {/* Auto Switch Toggle */}
+              <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-primary" />
+                  <div>
+                    <span className="text-sm font-medium">{t('environments.details.autoSwitch')}</span>
+                    <p className="text-xs text-muted-foreground">
+                      {t('environments.details.autoSwitchDesc')}
+                    </p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={envSettings?.autoSwitch || false}
+                  onCheckedChange={handleToggleAutoSwitch}
+                />
+              </div>
+
               <div className="space-y-2">
                 {detectionFiles.map((file, index) => (
                   <div
@@ -540,7 +580,7 @@ export function EnvironmentDetailsPanel({
                     </div>
                     <Switch 
                       checked={file.enabled}
-                      onCheckedChange={(checked) => toggleDetectionFile(env.env_type, file.fileName, checked)}
+                      onCheckedChange={(checked) => handleToggleDetectionFile(file.fileName, checked)}
                     />
                   </div>
                 ))}

@@ -10,11 +10,21 @@ interface UpdateBannerProps {
   updateInfo: SelfUpdateInfo | null;
   updating: boolean;
   updateProgress: number;
+  updateStatus: 'idle' | 'downloading' | 'installing' | 'done' | 'error';
+  isDesktop: boolean;
   onUpdate: () => void;
   t: (key: string) => string;
 }
 
-export function UpdateBanner({ updateInfo, updating, updateProgress, onUpdate, t }: UpdateBannerProps) {
+export function UpdateBanner({
+  updateInfo,
+  updating,
+  updateProgress,
+  updateStatus,
+  isDesktop,
+  onUpdate,
+  t,
+}: UpdateBannerProps) {
   if (!updateInfo?.update_available) {
     return null;
   }
@@ -46,14 +56,15 @@ export function UpdateBanner({ updateInfo, updating, updateProgress, onUpdate, t
           <div className="space-y-2">
             <Progress value={updateProgress} className="h-2" aria-label={t('about.downloadProgress')} />
             <span className="text-xs text-blue-700 dark:text-blue-300">
-              {t('about.downloading')} {updateProgress > 0 ? `${updateProgress}%` : '...'}
+              {updateStatus === 'installing' ? t('about.installing') : t('about.downloading')}{' '}
+              {updateProgress > 0 ? `${updateProgress}%` : '...'}
             </span>
           </div>
         )}
 
         <Button 
           onClick={onUpdate} 
-          disabled={updating} 
+          disabled={updating || !isDesktop}
           className="bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           aria-describedby="update-description"
         >
@@ -61,7 +72,7 @@ export function UpdateBanner({ updateInfo, updating, updateProgress, onUpdate, t
           {updating ? t('about.downloading') : t('common.update')}
         </Button>
         <span id="update-description" className="sr-only">
-          {t('about.updateDescription')}
+          {isDesktop ? t('about.updateDescription') : t('about.updateDesktopOnly')}
         </span>
       </CardContent>
     </Card>

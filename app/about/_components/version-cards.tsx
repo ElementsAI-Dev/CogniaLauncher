@@ -3,6 +3,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Package, CloudDownload, Check } from 'lucide-react';
+import { APP_VERSION } from '@/lib/app-version';
 import type { SelfUpdateInfo } from '@/lib/tauri';
 
 interface VersionCardsProps {
@@ -12,6 +13,9 @@ interface VersionCardsProps {
 }
 
 export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
+  const currentVersion = updateInfo?.current_version || APP_VERSION;
+  const latestVersion = updateInfo?.latest_version || updateInfo?.current_version || APP_VERSION;
+
   return (
     <div className="grid gap-4 grid-cols-1 md:grid-cols-2" role="group" aria-label={t('about.versionInfo')}>
       {/* Current Version Card */}
@@ -31,7 +35,7 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
                 className="text-[32px] font-bold text-foreground block"
                 aria-labelledby="current-version-label"
               >
-                v{updateInfo?.current_version || '0.1.0'}
+                v{currentVersion}
               </span>
               {updateInfo?.update_available === false && (
                 <div 
@@ -67,7 +71,7 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
                 className="text-[32px] font-bold text-foreground block"
                 aria-labelledby="latest-version-label"
               >
-                v{updateInfo?.latest_version || updateInfo?.current_version || '0.1.0'}
+                v{latestVersion}
               </span>
               {updateInfo?.update_available && (
                 <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">

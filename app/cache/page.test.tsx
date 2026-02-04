@@ -10,14 +10,16 @@ jest.mock('@/lib/tauri', () => ({
     total_size: 1024000,
     total_size_human: '1 MB',
     files: [
-      { path: '/cache/file1.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download' },
-      { path: '/cache/file2.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download' },
+      { path: '/cache/file1.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download', created_at: '2024-01-15T10:00:00Z' },
+      { path: '/cache/file2.tar.gz', size: 512000, size_human: '500 KB', entry_type: 'download', created_at: '2024-01-15T10:00:00Z' },
     ],
   }),
   cacheCleanEnhanced: jest.fn().mockResolvedValue({
-    freed: 1024000,
+    freed_bytes: 1024000,
     freed_human: '1 MB',
-    files_cleaned: 5,
+    deleted_count: 5,
+    use_trash: true,
+    history_id: 'history-1',
   }),
   getCleanupHistory: jest.fn().mockResolvedValue([
     {
@@ -25,24 +27,29 @@ jest.mock('@/lib/tauri', () => ({
       timestamp: '2024-01-15T10:00:00Z',
       clean_type: 'downloads',
       file_count: 10,
-      freed: 5242880,
+      freed_bytes: 5242880,
       freed_human: '5 MB',
       use_trash: true,
+      files: [],
+      files_truncated: false,
     },
     {
       id: '2',
       timestamp: '2024-01-14T09:00:00Z',
       clean_type: 'metadata',
       file_count: 20,
-      freed: 1048576,
+      freed_bytes: 1048576,
       freed_human: '1 MB',
       use_trash: false,
+      files: [],
+      files_truncated: false,
     },
   ]),
   getCleanupSummary: jest.fn().mockResolvedValue({
     total_cleanups: 2,
-    total_freed: 6291456,
+    total_freed_bytes: 6291456,
     total_freed_human: '6 MB',
+    total_files_cleaned: 30,
     trash_cleanups: 1,
     permanent_cleanups: 1,
   }),
@@ -61,6 +68,7 @@ jest.mock('@/lib/hooks/use-settings', () => ({
     cacheSettings: {
       max_size: 10737418240,
       max_age_days: 30,
+      metadata_cache_ttl: 3600,
       auto_clean: true,
     },
     cacheVerification: null,
@@ -70,7 +78,7 @@ jest.mock('@/lib/hooks/use-settings', () => ({
     fetchCacheInfo: jest.fn(),
     fetchPlatformInfo: jest.fn(),
     fetchCacheSettings: jest.fn(),
-    cleanCache: jest.fn().mockResolvedValue({ freed: 1024, freed_human: '1 KB' }),
+    cleanCache: jest.fn().mockResolvedValue({ freed_bytes: 1024, freed_human: '1 KB' }),
     verifyCacheIntegrity: jest.fn().mockResolvedValue({ is_healthy: true }),
     repairCache: jest.fn().mockResolvedValue({ removed_entries: 0, recovered_entries: 0, freed_human: '0 B' }),
     updateCacheSettings: jest.fn(),
@@ -140,6 +148,9 @@ const mockMessages = {
       maxSizeDesc: 'Maximum cache size in MB',
       maxAge: 'Maximum Age',
       maxAgeDesc: 'Maximum age of cache entries in days',
+      metadataCacheTtl: 'Metadata Cache TTL',
+      metadataCacheTtlDesc: 'Seconds before metadata cache expires',
+      ttlSeconds: 'seconds',
       autoClean: 'Auto Clean',
       autoCleanDesc: 'Automatically clean old entries',
       settingsSaved: 'Cache settings saved',
@@ -221,6 +232,9 @@ const mockMessages = {
       noHistory: '暂无清理历史记录',
       historyCleared: '已清除 {count} 条历史记录',
       historyClearFailed: '清除历史记录失败',
+      metadataCacheTtl: '元数据缓存 TTL',
+      metadataCacheTtlDesc: '元数据缓存过期时间（秒）',
+      ttlSeconds: '秒',
     },
   },
 };
@@ -453,6 +467,20 @@ describe('CachePage', () => {
       
       await waitFor(() => {
         expect(screen.getByText('Settings')).toBeInTheDocument();
+      });
+    });
+
+    it('renders metadata cache TTL setting', async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Settings')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Settings'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Metadata Cache TTL')).toBeInTheDocument();
       });
     });
   });

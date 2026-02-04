@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale } from '@/components/providers/locale-provider';
+import { isTauri, configSet } from '@/lib/tauri';
+import type { ThemeMode } from '@/lib/theme/types';
 
 const emptySubscribe = () => () => {};
 
@@ -27,6 +29,18 @@ export function ThemeToggle() {
   const mounted = useMounted();
   const { theme, setTheme } = useTheme();
   const { t } = useLocale();
+
+  const handleThemeSelect = async (value: ThemeMode) => {
+    setTheme(value);
+
+    if (isTauri()) {
+      try {
+        await configSet('appearance.theme', value);
+      } catch (err) {
+        console.error('Failed to sync theme to backend:', err);
+      }
+    }
+  };
 
   if (!mounted) {
     return (
@@ -47,17 +61,17 @@ export function ThemeToggle() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>
+        <DropdownMenuItem onClick={() => void handleThemeSelect('light')}>
           <Sun className="mr-2 h-4 w-4" />
           {t('theme.light')}
           {theme === 'light' && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
+        <DropdownMenuItem onClick={() => void handleThemeSelect('dark')}>
           <Moon className="mr-2 h-4 w-4" />
           {t('theme.dark')}
           {theme === 'dark' && <Check className="ml-auto h-4 w-4" />}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
+        <DropdownMenuItem onClick={() => void handleThemeSelect('system')}>
           <Monitor className="mr-2 h-4 w-4" />
           {t('theme.system')}
           {theme === 'system' && <Check className="ml-auto h-4 w-4" />}

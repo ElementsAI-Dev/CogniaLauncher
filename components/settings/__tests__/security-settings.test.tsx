@@ -10,6 +10,8 @@ const mockT = (key: string) => {
     'settings.allowHttpDesc': 'Allow insecure HTTP connections (not recommended)',
     'settings.verifyCerts': 'Verify Certificates',
     'settings.verifyCertsDesc': 'Validate SSL/TLS certificates for secure connections',
+    'settings.allowSelfSigned': 'Allow Self-Signed',
+    'settings.allowSelfSignedDesc': 'Allow self-signed certificates',
   };
   return translations[key] || key;
 };
@@ -19,6 +21,7 @@ describe('SecuritySettings', () => {
     localConfig: {
       'security.allow_http': 'false',
       'security.verify_certificates': 'true',
+      'security.allow_self_signed': 'false',
     },
     onValueChange: jest.fn(),
     t: mockT,
@@ -48,6 +51,12 @@ describe('SecuritySettings', () => {
     render(<SecuritySettings {...defaultProps} />);
 
     expect(screen.getByText('Verify Certificates')).toBeInTheDocument();
+  });
+
+  it('should render allow self-signed toggle', () => {
+    render(<SecuritySettings {...defaultProps} />);
+
+    expect(screen.getByText('Allow Self-Signed')).toBeInTheDocument();
   });
 
   it('should show allow HTTP as unchecked by default', () => {
@@ -82,5 +91,15 @@ describe('SecuritySettings', () => {
     fireEvent.click(switches[1]);
 
     expect(onValueChange).toHaveBeenCalledWith('security.verify_certificates', 'false');
+  });
+
+  it('should call onValueChange when allow self-signed is toggled', () => {
+    const onValueChange = jest.fn();
+    render(<SecuritySettings {...defaultProps} onValueChange={onValueChange} />);
+
+    const switches = screen.getAllByRole('switch');
+    fireEvent.click(switches[2]);
+
+    expect(onValueChange).toHaveBeenCalledWith('security.allow_self_signed', 'true');
   });
 });

@@ -1,4 +1,4 @@
-use super::db::{CacheDb, CacheEntry, CacheEntryType};
+use super::{CacheEntry, CacheEntryType, SqliteCacheDb};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
 use chrono::Utc;
@@ -9,7 +9,7 @@ const DEFAULT_TTL_SECONDS: i64 = 3600;
 
 pub struct MetadataCache {
     cache_dir: PathBuf,
-    db: CacheDb,
+    db: SqliteCacheDb,
     default_ttl: i64,
 }
 
@@ -22,7 +22,7 @@ impl MetadataCache {
         let metadata_dir = cache_dir.join("metadata");
         fs::create_dir_all(&metadata_dir).await?;
 
-        let db = CacheDb::open(cache_dir).await?;
+        let db = SqliteCacheDb::open(cache_dir).await?;
 
         Ok(Self {
             cache_dir: metadata_dir,
@@ -37,8 +37,8 @@ impl MetadataCache {
     {
         let cache_key = format!("metadata:{}", key);
 
-        let entry = match self.db.get(&cache_key) {
-            Some(e) => e.clone(),
+        let entry = match self.db.get(&cache_key).await? {
+            Some(e) => e,
             None => return Ok(None),
         };
 
@@ -133,7 +133,7 @@ impl MetadataCache {
     pub async fn remove(&mut self, key: &str) -> CogniaResult<bool> {
         let cache_key = format!("metadata:{}", key);
 
-        if let Some(entry) = self.db.get(&cache_key) {
+        if let Some(entry) = self.db.get(&cache_key).await? {
             let path = entry.file_path.clone();
             if fs::exists(&path).await {
                 fs::remove_file(&path).await?;
@@ -152,9 +152,9 @@ impl MetadataCache {
         let expired: Vec<_> = self
             .db
             .get_expired()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
-            .cloned()
             .collect();
 
         let count = expired.len();
@@ -178,9 +178,9 @@ impl MetadataCache {
         let entries: Vec<CacheEntry> = self
             .db
             .list()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
-            .cloned()
             .collect();
 
         let count = entries.len();
@@ -196,25 +196,29 @@ impl MetadataCache {
     }
 
     /// Get list of entries that would be cleaned (for preview)
-    pub fn preview_clean(&self) -> Vec<&CacheEntry> {
-        self.db
+    pub async fn preview_clean(&self) -> CogniaResult<Vec<CacheEntry>> {
+        Ok(self
+            .db
             .list()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
-            .collect()
+            .collect())
     }
 
     /// Get list of expired entries (for preview)
-    pub fn preview_expired(&self) -> Vec<&CacheEntry> {
-        self.db
+    pub async fn preview_expired(&self) -> CogniaResult<Vec<CacheEntry>> {
+        Ok(self
+            .db
             .get_expired()
+            .await?
             .into_iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
-            .collect()
+            .collect())
     }
 
-    pub fn stats(&self) -> MetadataCacheStats {
-        let binding = self.db.list();
+    pub async fn stats(&self) -> CogniaResult<MetadataCacheStats> {
+        let binding = self.db.list().await?;
         let entries: Vec<_> = binding
             .iter()
             .filter(|e| e.entry_type == CacheEntryType::Metadata)
@@ -224,12 +228,12 @@ impl MetadataCache {
         let entry_count = entries.len();
         let expired_count = entries.iter().filter(|e| e.is_expired()).count();
 
-        MetadataCacheStats {
+        Ok(MetadataCacheStats {
             total_size,
             entry_count,
             expired_count,
             location: self.cache_dir.clone(),
-        }
+        })
     }
 }
 
@@ -319,11 +323,11 @@ mod tests {
         }
 
         // Preview should return all entries without deleting
-        let entries = cache.preview_clean();
+        let entries = cache.preview_clean().await.unwrap();
         assert_eq!(entries.len(), 3);
 
         // Entries should still exist
-        let stats = cache.stats();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 3);
     }
 
@@ -341,7 +345,7 @@ mod tests {
         }
 
         // Preview expired should return all entries (since TTL is -1)
-        let entries = cache.preview_expired();
+        let entries = cache.preview_expired().await.unwrap();
         assert_eq!(entries.len(), 2);
     }
 
@@ -359,7 +363,7 @@ mod tests {
         let count = cache.clean_expired_with_option(false).await.unwrap();
         assert_eq!(count, 2);
 
-        let stats = cache.stats();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 
@@ -377,7 +381,7 @@ mod tests {
         let count = cache.clean_expired_with_option(true).await.unwrap();
         assert_eq!(count, 2);
 
-        let stats = cache.stats();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 
@@ -395,7 +399,7 @@ mod tests {
         let count = cache.clean_all_with_option(false).await.unwrap();
         assert_eq!(count, 3);
 
-        let stats = cache.stats();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 
@@ -413,7 +417,7 @@ mod tests {
         let count = cache.clean_all_with_option(true).await.unwrap();
         assert_eq!(count, 3);
 
-        let stats = cache.stats();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
 }
