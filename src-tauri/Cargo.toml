@@ -17,7 +17,7 @@ tauri-build = { version = "2.5.0", features = [] }
 
 [dependencies]
 # Tauri
-tauri = { version = "2.9.0", features = [] }
+tauri = { version = "2.9.0", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2.8"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
@@ -68,6 +68,10 @@ urlencoding = "2.1"
 
 # Trash support (cross-platform recycle bin)
 trash = "3"
+
+# Windows APIs
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

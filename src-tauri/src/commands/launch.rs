@@ -1,5 +1,5 @@
 use crate::core::EnvironmentManager;
-use crate::platform::env::{EnvModifications, ShellType};
+use crate::platform::env::ShellType;
 use crate::platform::process::{self, ProcessOptions, ProcessOutput};
 use crate::provider::ProviderRegistry;
 use chrono::Utc;

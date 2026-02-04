@@ -6,6 +6,8 @@ export interface AppSettings {
   checkUpdatesOnStart: boolean;
   autoInstallUpdates: boolean;
   notifyOnUpdates: boolean;
+  minimizeToTray: boolean;
+  startMinimized: boolean;
 }
 
 interface SettingsState {
@@ -35,6 +37,8 @@ const defaultAppSettings: AppSettings = {
   checkUpdatesOnStart: true,
   autoInstallUpdates: false,
   notifyOnUpdates: true,
+  minimizeToTray: true,
+  startMinimized: false,
 };
 
 export const useSettingsStore = create<SettingsState>()(

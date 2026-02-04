@@ -129,14 +129,14 @@ impl std::error::Error for DownloadError {}
 impl DownloadError {
     /// Check if the error is recoverable (can be retried)
     pub fn is_recoverable(&self) -> bool {
-        matches!(
-            self,
+        match self {
             Self::Network { .. }
                 | Self::Timeout { .. }
                 | Self::RateLimited { .. }
-                | Self::Interrupted
-                | Self::HttpError { status, .. } if *status >= 500
-        )
+                | Self::Interrupted => true,
+            Self::HttpError { status, .. } if *status >= 500 => true,
+            _ => false,
+        }
     }
 
     /// Convert to DownloadState::Failed

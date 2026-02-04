@@ -18,6 +18,7 @@ fn emit_batch_progress(app_handle: &AppHandle, progress: &BatchProgress) {
 
 /// Batch install packages with progress tracking
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn batch_install(
     packages: Vec<String>,
     dry_run: Option<bool>,

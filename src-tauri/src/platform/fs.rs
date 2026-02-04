@@ -143,7 +143,7 @@ pub fn move_to_trash(path: impl AsRef<Path>) -> FsResult<()> {
         return Err(FsError::NotFound(path.to_path_buf()));
     }
     trash::delete(path).map_err(|e| {
-        FsError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        FsError::Io(io::Error::other(e.to_string()))
     })
 }
 
@@ -159,7 +159,7 @@ pub fn move_to_trash_batch<P: AsRef<Path>>(paths: &[P]) -> FsResult<usize> {
         return Ok(0);
     }
     trash::delete_all(&valid_paths).map_err(|e| {
-        FsError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        FsError::Io(io::Error::other(e.to_string()))
     })?;
     Ok(count)
 }
@@ -171,7 +171,7 @@ pub async fn remove_file_with_option(path: impl AsRef<Path>, use_trash: bool) ->
         let path_clone = path.clone();
         tokio::task::spawn_blocking(move || move_to_trash(&path_clone))
             .await
-            .map_err(|e| FsError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))??;
+            .map_err(|e| FsError::Io(io::Error::other(e.to_string())))??;
         Ok(())
     } else {
         remove_file(&path).await
@@ -185,7 +185,7 @@ pub async fn remove_dir_with_option(path: impl AsRef<Path>, use_trash: bool) -> 
         let path_clone = path.clone();
         tokio::task::spawn_blocking(move || move_to_trash(&path_clone))
             .await
-            .map_err(|e| FsError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))??;
+            .map_err(|e| FsError::Io(io::Error::other(e.to_string())))??;
         Ok(())
     } else {
         remove_dir_all(&path).await
@@ -201,7 +201,7 @@ pub async fn remove_files_batch(paths: Vec<PathBuf>, use_trash: bool) -> FsResul
     if use_trash {
         tokio::task::spawn_blocking(move || move_to_trash_batch(&paths))
             .await
-            .map_err(|e| FsError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?
+            .map_err(|e| FsError::Io(io::Error::other(e.to_string())))?
     } else {
         let mut count = 0;
         for path in paths {

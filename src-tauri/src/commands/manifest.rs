@@ -32,8 +32,8 @@ struct ProjectInfo {
 const MANIFEST_FILE_NAME: &str = "cognia.toml";
 
 /// Find manifest file by searching upward from the given path
-async fn find_manifest(start_path: &PathBuf) -> Option<PathBuf> {
-    let mut current = start_path.clone();
+async fn find_manifest(start_path: &std::path::Path) -> Option<PathBuf> {
+    let mut current = start_path.to_path_buf();
     
     loop {
         let manifest_path = current.join(MANIFEST_FILE_NAME);

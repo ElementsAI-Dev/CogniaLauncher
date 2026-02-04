@@ -333,6 +333,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_history_manager_recording() {
         let _lock = ENV_LOCK.lock().unwrap();
         let dir = tempdir().unwrap();

@@ -22,6 +22,8 @@ describe('UpdateSettings', () => {
     checkUpdatesOnStart: true,
     autoInstallUpdates: false,
     notifyOnUpdates: true,
+    minimizeToTray: true,
+    startMinimized: false,
   };
 
   it('should render update settings card', () => {

@@ -5,6 +5,7 @@ export { SecuritySettings } from './security-settings';
 export { MirrorsSettings } from './mirrors-settings';
 export { AppearanceSettings } from './appearance-settings';
 export { UpdateSettings } from './update-settings';
+export { TraySettings } from './tray-settings';
 export { PathsSettings } from './paths-settings';
 export { ProviderSettings } from './provider-settings';
 export { SystemInfo } from './system-info';

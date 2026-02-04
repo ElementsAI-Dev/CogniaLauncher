@@ -182,7 +182,7 @@ impl DownloadHistory {
         let file_path = cache_dir.join("download_history.json");
 
         let records = if fs::exists(&file_path).await {
-            let content = fs::read_string(&file_path).await?;
+            let content = fs::read_file_string(&file_path).await?;
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             VecDeque::new()
@@ -213,7 +213,7 @@ impl DownloadHistory {
         let content = serde_json::to_string_pretty(&self.records)
             .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
-        fs::write_string(&self.file_path, &content).await?;
+        fs::write_file_string(&self.file_path, &content).await?;
         Ok(())
     }
 

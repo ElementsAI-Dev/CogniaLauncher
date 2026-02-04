@@ -3,12 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Minus, Square, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/stores/settings';
 
 type TauriWindow = Awaited<
   ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow>
 >;
 
 export function Titlebar() {
+  const { appSettings } = useSettingsStore();
   const [appWindow, setAppWindow] = useState<TauriWindow | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -120,8 +122,12 @@ export function Titlebar() {
   }, [appWindow, handleToggleFullscreen]);
 
   const handleClose = useCallback(async () => {
-    await appWindow?.close();
-  }, [appWindow]);
+    if (appSettings.minimizeToTray) {
+      await appWindow?.hide();
+    } else {
+      await appWindow?.close();
+    }
+  }, [appWindow, appSettings.minimizeToTray]);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;

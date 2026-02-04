@@ -3,15 +3,14 @@
 use crate::cache::download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
 use crate::config::Settings;
 use crate::download::{
-    DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadProgress,
-    DownloadState, DownloadTask,
+    DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadTask,
 };
 use crate::platform::disk::{self, DiskSpace};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 
 /// Shared download manager state
 pub type SharedDownloadManager = Arc<RwLock<DownloadManager>>;

@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncBufReadExt;
 
@@ -198,7 +198,7 @@ fn parse_timestamp_ms(value: &str) -> Option<i64> {
 
     for format in formats {
         if let Ok(dt) = NaiveDateTime::parse_from_str(trimmed, format) {
-            return Some(DateTime::<Utc>::from_utc(dt, Utc).timestamp_millis());
+            return Some(dt.and_utc().timestamp_millis());
         }
     }
 
@@ -318,7 +318,7 @@ fn parse_log_line(line: &str, line_number: usize) -> Option<LogEntry> {
             let message = line[idx..].trim().to_string();
 
             return Some(LogEntry {
-                timestamp: parts.get(0).cloned().unwrap_or_default(),
+                timestamp: parts.first().cloned().unwrap_or_default(),
                 level: parts.get(1).cloned().unwrap_or_else(|| "INFO".to_string()),
                 target: parts.get(2).cloned().unwrap_or_default(),
                 message,
@@ -356,7 +356,7 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
         .map_err(|e| format!("Failed to read entry: {}", e))?
     {
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "log") {
+        if path.extension().is_some_and(|ext| ext == "log") {
             if let Ok(metadata) = entry.metadata().await {
                 let modified = metadata
                     .modified()
@@ -448,11 +448,7 @@ pub async fn log_query(
         });
     };
     
-    let end = if total_count > offset {
-        total_count - offset
-    } else {
-        0
-    };
+    let end = total_count.saturating_sub(offset);
 
     let entries: Vec<LogEntry> = all_entries[start..end].to_vec();
     let has_more = start > 0;

@@ -16,6 +16,8 @@
     "core:window:allow-set-fullscreen",
     "core:window:allow-is-fullscreen",
     "core:window:allow-destroy",
+    "core:window:allow-hide",
+    "core:window:allow-show",
     "updater:default",
     "log:default",
     "opener:default"

@@ -128,9 +128,9 @@ impl SpeedLimiter {
             return requested_bytes;
         }
 
-        let mut guard = self.bucket.lock().await;
-        if let Some(ref mut bucket) = *guard {
-            loop {
+        loop {
+            let mut guard = self.bucket.lock().await;
+            if let Some(ref mut bucket) = *guard {
                 if let Some(granted) = bucket.try_consume(requested_bytes) {
                     return granted;
                 }
@@ -142,11 +142,9 @@ impl SpeedLimiter {
                 if wait_time > Duration::ZERO {
                     tokio::time::sleep(wait_time.min(Duration::from_millis(100))).await;
                 }
-
-                guard = self.bucket.lock().await;
+            } else {
+                return requested_bytes;
             }
-        } else {
-            requested_bytes
         }
     }
 

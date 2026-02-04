@@ -14,7 +14,7 @@ mod state;
 mod task;
 mod throttle;
 
-pub use manager::DownloadManager;
+pub use manager::{DownloadManager, DownloadManagerConfig, DownloadEvent};
 pub use queue::DownloadQueue;
 pub use state::{DownloadState, DownloadError};
 pub use task::{DownloadTask, DownloadProgress, DownloadConfig};

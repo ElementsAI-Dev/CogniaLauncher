@@ -1,16 +1,15 @@
 //! Download manager - the main coordinator for all download operations
 
 use super::queue::{DownloadQueue, QueueStats};
-use super::state::{DownloadError, DownloadState};
+use super::state::DownloadError;
 use super::task::{DownloadConfig, DownloadProgress, DownloadTask};
 use super::throttle::SpeedLimiter;
-use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -45,8 +44,9 @@ pub enum DownloadEvent {
     QueueUpdated { stats: QueueStats },
 }
 
-/// Control signals for download workers
+/// Control signals for download workers (reserved for future use)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum ControlSignal {
     Pause,
     Resume,
@@ -133,7 +133,8 @@ pub struct DownloadManager {
     event_tx: Option<mpsc::UnboundedSender<DownloadEvent>>,
     /// Whether the manager is running
     running: Arc<AtomicBool>,
-    /// Shutdown signal
+    /// Shutdown signal (reserved for future graceful shutdown)
+    #[allow(dead_code)]
     shutdown_tx: Option<mpsc::Sender<()>>,
 }
 
@@ -570,7 +571,7 @@ impl DownloadManager {
         client: &Client,
         speed_limiter: &SpeedLimiter,
         event_tx: &Option<mpsc::UnboundedSender<DownloadEvent>>,
-        config: &Arc<RwLock<DownloadManagerConfig>>,
+        _config: &Arc<RwLock<DownloadManagerConfig>>,
     ) -> Result<(), DownloadError> {
         let task_id = &task.id;
         let url = &task.url;
@@ -749,6 +750,7 @@ impl DownloadManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::download::DownloadState;
 
     #[tokio::test]
     async fn test_download_manager_new() {

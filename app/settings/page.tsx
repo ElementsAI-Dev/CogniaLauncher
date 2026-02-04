@@ -32,6 +32,7 @@ import {
   MirrorsSettings,
   AppearanceSettings,
   UpdateSettings,
+  TraySettings,
   PathsSettings,
   ProviderSettings,
   SystemInfo,
@@ -432,6 +433,12 @@ export default function SettingsPage() {
           />
 
           <UpdateSettings
+            appSettings={appSettings}
+            onValueChange={handleAppSettingsChange}
+            t={t}
+          />
+
+          <TraySettings
             appSettings={appSettings}
             onValueChange={handleAppSettingsChange}
             t={t}

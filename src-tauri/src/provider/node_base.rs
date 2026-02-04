@@ -1,6 +1,6 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::process;
-use crate::provider::{InstallReceipt, InstallRequest};
+use crate::provider::InstallReceipt;
 use std::path::PathBuf;
 
 /// Common utilities for Node.js-based package managers (npm, pnpm, yarn)
@@ -62,7 +62,7 @@ macro_rules! impl_node_provider_install {
     ) => {
         impl $provider {
             async fn install_package_common(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
-                use crate::provider::node_base::NodeProviderUtils;
+                use $crate::provider::node_base::NodeProviderUtils;
                 
                 let pkg = NodeProviderUtils::build_package_spec(
                     &req.name,

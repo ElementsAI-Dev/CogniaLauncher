@@ -159,7 +159,7 @@ impl Provider for PnpmProvider {
                     })
                     .collect()
             })
-            .unwrap_or_else(Vec::new);
+            .unwrap_or_default();
 
         Ok(deps)
     }

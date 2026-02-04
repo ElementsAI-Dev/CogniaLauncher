@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(repair_result.freed_bytes, 500);
 
         // Verify entry is removed
-        assert!(cache.entries.get("repair-missing").is_none());
+        assert!(!cache.entries.contains_key("repair-missing"));
     }
 
     #[tokio::test]

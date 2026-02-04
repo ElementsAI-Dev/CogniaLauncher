@@ -7,6 +7,7 @@ pub mod error;
 pub mod platform;
 pub mod provider;
 pub mod resolver;
+pub mod tray;
 
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use config::Settings;
@@ -100,6 +101,11 @@ pub fn run() {
                 INITIALIZED.store(true, Ordering::SeqCst);
                 info!("Application initialization complete");
             });
+
+            // Initialize system tray
+            if let Err(e) = tray::setup_tray(app.handle()) {
+                info!("Failed to setup system tray: {}", e);
+            }
 
             // Start background cache cleanup task
             let cleanup_settings = app.state::<SharedSettings>().inner().clone();

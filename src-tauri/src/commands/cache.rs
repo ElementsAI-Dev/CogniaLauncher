@@ -282,20 +282,14 @@ pub async fn cache_repair(
             0
         };
 
-        let mut remove_entry = false;
-
-        if !exists {
-            remove_entry = true;
-        } else if actual_size != entry.size {
-            remove_entry = true;
+        let remove_entry = if !exists || actual_size != entry.size {
+            true
         } else {
             let actual_checksum = fs::calculate_sha256(&entry.file_path)
                 .await
                 .map_err(|e| e.to_string())?;
-            if actual_checksum != entry.checksum {
-                remove_entry = true;
-            }
-        }
+            actual_checksum != entry.checksum
+        };
 
         if remove_entry {
             if exists {
