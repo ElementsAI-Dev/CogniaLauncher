@@ -1,11 +1,25 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-01-16
+> Last Updated: 2026-02-04
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-02-04
+- **NEW: Download Management System**: Queue-based download manager with throttling, progress tracking, and SQLite history persistence
+- **NEW: System Tray**: Multi-language tray with dynamic icon states, quick actions, and autostart support
+- **NEW: Command Palette**: Global command search with Ctrl+K / Cmd+K shortcut
+- **NEW: Custom Detection System**: User-defined version detection rules with 9 extraction strategies (regex, JSON, TOML, YAML, XML, plain text, .tool-versions, INI, command)
+- **NEW: Enhanced Cache**: Cache system with trash support, cleanup history tracking, and preview functionality
+- **NEW: Log Panel**: Real-time log monitoring with filtering, search, and export capabilities
+- **NEW Providers**: rbenv, sdkman, goenv for Ruby, Java/JDK, and Go version management
+- Updated module index with new routes (downloads, logs)
+- Updated Tauri commands documentation (100+ commands now)
+- Added new hooks: `use-tray-sync.ts`, `use-downloads.ts`, `use-logs.ts`
+- Added new stores: `download.ts`, `log.ts`
+- Added new providers: `rbenv.rs`, `sdkman.rs`, `goenv.rs`
 
 ### 2026-01-16
 - Added llmdoc/ documentation index system
@@ -28,55 +42,67 @@ CogniaLauncher is a **cross-platform environment and package manager** with a mo
 - **Desktop mode** (`pnpm tauri dev`): Tauri wraps Next.js in a native window
 
 The project provides unified management for:
-- **Development Environments**: Node.js (nvm), Python (pyenv), Rust (rustup) version management
-- **Package Providers**: npm, pnpm, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, vcpkg, Docker, PSGallery, GitHub Releases
-- **Core Features**: Cache management, dependency resolution, update checking, batch operations
+- **Development Environments**: Node.js (nvm/fnm), Python (pyenv), Rust (rustup), Go (goenv), Ruby (rbenv), Java (SDKMAN) version management
+- **Package Providers**: npm, pnpm, yarn, pip, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, vcpkg, Docker, PSGallery, GitHub Releases (35+ providers)
+- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection
 
 ---
 
-## Architecture Overview
+## Module Structure
 
 ```mermaid
 graph TD
-    A["CogniaLauncher (Root)"] --> B["app/ - Frontend Routes"]
-    A --> C["components/ - UI Components"]
-    A --> D["lib/ - Utilities & State"]
-    A --> E["src-tauri/ - Rust Backend"]
-    A --> F["openspec/ - Specifications"]
+    A["(根) CogniaLauncher"] --> B["app/ - 前端路由"]
+    A --> C["components/ - UI 组件"]
+    A --> D["lib/ - 工具与状态"]
+    A --> E["src-tauri/ - Rust 后端"]
+    A --> F["openspec/ - 规范文档"]
+    A --> G["llmdoc/ - 文档系统"]
 
-    B --> B1["page.tsx - Dashboard"]
-    B --> B2["environments/ - Env Management"]
-    B --> B3["packages/ - Package Management"]
-    B --> B4["providers/ - Provider Config"]
-    B --> B5["cache/ - Cache Management"]
-    B --> B6["settings/ - App Settings"]
+    B --> B1["page.tsx - 仪表板"]
+    B --> B2["environments/ - 环境管理"]
+    B --> B3["packages/ - 包管理"]
+    B --> B4["providers/ - 提供商配置"]
+    B --> B5["cache/ - 缓存管理"]
+    B --> B6["settings/ - 应用设置"]
+    B --> B7["downloads/ - 下载管理"]
+    B --> B8["logs/ - 日志查看"]
+    B --> B9["about/ - 关于页面"]
 
-    C --> C1["ui/ - shadcn/ui Components"]
-    C --> C2["dashboard/ - Dashboard Components"]
-    C --> C3["environments/ - Env Components"]
-    C --> C4["packages/ - Package Components"]
-    C --> C5["layout/ - Layout Components"]
+    C --> C1["ui/ - shadcn/ui 组件"]
+    C --> C2["dashboard/ - 仪表板组件"]
+    C --> C3["environments/ - 环境组件"]
+    C --> C4["packages/ - 包组件"]
+    C --> C5["settings/ - 设置组件"]
+    C --> C6["layout/ - 布局组件"]
+    C --> C7["log/ - 日志组件"]
+    C --> C8["downloads/ - 下载组件"]
+    C --> C9["providers/ - 上下文提供者"]
 
-    D --> D1["stores/ - Zustand Stores"]
+    D --> D1["stores/ - Zustand 存储"]
     D --> D2["hooks/ - React Hooks"]
-    D --> D3["tauri.ts - Tauri API Bindings"]
+    D --> D3["tauri.ts - Tauri API 绑定"]
 
-    E --> E1["commands/ - Tauri Commands"]
-    E --> E2["core/ - Core Logic"]
-    E --> E3["provider/ - Provider Implementations"]
-    E --> E4["cache/ - Cache Management"]
-    E --> E5["config/ - Configuration"]
-    E --> E6["platform/ - Platform Abstraction"]
-    E --> E7["resolver/ - Dependency Resolution"]
+    E --> E1["commands/ - Tauri 命令"]
+    E --> E2["core/ - 核心逻辑"]
+    E --> E3["provider/ - 提供商实现"]
+    E --> E4["cache/ - 缓存管理"]
+    E --> E5["download/ - 下载管理器"]
+    E --> E6["config/ - 配置"]
+    E --> E7["platform/ - 平台抽象"]
+    E --> E8["resolver/ - 依赖解析"]
+    E --> E9["tray.rs - 系统托盘"]
 
-    F --> F1["specs/ - Feature Specs"]
-    F --> F2["changes/ - Change Proposals"]
+    F --> F1["specs/ - 功能规范"]
+    F --> F2["changes/ - 变更提案"]
 
-    click E "./src-tauri/CLAUDE.md" "View Tauri Backend Documentation"
-    click F "./openspec/AGENTS.md" "View OpenSpec Guidelines"
+    click E "./src-tauri/CLAUDE.md" "查看 Tauri 后端文档"
+    click F "./openspec/AGENTS.md" "查看 OpenSpec 指南"
+    click G "./llmdoc/index.md" "查看文档索引"
 
     style A fill:#4f46e5,color:#fff
     style E fill:#ea580c,color:#fff
+    style G fill:#059669,color:#fff
 ```
 
 ---
@@ -106,6 +132,12 @@ pnpm tauri info       # Check Tauri environment
 
 # Add shadcn/ui components
 pnpm dlx shadcn@latest add <component-name>
+
+# Rust (in src-tauri/)
+cargo check           # Check Rust code
+cargo test            # Run Rust tests
+cargo fmt             # Format Rust code
+cargo clippy          # Run Rust linter
 ```
 
 ---
@@ -121,14 +153,20 @@ pnpm dlx shadcn@latest add <component-name>
   - `providers/` - Provider configuration UI
   - `cache/` - Cache management UI
   - `settings/` - Application settings UI
+  - `downloads/` - **NEW** Download management UI
+  - `logs/` - **NEW** Log viewer UI
+  - `about/` - About page with system info
 - `components/ui/` - shadcn/ui components using Radix UI + class-variance-authority
-  - `button.tsx`, `card.tsx`, `dialog.tsx`, `input.tsx`, etc.
+  - `button.tsx`, `card.tsx`, `dialog.tsx`, `input.tsx`, `command.tsx` (NEW), etc.
 - `components/{feature}/` - Feature-specific components
-  - `dashboard/`, `environments/`, `packages/`, `layout/`
+  - `dashboard/`, `environments/`, `packages/`, `settings/`, `log/` (NEW), `downloads/` (NEW), `layout/`
+- `components/providers/` - Context providers
+  - `theme-provider.tsx`, `locale-provider.tsx`, `log-provider.tsx`, `tray-provider.tsx` (NEW)
 - `lib/utils.ts` - `cn()` utility (clsx + tailwind-merge)
 - `lib/stores/` - Zustand state stores
+  - `packages.ts`, `environment.ts`, `settings.ts`, `appearance.ts`, `download.ts` (NEW), `log.ts` (NEW)
 - `lib/hooks/` - Custom React hooks
-- `hooks/` - Shared React hooks
+  - `use-packages.ts`, `use-environments.ts`, `use-settings.ts`, `use-downloads.ts` (NEW), `use-tray-sync.ts` (NEW), `use-logs.ts` (NEW)
 - `i18n/`, `messages/` - Internationalization
 
 ### Tauri Integration
@@ -138,13 +176,16 @@ pnpm dlx shadcn@latest add <component-name>
   - `beforeDevCommand`: runs `pnpm dev`
   - `beforeBuildCommand`: runs `pnpm build`
   - `src/` - Rust source code
-    - `commands/` - Tauri command handlers
+    - `commands/` - Tauri command handlers (15 modules, 120+ commands)
     - `core/` - Core business logic
-    - `provider/` - Provider implementations (30+ providers)
-    - `cache/` - Cache management
+    - `provider/` - Provider implementations (32 providers)
+    - `cache/` - Cache management (SQLite + JSON)
+    - `download/` - Download manager with queue and throttling
     - `config/` - Configuration
     - `platform/` - Platform abstraction
     - `resolver/` - Dependency resolution
+    - `tray.rs` - System tray (multi-language, notifications, autostart)
+    - `core/custom_detection.rs` - Custom version detection rules (17 commands)
 
 See [Tauri Backend Documentation](./src-tauri/CLAUDE.md) for detailed backend architecture.
 
@@ -183,7 +224,7 @@ cn("base-classes", condition && "conditional", className)
 | Frontend | `app/`, `components/`, `lib/` | Next.js 16 + React 19 UI | Below |
 | Tauri Backend | `src-tauri/` | Rust backend with 30+ providers | [View](./src-tauri/CLAUDE.md) |
 | OpenSpec | `openspec/` | Feature specifications | [AGENTS.md](./openspec/AGENTS.md) |
-| Docs | `docs/` | Additional documentation | [index.md](./docs/index.md) |
+| LLMDoc | `llmdoc/` | Documentation system | [index.md](./llmdoc/index.md) |
 
 ### Frontend Routes
 
@@ -195,6 +236,9 @@ cn("base-classes", condition && "conditional", className)
 | Providers | `app/providers/page.tsx` | Provider configuration |
 | Cache | `app/cache/page.tsx` | Cache management interface |
 | Settings | `app/settings/page.tsx` | Application settings |
+| Downloads | `app/downloads/page.tsx` | **NEW** Download management |
+| Logs | `app/logs/page.tsx` | **NEW** Log viewer |
+| About | `app/about/page.tsx` | System info and updates |
 
 ### Key Components
 
@@ -202,9 +246,12 @@ cn("base-classes", condition && "conditional", className)
 |-----------|------|---------|
 | AppShell | `components/app-shell.tsx` | Main layout wrapper |
 | AppSidebar | `components/app-sidebar.tsx` | Navigation sidebar |
+| CommandPalette | `components/command-palette.tsx` | **NEW** Global command search (Ctrl+K) |
+| TrayProvider | `components/providers/tray-provider.tsx` | **NEW** System tray sync |
 | StatsCard | `components/dashboard/stats-card.tsx` | Dashboard stat display |
 | PackageList | `components/packages/package-list.tsx` | Package listing |
 | EnvironmentCard | `components/environments/environment-card.tsx` | Environment display |
+| LogPanel | `components/log/log-panel.tsx` | **NEW** Real-time log viewer |
 
 ### State Management
 
@@ -213,6 +260,116 @@ cn("base-classes", condition && "conditional", className)
 | usePackageStore | `lib/stores/packages.ts` | Package state management |
 | useEnvironmentStore | `lib/stores/environment.ts` | Environment state |
 | useSettingsStore | `lib/stores/settings.ts` | Settings state |
+| useDownloadStore | `lib/stores/download.ts` | **NEW** Download state |
+| useLogStore | `lib/stores/log.ts` | **NEW** Log state |
+| useAppearanceStore | `lib/stores/appearance.ts` | Theme/appearance state |
+
+---
+
+## New Features (2026-02-04)
+
+### Download Management System
+
+**Backend** (`src-tauri/src/download/`):
+- `manager.rs` - DownloadManager: Main coordinator
+- `queue.rs` - DownloadQueue: Concurrency control
+- `task.rs` - DownloadTask: State machine (queued, downloading, paused, completed, failed, cancelled)
+- `throttle.rs` - SpeedLimiter: Token bucket algorithm
+- `state.rs` - Error types and state transitions
+
+**Frontend**:
+- `app/downloads/page.tsx` - Downloads UI with active tasks and history
+- `lib/stores/download.ts` - Zustand store for download state
+- `lib/hooks/use-downloads.ts` - Download operations hook
+- `components/downloads/add-download-dialog.tsx` - Add download dialog
+
+**Documentation**:
+- [Overview](./llmdoc/overview/downloads-system.md)
+- [Architecture](./llmdoc/architecture/downloads-system.md)
+- [Integration Guide](./llmdoc/guides/downloads-integration.md)
+- [API Reference](./llmdoc/reference/downloads-api.md)
+
+### System Tray
+
+**Backend** (`src-tauri/src/tray.rs`):
+- Multi-language menu support (English/Chinese)
+- Dynamic icon states (normal, downloading, update, error)
+- Quick actions (show/hide, settings, updates, logs)
+- Autostart management
+- System notifications
+
+**Frontend**:
+- `components/providers/tray-provider.tsx` - Tray context provider
+- `lib/hooks/use-tray-sync.ts` - Tray state synchronization
+- `components/settings/tray-settings.tsx` - Tray settings UI
+
+**Documentation**:
+- [Overview](./llmdoc/overview/system-tray.md)
+- [Architecture](./llmdoc/architecture/system-tray.md)
+- [Integration Guide](./llmdoc/guides/system-tray-integration.md)
+
+### Command Palette
+
+**Frontend**:
+- `components/command-palette.tsx` - Global command search
+- `components/ui/command.tsx` - shadcn/ui Command component
+- Shortcut: `Ctrl+K` (Windows/Linux) or `Cmd+K` (macOS)
+
+**Documentation**:
+- [Overview](./llmdoc/overview/command-palette.md)
+- [Architecture](./llmdoc/architecture/command-palette.md)
+- [Integration Guide](./llmdoc/guides/command-palette-actions.md)
+
+### Enhanced Cache System
+
+**Backend** (`src-tauri/src/cache/`):
+- `enhanced.rs` - Enhanced cache features
+- `history.rs` - Cleanup history tracking
+- Trash support (cross-platform recycle bin)
+
+**Documentation**:
+- [Architecture](./llmdoc/architecture/cache-system.md)
+- [API Reference](./llmdoc/reference/cache-commands.md)
+
+### Log Panel System
+
+**Backend** (`src-tauri/src/commands/log.rs`):
+- Log file listing and querying
+- Real-time log streaming
+- Export functionality
+
+**Frontend**:
+- `app/logs/page.tsx` - Log viewer page
+- `components/log/log-panel.tsx` - Real-time log display
+- `lib/stores/log.ts` - Log state management
+
+**Documentation**:
+- [Architecture](./llmdoc/architecture/log-panel-system.md)
+
+### Custom Detection System
+
+**Backend** (`src-tauri/src/core/custom_detection.rs`):
+- User-defined version detection rules
+- 9 extraction strategies: regex, JSON path, TOML path, YAML path, XML path, plain text, .tool-versions, INI key, command output
+- Preset rules for common use cases (Dockerfile, GitHub Actions, Pipfile, etc.)
+- Version transformation and normalization
+- Priority-based rule evaluation
+
+**Commands** (`src-tauri/src/commands/custom_detection.rs`):
+- 17 commands for rule management (list, get, add, update, delete, toggle, test, validate, import, export, detect)
+- Rule testing and validation before saving
+- JSON import/export with overwrite options
+
+**Extraction Strategies**:
+- `regex`: Pattern matching with named capture groups
+- `json_path`: Navigate JSON with dot notation
+- `toml_path`: Extract from TOML files
+- `yaml_path`: Extract from YAML files
+- `xml_path`: Simple XML tag extraction
+- `plain_text`: Read entire file with prefix/suffix stripping
+- `tool_versions`: Parse asdf .tool-versions format
+- `ini_key`: Extract from INI/properties files
+- `command`: Run command and parse output
 
 ---
 
@@ -249,9 +406,10 @@ cn("base-classes", condition && "conditional", className)
 | TypeScript | 5.9.3 | Type-safe JavaScript |
 | Tailwind CSS | 4.1.18 | Utility-first styling |
 | shadcn/ui | Latest | Radix UI + CVA components |
-| Zustand | 5.0.10 | State management |
-| next-intl | 4.7.0 | Internationalization |
+| Zustand | 5.0.11 | State management |
+| next-intl | 4.8.2 | Internationalization |
 | next-themes | 0.4.6 | Dark mode theming |
+| cmdk | 1.1.1 | Command palette |
 
 ### Backend
 
@@ -279,22 +437,22 @@ cn("base-classes", condition && "conditional", className)
 
 ## Coverage Report
 
-### Scan Summary
+### Scan Summary (2026-02-04)
 
 | Metric | Value |
 |--------|-------|
-| Total Files (Estimated) | 150 |
-| Files Scanned | 120 |
+| Total Files (Estimated) | 250 |
+| Files Scanned | 200 |
 | Coverage | 80% |
 
 ### By Language
 
 | Language | File Count |
 |----------|------------|
-| TypeScript/TSX | 60 |
-| Rust | 35 |
-| Markdown | 20 |
-| JSON | 15 |
+| TypeScript/TSX | 90 |
+| Rust | 70 |
+| Markdown | 32 |
+| JSON | 20 |
 | CSS | 10 |
 
 ### Gaps & Recommendations
@@ -304,7 +462,7 @@ cn("base-classes", condition && "conditional", className)
 | Rust Unit Tests | Missing | Add `cargo test` infrastructure |
 | E2E Tests | Missing | Consider Playwright |
 | CI/CD | Missing | Add GitHub Actions workflow |
-| API Docs | Partial | Document Tauri commands |
+| Tray Icon Variations | Partial | Add icons for downloading/update/error states |
 
 ---
 
@@ -339,6 +497,26 @@ Use this documentation when:
 3. Add to registry in `src-tauri/src/lib.rs`
 4. Update spec in `openspec/specs/provider-system/`
 
+**Integrate with system tray:**
+1. Read [System Tray Integration Guide](./llmdoc/guides/system-tray-integration.md)
+2. Use `use-tray-sync.ts` hook for state sync
+3. Add tray settings in `components/settings/tray-settings.tsx`
+
+**Integrate with download manager:**
+1. Read [Downloads Integration Guide](./llmdoc/guides/downloads-integration.md)
+2. Use `use-downloads.ts` hook for download operations
+3. Access download store via `lib/stores/download.ts`
+
+**Add command palette action:**
+1. Read [Command Palette Actions Guide](./llmdoc/guides/command-palette-actions.md)
+2. Update command palette configuration
+
+**Use custom detection system:**
+1. Define detection rules with file patterns and extraction strategies
+2. Test rules using `custom_rule_test` command before saving
+3. Import preset rules using `custom_rule_import_presets`
+4. Detect versions using `custom_rule_detect` or `custom_rule_detect_all`
+
 ---
 
 ## Related Documentation
@@ -347,4 +525,13 @@ Use this documentation when:
 - [AGENTS.md](./AGENTS.md) - AI agent guidelines
 - [OpenSpec AGENTS.md](./openspec/AGENTS.md) - Change proposal guidelines
 - [Tauri Backend Docs](./src-tauri/CLAUDE.md) - Backend module documentation
-- [Docs](./docs/index.md) - Additional documentation
+- [LLMDoc Index](./llmdoc/index.md) - Complete documentation system
+
+### Quick Links to New Features
+
+- [Downloads System Overview](./llmdoc/overview/downloads-system.md)
+- [System Tray Overview](./llmdoc/overview/system-tray.md)
+- [Command Palette Overview](./llmdoc/overview/command-palette.md)
+- [Custom Detection System](./src-tauri/src/core/custom_detection.rs) - User-defined version detection rules
+- [Log Panel Architecture](./llmdoc/architecture/log-panel-system.md)
+- [Enhanced Cache System](./llmdoc/architecture/cache-system.md)

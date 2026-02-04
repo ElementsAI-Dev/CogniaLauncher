@@ -72,113 +72,131 @@ export default function LogsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-6 pb-4 border-b">
+      {/* Header */}
+      <div className="shrink-0 p-4 sm:p-6 pb-3 sm:pb-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <PageHeader
           title={
             <span className="flex items-center gap-2">
-              <ScrollText className="h-6 w-6" />
+              <ScrollText className="h-5 w-5 sm:h-6 sm:w-6" />
               {t('logs.title')}
             </span>
           }
           description={t('logs.description')}
           actions={(
-            <>
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={loadLogFiles}
                 disabled={loading}
+                className="h-8 sm:h-9"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                {t('common.refresh')}
+                <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{t('common.refresh')}</span>
               </Button>
               {logDir && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleOpenLogDir}
+                  className="h-8 sm:h-9"
                 >
-                  <FolderOpen className="h-4 w-4 mr-2" />
-                  {t('logs.openDir')}
+                  <FolderOpen className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">{t('logs.openDir')}</span>
                 </Button>
               )}
-            </>
+            </div>
           )}
         />
       </div>
 
-      <Tabs defaultValue="realtime" className="flex-1 flex flex-col">
-        <div className="px-6 pt-4">
-          <TabsList>
-            <TabsTrigger value="realtime" className="gap-2">
+      {/* Tabs */}
+      <Tabs defaultValue="realtime" className="flex-1 flex flex-col min-h-0">
+        <div className="shrink-0 px-4 sm:px-6 pt-3 sm:pt-4">
+          <TabsList className="h-10 p-1">
+            <TabsTrigger value="realtime" className="gap-2 px-3 sm:px-4 h-8">
               <ScrollText className="h-4 w-4" />
-              {t('logs.realtime')}
-              <span className="ml-1 text-xs text-muted-foreground">
-                ({stats.total})
+              <span className="hidden xs:inline">{t('logs.realtime')}</span>
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums">
+                {stats.total}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="files" className="gap-2">
+            <TabsTrigger value="files" className="gap-2 px-3 sm:px-4 h-8">
               <FileText className="h-4 w-4" />
-              {t('logs.files')}
-              <span className="ml-1 text-xs text-muted-foreground">
-                ({logFiles.length})
+              <span className="hidden xs:inline">{t('logs.files')}</span>
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums">
+                {logFiles.length}
               </span>
             </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="realtime" className="flex-1 mt-0 p-6 pt-4">
-          <Card className="h-full flex flex-col">
-            <CardContent className="flex-1 p-0 overflow-hidden">
-              <LogPanel className="h-full" maxHeight="100%" />
-            </CardContent>
-          </Card>
+        {/* Real-time logs tab */}
+        <TabsContent value="realtime" className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 min-h-0">
+          <LogPanel className="h-full" maxHeight="100%" showToolbar />
         </TabsContent>
 
-        <TabsContent value="files" className="flex-1 mt-0 p-6 pt-4">
-          <Card className="h-full">
-            <CardHeader>
-              <CardTitle>{t('logs.logFiles')}</CardTitle>
-              <CardDescription>
-                {logDir && (
-                  <span className="font-mono text-xs">{logDir}</span>
-                )}
-              </CardDescription>
+        {/* Log files tab */}
+        <TabsContent value="files" className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 overflow-auto">
+          <Card className="h-full flex flex-col">
+            <CardHeader className="shrink-0 pb-3">
+              <CardTitle className="text-base sm:text-lg">{t('logs.logFiles')}</CardTitle>
+              {logDir && (
+                <CardDescription>
+                  <code className="text-[11px] sm:text-xs bg-muted px-2 py-1 rounded break-all">{logDir}</code>
+                </CardDescription>
+              )}
             </CardHeader>
-            <CardContent>
-              {logFiles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <FileText className="h-12 w-12 mb-4 opacity-50" />
-                  <p className="text-sm">{t('logs.noFiles')}</p>
+            <CardContent className="flex-1 min-h-0 pt-0">
+              {!isTauri() ? (
+                <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-muted-foreground">
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
+                    <FileText className="relative h-14 w-14 sm:h-16 sm:w-16 text-muted-foreground/40" />
+                  </div>
+                  <p className="text-sm sm:text-base font-medium text-foreground/70">{t('logs.desktopOnly')}</p>
+                  <p className="text-xs sm:text-sm mt-2 text-center max-w-[280px]">{t('logs.desktopOnlyDescription')}</p>
+                </div>
+              ) : logFiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-muted-foreground">
+                  <div className="relative mb-6">
+                    <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
+                    <FileText className="relative h-14 w-14 sm:h-16 sm:w-16 text-muted-foreground/40" />
+                  </div>
+                  <p className="text-sm sm:text-base font-medium text-foreground/70">{t('logs.noFiles')}</p>
                 </div>
               ) : (
-                <ScrollArea className="h-[400px]">
-                  <div className="space-y-2">
+                <ScrollArea className="h-full max-h-[calc(100vh-320px)]">
+                  <div className="space-y-2 pr-4">
                     {logFiles.map((file) => (
                       <div
                         key={file.name}
-                        className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+                        className="group flex items-center justify-between p-3 sm:p-4 rounded-lg border bg-card hover:bg-muted/30 hover:border-primary/20 transition-all cursor-pointer"
+                        onClick={() => setSelectedLogFile(file.name)}
                       >
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium text-sm">{file.name}</p>
-                            <p className="text-xs text-muted-foreground">
+                        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                          <div className="shrink-0 p-2 rounded-lg bg-muted/50 group-hover:bg-primary/10 transition-colors">
+                            <FileText className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
                               {formatBytes(file.size)} • {formatDate(file.modified)}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => setSelectedLogFile(file.name)}
-                            title={t('logs.viewFile')}
-                          >
-                            <FolderOpen className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLogFile(file.name);
+                          }}
+                          title={t('logs.viewFile')}
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                        </Button>
                       </div>
                     ))}
                   </div>

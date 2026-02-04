@@ -295,6 +295,7 @@ impl EnvironmentProvider for FnmProvider {
 
         let mut current = start_path.to_path_buf();
         loop {
+            // 1. Check .node-version and .nvmrc files (highest priority)
             for file_name in &version_files {
                 let version_file = current.join(file_name);
                 if version_file.exists() {
@@ -312,12 +313,36 @@ impl EnvironmentProvider for FnmProvider {
                 }
             }
 
+            // 2. Check .tool-versions file (asdf-style)
+            let tool_versions = current.join(".tool-versions");
+            if tool_versions.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("nodejs ") || line.starts_with("node ") {
+                            let version = line
+                                .strip_prefix("nodejs ")
+                                .or_else(|| line.strip_prefix("node "))
+                                .unwrap_or("")
+                                .trim();
+                            if !version.is_empty() {
+                                return Ok(Some(VersionDetection {
+                                    version: version.to_string(),
+                                    source: VersionSource::LocalFile,
+                                    source_path: Some(tool_versions),
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
             if !current.pop() {
                 break;
             }
         }
 
-        // Check package.json engines field
+        // 3. Check package.json engines field
         let package_json = start_path.join("package.json");
         if package_json.exists() {
             if let Ok(content) = crate::platform::fs::read_file_string(&package_json).await {
@@ -333,7 +358,7 @@ impl EnvironmentProvider for FnmProvider {
             }
         }
 
-        // Fall back to current version
+        // 4. Fall back to current version
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,

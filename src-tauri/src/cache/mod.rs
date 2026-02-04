@@ -16,4 +16,4 @@ pub use enhanced::{
 };
 pub use history::{CleanedFileInfo, CleanupHistory, CleanupRecord, CleanupRecordBuilder, CleanupSummary};
 pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
-pub use sqlite_db::SqliteCacheDb;
+pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};

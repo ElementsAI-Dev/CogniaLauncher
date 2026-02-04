@@ -20,6 +20,10 @@ describe('useEnvironmentStore', () => {
       versionBrowserEnvType: null,
       detailsPanelOpen: false,
       detailsPanelEnvType: null,
+      // Search and filter state
+      searchQuery: '',
+      statusFilter: 'all',
+      sortBy: 'name',
     });
   });
 
@@ -306,6 +310,64 @@ describe('useEnvironmentStore', () => {
       useEnvironmentStore.getState().closeDetailsPanel();
       expect(useEnvironmentStore.getState().detailsPanelOpen).toBe(false);
       expect(useEnvironmentStore.getState().detailsPanelEnvType).toBeNull();
+    });
+  });
+
+  describe('search and filter actions', () => {
+    it('should set search query', () => {
+      useEnvironmentStore.getState().setSearchQuery('node');
+      expect(useEnvironmentStore.getState().searchQuery).toBe('node');
+    });
+
+    it('should clear search query', () => {
+      useEnvironmentStore.getState().setSearchQuery('node');
+      useEnvironmentStore.getState().setSearchQuery('');
+      expect(useEnvironmentStore.getState().searchQuery).toBe('');
+    });
+
+    it('should set status filter', () => {
+      useEnvironmentStore.getState().setStatusFilter('available');
+      expect(useEnvironmentStore.getState().statusFilter).toBe('available');
+
+      useEnvironmentStore.getState().setStatusFilter('unavailable');
+      expect(useEnvironmentStore.getState().statusFilter).toBe('unavailable');
+
+      useEnvironmentStore.getState().setStatusFilter('all');
+      expect(useEnvironmentStore.getState().statusFilter).toBe('all');
+    });
+
+    it('should set sort by', () => {
+      useEnvironmentStore.getState().setSortBy('installed_count');
+      expect(useEnvironmentStore.getState().sortBy).toBe('installed_count');
+
+      useEnvironmentStore.getState().setSortBy('provider');
+      expect(useEnvironmentStore.getState().sortBy).toBe('provider');
+
+      useEnvironmentStore.getState().setSortBy('name');
+      expect(useEnvironmentStore.getState().sortBy).toBe('name');
+    });
+
+    it('should clear all filters', () => {
+      useEnvironmentStore.getState().setSearchQuery('python');
+      useEnvironmentStore.getState().setStatusFilter('available');
+      useEnvironmentStore.getState().setSortBy('provider');
+
+      useEnvironmentStore.getState().clearFilters();
+
+      expect(useEnvironmentStore.getState().searchQuery).toBe('');
+      expect(useEnvironmentStore.getState().statusFilter).toBe('all');
+      expect(useEnvironmentStore.getState().sortBy).toBe('name');
+    });
+
+    it('should preserve other state when updating filters', () => {
+      const mockEnvs = [
+        { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.10.0', installed_versions: [], available: true },
+      ];
+      useEnvironmentStore.getState().setEnvironments(mockEnvs);
+      useEnvironmentStore.getState().setSearchQuery('node');
+
+      expect(useEnvironmentStore.getState().environments).toEqual(mockEnvs);
+      expect(useEnvironmentStore.getState().searchQuery).toBe('node');
     });
   });
 });

@@ -5,6 +5,7 @@
 // Supported programming languages with their display information
 export const LANGUAGES = [
   { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-50 border-green-500' },
+  { id: 'deno', name: 'Deno', icon: '🦕', color: 'bg-teal-50 border-teal-500' },
   { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-50 border-blue-500' },
   { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-50 border-cyan-500' },
   { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-50 border-orange-500' },
@@ -21,6 +22,9 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
   node: [
     { id: 'fnm', name: 'fnm', description: 'Fast Node Manager (Recommended)' },
     { id: 'nvm', name: 'nvm', description: 'Node Version Manager' },
+  ],
+  deno: [
+    { id: 'deno', name: 'Deno', description: 'Deno runtime (built-in version management)' },
   ],
   python: [
     { id: 'pyenv', name: 'pyenv', description: 'Python version management' },
@@ -48,11 +52,14 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
 // Default detection files for automatic version detection per environment type
 export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
+  deno: ['.deno-version', '.dvmrc', 'deno.json', '.tool-versions'],
   python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
   go: ['.go-version', 'go.mod', '.tool-versions'],
   rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
   ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
   java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
+  php: ['.php-version', 'composer.json (require.php)', '.tool-versions'],
+  dotnet: ['global.json', '.tool-versions'],
 };
 
 // Version filter options

@@ -9,6 +9,7 @@
 
 - `src-tauri/src/commands/updater.rs` (self_check_update, self_update): Implements update checking and installation using tauri-plugin-updater.
 - `src-tauri/Cargo.toml` (tauri-plugin-updater): Updater plugin dependency.
+- `src-tauri/tauri.conf.json` (plugins.updater): Plugin configuration with empty pubkey/endpoints for manual update server setup.
 - `src-tauri/capabilities/default.json` (updater:default): Security permissions for update operations.
 - `src-tauri/src/lib.rs` (lines 175-176, 178): Command registration and plugin initialization.
 

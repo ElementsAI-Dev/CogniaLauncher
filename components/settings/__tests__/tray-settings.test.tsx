@@ -22,6 +22,9 @@ describe('TraySettings', () => {
     notifyOnUpdates: true,
     minimizeToTray: true,
     startMinimized: false,
+    autostart: false,
+    trayClickBehavior: 'toggle_window',
+    showNotifications: true,
   };
 
   it('should render tray settings card', () => {

@@ -56,8 +56,11 @@ import type {
   CacheSettings, 
   CleanPreview, 
   CleanupRecord, 
-  CleanupHistorySummary 
+  CleanupHistorySummary,
+  CacheAccessStats,
+  CacheEntryItem,
 } from '@/lib/tauri';
+import * as tauri from '@/lib/tauri';
 import {
   Dialog,
   DialogContent,
@@ -115,10 +118,30 @@ export default function CachePage() {
   const [historySummary, setHistorySummary] = useState<CleanupHistorySummary | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Cache access stats state
+  const [accessStats, setAccessStats] = useState<CacheAccessStats | null>(null);
+  const [accessStatsLoading, setAccessStatsLoading] = useState(false);
+
+  // Cache entry browser state
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [browserEntries, setBrowserEntries] = useState<CacheEntryItem[]>([]);
+  const [browserTotalCount, setBrowserTotalCount] = useState(0);
+  const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserSearch, setBrowserSearch] = useState('');
+  const [browserTypeFilter, setBrowserTypeFilter] = useState<string>('');
+  const [browserSortBy, setBrowserSortBy] = useState<string>('created_desc');
+  const [browserPage, setBrowserPage] = useState(0);
+  const [browserSelectedKeys, setBrowserSelectedKeys] = useState<Set<string>>(new Set());
+
+  // Hot files state
+  const [hotFiles, setHotFiles] = useState<CacheEntryItem[]>([]);
+
   useEffect(() => {
     fetchCacheInfo();
     fetchPlatformInfo();
     fetchCacheSettings();
+    fetchAccessStats();
+    fetchHotFiles();
   }, [fetchCacheInfo, fetchPlatformInfo, fetchCacheSettings]);
 
   useEffect(() => {
@@ -194,6 +217,81 @@ export default function CachePage() {
       console.error('Failed to fetch cleanup history:', err);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  // Fetch cache access stats
+  const fetchAccessStats = async () => {
+    if (!isTauri()) return;
+    setAccessStatsLoading(true);
+    try {
+      const stats = await tauri.getCacheAccessStats();
+      setAccessStats(stats);
+    } catch (err) {
+      console.error('Failed to fetch access stats:', err);
+    } finally {
+      setAccessStatsLoading(false);
+    }
+  };
+
+  // Reset cache access stats
+  const handleResetAccessStats = async () => {
+    if (!isTauri()) return;
+    try {
+      await tauri.resetCacheAccessStats();
+      await fetchAccessStats();
+      toast.success(t('cache.statsReset'));
+    } catch (err) {
+      toast.error(`${t('cache.statsResetFailed')}: ${err}`);
+    }
+  };
+
+  // Fetch cache entries for browser
+  const fetchBrowserEntries = async (resetPage = false) => {
+    if (!isTauri()) return;
+    setBrowserLoading(true);
+    const page = resetPage ? 0 : browserPage;
+    if (resetPage) setBrowserPage(0);
+    try {
+      const result = await tauri.listCacheEntries({
+        entryType: browserTypeFilter || undefined,
+        search: browserSearch || undefined,
+        sortBy: browserSortBy,
+        limit: 20,
+        offset: page * 20,
+      });
+      setBrowserEntries(result.entries);
+      setBrowserTotalCount(result.total_count);
+    } catch (err) {
+      console.error('Failed to fetch cache entries:', err);
+    } finally {
+      setBrowserLoading(false);
+    }
+  };
+
+  // Delete selected cache entries
+  const handleDeleteSelectedEntries = async () => {
+    if (!isTauri() || browserSelectedKeys.size === 0) return;
+    try {
+      const keys = Array.from(browserSelectedKeys);
+      const deleted = await tauri.deleteCacheEntries(keys, useTrash);
+      toast.success(t('cache.entriesDeleted', { count: deleted }));
+      setBrowserSelectedKeys(new Set());
+      await fetchBrowserEntries();
+      await fetchCacheInfo();
+    } catch (err) {
+      toast.error(`${t('cache.deleteEntriesFailed')}: ${err}`);
+    }
+  };
+
+  // Fetch hot files (top accessed)
+  const fetchHotFiles = async () => {
+    if (!isTauri()) return;
+    try {
+      const entries = await tauri.getTopAccessedEntries(5);
+      setHotFiles(entries);
+    } catch (err) {
+      console.error('Failed to fetch hot files:', err);
     }
   };
 
@@ -325,6 +423,123 @@ export default function CachePage() {
 
       {/* Error Alert */}
       {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Cache Size Warning */}
+      {usagePercent >= 80 && (
+        <Alert variant={usagePercent >= 90 ? 'destructive' : 'default'} className={usagePercent >= 90 ? '' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950'}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            {usagePercent >= 90 
+              ? t('cache.warningCritical', { percent: Math.round(usagePercent) })
+              : t('cache.warningHigh', { percent: Math.round(usagePercent) })
+            }
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Row 0: Hit Rate Stats + Hot Files */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+        {/* Hit Rate Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center justify-between text-base">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                {t('cache.hitRate')}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleResetAccessStats}
+                disabled={accessStatsLoading || !accessStats}
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                {t('cache.resetStats')}
+              </Button>
+            </CardTitle>
+            <CardDescription>{t('cache.hitRateDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {accessStatsLoading || !accessStats ? (
+              <>
+                <Skeleton className="h-10 w-24" />
+                <Skeleton className="h-4 w-48" />
+              </>
+            ) : (
+              <>
+                <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                  {(accessStats.hit_rate * 100).toFixed(1)}%
+                </div>
+                <div className="flex gap-4 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    {t('cache.hits')}: {accessStats.hits.toLocaleString()}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <XCircle className="h-3 w-3 text-red-500" />
+                    {t('cache.misses')}: {accessStats.misses.toLocaleString()}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('cache.totalRequests')}: {accessStats.total_requests.toLocaleString()}
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Hot Files Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-5 w-5" />
+              {t('cache.hotFiles')}
+            </CardTitle>
+            <CardDescription>{t('cache.hotFilesDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {hotFiles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('cache.noHotFiles')}</p>
+            ) : (
+              <div className="space-y-2">
+                {hotFiles.slice(0, 3).map((file) => (
+                  <div key={file.key} className="flex items-center justify-between text-sm">
+                    <span className="truncate flex-1 mr-2" title={file.key}>
+                      {file.key.split('/').pop() || file.key}
+                    </span>
+                    <Badge variant="secondary" className="shrink-0">
+                      {file.hit_count} {t('cache.accesses')}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Cache Entry Browser Button */}
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setBrowserOpen(true);
+            fetchBrowserEntries(true);
+          }}
+        >
+          <FolderOpen className="h-4 w-4 mr-2" />
+          {t('cache.browseEntries')}
+        </Button>
+      </div>
+
+      {/* Original Error Alert location - now handled above */}
+      {false && error && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
@@ -967,6 +1182,186 @@ export default function CachePage() {
                   {t('cache.confirmClean')}
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cache Entry Browser Dialog */}
+      <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5" />
+              {t('cache.browseEntries')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('cache.browseEntriesDesc')}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <Input
+              placeholder={t('cache.searchPlaceholder')}
+              value={browserSearch}
+              onChange={(e) => setBrowserSearch(e.target.value)}
+              className="max-w-xs"
+            />
+            <select
+              value={browserTypeFilter}
+              onChange={(e) => setBrowserTypeFilter(e.target.value)}
+              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
+            >
+              <option value="">{t('cache.allTypes')}</option>
+              <option value="download">{t('cache.typeDownload')}</option>
+              <option value="metadata">{t('cache.typeMetadata')}</option>
+              <option value="partial">{t('cache.typePartial')}</option>
+            </select>
+            <select
+              value={browserSortBy}
+              onChange={(e) => setBrowserSortBy(e.target.value)}
+              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
+            >
+              <option value="created_desc">{t('cache.sortNewest')}</option>
+              <option value="created_asc">{t('cache.sortOldest')}</option>
+              <option value="size_desc">{t('cache.sortLargest')}</option>
+              <option value="size_asc">{t('cache.sortSmallest')}</option>
+              <option value="hits_desc">{t('cache.sortMostAccessed')}</option>
+            </select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchBrowserEntries(true)}
+              disabled={browserLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${browserLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+
+          {/* Entry List */}
+          <ScrollArea className="h-[400px] rounded-md border">
+            {browserLoading ? (
+              <div className="p-4 space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : browserEntries.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                {t('cache.noEntries')}
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">
+                      <input
+                        type="checkbox"
+                        checked={browserSelectedKeys.size === browserEntries.length && browserEntries.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setBrowserSelectedKeys(new Set(browserEntries.map(e => e.key)));
+                          } else {
+                            setBrowserSelectedKeys(new Set());
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </TableHead>
+                    <TableHead>{t('cache.entryKey')}</TableHead>
+                    <TableHead>{t('cache.entryType')}</TableHead>
+                    <TableHead>{t('cache.entrySize')}</TableHead>
+                    <TableHead>{t('cache.entryHits')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {browserEntries.map((entry) => (
+                    <TableRow key={entry.key}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={browserSelectedKeys.has(entry.key)}
+                          onChange={(e) => {
+                            const newSet = new Set(browserSelectedKeys);
+                            if (e.target.checked) {
+                              newSet.add(entry.key);
+                            } else {
+                              newSet.delete(entry.key);
+                            }
+                            setBrowserSelectedKeys(newSet);
+                          }}
+                          className="h-4 w-4"
+                        />
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate" title={entry.key}>
+                        {entry.key.split('/').pop() || entry.key}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{entry.entry_type}</Badge>
+                      </TableCell>
+                      <TableCell>{entry.size_human}</TableCell>
+                      <TableCell>{entry.hit_count}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </ScrollArea>
+
+          {/* Pagination & Actions */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              {t('cache.showingEntries', { 
+                from: browserPage * 20 + 1, 
+                to: Math.min((browserPage + 1) * 20, browserTotalCount),
+                total: browserTotalCount 
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={browserPage === 0}
+                onClick={() => {
+                  setBrowserPage(p => p - 1);
+                  fetchBrowserEntries();
+                }}
+              >
+                {t('common.previous')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(browserPage + 1) * 20 >= browserTotalCount}
+                onClick={() => {
+                  setBrowserPage(p => p + 1);
+                  fetchBrowserEntries();
+                }}
+              >
+                {t('common.next')}
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="browser-trash"
+                checked={useTrash}
+                onCheckedChange={setUseTrash}
+              />
+              <Label htmlFor="browser-trash" className="text-sm">
+                {t('cache.moveToTrash')}
+              </Label>
+            </div>
+            <Button
+              variant="destructive"
+              disabled={browserSelectedKeys.size === 0}
+              onClick={handleDeleteSelectedEntries}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('cache.deleteSelected', { count: browserSelectedKeys.size })}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,8 +1,9 @@
 use super::api::update_api_client_from_settings;
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
-    apk, apt, brew, cargo, chocolatey, dnf, docker, flatpak, fnm, github, goenv, macports, npm,
-    nvm, pacman, pip, pnpm, psgallery, pyenv, rustup, scoop, snap, uv, vcpkg, winget, yarn, zypper,
+    apk, apt, brew, bun, bundler, cargo, chocolatey, composer, deno, dnf, docker, dotnet, flatpak, fnm,
+    github, goenv, macports, npm, nvm, pacman, phpbrew, pip, pnpm, poetry, psgallery, pyenv, rbenv,
+    rustup, scoop, sdkman, snap, uv, vcpkg, winget, yarn, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -78,6 +79,36 @@ impl ProviderRegistry {
             registry.register_environment_provider(goenv_provider);
         }
 
+        // Ruby version manager
+        let rbenv_provider = Arc::new(rbenv::RbenvProvider::new());
+        if rbenv_provider.is_available().await {
+            registry.register_environment_provider(rbenv_provider);
+        }
+
+        // Java version manager (SDKMAN!)
+        let sdkman_provider = Arc::new(sdkman::SdkmanProvider::new());
+        if sdkman_provider.is_available().await {
+            registry.register_environment_provider(sdkman_provider);
+        }
+
+        // PHP version manager (PHPBrew) - macOS/Linux only
+        let phpbrew_provider = Arc::new(phpbrew::PhpbrewProvider::new());
+        if phpbrew_provider.is_available().await {
+            registry.register_environment_provider(phpbrew_provider);
+        }
+
+        // .NET SDK version manager
+        let dotnet_provider = Arc::new(dotnet::DotnetProvider::new());
+        if dotnet_provider.is_available().await {
+            registry.register_environment_provider(dotnet_provider);
+        }
+
+        // Deno runtime version manager
+        let deno_provider = Arc::new(deno::DenoProvider::new());
+        if deno_provider.is_available().await {
+            registry.register_environment_provider(deno_provider);
+        }
+
         let github_provider = Arc::new(github::GitHubProvider::new());
         registry.register_provider(github_provider);
 
@@ -99,10 +130,18 @@ impl ProviderRegistry {
 
         // Register yarn provider with mirror configuration
         let yarn_provider = Arc::new(
-            yarn::YarnProvider::new().with_registry_opt(npm_mirror)
+            yarn::YarnProvider::new().with_registry_opt(npm_mirror.clone())
         );
         if yarn_provider.is_available().await {
             registry.register_provider(yarn_provider);
+        }
+
+        // Register Bun provider with mirror configuration (faster alternative to npm)
+        let bun_provider = Arc::new(
+            bun::BunProvider::new().with_registry_opt(npm_mirror)
+        );
+        if bun_provider.is_available().await {
+            registry.register_provider(bun_provider);
         }
 
         // Register pip provider with mirror configuration
@@ -133,10 +172,18 @@ impl ProviderRegistry {
 
         // Register uv provider with mirror configuration
         let uv_provider = Arc::new(
-            uv::UvProvider::new().with_index_url_opt(pypi_mirror)
+            uv::UvProvider::new().with_index_url_opt(pypi_mirror.clone())
         );
         if uv_provider.is_available().await {
             registry.register_provider(uv_provider);
+        }
+
+        // Register Poetry provider with mirror configuration (Python dependency management)
+        let poetry_provider = Arc::new(
+            poetry::PoetryProvider::new().with_index_url_opt(pypi_mirror)
+        );
+        if poetry_provider.is_available().await {
+            registry.register_provider(poetry_provider);
         }
 
         // Register cargo provider with mirror configuration
@@ -151,6 +198,18 @@ impl ProviderRegistry {
         let psgallery_provider = Arc::new(psgallery::PSGalleryProvider::new());
         if psgallery_provider.is_available().await {
             registry.register_provider(psgallery_provider);
+        }
+
+        // Register Bundler provider (Ruby dependency management)
+        let bundler_provider = Arc::new(bundler::BundlerProvider::new());
+        if bundler_provider.is_available().await {
+            registry.register_provider(bundler_provider);
+        }
+
+        // Register Composer provider (PHP dependency management)
+        let composer_provider = Arc::new(composer::ComposerProvider::new());
+        if composer_provider.is_available().await {
+            registry.register_provider(composer_provider);
         }
 
         let platform = current_platform();

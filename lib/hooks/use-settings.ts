@@ -25,7 +25,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateConfigValue = useCallback(async (key: string, value: string) => {
     store.setError(null);
@@ -36,7 +37,8 @@ export function useSettings() {
       store.setError(err instanceof Error ? err.message : String(err));
       throw err;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetConfig = useCallback(async () => {
     store.setLoading(true);
@@ -50,7 +52,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store, fetchConfig]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchConfig]);
 
   const fetchCacheInfo = useCallback(async () => {
     try {
@@ -61,7 +64,8 @@ export function useSettings() {
       store.setError(err instanceof Error ? err.message : String(err));
       return null;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cleanCache = useCallback(async (cleanType?: string) => {
     store.setLoading(true);
@@ -76,7 +80,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store, fetchCacheInfo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCacheInfo]);
 
   const fetchPlatformInfo = useCallback(async () => {
     try {
@@ -91,7 +96,8 @@ export function useSettings() {
       store.setError(err instanceof Error ? err.message : String(err));
       return null;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchCacheSettings = useCallback(async () => {
     try {
@@ -102,7 +108,8 @@ export function useSettings() {
       store.setError(err instanceof Error ? err.message : String(err));
       return null;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateCacheSettings = useCallback(async (settings: CacheSettings) => {
     store.setLoading(true);
@@ -116,7 +123,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const verifyCacheIntegrity = useCallback(async () => {
     store.setLoading(true);
@@ -131,7 +139,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const repairCache = useCallback(async () => {
     store.setLoading(true);
@@ -147,7 +156,8 @@ export function useSettings() {
     } finally {
       store.setLoading(false);
     }
-  }, [store, fetchCacheInfo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchCacheInfo]);
 
   return {
     ...store,

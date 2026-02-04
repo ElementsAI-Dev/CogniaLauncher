@@ -15,7 +15,12 @@ import { Label } from '@/components/ui/label';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDownloads } from '@/lib/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
-import { AddDownloadDialog } from '@/components/downloads/add-download-dialog';
+import {
+  AddDownloadDialog,
+  DownloadToolbar,
+  DownloadEmptyState,
+  type StatusFilter,
+} from '@/components/downloads';
 import { toast } from 'sonner';
 import {
   AlertCircle,
@@ -74,6 +79,8 @@ export default function DownloadsPage() {
   const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
   const [maxConcurrentInput, setMaxConcurrentInput] = useState('4');
+  const [queueSearchQuery, setQueueSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const {
     tasks,
@@ -139,6 +146,35 @@ export default function DownloadsPage() {
   }, [historyQuery, searchHistory]);
 
   const activeHistory = historyResults ?? history;
+
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
+
+    // Search filter
+    if (queueSearchQuery.trim()) {
+      const query = queueSearchQuery.toLowerCase();
+      result = result.filter(
+        (task) =>
+          task.name.toLowerCase().includes(query) ||
+          task.url.toLowerCase().includes(query) ||
+          (task.provider && task.provider.toLowerCase().includes(query))
+      );
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      result = result.filter((task) => task.state === statusFilter);
+    }
+
+    return result;
+  }, [tasks, queueSearchQuery, statusFilter]);
+
+  const hasQueueFilters = queueSearchQuery !== '' || statusFilter !== 'all';
+
+  const handleClearQueueFilters = useCallback(() => {
+    setQueueSearchQuery('');
+    setStatusFilter('all');
+  }, []);
 
   const handleAdd = useCallback(
     async (request: DownloadRequest) => {
@@ -289,40 +325,20 @@ export default function DownloadsPage() {
         </TabsList>
 
         <TabsContent value="queue" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t('downloads.stats.total')}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">
-                {queueStats.totalTasks}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t('downloads.stats.downloading')}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">
-                {queueStats.downloading}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t('downloads.stats.paused')}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">
-                {queueStats.paused}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{t('downloads.stats.failed')}</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold">
-                {queueStats.failed}
-              </CardContent>
-            </Card>
-          </div>
+          <DownloadToolbar
+            searchQuery={queueSearchQuery}
+            onSearchChange={setQueueSearchQuery}
+            statusFilter={statusFilter}
+            onStatusChange={setStatusFilter}
+            onPauseAll={handlePauseAll}
+            onResumeAll={handleResumeAll}
+            onCancelAll={handleCancelAll}
+            onClearFinished={handleClearFinished}
+            onRetryFailed={handleRetryFailed}
+            stats={queueStats}
+            isLoading={isLoading}
+            t={t}
+          />
 
           <Card>
             <CardHeader className="pb-2">
@@ -331,70 +347,27 @@ export default function DownloadsPage() {
                   <CardTitle>{t('downloads.queue')}</CardTitle>
                   <CardDescription>
                     {t('downloads.progress.percent')}: {queueStats.overallProgress.toFixed(1)}%
+                    {filteredTasks.length !== tasks.length && (
+                      <span className="ml-2">({filteredTasks.length} / {tasks.length})</span>
+                    )}
                   </CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePauseAll}
-                    disabled={queueStats.downloading === 0}
-                  >
-                    <Pause className="h-4 w-4 mr-2" />
-                    {t('downloads.actions.pauseAll')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleResumeAll}
-                    disabled={queueStats.paused === 0}
-                  >
-                    <Play className="h-4 w-4 mr-2" />
-                    {t('downloads.actions.resumeAll')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetryFailed}
-                    disabled={queueStats.failed === 0}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    {t('downloads.actions.retryFailed')}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleClearFinished}
-                    disabled={queueStats.completed + queueStats.cancelled + queueStats.failed === 0}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {t('downloads.actions.clearFinished')}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleCancelAll}
-                    disabled={queueStats.downloading + queueStats.queued + queueStats.paused === 0}
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    {t('downloads.actions.cancelAll')}
-                  </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              {tasks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <ArrowDownToLine className="h-12 w-12 mb-4 opacity-50" />
-                  <p className="text-sm font-medium">{t('downloads.noTasks')}</p>
-                  <p className="text-xs">{t('downloads.noTasksDesc')}</p>
-                </div>
+              {filteredTasks.length === 0 ? (
+                <DownloadEmptyState
+                  hasFilters={hasQueueFilters}
+                  onClearFilters={handleClearQueueFilters}
+                  t={t}
+                />
               ) : (
                 <ScrollArea className="h-[420px]">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t('downloads.name')}</TableHead>
+                        <TableHead>{t('downloads.provider')}</TableHead>
                         <TableHead>{t('downloads.status')}</TableHead>
                         <TableHead>{t('downloads.progress.percent')}</TableHead>
                         <TableHead>{t('downloads.progress.speed')}</TableHead>
@@ -403,7 +376,7 @@ export default function DownloadsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {tasks.map((task) => (
+                      {filteredTasks.map((task) => (
                         <TableRow key={task.id}>
                           <TableCell className="min-w-[220px]">
                             <div className="space-y-1">
@@ -417,6 +390,15 @@ export default function DownloadsPage() {
                                 <p className="text-xs text-destructive">{task.error}</p>
                               )}
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            {task.provider ? (
+                              <Badge variant="outline" className="font-normal">
+                                {task.provider}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge variant={getStateBadgeVariant(task.state)}>

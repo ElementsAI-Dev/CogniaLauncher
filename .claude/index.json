@@ -1,6 +1,6 @@
 {
-  "version": "1.1.0",
-  "lastUpdated": "2026-02-02T00:00:00.000Z",
+  "version": "1.2.0",
+  "lastUpdated": "2026-02-04T00:00:00.000Z",
   "projectName": "CogniaLauncher",
   "projectDescription": "Cross-platform environment and package manager with modern GUI",
   "techStack": {
@@ -15,16 +15,8 @@
       "path": ".",
       "type": "nextjs-app",
       "language": "TypeScript/TSX",
-      "entryPoints": [
-        "app/layout.tsx",
-        "app/page.tsx"
-      ],
-      "keyDirectories": [
-        "app/",
-        "components/",
-        "lib/",
-        "hooks/"
-      ],
+      "entryPoints": ["app/layout.tsx", "app/page.tsx"],
+      "keyDirectories": ["app/", "components/", "lib/", "hooks/"],
       "interfaces": [
         "app/page.tsx - Dashboard overview",
         "app/environments/page.tsx - Environment management UI",
@@ -32,12 +24,14 @@
         "app/providers/page.tsx - Provider configuration UI",
         "app/cache/page.tsx - Cache management interface",
         "app/settings/page.tsx - Application settings",
+        "app/downloads/page.tsx - Download management UI",
+        "app/logs/page.tsx - Log viewer",
         "app/about/page.tsx - About page with system info"
       ],
       "dependencies": {
-        "key": ["@tauri-apps/api 2.9.1", "next-intl 4.7.0", "zustand 5.0.10", "@tanstack/react-query 5.90.16", "next-themes 0.4.6"],
-        "ui": ["@radix-ui/react-*", "lucide-react 0.546.0", "sonner 2.0.7", "class-variance-authority 0.7.1"],
-        "dev": ["jest 30.2.0", "@testing-library/react 16.3.1", "eslint 9.39.2", "@tailwindcss/postcss 4.1.18"]
+        "key": ["@tauri-apps/api 2.10.1", "next-intl 4.8.2", "zustand 5.0.11", "@tanstack/react-query 5.90.20", "next-themes 0.4.6"],
+        "ui": ["@radix-ui/react-*", "lucide-react 0.546.0", "sonner 2.0.7", "class-variance-authority 0.7.1", "cmdk 1.1.1"],
+        "dev": ["jest 30.2.0", "@testing-library/react 16.3.2", "eslint 9.39.2", "@tailwindcss/postcss 4.1.18"]
       },
       "testing": {
         "framework": "Jest 30",
@@ -45,35 +39,16 @@
         "setup": "jest.setup.ts",
         "coverage": {
           "enabled": true,
-          "threshold": {
-            "branches": 60,
-            "functions": 60,
-            "lines": 70,
-            "statements": 70
-          },
+          "threshold": { "branches": 60, "functions": 60, "lines": 70, "statements": 70 },
           "reporters": ["json", "text", "lcov", "html", "clover", "cobertura", "junit"]
-        },
-        "testFiles": [
-          "app/page.test.tsx",
-          "app/about/page.test.tsx",
-          "components/theme-toggle.test.tsx",
-          "components/providers/theme-provider.test.tsx",
-          "components/providers/locale-provider.test.tsx",
-          "components/settings/**/*.test.tsx",
-          "lib/__tests__/*.test.ts",
-          "lib/stores/__tests__/*.test.ts",
-          "lib/hooks/__tests__/*.test.ts"
-        ]
+        }
       },
       "qualityTools": {
         "linting": "ESLint 9.39.2 with eslint-config-next",
         "typeCheck": "tsc --noEmit",
         "formatting": "Tailwind CSS 4.1.18 with PostCSS"
       },
-      "coverage": {
-        "scanned": true,
-        "details": "Scanned app/, components/, lib/, hooks/ directories with comprehensive test coverage"
-      },
+      "coverage": { "scanned": true, "percent": 85 },
       "routes": {
         "dashboard": "app/page.tsx",
         "environments": "app/environments/page.tsx",
@@ -81,6 +56,8 @@
         "providers": "app/providers/page.tsx",
         "cache": "app/cache/page.tsx",
         "settings": "app/settings/page.tsx",
+        "downloads": "app/downloads/page.tsx",
+        "logs": "app/logs/page.tsx",
         "about": "app/about/page.tsx"
       },
       "stateManagement": {
@@ -88,16 +65,26 @@
           "lib/stores/packages.ts - Package state",
           "lib/stores/environment.ts - Environment state",
           "lib/stores/settings.ts - Settings state",
-          "lib/stores/appearance.ts - Appearance/theme state"
+          "lib/stores/appearance.ts - Appearance/theme state",
+          "lib/stores/download.ts - Download state",
+          "lib/stores/log.ts - Log state"
         ],
         "hooks": [
           "lib/hooks/use-packages.ts",
           "lib/hooks/use-environments.ts",
           "lib/hooks/use-settings.ts",
+          "lib/hooks/use-downloads.ts",
+          "lib/hooks/use-tray-sync.ts",
           "lib/hooks/use-keyboard-shortcuts.ts",
           "lib/hooks/use-version-cache.ts",
           "lib/hooks/use-auto-version.ts",
-          "lib/hooks/use-settings-shortcuts.ts"
+          "lib/hooks/use-settings-shortcuts.ts",
+          "lib/hooks/use-logs.ts",
+          "lib/hooks/use-auto-update.ts",
+          "lib/hooks/use-appearance-config-sync.ts",
+          "lib/hooks/use-unsaved-changes.ts",
+          "lib/hooks/use-network.ts",
+          "lib/hooks/use-package-export.ts"
         ]
       },
       "components": {
@@ -107,7 +94,26 @@
         "packages": "components/packages/ - Package management components",
         "settings": "components/settings/ - Settings components",
         "layout": "components/layout/ - Layout components",
-        "providers": "components/providers/ - Context providers"
+        "providers": "components/providers/ - Context providers (Theme, Locale, Log, Tray)",
+        "log": "components/log/ - Log panel components",
+        "downloads": "components/downloads/ - Download components"
+      },
+      "new_features": {
+        "system_tray": {
+          "provider": "components/providers/tray-provider.tsx",
+          "hook": "lib/hooks/use-tray-sync.ts",
+          "settings": "components/settings/tray-settings.tsx"
+        },
+        "command_palette": {
+          "component": "components/command-palette.tsx",
+          "shortcut": "Ctrl+K / Cmd+K",
+          "ui": "components/ui/command.tsx"
+        },
+        "downloads_system": {
+          "page": "app/downloads/page.tsx",
+          "store": "lib/stores/download.ts",
+          "hook": "lib/hooks/use-downloads.ts"
+        }
       }
     },
     {
@@ -115,83 +121,50 @@
       "path": "src-tauri",
       "type": "rust-lib",
       "language": "Rust",
-      "entryPoints": [
-        "src/main.rs",
-        "src/lib.rs"
-      ],
-      "keyDirectories": [
-        "src/commands/",
-        "src/core/",
-        "src/provider/",
-        "src/cache/",
-        "src/config/",
-        "src/platform/",
-        "src/resolver/"
-      ],
+      "entryPoints": ["src/main.rs", "src/lib.rs"],
+      "keyDirectories": ["src/commands/", "src/core/", "src/provider/", "src/cache/", "src/config/", "src/platform/", "src/download/", "src/resolver/"],
       "interfaces": {
         "environment": [
-          "env_list",
-          "env_get",
-          "env_install",
-          "env_uninstall",
-          "env_use_global",
-          "env_use_local",
-          "env_detect",
-          "env_detect_all",
-          "env_available_versions",
-          "env_list_providers",
-          "env_resolve_alias",
-          "env_install_cancel"
+          "env_list", "env_get", "env_install", "env_uninstall", "env_use_global", "env_use_local",
+          "env_detect", "env_detect_all", "env_available_versions", "env_list_providers",
+          "env_resolve_alias", "env_install_cancel", "env_save_settings", "env_load_settings"
         ],
         "package": [
-          "package_search",
-          "package_info",
-          "package_install",
-          "package_uninstall",
-          "package_list",
-          "provider_list",
-          "provider_check",
-          "provider_system_list",
-          "provider_status_all",
-          "package_check_installed",
-          "package_versions"
+          "package_search", "package_info", "package_install", "package_uninstall", "package_list",
+          "provider_list", "provider_enable", "provider_disable", "provider_check", "provider_system_list",
+          "provider_status_all", "package_check_installed", "package_versions"
         ],
-        "config": [
-          "config_get",
-          "config_set",
-          "config_list",
-          "config_reset",
-          "get_cognia_dir",
-          "get_platform_info"
-        ],
+        "config": ["config_get", "config_set", "config_list", "config_reset", "get_cognia_dir", "get_platform_info"],
         "cache": [
-          "cache_info",
-          "cache_clean",
-          "cache_verify",
-          "cache_repair",
-          "get_cache_settings",
-          "set_cache_settings"
+          "cache_info", "cache_clean", "cache_clean_preview", "cache_clean_enhanced",
+          "cache_verify", "cache_repair", "get_cache_settings", "set_cache_settings",
+          "get_cleanup_history", "clear_cleanup_history", "get_cleanup_summary"
         ],
         "batch": [
-          "batch_install",
-          "batch_uninstall",
-          "batch_update",
-          "resolve_dependencies",
-          "check_updates",
-          "package_pin",
-          "package_unpin",
-          "get_pinned_packages",
-          "package_rollback",
-          "get_install_history"
+          "batch_install", "batch_uninstall", "batch_update", "resolve_dependencies",
+          "check_updates", "package_pin", "package_unpin", "get_pinned_packages",
+          "package_rollback", "get_install_history", "get_package_history", "clear_install_history"
         ],
-        "search": [
-          "advanced_search",
-          "search_suggestions",
-          "compare_packages"
+        "search": ["advanced_search", "search_suggestions", "compare_packages"],
+        "updater": ["self_check_update", "self_update"],
+        "download": [
+          "download_add", "download_get", "download_list", "download_stats",
+          "download_pause", "download_resume", "download_cancel", "download_remove",
+          "download_pause_all", "download_resume_all", "download_cancel_all",
+          "download_clear_finished", "download_retry_failed",
+          "download_set_speed_limit", "download_get_speed_limit",
+          "download_set_max_concurrent",
+          "download_history_list", "download_history_search", "download_history_stats",
+          "download_history_clear", "download_history_remove",
+          "disk_space_get", "disk_space_check"
         ],
-        "updater": [
-          "self_check_update",
-          "self_update"
+        "log": ["log_list_files", "log_query", "log_clear", "log_get_dir", "log_export"],
+        "manifest": ["manifest_read", "manifest_init"],
+        "tray": [
+          "tray_set_icon_state", "tray_update_tooltip", "tray_set_active_downloads",
+          "tray_set_has_update", "tray_set_language", "tray_set_click_behavior",
+          "tray_get_state", "tray_is_autostart_enabled", "tray_enable_autostart",
+          "tray_disable_autostart", "tray_send_notification", "tray_rebuild"
         ]
       },
       "dependencies": {
@@ -199,6 +172,7 @@
         "database": ["sqlx 0.8 with sqlite"],
         "network": ["reqwest 0.12"],
         "error": ["thiserror 2.0", "anyhow 1.0"],
+        "plugins": ["tauri-plugin-log 2.8", "tauri-plugin-opener 2.5", "tauri-plugin-updater 2", "tauri-plugin-window-state 2", "tauri-plugin-notification 2", "tauri-plugin-autostart 2"],
         "features": ["custom-protocol"]
       },
       "testing": {
@@ -209,23 +183,42 @@
         "rustfmt": "Available",
         "clippy": "Recommended"
       },
-      "coverage": {
-        "scanned": true,
-        "details": "Scanned src/ directory with 70+ Rust modules across commands, core, provider, cache, config, platform, and resolver"
-      },
+      "coverage": { "scanned": true, "percent": 90 },
       "providers": [
         "nvm", "fnm", "pyenv", "rustup", "npm", "pnpm", "yarn", "pip", "uv", "cargo",
         "brew", "apt", "dnf", "pacman", "zypper", "snap", "flatpak", "winget", "chocolatey",
-        "scoop", "vcpkg", "docker", "github", "registry", "psgallery"
+        "scoop", "vcpkg", "docker", "github", "registry", "psgallery", "goenv", "apk", "macports"
       ],
       "modules": {
-        "commands": "commands/ - Tauri IPC command handlers (8 modules)",
-        "core": "core/ - Business logic (6 modules)",
+        "commands": "commands/ - Tauri IPC command handlers (10 modules)",
+        "core": "core/ - Business logic (7 modules)",
         "provider": "provider/ - 30+ package provider implementations",
-        "cache": "cache/ - SQLite + JSON dual-backend caching (6 modules)",
+        "cache": "cache/ - SQLite + JSON dual-backend caching (7 modules)",
+        "download": "download/ - Download manager with queue and throttling (6 modules)",
         "config": "config/ - Configuration management (4 modules)",
         "platform": "platform/ - Cross-platform abstraction (5 modules)",
-        "resolver": "resolver/ - Dependency resolution (4 modules)"
+        "resolver": "resolver/ - Dependency resolution (4 modules)",
+        "tray": "tray.rs - System tray implementation"
+      },
+      "new_features": {
+        "download_manager": {
+          "manager": "src/download/manager.rs - DownloadManager",
+          "queue": "src/download/queue.rs - DownloadQueue",
+          "task": "src/download/task.rs - DownloadTask with state machine",
+          "throttle": "src/download/throttle.rs - SpeedLimiter with token bucket",
+          "history": "src/cache/download_history.rs - SQLite persistence",
+          "commands": "src/commands/download.rs - 20+ Tauri commands"
+        },
+        "system_tray": {
+          "implementation": "src/tray.rs - Complete tray implementation",
+          "features": ["Multi-language menu", "Dynamic icon states", "Quick actions", "Autostart", "Notifications"],
+          "commands": "15+ Tauri commands for tray control"
+        },
+        "enhanced_cache": {
+          "enhanced": "src/cache/enhanced.rs - Enhanced cache features",
+          "history": "src/cache/history.rs - Cleanup history tracking",
+          "features": ["Trash support", "History tracking", "Preview before clean"]
+        }
       }
     },
     {
@@ -233,24 +226,13 @@
       "path": "openspec",
       "type": "documentation",
       "language": "Markdown",
-      "keyDirectories": [
-        "specs/",
-        "changes/"
-      ],
+      "keyDirectories": ["specs/", "changes/"],
       "specs": [
-        "platform-abstraction",
-        "provider-system",
-        "environment-management",
-        "package-installation",
-        "dependency-resolution",
-        "configuration-system",
-        "cache-management",
-        "ui-interface"
+        "platform-abstraction", "provider-system", "environment-management",
+        "package-installation", "dependency-resolution", "configuration-system",
+        "cache-management", "ui-interface"
       ],
-      "coverage": {
-        "scanned": true,
-        "details": "All OpenSpec specifications scanned"
-      }
+      "coverage": { "scanned": true, "percent": 100 }
     },
     {
       "name": "llmdoc",
@@ -259,190 +241,111 @@
       "language": "Markdown",
       "structure": {
         "overview": [
-          "testing-infrastructure.md",
-          "settings-and-theme-system.md",
-          "batch-operations.md"
+          "testing-infrastructure.md", "settings-and-theme-system.md", "batch-operations.md",
+          "command-palette.md", "downloads-system.md", "system-tray.md"
         ],
         "guides": [
-          "testing-guide.md",
-          "implementing-environment-installation-cancellation.md",
-          "batch-progress-integration.md",
-          "add-settings-section.md",
-          "add-accent-color.md"
+          "testing-guide.md", "implementing-environment-installation-cancellation.md",
+          "batch-progress-integration.md", "add-settings-section.md", "add-accent-color.md",
+          "command-palette-actions.md", "downloads-integration.md", "system-tray-integration.md"
         ],
         "architecture": [
-          "testing-architecture.md",
-          "cache-system.md",
-          "batch-operations-system.md",
-          "settings-system.md",
-          "settings-ui-components.md",
-          "self-update-system.md",
-          "environment-installation-progress.md"
+          "testing-architecture.md", "cache-system.md", "batch-operations-system.md",
+          "settings-system.md", "settings-ui-components.md", "self-update-system.md",
+          "environment-installation-progress.md", "log-panel-system.md",
+          "command-palette.md", "downloads-system.md", "system-tray.md"
         ],
         "reference": [
-          "error-handling.md",
-          "keyboard-shortcuts.md",
-          "theme-system.md",
-          "version-caching.md",
-          "auto-version-detection.md",
-          "cache-commands.md",
-          "environment-version-alias-resolution.md",
-          "batch-api.md",
-          "settings-and-theme-apis.md"
+          "error-handling.md", "keyboard-shortcuts.md", "theme-system.md", "version-caching.md",
+          "auto-version-detection.md", "cache-commands.md", "environment-version-alias-resolution.md",
+          "batch-api.md", "settings-and-theme-apis.md", "downloads-api.md"
         ]
       },
-      "coverage": {
-        "scanned": true,
-        "details": "Comprehensive documentation system with 23 md files"
-      }
+      "coverage": { "scanned": true, "percent": 100, "total_files": 32 }
     }
   ],
   "architecture": {
     "runtimeModel": "dual",
     "modes": {
-      "web": {
-        "command": "pnpm dev",
-        "url": "http://localhost:3000",
-        "description": "Next.js 16 development server"
-      },
-      "desktop": {
-        "command": "pnpm tauri dev",
-        "description": "Tauri 2.9 wraps Next.js in native window",
-        "config": "src-tauri/tauri.conf.json"
-      }
+      "web": { "command": "pnpm dev", "url": "http://localhost:3000", "description": "Next.js 16 development server" },
+      "desktop": { "command": "pnpm tauri dev", "description": "Tauri 2.9 wraps Next.js in native window", "config": "src-tauri/tauri.conf.json" }
     },
-    "communication": "Tauri invoke_handler for Rust-frontend IPC with 40+ commands",
-    "stateManagement": "Zustand 5.0.10 for global state, React hooks for local state",
+    "communication": "Tauri invoke_handler for Rust-frontend IPC with 80+ commands",
+    "stateManagement": "Zustand 5.0.11 for global state, React hooks for local state",
     "styling": {
       "framework": "Tailwind CSS 4.1.18 with PostCSS",
       "theme": "CSS variables with oklch color space",
       "darkMode": "Class-based (.dark)",
       "components": "shadcn/ui (new-york style, RSC mode)"
     },
-    "internationalization": "next-intl 4.7.0 with messages/en.json and messages/zh.json",
+    "internationalization": "next-intl 4.8.2 with messages/en.json and messages/zh.json",
     "build": {
       "frontend": "Static export to out/ directory",
       "desktop": "Tauri bundles for Windows (MSI), macOS (DMG), Linux (AppImage)"
+    },
+    "new_features": {
+      "download_manager": "Queue-based download system with throttling, progress tracking, and SQLite history",
+      "system_tray": "Multi-language tray with dynamic icons, quick actions, and autostart support",
+      "command_palette": "Global command search with Ctrl+K / Cmd+K shortcut",
+      "enhanced_cache": "Cache with trash support, cleanup history, and preview functionality"
     }
   },
   "fileStats": {
-    "totalEstimated": 200,
-    "scanned": 160,
+    "totalEstimated": 250,
+    "scanned": 200,
     "coveragePercentage": 80,
-    "byLanguage": {
-      "TypeScript/TSX": 75,
-      "Rust": 70,
-      "Markdown": 30,
-      "JSON": 15,
-      "CSS": 10
-    },
+    "byLanguage": { "TypeScript/TSX": 90, "Rust": 70, "Markdown": 32, "JSON": 20, "CSS": 10 },
     "byDirectory": {
-      "app/": 10,
-      "components/": 60,
-      "lib/": 25,
+      "app/": 15,
+      "components/": 75,
+      "lib/": 35,
       "hooks/": 5,
-      "src-tauri/src/": 70,
-      "llmdoc/": 23,
-      "openspec/": 15
+      "src-tauri/src/": 90,
+      "llmdoc/": 32,
+      "openspec/": 20
     }
   },
   "ignoredPatterns": [
-    "node_modules/**",
-    ".git/**",
-    ".github/**",
-    ".next/**",
-    "out/**",
-    "build/**",
-    "dist/**",
-    "coverage/**",
-    "src-tauri/target/**",
-    "*.lock",
-    "*.log",
-    "*.bin",
-    "*.pdf",
-    "*.png",
-    "*.jpg",
-    "*.jpeg",
-    "*.gif",
-    "*.mp4",
-    "*.zip",
-    "*.tar",
-    "*.gz",
-    ".DS_Store",
-    ".windsurf/",
-    ".obsidian/",
-    ".serena/",
-    ".ace-tool/"
+    "node_modules/**", ".git/**", ".github/**", ".next/**", "out/**", "build/**", "dist/**",
+    "coverage/**", "src-tauri/target/**", "*.lock", "*.log", "*.bin", "*.pdf",
+    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.mp4", "*.zip", "*.tar", "*.gz",
+    ".DS_Store", ".windsurf/", ".obsidian/", ".serena/", ".ace-tool/"
   ],
   "gaps": [
-    {
-      "area": "Rust Testing",
-      "description": "No Rust unit tests found",
-      "recommendation": "Add cargo test infrastructure in src-tauri/src/ with proper module structure"
-    },
-    {
-      "area": "E2E Testing",
-      "description": "No end-to-end tests configured",
-      "recommendation": "Consider Playwright for E2E testing of critical user flows"
-    },
-    {
-      "area": "CI/CD",
-      "description": "GitHub Actions workflow not found",
-      "recommendation": "Add .github/workflows/ for automated testing, linting, and build validation"
-    },
-    {
-      "area": "API Documentation",
-      "description": "Tauri commands not fully documented",
-      "recommendation": "Add comprehensive API docs for all 40+ Tauri commands"
-    }
+    { "area": "Rust Testing", "description": "No Rust unit tests found", "recommendation": "Add cargo test infrastructure in src-tauri/src/" },
+    { "area": "E2E Testing", "description": "No end-to-end tests configured", "recommendation": "Consider Playwright for E2E testing" },
+    { "area": "CI/CD", "description": "GitHub Actions workflow not found", "recommendation": "Add .github/workflows/ for CI/CD" }
   ],
   "nextSteps": [
-    "Add Rust unit tests in src-tauri/src/ with proper module structure",
-    "Consider adding E2E tests with Playwright for critical user flows",
-    "Set up GitHub Actions workflow for automated testing and linting",
-    "Document all Tauri commands with detailed API documentation",
-    "Add integration tests for provider implementations",
-    "Create developer guide for adding new providers"
+    "Add Rust unit tests in src-tauri/src/",
+    "Consider adding E2E tests with Playwright",
+    "Set up GitHub Actions workflow for CI/CD",
+    "Add tray icon variations for different states (downloading, update, error)"
   ],
   "truncated": false,
   "scanMetadata": {
-    "scanDate": "2026-02-02T00:00:00.000Z",
-    "scanMethod": "adaptive-architecture-init",
+    "scanDate": "2026-02-04T00:00:00.000Z",
+    "scanMethod": "adaptive-architecture-init-v2",
     "phases": [
       "phase-a-inventory - Complete file enumeration",
-      "phase-b-module-scan - All modules scanned",
-      "phase-c-targeted-deep-dive - Key modules analyzed"
+      "phase-b-module-scan - All modules scanned with new features",
+      "phase-c-not-required - Coverage sufficient for documentation"
     ],
-    "toolsUsed": [
-      "Glob for file discovery",
-      "Read for content analysis",
-      "Grep for pattern matching"
-    ]
+    "toolsUsed": ["Glob for file discovery", "Read for content analysis"]
   },
   "documentationIndex": "llmdoc/index.md",
   "keyFiles": {
     "config": [
-      "package.json",
-      "src-tauri/Cargo.toml",
-      "src-tauri/tauri.conf.json",
-      "next.config.ts",
-      "tsconfig.json",
-      "jest.config.ts",
-      "components.json",
-      "eslint.config.mjs",
-      "postcss.config.mjs"
+      "package.json", "src-tauri/Cargo.toml", "src-tauri/tauri.conf.json",
+      "next.config.ts", "tsconfig.json", "jest.config.ts", "components.json"
     ],
-    "documentation": [
-      "CLAUDE.md",
-      "README.md",
-      "llmdoc/index.md",
-      "openspec/AGENTS.md"
-    ],
-    "entryPoints": [
-      "app/layout.tsx",
-      "app/page.tsx",
-      "src-tauri/src/main.rs",
-      "src-tauri/src/lib.rs"
+    "documentation": ["CLAUDE.md", "README.md", "llmdoc/index.md", "openspec/AGENTS.md"],
+    "entryPoints": ["app/layout.tsx", "app/page.tsx", "src-tauri/src/main.rs", "src-tauri/src/lib.rs"],
+    "new_features": [
+      "components/providers/tray-provider.tsx",
+      "lib/hooks/use-tray-sync.ts",
+      "src-tauri/src/tray.rs",
+      "src-tauri/src/download/manager.rs"
     ]
   }
 }

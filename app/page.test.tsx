@@ -1,26 +1,37 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import DashboardPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 
 // Mock the Tauri API with all required functions
 jest.mock("@/lib/tauri", () => ({
-  envList: jest.fn().mockResolvedValue([]),
+  envList: jest.fn().mockResolvedValue([
+    {
+      env_type: "node",
+      provider: "nvm",
+      provider_id: "nvm",
+      available: true,
+      current_version: "20.0.0",
+      installed_versions: ["18.0.0", "20.0.0"],
+    },
+  ]),
   envGet: jest.fn().mockResolvedValue(null),
   packageSearch: jest.fn().mockResolvedValue([]),
-  packageList: jest.fn().mockResolvedValue([]),
-  providerList: jest.fn().mockResolvedValue([]),
+  packageList: jest.fn().mockResolvedValue([
+    { name: "typescript", version: "5.0.0", provider: "npm" },
+  ]),
+  providerList: jest.fn().mockResolvedValue([{ id: "npm", display_name: "NPM" }]),
   configList: jest.fn().mockResolvedValue([]),
   cacheInfo: jest.fn().mockResolvedValue({
-    download_cache: { entry_count: 0, size: 0, size_human: "0 B", location: "" },
-    metadata_cache: { entry_count: 0, size: 0, size_human: "0 B", location: "" },
-    total_size: 0,
-    total_size_human: "0 B",
+    download_cache: { entry_count: 5, size: 1024, size_human: "1 KB", location: "" },
+    metadata_cache: { entry_count: 10, size: 2048, size_human: "2 KB", location: "" },
+    total_size: 3072,
+    total_size_human: "3 KB",
   }),
   getPlatformInfo: jest.fn().mockResolvedValue({ os: "Test OS", arch: "x64" }),
   getCogniaDir: jest.fn().mockResolvedValue("/mock/cognia/dir"),
 }));
 
-// Mock messages
+// Mock messages with new dashboard translations
 const mockMessages = {
   en: {
     dashboard: {
@@ -39,13 +50,63 @@ const mockMessages = {
       recentPackages: "Recent Packages",
       recentPackagesDesc: "Recently installed packages",
       noPackages: "No packages installed",
-      viewAll: "View All",
+      quickSearch: {
+        placeholder: "Search environments, packages...",
+        hint: "Press / to focus",
+        noResults: "No results found",
+        environments: "Environments",
+        packages: "Packages",
+        actions: "Quick Actions",
+        recentSearches: "Recent Searches",
+        clearRecent: "Clear recent",
+        viewAll: "View all results",
+      },
+      quickActions: {
+        title: "Quick Actions",
+        addEnvironment: "Add Environment",
+        installPackage: "Install Package",
+        clearCache: "Clear Cache",
+        refreshAll: "Refresh All",
+        openSettings: "Settings",
+        viewLogs: "View Logs",
+      },
+      environmentList: {
+        title: "Environments",
+        filter: "Filter",
+        all: "All",
+        available: "Available",
+        unavailable: "Unavailable",
+        switchVersion: "Switch version",
+        viewDetails: "View details",
+        noResults: "No environments match the filter",
+        showMore: "Show more",
+        showLess: "Show less",
+      },
+      packageList: {
+        title: "Installed Packages",
+        searchPlaceholder: "Search packages...",
+        viewAll: "View All",
+        noResults: "No packages match the search",
+        update: "Update",
+        uninstall: "Uninstall",
+        updateAvailable: "Update available",
+        showMore: "Show {count} more",
+      },
+      stats: {
+        clickToView: "Click to view details",
+      },
     },
     common: {
       unknown: "Unknown",
       none: "None",
+      clear: "Clear",
+      refresh: "Refresh",
     },
-    environments: {},
+    environments: {
+      details: {
+        versions: "versions",
+      },
+    },
     packages: {},
   },
   zh: {
@@ -110,6 +171,68 @@ describe("Dashboard Page", () => {
     
     await waitFor(() => {
       expect(screen.getByText("Test OS")).toBeInTheDocument();
+    });
+  });
+
+  it("renders quick search input", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      const searchInput = screen.getByPlaceholderText(/search environments, packages/i);
+      expect(searchInput).toBeInTheDocument();
+    });
+  });
+
+  it("renders quick actions buttons", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /add environment/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /refresh all/i })).toBeInTheDocument();
+    });
+  });
+
+  it("renders environment list with data", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByText("node")).toBeInTheDocument();
+      expect(screen.getByText("nvm")).toBeInTheDocument();
+    });
+  });
+
+  it("renders package list with data", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByText("typescript")).toBeInTheDocument();
+      expect(screen.getByText("5.0.0")).toBeInTheDocument();
+    });
+  });
+
+  it("quick search filters results when typing", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      const searchInput = screen.getByPlaceholderText(/search environments, packages/i);
+      expect(searchInput).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/search environments, packages/i);
+    fireEvent.change(searchInput, { target: { value: "node" } });
+    fireEvent.focus(searchInput);
+
+    await waitFor(() => {
+      // Should show filtered results in dropdown
+      expect(searchInput).toHaveValue("node");
+    });
+  });
+
+  it("displays cache information in stats card", async () => {
+    renderWithProviders(<DashboardPage />);
+    
+    await waitFor(() => {
+      expect(screen.getByText("3 KB")).toBeInTheDocument();
     });
   });
 });

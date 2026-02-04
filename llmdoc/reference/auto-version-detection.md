@@ -2,34 +2,30 @@
 
 ## 1. Core Summary
 
-Automatic version detection and switching based on project configuration files (.nvmrc, .python-version, rust-toolchain.toml, etc.) with polling support.
+Automatic version detection from project files and system executables with custom detection rules support.
 
 ## 2. Source of Truth
 
-- **Primary Hook:** `lib/hooks/use-auto-version.ts` - Auto version detection logic
-- **Project Path:** `lib/hooks/use-auto-version.ts:121-131` - Project path management (placeholder)
-- **Detection:** `lib/hooks/use-auto-version.ts:35-76` - Version check and switch logic
-- **Polling:** `lib/hooks/use-auto-version.ts:78-99` - Interval-based checking
-- **Tests:** `lib/hooks/__tests__/use-auto-version.test.ts` - Detection behavior tests
+- **Provider Traits:** `src-tauri/src/provider/traits.rs:274-296` - EnvironmentProvider trait with detect_version()
+- **System Detection:** `src-tauri/src/provider/traits.rs:182-272` - Executable-based version detection
+- **Custom Detection:** `src-tauri/src/core/custom_detection.rs` - User-defined detection rules
+- **Frontend Hook:** `lib/hooks/use-auto-version.ts` - Auto version detection and switching
 
-## 3. Supported Version Files
+## 3. Detection Sources
 
-**Node.js:** `.nvmrc`, `.node-version`, `package.json` (engines.field)
-**Python:** `.python-version`, `pyproject.toml`, `requirements.txt`
-**Rust:** `rust-toolchain.toml`
-**Go:** `.go-version`, `go.mod`
+**Local Files:** `.nvmrc`, `.python-version`, `.ruby-version`, `.java-version`, `.go-version`, `rust-toolchain.toml`
+**Manifests:** `package.json` (engines), `pyproject.toml`, `Gemfile`, `pom.xml`, `.sdkmanrc`, `.tool-versions`
+**System Executable:** `src-tauri/src/provider/traits.rs:188-221` - Direct executable version detection (NODE_DETECTOR, PYTHON_DETECTOR, GO_DETECTOR, RUST_DETECTOR, RUBY_DETECTOR, JAVA_DETECTOR)
+**Custom Rules:** User-defined regex, JSONPath, TOML, YAML, XML patterns
 
-## 4. Configuration
+## 4. Provider Implementation
 
-Options per `lib/hooks/use-auto-version.ts:8-12`:
-- `projectPath` - Path to project directory
-- `enabled` - Enable/disable auto-switch (default: true)
-- `pollInterval` - Check frequency in ms (default: 5000)
+Each environment provider implements `detect_version()` walking up directory tree:
+1. Check local version files (highest priority)
+2. Check manifest files
+3. Fall back to system executable detection via `system_detection::detect_from_executable()`
+4. Fall back to current provider version
 
-## 5. Behavior Flow
+## 5. Custom Detection
 
-1. Detect version files in project path
-2. Parse version specification
-3. Check if version is installed
-4. Auto-switch if enabled and version available
-5. Silent failure - no user interruption
+Users can define detection rules via `src-tauri/src/commands/custom_detection.rs` with 9 extraction strategies: regex, json_path, toml_path, yaml_path, xml_path, plain_text, tool_versions, ini_key, command.

@@ -1,12 +1,15 @@
 pub mod batch;
 pub mod cache;
 pub mod config;
+pub mod custom_detection;
 pub mod download;
 pub mod environment;
+pub mod health_check;
 pub mod launch;
 pub mod log;
 pub mod manifest;
 pub mod package;
+pub mod profiles;
 pub mod search;
 pub mod shim;
 pub mod updater;
@@ -52,3 +55,15 @@ pub use shim::{
 pub use updater::{self_check_update, self_update};
 pub use log::{log_clear, log_export, log_get_dir, log_list_files, log_query};
 pub use manifest::{manifest_init, manifest_read};
+pub use custom_detection::{
+    create_shared_custom_detection_manager, custom_rule_add, custom_rule_delete,
+    custom_rule_detect, custom_rule_detect_all, custom_rule_export, custom_rule_extraction_types,
+    custom_rule_get, custom_rule_import, custom_rule_import_presets, custom_rule_list,
+    custom_rule_list_by_env, custom_rule_presets, custom_rule_test, custom_rule_toggle,
+    custom_rule_update, custom_rule_validate_regex, SharedCustomDetectionManager,
+};
+pub use health_check::{health_check_all, health_check_environment};
+pub use profiles::{
+    profile_apply, profile_create, profile_create_from_current, profile_delete, profile_export,
+    profile_get, profile_import, profile_list, profile_update,
+};

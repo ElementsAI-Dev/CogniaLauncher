@@ -23,7 +23,8 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/lib/hooks/use-environments';
 import { cn } from '@/lib/utils';
-import { X, Check } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { X, Check, RefreshCw, Globe } from 'lucide-react';
 
 const LANGUAGES = [
   { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-50 border-green-500' },
@@ -64,8 +65,13 @@ const PROVIDERS: Record<string, { id: string; name: string; description: string 
   ],
 };
 
+export interface AddEnvironmentOptions {
+  autoSwitch: boolean;
+  setAsDefault: boolean;
+}
+
 interface AddEnvironmentDialogProps {
-  onAdd?: (language: string, provider: string, version: string) => Promise<void>;
+  onAdd?: (language: string, provider: string, version: string, options: AddEnvironmentOptions) => Promise<void>;
 }
 
 export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
@@ -77,6 +83,10 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
   const [versionType, setVersionType] = useState<'lts' | 'latest' | 'specific'>('lts');
   const [specificVersion, setSpecificVersion] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Advanced options
+  const [autoSwitch, setAutoSwitch] = useState(true);
+  const [setAsDefault, setSetAsDefault] = useState(true);
 
   // Fetch providers when dialog opens
   useEffect(() => {
@@ -121,7 +131,10 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
     setIsSubmitting(true);
     try {
       const version = versionType === 'specific' ? specificVersion : versionType;
-      await onAdd?.(selectedLanguage, selectedProvider, version);
+      await onAdd?.(selectedLanguage, selectedProvider, version, {
+        autoSwitch,
+        setAsDefault,
+      });
       handleClose();
     } catch {
       // Error handled by parent
@@ -135,6 +148,8 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
     setSelectedProvider('');
     setVersionType('lts');
     setSpecificVersion('');
+    setAutoSwitch(true);
+    setSetAsDefault(true);
     closeAddDialog();
   };
 
@@ -284,6 +299,35 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                   onChange={(e) => setSpecificVersion(e.target.value)}
                 />
               )}
+            </div>
+          )}
+
+          {/* Advanced Options */}
+          {selectedLanguage && selectedProvider && (
+            <div className="space-y-3 pt-4 border-t">
+              <Label className="text-sm font-medium">{t('environments.addDialog.options')}</Label>
+              
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-3">
+                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{t('environments.addDialog.autoSwitch')}</p>
+                    <p className="text-xs text-muted-foreground">{t('environments.addDialog.autoSwitchDesc')}</p>
+                  </div>
+                </div>
+                <Switch checked={autoSwitch} onCheckedChange={setAutoSwitch} />
+              </div>
+              
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-3">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{t('environments.addDialog.setAsDefault')}</p>
+                    <p className="text-xs text-muted-foreground">{t('environments.addDialog.setAsDefaultDesc')}</p>
+                  </div>
+                </div>
+                <Switch checked={setAsDefault} onCheckedChange={setSetAsDefault} />
+              </div>
             </div>
           )}
         </div>

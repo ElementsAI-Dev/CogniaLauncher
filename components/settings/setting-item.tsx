@@ -57,6 +57,8 @@ export interface SettingItemProps {
   placeholder?: string;
   error?: string | null;
   disabled?: boolean;
+  originalValue?: string;
+  highlightMatch?: boolean;
 }
 
 export function SettingItem({
@@ -71,15 +73,30 @@ export function SettingItem({
   placeholder,
   error,
   disabled = false,
+  originalValue,
+  highlightMatch = false,
 }: SettingItemProps) {
   const descId = `${id}-desc`;
   const errorId = `${id}-error`;
+  const isModified = originalValue !== undefined && value !== originalValue;
 
   return (
-    <div className="flex items-center justify-between py-3">
+    <div
+      className={cn(
+        'flex items-center justify-between py-3 rounded-md transition-colors',
+        highlightMatch && 'bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3'
+      )}
+    >
       <div className="space-y-0.5 flex-1 mr-4">
-        <Label htmlFor={id} className="font-medium">
+        <Label htmlFor={id} className="font-medium flex items-center gap-2">
           {label}
+          {isModified && (
+            <span
+              className="h-2 w-2 rounded-full bg-amber-500"
+              title="Modified"
+              aria-label="This setting has been modified"
+            />
+          )}
         </Label>
         <p id={descId} className="text-sm text-muted-foreground">
           {description}
@@ -101,7 +118,7 @@ export function SettingItem({
         max={max}
         placeholder={placeholder}
         disabled={disabled}
-        className={cn('w-48', error && 'border-destructive')}
+        className={cn('w-48', error && 'border-destructive', isModified && 'border-amber-500')}
       />
     </div>
   );

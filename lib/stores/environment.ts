@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { EnvironmentInfo, DetectedEnvironment, VersionInfo, EnvironmentProviderInfo } from '../tauri';
+import { DEFAULT_DETECTION_FILES } from '../constants/environments';
 
 export interface InstallationProgress {
   envType: string;
@@ -34,6 +35,10 @@ export interface EnvironmentSettings {
   autoSwitch: boolean;
 }
 
+// Filter types for environment list
+export type EnvironmentStatusFilter = 'all' | 'available' | 'unavailable';
+export type EnvironmentSortBy = 'name' | 'installed_count' | 'provider';
+
 interface EnvironmentState {
   environments: EnvironmentInfo[];
   selectedEnv: string | null;
@@ -42,6 +47,11 @@ interface EnvironmentState {
   availableProviders: EnvironmentProviderInfo[];
   loading: boolean;
   error: string | null;
+  
+  // Search and filter state
+  searchQuery: string;
+  statusFilter: EnvironmentStatusFilter;
+  sortBy: EnvironmentSortBy;
   
   // Persisted settings per environment type
   envSettings: Record<string, EnvironmentSettings>;
@@ -101,24 +111,26 @@ interface EnvironmentState {
   closeVersionBrowser: () => void;
   openDetailsPanel: (envType: string) => void;
   closeDetailsPanel: () => void;
+  
+  // Search and filter actions
+  setSearchQuery: (query: string) => void;
+  setStatusFilter: (filter: EnvironmentStatusFilter) => void;
+  setSortBy: (sort: EnvironmentSortBy) => void;
+  clearFilters: () => void;
 }
 
-// Default detection files per environment type
-const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
-  node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
-  python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
-  go: ['.go-version', 'go.mod', '.tool-versions'],
-  rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
-  ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
-  java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
-};
-
+// Map provider IDs to their corresponding environment types
 const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
   fnm: 'node',
   nvm: 'node',
+  deno: 'deno',
   pyenv: 'python',
   goenv: 'go',
   rustup: 'rust',
+  rbenv: 'ruby',
+  sdkman: 'java',
+  phpbrew: 'php',
+  dotnet: 'dotnet',
 };
 
 // Helper to get default settings for an environment type
@@ -166,6 +178,11 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       versionBrowserEnvType: null,
       detailsPanelOpen: false,
       detailsPanelEnvType: null,
+      
+      // Search and filter state
+      searchQuery: '',
+      statusFilter: 'all' as EnvironmentStatusFilter,
+      sortBy: 'name' as EnvironmentSortBy,
 
       setEnvironments: (environments) => set({ environments }),
       setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
@@ -342,6 +359,12 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       closeVersionBrowser: () => set({ versionBrowserOpen: false, versionBrowserEnvType: null }),
       openDetailsPanel: (envType) => set({ detailsPanelOpen: true, detailsPanelEnvType: envType }),
       closeDetailsPanel: () => set({ detailsPanelOpen: false, detailsPanelEnvType: null }),
+      
+      // Search and filter actions
+      setSearchQuery: (searchQuery) => set({ searchQuery }),
+      setStatusFilter: (statusFilter) => set({ statusFilter }),
+      setSortBy: (sortBy) => set({ sortBy }),
+      clearFilters: () => set({ searchQuery: '', statusFilter: 'all', sortBy: 'name' }),
     }),
     {
       name: 'cognia-environment-settings',

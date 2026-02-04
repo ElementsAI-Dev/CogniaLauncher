@@ -175,6 +175,100 @@ pub enum VersionSource {
     Manifest,
     GlobalFile,
     SystemDefault,
+    SystemExecutable,
+}
+
+/// Helper functions for detecting system-installed versions directly from executables
+pub mod system_detection {
+    use crate::error::CogniaResult;
+    use crate::platform::process;
+    use regex::Regex;
+
+    /// Detect version from a system executable using --version flag
+    pub async fn detect_from_executable(
+        cmd: &str,
+        version_args: &[&str],
+        version_pattern: Option<&str>,
+    ) -> CogniaResult<Option<String>> {
+        // Check if executable exists
+        if process::which(cmd).await.is_none() {
+            return Ok(None);
+        }
+
+        // Run version command
+        let output = process::execute(cmd, version_args, None).await?;
+        if !output.success {
+            return Ok(None);
+        }
+
+        let output_text = if output.stdout.is_empty() {
+            &output.stderr
+        } else {
+            &output.stdout
+        };
+
+        // Extract version using pattern or default
+        let pattern = version_pattern.unwrap_or(r"(\d+\.\d+(?:\.\d+)?)");
+        if let Ok(re) = Regex::new(pattern) {
+            if let Some(caps) = re.captures(output_text) {
+                if let Some(version) = caps.get(1) {
+                    return Ok(Some(version.as_str().to_string()));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Common version detection configurations
+    pub struct VersionDetector {
+        pub cmd: &'static str,
+        pub args: &'static [&'static str],
+        pub pattern: Option<&'static str>,
+    }
+
+    /// Predefined detectors for common languages
+    pub const NODE_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "node",
+        args: &["--version"],
+        pattern: Some(r"v?(\d+\.\d+\.\d+)"),
+    };
+
+    pub const PYTHON_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "python3",
+        args: &["--version"],
+        pattern: Some(r"Python (\d+\.\d+\.\d+)"),
+    };
+
+    pub const GO_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "go",
+        args: &["version"],
+        pattern: Some(r"go(\d+\.\d+(?:\.\d+)?)"),
+    };
+
+    pub const RUST_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "rustc",
+        args: &["--version"],
+        pattern: Some(r"rustc (\d+\.\d+\.\d+)"),
+    };
+
+    pub const RUBY_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "ruby",
+        args: &["--version"],
+        pattern: Some(r"ruby (\d+\.\d+\.\d+)"),
+    };
+
+    pub const JAVA_DETECTOR: VersionDetector = VersionDetector {
+        cmd: "java",
+        args: &["-version"],
+        pattern: Some(r#"version "(\d+(?:\.\d+)*)"#),
+    };
+
+    impl VersionDetector {
+        pub async fn detect(&self) -> CogniaResult<Option<String>> {
+            detect_from_executable(self.cmd, self.args, self.pattern).await
+        }
+    }
 }
 
 #[async_trait]

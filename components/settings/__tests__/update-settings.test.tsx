@@ -24,6 +24,9 @@ describe('UpdateSettings', () => {
     notifyOnUpdates: true,
     minimizeToTray: true,
     startMinimized: false,
+    autostart: false,
+    trayClickBehavior: 'toggle_window',
+    showNotifications: true,
   };
 
   it('should render update settings card', () => {

@@ -6,31 +6,36 @@ import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { LogEntry as LogEntryType, LogLevel } from '@/lib/stores/log';
 
-const LEVEL_STYLES: Record<LogLevel, { bg: string; text: string; border: string }> = {
+const LEVEL_STYLES: Record<LogLevel, { bg: string; text: string; border: string; indicator: string }> = {
   trace: {
-    bg: 'bg-slate-500/10',
-    text: 'text-slate-500',
-    border: 'border-slate-500/20',
+    bg: 'bg-slate-500/10 dark:bg-slate-400/10',
+    text: 'text-slate-600 dark:text-slate-400',
+    border: 'border-slate-400/30',
+    indicator: 'bg-slate-400',
   },
   debug: {
-    bg: 'bg-blue-500/10',
-    text: 'text-blue-500',
-    border: 'border-blue-500/20',
+    bg: 'bg-blue-500/10 dark:bg-blue-400/10',
+    text: 'text-blue-600 dark:text-blue-400',
+    border: 'border-blue-400/30',
+    indicator: 'bg-blue-500',
   },
   info: {
-    bg: 'bg-green-500/10',
-    text: 'text-green-500',
-    border: 'border-green-500/20',
+    bg: 'bg-emerald-500/10 dark:bg-emerald-400/10',
+    text: 'text-emerald-600 dark:text-emerald-400',
+    border: 'border-emerald-400/30',
+    indicator: 'bg-emerald-500',
   },
   warn: {
-    bg: 'bg-yellow-500/10',
-    text: 'text-yellow-600 dark:text-yellow-400',
-    border: 'border-yellow-500/20',
+    bg: 'bg-amber-500/10 dark:bg-amber-400/10',
+    text: 'text-amber-600 dark:text-amber-400',
+    border: 'border-amber-400/30',
+    indicator: 'bg-amber-500',
   },
   error: {
-    bg: 'bg-red-500/10',
-    text: 'text-red-500',
-    border: 'border-red-500/20',
+    bg: 'bg-red-500/10 dark:bg-red-400/10',
+    text: 'text-red-600 dark:text-red-400',
+    border: 'border-red-400/30',
+    indicator: 'bg-red-500',
   },
 };
 
@@ -141,19 +146,24 @@ export function LogEntry({
   return (
     <div
       className={cn(
-        'group flex items-start gap-2 px-3 py-1.5 font-mono text-xs hover:bg-muted/50 border-l-2',
-        style.border
+        'group relative flex items-start gap-3 px-4 py-2.5 font-mono text-xs transition-colors',
+        'hover:bg-muted/40 dark:hover:bg-muted/20'
       )}
     >
+      {/* Level indicator bar */}
+      <div className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-r', style.indicator)} />
+      
+      {/* Timestamp */}
       {showTimestamp && (
-        <span className="shrink-0 text-muted-foreground tabular-nums">
+        <span className="shrink-0 text-muted-foreground/70 tabular-nums text-[11px] pt-0.5">
           {formatTimestamp(entry.timestamp)}
         </span>
       )}
       
+      {/* Level badge */}
       <span
         className={cn(
-          'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase',
+          'shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
           style.bg,
           style.text
         )}
@@ -161,47 +171,53 @@ export function LogEntry({
         {LEVEL_LABELS[entry.level]}
       </span>
 
+      {/* Target/Source */}
       {showTarget && entry.target && (
-        <span className="shrink-0 text-muted-foreground max-w-[120px] truncate">
-          [{entry.target}]
+        <span className="shrink-0 text-muted-foreground/60 text-[11px] max-w-[140px] truncate pt-0.5">
+          {entry.target}
         </span>
       )}
 
+      {/* Message content */}
       <span
         className={cn(
-          'flex-1 break-all whitespace-pre-wrap',
-          isExpandable && !expanded && 'max-h-[3.5rem] overflow-hidden'
+          'flex-1 break-words whitespace-pre-wrap leading-relaxed text-foreground/90',
+          isExpandable && !expanded && 'max-h-[3.5rem] overflow-hidden relative',
+          isExpandable && !expanded && 'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-4 after:bg-gradient-to-t after:from-background/80 after:to-transparent'
         )}
       >
         {highlightNodes}
       </span>
 
-      {isExpandable && (
+      {/* Action buttons */}
+      <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {isExpandable && (
+          <button
+            onClick={() => setExpanded((prev) => !prev)}
+            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={expanded ? t('logs.collapse') : t('logs.expand')}
+          >
+            {expanded ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
+
         <button
-          onClick={() => setExpanded((prev) => !prev)}
-          className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
-          aria-label={expanded ? t('logs.collapse') : t('logs.expand')}
+          onClick={handleCopy}
+          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title={t('logs.copyEntry')}
+          aria-label={t('logs.copyEntry')}
         >
-          {expanded ? (
-            <ChevronUp className="h-3.5 w-3.5" />
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-green-500" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5" />
+            <Copy className="h-3.5 w-3.5" />
           )}
         </button>
-      )}
-
-      <button
-        onClick={handleCopy}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-muted rounded"
-        title={t('logs.copyEntry')}
-        aria-label={t('logs.copyEntry')}
-      >
-        {copied ? (
-          <Check className="h-3 w-3 text-green-500" />
-        ) : (
-          <Copy className="h-3 w-3 text-muted-foreground" />
-        )}
-      </button>
+      </div>
     </div>
   );
 }

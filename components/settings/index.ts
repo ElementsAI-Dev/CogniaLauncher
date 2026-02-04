@@ -11,3 +11,6 @@ export { ProviderSettings } from './provider-settings';
 export { SystemInfo } from './system-info';
 export { SettingsSkeleton } from './settings-skeleton';
 export { AccentColorPicker } from './accent-color-picker';
+export { SettingsSearch } from './settings-search';
+export { SettingsNav } from './settings-nav';
+export { CollapsibleSection } from './collapsible-section';

@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { EnvironmentCard } from '@/components/environments/environment-card';
-import { AddEnvironmentDialog } from '@/components/environments/add-environment-dialog';
+import { AddEnvironmentDialog, type AddEnvironmentOptions } from '@/components/environments/add-environment-dialog';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { EnvironmentDetailsPanel } from '@/components/environments/environment-details-panel';
 import { EnvironmentErrorBoundary, EnvironmentCardErrorBoundary } from '@/components/environments/environment-error-boundary';
 import { EmptyState } from '@/components/environments/empty-state';
 import { EnvironmentBatchOperations } from '@/components/environments/batch-operations';
+import { EnvironmentToolbar } from '@/components/environments/environment-toolbar';
 import { PageHeader } from '@/components/layout/page-header';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/lib/hooks/use-environments';
@@ -18,7 +19,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw, Plus } from 'lucide-react';
+import { AlertCircle, Plus } from 'lucide-react';
 
 export default function EnvironmentsPage() {
   const {
@@ -46,6 +47,13 @@ export default function EnvironmentsPage() {
     closeDetailsPanel,
     selectedVersions,
     clearVersionSelection,
+    searchQuery,
+    statusFilter,
+    sortBy,
+    setSearchQuery,
+    setStatusFilter,
+    setSortBy,
+    clearFilters,
   } = useEnvironmentStore();
   const { t } = useLocale();
   const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({});
@@ -108,8 +116,49 @@ export default function EnvironmentsPage() {
     await detectVersions('.');
   }, [fetchEnvironments, detectVersions]);
 
-  const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string) => {
+  // Filter and sort environments
+  const filteredEnvironments = useMemo(() => {
+    return environments
+      .filter((env) => {
+        // Search filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const matchesType = env.env_type.toLowerCase().includes(query);
+          const matchesProvider = env.provider.toLowerCase().includes(query);
+          if (!matchesType && !matchesProvider) {
+            return false;
+          }
+        }
+        // Status filter
+        if (statusFilter === 'available' && !env.available) return false;
+        if (statusFilter === 'unavailable' && env.available) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'installed_count':
+            return b.installed_versions.length - a.installed_versions.length;
+          case 'provider':
+            return a.provider.localeCompare(b.provider);
+          case 'name':
+          default:
+            return a.env_type.localeCompare(b.env_type);
+        }
+      });
+  }, [environments, searchQuery, statusFilter, sortBy]);
+
+  const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
     await installVersion(provider, version, provider);
+    // Apply options after installation completes
+    // Note: autoSwitch and setAsDefault settings are stored via the environment settings
+    if (options.autoSwitch || options.setAsDefault) {
+      const { setEnvSettings, getEnvSettings } = useEnvironmentStore.getState();
+      const currentSettings = getEnvSettings(provider);
+      setEnvSettings(provider, {
+        ...currentSettings,
+        autoSwitch: options.autoSwitch,
+      });
+    }
   }, [installVersion]);
 
   // Memoized handlers to prevent unnecessary re-renders
@@ -152,23 +201,26 @@ export default function EnvironmentsPage() {
           title={t('environments.title')}
           description={t('environments.description')}
           actions={(
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefresh}
-                disabled={loading}
-                className="gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {t('environments.refresh')}
-              </Button>
-              <Button size="sm" onClick={openAddDialog} className="gap-2">
-                <Plus className="h-4 w-4" />
-                {t('environments.addEnvironment')}
-              </Button>
-            </>
+            <Button size="sm" onClick={openAddDialog} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {t('environments.addEnvironment')}
+            </Button>
           )}
+        />
+
+        <EnvironmentToolbar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          statusFilter={statusFilter}
+          onStatusChange={setStatusFilter}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
+          onRefresh={handleRefresh}
+          onClearFilters={clearFilters}
+          isLoading={loading}
+          totalCount={environments.length}
+          filteredCount={filteredEnvironments.length}
+          t={t}
         />
 
       {error && (
@@ -193,11 +245,20 @@ export default function EnvironmentsPage() {
             </Card>
           ))}
         </div>
-      ) : environments.length === 0 ? (
-        <EmptyState onAddEnvironment={openAddDialog} t={t} />
+      ) : filteredEnvironments.length === 0 ? (
+        environments.length === 0 ? (
+          <EmptyState onAddEnvironment={openAddDialog} t={t} />
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">{t('environments.noMatchingEnvironments')}</p>
+            <Button variant="link" onClick={clearFilters} className="mt-2">
+              {t('environments.toolbar.clearAll')}
+            </Button>
+          </div>
+        )
       ) : (
         <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-          {environments.map((env) => (
+          {filteredEnvironments.map((env) => (
             <EnvironmentCardErrorBoundary key={env.env_type} envType={env.env_type} t={t}>
               <EnvironmentCard
                 env={env}

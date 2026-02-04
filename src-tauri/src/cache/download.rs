@@ -1,4 +1,4 @@
-use super::{CacheEntry, CacheEntryType, SqliteCacheDb};
+use super::{CacheEntry, CacheEntryType, SqliteCacheDb, sqlite_db::CacheAccessStats};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     fs,
@@ -270,6 +270,59 @@ impl DownloadCache {
             entry_count,
             location: self.cache_dir.clone(),
         })
+    }
+
+    // ==================== Cache Access Stats ====================
+
+    /// Get cache access statistics (hit rate, hits, misses)
+    pub fn get_access_stats(&self) -> CacheAccessStats {
+        self.db.get_access_stats()
+    }
+
+    /// Reset cache access statistics
+    pub async fn reset_access_stats(&self) -> CogniaResult<()> {
+        self.db.reset_access_stats().await
+    }
+
+    /// Persist access stats to database
+    pub async fn persist_access_stats(&self) -> CogniaResult<()> {
+        self.db.persist_stats().await
+    }
+
+    // ==================== Cache Entry Browser ====================
+
+    /// List cache entries with filtering, sorting, and pagination
+    pub async fn list_filtered(
+        &self,
+        entry_type: Option<CacheEntryType>,
+        search: Option<&str>,
+        sort_by: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> CogniaResult<(Vec<CacheEntry>, usize)> {
+        self.db.list_filtered(entry_type, search, sort_by, limit, offset).await
+    }
+
+    /// Remove a cache entry with optional trash support
+    pub async fn remove_with_option(&mut self, key: &str, use_trash: bool) -> CogniaResult<bool> {
+        if let Some(entry) = self.db.get(key).await? {
+            if fs::exists(&entry.file_path).await {
+                fs::remove_file_with_option(&entry.file_path, use_trash).await?;
+            }
+            self.db.remove(key).await
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Get top accessed entries (hot files)
+    pub async fn get_top_accessed(&self, limit: usize) -> CogniaResult<Vec<CacheEntry>> {
+        self.db.get_top_accessed(limit).await
+    }
+
+    /// Get entries by type
+    pub async fn list_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<Vec<CacheEntry>> {
+        self.db.list_by_type(entry_type).await
     }
 }
 

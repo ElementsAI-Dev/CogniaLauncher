@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 import { LogProvider } from "@/components/providers/log-provider";
+import { TrayProvider } from "@/components/providers/tray-provider";
 import en from "@/messages/en.json";
 import zh from "@/messages/zh.json";
 
@@ -39,9 +40,11 @@ export default function RootLayout({
           enableColorScheme
         >
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
-            <LogProvider>
-              <AppShell>{children}</AppShell>
-            </LogProvider>
+            <TrayProvider>
+              <LogProvider>
+                <AppShell>{children}</AppShell>
+              </LogProvider>
+            </TrayProvider>
           </LocaleProvider>
         </ThemeProvider>
         <Toaster position="bottom-right" richColors />

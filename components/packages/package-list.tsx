@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Download, Trash2, Info, Loader2, Package, Pin } from 'lucide-react';
+import { Download, Trash2, Info, Loader2, Package, Pin, Star } from 'lucide-react';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { PackageSummary, InstalledPackage } from '@/lib/tauri';
@@ -25,11 +25,13 @@ interface PackageListProps {
   type: 'search' | 'installed';
   installing?: string[];
   pinnedPackages?: string[];
+  bookmarkedPackages?: string[];
   onInstall?: (name: string) => void;
   onUninstall?: (name: string) => void;
   onSelect?: (pkg: PackageSummary | InstalledPackage) => void;
   onPin?: (name: string) => void;
   onUnpin?: (name: string) => void;
+  onBookmark?: (name: string) => void;
   selectable?: boolean;
   showSelectAll?: boolean;
 }
@@ -39,11 +41,13 @@ export function PackageList({
   type, 
   installing = [], 
   pinnedPackages = [],
+  bookmarkedPackages = [],
   onInstall, 
   onUninstall, 
   onSelect,
   onPin,
   onUnpin,
+  onBookmark,
   selectable = true,
   showSelectAll = true,
 }: PackageListProps) {
@@ -110,9 +114,10 @@ export function PackageList({
 
       <ScrollArea className="h-[500px]">
         <div className="space-y-2 pr-4">
-        {packages.map((pkg) => {
+        {packages.map((pkg, index) => {
           const isInstalled = type === 'installed';
           const packageKey = getPackageKey(pkg);
+          const uniqueKey = `${packageKey}-${index}`;
           const isInstalling = installing.includes(packageKey);
           const version = isInstalled ? (pkg as InstalledPackage).version : (pkg as PackageSummary).latest_version;
           const isSelected = selectedPackages.includes(packageKey);
@@ -121,7 +126,7 @@ export function PackageList({
 
           return (
             <div
-              key={packageKey}
+              key={uniqueKey}
               className={`
                 flex items-center justify-between p-4 
                 bg-card border rounded-lg cursor-pointer 
@@ -203,6 +208,22 @@ export function PackageList({
                     title={isPinned ? t('packages.unpinVersion') : t('packages.pinVersion')}
                   >
                     <Pin className={`h-4 w-4 ${isPinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
+                  </Button>
+                )}
+
+                {/* Bookmark button */}
+                {onBookmark && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onBookmark(pkg.name);
+                    }}
+                    title={bookmarkedPackages.includes(pkg.name) ? t('packages.removeBookmark') : t('packages.addBookmark')}
+                  >
+                    <Star className={`h-4 w-4 ${bookmarkedPackages.includes(pkg.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
                   </Button>
                 )}
                 

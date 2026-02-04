@@ -6,30 +6,22 @@ import { LogEntry } from './log-entry';
 import { LogToolbar } from './log-toolbar';
 import { useLogStore } from '@/lib/stores/log';
 import { useLocale } from '@/components/providers/locale-provider';
-import { isTauri } from '@/lib/tauri';
-import { FileText, AlertCircle } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 function EmptyState() {
   const { t } = useLocale();
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-muted-foreground">
-      <FileText className="h-12 w-12 mb-4 opacity-50" />
-      <p className="text-sm font-medium">{t('logs.noLogs')}</p>
-      <p className="text-xs mt-1">{t('logs.noLogsDescription')}</p>
+    <div className="flex flex-col items-center justify-center h-full min-h-[280px] text-muted-foreground px-4">
+      <div className="relative">
+        <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
+        <FileText className="relative h-16 w-16 mb-6 text-muted-foreground/40" />
+      </div>
+      <p className="text-base font-medium text-foreground/70">{t('logs.noLogs')}</p>
+      <p className="text-sm mt-2 text-center max-w-[280px]">{t('logs.noLogsDescription')}</p>
     </div>
   );
 }
 
-function NotTauriState() {
-  const { t } = useLocale();
-  return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[200px] text-muted-foreground">
-      <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
-      <p className="text-sm font-medium">{t('logs.notAvailable')}</p>
-      <p className="text-xs mt-1">{t('logs.notAvailableDescription')}</p>
-    </div>
-  );
-}
 
 interface LogPanelProps {
   className?: string;
@@ -63,23 +55,15 @@ export function LogPanel({
     }
   }, [filteredLogs.length, autoScroll]);
 
-  if (!isTauri()) {
-    return (
-      <div className={className}>
-        <NotTauriState />
-      </div>
-    );
-  }
-
   return (
-    <div className={`flex flex-col ${className}`} style={{ maxHeight }}>
+    <div className={`flex flex-col overflow-hidden rounded-lg border bg-card ${className}`} style={{ maxHeight }}>
       {showToolbar && <LogToolbar />}
       
       <ScrollArea ref={scrollRef} className="flex-1">
         {filteredLogs.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="divide-y divide-border/50">
+          <div className="divide-y divide-border/30">
             {filteredLogs.map((entry) => (
               <LogEntry
                 key={entry.id}

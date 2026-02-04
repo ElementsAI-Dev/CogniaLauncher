@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-02-02
+> Last Updated: 2026-02-04
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -11,12 +11,14 @@
 
 This module contains the **Rust backend** for CogniaLauncher, running as a native desktop application via Tauri. It provides:
 
-- **IPC Commands**: Exposed to frontend via Tauri's invoke system
+- **IPC Commands**: Exposed to frontend via Tauri's invoke system (120+ commands)
 - **Core Logic**: Environment and package management operations
-- **Provider System**: Extensible provider registry for package sources
+- **Provider System**: Extensible provider registry for package sources (32+ providers)
 - **Cache Management**: Download and metadata caching with SQLite
 - **Platform Abstraction**: Cross-platform file system, process, and network operations
 - **Dependency Resolution**: Version constraint resolution using PubGrub
+- **Custom Detection**: User-configurable version detection rules
+- **System Tray**: Multi-language tray with notifications and autostart
 
 ---
 
@@ -55,6 +57,8 @@ pub fn run() {
 - **ProviderRegistry**: `Arc<RwLock<ProviderRegistry>>` - Available package providers
 - **Settings**: `Arc<RwLock<Settings>>` - Application configuration
 - **CancellationTokens**: `Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>` - Installation cancellation tokens
+- **SharedTrayState**: `Arc<RwLock<TrayState>>` - System tray state (icon, language, downloads, autostart)
+- **SharedCustomDetectionManager**: `Arc<RwLock<CustomDetectionManager>>` - Custom version detection rules
 
 ---
 
@@ -135,6 +139,34 @@ All commands are registered in `src/lib.rs` and organized by module.
 | `package_rollback` | Rollback package version |
 | `get_install_history` | Get installation history |
 
+### Download Commands (`commands::download`)
+
+| Command | Purpose |
+|---------|---------|
+| `download_add` | Add new download task |
+| `download_list` | List active downloads |
+| `download_get` | Get specific download details |
+| `download_pause` | Pause a download |
+| `download_resume` | Resume paused download |
+| `download_cancel` | Cancel a download |
+| `download_remove` | Remove download from list |
+| `download_pause_all` | Pause all downloads |
+| `download_resume_all` | Resume all downloads |
+| `download_cancel_all` | Cancel all downloads |
+| `download_retry_failed` | Retry failed downloads |
+| `download_clear_finished` | Clear completed downloads |
+| `download_stats` | Get download statistics |
+| `download_set_speed_limit` | Set speed limit (KB/s) |
+| `download_get_speed_limit` | Get current speed limit |
+| `download_set_max_concurrent` | Set max concurrent downloads |
+| `download_history_list` | List download history |
+| `download_history_search` | Search download history |
+| `download_history_remove` | Remove entry from history |
+| `download_history_clear` | Clear download history |
+| `download_history_stats` | Get download history statistics |
+| `disk_space_check` | Check available disk space |
+| `disk_space_get` | Get disk space information |
+
 ### Search Commands (`commands::search`)
 
 | Command | Purpose |
@@ -149,6 +181,54 @@ All commands are registered in `src/lib.rs` and organized by module.
 |---------|---------|
 | `self_check_update` | Check for application updates |
 | `self_update` | Install available update |
+
+### Custom Detection Commands (`commands::custom_detection`)
+
+| Command | Purpose |
+|---------|---------|
+| `custom_rule_list` | List all custom detection rules |
+| `custom_rule_get` | Get specific rule by ID |
+| `custom_rule_add` | Add new detection rule |
+| `custom_rule_update` | Update existing rule |
+| `custom_rule_delete` | Delete a rule |
+| `custom_rule_toggle` | Enable/disable rule |
+| `custom_rule_presets` | Get built-in preset rules |
+| `custom_rule_import_presets` | Import preset rules |
+| `custom_rule_detect` | Detect version using custom rules |
+| `custom_rule_detect_all` | Detect all versions in directory |
+| `custom_rule_test` | Test rule against file |
+| `custom_rule_validate_regex` | Validate regex pattern |
+| `custom_rule_export` | Export rules to JSON |
+| `custom_rule_import` | Import rules from JSON |
+| `custom_rule_list_by_env` | Get rules for environment type |
+| `custom_rule_extraction_types` | Get supported extraction strategies |
+
+### System Tray Commands (`tray.rs`)
+
+| Command | Purpose |
+|---------|---------|
+| `tray_set_icon_state` | Set tray icon state (normal, downloading, update, error) |
+| `tray_update_tooltip` | Update tray tooltip text |
+| `tray_set_active_downloads` | Set active download count |
+| `tray_set_has_update` | Set update availability flag |
+| `tray_set_language` | Set tray menu language (en/zh) |
+| `tray_set_click_behavior` | Set left-click behavior |
+| `tray_get_state` | Get current tray state |
+| `tray_is_autostart_enabled` | Check if autostart is enabled |
+| `tray_enable_autostart` | Enable application autostart |
+| `tray_disable_autostart` | Disable application autostart |
+| `tray_send_notification` | Send system notification |
+| `tray_rebuild` | Rebuild tray menu |
+
+### Log Commands (`commands::log`)
+
+| Command | Purpose |
+|---------|---------|
+| `log_list_files` | List all log files |
+| `log_query` | Query log entries with filters |
+| `log_export` | Export logs to file |
+| `log_clear` | Clear log files |
+| `log_get_dir` | Get log directory path |
 
 ---
 
@@ -187,6 +267,7 @@ pub async fn package_search(
 - `orchestrator.rs` - Operation orchestration
 - `batch.rs` - Batch operations
 - `shim.rs` - Shim creation for executables
+- `custom_detection.rs` - Custom version detection rules (17 commands)
 
 ### provider/ - Package Providers
 
@@ -200,6 +281,9 @@ pub async fn package_search(
 | `fnm` | Environment | Cross | Fast Node.js manager |
 | `pyenv` | Environment | Cross | Python version management |
 | `rustup` | Environment | Cross | Rust toolchain management |
+| `rbenv` | Environment | Cross | Ruby version management |
+| `sdkman` | Environment | Cross | SDKMAN for JVM |
+| `goenv` | Environment | Cross | Go version management |
 | `npm` | Package | Cross | Node.js packages |
 | `pnpm` | Package | Cross | Fast Node.js package manager |
 | `yarn` | Package | Cross | Node.js package manager |
@@ -384,9 +468,17 @@ pub enum CogniaError {
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
   }
 }
 ```
+
+The `plugins.updater` section enables the Tauri updater plugin. Currently configured with empty `pubkey` and `endpoints` for manual update server setup.
 
 **File:** `capabilities/default.json`
 
@@ -524,14 +616,21 @@ src-tauri/
 │   │   ├── cache.rs
 │   │   ├── batch.rs
 │   │   ├── search.rs
-│   │   └── updater.rs
+│   │   ├── updater.rs
+│   │   ├── custom_detection.rs
+│   │   ├── download.rs
+│   │   ├── log.rs
+│   │   ├── launch.rs
+│   │   ├── manifest.rs
+│   │   └── shim.rs
 │   ├── core/                # Core business logic
 │   │   ├── mod.rs
 │   │   ├── environment.rs
 │   │   ├── installer.rs
 │   │   ├── orchestrator.rs
 │   │   ├── batch.rs
-│   │   └── shim.rs
+│   │   ├── shim.rs
+│   │   └── custom_detection.rs
 │   ├── provider/            # Provider implementations
 │   │   ├── mod.rs
 │   │   ├── traits.rs
@@ -539,7 +638,7 @@ src-tauri/
 │   │   ├── registry.rs
 │   │   ├── npm.rs
 │   │   ├── brew.rs
-│   │   └── ... (30+ providers)
+│   │   └── ... (35+ providers)
 │   ├── cache/               # Cache management
 │   │   ├── mod.rs
 │   │   ├── download.rs
@@ -551,17 +650,25 @@ src-tauri/
 │   │   ├── settings.rs
 │   │   ├── manifest.rs
 │   │   └── lockfile.rs
+│   ├── download/            # Download management
+│   │   ├── mod.rs
+│   │   ├── manager.rs
+│   │   ├── queue.rs
+│   │   ├── task.rs
+│   │   ├── throttle.rs
+│   │   └── state.rs
 │   ├── platform/            # Platform abstraction
 │   │   ├── mod.rs
 │   │   ├── fs.rs
 │   │   ├── process.rs
 │   │   ├── network.rs
 │   │   └── env.rs
-│   └── resolver/            # Dependency resolution
-│       ├── mod.rs
-│       ├── pubgrub.rs
-│       ├── constraint.rs
-│       └── version.rs
+│   ├── resolver/            # Dependency resolution
+│   │   ├── mod.rs
+│   │   ├── pubgrub.rs
+│   │   ├── constraint.rs
+│   │   └── version.rs
+│   └── tray.rs              # System tray implementation
 ├── Cargo.toml               # Rust dependencies
 ├── Cargo.lock               # Lock file
 ├── build.rs                 # Build script

@@ -275,9 +275,11 @@ impl EnvironmentProvider for GoenvProvider {
     }
 
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
-        // Check for .go-version file
         let mut current = start_path.to_path_buf();
+        
+        // Walk up directory tree looking for version files
         loop {
+            // 1. Check .go-version file (highest priority)
             let version_file = current.join(self.version_file_name());
             if version_file.exists() {
                 if let Ok(content) = crate::platform::fs::read_file_string(&version_file).await {
@@ -292,12 +294,36 @@ impl EnvironmentProvider for GoenvProvider {
                 }
             }
 
+            // 2. Check .tool-versions file (asdf-style)
+            let tool_versions = current.join(".tool-versions");
+            if tool_versions.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("golang ") || line.starts_with("go ") {
+                            let version = line
+                                .strip_prefix("golang ")
+                                .or_else(|| line.strip_prefix("go "))
+                                .unwrap_or("")
+                                .trim();
+                            if !version.is_empty() {
+                                return Ok(Some(VersionDetection {
+                                    version: version.to_string(),
+                                    source: VersionSource::LocalFile,
+                                    source_path: Some(tool_versions),
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+
             if !current.pop() {
                 break;
             }
         }
 
-        // Check go.mod for go directive
+        // 3. Check go.mod for go directive
         let go_mod = start_path.join("go.mod");
         if go_mod.exists() {
             if let Ok(content) = crate::platform::fs::read_file_string(&go_mod).await {
@@ -305,17 +331,19 @@ impl EnvironmentProvider for GoenvProvider {
                     let line = line.trim();
                     if let Some(stripped) = line.strip_prefix("go ") {
                         let version = stripped.trim().to_string();
-                        return Ok(Some(VersionDetection {
-                            version,
-                            source: VersionSource::Manifest,
-                            source_path: Some(go_mod),
-                        }));
+                        if !version.is_empty() {
+                            return Ok(Some(VersionDetection {
+                                version,
+                                source: VersionSource::Manifest,
+                                source_path: Some(go_mod),
+                            }));
+                        }
                     }
                 }
             }
         }
 
-        // Fall back to current version
+        // 4. Fall back to current version
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,

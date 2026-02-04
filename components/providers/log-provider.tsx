@@ -37,8 +37,9 @@ export function LogProvider({ children }: LogProviderProps) {
   const { addLog } = useLogStore();
 
   // Setup console interception for capturing webview logs
+  // Works in both web and desktop modes for universal logging support
   useEffect(() => {
-    if (!isTauri() || consoleIntercepted) return;
+    if (consoleIntercepted) return;
 
     // Create interceptor that logs to store while calling original
     const createInterceptor = (level: LogLevel, original: typeof console.log) => {

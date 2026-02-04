@@ -231,6 +231,55 @@ export const getCleanupHistory = (limit?: number) => invoke<CleanupRecord[]>('ge
 export const clearCleanupHistory = () => invoke<number>('clear_cleanup_history');
 export const getCleanupSummary = () => invoke<CleanupHistorySummary>('get_cleanup_summary');
 
+// Cache access stats
+export const getCacheAccessStats = () => invoke<CacheAccessStats>('get_cache_access_stats');
+export const resetCacheAccessStats = () => invoke<void>('reset_cache_access_stats');
+
+// Cache entry browser
+export const listCacheEntries = (options?: {
+  entryType?: string;
+  search?: string;
+  sortBy?: string;
+  limit?: number;
+  offset?: number;
+}) => invoke<CacheEntryList>('list_cache_entries', options ?? {});
+export const deleteCacheEntry = (key: string, useTrash?: boolean) => 
+  invoke<boolean>('delete_cache_entry', { key, useTrash });
+export const deleteCacheEntries = (keys: string[], useTrash?: boolean) => 
+  invoke<number>('delete_cache_entries', { keys, useTrash });
+
+// Hot files (top accessed)
+export const getTopAccessedEntries = (limit?: number) => 
+  invoke<CacheEntryItem[]>('get_top_accessed_entries', { limit });
+
+// Cache access stats types
+export interface CacheAccessStats {
+  hits: number;
+  misses: number;
+  hit_rate: number;
+  total_requests: number;
+  last_reset: string | null;
+}
+
+// Cache entry browser types
+export interface CacheEntryItem {
+  key: string;
+  file_path: string;
+  size: number;
+  size_human: string;
+  checksum: string;
+  entry_type: string;
+  created_at: string;
+  last_accessed: string | null;
+  hit_count: number;
+}
+
+export interface CacheEntryList {
+  entries: CacheEntryItem[];
+  total_count: number;
+  has_more: boolean;
+}
+
 export interface CacheVerificationResult {
   valid_entries: number;
   missing_files: number;
@@ -930,3 +979,367 @@ export async function listenDownloadQueueUpdated(
     callback(event.payload.stats);
   });
 }
+
+// ===== System Tray Types and Commands =====
+
+export type TrayIconState = 'normal' | 'downloading' | 'update' | 'error';
+export type TrayLanguage = 'en' | 'zh';
+export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'do_nothing';
+
+export interface TrayStateInfo {
+  icon_state: TrayIconState;
+  language: TrayLanguage;
+  active_downloads: number;
+  has_update: boolean;
+  click_behavior: TrayClickBehavior;
+}
+
+// Tray commands
+export const traySetIconState = (iconState: TrayIconState) =>
+  invoke<void>('tray_set_icon_state', { iconState });
+
+export const trayUpdateTooltip = () =>
+  invoke<void>('tray_update_tooltip');
+
+export const traySetActiveDownloads = (count: number) =>
+  invoke<void>('tray_set_active_downloads', { count });
+
+export const traySetHasUpdate = (hasUpdate: boolean) =>
+  invoke<void>('tray_set_has_update', { hasUpdate });
+
+export const traySetLanguage = (language: TrayLanguage) =>
+  invoke<void>('tray_set_language', { language });
+
+export const traySetClickBehavior = (behavior: TrayClickBehavior) =>
+  invoke<void>('tray_set_click_behavior', { behavior });
+
+export const trayGetState = () =>
+  invoke<TrayStateInfo>('tray_get_state');
+
+export const trayIsAutostartEnabled = () =>
+  invoke<boolean>('tray_is_autostart_enabled');
+
+export const trayEnableAutostart = () =>
+  invoke<void>('tray_enable_autostart');
+
+export const trayDisableAutostart = () =>
+  invoke<void>('tray_disable_autostart');
+
+export const traySendNotification = (title: string, body: string) =>
+  invoke<void>('tray_send_notification', { title, body });
+
+export const trayRebuild = () =>
+  invoke<void>('tray_rebuild');
+
+// Listen for navigation events from tray
+export async function listenNavigate(
+  callback: (path: string) => void
+): Promise<UnlistenFn> {
+  return listen<string>('navigate', (event) => {
+    callback(event.payload);
+  });
+}
+
+// Listen for check-updates events from tray
+export async function listenCheckUpdates(
+  callback: () => void
+): Promise<UnlistenFn> {
+  return listen<void>('check-updates', () => {
+    callback();
+  });
+}
+
+// ============================================================================
+// Custom Detection Rules Types and Commands
+// ============================================================================
+
+/** Extraction strategy types */
+export type ExtractionStrategy =
+  | { type: 'regex'; pattern: string; multiline?: boolean }
+  | { type: 'json_path'; path: string }
+  | { type: 'toml_path'; path: string }
+  | { type: 'yaml_path'; path: string }
+  | { type: 'xml_path'; path: string }
+  | { type: 'plain_text'; strip_prefix?: string; strip_suffix?: string }
+  | { type: 'tool_versions'; tool_name: string }
+  | { type: 'ini_key'; section?: string; key: string }
+  | { type: 'command'; cmd: string; args: string[]; output_pattern: string };
+
+/** Version transformation options */
+export interface VersionTransform {
+  match_pattern?: string;
+  replace_template?: string;
+  strip_version_prefix?: boolean;
+  normalize_semver?: boolean;
+}
+
+/** Custom detection rule */
+export interface CustomDetectionRule {
+  id: string;
+  name: string;
+  description?: string;
+  env_type: string;
+  priority: number;
+  enabled: boolean;
+  file_patterns: string[];
+  extraction: ExtractionStrategy;
+  version_transform?: VersionTransform;
+  tags: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Result of custom rule detection */
+export interface CustomDetectionResult {
+  rule_id: string;
+  rule_name: string;
+  env_type: string;
+  version: string;
+  source_file: string;
+  raw_version: string;
+}
+
+/** Result of testing a rule */
+export interface TestRuleResult {
+  success: boolean;
+  version?: string;
+  source_file?: string;
+  raw_version?: string;
+  error?: string;
+  duration_ms: number;
+}
+
+/** Regex validation result */
+export interface RegexValidation {
+  valid: boolean;
+  error?: string;
+  has_capture_group: boolean;
+  suggestion?: string;
+}
+
+/** Import result */
+export interface ImportRulesResult {
+  imported: number;
+  updated: number;
+  skipped: number;
+}
+
+/** Extraction type info */
+export interface ExtractionTypeInfo {
+  type_name: string;
+  display_name: string;
+  description: string;
+  example: string;
+}
+
+// Custom Detection Rule Commands
+
+/** List all custom detection rules */
+export const customRuleList = () =>
+  invoke<CustomDetectionRule[]>('custom_rule_list');
+
+/** Get a specific rule by ID */
+export const customRuleGet = (ruleId: string) =>
+  invoke<CustomDetectionRule | null>('custom_rule_get', { ruleId });
+
+/** Add a new custom detection rule */
+export const customRuleAdd = (rule: CustomDetectionRule) =>
+  invoke<void>('custom_rule_add', { rule });
+
+/** Update an existing rule */
+export const customRuleUpdate = (rule: CustomDetectionRule) =>
+  invoke<void>('custom_rule_update', { rule });
+
+/** Delete a rule */
+export const customRuleDelete = (ruleId: string) =>
+  invoke<void>('custom_rule_delete', { ruleId });
+
+/** Enable or disable a rule */
+export const customRuleToggle = (ruleId: string, enabled: boolean) =>
+  invoke<void>('custom_rule_toggle', { ruleId, enabled });
+
+/** Get preset rules (built-in templates) */
+export const customRulePresets = () =>
+  invoke<CustomDetectionRule[]>('custom_rule_presets');
+
+/** Import preset rules by their IDs */
+export const customRuleImportPresets = (presetIds: string[]) =>
+  invoke<string[]>('custom_rule_import_presets', { presetIds });
+
+/** Detect version using custom rules for a specific environment */
+export const customRuleDetect = (envType: string, startPath: string) =>
+  invoke<CustomDetectionResult | null>('custom_rule_detect', { envType, startPath });
+
+/** Detect all versions using custom rules */
+export const customRuleDetectAll = (startPath: string) =>
+  invoke<CustomDetectionResult[]>('custom_rule_detect_all', { startPath });
+
+/** Test a rule against a specific file */
+export const customRuleTest = (rule: CustomDetectionRule, testPath: string) =>
+  invoke<TestRuleResult>('custom_rule_test', { rule, testPath });
+
+/** Validate a regex pattern */
+export const customRuleValidateRegex = (pattern: string) =>
+  invoke<RegexValidation>('custom_rule_validate_regex', { pattern });
+
+/** Export rules to JSON string */
+export const customRuleExport = () =>
+  invoke<string>('custom_rule_export');
+
+/** Import rules from JSON string */
+export const customRuleImport = (json: string, overwrite: boolean = false) =>
+  invoke<ImportRulesResult>('custom_rule_import', { json, overwrite });
+
+/** List rules for a specific environment type */
+export const customRuleListByEnv = (envType: string) =>
+  invoke<CustomDetectionRule[]>('custom_rule_list_by_env', { envType });
+
+/** Get supported extraction strategy types */
+export const customRuleExtractionTypes = () =>
+  invoke<ExtractionTypeInfo[]>('custom_rule_extraction_types');
+
+// ============================================================================
+// Health Check Types and Commands
+// ============================================================================
+
+/** Health status of an environment */
+export type HealthStatus = 'healthy' | 'warning' | 'error' | 'unknown';
+
+/** Severity level of a health issue */
+export type Severity = 'info' | 'warning' | 'error' | 'critical';
+
+/** Category of health issue */
+export type IssueCategory =
+  | 'path_conflict'
+  | 'version_mismatch'
+  | 'missing_dependency'
+  | 'config_error'
+  | 'permission_error'
+  | 'network_error'
+  | 'provider_not_found'
+  | 'shell_integration'
+  | 'other';
+
+/** A single health issue */
+export interface HealthIssue {
+  severity: Severity;
+  category: IssueCategory;
+  message: string;
+  details: string | null;
+  fix_command: string | null;
+  fix_description: string | null;
+}
+
+/** Result of a health check for a single environment */
+export interface EnvironmentHealthResult {
+  env_type: string;
+  provider_id: string | null;
+  status: HealthStatus;
+  issues: HealthIssue[];
+  suggestions: string[];
+  checked_at: string;
+}
+
+/** Result of a full system health check */
+export interface SystemHealthResult {
+  overall_status: HealthStatus;
+  environments: EnvironmentHealthResult[];
+  system_issues: HealthIssue[];
+  checked_at: string;
+}
+
+/** Check health of all environments */
+export const healthCheckAll = () =>
+  invoke<SystemHealthResult>('health_check_all');
+
+/** Check health of a specific environment */
+export const healthCheckEnvironment = (envType: string) =>
+  invoke<EnvironmentHealthResult>('health_check_environment', { envType });
+
+// ============================================================================
+// Environment Profiles Types and Commands
+// ============================================================================
+
+/** An environment version specification within a profile */
+export interface ProfileEnvironment {
+  env_type: string;
+  version: string;
+  provider_id: string | null;
+}
+
+/** An environment profile containing multiple environment configurations */
+export interface EnvironmentProfile {
+  id: string;
+  name: string;
+  description: string | null;
+  environments: ProfileEnvironment[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** Result of applying a profile */
+export interface ProfileApplyResult {
+  profile_id: string;
+  profile_name: string;
+  successful: ProfileEnvironmentResult[];
+  failed: ProfileEnvironmentError[];
+  skipped: ProfileEnvironmentSkipped[];
+}
+
+export interface ProfileEnvironmentResult {
+  env_type: string;
+  version: string;
+  provider_id: string;
+}
+
+export interface ProfileEnvironmentError {
+  env_type: string;
+  version: string;
+  error: string;
+}
+
+export interface ProfileEnvironmentSkipped {
+  env_type: string;
+  version: string;
+  reason: string;
+}
+
+/** List all profiles */
+export const profileList = () =>
+  invoke<EnvironmentProfile[]>('profile_list');
+
+/** Get a profile by ID */
+export const profileGet = (id: string) =>
+  invoke<EnvironmentProfile | null>('profile_get', { id });
+
+/** Create a new profile */
+export const profileCreate = (
+  name: string,
+  description: string | null,
+  environments: ProfileEnvironment[]
+) =>
+  invoke<EnvironmentProfile>('profile_create', { name, description, environments });
+
+/** Update an existing profile */
+export const profileUpdate = (profile: EnvironmentProfile) =>
+  invoke<EnvironmentProfile>('profile_update', { profile });
+
+/** Delete a profile */
+export const profileDelete = (id: string) =>
+  invoke<void>('profile_delete', { id });
+
+/** Apply a profile (switch to all specified versions) */
+export const profileApply = (id: string) =>
+  invoke<ProfileApplyResult>('profile_apply', { id });
+
+/** Export a profile to JSON */
+export const profileExport = (id: string) =>
+  invoke<string>('profile_export', { id });
+
+/** Import a profile from JSON */
+export const profileImport = (json: string) =>
+  invoke<EnvironmentProfile>('profile_import', { json });
+
+/** Create a profile from current environment state */
+export const profileCreateFromCurrent = (name: string) =>
+  invoke<EnvironmentProfile>('profile_create_from_current', { name });

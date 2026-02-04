@@ -68,12 +68,10 @@ export function InstallationProgressDialog() {
             </div>
             <div>
               <h3 className="text-base font-semibold">
-                {t('environments.progress.title').replace('{name}', envType)}
+                {t('environments.progress.title', { name: envType })}
               </h3>
               <p className="text-sm text-muted-foreground">
-                {t('environments.progress.subtitle')
-                  .replace('{version}', version)
-                  .replace('{provider}', provider)}
+                {t('environments.progress.subtitle', { version, provider })}
               </p>
             </div>
           </div>

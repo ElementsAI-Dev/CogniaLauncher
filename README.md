@@ -6,14 +6,18 @@ A cross-platform environment and package manager with a modern graphical interfa
 
 ## Features
 
-- 🔧 **Environment Management** - Manage Node.js (nvm), Python (pyenv), and Rust (rustup) versions
+- 🔧 **Environment Management** - Manage Node.js (nvm), Python (pyenv), and Rust (rustup) versions with installation progress tracking
 - 📦 **Package Management** - Search, install, and update packages from multiple providers
 - 🔌 **Multi-Provider Support** - npm, pnpm, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, vcpkg, Docker, PSGallery, GitHub Releases
-- 💾 **Cache Management** - Download and metadata caching with cleanup tools
+- 💾 **Cache Management** - SQLite + JSON dual-backend caching with cleanup tools
 - ⚙️ **Configuration System** - Network settings, proxies, mirrors, security options
 - 🖥️ **Cross-Platform** - Native desktop app for Windows, macOS, and Linux
-- 🎨 **Modern UI** - Beautiful interface built with shadcn/ui and Tailwind CSS
-- 🔄 **Update Checking** - Check for package updates across all providers
+- 🎨 **Modern UI** - Beautiful interface with custom title bar, built with shadcn/ui and Tailwind CSS v4
+- 🌐 **Internationalization** - Multi-language support (English, Chinese) via next-intl
+- 🔄 **Auto Update** - Built-in self-update system for the application
+- 📊 **Batch Operations** - Perform bulk actions on environments and packages with progress tracking
+- ⌨️ **Command Palette** - Quick access to all features via keyboard shortcuts
+- 🧪 **Testing** - Comprehensive test suite with Jest 30 and Testing Library
 
 ## Prerequisites
 
@@ -68,6 +72,9 @@ Before you begin, ensure you have the following installed:
    # Check if Next.js is ready
    pnpm dev
 
+   # Run tests
+   pnpm test
+
    # Check if Tauri is ready (optional, for desktop development)
    pnpm tauri info
    ```
@@ -94,9 +101,13 @@ This starts the Next.js development server at [http://localhost:3000](http://loc
 - `app/providers/page.tsx` - Provider configuration
 - `app/cache/page.tsx` - Cache management interface
 - `app/settings/page.tsx` - Application settings
+- `app/about/page.tsx` - About page with system information
+- `app/downloads/page.tsx` - Download management
+- `app/logs/page.tsx` - Application logs viewer
 - `components/ui/` - Reusable UI components (shadcn/ui)
 - `lib/tauri.ts` - Tauri API bindings for Rust backend
 - `lib/hooks/` - React hooks for state management
+- `lib/stores/` - Zustand state stores with persistence
 
 ### Desktop Application Development
 
@@ -130,6 +141,9 @@ This command:
 | `pnpm start` | Start Next.js production server (after `pnpm build`) |
 | `pnpm lint` | Run ESLint to check code quality |
 | `pnpm lint --fix` | Auto-fix ESLint issues |
+| `pnpm test` | Run Jest unit tests |
+| `pnpm test:watch` | Run tests in watch mode |
+| `pnpm test:coverage` | Run tests with coverage report |
 
 ### Tauri (Desktop) Scripts
 
@@ -162,31 +176,45 @@ CogniaLauncher/
 │   ├── providers/           # Provider configuration page
 │   ├── cache/               # Cache management page
 │   ├── settings/            # Settings page
+│   ├── about/               # About page with system info
+│   ├── downloads/           # Download management page
+│   ├── logs/                # Application logs viewer
 │   ├── layout.tsx           # Root layout with sidebar
 │   └── globals.css          # Global styles
 ├── components/              # React components
 │   ├── dashboard/           # Dashboard-specific components
 │   ├── environments/        # Environment cards and controls
 │   ├── packages/            # Package list and search components
+│   ├── downloads/           # Download management components
+│   ├── log/                 # Log viewer components
+│   ├── settings/            # Settings panel components
 │   ├── layout/              # Sidebar and navigation
 │   └── ui/                  # shadcn/ui components
 ├── lib/                     # Utilities and state
 │   ├── hooks/               # React hooks (use-environments, use-packages, etc.)
-│   ├── stores/              # Zustand stores
+│   ├── stores/              # Zustand stores with persistence
+│   ├── theme/               # Theme configuration and utilities
+│   ├── constants/           # Application constants
 │   ├── tauri.ts             # Tauri API bindings
 │   └── utils.ts             # Helper functions
+├── messages/                 # i18n translation files
+│   ├── en.json              # English translations
+│   └── zh.json              # Chinese translations
 ├── src-tauri/               # Tauri/Rust backend
 │   ├── src/
 │   │   ├── commands/        # Tauri command handlers
-│   │   ├── cache/           # Cache management
+│   │   ├── cache/           # SQLite + JSON cache management
 │   │   ├── config/          # Configuration system
-│   │   ├── core/            # Core environment/package logic
-│   │   ├── provider/        # Provider implementations
+│   │   ├── core/            # Core environment/package/batch logic
+│   │   ├── provider/        # Provider implementations (30+)
+│   │   ├── platform/        # Platform abstraction layer
 │   │   ├── resolver/        # Dependency resolution
 │   │   └── lib.rs           # Main Tauri setup
 │   ├── icons/               # Desktop app icons
 │   └── tauri.conf.json      # Tauri configuration
+├── llmdoc/                   # AI/LLM documentation
 ├── openspec/                # OpenSpec change management
+├── jest.config.ts           # Jest test configuration
 ├── components.json          # shadcn/ui configuration
 ├── next.config.ts           # Next.js configuration
 ├── tsconfig.json            # TypeScript configuration
@@ -396,12 +424,14 @@ See [Tauri Distribution Guide](https://tauri.app/v1/guides/distribution/) for de
 ### Best Practices
 
 - **Code Style**: Follow ESLint rules (`pnpm lint`)
+- **Testing**: Write tests for new features (`pnpm test`)
 - **Commits**: Use conventional commits (feat:, fix:, docs:, etc.)
 - **Components**: Keep components small and reusable
 - **State**: Use Zustand stores in `lib/stores/` for global state
 - **Hooks**: Use custom hooks in `lib/hooks/` for Tauri API interactions
 - **Backend**: Add new Rust commands in `src-tauri/src/commands/`
 - **Styling**: Use Tailwind utility classes, avoid custom CSS when possible
+- **i18n**: Add translations in `messages/en.json` and `messages/zh.json`
 
 ## Troubleshooting
 

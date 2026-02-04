@@ -282,21 +282,71 @@ impl EnvironmentProvider for RustupProvider {
         let mut current = start_path.to_path_buf();
 
         loop {
-            let toolchain_file = current.join(self.version_file_name());
-            if toolchain_file.exists() {
-                let content = crate::platform::fs::read_file_string(&toolchain_file).await?;
-                let version = content
-                    .lines()
-                    .find(|line| !line.starts_with('#') && !line.trim().is_empty())
-                    .unwrap_or("")
-                    .trim();
+            // 1. Check rust-toolchain.toml (TOML format, highest priority)
+            let toolchain_toml = current.join("rust-toolchain.toml");
+            if toolchain_toml.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&toolchain_toml).await {
+                    // Parse [toolchain] channel = "..."
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("channel") {
+                            if let Some(value) = line.split('=').nth(1) {
+                                let version = value
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .trim();
+                                if !version.is_empty() {
+                                    return Ok(Some(VersionDetection {
+                                        version: version.to_string(),
+                                        source: VersionSource::LocalFile,
+                                        source_path: Some(toolchain_toml),
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
-                if !version.is_empty() {
-                    return Ok(Some(VersionDetection {
-                        version: version.to_string(),
-                        source: VersionSource::LocalFile,
-                        source_path: Some(toolchain_file),
-                    }));
+            // 2. Check rust-toolchain (plain text format)
+            let toolchain_plain = current.join("rust-toolchain");
+            if toolchain_plain.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&toolchain_plain).await {
+                    // Plain format: just the channel name on a line
+                    let version = content
+                        .lines()
+                        .find(|line| !line.starts_with('#') && !line.trim().is_empty())
+                        .unwrap_or("")
+                        .trim();
+
+                    if !version.is_empty() {
+                        return Ok(Some(VersionDetection {
+                            version: version.to_string(),
+                            source: VersionSource::LocalFile,
+                            source_path: Some(toolchain_plain),
+                        }));
+                    }
+                }
+            }
+
+            // 3. Check .tool-versions file (asdf-style)
+            let tool_versions = current.join(".tool-versions");
+            if tool_versions.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("rust ") {
+                            let version = line.strip_prefix("rust ").unwrap_or("").trim();
+                            if !version.is_empty() {
+                                return Ok(Some(VersionDetection {
+                                    version: version.to_string(),
+                                    source: VersionSource::LocalFile,
+                                    source_path: Some(tool_versions),
+                                }));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -305,6 +355,7 @@ impl EnvironmentProvider for RustupProvider {
             }
         }
 
+        // 4. Fall back to current rustup default
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,

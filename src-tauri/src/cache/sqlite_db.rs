@@ -1,15 +1,42 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, SqlitePool};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::db::{CacheEntry, CacheEntryType, CacheStats};
+
+/// Cache access statistics for hit rate tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheAccessStats {
+    pub hits: u64,
+    pub misses: u64,
+    pub hit_rate: f64,
+    pub total_requests: u64,
+    pub last_reset: Option<DateTime<Utc>>,
+}
+
+impl Default for CacheAccessStats {
+    fn default() -> Self {
+        Self {
+            hits: 0,
+            misses: 0,
+            hit_rate: 0.0,
+            total_requests: 0,
+            last_reset: Some(Utc::now()),
+        }
+    }
+}
 
 /// SQLite-based cache database for improved performance and ACID compliance
 pub struct SqliteCacheDb {
     pool: SqlitePool,
     cache_dir: PathBuf,
+    // In-memory stats counters for performance (persisted periodically)
+    stats_hits: AtomicU64,
+    stats_misses: AtomicU64,
 }
 
 #[derive(Debug, FromRow)]
@@ -39,7 +66,7 @@ impl SqliteCacheDb {
             .await
             .map_err(|e| CogniaError::Internal(format!("Failed to open cache database: {}", e)))?;
 
-        // Run migrations
+        // Run migrations for cache_entries table
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS cache_entries (
@@ -59,21 +86,54 @@ impl SqliteCacheDb {
         .await
         .map_err(|e| CogniaError::Internal(format!("Failed to create cache table: {}", e)))?;
 
+        // Create cache_access_stats table for hit/miss tracking
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS cache_access_stats (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                hits INTEGER DEFAULT 0,
+                misses INTEGER DEFAULT 0,
+                last_reset TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to create stats table: {}", e)))?;
+
+        // Initialize stats row if not exists
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO cache_access_stats (id, hits, misses, last_reset)
+            VALUES (1, 0, 0, ?)
+            "#,
+        )
+        .bind(Utc::now().to_rfc3339())
+        .execute(&pool)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to init stats: {}", e)))?;
+
         // Create indexes for common queries
         sqlx::query(
             r#"
             CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache_entries(expires_at);
             CREATE INDEX IF NOT EXISTS idx_cache_type ON cache_entries(entry_type);
             CREATE INDEX IF NOT EXISTS idx_cache_accessed ON cache_entries(last_accessed);
+            CREATE INDEX IF NOT EXISTS idx_cache_hit_count ON cache_entries(hit_count DESC);
             "#,
         )
         .execute(&pool)
         .await
         .map_err(|e| CogniaError::Internal(format!("Failed to create indexes: {}", e)))?;
 
+        // Load persisted stats
+        let (hits, misses) = Self::load_stats_from_db(&pool).await.unwrap_or((0, 0));
+
         let db = Self {
             pool,
             cache_dir: cache_dir.to_path_buf(),
+            stats_hits: AtomicU64::new(hits),
+            stats_misses: AtomicU64::new(misses),
         };
 
         let json_path = db.cache_dir.join("cache-index.json");
@@ -85,6 +145,87 @@ impl SqliteCacheDb {
         }
 
         Ok(db)
+    }
+
+    /// Load stats from database
+    async fn load_stats_from_db(pool: &SqlitePool) -> CogniaResult<(u64, u64)> {
+        #[derive(FromRow)]
+        struct StatsRow {
+            hits: i64,
+            misses: i64,
+        }
+        
+        let row: Option<StatsRow> = sqlx::query_as(
+            "SELECT hits, misses FROM cache_access_stats WHERE id = 1"
+        )
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(row.map(|r| (r.hits as u64, r.misses as u64)).unwrap_or((0, 0)))
+    }
+
+    /// Persist current stats to database
+    pub async fn persist_stats(&self) -> CogniaResult<()> {
+        let hits = self.stats_hits.load(Ordering::Relaxed);
+        let misses = self.stats_misses.load(Ordering::Relaxed);
+        
+        sqlx::query(
+            "UPDATE cache_access_stats SET hits = ?, misses = ? WHERE id = 1"
+        )
+        .bind(hits as i64)
+        .bind(misses as i64)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Get current access statistics
+    pub fn get_access_stats(&self) -> CacheAccessStats {
+        let hits = self.stats_hits.load(Ordering::Relaxed);
+        let misses = self.stats_misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+        let hit_rate = if total > 0 {
+            hits as f64 / total as f64
+        } else {
+            0.0
+        };
+
+        CacheAccessStats {
+            hits,
+            misses,
+            hit_rate,
+            total_requests: total,
+            last_reset: None, // Will be filled from DB if needed
+        }
+    }
+
+    /// Reset access statistics
+    pub async fn reset_access_stats(&self) -> CogniaResult<()> {
+        self.stats_hits.store(0, Ordering::Relaxed);
+        self.stats_misses.store(0, Ordering::Relaxed);
+        
+        sqlx::query(
+            "UPDATE cache_access_stats SET hits = 0, misses = 0, last_reset = ? WHERE id = 1"
+        )
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Record a cache hit
+    fn record_hit(&self) {
+        self.stats_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record a cache miss
+    fn record_miss(&self) {
+        self.stats_misses.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Migrate from JSON-based cache index to SQLite
@@ -111,7 +252,7 @@ impl SqliteCacheDb {
         Ok(migrated)
     }
 
-    /// Get a cache entry by key
+    /// Get a cache entry by key (tracks hit/miss statistics)
     pub async fn get(&self, key: &str) -> CogniaResult<Option<CacheEntry>> {
         let row: Option<CacheEntryRow> = sqlx::query_as(
             "SELECT * FROM cache_entries WHERE key = ?",
@@ -121,10 +262,16 @@ impl SqliteCacheDb {
         .await
         .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
+        if row.is_some() {
+            self.record_hit();
+        } else {
+            self.record_miss();
+        }
+
         Ok(row.map(Self::row_to_entry))
     }
 
-    /// Get a cache entry by checksum
+    /// Get a cache entry by checksum (tracks hit/miss statistics)
     pub async fn get_by_checksum(&self, checksum: &str) -> CogniaResult<Option<CacheEntry>> {
         let row: Option<CacheEntryRow> = sqlx::query_as(
             "SELECT * FROM cache_entries WHERE checksum = ?",
@@ -133,6 +280,12 @@ impl SqliteCacheDb {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        if row.is_some() {
+            self.record_hit();
+        } else {
+            self.record_miss();
+        }
 
         Ok(row.map(Self::row_to_entry))
     }
@@ -216,6 +369,15 @@ impl SqliteCacheDb {
         .await
         .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
+        let hits = self.stats_hits.load(Ordering::Relaxed);
+        let misses = self.stats_misses.load(Ordering::Relaxed);
+        let total_requests = hits + misses;
+        let hit_rate = if total_requests > 0 {
+            hits as f64 / total_requests as f64
+        } else {
+            0.0
+        };
+
         Ok(CacheStats {
             total_size: row.total_size.unwrap_or(0) as u64,
             entry_count: row.entry_count as usize,
@@ -223,9 +385,9 @@ impl SqliteCacheDb {
             metadata_count: row.metadata_count as usize,
             oldest_entry: row.oldest_entry.and_then(|s| s.parse().ok()),
             newest_entry: row.newest_entry.and_then(|s| s.parse().ok()),
-            hits: 0,
-            misses: 0,
-            hit_rate: 0.0,
+            hits,
+            misses,
+            hit_rate,
         })
     }
 
@@ -311,6 +473,111 @@ impl SqliteCacheDb {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+    }
+
+    /// List cache entries with filtering, sorting, and pagination
+    pub async fn list_filtered(
+        &self,
+        entry_type: Option<CacheEntryType>,
+        search: Option<&str>,
+        sort_by: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> CogniaResult<(Vec<CacheEntry>, usize)> {
+        // Build WHERE clause
+        let mut conditions = Vec::new();
+        if entry_type.is_some() {
+            conditions.push("entry_type = ?");
+        }
+        if search.is_some() {
+            conditions.push("(key LIKE ? OR file_path LIKE ?)");
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        // Build ORDER BY clause
+        let order_clause = match sort_by {
+            Some("size_asc") => "ORDER BY size ASC",
+            Some("size_desc") => "ORDER BY size DESC",
+            Some("created_asc") => "ORDER BY created_at ASC",
+            Some("created_desc") => "ORDER BY created_at DESC",
+            Some("accessed_asc") => "ORDER BY COALESCE(last_accessed, created_at) ASC",
+            Some("accessed_desc") => "ORDER BY COALESCE(last_accessed, created_at) DESC",
+            Some("hits_desc") => "ORDER BY hit_count DESC",
+            Some("hits_asc") => "ORDER BY hit_count ASC",
+            _ => "ORDER BY created_at DESC",
+        };
+
+        // Get total count
+        let count_query = format!("SELECT COUNT(*) as count FROM cache_entries {}", where_clause);
+        let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
+        
+        if let Some(et) = &entry_type {
+            count_builder = count_builder.bind(Self::entry_type_to_str(*et));
+        }
+        if let Some(s) = &search {
+            let pattern = format!("%{}%", s);
+            count_builder = count_builder.bind(pattern.clone()).bind(pattern);
+        }
+
+        let total_count: i64 = count_builder
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        // Get entries
+        let query = format!(
+            "SELECT * FROM cache_entries {} {} LIMIT ? OFFSET ?",
+            where_clause, order_clause
+        );
+        
+        let mut builder = sqlx::query_as::<_, CacheEntryRow>(&query);
+        
+        if let Some(et) = &entry_type {
+            builder = builder.bind(Self::entry_type_to_str(*et));
+        }
+        if let Some(s) = &search {
+            let pattern = format!("%{}%", s);
+            builder = builder.bind(pattern.clone()).bind(pattern);
+        }
+        builder = builder.bind(limit as i64).bind(offset as i64);
+
+        let rows: Vec<CacheEntryRow> = builder
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok((rows.into_iter().map(Self::row_to_entry).collect(), total_count as usize))
+    }
+
+    /// Get top accessed entries (hot files)
+    pub async fn get_top_accessed(&self, limit: usize) -> CogniaResult<Vec<CacheEntry>> {
+        let rows: Vec<CacheEntryRow> = sqlx::query_as(
+            "SELECT * FROM cache_entries WHERE hit_count > 0 ORDER BY hit_count DESC LIMIT ?",
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+    }
+
+    /// Get entries by type
+    pub async fn list_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<Vec<CacheEntry>> {
+        let rows: Vec<CacheEntryRow> = sqlx::query_as(
+            "SELECT * FROM cache_entries WHERE entry_type = ?",
+        )
+        .bind(Self::entry_type_to_str(entry_type))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
@@ -551,5 +818,131 @@ mod tests {
         assert!(matches!(SqliteCacheDb::str_to_entry_type("index"), CacheEntryType::Index));
         assert!(matches!(SqliteCacheDb::str_to_entry_type("partial"), CacheEntryType::Partial));
         assert!(matches!(SqliteCacheDb::str_to_entry_type("unknown"), CacheEntryType::Download));
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cache_hit_miss_stats() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        // Initial stats should be 0
+        let stats = db.get_access_stats();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+
+        // Insert an entry
+        db.insert(CacheEntry::new("stats-key", dir.path().join("f"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+
+        // Hit: get existing key
+        let _ = db.get("stats-key").await.unwrap();
+        let stats = db.get_access_stats();
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 0);
+
+        // Miss: get non-existing key
+        let _ = db.get("nonexistent").await.unwrap();
+        let stats = db.get_access_stats();
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.misses, 1);
+
+        // Hit rate calculation
+        assert!((stats.hit_rate - 0.5).abs() < 0.01);
+
+        // Reset stats
+        db.reset_access_stats().await.unwrap();
+        let stats = db.get_access_stats();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cache_persist_stats() {
+        let dir = tempdir().unwrap();
+        
+        // Open db and generate some stats
+        {
+            let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+            db.insert(CacheEntry::new("persist-key", dir.path().join("f"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+            let _ = db.get("persist-key").await.unwrap(); // hit
+            let _ = db.get("miss-key").await.unwrap(); // miss
+            db.persist_stats().await.unwrap();
+        }
+        
+        // Reopen db and verify stats are loaded
+        {
+            let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+            let stats = db.get_access_stats();
+            assert_eq!(stats.hits, 1);
+            assert_eq!(stats.misses, 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cache_list_filtered() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        // Insert entries of different types
+        db.insert(CacheEntry::new("download1", dir.path().join("d1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new("download2", dir.path().join("d2"), 200, "c2", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new("metadata1", dir.path().join("m1"), 50, "c3", CacheEntryType::Metadata)).await.unwrap();
+
+        // Filter by type
+        let (entries, total) = db.list_filtered(Some(CacheEntryType::Download), None, None, 10, 0).await.unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(total, 2);
+
+        // Search by key
+        let (entries, total) = db.list_filtered(None, Some("download"), None, 10, 0).await.unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(total, 2);
+
+        // Pagination
+        let (entries, total) = db.list_filtered(None, None, None, 2, 0).await.unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(total, 3);
+
+        let (entries, _) = db.list_filtered(None, None, None, 2, 2).await.unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cache_get_top_accessed() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        db.insert(CacheEntry::new("hot1", dir.path().join("h1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new("hot2", dir.path().join("h2"), 100, "c2", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new("cold", dir.path().join("cold"), 100, "c3", CacheEntryType::Download)).await.unwrap();
+
+        // Touch hot1 multiple times
+        db.touch("hot1").await.unwrap();
+        db.touch("hot1").await.unwrap();
+        db.touch("hot1").await.unwrap();
+        // Touch hot2 once
+        db.touch("hot2").await.unwrap();
+
+        let top = db.get_top_accessed(2).await.unwrap();
+        assert_eq!(top.len(), 2);
+        assert_eq!(top[0].key, "hot1");
+        assert_eq!(top[0].hit_count, 3);
+        assert_eq!(top[1].key, "hot2");
+        assert_eq!(top[1].hit_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cache_list_by_type() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        db.insert(CacheEntry::new("d1", dir.path().join("d1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new("m1", dir.path().join("m1"), 50, "c2", CacheEntryType::Metadata)).await.unwrap();
+        db.insert(CacheEntry::new("m2", dir.path().join("m2"), 50, "c3", CacheEntryType::Metadata)).await.unwrap();
+
+        let downloads = db.list_by_type(CacheEntryType::Download).await.unwrap();
+        assert_eq!(downloads.len(), 1);
+
+        let metadata = db.list_by_type(CacheEntryType::Metadata).await.unwrap();
+        assert_eq!(metadata.len(), 2);
     }
 }

@@ -251,15 +251,41 @@ impl EnvironmentProvider for PyenvProvider {
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
         let mut current = start_path.to_path_buf();
 
+        // Walk up directory tree looking for version files
         loop {
+            // 1. Check .python-version file (highest priority)
             let version_file = current.join(self.version_file_name());
             if version_file.exists() {
-                let version = crate::platform::fs::read_file_string(&version_file).await?;
-                return Ok(Some(VersionDetection {
-                    version: version.trim().to_string(),
-                    source: VersionSource::LocalFile,
-                    source_path: Some(version_file),
-                }));
+                if let Ok(content) = crate::platform::fs::read_file_string(&version_file).await {
+                    let version = content.trim().to_string();
+                    if !version.is_empty() {
+                        return Ok(Some(VersionDetection {
+                            version,
+                            source: VersionSource::LocalFile,
+                            source_path: Some(version_file),
+                        }));
+                    }
+                }
+            }
+
+            // 2. Check .tool-versions file (asdf-style)
+            let tool_versions = current.join(".tool-versions");
+            if tool_versions.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&tool_versions).await {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if line.starts_with("python ") {
+                            let version = line.strip_prefix("python ").unwrap_or("").trim();
+                            if !version.is_empty() {
+                                return Ok(Some(VersionDetection {
+                                    version: version.to_string(),
+                                    source: VersionSource::LocalFile,
+                                    source_path: Some(tool_versions),
+                                }));
+                            }
+                        }
+                    }
+                }
             }
 
             if !current.pop() {
@@ -267,6 +293,56 @@ impl EnvironmentProvider for PyenvProvider {
             }
         }
 
+        // 3. Check pyproject.toml for requires-python
+        let pyproject = start_path.join("pyproject.toml");
+        if pyproject.exists() {
+            if let Ok(content) = crate::platform::fs::read_file_string(&pyproject).await {
+                // Parse requires-python from [project] section
+                // Format: requires-python = ">=3.8" or requires-python = "3.11"
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.starts_with("requires-python") {
+                        if let Some(value) = line.split('=').nth(1) {
+                            let version = value
+                                .trim()
+                                .trim_matches('"')
+                                .trim_matches('\'')
+                                .trim_start_matches(">=")
+                                .trim_start_matches("^")
+                                .trim_start_matches("~=")
+                                .trim();
+                            if !version.is_empty() {
+                                return Ok(Some(VersionDetection {
+                                    version: version.to_string(),
+                                    source: VersionSource::Manifest,
+                                    source_path: Some(pyproject),
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Check runtime.txt (Heroku-style)
+        let runtime_txt = start_path.join("runtime.txt");
+        if runtime_txt.exists() {
+            if let Ok(content) = crate::platform::fs::read_file_string(&runtime_txt).await {
+                let line = content.trim();
+                // Format: python-3.11.4
+                if let Some(version) = line.strip_prefix("python-") {
+                    if !version.is_empty() {
+                        return Ok(Some(VersionDetection {
+                            version: version.to_string(),
+                            source: VersionSource::LocalFile,
+                            source_path: Some(runtime_txt),
+                        }));
+                    }
+                }
+            }
+        }
+
+        // 5. Fall back to current pyenv version
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,

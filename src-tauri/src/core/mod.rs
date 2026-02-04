@@ -1,13 +1,19 @@
 pub mod batch;
+pub mod custom_detection;
 pub mod environment;
+pub mod health_check;
 pub mod history;
 pub mod installer;
 pub mod orchestrator;
+pub mod profiles;
 pub mod shim;
 
 pub use batch::*;
+pub use custom_detection::*;
 pub use environment::*;
+pub use health_check::*;
 pub use history::*;
 pub use installer::*;
 pub use orchestrator::*;
+pub use profiles::*;
 pub use shim::*;

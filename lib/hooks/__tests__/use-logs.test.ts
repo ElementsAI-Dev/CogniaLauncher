@@ -307,17 +307,19 @@ describe('useLogs', () => {
       global.URL.createObjectURL = mockCreateObjectURL;
       global.URL.revokeObjectURL = mockRevokeObjectURL;
 
-      // Mock DOM APIs
+      // Create a real anchor element and spy on click
+      const realAnchor = document.createElement('a');
       const mockClick = jest.fn();
-      const mockAppendChild = jest.fn();
-      const mockRemoveChild = jest.fn();
-      document.createElement = jest.fn(() => ({
-        click: mockClick,
-        href: '',
-        download: '',
-      })) as unknown as typeof document.createElement;
-      document.body.appendChild = mockAppendChild;
-      document.body.removeChild = mockRemoveChild;
+      realAnchor.click = mockClick;
+
+      // Only mock createElement for 'a' elements
+      const originalCreateElement = document.createElement.bind(document);
+      const createElementSpy = jest.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+        if (tagName === 'a') {
+          return realAnchor;
+        }
+        return originalCreateElement(tagName);
+      });
 
       const { result } = renderHook(() => useLogs());
 
@@ -332,6 +334,8 @@ describe('useLogs', () => {
       expect(mockCreateObjectURL).toHaveBeenCalled();
       expect(mockClick).toHaveBeenCalled();
       expect(mockRevokeObjectURL).toHaveBeenCalledWith(mockUrl);
+
+      createElementSpy.mockRestore();
     });
 
     it('should export logs as JSON', () => {
@@ -341,14 +345,19 @@ describe('useLogs', () => {
       global.URL.createObjectURL = mockCreateObjectURL;
       global.URL.revokeObjectURL = mockRevokeObjectURL;
 
+      // Create a real anchor element and spy on click
+      const realAnchor = document.createElement('a');
       const mockClick = jest.fn();
-      document.createElement = jest.fn(() => ({
-        click: mockClick,
-        href: '',
-        download: '',
-      })) as unknown as typeof document.createElement;
-      document.body.appendChild = jest.fn();
-      document.body.removeChild = jest.fn();
+      realAnchor.click = mockClick;
+
+      // Only mock createElement for 'a' elements
+      const originalCreateElement = document.createElement.bind(document);
+      const createElementSpy = jest.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+        if (tagName === 'a') {
+          return realAnchor;
+        }
+        return originalCreateElement(tagName);
+      });
 
       const { result } = renderHook(() => useLogs());
 
@@ -361,6 +370,8 @@ describe('useLogs', () => {
       });
 
       expect(mockCreateObjectURL).toHaveBeenCalled();
+
+      createElementSpy.mockRestore();
     });
   });
 });

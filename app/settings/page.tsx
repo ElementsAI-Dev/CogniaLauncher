@@ -22,8 +22,9 @@ import { useAppearanceStore, type AccentColor } from '@/lib/stores/appearance';
 import { useSettingsStore } from '@/lib/stores/settings';
 import { isTauri } from '@/lib/tauri';
 import { isThemeMode } from '@/lib/theme';
-import { useSettingsShortcuts } from '@/lib/hooks/use-settings-shortcuts';
+import { useSettingsShortcuts, useSectionNavigation } from '@/lib/hooks/use-settings-shortcuts';
 import { useUnsavedChanges } from '@/lib/hooks/use-unsaved-changes';
+import { useSettingsSearch, useActiveSection } from '@/lib/hooks/use-settings-search';
 import {
   validateField,
   GeneralSettings,
@@ -38,14 +39,32 @@ import {
   SystemInfo,
   SettingsSkeleton,
 } from '@/components/settings';
+import { SettingsSearch } from '@/components/settings/settings-search';
+import { SettingsNav } from '@/components/settings/settings-nav';
+import { CollapsibleSection } from '@/components/settings/collapsible-section';
 import { PageHeader } from '@/components/layout/page-header';
 import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { type SettingsSection } from '@/lib/constants/settings-registry';
 
 interface SaveProgress {
   current: number;
   total: number;
 }
+
+// Section IDs in order
+const SECTION_IDS: SettingsSection[] = [
+  'general',
+  'network',
+  'security',
+  'mirrors',
+  'appearance',
+  'updates',
+  'tray',
+  'paths',
+  'provider',
+  'system',
+];
 
 export default function SettingsPage() {
   const { config, loading, error, fetchConfig, updateConfigValue, resetConfig, platformInfo, fetchPlatformInfo } = useSettings();
@@ -54,12 +73,49 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const { accentColor, setAccentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
+  const [originalConfig, setOriginalConfig] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string | null>>({});
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState<SaveProgress | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<SettingsSection>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Search functionality
+  const search = useSettingsSearch({ t, showAdvanced: true, showTauriOnly: isTauri() });
+
+  // Section navigation
+  const { activeSection, setActiveSection, scrollToSection } = useActiveSection(SECTION_IDS);
+  const { navigateSection, jumpToSection } = useSectionNavigation({
+    sectionIds: SECTION_IDS,
+    activeSection,
+    setActiveSection,
+  });
+
+  // Track which sections have changes
+  const sectionHasChanges = useCallback(
+    (sectionId: SettingsSection): boolean => {
+      const sectionPrefixes: Record<SettingsSection, string[]> = {
+        general: ['general.'],
+        network: ['network.'],
+        security: ['security.'],
+        mirrors: ['mirrors.'],
+        appearance: ['appearance.'],
+        updates: ['updates.'],
+        tray: ['tray.'],
+        paths: ['paths.'],
+        provider: ['provider_settings.'],
+        system: [],
+      };
+      const prefixes = sectionPrefixes[sectionId] || [];
+      return Object.entries(localConfig).some(([key, value]) =>
+        prefixes.some((prefix) => key.startsWith(prefix) && originalConfig[key] !== value)
+      );
+    },
+    [localConfig, originalConfig]
+  );
 
   useUnsavedChanges('settings-page', hasChanges);
 
@@ -77,6 +133,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setLocalConfig(config);
+    setOriginalConfig(config);
   }, [config]);
 
 
@@ -290,16 +347,109 @@ export default function SettingsPage() {
     }
   }, [setReducedMotion, updateConfigValue]);
 
+  // Focus search handler
+  const handleFocusSearch = useCallback(() => {
+    searchInputRef.current?.focus();
+  }, []);
+
+  // Section collapse handler
+  const handleSectionOpenChange = useCallback((sectionId: SettingsSection, open: boolean) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (open) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Reset a single section to defaults
+  const handleResetSection = useCallback(
+    async (sectionId: SettingsSection) => {
+      const sectionPrefixes: Record<SettingsSection, string[]> = {
+        general: ['general.'],
+        network: ['network.'],
+        security: ['security.'],
+        mirrors: ['mirrors.'],
+        appearance: ['appearance.'],
+        updates: ['updates.'],
+        tray: ['tray.'],
+        paths: ['paths.'],
+        provider: ['provider_settings.'],
+        system: [],
+      };
+      const prefixes = sectionPrefixes[sectionId] || [];
+      
+      // Reset local config for this section to original values
+      setLocalConfig((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (prefixes.some((prefix) => key.startsWith(prefix))) {
+            next[key] = originalConfig[key] ?? '';
+          }
+        }
+        return next;
+      });
+
+      // Clear validation errors for this section
+      setValidationErrors((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (prefixes.some((prefix) => key.startsWith(prefix))) {
+            next[key] = null;
+          }
+        }
+        return next;
+      });
+
+      toast.success(t('settings.sectionReset', { section: t(`settings.sections.${sectionId}`) }));
+    },
+    [originalConfig, t]
+  );
+
+  // Navigate to setting from search
+  const handleNavigateToSetting = useCallback(
+    (section: SettingsSection, key: string) => {
+      // Expand the section if collapsed
+      setCollapsedSections((prev) => {
+        const next = new Set(prev);
+        next.delete(section);
+        return next;
+      });
+      
+      // Scroll to section
+      scrollToSection(section);
+      
+      // Clear search
+      search.clearSearch();
+      
+      // Focus the setting input after a short delay
+      setTimeout(() => {
+        const element = document.getElementById(key);
+        if (element) {
+          element.focus();
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    },
+    [scrollToSection, search]
+  );
+
   useSettingsShortcuts({
     onSave: handleSave,
     onReset: handleReset,
-    onEscape: hasChanges ? handleDiscardChanges : undefined,
+    onEscape: hasChanges ? handleDiscardChanges : search.isSearching ? search.clearSearch : undefined,
+    onFocusSearch: handleFocusSearch,
+    onNavigateSection: navigateSection,
+    onJumpToSection: jumpToSection,
     enabled: true,
     hasChanges,
     isLoading: loading || saving,
   });
 
-  const handleAppSettingsChange = useCallback((key: keyof typeof appSettings, value: boolean) => {
+  const handleAppSettingsChange = useCallback(<K extends keyof typeof appSettings>(key: K, value: typeof appSettings[K]) => {
     setAppSettings({ [key]: value });
   }, [setAppSettings]);
 
@@ -392,78 +542,218 @@ export default function SettingsPage() {
       {!initialLoadComplete ? (
         <SettingsSkeleton />
       ) : (
-        <>
-          <GeneralSettings
-            localConfig={localConfig}
-            errors={validationErrors}
-            onValueChange={handleChange}
-            t={t}
-          />
+        <div className="flex gap-6">
+          {/* Sidebar Navigation - Hidden on mobile */}
+          <aside className="hidden lg:block w-56 shrink-0">
+            <SettingsNav
+              activeSection={activeSection}
+              onSectionClick={scrollToSection}
+              matchingSections={search.matchingSections}
+              isSearching={search.isSearching}
+              collapsedSections={collapsedSections}
+              sectionHasChanges={sectionHasChanges}
+              t={t}
+            />
+          </aside>
 
-          <NetworkSettings
-            localConfig={localConfig}
-            errors={validationErrors}
-            onValueChange={handleChange}
-            t={t}
-          />
+          {/* Main Content */}
+          <div className="flex-1 space-y-6 min-w-0">
+            {/* Search Bar */}
+            <SettingsSearch
+              search={search}
+              onNavigateToSetting={handleNavigateToSetting}
+              t={t}
+            />
 
-          <SecuritySettings
-            localConfig={localConfig}
-            onValueChange={handleChange}
-            t={t}
-          />
+            {/* Settings Sections */}
+            <CollapsibleSection
+              id="general"
+              title={t('settings.general')}
+              description={t('settings.generalDesc')}
+              icon="Settings2"
+              defaultOpen={!collapsedSections.has('general')}
+              hasChanges={sectionHasChanges('general')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <GeneralSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <MirrorsSettings
-            localConfig={localConfig}
-            errors={validationErrors}
-            onValueChange={handleChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="network"
+              title={t('settings.network')}
+              description={t('settings.networkDesc')}
+              icon="Network"
+              defaultOpen={!collapsedSections.has('network')}
+              hasChanges={sectionHasChanges('network')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <NetworkSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <AppearanceSettings
-            theme={theme}
-            setTheme={handleThemeChange}
-            locale={locale}
-            setLocale={handleLocaleChange}
-            accentColor={accentColor}
-            setAccentColor={handleAccentColorChange}
-            reducedMotion={reducedMotion}
-            setReducedMotion={handleReducedMotionChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="security"
+              title={t('settings.security')}
+              description={t('settings.securityDesc')}
+              icon="Shield"
+              defaultOpen={!collapsedSections.has('security')}
+              hasChanges={sectionHasChanges('security')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <SecuritySettings
+                localConfig={localConfig}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <UpdateSettings
-            appSettings={appSettings}
-            onValueChange={handleAppSettingsChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="mirrors"
+              title={t('settings.mirrors')}
+              description={t('settings.mirrorsDesc')}
+              icon="Server"
+              defaultOpen={!collapsedSections.has('mirrors')}
+              hasChanges={sectionHasChanges('mirrors')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <MirrorsSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <TraySettings
-            appSettings={appSettings}
-            onValueChange={handleAppSettingsChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="appearance"
+              title={t('settings.appearance')}
+              description={t('settings.appearanceDesc')}
+              icon="Palette"
+              defaultOpen={!collapsedSections.has('appearance')}
+              hasChanges={sectionHasChanges('appearance')}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <AppearanceSettings
+                theme={theme}
+                setTheme={handleThemeChange}
+                locale={locale}
+                setLocale={handleLocaleChange}
+                accentColor={accentColor}
+                setAccentColor={handleAccentColorChange}
+                reducedMotion={reducedMotion}
+                setReducedMotion={handleReducedMotionChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <PathsSettings
-            localConfig={localConfig}
-            errors={validationErrors}
-            onValueChange={handleChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="updates"
+              title={t('settings.updates')}
+              description={t('settings.updatesDesc')}
+              icon="RefreshCw"
+              defaultOpen={!collapsedSections.has('updates')}
+              hasChanges={sectionHasChanges('updates')}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <UpdateSettings
+                appSettings={appSettings}
+                onValueChange={handleAppSettingsChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <ProviderSettings
-            localConfig={localConfig}
-            errors={validationErrors}
-            onValueChange={handleChange}
-            t={t}
-          />
+            <CollapsibleSection
+              id="tray"
+              title={t('settings.tray')}
+              description={t('settings.trayDesc')}
+              icon="Monitor"
+              defaultOpen={!collapsedSections.has('tray')}
+              hasChanges={sectionHasChanges('tray')}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <TraySettings
+                appSettings={appSettings}
+                onValueChange={handleAppSettingsChange}
+                t={t}
+              />
+            </CollapsibleSection>
 
-          <SystemInfo
-            loading={loading}
-            platformInfo={platformInfo}
-            t={t}
-          />
-        </>
+            <CollapsibleSection
+              id="paths"
+              title={t('settings.paths')}
+              description={t('settings.pathsDesc')}
+              icon="FolderOpen"
+              defaultOpen={!collapsedSections.has('paths')}
+              hasChanges={sectionHasChanges('paths')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <PathsSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="provider"
+              title={t('settings.providerSettings')}
+              description={t('settings.providerSettingsDesc')}
+              icon="Package"
+              defaultOpen={!collapsedSections.has('provider')}
+              hasChanges={sectionHasChanges('provider')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <ProviderSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
+                t={t}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="system"
+              title={t('settings.systemInfo')}
+              description={t('settings.systemInfoDesc')}
+              icon="Info"
+              defaultOpen={!collapsedSections.has('system')}
+              hasChanges={false}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <SystemInfo
+                loading={loading}
+                platformInfo={platformInfo}
+                t={t}
+              />
+            </CollapsibleSection>
+          </div>
+        </div>
       )}
     </main>
   );

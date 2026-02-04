@@ -31,7 +31,8 @@ export function useDownloads() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Refresh stats from backend
   const refreshStats = useCallback(async () => {
@@ -43,7 +44,8 @@ export function useDownloads() {
     } catch (err) {
       console.error('Failed to refresh stats:', err);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Refresh history from backend
   const refreshHistory = useCallback(async (limit?: number) => {
@@ -58,7 +60,8 @@ export function useDownloads() {
     } catch (err) {
       console.error('Failed to refresh history:', err);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Setup event listeners
   useEffect(() => {
@@ -130,7 +133,8 @@ export function useDownloads() {
       unlistenRefs.current.forEach((unlisten) => unlisten?.());
       unlistenRefs.current = [];
     };
-  }, [store, refreshTasks, refreshHistory]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTasks, refreshHistory]);
 
   // Initial data fetch
   useEffect(() => {
@@ -149,6 +153,7 @@ export function useDownloads() {
       await refreshTasks();
       return taskId;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [refreshTasks]
   );
 
@@ -204,7 +209,8 @@ export function useDownloads() {
     const count = await tauri.downloadClearFinished();
     await refreshTasks();
     return count;
-  }, [refreshTasks]);
+  }, // eslint-disable-next-line react-hooks/exhaustive-deps
+    [refreshTasks]);
 
   // Retry failed downloads
   const retryFailed = useCallback(async (): Promise<number> => {

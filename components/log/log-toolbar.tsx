@@ -94,6 +94,10 @@ export function LogToolbar({
   });
   const [customStart, setCustomStart] = useState(() => formatDateTimeInput(filter.startTime));
   const [customEnd, setCustomEnd] = useState(() => formatDateTimeInput(filter.endTime));
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const activeFiltersCount = (filter.levels.length < ALL_LEVELS.length ? 1 : 0) + 
+    (filter.startTime || filter.endTime ? 1 : 0) + 
+    (filter.useRegex ? 1 : 0);
 
   const timeRangeOptions = useMemo(
     () => ({
@@ -187,106 +191,88 @@ export function LogToolbar({
   }, [setMaxLogs]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="relative flex-1 max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('logs.searchPlaceholder')}
-          value={filter.search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 h-8"
-        />
-        {filter.search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
-          >
-            <X className="h-3 w-3 text-muted-foreground" />
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={timeRangePreset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="h-8" size="sm">
-            <SelectValue placeholder={t('logs.timeRange')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{timeRangeOptions.all}</SelectItem>
-            <SelectItem value="1h">{timeRangeOptions['1h']}</SelectItem>
-            <SelectItem value="24h">{timeRangeOptions['24h']}</SelectItem>
-            <SelectItem value="7d">{timeRangeOptions['7d']}</SelectItem>
-            <SelectItem value="custom">{timeRangeOptions.custom}</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {timeRangePreset === 'custom' && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              type="datetime-local"
-              className="h-8 w-[170px]"
-              value={customStart}
-              onChange={(event) => handleCustomStartChange(event.target.value)}
-              aria-label={t('logs.timeRangeStart')}
-            />
-            <span className="text-xs text-muted-foreground">{t('logs.timeRangeTo')}</span>
-            <Input
-              type="datetime-local"
-              className="h-8 w-[170px]"
-              value={customEnd}
-              onChange={(event) => handleCustomEndChange(event.target.value)}
-              aria-label={t('logs.timeRangeEnd')}
-            />
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 rounded-md border px-2 py-1">
-          <Switch
-            checked={Boolean(filter.useRegex)}
-            onCheckedChange={handleRegexToggle}
-            aria-label={t('logs.regex')}
+    <div className="flex flex-col gap-2 p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      {/* Primary row - Search and main actions */}
+      <div className="flex items-center gap-2">
+        {/* Search input */}
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder={t('logs.searchPlaceholder')}
+            value={filter.search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-8 h-9"
           />
-          <span className="text-xs text-muted-foreground">{t('logs.regex')}</span>
-        </div>
-      </div>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5">
-            <Filter className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{t('logs.filter')}</span>
-            {filter.levels.length < ALL_LEVELS.length && (
-              <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
-                {filter.levels.length}
-              </span>
-            )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuLabel>{t('logs.logLevels')}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {ALL_LEVELS.map((level) => (
-            <DropdownMenuCheckboxItem
-              key={level}
-              checked={filter.levels.includes(level)}
-              onCheckedChange={() => toggleLevel(level)}
+          {filter.search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded-sm transition-colors"
+              aria-label="Clear search"
             >
-              <span className={LEVEL_COLORS[level]}>{level.toUpperCase()}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {stats.byLevel[level]}
-              </span>
-            </DropdownMenuCheckboxItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+              <X className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          )}
+        </div>
 
-      <div className="flex items-center gap-1">
+        {/* Level filter dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 shrink-0">
+              <Filter className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('logs.filter')}</span>
+              {filter.levels.length < ALL_LEVELS.length && (
+                <span className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+                  {filter.levels.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="text-xs font-medium">{t('logs.logLevels')}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {ALL_LEVELS.map((level) => (
+              <DropdownMenuCheckboxItem
+                key={level}
+                checked={filter.levels.includes(level)}
+                onCheckedChange={() => toggleLevel(level)}
+                className="gap-2"
+              >
+                <span className={`font-mono text-xs font-semibold ${LEVEL_COLORS[level]}`}>
+                  {level.toUpperCase()}
+                </span>
+                <span className="ml-auto tabular-nums text-xs text-muted-foreground">
+                  {stats.byLevel[level]}
+                </span>
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Advanced filters toggle */}
+        <Button
+          variant={showAdvanced || activeFiltersCount > 0 ? "secondary" : "outline"}
+          size="sm"
+          className="h-9 gap-1.5 shrink-0"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          <span className="hidden sm:inline">{t('logs.advanced')}</span>
+          {activeFiltersCount > 0 && (
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+              {activeFiltersCount}
+            </span>
+          )}
+        </Button>
+
+        {/* Separator */}
+        <div className="hidden sm:block h-6 w-px bg-border" />
+
+        {/* Realtime controls */}
         {showRealtimeControls && (
-          <>
+          <div className="flex items-center gap-0.5">
             <Button
-              variant="ghost"
+              variant={paused ? "secondary" : "ghost"}
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9"
               onClick={togglePaused}
               title={paused ? t('logs.resume') : t('logs.pause')}
             >
@@ -298,9 +284,9 @@ export function LogToolbar({
             </Button>
 
             <Button
-              variant="ghost"
+              variant={autoScroll ? "secondary" : "ghost"}
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9"
               onClick={toggleAutoScroll}
               title={autoScroll ? t('logs.autoScrollOn') : t('logs.autoScrollOff')}
             >
@@ -308,15 +294,16 @@ export function LogToolbar({
                 className={`h-4 w-4 ${autoScroll ? 'text-primary' : 'text-muted-foreground'}`}
               />
             </Button>
-          </>
+          </div>
         )}
 
+        {/* Export menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-9 w-9 shrink-0"
               title={t('logs.export')}
             >
               <Download className="h-4 w-4" />
@@ -332,43 +319,105 @@ export function LogToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Clear button */}
         {showRealtimeControls && (
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-9 w-9 shrink-0"
             onClick={clearLogs}
             title={t('logs.clear')}
           >
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         )}
+
+        {/* Stats badge */}
+        {showRealtimeControls && (
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 text-xs tabular-nums">
+            <span className="text-muted-foreground">{t('logs.total')}:</span>
+            <span className="font-medium">{stats.total}</span>
+            {paused && (
+              <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                • {t('logs.paused')}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
-      {showMaxLogs && (
-        <div className="flex items-center gap-2 rounded-md border px-2 py-1">
-          <Label htmlFor="max-logs" className="text-xs text-muted-foreground">
-            {t('logs.maxLogs')}
-          </Label>
-          <Input
-            id="max-logs"
-            type="number"
-            min={100}
-            step={100}
-            value={maxLogs}
-            onChange={(event) => handleMaxLogsChange(event.target.value)}
-            className="h-8 w-20"
-          />
-        </div>
-      )}
+      {/* Advanced filters row - collapsible */}
+      {showAdvanced && (
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-dashed">
+          {/* Time range */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground shrink-0">{t('logs.timeRange')}:</span>
+            <Select value={timeRangePreset} onValueChange={handlePresetChange}>
+              <SelectTrigger className="h-8 w-[120px]" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{timeRangeOptions.all}</SelectItem>
+                <SelectItem value="1h">{timeRangeOptions['1h']}</SelectItem>
+                <SelectItem value="24h">{timeRangeOptions['24h']}</SelectItem>
+                <SelectItem value="7d">{timeRangeOptions['7d']}</SelectItem>
+                <SelectItem value="custom">{timeRangeOptions.custom}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-      {showRealtimeControls && (
-        <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground border-l pl-3">
-          <span>{t('logs.total')}: {stats.total}</span>
-          {paused && (
-            <span className="text-yellow-600 dark:text-yellow-400">
-              ({t('logs.paused')})
-            </span>
+          {timeRangePreset === 'custom' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="datetime-local"
+                className="h-8 w-[160px] text-xs"
+                value={customStart}
+                onChange={(event) => handleCustomStartChange(event.target.value)}
+                aria-label={t('logs.timeRangeStart')}
+              />
+              <span className="text-xs text-muted-foreground">→</span>
+              <Input
+                type="datetime-local"
+                className="h-8 w-[160px] text-xs"
+                value={customEnd}
+                onChange={(event) => handleCustomEndChange(event.target.value)}
+                aria-label={t('logs.timeRangeEnd')}
+              />
+            </div>
+          )}
+
+          <div className="h-5 w-px bg-border hidden sm:block" />
+
+          {/* Regex toggle */}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="regex-toggle"
+              checked={Boolean(filter.useRegex)}
+              onCheckedChange={handleRegexToggle}
+            />
+            <Label htmlFor="regex-toggle" className="text-xs text-muted-foreground cursor-pointer">
+              {t('logs.regex')}
+            </Label>
+          </div>
+
+          {showMaxLogs && (
+            <>
+              <div className="h-5 w-px bg-border hidden sm:block" />
+              <div className="flex items-center gap-2">
+                <Label htmlFor="max-logs" className="text-xs text-muted-foreground shrink-0">
+                  {t('logs.maxLogs')}:
+                </Label>
+                <Input
+                  id="max-logs"
+                  type="number"
+                  min={100}
+                  step={100}
+                  value={maxLogs}
+                  onChange={(event) => handleMaxLogsChange(event.target.value)}
+                  className="h-8 w-24"
+                />
+              </div>
+            </>
           )}
         </div>
       )}

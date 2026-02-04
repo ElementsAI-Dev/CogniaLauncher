@@ -1,4 +1,4 @@
-import { useAppearanceStore } from './appearance';
+import { useAppearanceStore } from '../appearance';
 
 describe('useAppearanceStore', () => {
   beforeEach(() => {

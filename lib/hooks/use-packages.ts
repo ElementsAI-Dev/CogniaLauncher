@@ -47,7 +47,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const advancedSearch = useCallback(async (query: string, options?: Omit<tauri.AdvancedSearchOptions, 'query'>) => {
     store.setLoading(true);
@@ -69,7 +70,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getSuggestions = useCallback(async (query: string) => {
     if (query.length < 2) return [];
@@ -93,7 +95,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchInstalledPackages = useCallback(async (provider?: string) => {
     store.setLoading(true);
@@ -108,7 +111,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const installPackages = useCallback(async (packages: string[]) => {
     store.setError(null);
@@ -124,7 +128,8 @@ export function usePackages() {
     } finally {
       normalized.forEach((p) => store.removeInstalling(p));
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const batchInstall = useCallback(async (packages: string[], dryRun?: boolean, force?: boolean) => {
     store.setError(null);
@@ -140,7 +145,8 @@ export function usePackages() {
     } finally {
       normalized.forEach((p) => store.removeInstalling(p));
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const batchUpdate = useCallback(async (packages?: string[]) => {
     store.setLoading(true);
@@ -155,7 +161,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const uninstallPackages = useCallback(async (packages: string[]) => {
     store.setError(null);
@@ -166,7 +173,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const batchUninstall = useCallback(async (packages: string[], force?: boolean) => {
     store.setError(null);
@@ -178,7 +186,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -189,7 +198,8 @@ export function usePackages() {
       store.setError(formatError(err));
       return [];
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const checkForUpdates = useCallback(async (packages?: string[]) => {
     store.setLoading(true);
@@ -204,7 +214,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pinPackage = useCallback(async (name: string, version?: string) => {
     try {
@@ -214,7 +225,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const unpinPackage = useCallback(async (name: string) => {
     try {
@@ -224,7 +236,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const rollbackPackage = useCallback(async (name: string, toVersion: string) => {
     store.addInstalling(name);
@@ -237,7 +250,8 @@ export function usePackages() {
     } finally {
       store.removeInstalling(name);
     }
-  }, [store, fetchInstalledPackages]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchInstalledPackages]);
 
   const resolveDependencies = useCallback(async (packageName: string) => {
     store.setLoading(true);
@@ -249,7 +263,8 @@ export function usePackages() {
     } finally {
       store.setLoading(false);
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const comparePackages = useCallback(async (packageIds: string[]) => {
     try {
@@ -267,7 +282,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getInstallHistory = useCallback(async (limit?: number) => {
     try {
@@ -276,7 +292,8 @@ export function usePackages() {
       store.setError(formatError(err));
       return [];
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const getPackageHistory = useCallback(async (name: string) => {
     try {
@@ -285,7 +302,8 @@ export function usePackages() {
       store.setError(formatError(err));
       return [];
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const clearInstallHistory = useCallback(async () => {
     try {
@@ -294,7 +312,8 @@ export function usePackages() {
       store.setError(formatError(err));
       throw err;
     }
-  }, [store]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     ...store,

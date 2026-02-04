@@ -14,7 +14,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { DownloadRequest } from '@/lib/stores/download';
-import { X } from 'lucide-react';
+import { isTauri } from '@/lib/tauri';
+import { X, FolderOpen } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AddDownloadDialogProps {
   open: boolean;
@@ -28,6 +30,7 @@ const DEFAULT_FORM = {
   name: '',
   checksum: '',
   priority: '',
+  provider: '',
 };
 
 function inferNameFromUrl(url: string) {
@@ -63,6 +66,31 @@ export function AddDownloadDialog({ open, onOpenChange, onSubmit }: AddDownloadD
 
   const isValid = form.url.trim() && form.destination.trim() && form.name.trim();
 
+  const handleBrowseDestination = async () => {
+    if (!isTauri()) {
+      toast.info(t('downloads.manualPathRequired'));
+      return;
+    }
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dialogModule = await import('@tauri-apps/plugin-dialog' as any).catch(() => null);
+      if (dialogModule?.save) {
+        const selected = await dialogModule.save({
+          defaultPath: form.name || 'download',
+          title: t('downloads.selectDestination'),
+        });
+        if (selected && typeof selected === 'string') {
+          setForm((prev) => ({ ...prev, destination: selected }));
+        }
+      } else {
+        toast.info(t('downloads.manualPathRequired'));
+      }
+    } catch {
+      toast.info(t('downloads.manualPathRequired'));
+    }
+  };
+
   const handleSubmit = async () => {
     if (!isValid) return;
 
@@ -74,6 +102,7 @@ export function AddDownloadDialog({ open, onOpenChange, onSubmit }: AddDownloadD
         name: form.name.trim(),
         checksum: form.checksum.trim() || undefined,
         priority: form.priority ? Number(form.priority) : undefined,
+        provider: form.provider.trim() || undefined,
       });
       onOpenChange(false);
     } finally {
@@ -114,14 +143,26 @@ export function AddDownloadDialog({ open, onOpenChange, onSubmit }: AddDownloadD
 
           <div className="space-y-2">
             <Label htmlFor="download-destination">{t('downloads.destination')}</Label>
-            <Input
-              id="download-destination"
-              value={form.destination}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, destination: event.target.value }))
-              }
-              placeholder="/path/to/file.zip"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="download-destination"
+                value={form.destination}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, destination: event.target.value }))
+                }
+                placeholder="/path/to/file.zip"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleBrowseDestination}
+                title={t('downloads.browseFolder')}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -130,6 +171,18 @@ export function AddDownloadDialog({ open, onOpenChange, onSubmit }: AddDownloadD
               id="download-name"
               value={form.name}
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="download-provider">{t('downloads.provider')}</Label>
+            <Input
+              id="download-provider"
+              value={form.provider}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, provider: event.target.value }))
+              }
+              placeholder={t('downloads.providerPlaceholder')}
             />
           </div>
 

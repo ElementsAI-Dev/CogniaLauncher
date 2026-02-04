@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { CacheInfo, CacheSettings, CacheVerificationResult, PlatformInfo } from '../tauri';
+import type { CacheInfo, CacheSettings, CacheVerificationResult, PlatformInfo, TrayClickBehavior } from '../tauri';
 
 export interface AppSettings {
   checkUpdatesOnStart: boolean;
@@ -8,6 +8,9 @@ export interface AppSettings {
   notifyOnUpdates: boolean;
   minimizeToTray: boolean;
   startMinimized: boolean;
+  autostart: boolean;
+  trayClickBehavior: TrayClickBehavior;
+  showNotifications: boolean;
 }
 
 interface SettingsState {
@@ -39,6 +42,9 @@ const defaultAppSettings: AppSettings = {
   notifyOnUpdates: true,
   minimizeToTray: true,
   startMinimized: false,
+  autostart: false,
+  trayClickBehavior: 'toggle_window',
+  showNotifications: true,
 };
 
 export const useSettingsStore = create<SettingsState>()(

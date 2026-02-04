@@ -1,4 +1,5 @@
 use crate::cache::{
+    CacheAccessStats, CacheEntryType,
     CleanupHistory, CleanupRecord, CleanupRecordBuilder,
     DownloadCache, DownloadResumer, MetadataCache,
 };
@@ -878,4 +879,221 @@ pub async fn get_cleanup_summary(
         trash_cleanups: summary.trash_cleanups,
         permanent_cleanups: summary.permanent_cleanups,
     })
+}
+
+// ==================== Cache Access Stats ====================
+
+/// Get cache access statistics (hit rate, hits, misses)
+#[tauri::command]
+pub async fn get_cache_access_stats(
+    settings: State<'_, SharedSettings>,
+) -> Result<CacheAccessStats, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(download_cache.get_access_stats())
+}
+
+/// Reset cache access statistics
+#[tauri::command]
+pub async fn reset_cache_access_stats(
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    download_cache.reset_access_stats().await.map_err(|e| e.to_string())
+}
+
+// ==================== Cache Entry Browser ====================
+
+/// A cache entry item for the browser view
+#[derive(Serialize)]
+pub struct CacheEntryItem {
+    pub key: String,
+    pub file_path: String,
+    pub size: u64,
+    pub size_human: String,
+    pub checksum: String,
+    pub entry_type: String,
+    pub created_at: String,
+    pub last_accessed: Option<String>,
+    pub hit_count: u32,
+}
+
+/// Result of listing cache entries
+#[derive(Serialize)]
+pub struct CacheEntryList {
+    pub entries: Vec<CacheEntryItem>,
+    pub total_count: usize,
+    pub has_more: bool,
+}
+
+/// List cache entries with filtering, sorting, and pagination
+#[tauri::command]
+pub async fn list_cache_entries(
+    entry_type: Option<String>,
+    search: Option<String>,
+    sort_by: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    settings: State<'_, SharedSettings>,
+) -> Result<CacheEntryList, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let entry_type_filter = entry_type.as_deref().and_then(|t| match t {
+        "download" => Some(CacheEntryType::Download),
+        "metadata" => Some(CacheEntryType::Metadata),
+        "partial" => Some(CacheEntryType::Partial),
+        "index" => Some(CacheEntryType::Index),
+        _ => None,
+    });
+
+    let limit = limit.unwrap_or(50);
+    let offset = offset.unwrap_or(0);
+
+    let (entries, total_count) = download_cache
+        .list_filtered(
+            entry_type_filter,
+            search.as_deref(),
+            sort_by.as_deref(),
+            limit,
+            offset,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let items: Vec<CacheEntryItem> = entries
+        .into_iter()
+        .map(|e| CacheEntryItem {
+            key: e.key,
+            file_path: e.file_path.display().to_string(),
+            size: e.size,
+            size_human: format_size(e.size),
+            checksum: e.checksum,
+            entry_type: match e.entry_type {
+                CacheEntryType::Download => "download".to_string(),
+                CacheEntryType::Metadata => "metadata".to_string(),
+                CacheEntryType::Partial => "partial".to_string(),
+                CacheEntryType::Index => "index".to_string(),
+            },
+            created_at: e.created_at.to_rfc3339(),
+            last_accessed: e.last_accessed.map(|d| d.to_rfc3339()),
+            hit_count: e.hit_count,
+        })
+        .collect();
+
+    Ok(CacheEntryList {
+        has_more: offset + items.len() < total_count,
+        entries: items,
+        total_count,
+    })
+}
+
+/// Delete a single cache entry by key
+#[tauri::command]
+pub async fn delete_cache_entry(
+    key: String,
+    use_trash: Option<bool>,
+    settings: State<'_, SharedSettings>,
+) -> Result<bool, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let mut download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    download_cache
+        .remove_with_option(&key, use_trash.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete multiple cache entries by keys
+#[tauri::command]
+pub async fn delete_cache_entries(
+    keys: Vec<String>,
+    use_trash: Option<bool>,
+    settings: State<'_, SharedSettings>,
+) -> Result<usize, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let mut download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let use_trash = use_trash.unwrap_or(false);
+    let mut deleted = 0;
+
+    for key in keys {
+        if download_cache.remove_with_option(&key, use_trash).await.is_ok() {
+            deleted += 1;
+        }
+    }
+
+    Ok(deleted)
+}
+
+// ==================== Hot Files (Top Accessed) ====================
+
+/// Get top accessed cache entries
+#[tauri::command]
+pub async fn get_top_accessed_entries(
+    limit: Option<usize>,
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<CacheEntryItem>, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let entries = download_cache
+        .get_top_accessed(limit.unwrap_or(10))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let items: Vec<CacheEntryItem> = entries
+        .into_iter()
+        .map(|e| CacheEntryItem {
+            key: e.key,
+            file_path: e.file_path.display().to_string(),
+            size: e.size,
+            size_human: format_size(e.size),
+            checksum: e.checksum,
+            entry_type: match e.entry_type {
+                CacheEntryType::Download => "download".to_string(),
+                CacheEntryType::Metadata => "metadata".to_string(),
+                CacheEntryType::Partial => "partial".to_string(),
+                CacheEntryType::Index => "index".to_string(),
+            },
+            created_at: e.created_at.to_rfc3339(),
+            last_accessed: e.last_accessed.map(|d| d.to_rfc3339()),
+            hit_count: e.hit_count,
+        })
+        .collect();
+
+    Ok(items)
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,13 +13,19 @@ import { PackageDetailsDialog } from '@/components/packages/package-details-dial
 import { BatchOperations } from '@/components/packages/batch-operations';
 import { DependencyTree } from '@/components/packages/dependency-tree';
 import { PackageComparisonDialog } from '@/components/packages/package-comparison-dialog';
+import { InstalledFilterBar, useInstalledFilter } from '@/components/packages/installed-filter-bar';
+import { ExportImportDialog } from '@/components/packages/export-import-dialog';
+import { ProviderStatusBadge } from '@/components/packages/provider-status-badge';
+import { StatsOverview } from '@/components/packages/stats-overview';
 import { PageHeader } from '@/components/layout/page-header';
 import { usePackages } from '@/lib/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useKeyboardShortcuts } from '@/lib/hooks/use-keyboard-shortcuts';
 import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, UpdateInfo, ResolutionResult, BatchResult } from '@/lib/tauri';
+import type { ExportedPackageList } from '@/lib/hooks/use-package-export';
 
 export default function PackagesPage() {
   const {
@@ -52,6 +58,8 @@ export default function PackagesPage() {
   const { 
     selectedPackages, 
     clearPackageSelection,
+    bookmarkedPackages,
+    toggleBookmark,
   } = usePackageStore();
   
   const { t } = useLocale();
@@ -74,6 +82,31 @@ export default function PackagesPage() {
     success: boolean;
   }>>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Installed packages filter
+  const { filter: installedFilter, setFilter: setInstalledFilter, filteredPackages: filteredInstalledPackages } = useInstalledFilter(installedPackages);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        key: 'f',
+        ctrlKey: true,
+        action: () => searchInputRef.current?.focus(),
+        description: 'Focus search',
+      },
+      {
+        key: 'r',
+        ctrlKey: true,
+        action: () => {
+          fetchInstalledPackages();
+          fetchProviders();
+        },
+        description: 'Refresh',
+      },
+    ],
+  });
 
   useEffect(() => {
     fetchProviders();
@@ -262,22 +295,56 @@ export default function PackagesPage() {
     }
   }, [resolveDependencies]);
 
+  const handleImportPackages = useCallback(async (data: ExportedPackageList) => {
+    const packageIds = data.packages.map((p) => {
+      if (p.provider && p.version) {
+        return `${p.provider}:${p.name}@${p.version}`;
+      } else if (p.provider) {
+        return `${p.provider}:${p.name}`;
+      } else if (p.version) {
+        return `${p.name}@${p.version}`;
+      }
+      return p.name;
+    });
+
+    if (packageIds.length > 0) {
+      await handleBatchInstall(packageIds);
+    }
+  }, [handleBatchInstall]);
+
+  const handleBookmarkToggle = useCallback((name: string) => {
+    toggleBookmark(name);
+    const isBookmarked = bookmarkedPackages.includes(name);
+    toast.success(
+      isBookmarked
+        ? t('packages.bookmarkRemoved', { name })
+        : t('packages.bookmarkAdded', { name })
+    );
+  }, [toggleBookmark, bookmarkedPackages, t]);
+
   return (
     <div className="p-6 space-y-6">
       <PageHeader
         title={t('packages.title')}
         description={t('packages.description')}
         actions={
-          selectedPackages.length >= 2 ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setComparisonOpen(true)}
-            >
-              <GitCompare className="h-4 w-4 mr-1" />
-              {t('packages.compare', { count: selectedPackages.length })}
-            </Button>
-          ) : null
+          <div className="flex items-center gap-2">
+            <ProviderStatusBadge
+              providers={providers}
+              onRefresh={fetchProviders}
+            />
+            <ExportImportDialog onImport={handleImportPackages} />
+            {selectedPackages.length >= 2 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setComparisonOpen(true)}
+              >
+                <GitCompare className="h-4 w-4 mr-1" />
+                {t('packages.compare', { count: selectedPackages.length })}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -287,6 +354,14 @@ export default function PackagesPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
+
+      <StatsOverview
+        installedPackages={installedPackages}
+        providers={providers}
+        updates={updates}
+        pinnedCount={pinnedPackages.length}
+        bookmarkedCount={bookmarkedPackages.length}
+      />
 
       <SearchBar
         providers={providers}
@@ -338,6 +413,12 @@ export default function PackagesPage() {
         </TabsList>
 
         <TabsContent value="installed" className="mt-4">
+          <InstalledFilterBar
+            packages={installedPackages}
+            providers={providers}
+            filter={installedFilter}
+            onFilterChange={setInstalledFilter}
+          />
           {loading && installedPackages.length === 0 ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -346,13 +427,15 @@ export default function PackagesPage() {
             </div>
           ) : (
             <PackageList
-              packages={installedPackages}
+              packages={filteredInstalledPackages}
               type="installed"
               pinnedPackages={pinnedPackages}
+              bookmarkedPackages={bookmarkedPackages}
               onUninstall={handleUninstall}
               onSelect={handleSelectPackage}
               onPin={handlePinPackage}
               onUnpin={handleUnpinPackage}
+              onBookmark={handleBookmarkToggle}
             />
           )}
         </TabsContent>

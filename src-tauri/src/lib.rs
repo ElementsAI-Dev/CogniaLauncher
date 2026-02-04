@@ -10,7 +10,9 @@ pub mod resolver;
 pub mod tray;
 
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
+use commands::custom_detection::SharedCustomDetectionManager;
 use config::Settings;
+use core::custom_detection::CustomDetectionManager;
 use log::info;
 use provider::ProviderRegistry;
 use std::collections::HashMap;
@@ -20,6 +22,7 @@ use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
+use tray::{SharedTrayState, TrayState};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
@@ -67,6 +70,10 @@ pub fn run() {
             // Initialize provider registry with defaults asynchronously
             let registry = app.state::<SharedRegistry>().inner().clone();
             let settings = app.state::<SharedSettings>().inner().clone();
+            let custom_detection = app.state::<SharedCustomDetectionManager>().inner().clone();
+
+            // Get config directory for custom detection rules
+            let config_dir = app.path().app_config_dir().unwrap_or_default();
 
             // Use block_on to ensure initialization completes before app starts accepting commands
             tauri::async_runtime::block_on(async move {
@@ -97,6 +104,16 @@ pub fn run() {
                     }
                 }
 
+                // Initialize custom detection manager
+                let mut custom_detection_guard = custom_detection.write().await;
+                *custom_detection_guard = CustomDetectionManager::new(&config_dir);
+                if let Err(e) = custom_detection_guard.load().await {
+                    info!("Custom detection rules load error (using defaults): {}", e);
+                } else {
+                    info!("Custom detection rules loaded");
+                }
+                drop(custom_detection_guard);
+
                 // Mark initialization as complete
                 INITIALIZED.store(true, Ordering::SeqCst);
                 info!("Application initialization complete");
@@ -118,6 +135,12 @@ pub fn run() {
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())) as SharedRegistry)
         .manage(Arc::new(RwLock::new(Settings::default())) as SharedSettings)
         .manage(Arc::new(RwLock::new(HashMap::new())) as CancellationTokens)
+        .manage(Arc::new(RwLock::new(TrayState::default())) as SharedTrayState)
+        .manage(Arc::new(RwLock::new(CustomDetectionManager::new(std::path::Path::new("")))) as SharedCustomDetectionManager)
+        .manage(core::create_shared_profile_manager(
+            std::path::PathBuf::from(""),
+            Arc::new(RwLock::new(ProviderRegistry::new())),
+        ))
         .invoke_handler(tauri::generate_handler![
             // Environment commands
             commands::environment::env_list,
@@ -167,6 +190,15 @@ pub fn run() {
             commands::cache::get_cleanup_history,
             commands::cache::clear_cleanup_history,
             commands::cache::get_cleanup_summary,
+            // Cache access stats
+            commands::cache::get_cache_access_stats,
+            commands::cache::reset_cache_access_stats,
+            // Cache entry browser
+            commands::cache::list_cache_entries,
+            commands::cache::delete_cache_entry,
+            commands::cache::delete_cache_entries,
+            // Hot files
+            commands::cache::get_top_accessed_entries,
             // Batch operations
             commands::batch::batch_install,
             commands::batch::batch_uninstall,
@@ -180,6 +212,19 @@ pub fn run() {
             commands::batch::get_install_history,
             commands::batch::get_package_history,
             commands::batch::clear_install_history,
+            // Health check commands
+            commands::health_check::health_check_all,
+            commands::health_check::health_check_environment,
+            // Profile commands
+            commands::profiles::profile_list,
+            commands::profiles::profile_get,
+            commands::profiles::profile_create,
+            commands::profiles::profile_update,
+            commands::profiles::profile_delete,
+            commands::profiles::profile_apply,
+            commands::profiles::profile_export,
+            commands::profiles::profile_import,
+            commands::profiles::profile_create_from_current,
             // Search commands
             commands::search::advanced_search,
             commands::search::search_suggestions,
@@ -241,10 +286,45 @@ pub fn run() {
             // Disk space commands
             commands::download::disk_space_get,
             commands::download::disk_space_check,
+            // Tray commands
+            tray::tray_set_icon_state,
+            tray::tray_update_tooltip,
+            tray::tray_set_active_downloads,
+            tray::tray_set_has_update,
+            tray::tray_set_language,
+            tray::tray_set_click_behavior,
+            tray::tray_get_state,
+            tray::tray_is_autostart_enabled,
+            tray::tray_enable_autostart,
+            tray::tray_disable_autostart,
+            tray::tray_send_notification,
+            tray::tray_rebuild,
+            // Custom detection commands
+            commands::custom_detection::custom_rule_list,
+            commands::custom_detection::custom_rule_get,
+            commands::custom_detection::custom_rule_add,
+            commands::custom_detection::custom_rule_update,
+            commands::custom_detection::custom_rule_delete,
+            commands::custom_detection::custom_rule_toggle,
+            commands::custom_detection::custom_rule_presets,
+            commands::custom_detection::custom_rule_import_presets,
+            commands::custom_detection::custom_rule_detect,
+            commands::custom_detection::custom_rule_detect_all,
+            commands::custom_detection::custom_rule_test,
+            commands::custom_detection::custom_rule_validate_regex,
+            commands::custom_detection::custom_rule_export,
+            commands::custom_detection::custom_rule_import,
+            commands::custom_detection::custom_rule_list_by_env,
+            commands::custom_detection::custom_rule_extraction_types,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

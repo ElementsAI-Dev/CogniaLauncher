@@ -88,3 +88,11 @@ export function getUnsavedChangesSources(): string[] {
   });
   return sources;
 }
+
+/**
+ * Clear all registered sources. Used for testing purposes only.
+ * @internal
+ */
+export function _clearRegistry(): void {
+  registry.sources.clear();
+}
