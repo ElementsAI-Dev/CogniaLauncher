@@ -291,9 +291,11 @@ export function BatchOperations({
                 </div>
 
                 {/* Details Toggle */}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setShowDetails(!showDetails)}
-                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground h-auto p-0"
                 >
                   {showDetails ? (
                     <ChevronDown className="h-4 w-4" />
@@ -301,7 +303,7 @@ export function BatchOperations({
                     <ChevronRight className="h-4 w-4" />
                   )}
                   {t('packages.showDetails')}
-                </button>
+                </Button>
 
                 {/* Detailed Results */}
                 {showDetails && (

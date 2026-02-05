@@ -6,6 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Loader2, CheckCircle2, XCircle, Activity } from 'lucide-react';
 import type { ProviderInfo } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
@@ -186,7 +192,8 @@ export function ProviderCard({
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-3 border-t">
+        <Separator className="my-3" />
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Label htmlFor={`enabled-${provider.id}`} className="text-sm font-medium">
               {t('providers.enabled')}
@@ -196,20 +203,26 @@ export function ProviderCard({
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCheckStatus}
-              disabled={isChecking}
-              className="h-8 px-2"
-              title={t('providers.checkStatus')}
-            >
-              {isChecking ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Activity className="h-4 w-4" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCheckStatus}
+                  disabled={isChecking}
+                  className="h-8 px-2"
+                >
+                  {isChecking ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('providers.checkStatus')}</p>
+              </TooltipContent>
+            </Tooltip>
             <Switch
               id={`enabled-${provider.id}`}
               checked={provider.enabled}

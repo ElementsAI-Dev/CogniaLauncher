@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-02-04
+> Last Updated: 2026-02-05 | v1.3.0
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -11,14 +11,16 @@
 
 This module contains the **Rust backend** for CogniaLauncher, running as a native desktop application via Tauri. It provides:
 
-- **IPC Commands**: Exposed to frontend via Tauri's invoke system (120+ commands)
-- **Core Logic**: Environment and package management operations
-- **Provider System**: Extensible provider registry for package sources (32+ providers)
+- **IPC Commands**: Exposed to frontend via Tauri's invoke system (120+ commands across 15 modules)
+- **Core Logic**: Environment and package management operations (9 modules including profiles, health_check, custom_detection)
+- **Provider System**: Extensible provider registry for package sources (40+ providers)
 - **Cache Management**: Download and metadata caching with SQLite
 - **Platform Abstraction**: Cross-platform file system, process, and network operations
 - **Dependency Resolution**: Version constraint resolution using PubGrub
-- **Custom Detection**: User-configurable version detection rules
+- **Custom Detection**: User-configurable version detection rules with 9 extraction strategies
 - **System Tray**: Multi-language tray with notifications and autostart
+- **Profiles**: Environment configuration snapshot management
+- **Health Check**: System and environment diagnostics
 
 ---
 

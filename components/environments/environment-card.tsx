@@ -121,8 +121,8 @@ export function EnvironmentCard({
           )}
           
           {/* Title Row */}
-          <div className="flex items-start justify-between">
-            <div className="space-y-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-semibold">{env.env_type}</h3>
                 {env.available ? (
@@ -155,9 +155,9 @@ export function EnvironmentCard({
             
             {/* Current Version Badge */}
             {env.current_version && (
-              <div className="text-right">
-                <div className="inline-flex items-center px-3 py-1.5 rounded-md border bg-background">
-                  <span className="font-mono text-base font-medium">{env.current_version}</span>
+              <div className="text-right shrink-0 max-w-[180px]">
+                <div className="inline-flex items-center px-3 py-1.5 rounded-md border bg-background max-w-full">
+                  <span className="font-mono text-base font-medium truncate">{env.current_version}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">{t('environments.currentVersion')}</p>
               </div>

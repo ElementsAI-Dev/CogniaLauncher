@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -70,7 +71,7 @@ export function TraySettings({ appSettings, onValueChange, t }: TraySettingsProp
         <CardTitle>{t('settings.tray')}</CardTitle>
         <CardDescription>{t('settings.trayDesc')}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-1">
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="minimize-to-tray">{t('settings.minimizeToTray')}</Label>
@@ -85,7 +86,7 @@ export function TraySettings({ appSettings, onValueChange, t }: TraySettingsProp
             onCheckedChange={(checked) => onValueChange('minimizeToTray', checked)}
           />
         </div>
-
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="start-minimized">{t('settings.startMinimized')}</Label>
@@ -100,7 +101,7 @@ export function TraySettings({ appSettings, onValueChange, t }: TraySettingsProp
             onCheckedChange={(checked) => onValueChange('startMinimized', checked)}
           />
         </div>
-
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="autostart">{t('settings.autostart')}</Label>
@@ -116,7 +117,7 @@ export function TraySettings({ appSettings, onValueChange, t }: TraySettingsProp
             onCheckedChange={handleAutostartChange}
           />
         </div>
-
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="show-notifications">{t('settings.showNotifications')}</Label>
@@ -131,7 +132,7 @@ export function TraySettings({ appSettings, onValueChange, t }: TraySettingsProp
             onCheckedChange={(checked) => onValueChange('showNotifications', checked)}
           />
         </div>
-
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="tray-click-behavior">{t('settings.trayClickBehavior')}</Label>

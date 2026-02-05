@@ -53,7 +53,7 @@ export function AppSidebar() {
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Layers className="h-4 w-4" />
           </div>
-          <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+          <div className="sidebar-text flex flex-col">
             <span className="text-sm font-semibold">{t('common.appName')}</span>
             <span className="text-xs text-muted-foreground">{t('common.appDescription')}</span>
           </div>
@@ -130,7 +130,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:justify-center">
-          <span className="text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <span className="sidebar-text text-xs text-muted-foreground">
             {t('common.version')}
           </span>
           <div className="flex items-center gap-1">

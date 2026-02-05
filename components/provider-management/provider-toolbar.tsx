@@ -10,8 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Search, RefreshCw, Activity, LayoutGrid, List, ArrowUpDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 export type CategoryFilter = 'all' | 'environment' | 'package' | 'system';
 export type StatusFilter = 'all' | 'available' | 'unavailable' | 'enabled' | 'disabled';
@@ -67,26 +72,40 @@ export function ProviderToolbar({
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCheckAllStatus}
-            disabled={isCheckingStatus}
-            className="gap-2"
-          >
-            <Activity className={`h-4 w-4 ${isCheckingStatus ? 'animate-pulse' : ''}`} />
-            {isCheckingStatus ? t('providers.checking') : t('providers.checkStatus')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {t('providers.refresh')}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCheckAllStatus}
+                disabled={isCheckingStatus}
+                className="gap-2"
+              >
+                <Activity className={`h-4 w-4 ${isCheckingStatus ? 'animate-pulse' : ''}`} />
+                {isCheckingStatus ? t('providers.checking') : t('providers.checkStatus')}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('providers.checkStatusDesc')}</p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onRefresh}
+                disabled={isLoading}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                {t('providers.refresh')}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('providers.refreshDesc')}</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -137,32 +156,33 @@ export function ProviderToolbar({
             </SelectContent>
           </Select>
 
-          <div className="flex items-center border rounded-md">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onViewModeChange('grid')}
-              className={cn(
-                'h-8 px-2 rounded-r-none',
-                viewMode === 'grid' && 'bg-muted'
-              )}
-              title={t('providers.viewGrid')}
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onViewModeChange('list')}
-              className={cn(
-                'h-8 px-2 rounded-l-none',
-                viewMode === 'list' && 'bg-muted'
-              )}
-              title={t('providers.viewList')}
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={(value) => value && onViewModeChange(value as ViewMode)}
+            className="border rounded-md"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem value="grid" aria-label={t('providers.viewGrid')} className="h-8 px-2">
+                  <LayoutGrid className="h-4 w-4" />
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('providers.viewGrid')}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem value="list" aria-label={t('providers.viewList')} className="h-8 px-2">
+                  <List className="h-4 w-4" />
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('providers.viewList')}</p>
+              </TooltipContent>
+            </Tooltip>
+          </ToggleGroup>
         </div>
       </div>
     </div>

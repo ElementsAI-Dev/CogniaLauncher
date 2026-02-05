@@ -2,7 +2,7 @@
 
 import { Component, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryProps {
@@ -43,21 +43,17 @@ export class EnvironmentErrorBoundary extends Component<ErrorBoundaryProps, Erro
   render() {
     if (this.state.hasError) {
       return (
-        <Card className="border-destructive/50 bg-destructive/5">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              <CardTitle className="text-lg">
-                {this.props.fallbackTitle || 'Something went wrong'}
-              </CardTitle>
-            </div>
-            <CardDescription>
-              {this.props.fallbackDescription || 
-                'An error occurred while loading this component. Please try again.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>
+            {this.props.fallbackTitle || 'Something went wrong'}
+          </AlertTitle>
+          <AlertDescription>
             <div className="space-y-3">
+              <p>
+                {this.props.fallbackDescription || 
+                  'An error occurred while loading this component. Please try again.'}
+              </p>
               {this.state.error && (
                 <div className="p-3 rounded-md bg-muted/50 font-mono text-xs text-muted-foreground overflow-auto max-h-24">
                   {this.state.error.message}
@@ -73,8 +69,8 @@ export class EnvironmentErrorBoundary extends Component<ErrorBoundaryProps, Erro
                 {this.props.retryLabel || 'Try Again'}
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </AlertDescription>
+        </Alert>
       );
     }
 

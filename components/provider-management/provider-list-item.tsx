@@ -4,6 +4,11 @@ import { useState, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Loader2, CheckCircle2, XCircle, Activity } from 'lucide-react';
 import type { ProviderInfo } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
@@ -133,20 +138,26 @@ export function ProviderListItem({
           </Badge>
         )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleCheckStatus}
-          disabled={isChecking}
-          className="h-8 px-2"
-          title={t('providers.checkStatus')}
-        >
-          {isChecking ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Activity className="h-4 w-4" />
-          )}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCheckStatus}
+              disabled={isChecking}
+              className="h-8 px-2"
+            >
+              {isChecking ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Activity className="h-4 w-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('providers.checkStatus')}</p>
+          </TooltipContent>
+        </Tooltip>
 
         <div className="flex items-center gap-2">
           {isToggling && (

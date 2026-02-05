@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useSyncExternalStore, ReactNode } from 'react';
 import { type Locale, defaultLocale, getLocaleFromCookie, setLocaleCookie } from '@/lib/i18n';
 
 type MessageValue = string | Record<string, string | Record<string, string>>;
@@ -32,27 +32,34 @@ interface LocaleProviderProps {
   };
 }
 
-function getInitialLocale(initialLocale?: Locale): Locale {
-  if (typeof document !== 'undefined') {
-    return getLocaleFromCookie();
-  }
-  return initialLocale || defaultLocale;
+// Cookie store for useSyncExternalStore
+let listeners: Array<() => void> = [];
+function subscribeToCookie(callback: () => void) {
+  listeners.push(callback);
+  return () => {
+    listeners = listeners.filter((l) => l !== callback);
+  };
+}
+function notifyCookieChange() {
+  listeners.forEach((l) => l());
 }
 
 export function LocaleProvider({ children, initialLocale, messages }: LocaleProviderProps) {
-  const [locale, setLocaleState] = useState<Locale>(() => getInitialLocale(initialLocale));
-  const [currentMessages, setCurrentMessages] = useState<Messages>(() => {
-    const loc = getInitialLocale(initialLocale);
-    return messages[loc] || messages.en;
-  });
+  const serverLocale = initialLocale || defaultLocale;
+  
+  // useSyncExternalStore ensures SSR matches client by using serverLocale as server snapshot
+  const locale = useSyncExternalStore(
+    subscribeToCookie,
+    getLocaleFromCookie,
+    () => serverLocale // Server snapshot - prevents hydration mismatch
+  );
+
+  const currentMessages = messages[locale] || messages.en;
 
   const setLocale = useCallback((newLocale: Locale) => {
-    setLocaleState(newLocale);
     setLocaleCookie(newLocale);
-    setCurrentMessages(messages[newLocale] || messages.en);
-    // Note: State update triggers re-render without full page reload
-    // Only reload if absolutely necessary for complex cases
-  }, [messages]);
+    notifyCookieChange();
+  }, []);
 
   const t = useCallback((key: string, params?: Record<string, string | number>): string => {
     const keys = key.split('.');

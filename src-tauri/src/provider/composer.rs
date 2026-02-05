@@ -42,7 +42,7 @@ impl ComposerProvider {
     }
 
     /// Search Packagist API
-    async fn search_packagist(&self, query: &str, limit: usize) -> CogniaResult<Vec<PackagistPackage>> {
+    async fn search_packagist(&self, query: &str, limit: usize) -> CogniaResult<PackagistSearchResult> {
         let url = format!(
             "https://packagist.org/search.json?q={}&per_page={}",
             urlencoding::encode(query),
@@ -68,7 +68,7 @@ impl ComposerProvider {
             .await
             .map_err(|e| CogniaError::Provider(format!("Failed to parse Packagist response: {}", e)))?;
 
-        Ok(data
+        let packages = data
             .results
             .into_iter()
             .map(|p| PackagistPackage {
@@ -79,7 +79,12 @@ impl ComposerProvider {
                 downloads: p.downloads,
                 favers: p.favers,
             })
-            .collect())
+            .collect();
+
+        Ok(PackagistSearchResult {
+            packages,
+            total: data.total,
+        })
     }
 
     /// Get package info from Packagist API
@@ -182,13 +187,20 @@ impl Default for ComposerProvider {
 // Packagist API response types
 #[derive(Debug, Deserialize)]
 struct PackagistSearchResponse {
-    results: Vec<PackagistSearchResult>,
+    results: Vec<PackagistSearchItem>,
     #[serde(default)]
     total: i64,
 }
 
+/// Result from Packagist search including total count
+#[derive(Debug, Clone)]
+pub struct PackagistSearchResult {
+    pub packages: Vec<PackagistPackage>,
+    pub total: i64,
+}
+
 #[derive(Debug, Deserialize)]
-struct PackagistSearchResult {
+struct PackagistSearchItem {
     name: String,
     #[serde(default)]
     description: Option<String>,
@@ -276,9 +288,12 @@ impl Provider for ComposerProvider {
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(20);
-        let packages = self.search_packagist(query, limit).await?;
+        let result = self.search_packagist(query, limit).await?;
 
-        Ok(packages
+        // Log total available results for debugging
+        tracing::debug!("Packagist search for '{}': {} results available, returning {}", query, result.total, result.packages.len());
+
+        Ok(result.packages
             .into_iter()
             .map(|p| PackageSummary {
                 name: p.name,

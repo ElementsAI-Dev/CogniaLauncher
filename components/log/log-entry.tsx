@@ -1,40 +1,37 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { LogEntry as LogEntryType, LogLevel } from '@/lib/stores/log';
 
-const LEVEL_STYLES: Record<LogLevel, { bg: string; text: string; border: string; indicator: string }> = {
+const LEVEL_STYLES: Record<LogLevel, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string; indicator: string }> = {
   trace: {
-    bg: 'bg-slate-500/10 dark:bg-slate-400/10',
-    text: 'text-slate-600 dark:text-slate-400',
-    border: 'border-slate-400/30',
+    variant: 'secondary',
+    className: 'bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:bg-slate-400/10 dark:text-slate-400',
     indicator: 'bg-slate-400',
   },
   debug: {
-    bg: 'bg-blue-500/10 dark:bg-blue-400/10',
-    text: 'text-blue-600 dark:text-blue-400',
-    border: 'border-blue-400/30',
+    variant: 'secondary',
+    className: 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:bg-blue-400/10 dark:text-blue-400',
     indicator: 'bg-blue-500',
   },
   info: {
-    bg: 'bg-emerald-500/10 dark:bg-emerald-400/10',
-    text: 'text-emerald-600 dark:text-emerald-400',
-    border: 'border-emerald-400/30',
+    variant: 'secondary',
+    className: 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-400',
     indicator: 'bg-emerald-500',
   },
   warn: {
-    bg: 'bg-amber-500/10 dark:bg-amber-400/10',
-    text: 'text-amber-600 dark:text-amber-400',
-    border: 'border-amber-400/30',
+    variant: 'secondary',
+    className: 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:bg-amber-400/10 dark:text-amber-400',
     indicator: 'bg-amber-500',
   },
   error: {
-    bg: 'bg-red-500/10 dark:bg-red-400/10',
-    text: 'text-red-600 dark:text-red-400',
-    border: 'border-red-400/30',
+    variant: 'destructive',
+    className: 'bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:bg-red-400/10 dark:text-red-400',
     indicator: 'bg-red-500',
   },
 };
@@ -161,15 +158,15 @@ export function LogEntry({
       )}
       
       {/* Level badge */}
-      <span
+      <Badge
+        variant={style.variant}
         className={cn(
-          'shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-          style.bg,
-          style.text
+          'shrink-0 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
+          style.className
         )}
       >
         {LEVEL_LABELS[entry.level]}
-      </span>
+      </Badge>
 
       {/* Target/Source */}
       {showTarget && entry.target && (
@@ -192,9 +189,11 @@ export function LogEntry({
       {/* Action buttons */}
       <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         {isExpandable && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={() => setExpanded((prev) => !prev)}
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             aria-label={expanded ? t('logs.collapse') : t('logs.expand')}
           >
             {expanded ? (
@@ -202,12 +201,14 @@ export function LogEntry({
             ) : (
               <ChevronDown className="h-3.5 w-3.5" />
             )}
-          </button>
+          </Button>
         )}
 
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
           onClick={handleCopy}
-          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
           title={t('logs.copyEntry')}
           aria-label={t('logs.copyEntry')}
         >
@@ -216,7 +217,7 @@ export function LogEntry({
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

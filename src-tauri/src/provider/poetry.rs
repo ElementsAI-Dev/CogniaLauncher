@@ -215,11 +215,16 @@ impl Provider for PoetryProvider {
         // Poetry add command
         self.run_poetry(&["add", &pkg]).await?;
 
+        // Determine install path based on Poetry home
+        let install_path = Self::get_poetry_home()
+            .map(|p| p.join("venv").join("lib").join(&req.name))
+            .unwrap_or_default();
+
         Ok(InstallReceipt {
             name: req.name,
             version: req.version.unwrap_or_default(),
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })

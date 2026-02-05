@@ -7,21 +7,29 @@
 
 ## 2. Core Components
 
-- `jest.config.ts` - Jest configuration with coverage thresholds and module mocking
+- `jest.config.ts` - Jest 30.2.0 configuration with coverage thresholds and module mocking
 - `jest.setup.ts` - Test environment setup
-- `app/about/page.test.tsx` (AboutPage tests) - Page structure, version info, system info, actions, changelog, license
-- `components/providers/locale-provider.test.tsx` (LocaleProvider) - i18n provider behavior
-- `components/providers/theme-provider.test.tsx` (ThemeProvider) - Theme switching, accent colors, reduced motion
-- `components/theme-toggle.test.tsx` (ThemeToggle) - Theme toggle dropdown interactions
-- `lib/__tests__/errors.test.ts` (error utilities) - Error parsing, formatting, type detection
-- `lib/__tests__/tauri.test.ts` (type validation) - Tauri type structure validation
-- `lib/hooks/__tests__/use-keyboard-shortcuts.test.ts` (keyboard shortcuts) - Shortcut registration and execution
-- `lib/hooks/__tests__/use-version-cache.test.ts` (version cache) - Cache expiry, invalidation
-- `lib/hooks/__tests__/use-auto-version.test.ts` (auto version) - Version detection and switching
-- `lib/hooks/__tests__/use-packages.test.ts` (package operations) - Package search, install, uninstall
-- `lib/stores/__tests__/environment.test.ts` (environment store) - Environment state management
-- `lib/stores/__tests__/packages.test.ts` (package store) - Package state management
-- `lib/stores/appearance.test.ts` (appearance store) - Theme persistence and actions
+- `package.json` - Testing dependencies: @testing-library/react 16.3.2, jsdom 30.2.0, ts-jest 29.4.6
+
+**Test Files (14 total):**
+- `hooks/use-mobile.test.ts` - Mobile breakpoint detection hook
+- `hooks/use-unsaved-changes.test.ts` - Unsaved changes tracking hook
+- `hooks/use-network.test.ts` - Network status monitoring hook
+- `hooks/use-version-cache.test.ts` - Version caching with expiry hook
+- `hooks/use-keyboard-shortcuts.test.ts` - Keyboard shortcut registration hook
+- `hooks/use-settings-shortcuts.test.ts` - Settings navigation shortcuts hook
+- `hooks/use-health-check.test.ts` - Health check operations hook
+- `hooks/use-downloads.test.ts` - Download management hook
+- `hooks/use-logs.test.ts` - Log viewing hook
+- `hooks/use-settings.test.ts` - Settings management hook
+- `hooks/use-environments.test.ts` - Environment operations hook
+- `hooks/use-package-export.test.ts` - Package export functionality hook
+- `hooks/use-profiles.test.ts` - Profile management hook
+- `hooks/use-appearance-config-sync.test.ts` - Appearance config synchronization hook
+- `hooks/use-auto-update.test.ts` - Auto-update mechanism hook
+- `hooks/use-tray-sync.test.ts` - System tray state synchronization hook
+- `hooks/use-packages.test.ts` - Package operations hook
+- `hooks/use-auto-version.test.ts` - Auto version detection hook
 
 ## 3. Execution Flow
 

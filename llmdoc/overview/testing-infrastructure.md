@@ -15,4 +15,4 @@ Comprehensive testing infrastructure covering:
 - Type definitions validation
 - Coverage enforcement (60-70% thresholds)
 
-Tests co-located with source files (`*.test.ts`, `*.test.tsx`) or in `__tests__/` directories.
+**Test Coverage:** 18 test files covering hooks, utilities, and components. Tests are co-located with source files (`*.test.ts`, `*.test.tsx`) in the `hooks/` directory.

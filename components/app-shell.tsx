@@ -20,6 +20,9 @@ interface AppShellProps {
   children: ReactNode;
 }
 
+// Titlebar height in desktop mode (matches Titlebar h-8 = 2rem = 32px)
+const TITLEBAR_HEIGHT = '2rem';
+
 export function AppShell({ children }: AppShellProps) {
   const { toggleDrawer, getLogStats } = useLogStore();
   const { config, fetchConfig } = useSettings();
@@ -27,6 +30,9 @@ export function AppShell({ children }: AppShellProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const stats = getLogStats();
   const hasErrors = stats.byLevel.error > 0;
+  
+  // Check desktop mode - safe to call during render as it's synchronous
+  const isDesktopMode = isTauri();
 
   useAppearanceConfigSync(config);
 
@@ -52,10 +58,12 @@ export function AppShell({ children }: AppShellProps) {
     <div className="flex h-screen flex-col overflow-hidden">
       <Titlebar />
       <div className="flex flex-1 overflow-hidden">
-        <SidebarProvider>
+        <SidebarProvider
+          style={isDesktopMode ? { '--titlebar-height': TITLEBAR_HEIGHT } as React.CSSProperties : undefined}
+        >
           <AppSidebar />
           <SidebarInset>
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6">
+            <header data-tauri-drag-region className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6">
               <SidebarTrigger className="-ml-1" />
               <Separator orientation="vertical" className="mr-2 h-4" />
               <Breadcrumb />

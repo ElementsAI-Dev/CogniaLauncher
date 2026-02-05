@@ -4,15 +4,15 @@
 
 // Supported programming languages with their display information
 export const LANGUAGES = [
-  { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-50 border-green-500' },
-  { id: 'deno', name: 'Deno', icon: '🦕', color: 'bg-teal-50 border-teal-500' },
-  { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-50 border-blue-500' },
-  { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-50 border-cyan-500' },
-  { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-50 border-orange-500' },
-  { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-50 border-red-500' },
-  { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-50 border-amber-500' },
-  { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-50 border-purple-500' },
-  { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-50 border-violet-500' },
+  { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-500/10 border-green-500 dark:bg-green-500/20' },
+  { id: 'deno', name: 'Deno', icon: '🦕', color: 'bg-teal-500/10 border-teal-500 dark:bg-teal-500/20' },
+  { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-500/10 border-blue-500 dark:bg-blue-500/20' },
+  { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-500/10 border-cyan-500 dark:bg-cyan-500/20' },
+  { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-500/10 border-orange-500 dark:bg-orange-500/20' },
+  { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-500/10 border-red-500 dark:bg-red-500/20' },
+  { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-500/10 border-amber-500 dark:bg-amber-500/20' },
+  { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-500/10 border-purple-500 dark:bg-purple-500/20' },
+  { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-500/10 border-violet-500 dark:bg-violet-500/20' },
 ] as const;
 
 export type LanguageId = typeof LANGUAGES[number]['id'];
@@ -27,7 +27,11 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'deno', name: 'Deno', description: 'Deno runtime (built-in version management)' },
   ],
   python: [
+    { id: 'uv', name: 'uv', description: 'Fast Python package & version manager (Recommended)' },
     { id: 'pyenv', name: 'pyenv', description: 'Python version management' },
+    { id: 'conda', name: 'Conda', description: 'Anaconda/Miniconda environment manager' },
+    { id: 'rye', name: 'Rye', description: 'Modern Python project manager' },
+    { id: 'mise', name: 'mise', description: 'Polyglot version manager (formerly rtx)' },
   ],
   go: [
     { id: 'goenv', name: 'goenv', description: 'Go version management' },
@@ -53,7 +57,7 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
 export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   node: ['.nvmrc', '.node-version', 'package.json (engines.node)', '.tool-versions'],
   deno: ['.deno-version', '.dvmrc', 'deno.json', '.tool-versions'],
-  python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt'],
+  python: ['.python-version', 'pyproject.toml', '.tool-versions', 'runtime.txt', 'uv.lock', 'rye.lock', 'environment.yml'],
   go: ['.go-version', 'go.mod', '.tool-versions'],
   rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
   ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],

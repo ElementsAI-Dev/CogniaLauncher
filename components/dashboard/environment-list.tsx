@@ -169,14 +169,14 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
         'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className={cn(
-          'flex h-10 w-10 items-center justify-center rounded-lg',
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
           available ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
         )}>
           <Layers className="h-5 w-5" />
         </div>
-        <div className="text-left">
+        <div className="text-left min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium">{env_type}</span>
             {available ? (
@@ -197,9 +197,9 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {current_version ? (
-          <Badge variant="secondary" className="font-mono text-xs">
+          <Badge variant="secondary" className="font-mono text-xs max-w-[140px] truncate">
             {current_version}
           </Badge>
         ) : (

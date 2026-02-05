@@ -1,6 +1,7 @@
 'use client';
 
 import { Scan } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import type { DetectedEnvironment } from '@/lib/tauri';
 
 interface CardHeaderProps {
@@ -14,15 +15,16 @@ export function CardHeader({ envType, detectedVersion, t }: CardHeaderProps) {
     <>
       {/* Detected Version Badge */}
       {detectedVersion && (
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
+        <Badge 
+          variant="outline" 
+          className="gap-2 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
+        >
           <Scan className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-          <span className="text-xs font-medium text-green-700 dark:text-green-300">
-            {t('environments.detectedVersion', {
-              version: detectedVersion.version,
-              source: detectedVersion.source,
-            })}
-          </span>
-        </div>
+          {t('environments.detectedVersion', {
+            version: detectedVersion.version,
+            source: detectedVersion.source,
+          })}
+        </Badge>
       )}
 
       {/* Title */}

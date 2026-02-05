@@ -1,8 +1,42 @@
 # CogniaLauncher 文档索引
 
-> Last Updated: 2026-02-05
+> Last Updated: 2026-02-05 | v1.3.0
 
 本文档提供 CogniaLauncher 项目的 AI 上下文文档导航索引。
+
+## 快速查找 v1.3.0 新增内容
+
+| 类型 | 文档 | 描述 |
+|------|------|------|
+| 架构 | `dashboard-components.md` | 仪表板 UI 组件 (flexbox 布局, 文本溢出) |
+| 架构 | `ssr-internationalization.md` | SSR 安全国际化 (useSyncExternalStore) |
+| 参考 | `provider-version-detection.md` | Provider 版本检测增强 API |
+| 增强 | `provider-system.md` | 更新增强版本元数据支持 |
+| 增强 | `testing-architecture.md` | 更新至 18 个测试文件 |
+| 增强 | `testing-infrastructure.md` | 更新测试覆盖统计 |
+
+---
+
+## v1.3.0 更新内容 (2026-02-05)
+
+### 新增文档
+- `llmdoc/architecture/dashboard-components.md` - 仪表板 UI 组件架构 (flexbox 布局, 文本溢出处理)
+- `llmdoc/architecture/ssr-internationalization.md` - SSR 安全的国际化架构 (useSyncExternalStore)
+- `llmdoc/reference/provider-version-detection.md` - Provider 版本检测增强 API (发布日期、弃用状态、下载计数)
+
+### 架构增强
+- **Provider 系统**: 新增增强版本元数据支持，包括发布日期、yanked/deprecated 状态、每版本下载计数
+- **测试基础设施**: 更新至 18 个测试文件，覆盖所有核心 hooks 和功能
+- **仪表板组件**: 新增 flexbox 溢出处理模式和文本截断最佳实践文档
+- **国际化**: 新增 SSR 安全的 locale provider 架构文档
+
+### 文档更新
+- `llmdoc/index.md` - 完整文档索引更新
+- `llmdoc/architecture/provider-system.md` - Provider 系统增强文档
+- `llmdoc/overview/testing-infrastructure.md` - 测试基础设施更新 (18 个测试文件)
+- `llmdoc/architecture/testing-architecture.md` - 测试架构详细文档
+- `CLAUDE.md` - 项目根文档 v1.3.0
+- `src-tauri/CLAUDE.md` - Tauri 后端文档 v1.3.0
 
 ---
 
@@ -26,6 +60,8 @@
 | `command-palette.md` | 命令面板概览 |
 | `custom-detection-system.md` | 自定义检测系统概览 |
 | `downloads-system.md` | 下载管理系统概览 |
+| `health-check-system.md` | 健康检查系统概览 |
+| `profiles-system.md` | 环境配置文件系统概览 |
 | `settings-and-theme-system.md` | 设置和主题系统概览 |
 | `system-tray.md` | 系统托盘概览 |
 | `testing-infrastructure.md` | Jest 30 测试框架概览 |
@@ -50,13 +86,15 @@
 | `cache-system.md` | 缓存系统架构 (SQLite + JSON) |
 | `command-palette.md` | 命令面板组件架构 |
 | `custom-detection-system.md` | 自定义检测系统架构 |
+| `dashboard-components.md` | 仪表板 UI 组件架构 (flexbox 布局, 文本溢出处理) |
 | `downloads-system.md` | 下载管理器架构 |
 | `environment-installation-progress.md` | 环境安装进度架构 |
 | `log-panel-system.md` | 日志面板系统架构 |
-| `provider-system.md` | Provider 系统架构 (35+ providers, system detection) |
+| `provider-system.md` | Provider 系统架构 (40+ providers, system detection) |
 | `self-update-system.md` | 自更新系统架构 |
 | `settings-system.md` | 设置系统架构 |
 | `settings-ui-components.md` | 设置 UI 组件架构 |
+| `ssr-internationalization.md` | SSR 安全的国际化架构 (useSyncExternalStore) |
 | `testing-architecture.md` | 测试框架架构 |
 | `system-tray.md` | 系统托盘架构 |
 
@@ -71,6 +109,7 @@
 | `environment-version-alias-resolution.md` | 环境版本别名解析 |
 | `error-handling.md` | 错误处理和解析 |
 | `keyboard-shortcuts.md` | 键盘快捷键系统 |
+| `provider-version-detection.md` | Provider 版本检测增强 API |
 | `settings-and-theme-apis.md` | 设置和主题 API 参考 |
 | `theme-system.md` | 主题和颜色系统 |
 | `tray-api.md` | 系统托盘 API 参考 |
@@ -102,8 +141,8 @@
 - **状态**: `lib/stores/packages.ts`
 - **后端**: `src-tauri/src/commands/package.rs` - 包命令
 
-#### Provider 系统
-- **后端**: `src-tauri/src/provider/` - 35+ provider 实现
+#### Provider 系统 (v1.3.0 增强)
+- **后端**: `src-tauri/src/provider/` - 40+ provider 实现
 - **注册表**: `src-tauri/src/provider/registry.rs` - Provider 注册和发现
 - **Traits**: `src-tauri/src/provider/traits.rs` - Provider trait 定义和系统检测
 - **系统检测**: `src-tauri/src/provider/traits.rs:182-272` - 可执行文件版本检测
@@ -111,17 +150,36 @@
 - **组件**: `components/providers/` - Provider 相关组件
 - **常量**: `lib/constants/environments.ts` - 环境类型定义
 - **架构**: `llmdoc/architecture/provider-system.md` - Provider 系统架构
-- **新提供商**: `rbenv.rs`, `sdkman.rs`, `goenv.rs` - Ruby/Java/Go 版本管理
+- **版本检测 API**: `llmdoc/reference/provider-version-detection.md` - 增强版本元数据 API (发布日期、弃用状态、下载计数)
+- **新提供商**: `rbenv`, `sdkman`, `goenv` (Ruby/Java/Go 版本管理), `deno`, `phpbrew`, `bundler`, `composer`, `dotnet`, `poetry`
 
 #### 自定义检测系统
 - **后端**: `src-tauri/src/core/custom_detection.rs` - 核心检测逻辑
-- **命令**: `src-tauri/src/commands/custom_detection.rs` - 20+ 条命令
+- **命令**: `src-tauri/src/commands/custom_detection.rs` - 17 条命令
 - **前端**: `lib/tauri.ts:1008-1150` - TypeScript 类型和命令包装器
 - **总览**: `llmdoc/overview/custom-detection-system.md` - 系统概览
 - **架构**: `llmdoc/architecture/custom-detection-system.md` - 系统架构
 - **集成指南**: `llmdoc/guides/custom-detection-integration.md` - 集成指南
 - **API 参考**: `llmdoc/reference/custom-detection-api.md` - API 参考
 - **功能**: 用户定义版本检测规则，支持 9 种提取策略
+
+#### 健康检查系统
+- **后端**: `src-tauri/src/core/health_check.rs` - 健康检查核心逻辑
+- **命令**: `src-tauri/src/commands/health_check.rs` - 2 条命令
+- **前端**: `hooks/use-health-check.ts` - 健康检查 Hook
+- **组件**: `components/environments/health-check-panel.tsx` - 健康检查面板
+- **总览**: `llmdoc/overview/health-check-system.md` - 系统概览
+- **架构**: `llmdoc/architecture/health-check-system.md` - 系统架构
+- **功能**: 环境和系统健康检查，问题检测
+
+#### 环境配置文件系统
+- **后端**: `src-tauri/src/core/profiles.rs` - 配置文件核心逻辑
+- **命令**: `src-tauri/src/commands/profiles.rs` - 9 条命令
+- **前端**: `hooks/use-profiles.ts` - 配置文件 Hook
+- **总览**: `llmdoc/overview/profiles-system.md` - 系统概览
+- **架构**: `llmdoc/architecture/profiles-system.md` - 系统架构
+- **API 参考**: `llmdoc/reference/profiles-api.md` - API 参考
+- **功能**: 环境配置文件管理，快速切换，导入导出
 
 #### 缓存管理
 - **后端**: `src-tauri/src/cache/` - SQLite + JSON 双后端缓存系统
@@ -143,9 +201,10 @@
 - **前端**: `app/settings/page.tsx`
 - **状态**: `lib/stores/settings.ts`, `lib/stores/appearance.ts`
 - **主题**: `lib/theme/`, `components/providers/theme-provider.tsx`
+- **国际化**: `components/providers/locale-provider.tsx`, `lib/i18n.ts`
 - **组件**: `components/settings/`
 - **总览**: `llmdoc/overview/settings-and-theme-system.md`
-- **架构**: `llmdoc/architecture/settings-system.md`, `llmdoc/architecture/settings-ui-components.md`
+- **架构**: `llmdoc/architecture/settings-system.md`, `llmdoc/architecture/settings-ui-components.md`, `llmdoc/architecture/ssr-internationalization.md`
 - **指南**: `llmdoc/guides/add-settings-section.md`, `llmdoc/guides/add-accent-color.md`
 - **API 参考**: `llmdoc/reference/settings-and-theme-apis.md`
 
@@ -156,6 +215,12 @@
 - **总览**: `llmdoc/overview/command-palette.md` - 系统概览
 - **架构**: `llmdoc/architecture/command-palette.md` - 组件架构
 - **扩展指南**: `llmdoc/guides/command-palette-actions.md` - 添加操作
+
+#### 仪表板组件
+- **前端**: `app/page.tsx` - 仪表板主页
+- **组件**: `components/dashboard/` - 环境列表、包列表、快速搜索、统计卡片
+- **状态**: `lib/stores/environment.ts`, `lib/stores/packages.ts`
+- **架构**: `llmdoc/architecture/dashboard-components.md` - Flexbox 布局和文本溢出处理模式
 
 #### 系统托盘
 - **后端**: `src-tauri/src/tray.rs` - 托盘初始化、状态管理、13个Tauri命令
@@ -202,23 +267,37 @@
 - **集成指南**: `llmdoc/guides/custom-detection-integration.md`
 - **API 参考**: `llmdoc/reference/custom-detection-api.md`
 
+#### 健康检查系统
+- **后端**: `src-tauri/src/core/health_check.rs`, `src-tauri/src/commands/health_check.rs`
+- **前端**: `hooks/use-health-check.ts`, `components/environments/health-check-panel.tsx`
+- **总览**: `llmdoc/overview/health-check-system.md`
+- **架构**: `llmdoc/architecture/health-check-system.md`
+
+#### 环境配置文件系统
+- **后端**: `src-tauri/src/core/profiles.rs`, `src-tauri/src/commands/profiles.rs`
+- **前端**: `hooks/use-profiles.ts`
+- **总览**: `llmdoc/overview/profiles-system.md`
+- **架构**: `llmdoc/architecture/profiles-system.md`
+- **API 参考**: `llmdoc/reference/profiles-api.md`
+
 #### 测试基础设施
 - **配置**: `jest.config.ts` - Jest 30 配置和覆盖率阈值
-- **总览**: `llmdoc/overview/testing-infrastructure.md`
-- **架构**: `llmdoc/architecture/testing-architecture.md`
-- **指南**: `llmdoc/guides/testing-guide.md`
+- **总览**: `llmdoc/overview/testing-infrastructure.md` - 测试框架概览
+- **架构**: `llmdoc/architecture/testing-architecture.md` - 18 个测试文件的详细架构
+- **指南**: `llmdoc/guides/testing-guide.md` - 测试代码和运行测试
 
 ### 按技术栈
 
 #### TypeScript/React
 - 类型定义: `lib/tauri.ts`
-- Hooks: `lib/hooks/`, `hooks/`
-- UI 组件: `components/ui/`
+- Hooks: `hooks/` (30 hooks)
+- UI 组件: `components/ui/` (26+ shadcn/ui 组件)
+- 状态: `lib/stores/` (6 Zustand stores)
 
 #### Rust
-- 命令: `src-tauri/src/commands/` - 12 个模块
-- 核心逻辑: `src-tauri/src/core/`
-- Provider: `src-tauri/src/provider/` - 35+ 提供商
+- 命令: `src-tauri/src/commands/` - 15 个模块, 120+ 命令
+- 核心逻辑: `src-tauri/src/core/` (9 模块: profiles, health_check, custom_detection, batch, etc.)
+- Provider: `src-tauri/src/provider/` - 40+ 提供商
 - 平台抽象: `src-tauri/src/platform/`
 - 缓存系统: `src-tauri/src/cache/`
 - 下载管理: `src-tauri/src/download/`
@@ -252,9 +331,15 @@
 
 ## 文档维护
 
-- 更新频率: 每次重大功能变更后
-- 责任: 开发团队
-- 审查: 技术负责人
+- **当前版本:** v1.3.0 (2026-02-05)
+- **覆盖范围:** 90% (270/300 files)
+- **文档总数:** 49 (概述: 9, 指南: 9, 架构: 17, 参考: 14)
+- **Provider 数量:** 40+
+- **Tauri 命令:** 120+
+- **测试文件:** 18
+- **更新频率:** 每次重大功能变更后
+- **责任:** 开发团队
+- **审查:** 技术负责人
 
 ---
 

@@ -59,7 +59,7 @@ export function LogPanel({
     <div className={`flex flex-col overflow-hidden rounded-lg border bg-card ${className}`} style={{ maxHeight }}>
       {showToolbar && <LogToolbar />}
       
-      <ScrollArea ref={scrollRef} className="flex-1">
+      <ScrollArea ref={scrollRef} className="flex-1 min-h-0">
         {filteredLogs.length === 0 ? (
           <EmptyState />
         ) : (

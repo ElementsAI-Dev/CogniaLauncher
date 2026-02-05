@@ -125,8 +125,8 @@ impl BundlerProvider {
         })
     }
 
-    /// Get all versions of a gem
-    async fn get_gem_versions(&self, name: &str) -> CogniaResult<Vec<String>> {
+    /// Get all versions of a gem with detailed info
+    async fn get_gem_versions_detailed(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let url = format!("https://rubygems.org/api/v1/versions/{}.json", name);
 
         let response = self
@@ -145,7 +145,21 @@ impl BundlerProvider {
             .await
             .map_err(|e| CogniaError::Provider(format!("Failed to parse versions response: {}", e)))?;
 
-        Ok(versions.into_iter().map(|v| v.number).collect())
+        Ok(versions
+            .into_iter()
+            .map(|v| VersionInfo {
+                version: v.number,
+                release_date: v.created_at,
+                deprecated: false,
+                yanked: v.yanked,
+            })
+            .collect())
+    }
+
+    /// Get all versions of a gem (version strings only)
+    async fn get_gem_versions(&self, name: &str) -> CogniaResult<Vec<String>> {
+        let versions = self.get_gem_versions_detailed(name).await?;
+        Ok(versions.into_iter().map(|v| v.version).collect())
     }
 
     fn parse_bundle_list_output(output: &str) -> Vec<InstalledPackage> {
@@ -315,17 +329,7 @@ impl Provider for BundlerProvider {
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
-        let versions = self.get_gem_versions(name).await?;
-
-        Ok(versions
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v,
-                release_date: None,
-                deprecated: false,
-                yanked: false,
-            })
-            .collect())
+        self.get_gem_versions_detailed(name).await
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
@@ -415,8 +419,21 @@ impl SystemPackageProvider for BundlerProvider {
     }
 
     async fn get_version(&self) -> CogniaResult<String> {
+        // Try gem command first to get the actual gem version
+        if let Ok(output) = self.run_gem(&["--version"]).await {
+            let gem_version = output.trim().to_string();
+            // Also get bundler version for complete info
+            if let Ok(bundle_output) = self.run_bundle(&["--version"]).await {
+                let bundler_version = bundle_output
+                    .trim()
+                    .strip_prefix("Bundler version ")
+                    .unwrap_or(bundle_output.trim());
+                return Ok(format!("Bundler {} (RubyGems {})", bundler_version, gem_version));
+            }
+        }
+
+        // Fallback to bundler only
         let output = self.run_bundle(&["--version"]).await?;
-        // Output: "Bundler version x.x.x"
         let version = output
             .trim()
             .strip_prefix("Bundler version ")

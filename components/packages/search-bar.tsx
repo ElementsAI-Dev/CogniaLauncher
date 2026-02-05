@@ -20,6 +20,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface SearchBarProps {
   providers: ProviderInfo[];
@@ -203,14 +208,20 @@ export function SearchBar({
             className="h-10 pl-9 pr-9 bg-background border-border"
           />
           {query && (
-            <button
-              onClick={() => { setQuery(''); inputRef.current?.focus(); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              title={t('common.clear')}
-              aria-label={t('common.clear')}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
+                  aria-label={t('common.clear')}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.clear')}</TooltipContent>
+            </Tooltip>
           )}
           
           {/* Suggestions & History Dropdown */}
@@ -260,12 +271,14 @@ export function SearchBar({
                       <Clock className="h-3 w-3" />
                       {t('packages.recentSearches')}
                     </span>
-                    <button
+                    <Button
+                      variant="link"
+                      size="sm"
                       onClick={clearHistory}
-                      className="text-xs text-muted-foreground hover:text-foreground"
+                      className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
                     >
                       {t('common.clear')}
-                    </button>
+                    </Button>
                   </div>
                   <div className="py-1">
                     {searchHistory.map((item, index) => (
@@ -418,15 +431,17 @@ export function SearchBar({
               {t('packages.hasUpdatesFilter')} <X className="h-3 w-3" />
             </Badge>
           )}
-          <button 
-            className="text-xs text-muted-foreground hover:text-foreground"
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => {
               setSelectedProviders([]);
               setFilters({});
             }}
           >
             {t('packages.clearAllFilters')}
-          </button>
+          </Button>
         </div>
       )}
     </div>

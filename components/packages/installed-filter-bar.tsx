@@ -11,6 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Search, X, Server } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { InstalledPackage, ProviderInfo } from '@/lib/tauri';
@@ -82,14 +87,20 @@ export function InstalledFilterBar({
           className="h-9 pl-9 pr-9"
         />
         {filter.query && (
-          <button
-            onClick={() => handleQueryChange('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            title={t('common.clear')}
-            aria-label={t('common.clear')}
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleQueryChange('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
+                aria-label={t('common.clear')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('common.clear')}</TooltipContent>
+          </Tooltip>
         )}
       </div>
 

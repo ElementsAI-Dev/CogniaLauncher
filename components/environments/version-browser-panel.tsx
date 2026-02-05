@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import type { VersionInfo } from '@/lib/tauri';
@@ -298,19 +299,23 @@ export function VersionBrowserPanel({
 
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
-            <div className="flex gap-1">
+            <ToggleGroup
+              type="single"
+              value={filter}
+              onValueChange={(value) => value && setFilter(value as VersionFilter)}
+              className="flex gap-1"
+            >
               {(['all', 'stable', 'lts', 'latest'] as VersionFilter[]).map((f) => (
-                <Button
+                <ToggleGroupItem
                   key={f}
-                  variant={filter === f ? 'default' : 'outline'}
+                  value={f}
                   size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setFilter(f)}
+                  className="h-7 text-xs px-3"
                 >
                   {t(`environments.versionBrowser.filter.${f}`)}
-                </Button>
+                </ToggleGroupItem>
               ))}
-            </div>
+            </ToggleGroup>
           </div>
         </div>
 

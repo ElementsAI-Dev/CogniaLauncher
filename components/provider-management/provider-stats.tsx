@@ -1,6 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { CheckCircle2, XCircle, Power, PowerOff } from 'lucide-react';
 
 export interface ProviderStatsProps {
@@ -29,7 +30,7 @@ export function ProviderStats({
         </Badge>
       </div>
 
-      <div className="h-4 w-px bg-border" />
+      <Separator orientation="vertical" className="h-4" />
 
       <div className="flex items-center gap-2">
         <Power className="h-4 w-4 text-green-600" />
@@ -47,7 +48,7 @@ export function ProviderStats({
         </Badge>
       </div>
 
-      <div className="h-4 w-px bg-border" />
+      <Separator orientation="vertical" className="h-4" />
 
       <div className="flex items-center gap-2">
         <CheckCircle2 className="h-4 w-4 text-green-600" />

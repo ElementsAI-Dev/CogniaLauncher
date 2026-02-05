@@ -122,12 +122,14 @@ export function PackageDetailsDialog({
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription>
-            {loading ? (
-              <Skeleton className="h-4 w-3/4" />
-            ) : (
-              packageInfo?.description || pkg?.description || 'No description available'
-            )}
+          <DialogDescription asChild>
+            <div>
+              {loading ? (
+                <Skeleton className="h-4 w-3/4" />
+              ) : (
+                packageInfo?.description || pkg?.description || 'No description available'
+              )}
+            </div>
           </DialogDescription>
         </DialogHeader>
 

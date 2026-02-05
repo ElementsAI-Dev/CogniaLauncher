@@ -9,6 +9,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   RefreshCw, AlertCircle, Package, 
   ChevronRight, ArrowUp, 
   CheckCircle, Loader2, Pin
@@ -290,17 +295,21 @@ export function UpdateManager({
                       )}
                     </div>
                     
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPinPackage(update.package_id);
-                      }}
-                      title="Pin version"
-                    >
-                      <Pin className="h-4 w-4" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPinPackage(update.package_id);
+                          }}
+                        >
+                          <Pin className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Pin version</TooltipContent>
+                    </Tooltip>
                   </div>
                 ))}
               </div>

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Collapsible,
   CollapsibleContent,
@@ -92,9 +93,10 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
 
       <CardContent>
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-            {error}
-          </div>
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {!systemHealth && !loading && (
@@ -246,60 +248,59 @@ interface IssueCardProps {
 }
 
 function IssueCard({ issue, onCopy, t }: IssueCardProps) {
+  const getAlertVariant = (severity: Severity): 'default' | 'destructive' => {
+    switch (severity) {
+      case 'critical':
+      case 'error':
+        return 'destructive';
+      default:
+        return 'default';
+    }
+  };
+
   const getSeverityIcon = (severity: Severity) => {
     switch (severity) {
       case 'critical':
       case 'error':
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+        return <AlertCircle className="h-4 w-4" />;
       case 'warning':
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+        return <AlertTriangle className="h-4 w-4" />;
       case 'info':
       default:
-        return <Info className="h-4 w-4 text-blue-500" />;
+        return <Info className="h-4 w-4" />;
     }
   };
 
   return (
-    <div
-      className={cn(
-        'p-3 rounded-md border text-sm',
-        issue.severity === 'critical' || issue.severity === 'error'
-          ? 'bg-red-50 border-red-200'
-          : issue.severity === 'warning'
-          ? 'bg-yellow-50 border-yellow-200'
-          : 'bg-blue-50 border-blue-200'
-      )}
-    >
-      <div className="flex items-start gap-2">
-        {getSeverityIcon(issue.severity)}
-        <div className="flex-1">
-          <p className="font-medium">{issue.message}</p>
-          {issue.details && (
-            <p className="text-xs mt-1 opacity-80">{issue.details}</p>
-          )}
-          {issue.fix_command && (
-            <div className="mt-2 flex items-center gap-2">
-              <code className="text-xs bg-black/10 px-2 py-1 rounded">
-                {issue.fix_command}
-              </code>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0"
-                onClick={() => onCopy(issue.fix_command!)}
-                title={t('copyCommand')}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-          {issue.fix_description && (
-            <p className="text-xs mt-1 text-muted-foreground">
-              {issue.fix_description}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
+    <Alert variant={getAlertVariant(issue.severity)} className="text-sm">
+      {getSeverityIcon(issue.severity)}
+      <AlertTitle className="text-sm font-medium">{issue.message}</AlertTitle>
+      <AlertDescription>
+        {issue.details && (
+          <p className="text-xs mt-1 opacity-80">{issue.details}</p>
+        )}
+        {issue.fix_command && (
+          <div className="mt-2 flex items-center gap-2">
+            <code className="text-xs bg-black/10 px-2 py-1 rounded">
+              {issue.fix_command}
+            </code>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={() => onCopy(issue.fix_command!)}
+              title={t('copyCommand')}
+            >
+              <Copy className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
+        {issue.fix_description && (
+          <p className="text-xs mt-1 text-muted-foreground">
+            {issue.fix_description}
+          </p>
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

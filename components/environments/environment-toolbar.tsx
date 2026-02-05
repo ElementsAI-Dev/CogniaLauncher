@@ -58,14 +58,16 @@ export function EnvironmentToolbar({
             className="h-9 pl-9 pr-9 bg-background"
           />
           {searchQuery && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => onSearchChange('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7"
               title={t('common.clear')}
               aria-label={t('common.clear')}
             >
               <X className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </div>
 
@@ -148,12 +150,14 @@ export function EnvironmentToolbar({
                 </Badge>
               )}
               
-              <button
-                className="text-xs text-destructive hover:underline"
+              <Button
+                variant="link"
+                size="sm"
+                className="text-xs text-destructive h-auto p-0"
                 onClick={onClearFilters}
               >
                 {t('environments.toolbar.clearAll')}
-              </button>
+              </Button>
             </>
           )}
         </div>

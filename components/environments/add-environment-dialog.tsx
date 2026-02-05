@@ -24,17 +24,18 @@ import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/hooks/use-environments';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { X, Check, RefreshCw, Globe } from 'lucide-react';
 
 const LANGUAGES = [
-  { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-50 border-green-500' },
-  { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-50 border-blue-500' },
-  { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-50 border-cyan-500' },
-  { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-50 border-orange-500' },
-  { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-50 border-red-500' },
-  { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-50 border-amber-500' },
-  { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-50 border-purple-500' },
-  { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-50 border-violet-500' },
+  { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-500/10 border-green-500 dark:bg-green-500/20' },
+  { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-500/10 border-blue-500 dark:bg-blue-500/20' },
+  { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-500/10 border-cyan-500 dark:bg-cyan-500/20' },
+  { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-500/10 border-orange-500 dark:bg-orange-500/20' },
+  { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-500/10 border-red-500 dark:bg-red-500/20' },
+  { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-500/10 border-amber-500 dark:bg-amber-500/20' },
+  { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-500/10 border-purple-500 dark:bg-purple-500/20' },
+  { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-500/10 border-violet-500 dark:bg-violet-500/20' },
 ];
 
 const PROVIDERS: Record<string, { id: string; name: string; description: string }[]> = {
@@ -43,7 +44,11 @@ const PROVIDERS: Record<string, { id: string; name: string; description: string 
     { id: 'nvm', name: 'nvm', description: 'Node Version Manager' },
   ],
   python: [
+    { id: 'uv', name: 'uv', description: 'Fast Python package & version manager (Recommended)' },
     { id: 'pyenv', name: 'pyenv', description: 'Python version management' },
+    { id: 'conda', name: 'Conda', description: 'Anaconda/Miniconda environment manager' },
+    { id: 'rye', name: 'Rye', description: 'Modern Python project manager' },
+    { id: 'mise', name: 'mise', description: 'Polyglot version manager (formerly rtx)' },
   ],
   go: [
     { id: 'goenv', name: 'goenv', description: 'Go version management' },
@@ -177,47 +182,21 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
             <Label id="language-label" className="text-sm font-medium">
               {t('environments.addDialog.selectLanguage')}
             </Label>
-            <div 
-              role="radiogroup" 
-              aria-labelledby="language-label"
+            <ToggleGroup
+              type="single"
+              value={selectedLanguage || ''}
+              onValueChange={(value) => value && handleLanguageSelect(value)}
               className="grid grid-cols-4 gap-3"
+              aria-labelledby="language-label"
             >
-              {LANGUAGES.map((lang, index) => (
-                <button
+              {LANGUAGES.map((lang) => (
+                <ToggleGroupItem
                   key={lang.id}
-                  role="radio"
-                  aria-checked={selectedLanguage === lang.id}
-                  tabIndex={selectedLanguage === lang.id || (selectedLanguage === null && index === 0) ? 0 : -1}
-                  onClick={() => handleLanguageSelect(lang.id)}
-                  onKeyDown={(e) => {
-                    const totalItems = LANGUAGES.length;
-                    let nextIndex = index;
-                    
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      nextIndex = (index + 1) % totalItems;
-                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      nextIndex = (index - 1 + totalItems) % totalItems;
-                    } else if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      handleLanguageSelect(lang.id);
-                      return;
-                    } else {
-                      return;
-                    }
-                    
-                    handleLanguageSelect(LANGUAGES[nextIndex].id);
-                    // Focus the next button
-                    const buttons = e.currentTarget.parentElement?.querySelectorAll('[role="radio"]');
-                    (buttons?.[nextIndex] as HTMLElement)?.focus();
-                  }}
+                  value={lang.id}
                   className={cn(
-                    'relative flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                    'hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
-                    selectedLanguage === lang.id
-                      ? lang.color + ' border-2'
-                      : 'border-border bg-background'
+                    'relative flex flex-col items-center gap-2 p-4 h-auto rounded-lg border-2 transition-all',
+                    'data-[state=on]:border-primary',
+                    selectedLanguage === lang.id && lang.color
                   )}
                 >
                   <span className="text-2xl" aria-hidden="true">{lang.icon}</span>
@@ -225,9 +204,9 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                   {selectedLanguage === lang.id && (
                     <Check className="h-4 w-4 text-primary absolute top-2 right-2" aria-hidden="true" />
                   )}
-                </button>
+                </ToggleGroupItem>
               ))}
-            </div>
+            </ToggleGroup>
           </div>
 
           {/* Provider Selection */}

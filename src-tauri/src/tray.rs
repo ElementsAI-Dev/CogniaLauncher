@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tauri::{
     image::Image,
     menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime, State, Wry,
 };
 use tokio::sync::RwLock;

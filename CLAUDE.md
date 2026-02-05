@@ -1,25 +1,31 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-02-04
+> Last Updated: 2026-02-05 | v1.3.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
 
+### 2026-02-05 (v1.3.0)
+- **NEW: Health Check System**: Environment and system health diagnostics with issue detection and remediation
+- **NEW: Profiles System**: Environment configuration snapshots for quick switching and sharing
+- **NEW Providers**: deno, phpbrew, bundler, composer, dotnet, poetry for additional language ecosystems
+- **Enhanced Provider Metadata**: RubyGems, NuGet, and Packagist now return detailed version info (release dates, download counts, yanked status)
+- **Updated provider count**: 40+ providers (previously 35+)
+- **Updated command count**: 120+ Tauri commands (previously 100+)
+- **Updated hooks directory**: 30 hooks in hooks/ directory
+- **Updated coverage**: 90% (270/300 files scanned)
+- **New dependencies**: @tauri-apps/plugin-log 2.8.0, @tauri-apps/plugin-opener 2.5.3, ts-jest 29.4.6
+
 ### 2026-02-04
 - **NEW: Download Management System**: Queue-based download manager with throttling, progress tracking, and SQLite history persistence
 - **NEW: System Tray**: Multi-language tray with dynamic icon states, quick actions, and autostart support
 - **NEW: Command Palette**: Global command search with Ctrl+K / Cmd+K shortcut
-- **NEW: Custom Detection System**: User-defined version detection rules with 9 extraction strategies (regex, JSON, TOML, YAML, XML, plain text, .tool-versions, INI, command)
+- **NEW: Custom Detection System**: User-defined version detection rules with 9 extraction strategies
 - **NEW: Enhanced Cache**: Cache system with trash support, cleanup history tracking, and preview functionality
 - **NEW: Log Panel**: Real-time log monitoring with filtering, search, and export capabilities
 - **NEW Providers**: rbenv, sdkman, goenv for Ruby, Java/JDK, and Go version management
-- Updated module index with new routes (downloads, logs)
-- Updated Tauri commands documentation (100+ commands now)
-- Added new hooks: `use-tray-sync.ts`, `use-downloads.ts`, `use-logs.ts`
-- Added new stores: `download.ts`, `log.ts`
-- Added new providers: `rbenv.rs`, `sdkman.rs`, `goenv.rs`
 
 ### 2026-01-16
 - Added llmdoc/ documentation index system
@@ -42,9 +48,9 @@ CogniaLauncher is a **cross-platform environment and package manager** with a mo
 - **Desktop mode** (`pnpm tauri dev`): Tauri wraps Next.js in a native window
 
 The project provides unified management for:
-- **Development Environments**: Node.js (nvm/fnm), Python (pyenv), Rust (rustup), Go (goenv), Ruby (rbenv), Java (SDKMAN) version management
-- **Package Providers**: npm, pnpm, yarn, pip, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, vcpkg, Docker, PSGallery, GitHub Releases (35+ providers)
-- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection
+- **Development Environments**: Node.js (nvm/fnm/bun), Python (pyenv), Rust (rustup), Go (goenv), Ruby (rbenv), Java (SDKMAN), PHP (phpbrew), Deno version management
+- **Package Providers**: npm, pnpm, yarn, pip, uv, poetry, cargo, bundler, composer, dotnet, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, vcpkg, Docker, PSGallery, GitHub Releases (40+ providers)
+- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection, health checks, profiles
 
 ---
 

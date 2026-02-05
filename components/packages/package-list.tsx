@@ -15,6 +15,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Download, Trash2, Info, Loader2, Package, Pin, Star } from 'lucide-react';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -178,68 +183,84 @@ export function PackageList({
                   {pkg.provider}
                 </Badge>
                 
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect?.(pkg);
-                  }}
-                  title={t('common.info')}
-                >
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect?.(pkg);
+                      }}
+                    >
+                      <Info className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('common.info')}</TooltipContent>
+                </Tooltip>
 
                 {/* Pin/Unpin button for installed packages */}
                 {isInstalled && onPin && onUnpin && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isPinned) {
-                        onUnpin(pkg.name);
-                      } else {
-                        onPin(pkg.name);
-                      }
-                    }}
-                    title={isPinned ? t('packages.unpinVersion') : t('packages.pinVersion')}
-                  >
-                    <Pin className={`h-4 w-4 ${isPinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isPinned) {
+                            onUnpin(pkg.name);
+                          } else {
+                            onPin(pkg.name);
+                          }
+                        }}
+                      >
+                        <Pin className={`h-4 w-4 ${isPinned ? 'text-primary fill-primary' : 'text-muted-foreground'}`} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{isPinned ? t('packages.unpinVersion') : t('packages.pinVersion')}</TooltipContent>
+                  </Tooltip>
                 )}
 
                 {/* Bookmark button */}
                 {onBookmark && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onBookmark(pkg.name);
-                    }}
-                    title={bookmarkedPackages.includes(pkg.name) ? t('packages.removeBookmark') : t('packages.addBookmark')}
-                  >
-                    <Star className={`h-4 w-4 ${bookmarkedPackages.includes(pkg.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onBookmark(pkg.name);
+                        }}
+                      >
+                        <Star className={`h-4 w-4 ${bookmarkedPackages.includes(pkg.name) ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{bookmarkedPackages.includes(pkg.name) ? t('packages.removeBookmark') : t('packages.addBookmark')}</TooltipContent>
+                  </Tooltip>
                 )}
                 
                 {isInstalled ? (
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="icon"
-                        variant="destructive"
-                        className="h-8 w-8"
-                        onClick={(e) => e.stopPropagation()}
-                        title={t('common.uninstall')}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </AlertDialogTrigger>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="destructive"
+                            className="h-8 w-8"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.uninstall')}</TooltipContent>
+                    </Tooltip>
                     <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                       <AlertDialogHeader>
                         <AlertDialogTitle>{t('common.uninstall')} {pkg.name}</AlertDialogTitle>
@@ -260,21 +281,25 @@ export function PackageList({
                   </AlertDialog>
                 ) : (
                   <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="icon"
-                        className="h-8 w-8"
-                        disabled={isInstalling}
-                        onClick={(e) => e.stopPropagation()}
-                        title={t('common.install')}
-                      >
-                        {isInstalling ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Download className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </AlertDialogTrigger>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={isInstalling}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {isInstalling ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Download className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.install')}</TooltipContent>
+                    </Tooltip>
                     <AlertDialogContent onClick={(e) => e.stopPropagation()}>
                       <AlertDialogHeader>
                         <AlertDialogTitle>{t('common.install')} {pkg.name}</AlertDialogTitle>

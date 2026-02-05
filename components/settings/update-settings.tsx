@@ -1,6 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import type { AppSettings } from '@/lib/stores/settings';
@@ -18,7 +19,7 @@ export function UpdateSettings({ appSettings, onValueChange, t }: UpdateSettings
         <CardTitle>{t('settings.updates')}</CardTitle>
         <CardDescription>{t('settings.updatesDesc')}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-1">
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="check-updates-on-start">{t('settings.checkUpdatesOnStart')}</Label>
@@ -33,6 +34,7 @@ export function UpdateSettings({ appSettings, onValueChange, t }: UpdateSettings
             onCheckedChange={(checked) => onValueChange('checkUpdatesOnStart', checked)}
           />
         </div>
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="auto-install-updates">{t('settings.autoInstallUpdates')}</Label>
@@ -47,6 +49,7 @@ export function UpdateSettings({ appSettings, onValueChange, t }: UpdateSettings
             onCheckedChange={(checked) => onValueChange('autoInstallUpdates', checked)}
           />
         </div>
+        <Separator />
         <div className="flex items-center justify-between py-2">
           <div className="space-y-0.5">
             <Label htmlFor="notify-on-updates">{t('settings.notifyOnUpdates')}</Label>

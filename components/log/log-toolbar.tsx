@@ -3,6 +3,8 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -204,13 +206,15 @@ export function LogToolbar({
             className="pl-9 pr-8 h-9"
           />
           {filter.search && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6"
               onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded-sm transition-colors"
               aria-label="Clear search"
             >
               <X className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
+            </Button>
           )}
         </div>
 
@@ -264,7 +268,7 @@ export function LogToolbar({
         </Button>
 
         {/* Separator */}
-        <div className="hidden sm:block h-6 w-px bg-border" />
+        <Separator orientation="vertical" className="hidden sm:block h-6" />
 
         {/* Realtime controls */}
         {showRealtimeControls && (
@@ -334,7 +338,7 @@ export function LogToolbar({
 
         {/* Stats badge */}
         {showRealtimeControls && (
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/50 text-xs tabular-nums">
+          <Badge variant="secondary" className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs tabular-nums">
             <span className="text-muted-foreground">{t('logs.total')}:</span>
             <span className="font-medium">{stats.total}</span>
             {paused && (
@@ -342,7 +346,7 @@ export function LogToolbar({
                 • {t('logs.paused')}
               </span>
             )}
-          </div>
+          </Badge>
         )}
       </div>
 
@@ -386,7 +390,7 @@ export function LogToolbar({
             </div>
           )}
 
-          <div className="h-5 w-px bg-border hidden sm:block" />
+          <Separator orientation="vertical" className="h-5 hidden sm:block" />
 
           {/* Regex toggle */}
           <div className="flex items-center gap-2">
@@ -402,7 +406,7 @@ export function LogToolbar({
 
           {showMaxLogs && (
             <>
-              <div className="h-5 w-px bg-border hidden sm:block" />
+              <Separator orientation="vertical" className="h-5 hidden sm:block" />
               <div className="flex items-center gap-2">
                 <Label htmlFor="max-logs" className="text-xs text-muted-foreground shrink-0">
                   {t('logs.maxLogs')}:

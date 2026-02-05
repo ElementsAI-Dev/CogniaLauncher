@@ -115,7 +115,7 @@ export function ProviderStatusBadge({
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="end">
+      <PopoverContent className="w-80 p-0" align="end" collisionPadding={16}>
         <div className="p-3 border-b">
           <div className="flex items-center justify-between">
             <h4 className="font-medium text-sm">{t('packages.providerManagement')}</h4>
@@ -129,7 +129,7 @@ export function ProviderStatusBadge({
           </p>
         </div>
 
-        <ScrollArea className="max-h-[300px]">
+        <ScrollArea className="max-h-[min(300px,50vh)]">
           <div className="p-2 space-y-1">
             {packageProviders.map((provider) => {
               const isToggling = togglingProvider === provider.id;

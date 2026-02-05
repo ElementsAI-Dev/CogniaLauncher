@@ -42,7 +42,7 @@ impl DotnetProvider {
     }
 
     /// Search NuGet API
-    async fn search_nuget(&self, query: &str, limit: usize) -> CogniaResult<Vec<NuGetPackage>> {
+    async fn search_nuget(&self, query: &str, limit: usize) -> CogniaResult<NuGetSearchResults> {
         let url = format!(
             "https://azuresearch-usnc.nuget.org/query?q={}&take={}",
             urlencoding::encode(query),
@@ -68,7 +68,7 @@ impl DotnetProvider {
             .await
             .map_err(|e| CogniaError::Provider(format!("Failed to parse NuGet response: {}", e)))?;
 
-        Ok(data
+        let packages = data
             .data
             .into_iter()
             .map(|p| NuGetPackage {
@@ -79,16 +79,25 @@ impl DotnetProvider {
                 project_url: p.project_url,
                 license_url: p.license_url,
                 total_downloads: p.total_downloads,
-                versions: p.versions.into_iter().map(|v| v.version).collect(),
+                versions: p.versions.into_iter().map(|v| NuGetPackageVersion {
+                    version: v.version,
+                    downloads: v.downloads,
+                }).collect(),
             })
-            .collect())
+            .collect();
+
+        Ok(NuGetSearchResults {
+            packages,
+            total_hits: data.total_hits,
+        })
     }
 
     /// Get package info from NuGet API
     async fn get_nuget_package(&self, id: &str) -> CogniaResult<NuGetPackageInfo> {
-        let packages = self.search_nuget(id, 1).await?;
+        let results = self.search_nuget(id, 1).await?;
 
-        packages
+        results
+            .packages
             .into_iter()
             .find(|p| p.id.eq_ignore_ascii_case(id))
             .map(|p| NuGetPackageInfo {
@@ -229,7 +238,19 @@ pub struct NuGetPackage {
     pub project_url: Option<String>,
     pub license_url: Option<String>,
     pub total_downloads: i64,
-    pub versions: Vec<String>,
+    pub versions: Vec<NuGetPackageVersion>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NuGetPackageVersion {
+    pub version: String,
+    pub downloads: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct NuGetSearchResults {
+    pub packages: Vec<NuGetPackage>,
+    pub total_hits: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -240,7 +261,7 @@ pub struct NuGetPackageInfo {
     pub authors: Option<Vec<String>>,
     pub project_url: Option<String>,
     pub license_url: Option<String>,
-    pub versions: Vec<String>,
+    pub versions: Vec<NuGetPackageVersion>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -298,9 +319,12 @@ impl Provider for DotnetProvider {
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(20);
-        let packages = self.search_nuget(query, limit).await?;
+        let results = self.search_nuget(query, limit).await?;
 
-        Ok(packages
+        tracing::debug!("NuGet search returned {} of {} total hits", results.packages.len(), results.total_hits);
+
+        Ok(results
+            .packages
             .into_iter()
             .map(|p| PackageSummary {
                 name: p.id,
@@ -317,11 +341,14 @@ impl Provider for DotnetProvider {
         let versions: Vec<VersionInfo> = info
             .versions
             .into_iter()
-            .map(|v| VersionInfo {
-                version: v,
-                release_date: None,
-                deprecated: false,
-                yanked: false,
+            .map(|v| {
+                tracing::trace!("Version {} has {} downloads", v.version, v.downloads);
+                VersionInfo {
+                    version: v.version,
+                    release_date: None,
+                    deprecated: false,
+                    yanked: false,
+                }
             })
             .collect();
 
@@ -344,7 +371,7 @@ impl Provider for DotnetProvider {
             .versions
             .into_iter()
             .map(|v| VersionInfo {
-                version: v,
+                version: v.version,
                 release_date: None,
                 deprecated: false,
                 yanked: false,

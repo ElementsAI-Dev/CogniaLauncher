@@ -3,7 +3,7 @@
 ## 1. Identity
 
 - **What it is:** Extensible provider registry for package and environment management.
-- **Purpose:** Unified interface for 35+ package sources and version managers across multiple platforms.
+- **Purpose:** Unified interface for 40+ package sources and version managers across multiple platforms.
 
 ## 2. Core Components
 
@@ -19,6 +19,15 @@
 - `src-tauri/src/provider/npm.rs` (NpmProvider): Node.js package registry.
 - `src-tauri/src/provider/cargo.rs` (CargoProvider): Rust package registry.
 - `src-tauri/src/provider/pip.rs` (PipProvider): Python package registry.
+- `src-tauri/src/provider/uv.rs` (UvProvider): Fast Python package installer.
+- `src-tauri/src/provider/yarn.rs` (YarnProvider): Node.js package manager.
+- `src-tauri/src/provider/bun.rs` (BunProvider): Bun runtime and package manager.
+- `src-tauri/src/provider/deno.rs` (DenoProvider): Deno runtime and package management.
+- `src-tauri/src/provider/phpbrew.rs` (PhpbrewProvider): PHP version management.
+- `src-tauri/src/provider/bundler.rs` (BundlerProvider): Ruby dependency management with detailed version info (release dates, yanked status).
+- `src-tauri/src/provider/composer.rs` (ComposerProvider): PHP dependency management with Packagist search result counts.
+- `src-tauri/src/provider/dotnet.rs` (DotnetProvider): .NET SDK with NuGet search including per-version download counts.
+- `src-tauri/src/provider/poetry.rs` (PoetryProvider): Python dependency management with Poetry home install path detection.
 - `src-tauri/src/provider/brew.rs` (BrewProvider): macOS package manager.
 - `src-tauri/src/provider/apt.rs` (AptProvider): Debian/Ubuntu packages.
 - `src-tauri/src/provider/dnf.rs` (DnfProvider): Fedora packages.
@@ -51,6 +60,12 @@
 ## 4. Design Rationale
 
 **Trait-based architecture:** Enables polymorphic provider handling through `Provider`, `EnvironmentProvider`, and `SystemPackageProvider` traits.
+
+**Enhanced version metadata:** Providers now return detailed `VersionInfo` structures including release dates, yanked/deprecated status, and per-version download counts where available (RubyGems, NuGet).
+
+**Search result pagination:** Package search APIs return total hit counts for proper pagination (Packagist `total`, NuGet `total_hits`).
+
+**Install path detection:** Providers use home directory environment variables (`POETRY_HOME`, `COMPOSER_HOME`) for accurate install path determination.
 
 **System detection enhancement:** New `system_detection` module allows providers to detect versions from system executables without requiring the version manager to be installed, adding `VersionSource::SystemExecutable` variant.
 

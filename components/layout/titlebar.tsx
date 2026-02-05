@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Minus, Square, X, Pin, PinOff, Maximize2, Move, MonitorUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isTauri } from '@/lib/tauri';
 import { useSettingsStore } from '@/lib/stores/settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
@@ -21,11 +22,12 @@ type TauriWindow = Awaited<
 export function Titlebar() {
   const { appSettings } = useSettingsStore();
   const { t } = useLocale();
+  const [mounted, setMounted] = useState(false);
   const [appWindow, setAppWindow] = useState<TauriWindow | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
-  const [isTauri, setIsTauri] = useState(false);
+  const [isDesktopMode, setIsDesktopMode] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
@@ -34,78 +36,86 @@ export function Titlebar() {
   const unlistenFocusRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
 
+  // Handle hydration - only render after mount
   useEffect(() => {
-    let mounted = true;
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    
+    let active = true;
 
     const initTauri = async () => {
-      if (typeof window !== 'undefined' && '__TAURI__' in window) {
-        try {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          const win = getCurrentWindow();
-          
-          if (!mounted) return;
-          
-          setAppWindow(win);
-          setIsTauri(true);
+      // Use the shared isTauri() detection from lib/tauri
+      if (!isTauri()) return;
+      
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const win = getCurrentWindow();
+        
+        if (!active) return;
+        
+        setAppWindow(win);
+        setIsDesktopMode(true);
 
-          const [maximized, fullscreen, alwaysOnTop] = await Promise.all([
+        const [maximized, fullscreen, alwaysOnTop] = await Promise.all([
+          win.isMaximized(),
+          win.isFullscreen(),
+          win.isAlwaysOnTop(),
+        ]);
+        
+        if (!active) return;
+          
+        setIsMaximized(maximized);
+        setIsFullscreen(fullscreen);
+        setIsAlwaysOnTop(alwaysOnTop);
+
+        unlistenResizeRef.current = await win.onResized(async () => {
+          if (!active) return;
+          const [max, full] = await Promise.all([
             win.isMaximized(),
             win.isFullscreen(),
-            win.isAlwaysOnTop(),
           ]);
-          
-          if (!mounted) return;
-          
-          setIsMaximized(maximized);
-          setIsFullscreen(fullscreen);
-          setIsAlwaysOnTop(alwaysOnTop);
+          if (active) {
+            setIsMaximized(max);
+            setIsFullscreen(full);
+          }
+        });
 
-          unlistenResizeRef.current = await win.onResized(async () => {
-            if (!mounted) return;
-            const [max, full] = await Promise.all([
-              win.isMaximized(),
-              win.isFullscreen(),
-            ]);
-            if (mounted) {
-              setIsMaximized(max);
-              setIsFullscreen(full);
+        unlistenFocusRef.current = await win.onFocusChanged(({ payload: focused }) => {
+          if (active) {
+            setIsFocused(focused);
+          }
+        });
+
+        unlistenCloseRef.current = await win.onCloseRequested(async (event) => {
+          const hasUnsavedChanges = checkGlobalUnsavedChanges();
+          if (hasUnsavedChanges) {
+            event.preventDefault();
+            const confirmed = await window.confirm(
+              'You have unsaved changes. Are you sure you want to close?'
+            );
+            if (confirmed) {
+              await win.destroy();
             }
-          });
+          }
+        });
 
-          unlistenFocusRef.current = await win.onFocusChanged(({ payload: focused }) => {
-            if (mounted) {
-              setIsFocused(focused);
-            }
-          });
-
-          unlistenCloseRef.current = await win.onCloseRequested(async (event) => {
-            const hasUnsavedChanges = checkGlobalUnsavedChanges();
-            if (hasUnsavedChanges) {
-              event.preventDefault();
-              const confirmed = await window.confirm(
-                'You have unsaved changes. Are you sure you want to close?'
-              );
-              if (confirmed) {
-                await win.destroy();
-              }
-            }
-          });
-
-        } catch (e) {
-          console.error('Failed to initialize Tauri window:', e);
-        }
+      } catch (e) {
+        console.error('Failed to initialize Tauri window:', e);
       }
     };
 
     initTauri();
 
     return () => {
-      mounted = false;
+      active = false;
       unlistenResizeRef.current?.();
       unlistenFocusRef.current?.();
       unlistenCloseRef.current?.();
     };
-  }, []);
+  }, [mounted]);
 
   const handleMinimize = useCallback(async () => {
     await appWindow?.minimize();
@@ -174,10 +184,17 @@ export function Titlebar() {
     setContextMenuOpen(true);
   }, []);
 
-  if (!isTauri) {
+  // Don't render on server or before hydration
+  if (!mounted) {
     return null;
   }
 
+  // Don't render if not in desktop (Tauri) mode
+  if (!isDesktopMode) {
+    return null;
+  }
+
+  // Hide titlebar in fullscreen mode
   if (isFullscreen) {
     return null;
   }
