@@ -41,7 +41,7 @@ const mockProviders = [
   },
 ];
 
-jest.mock('@/lib/hooks/use-packages', () => ({
+jest.mock('@/hooks/use-packages', () => ({
   usePackages: () => ({
     providers: mockProviders,
     loading: false,

@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useLogStore } from '@/lib/stores/log';
-import { useKeyboardShortcuts } from '@/lib/hooks/use-keyboard-shortcuts';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import {
   CommandDialog,
   CommandInput,

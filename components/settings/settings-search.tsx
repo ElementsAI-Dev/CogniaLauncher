@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, X, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { SettingsSearchResult, UseSettingsSearchReturn } from '@/lib/hooks/use-settings-search';
+import type { SettingsSearchResult, UseSettingsSearchReturn } from '@/hooks/use-settings-search';
 import type { SettingsSection } from '@/lib/constants/settings-registry';
 
 type TranslateFunction = (key: string, params?: Record<string, string | number>) => string;

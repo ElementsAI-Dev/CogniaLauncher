@@ -35,7 +35,7 @@ const baseConfig: Record<string, string> = {
   'provider_settings.disabled_providers': '',
 };
 
-jest.mock('@/lib/hooks/use-settings', () => ({
+jest.mock('@/hooks/use-settings', () => ({
   useSettings: jest.fn(),
 }));
 
@@ -215,7 +215,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSettings: AppSettings; loading: boolean }>) {
-  const { useSettings } = jest.requireMock('@/lib/hooks/use-settings') as {
+  const { useSettings } = jest.requireMock('@/hooks/use-settings') as {
     useSettings: jest.Mock;
   };
   const { useSettingsStore } = jest.requireMock('@/lib/stores/settings') as {

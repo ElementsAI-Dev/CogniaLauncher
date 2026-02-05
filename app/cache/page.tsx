@@ -27,7 +27,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { useSettings } from '@/lib/hooks/use-settings';
+import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   HardDrive,

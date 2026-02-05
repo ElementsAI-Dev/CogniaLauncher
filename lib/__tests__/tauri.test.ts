@@ -19,6 +19,97 @@ import type {
   CleanupHistorySummary,
 } from '../tauri';
 
+import { isTauri, getAppVersion, openExternal } from '../tauri';
+
+describe('Tauri Utility Functions', () => {
+  describe('isTauri', () => {
+    const originalWindow = global.window;
+
+    afterEach(() => {
+      // Restore window after each test
+      if (originalWindow) {
+        global.window = originalWindow;
+      }
+    });
+
+    it('returns false when window is undefined', () => {
+      const windowBackup = global.window;
+      // @ts-expect-error - intentionally testing undefined case
+      delete global.window;
+      
+      expect(isTauri()).toBe(false);
+      
+      global.window = windowBackup;
+    });
+
+    it('returns false when __TAURI__ is not in window', () => {
+      // Window exists but without __TAURI__
+      expect(isTauri()).toBe(false);
+    });
+
+    it('returns true when __TAURI__ is in window', () => {
+      // Add __TAURI__ to window
+      // @ts-expect-error - adding __TAURI__ for testing
+      global.window.__TAURI__ = {};
+      
+      expect(isTauri()).toBe(true);
+      
+      // Clean up
+      // @ts-expect-error - removing __TAURI__ after testing
+      delete global.window.__TAURI__;
+    });
+  });
+
+  describe('getAppVersion', () => {
+    it('returns null when window is undefined', async () => {
+      const windowBackup = global.window;
+      // @ts-expect-error - intentionally testing undefined case
+      delete global.window;
+      
+      const version = await getAppVersion();
+      expect(version).toBeNull();
+      
+      global.window = windowBackup;
+    });
+
+    it('returns null when not in Tauri environment', async () => {
+      // Window exists but no __TAURI__
+      const version = await getAppVersion();
+      expect(version).toBeNull();
+    });
+  });
+
+  describe('openExternal', () => {
+    it('does nothing when window is undefined', async () => {
+      const windowBackup = global.window;
+      // @ts-expect-error - intentionally testing undefined case
+      delete global.window;
+      
+      // Should not throw
+      await expect(openExternal('https://example.com')).resolves.toBeUndefined();
+      
+      global.window = windowBackup;
+    });
+
+    it('opens URL in new tab when not in Tauri environment', async () => {
+      const mockOpen = jest.fn();
+      const originalOpen = global.window.open;
+      global.window.open = mockOpen;
+      
+      await openExternal('https://example.com');
+      
+      expect(mockOpen).toHaveBeenCalledWith(
+        'https://example.com',
+        '_blank',
+        'noopener,noreferrer'
+      );
+      
+      // Restore original
+      global.window.open = originalOpen;
+    });
+  });
+});
+
 describe('Tauri Types', () => {
   describe('BatchProgress', () => {
     it('should have correct starting type structure', () => {

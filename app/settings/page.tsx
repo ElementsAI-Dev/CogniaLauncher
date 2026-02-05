@@ -15,16 +15,16 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
-import { useSettings } from '@/lib/hooks/use-settings';
+import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
 import { useAppearanceStore, type AccentColor } from '@/lib/stores/appearance';
 import { useSettingsStore } from '@/lib/stores/settings';
 import { isTauri } from '@/lib/tauri';
 import { isThemeMode } from '@/lib/theme';
-import { useSettingsShortcuts, useSectionNavigation } from '@/lib/hooks/use-settings-shortcuts';
-import { useUnsavedChanges } from '@/lib/hooks/use-unsaved-changes';
-import { useSettingsSearch, useActiveSection } from '@/lib/hooks/use-settings-search';
+import { useSettingsShortcuts, useSectionNavigation } from '@/hooks/use-settings-shortcuts';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import { useSettingsSearch, useActiveSection } from '@/hooks/use-settings-search';
 import {
   validateField,
   GeneralSettings,

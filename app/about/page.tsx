@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { PageHeader } from '@/components/layout/page-header';
-import { useAboutData } from './_hooks/use-about-data';
-import { getChangelog } from './_constants/changelog';
+import { useAboutData } from '@/hooks/use-about-data';
+import { getChangelog } from '@/lib/constants/about';
 import {
   VersionCards,
   UpdateBanner,
@@ -14,7 +14,7 @@ import {
   ActionsCard,
   ErrorAlert,
   ChangelogDialog,
-} from './_components';
+} from '@/components/about';
 
 export default function AboutPage() {
   const { t, locale } = useLocale();

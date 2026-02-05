@@ -1,5 +1,8 @@
-export const locales = ['en', 'zh'] as const;
-export type Locale = (typeof locales)[number];
+// Re-export types from types/i18n.ts
+export { locales, type Locale } from '@/types/i18n';
+
+import type { Locale } from '@/types/i18n';
+import { locales } from '@/types/i18n';
 
 export const defaultLocale: Locale = 'en';
 

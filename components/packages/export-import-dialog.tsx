@@ -25,7 +25,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { usePackageExport, ExportedPackageList } from '@/lib/hooks/use-package-export';
+import { usePackageExport, ExportedPackageList } from '@/hooks/use-package-export';
 import { toast } from 'sonner';
 
 interface ExportImportDialogProps {

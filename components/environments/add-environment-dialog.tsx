@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore } from '@/lib/stores/environment';
-import { useEnvironments } from '@/lib/hooks/use-environments';
+import { useEnvironments } from '@/hooks/use-environments';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import { X, Check, RefreshCw, Globe } from 'lucide-react';

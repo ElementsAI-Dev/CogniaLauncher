@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { LogToolbar } from './log-toolbar';
 import { LogEntry } from './log-entry';
-import { useLogs } from '@/lib/hooks/use-logs';
+import { useLogs } from '@/hooks/use-logs';
 import { useLogStore, type LogEntry as UiLogEntry, type LogLevel } from '@/lib/stores/log';
 import { useLocale } from '@/components/providers/locale-provider';
 import { FileText, Loader2, RefreshCw } from 'lucide-react';

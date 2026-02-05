@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useEnvironmentStore, type InstallationProgress } from '@/lib/stores/environment';
-import { useEnvironments } from '@/lib/hooks/use-environments';
+import { useEnvironments } from '@/hooks/use-environments';
 import { cn } from '@/lib/utils';
 import { Download, Check, Loader2, AlertCircle, Minimize2 } from 'lucide-react';
 

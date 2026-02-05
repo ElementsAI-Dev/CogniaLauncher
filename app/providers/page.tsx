@@ -16,20 +16,12 @@ import {
   type SortOption,
   type ViewMode,
 } from '@/components/provider-management';
-import { usePackages } from '@/lib/hooks/use-packages';
+import { usePackages } from '@/hooks/use-packages';
 import { useLocale } from '@/components/providers/locale-provider';
 import { AlertCircle } from 'lucide-react';
 import * as tauri from '@/lib/tauri';
+import { SYSTEM_PROVIDER_IDS, PACKAGE_MANAGER_IDS } from '@/lib/constants/providers';
 import { toast } from 'sonner';
-
-const SYSTEM_PROVIDER_IDS = new Set([
-  'apt', 'dnf', 'pacman', 'zypper', 'apk', 'brew', 'macports',
-  'chocolatey', 'scoop', 'winget', 'flatpak', 'snap',
-]);
-
-const PACKAGE_MANAGER_IDS = new Set([
-  'npm', 'pnpm', 'yarn', 'pip', 'uv', 'cargo', 'vcpkg', 'docker', 'psgallery', 'github',
-]);
 
 export default function ProvidersPage() {
   const { providers, loading, error, fetchProviders } = usePackages();

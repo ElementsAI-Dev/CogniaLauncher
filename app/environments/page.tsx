@@ -12,8 +12,8 @@ import { EnvironmentBatchOperations } from '@/components/environments/batch-oper
 import { EnvironmentToolbar } from '@/components/environments/environment-toolbar';
 import { PageHeader } from '@/components/layout/page-header';
 import { useEnvironmentStore } from '@/lib/stores/environment';
-import { useEnvironments } from '@/lib/hooks/use-environments';
-import { useAutoVersionSwitch, useProjectPath } from '@/lib/hooks/use-auto-version';
+import { useEnvironments } from '@/hooks/use-environments';
+import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';

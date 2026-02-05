@@ -57,7 +57,7 @@ jest.mock('@/lib/tauri', () => ({
 }));
 
 // Mock useSettings hook
-jest.mock('@/lib/hooks/use-settings', () => ({
+jest.mock('@/hooks/use-settings', () => ({
   useSettings: jest.fn().mockReturnValue({
     cacheInfo: {
       download_cache: { entry_count: 10, size: 5242880, size_human: '5 MB', location: '/cache/downloads' },

@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useDownloads } from '@/lib/hooks/use-downloads';
+import { useDownloads } from '@/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
 import {
   AddDownloadDialog,
@@ -35,6 +35,7 @@ import {
   Gauge,
   History,
 } from 'lucide-react';
+import { formatEta } from '@/lib/utils';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
 
 const EMPTY_STATS = {
@@ -64,10 +65,6 @@ function getStateBadgeVariant(state: DownloadTask['state']) {
     default:
       return 'outline';
   }
-}
-
-function formatEta(eta: string | null | undefined) {
-  return eta || '—';
 }
 
 export default function DownloadsPage() {

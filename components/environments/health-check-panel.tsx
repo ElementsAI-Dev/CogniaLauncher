@@ -23,7 +23,7 @@ import {
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
-import { useHealthCheck } from '@/lib/hooks/use-health-check';
+import { useHealthCheck } from '@/hooks/use-health-check';
 import type { HealthIssue, HealthStatus, Severity } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
 

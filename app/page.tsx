@@ -7,9 +7,9 @@ import { QuickActionsInline } from '@/components/dashboard/quick-actions';
 import { EnvironmentList } from '@/components/dashboard/environment-list';
 import { PackageList } from '@/components/dashboard/package-list';
 import { PageHeader } from '@/components/layout/page-header';
-import { useEnvironments } from '@/lib/hooks/use-environments';
-import { usePackages } from '@/lib/hooks/use-packages';
-import { useSettings } from '@/lib/hooks/use-settings';
+import { useEnvironments } from '@/hooks/use-environments';
+import { usePackages } from '@/hooks/use-packages';
+import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Layers, Package, HardDrive, Activity } from 'lucide-react';
 

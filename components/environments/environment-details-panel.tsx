@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useLocale } from '@/components/providers/locale-provider';
 import type { EnvironmentInfo, DetectedEnvironment } from '@/lib/tauri';
 import { useEnvironmentStore, type EnvironmentSettings } from '@/lib/stores/environment';
-import { useEnvironments } from '@/lib/hooks/use-environments';
+import { useEnvironments } from '@/hooks/use-environments';
 import { 
   Check, 
   Globe, 

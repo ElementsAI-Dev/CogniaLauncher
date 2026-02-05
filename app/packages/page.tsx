@@ -18,14 +18,14 @@ import { ExportImportDialog } from '@/components/packages/export-import-dialog';
 import { ProviderStatusBadge } from '@/components/packages/provider-status-badge';
 import { StatsOverview } from '@/components/packages/stats-overview';
 import { PageHeader } from '@/components/layout/page-header';
-import { usePackages } from '@/lib/hooks/use-packages';
+import { usePackages } from '@/hooks/use-packages';
 import { usePackageStore } from '@/lib/stores/packages';
 import { useLocale } from '@/components/providers/locale-provider';
-import { useKeyboardShortcuts } from '@/lib/hooks/use-keyboard-shortcuts';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, UpdateInfo, ResolutionResult, BatchResult } from '@/lib/tauri';
-import type { ExportedPackageList } from '@/lib/hooks/use-package-export';
+import type { ExportedPackageList } from '@/hooks/use-package-export';
 
 export default function PackagesPage() {
   const {

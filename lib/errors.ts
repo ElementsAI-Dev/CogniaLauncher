@@ -3,35 +3,10 @@
  * Provides structured error parsing and user-friendly suggestions
  */
 
-// Error codes mapped from backend CogniaError variants
-export type ErrorCode =
-  | 'CONFIG_ERROR'
-  | 'PROVIDER_ERROR'
-  | 'PROVIDER_NOT_FOUND'
-  | 'PACKAGE_NOT_FOUND'
-  | 'VERSION_NOT_FOUND'
-  | 'VERSION_NOT_INSTALLED'
-  | 'RESOLUTION_ERROR'
-  | 'CONFLICT_ERROR'
-  | 'INSTALLATION_ERROR'
-  | 'CHECKSUM_MISMATCH'
-  | 'DOWNLOAD_ERROR'
-  | 'NETWORK_ERROR'
-  | 'IO_ERROR'
-  | 'DATABASE_ERROR'
-  | 'PARSE_ERROR'
-  | 'PLATFORM_NOT_SUPPORTED'
-  | 'PERMISSION_DENIED'
-  | 'CANCELLED'
-  | 'INTERNAL_ERROR'
-  | 'UNKNOWN_ERROR';
+// Re-export types from types/errors.ts
+export type { ErrorCode, CogniaError } from '@/types/errors';
 
-export interface CogniaError {
-  code: ErrorCode;
-  message: string;
-  suggestion?: string;
-  details?: string;
-}
+import type { ErrorCode, CogniaError } from '@/types/errors';
 
 // Error code detection patterns
 const ERROR_PATTERNS: Array<{ pattern: RegExp; code: ErrorCode }> = [

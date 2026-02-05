@@ -4,7 +4,7 @@ import DownloadsPage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import type { DownloadTask, HistoryRecord, QueueStats } from '@/lib/stores/download';
 
-jest.mock('@/lib/hooks/use-downloads', () => ({
+jest.mock('@/hooks/use-downloads', () => ({
   useDownloads: jest.fn(),
 }));
 
@@ -229,7 +229,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 function setupMocks() {
-  const { useDownloads } = jest.requireMock('@/lib/hooks/use-downloads') as {
+  const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
     useDownloads: jest.Mock;
   };
   const { isTauri } = jest.requireMock('@/lib/tauri') as {

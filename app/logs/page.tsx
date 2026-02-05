@@ -11,20 +11,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useLogStore } from '@/lib/stores/log';
 import { isTauri, logListFiles, logGetDir } from '@/lib/tauri';
+import { formatBytes, formatDate } from '@/lib/utils';
 import { ScrollText, FolderOpen, FileText, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleString();
-}
 
 export default function LogsPage() {
   const { t } = useLocale();

@@ -1,6 +1,171 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
+// Re-export all types from types/tauri.ts
+export type {
+  EnvInstallProgressEvent,
+  EnvironmentInfo,
+  InstalledVersion,
+  DetectedEnvironment,
+  EnvironmentProviderInfo,
+  EnvVariableConfig,
+  DetectionFileConfig,
+  EnvironmentSettingsConfig,
+  PackageSummary,
+  PackageInfo,
+  VersionInfo,
+  InstalledPackage,
+  ProviderInfo,
+  ProviderStatusInfo,
+  CacheInfo,
+  CacheStats,
+  CacheAccessStats,
+  CacheEntryItem,
+  CacheEntryList,
+  CacheVerificationResult,
+  CacheIssue,
+  CacheRepairResult,
+  CacheSettings,
+  CleanPreviewItem,
+  CleanPreview,
+  EnhancedCleanResult,
+  CleanedFileInfo,
+  CleanupRecord,
+  CleanupHistorySummary,
+  PlatformInfo,
+  BatchInstallOptions,
+  BatchProgress,
+  BatchResult,
+  BatchItemResult,
+  BatchItemError,
+  BatchItemSkipped,
+  UpdateInfo,
+  SelfUpdateInfo,
+  SelfUpdateProgressEvent,
+  InstallHistoryEntry,
+  DependencyNode,
+  ResolutionResult,
+  ResolvedPackage,
+  ConflictInfo,
+  RequiredVersion,
+  AdvancedSearchOptions,
+  SearchFilters,
+  EnhancedSearchResult,
+  ScoredPackage,
+  SearchFacets,
+  SearchSuggestion,
+  PackageComparison,
+  PackageCompareItem,
+  FeatureComparison,
+  ManifestInfo,
+  LogFileInfo,
+  LogEntry,
+  LogQueryOptions,
+  LogQueryResult,
+  LogExportOptions,
+  LogExportResult,
+  CommandOutputEvent,
+  DownloadProgress,
+  DownloadTask,
+  DownloadQueueStats,
+  DownloadHistoryRecord,
+  DownloadHistoryStats,
+  DiskSpaceInfo,
+  DownloadRequest,
+  DownloadEvent,
+  TrayIconState,
+  TrayLanguage,
+  TrayClickBehavior,
+  TrayStateInfo,
+  ExtractionStrategy,
+  VersionTransform,
+  CustomDetectionRule,
+  CustomDetectionResult,
+  TestRuleResult,
+  RegexValidation,
+  ImportRulesResult,
+  ExtractionTypeInfo,
+  HealthStatus,
+  Severity,
+  IssueCategory,
+  HealthIssue,
+  EnvironmentHealthResult,
+  SystemHealthResult,
+  ProfileEnvironment,
+  EnvironmentProfile,
+  ProfileApplyResult,
+  ProfileEnvironmentResult,
+  ProfileEnvironmentError,
+  ProfileEnvironmentSkipped,
+} from '@/types/tauri';
+
+import type {
+  EnvInstallProgressEvent,
+  EnvironmentInfo,
+  DetectedEnvironment,
+  EnvironmentProviderInfo,
+  EnvironmentSettingsConfig,
+  PackageSummary,
+  PackageInfo,
+  VersionInfo,
+  InstalledPackage,
+  ProviderInfo,
+  ProviderStatusInfo,
+  CacheInfo,
+  CacheAccessStats,
+  CacheEntryItem,
+  CacheEntryList,
+  CacheVerificationResult,
+  CacheRepairResult,
+  CacheSettings,
+  CleanPreview,
+  EnhancedCleanResult,
+  CleanupRecord,
+  CleanupHistorySummary,
+  PlatformInfo,
+  BatchProgress,
+  BatchResult,
+  BatchInstallOptions,
+  UpdateInfo,
+  SelfUpdateInfo,
+  SelfUpdateProgressEvent,
+  InstallHistoryEntry,
+  ResolutionResult,
+  AdvancedSearchOptions,
+  EnhancedSearchResult,
+  SearchSuggestion,
+  PackageComparison,
+  ManifestInfo,
+  LogFileInfo,
+  LogQueryOptions,
+  LogQueryResult,
+  LogExportOptions,
+  LogExportResult,
+  CommandOutputEvent,
+  DownloadProgress,
+  DownloadTask,
+  DownloadQueueStats,
+  DownloadHistoryRecord,
+  DownloadHistoryStats,
+  DiskSpaceInfo,
+  DownloadRequest,
+  TrayIconState,
+  TrayLanguage,
+  TrayClickBehavior,
+  TrayStateInfo,
+  CustomDetectionRule,
+  CustomDetectionResult,
+  TestRuleResult,
+  RegexValidation,
+  ImportRulesResult,
+  ExtractionTypeInfo,
+  SystemHealthResult,
+  EnvironmentHealthResult,
+  EnvironmentProfile,
+  ProfileEnvironment,
+  ProfileApplyResult,
+} from '@/types/tauri';
+
 // Check if running in Tauri environment
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window;
@@ -38,18 +203,6 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
-// Environment installation progress event payload
-export interface EnvInstallProgressEvent {
-  envType: string;
-  version: string;
-  step: 'fetching' | 'downloading' | 'extracting' | 'configuring' | 'done' | 'error';
-  progress: number;
-  downloadedSize?: number;
-  totalSize?: number;
-  speed?: number;
-  error?: string;
-}
-
 // Listen for environment install progress events
 export async function listenEnvInstallProgress(
   callback: (progress: EnvInstallProgressEvent) => void
@@ -67,96 +220,6 @@ export const envInstallCancel = (envType: string, version: string) =>
 export const envResolveAlias = (envType: string, alias: string) =>
   invoke<string>('env_resolve_alias', { envType, alias });
 
-export interface EnvironmentInfo {
-  env_type: string;
-  provider_id: string;
-  provider: string;
-  current_version: string | null;
-  installed_versions: InstalledVersion[];
-  available: boolean;
-}
-
-export interface InstalledVersion {
-  version: string;
-  install_path: string;
-  size: number | null;
-  installed_at: string | null;
-  is_current: boolean;
-}
-
-export interface DetectedEnvironment {
-  env_type: string;
-  version: string;
-  source: string;
-  source_path: string | null;
-}
-
-export interface PackageSummary {
-  name: string;
-  description: string | null;
-  latest_version: string | null;
-  provider: string;
-}
-
-export interface PackageInfo {
-  name: string;
-  display_name: string | null;
-  description: string | null;
-  homepage: string | null;
-  license: string | null;
-  repository: string | null;
-  versions: VersionInfo[];
-  provider: string;
-}
-
-export interface VersionInfo {
-  version: string;
-  release_date: string | null;
-  deprecated: boolean;
-  yanked: boolean;
-}
-
-export interface InstalledPackage {
-  name: string;
-  version: string;
-  provider: string;
-  install_path: string;
-  installed_at: string;
-  is_global: boolean;
-}
-
-export interface ProviderInfo {
-  id: string;
-  display_name: string;
-  capabilities: string[];
-  platforms: string[];
-  priority: number;
-  is_environment_provider: boolean;
-  enabled: boolean;
-}
-
-export interface CacheInfo {
-  download_cache: CacheStats;
-  metadata_cache: CacheStats;
-  total_size: number;
-  total_size_human: string;
-  max_size?: number;
-  max_size_human?: string;
-  usage_percent?: number;
-}
-
-export interface CacheStats {
-  entry_count: number;
-  size: number;
-  size_human: string;
-  location: string;
-}
-
-export interface PlatformInfo {
-  os: string;
-  arch: string;
-}
-
 // Environment commands
 export const envList = () => invoke<EnvironmentInfo[]>('env_list');
 export const envGet = (envType: string) => invoke<EnvironmentInfo>('env_get', { envType });
@@ -170,36 +233,11 @@ export const envAvailableVersions = (envType: string) => invoke<VersionInfo[]>('
 export const envListProviders = () => invoke<EnvironmentProviderInfo[]>('env_list_providers');
 
 // Environment settings commands
-export interface EnvVariableConfig {
-  key: string;
-  value: string;
-  enabled: boolean;
-}
-
-export interface DetectionFileConfig {
-  file_name: string;
-  enabled: boolean;
-}
-
-export interface EnvironmentSettingsConfig {
-  env_type: string;
-  env_variables: EnvVariableConfig[];
-  detection_files: DetectionFileConfig[];
-  auto_switch: boolean;
-}
-
 export const envSaveSettings = (settings: EnvironmentSettingsConfig) => 
   invoke<void>('env_save_settings', { settings });
 
 export const envLoadSettings = (envType: string) => 
   invoke<EnvironmentSettingsConfig | null>('env_load_settings', { envType });
-
-export interface EnvironmentProviderInfo {
-  id: string;
-  display_name: string;
-  env_type: string;
-  description: string;
-}
 
 // Package commands
 export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
@@ -252,148 +290,12 @@ export const deleteCacheEntries = (keys: string[], useTrash?: boolean) =>
 export const getTopAccessedEntries = (limit?: number) => 
   invoke<CacheEntryItem[]>('get_top_accessed_entries', { limit });
 
-// Cache access stats types
-export interface CacheAccessStats {
-  hits: number;
-  misses: number;
-  hit_rate: number;
-  total_requests: number;
-  last_reset: string | null;
-}
-
-// Cache entry browser types
-export interface CacheEntryItem {
-  key: string;
-  file_path: string;
-  size: number;
-  size_human: string;
-  checksum: string;
-  entry_type: string;
-  created_at: string;
-  last_accessed: string | null;
-  hit_count: number;
-}
-
-export interface CacheEntryList {
-  entries: CacheEntryItem[];
-  total_count: number;
-  has_more: boolean;
-}
-
-export interface CacheVerificationResult {
-  valid_entries: number;
-  missing_files: number;
-  corrupted_files: number;
-  size_mismatches: number;
-  is_healthy: boolean;
-  details: CacheIssue[];
-}
-
-export interface CacheIssue {
-  entry_key: string;
-  issue_type: string;
-  description: string;
-}
-
-export interface CacheRepairResult {
-  removed_entries: number;
-  recovered_entries: number;
-  freed_bytes: number;
-  freed_human: string;
-}
-
-export interface CacheSettings {
-  max_size: number;
-  max_age_days: number;
-  metadata_cache_ttl: number;
-  auto_clean: boolean;
-}
-
-// Clean preview types
-export interface CleanPreviewItem {
-  path: string;
-  size: number;
-  size_human: string;
-  entry_type: string;
-  created_at: string;
-}
-
-export interface CleanPreview {
-  files: CleanPreviewItem[];
-  total_count: number;
-  total_size: number;
-  total_size_human: string;
-}
-
-// Enhanced clean result
-export interface EnhancedCleanResult {
-  freed_bytes: number;
-  freed_human: string;
-  deleted_count: number;
-  use_trash: boolean;
-  history_id: string;
-}
-
-// Cleanup history types
-export interface CleanedFileInfo {
-  path: string;
-  size: number;
-  size_human: string;
-  entry_type: string;
-}
-
-export interface CleanupRecord {
-  id: string;
-  timestamp: string;
-  clean_type: string;
-  use_trash: boolean;
-  freed_bytes: number;
-  freed_human: string;
-  file_count: number;
-  files: CleanedFileInfo[];
-  files_truncated: boolean;
-}
-
-export interface CleanupHistorySummary {
-  total_cleanups: number;
-  total_freed_bytes: number;
-  total_freed_human: string;
-  total_files_cleaned: number;
-  trash_cleanups: number;
-  permanent_cleanups: number;
-}
-
 // Provider management commands
 export const providerEnable = (providerId: string) => invoke<void>('provider_enable', { providerId });
 export const providerDisable = (providerId: string) => invoke<void>('provider_disable', { providerId });
 export const providerCheck = (providerId: string) => invoke<boolean>('provider_check', { providerId });
 export const providerSystemList = () => invoke<string[]>('provider_system_list');
 export const providerStatusAll = () => invoke<ProviderStatusInfo[]>('provider_status_all');
-
-export interface ProviderStatusInfo {
-  id: string;
-  display_name: string;
-  installed: boolean;
-  platforms: string[];
-}
-
-// Batch operations
-export interface BatchInstallOptions {
-  packages: string[];
-  dryRun?: boolean;
-  parallel?: boolean;
-  force?: boolean;
-  global?: boolean;
-}
-
-// Batch progress events
-export type BatchProgress =
-  | { type: 'starting'; total: number }
-  | { type: 'resolving'; package: string; current: number; total: number }
-  | { type: 'downloading'; package: string; progress: number; current: number; total: number }
-  | { type: 'installing'; package: string; current: number; total: number }
-  | { type: 'item_completed'; package: string; success: boolean; current: number; total: number }
-  | { type: 'completed'; result: BatchResult };
 
 // Listen for batch progress events
 export async function listenBatchProgress(
@@ -402,32 +304,6 @@ export async function listenBatchProgress(
   return listen<BatchProgress>('batch-progress', (event) => {
     callback(event.payload);
   });
-}
-
-export interface BatchResult {
-  successful: BatchItemResult[];
-  failed: BatchItemError[];
-  skipped: BatchItemSkipped[];
-  total_time_ms: number;
-}
-
-export interface BatchItemResult {
-  name: string;
-  version: string;
-  provider: string;
-  action: string;
-}
-
-export interface BatchItemError {
-  name: string;
-  error: string;
-  recoverable: boolean;
-  suggestion: string | null;
-}
-
-export interface BatchItemSkipped {
-  name: string;
-  reason: string;
 }
 
 export const batchInstall = (packages: string[], options?: Partial<BatchInstallOptions>) => 
@@ -446,14 +322,6 @@ export const batchUpdate = (packages?: string[]) =>
   invoke<BatchResult>('batch_update', { packages });
 
 // Update checking commands
-export interface UpdateInfo {
-  name: string;
-  current_version: string;
-  latest_version: string;
-  provider: string;
-  update_type?: string;
-}
-
 export const checkUpdates = (packages?: string[]) => invoke<UpdateInfo[]>('check_updates', { packages });
 
 // Package pinning
@@ -469,17 +337,6 @@ export const packageRollback = (name: string, toVersion: string) =>
   invoke<void>('package_rollback', { name, toVersion });
 
 // Install history
-export interface InstallHistoryEntry {
-  id: string;
-  name: string;
-  version: string;
-  action: string;
-  timestamp: string;
-  provider: string;
-  success: boolean;
-  error_message: string | null;
-}
-
 export const getInstallHistory = (limit?: number) =>
   invoke<InstallHistoryEntry[]>('get_install_history', { limit });
 
@@ -490,150 +347,21 @@ export const clearInstallHistory = () =>
   invoke<void>('clear_install_history');
 
 // Dependency resolution
-export interface DependencyNode {
-  name: string;
-  version: string;
-  constraint: string;
-  provider: string | null;
-  dependencies: DependencyNode[];
-  is_direct: boolean;
-  is_installed: boolean;
-  is_conflict: boolean;
-  conflict_reason: string | null;
-  depth: number;
-}
-
-export interface ResolutionResult {
-  success: boolean;
-  packages: ResolvedPackage[];
-  tree: DependencyNode[];
-  conflicts: ConflictInfo[];
-  install_order: string[];
-  total_packages: number;
-  total_size: number | null;
-}
-
-export interface ResolvedPackage {
-  name: string;
-  version: string;
-  provider: string;
-}
-
-export interface ConflictInfo {
-  package_name: string;
-  package?: string;
-  required_by: string[];
-  versions: string[];
-  required_versions?: RequiredVersion[];
-  message?: string;
-  resolution?: string;
-}
-
-export interface RequiredVersion {
-  required_by: string;
-  constraint: string;
-}
-
 export const resolveDependencies = (packages: string[]) =>
   invoke<ResolutionResult>('resolve_dependencies', { packages });
 
 // Advanced search
-export interface AdvancedSearchOptions {
-  query: string;
-  providers?: string[];
-  limit?: number;
-  offset?: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-  filters?: SearchFilters;
-}
-
-export interface SearchFilters {
-  hasUpdates?: boolean;
-  installedOnly?: boolean;
-  notInstalled?: boolean;
-  license?: string[];
-  minVersion?: string;
-  maxVersion?: string;
-}
-
-export interface EnhancedSearchResult {
-  packages: ScoredPackage[];
-  total: number;
-  page: number;
-  page_size: number;
-  facets: SearchFacets;
-}
-
-export interface ScoredPackage extends PackageSummary {
-  score: number;
-  match_type: string;
-  is_installed: boolean;
-  has_update: boolean;
-}
-
-export interface SearchFacets {
-  providers: Record<string, number>;
-  licenses: Record<string, number>;
-}
-
 export const advancedSearch = (options: AdvancedSearchOptions) =>
   invoke<EnhancedSearchResult>('advanced_search', { options });
-
-export interface SearchSuggestion {
-  text: string;
-  suggestion_type: string;
-  provider: string | null;
-}
 
 export const searchSuggestions = (query: string, limit?: number) =>
   invoke<SearchSuggestion[]>('search_suggestions', { query, limit });
 
 // Package comparison
-export interface PackageComparison {
-  packages: PackageCompareItem[];
-  features: FeatureComparison[];
-  differences?: string[];
-  common_features?: string[];
-  recommendation?: string;
-}
-
-export interface PackageCompareItem {
-  name: string;
-  provider: string;
-  version: string;
-  latest_version: string | null;
-  description: string | null;
-  homepage: string | null;
-  license: string | null;
-  size?: number;
-  updated_at?: string;
-  dependencies?: string[];
-  platforms?: string[];
-  [key: string]: unknown; // Allow index access
-}
-
-export interface FeatureComparison {
-  feature: string;
-  values: (string | null)[];
-}
-
 export const comparePackages = (packages: [string, string | null][]) =>
   invoke<PackageComparison>('compare_packages', { packages });
 
 // Self update
-export interface SelfUpdateInfo {
-  current_version: string;
-  latest_version: string | null;
-  update_available: boolean;
-  release_notes: string | null;
-}
-
-export interface SelfUpdateProgressEvent {
-  progress: number | null;
-  status: 'downloading' | 'installing' | 'done' | 'error';
-}
-
 export const selfCheckUpdate = () => invoke<SelfUpdateInfo>('self_check_update');
 export const selfUpdate = () => invoke<void>('self_update');
 
@@ -646,65 +374,10 @@ export async function listenSelfUpdateProgress(
 }
 
 // Manifest operations
-export interface ManifestInfo {
-  project_name: string | null;
-  project_version: string | null;
-  environments: Record<string, string>;
-  packages: string[];
-  path: string;
-}
-
 export const manifestRead = (projectPath?: string) => invoke<ManifestInfo | null>('manifest_read', { projectPath });
 export const manifestInit = (projectPath?: string) => invoke<void>('manifest_init', { projectPath });
 
 // Log operations
-export interface LogFileInfo {
-  name: string;
-  path: string;
-  size: number;
-  modified: number;
-}
-
-export interface LogEntry {
-  timestamp: string;
-  level: string;
-  target: string;
-  message: string;
-  lineNumber: number;
-}
-
-export interface LogQueryOptions {
-  fileName?: string;
-  levelFilter?: string[];
-  search?: string;
-  useRegex?: boolean;
-  startTime?: number | null;
-  endTime?: number | null;
-  limit?: number;
-  offset?: number;
-}
-
-export interface LogQueryResult {
-  entries: LogEntry[];
-  totalCount: number;
-  hasMore: boolean;
-}
-
-export interface LogExportOptions {
-  fileName?: string;
-  levelFilter?: string[];
-  search?: string;
-  useRegex?: boolean;
-  startTime?: number | null;
-  endTime?: number | null;
-  format?: 'txt' | 'json';
-}
-
-export interface LogExportResult {
-  content: string;
-  fileName: string;
-}
-
 export const logListFiles = () => invoke<LogFileInfo[]>('log_list_files');
 export const logQuery = (options: LogQueryOptions) => invoke<LogQueryResult>('log_query', { options });
 export const logClear = (fileName?: string) => invoke<void>('log_clear', { fileName });
@@ -712,13 +385,6 @@ export const logGetDir = () => invoke<string>('log_get_dir');
 export const logExport = (options: LogExportOptions) => invoke<LogExportResult>('log_export', { options });
 
 // Command output streaming event
-export interface CommandOutputEvent {
-  commandId: string;
-  stream: 'stdout' | 'stderr';
-  data: string;
-  timestamp: number;
-}
-
 export async function listenCommandOutput(
   callback: (event: CommandOutputEvent) => void
 ): Promise<UnlistenFn> {
@@ -727,112 +393,8 @@ export async function listenCommandOutput(
   });
 }
 
-// ===== Download Manager Types and Commands =====
+// ===== Download Manager Commands =====
 
-export interface DownloadProgress {
-  downloadedBytes: number;
-  totalBytes: number | null;
-  speed: number;
-  speedHuman: string;
-  percent: number;
-  etaSecs: number | null;
-  etaHuman: string | null;
-  downloadedHuman: string;
-  totalHuman: string | null;
-}
-
-export interface DownloadTask {
-  id: string;
-  url: string;
-  name: string;
-  destination: string;
-  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed';
-  progress: DownloadProgress;
-  error: string | null;
-  provider: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-}
-
-export interface DownloadQueueStats {
-  totalTasks: number;
-  queued: number;
-  downloading: number;
-  paused: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-  totalBytes: number;
-  downloadedBytes: number;
-  totalHuman: string;
-  downloadedHuman: string;
-  overallProgress: number;
-}
-
-export interface DownloadHistoryRecord {
-  id: string;
-  url: string;
-  filename: string;
-  destination: string;
-  size: number;
-  sizeHuman: string;
-  checksum: string | null;
-  startedAt: string;
-  completedAt: string;
-  durationSecs: number;
-  durationHuman: string;
-  averageSpeed: number;
-  speedHuman: string;
-  status: 'completed' | 'failed' | 'cancelled';
-  error: string | null;
-  provider: string | null;
-}
-
-export interface DownloadHistoryStats {
-  totalCount: number;
-  completedCount: number;
-  failedCount: number;
-  cancelledCount: number;
-  totalBytes: number;
-  totalBytesHuman: string;
-  averageSpeed: number;
-  averageSpeedHuman: string;
-  successRate: number;
-}
-
-export interface DiskSpaceInfo {
-  total: number;
-  available: number;
-  used: number;
-  usagePercent: number;
-  totalHuman: string;
-  availableHuman: string;
-  usedHuman: string;
-}
-
-export interface DownloadRequest {
-  url: string;
-  destination: string;
-  name: string;
-  checksum?: string;
-  priority?: number;
-  provider?: string;
-}
-
-// Download event types
-export type DownloadEvent =
-  | { type: 'task_added'; task_id: string }
-  | { type: 'task_started'; task_id: string }
-  | { type: 'task_progress'; task_id: string; progress: DownloadProgress }
-  | { type: 'task_completed'; task_id: string }
-  | { type: 'task_failed'; task_id: string; error: string }
-  | { type: 'task_paused'; task_id: string }
-  | { type: 'task_resumed'; task_id: string }
-  | { type: 'task_cancelled'; task_id: string }
-  | { type: 'queue_updated'; stats: DownloadQueueStats };
-
-// Download commands
 export const downloadAdd = (request: DownloadRequest) =>
   invoke<string>('download_add', { request });
 
@@ -980,21 +542,8 @@ export async function listenDownloadQueueUpdated(
   });
 }
 
-// ===== System Tray Types and Commands =====
+// ===== System Tray Commands =====
 
-export type TrayIconState = 'normal' | 'downloading' | 'update' | 'error';
-export type TrayLanguage = 'en' | 'zh';
-export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'do_nothing';
-
-export interface TrayStateInfo {
-  icon_state: TrayIconState;
-  language: TrayLanguage;
-  active_downloads: number;
-  has_update: boolean;
-  click_behavior: TrayClickBehavior;
-}
-
-// Tray commands
 export const traySetIconState = (iconState: TrayIconState) =>
   invoke<void>('tray_set_icon_state', { iconState });
 
@@ -1049,90 +598,7 @@ export async function listenCheckUpdates(
   });
 }
 
-// ============================================================================
-// Custom Detection Rules Types and Commands
-// ============================================================================
-
-/** Extraction strategy types */
-export type ExtractionStrategy =
-  | { type: 'regex'; pattern: string; multiline?: boolean }
-  | { type: 'json_path'; path: string }
-  | { type: 'toml_path'; path: string }
-  | { type: 'yaml_path'; path: string }
-  | { type: 'xml_path'; path: string }
-  | { type: 'plain_text'; strip_prefix?: string; strip_suffix?: string }
-  | { type: 'tool_versions'; tool_name: string }
-  | { type: 'ini_key'; section?: string; key: string }
-  | { type: 'command'; cmd: string; args: string[]; output_pattern: string };
-
-/** Version transformation options */
-export interface VersionTransform {
-  match_pattern?: string;
-  replace_template?: string;
-  strip_version_prefix?: boolean;
-  normalize_semver?: boolean;
-}
-
-/** Custom detection rule */
-export interface CustomDetectionRule {
-  id: string;
-  name: string;
-  description?: string;
-  env_type: string;
-  priority: number;
-  enabled: boolean;
-  file_patterns: string[];
-  extraction: ExtractionStrategy;
-  version_transform?: VersionTransform;
-  tags: string[];
-  created_at?: string;
-  updated_at?: string;
-}
-
-/** Result of custom rule detection */
-export interface CustomDetectionResult {
-  rule_id: string;
-  rule_name: string;
-  env_type: string;
-  version: string;
-  source_file: string;
-  raw_version: string;
-}
-
-/** Result of testing a rule */
-export interface TestRuleResult {
-  success: boolean;
-  version?: string;
-  source_file?: string;
-  raw_version?: string;
-  error?: string;
-  duration_ms: number;
-}
-
-/** Regex validation result */
-export interface RegexValidation {
-  valid: boolean;
-  error?: string;
-  has_capture_group: boolean;
-  suggestion?: string;
-}
-
-/** Import result */
-export interface ImportRulesResult {
-  imported: number;
-  updated: number;
-  skipped: number;
-}
-
-/** Extraction type info */
-export interface ExtractionTypeInfo {
-  type_name: string;
-  display_name: string;
-  description: string;
-  example: string;
-}
-
-// Custom Detection Rule Commands
+// ===== Custom Detection Rules Commands =====
 
 /** List all custom detection rules */
 export const customRuleList = () =>
@@ -1198,55 +664,7 @@ export const customRuleListByEnv = (envType: string) =>
 export const customRuleExtractionTypes = () =>
   invoke<ExtractionTypeInfo[]>('custom_rule_extraction_types');
 
-// ============================================================================
-// Health Check Types and Commands
-// ============================================================================
-
-/** Health status of an environment */
-export type HealthStatus = 'healthy' | 'warning' | 'error' | 'unknown';
-
-/** Severity level of a health issue */
-export type Severity = 'info' | 'warning' | 'error' | 'critical';
-
-/** Category of health issue */
-export type IssueCategory =
-  | 'path_conflict'
-  | 'version_mismatch'
-  | 'missing_dependency'
-  | 'config_error'
-  | 'permission_error'
-  | 'network_error'
-  | 'provider_not_found'
-  | 'shell_integration'
-  | 'other';
-
-/** A single health issue */
-export interface HealthIssue {
-  severity: Severity;
-  category: IssueCategory;
-  message: string;
-  details: string | null;
-  fix_command: string | null;
-  fix_description: string | null;
-}
-
-/** Result of a health check for a single environment */
-export interface EnvironmentHealthResult {
-  env_type: string;
-  provider_id: string | null;
-  status: HealthStatus;
-  issues: HealthIssue[];
-  suggestions: string[];
-  checked_at: string;
-}
-
-/** Result of a full system health check */
-export interface SystemHealthResult {
-  overall_status: HealthStatus;
-  environments: EnvironmentHealthResult[];
-  system_issues: HealthIssue[];
-  checked_at: string;
-}
+// ===== Health Check Commands =====
 
 /** Check health of all environments */
 export const healthCheckAll = () =>
@@ -1256,53 +674,7 @@ export const healthCheckAll = () =>
 export const healthCheckEnvironment = (envType: string) =>
   invoke<EnvironmentHealthResult>('health_check_environment', { envType });
 
-// ============================================================================
-// Environment Profiles Types and Commands
-// ============================================================================
-
-/** An environment version specification within a profile */
-export interface ProfileEnvironment {
-  env_type: string;
-  version: string;
-  provider_id: string | null;
-}
-
-/** An environment profile containing multiple environment configurations */
-export interface EnvironmentProfile {
-  id: string;
-  name: string;
-  description: string | null;
-  environments: ProfileEnvironment[];
-  created_at: string;
-  updated_at: string;
-}
-
-/** Result of applying a profile */
-export interface ProfileApplyResult {
-  profile_id: string;
-  profile_name: string;
-  successful: ProfileEnvironmentResult[];
-  failed: ProfileEnvironmentError[];
-  skipped: ProfileEnvironmentSkipped[];
-}
-
-export interface ProfileEnvironmentResult {
-  env_type: string;
-  version: string;
-  provider_id: string;
-}
-
-export interface ProfileEnvironmentError {
-  env_type: string;
-  version: string;
-  error: string;
-}
-
-export interface ProfileEnvironmentSkipped {
-  env_type: string;
-  version: string;
-  reason: string;
-}
+// ===== Environment Profiles Commands =====
 
 /** List all profiles */
 export const profileList = () =>
