@@ -127,7 +127,7 @@ export function PackageDetailsDialog({
               {loading ? (
                 <Skeleton className="h-4 w-3/4" />
               ) : (
-                packageInfo?.description || pkg?.description || 'No description available'
+                packageInfo?.description || pkg?.description || t('packages.noDescriptionAvailable')
               )}
             </div>
           </DialogDescription>
@@ -152,7 +152,7 @@ export function PackageDetailsDialog({
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:underline flex items-center gap-1"
                     >
-                      Homepage
+                      {t('packages.homepage')}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -166,7 +166,7 @@ export function PackageDetailsDialog({
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:underline flex items-center gap-1"
                     >
-                      Repository
+                      {t('packages.repository')}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -227,7 +227,7 @@ export function PackageDetailsDialog({
                       <div className="flex items-center gap-2">
                         <span className="font-mono">{v.version}</span>
                         {v.deprecated && (
-                          <Badge variant="outline" className="text-xs">deprecated</Badge>
+                          <Badge variant="outline" className="text-xs">{t('packages.deprecated')}</Badge>
                         )}
                       </div>
                       {v.release_date && (

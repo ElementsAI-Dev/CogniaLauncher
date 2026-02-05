@@ -20,6 +20,20 @@ impl AptProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package using dpkg
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+        let out = process::execute("dpkg", &["-s", name], None).await?;
+        if !out.success {
+            return Err(CogniaError::Provider(format!("Package {} not installed", name)));
+        }
+        for line in out.stdout.lines() {
+            if let Some(version) = line.strip_prefix("Version:") {
+                return Ok(version.trim().to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
 }
 
 impl Default for AptProvider {
@@ -52,7 +66,14 @@ impl Provider for AptProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("apt-get").await.is_some()
+        if process::which("apt-get").await.is_none() {
+            return false;
+        }
+        // Verify apt-get actually works
+        match process::execute("apt-get", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(&self, query: &str, _: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
@@ -141,9 +162,16 @@ impl Provider for AptProvider {
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
+
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from("/usr"),
             files: vec![],

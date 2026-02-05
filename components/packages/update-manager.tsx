@@ -18,6 +18,7 @@ import {
   ChevronRight, ArrowUp, 
   CheckCircle, Loader2, Pin
 } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
 import type { BatchResult } from '@/lib/tauri';
 
 interface UpdateInfo {
@@ -51,6 +52,7 @@ export function UpdateManager({
   onPinPackage,
   onUnpinPackage,
 }: UpdateManagerProps) {
+  const { t } = useLocale();
   const [selectedUpdates, setSelectedUpdates] = useState<Set<string>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateResult, setUpdateResult] = useState<BatchResult | null>(null);
@@ -120,13 +122,13 @@ export function UpdateManager({
   const getChangeTypeBadge = (type: UpdateInfo['change_type']) => {
     switch (type) {
       case 'major':
-        return <Badge variant="destructive">Major</Badge>;
+        return <Badge variant="destructive">{t('packages.changeTypeMajor')}</Badge>;
       case 'minor':
-        return <Badge variant="default">Minor</Badge>;
+        return <Badge variant="default">{t('packages.changeTypeMinor')}</Badge>;
       case 'patch':
-        return <Badge variant="secondary">Patch</Badge>;
+        return <Badge variant="secondary">{t('packages.changeTypePatch')}</Badge>;
       default:
-        return <Badge variant="outline">Update</Badge>;
+        return <Badge variant="outline">{t('packages.changeTypeUpdate')}</Badge>;
     }
   };
 
@@ -137,10 +139,10 @@ export function UpdateManager({
           <div>
             <CardTitle className="flex items-center gap-2">
               <ArrowUp className="h-5 w-5" />
-              Updates Available
+              {t('packages.updatesAvailableTitle')}
             </CardTitle>
             <CardDescription>
-              {loading ? 'Checking for updates...' : `${updates.length} update(s) available`}
+              {loading ? t('packages.checkingForUpdates') : t('packages.updatesCount', { count: updates.length })}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -151,7 +153,7 @@ export function UpdateManager({
               disabled={loading}
             >
               <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-              Check Now
+              {t('packages.checkNow')}
             </Button>
             {availableUpdates.length > 0 && (
               <Button 
@@ -164,7 +166,7 @@ export function UpdateManager({
                 ) : (
                   <ArrowUp className="h-4 w-4 mr-1" />
                 )}
-                Update All
+                {t('packages.updateAll')}
               </Button>
             )}
           </div>
@@ -193,9 +195,9 @@ export function UpdateManager({
             <div className="p-3 bg-green-500/10 rounded-full mb-4">
               <CheckCircle className="h-8 w-8 text-green-500" />
             </div>
-            <h3 className="font-medium mb-1">All packages are up to date!</h3>
+            <h3 className="font-medium mb-1">{t('packages.allPackagesUpToDate')}</h3>
             <p className="text-sm text-muted-foreground">
-              Last checked: just now
+              {t('packages.lastChecked', { time: t('packages.justNow') })}
             </p>
           </div>
         )}
@@ -205,10 +207,10 @@ export function UpdateManager({
           <Alert className="mb-4">
             <CheckCircle className="h-4 w-4" />
             <AlertDescription>
-              Updated {updateResult.successful.length} package(s).
+              {t('packages.updatedPackagesCount', { count: updateResult.successful.length })}
               {updateResult.failed.length > 0 && (
                 <span className="text-destructive ml-1">
-                  {updateResult.failed.length} failed.
+                  {t('packages.failedPackagesCount', { count: updateResult.failed.length })}
                 </span>
               )}
             </AlertDescription>
@@ -229,7 +231,7 @@ export function UpdateManager({
                   }}
                 />
                 <span className="text-sm text-muted-foreground">
-                  {selectedUpdates.size} of {availableUpdates.length} selected
+                  {t('packages.selectedOfTotal', { selected: selectedUpdates.size, total: availableUpdates.length })}
                 </span>
               </div>
               {selectedUpdates.size > 0 && (
@@ -243,7 +245,7 @@ export function UpdateManager({
                   ) : (
                     <ArrowUp className="h-4 w-4 mr-1" />
                   )}
-                  Update Selected ({selectedUpdates.size})
+                  {t('packages.updateSelectedCount', { count: selectedUpdates.size })}
                 </Button>
               )}
             </div>
@@ -290,7 +292,7 @@ export function UpdateManager({
                       {update.is_breaking && (
                         <Badge variant="destructive" className="gap-1">
                           <AlertCircle className="h-3 w-3" />
-                          Breaking
+                          {t('packages.breaking')}
                         </Badge>
                       )}
                     </div>
@@ -308,7 +310,7 @@ export function UpdateManager({
                           <Pin className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Pin version</TooltipContent>
+                      <TooltipContent>{t('packages.pinVersion')}</TooltipContent>
                     </Tooltip>
                   </div>
                 ))}
@@ -322,7 +324,7 @@ export function UpdateManager({
           <div className="mt-6 pt-6 border-t">
             <div className="flex items-center gap-2 mb-3">
               <Pin className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Pinned Packages</span>
+              <span className="text-sm font-medium">{t('packages.pinnedPackages')}</span>
               <Badge variant="secondary">{pinnedUpdates.length}</Badge>
             </div>
             <div className="space-y-2">
@@ -338,10 +340,10 @@ export function UpdateManager({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium truncate">{update.name}</span>
-                      <Badge variant="secondary">Pinned at {update.current_version}</Badge>
+                      <Badge variant="secondary">{t('packages.pinnedAtVersion', { version: update.current_version })}</Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Available: {update.latest_version}
+                      {t('packages.availableVersionLabel', { version: update.latest_version })}
                     </div>
                   </div>
                   
@@ -350,7 +352,7 @@ export function UpdateManager({
                     size="sm"
                     onClick={() => onUnpinPackage(update.package_id)}
                   >
-                    Unpin
+                    {t('packages.unpin')}
                   </Button>
                 </div>
               ))}

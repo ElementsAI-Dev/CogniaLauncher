@@ -1,10 +1,13 @@
 use crate::core::{DetectedEnvironment, EnvironmentInfo, EnvironmentManager};
-use crate::provider::ProviderRegistry;
+use crate::provider::{
+    EnvironmentProvider, InstallProgressEvent, InstallRequest, InstallStage, 
+    Provider, ProgressSender, ProviderRegistry,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 
@@ -56,69 +59,75 @@ pub async fn env_install(
     registry: State<'_, SharedRegistry>,
     app: AppHandle,
 ) -> Result<(), String> {
-    let manager = EnvironmentManager::new(registry.inner().clone());
+    // Create a progress channel
+    let (tx, mut rx): (ProgressSender, mpsc::Receiver<InstallProgressEvent>) =
+        mpsc::channel(32);
     
-    // Emit fetching progress
-    let _ = app.emit("env-install-progress", EnvInstallProgress {
-        env_type: env_type.clone(),
-        version: version.clone(),
-        step: "fetching".to_string(),
-        progress: 10.0,
-        downloaded_size: None,
-        total_size: None,
-        speed: None,
-        error: None,
+    // Clone values for the progress forwarding task
+    let env_type_clone = env_type.clone();
+    let version_clone = version.clone();
+    let app_clone = app.clone();
+    
+    // Spawn a task to forward progress events to the frontend
+    let progress_task = tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            let step = match event.stage {
+                InstallStage::Fetching => "fetching",
+                InstallStage::Downloading => "downloading",
+                InstallStage::Extracting => "extracting",
+                InstallStage::Configuring => "configuring",
+                InstallStage::PostInstall => "configuring",
+                InstallStage::Done => "done",
+                InstallStage::Failed => "error",
+            };
+            
+            let progress = EnvInstallProgress {
+                env_type: env_type_clone.clone(),
+                version: version_clone.clone(),
+                step: step.to_string(),
+                progress: event.progress_percent,
+                downloaded_size: if event.downloaded_bytes > 0 { Some(event.downloaded_bytes) } else { None },
+                total_size: event.total_bytes,
+                speed: if event.speed_bps > 0.0 { Some(event.speed_bps) } else { None },
+                error: if event.stage == InstallStage::Failed { Some(event.message.clone()) } else { None },
+            };
+            
+            let _ = app_clone.emit("env-install-progress", progress);
+        }
     });
     
-    // Emit downloading progress
-    // TODO: Implement real download progress by:
-    // 1. Adding progress callback to EnvironmentProvider trait
-    // 2. Using platform::network::DownloadProgress in provider implementations
-    // 3. Emitting progress events from the callback
-    let _ = app.emit("env-install-progress", EnvInstallProgress {
-        env_type: env_type.clone(),
-        version: version.clone(),
-        step: "downloading".to_string(),
-        progress: 30.0,
-        downloaded_size: None,
-        total_size: None,
-        speed: None,
-        error: None,
-    });
+    // Get the provider and install with progress
+    let registry_guard = registry.read().await;
+    let provider_key = provider_id.as_deref().unwrap_or(&env_type);
     
-    // Perform the actual installation
-    let result = manager
-        .install_version(&env_type, &version, provider_id.as_deref())
+    let provider = registry_guard
+        .get_environment_provider(provider_key)
+        .ok_or_else(|| format!("Provider not found: {}", provider_key))?;
+    
+    // Create the install request
+    let request = InstallRequest {
+        name: env_type.clone(),
+        version: Some(version.clone()),
+        global: true,
+        force: false,
+    };
+    
+    // Perform installation with progress reporting
+    let result = provider
+        .install_with_progress(request, Some(tx))
         .await;
     
-    match &result {
-        Ok(_) => {
-            // Emit configuring progress
-            let _ = app.emit("env-install-progress", EnvInstallProgress {
-                env_type: env_type.clone(),
-                version: version.clone(),
-                step: "configuring".to_string(),
-                progress: 80.0,
-                downloaded_size: None,
-                total_size: None,
-                speed: None,
-                error: None,
-            });
-            
-            // Emit done progress
-            let _ = app.emit("env-install-progress", EnvInstallProgress {
-                env_type: env_type.clone(),
-                version: version.clone(),
-                step: "done".to_string(),
-                progress: 100.0,
-                downloaded_size: None,
-                total_size: None,
-                speed: None,
-                error: None,
-            });
-        }
+    // Drop the registry guard before waiting for progress task
+    drop(registry_guard);
+    
+    // Wait for progress task to complete
+    let _ = progress_task.await;
+    
+    // Handle result
+    match result {
+        Ok(_receipt) => Ok(()),
         Err(e) => {
-            // Emit error progress
+            // Emit final error event
             let _ = app.emit("env-install-progress", EnvInstallProgress {
                 env_type: env_type.clone(),
                 version: version.clone(),
@@ -129,10 +138,9 @@ pub async fn env_install(
                 speed: None,
                 error: Some(e.to_string()),
             });
+            Err(e.to_string())
         }
     }
-    
-    result.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -416,4 +424,121 @@ pub async fn env_install_cancel(
     } else {
         Ok(false)
     }
+}
+
+/// System-detected environment information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SystemEnvironmentInfo {
+    pub env_type: String,
+    pub version: String,
+    pub executable_path: Option<String>,
+    pub source: String,
+}
+
+/// Detect all system-installed environments (not managed by version managers)
+/// This detects environments installed via official installers, package managers, etc.
+#[tauri::command]
+pub async fn env_detect_system_all() -> Result<Vec<SystemEnvironmentInfo>, String> {
+    use crate::provider::{SystemEnvironmentProvider, SystemEnvironmentType};
+    
+    let mut results = Vec::new();
+    
+    for env_type in SystemEnvironmentType::all() {
+        let provider = SystemEnvironmentProvider::new(env_type);
+        
+        if provider.is_available().await {
+            if let Ok(Some(version)) = provider.get_current_version().await {
+                // Get executable path
+                let versions = provider.list_installed_versions().await.unwrap_or_default();
+                let path = versions.first().map(|v| v.install_path.to_string_lossy().to_string());
+                
+                results.push(SystemEnvironmentInfo {
+                    env_type: env_type.env_type().to_string(),
+                    version,
+                    executable_path: path,
+                    source: "system".to_string(),
+                });
+            }
+        }
+    }
+    
+    Ok(results)
+}
+
+/// Detect a specific system-installed environment
+#[tauri::command]
+pub async fn env_detect_system(
+    env_type: String,
+) -> Result<Option<SystemEnvironmentInfo>, String> {
+    use crate::provider::{SystemEnvironmentProvider, SystemEnvironmentType};
+    
+    let system_type = match env_type.as_str() {
+        "node" | "nodejs" => Some(SystemEnvironmentType::Node),
+        "python" | "python3" => Some(SystemEnvironmentType::Python),
+        "go" | "golang" => Some(SystemEnvironmentType::Go),
+        "rust" | "rustc" => Some(SystemEnvironmentType::Rust),
+        "ruby" => Some(SystemEnvironmentType::Ruby),
+        "java" => Some(SystemEnvironmentType::Java),
+        "php" => Some(SystemEnvironmentType::Php),
+        "dotnet" | ".net" => Some(SystemEnvironmentType::Dotnet),
+        "deno" => Some(SystemEnvironmentType::Deno),
+        "bun" => Some(SystemEnvironmentType::Bun),
+        _ => None,
+    };
+    
+    let Some(system_type) = system_type else {
+        return Ok(None);
+    };
+    
+    let provider = SystemEnvironmentProvider::new(system_type);
+    
+    if !provider.is_available().await {
+        return Ok(None);
+    }
+    
+    if let Ok(Some(version)) = provider.get_current_version().await {
+        let versions = provider.list_installed_versions().await.unwrap_or_default();
+        let path = versions.first().map(|v| v.install_path.to_string_lossy().to_string());
+        
+        return Ok(Some(SystemEnvironmentInfo {
+            env_type: system_type.env_type().to_string(),
+            version,
+            executable_path: path,
+            source: "system".to_string(),
+        }));
+    }
+    
+    Ok(None)
+}
+
+/// Get the environment type mapping from provider ID to logical environment type
+#[tauri::command]
+pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, String>, String> {
+    let mut mapping = std::collections::HashMap::new();
+    
+    // Version managers to environment types
+    mapping.insert("fnm".to_string(), "node".to_string());
+    mapping.insert("nvm".to_string(), "node".to_string());
+    mapping.insert("pyenv".to_string(), "python".to_string());
+    mapping.insert("goenv".to_string(), "go".to_string());
+    mapping.insert("rbenv".to_string(), "ruby".to_string());
+    mapping.insert("rustup".to_string(), "rust".to_string());
+    mapping.insert("sdkman".to_string(), "java".to_string());
+    mapping.insert("phpbrew".to_string(), "php".to_string());
+    mapping.insert("dotnet".to_string(), "dotnet".to_string());
+    mapping.insert("deno".to_string(), "deno".to_string());
+    
+    // System providers
+    mapping.insert("system-node".to_string(), "node".to_string());
+    mapping.insert("system-python".to_string(), "python".to_string());
+    mapping.insert("system-go".to_string(), "go".to_string());
+    mapping.insert("system-rust".to_string(), "rust".to_string());
+    mapping.insert("system-ruby".to_string(), "ruby".to_string());
+    mapping.insert("system-java".to_string(), "java".to_string());
+    mapping.insert("system-php".to_string(), "php".to_string());
+    mapping.insert("system-dotnet".to_string(), "dotnet".to_string());
+    mapping.insert("system-deno".to_string(), "deno".to_string());
+    mapping.insert("system-bun".to_string(), "bun".to_string());
+    
+    Ok(mapping)
 }

@@ -193,8 +193,9 @@ export default function EnvironmentsPage() {
 
   return (
     <EnvironmentErrorBoundary
-      fallbackTitle="Environment Page Error"
-      fallbackDescription="An error occurred while loading the environments page. Please try refreshing."
+      fallbackTitle={t('environments.errorBoundary.title')}
+      fallbackDescription={t('environments.errorBoundary.description')}
+      retryLabel={t('environments.errorBoundary.tryAgain')}
     >
       <div className="p-4 md:p-6 space-y-6">
         <PageHeader

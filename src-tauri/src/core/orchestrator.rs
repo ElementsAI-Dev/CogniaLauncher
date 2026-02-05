@@ -1,12 +1,14 @@
 use crate::config::Settings;
 use crate::error::{CogniaError, CogniaResult};
-use crate::provider::{InstallReceipt, InstallRequest, InstalledFilter, ProviderRegistry};
+use crate::provider::{InstallReceipt, InstallRequest, InstalledFilter, Provider, ProviderRegistry};
 use crate::core::{HistoryManager, PackageSpec};
 use crate::resolver::{Dependency, Package, Resolver, Version};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstallPlan {
@@ -41,6 +43,8 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
+    const VERSION_VERIFY_RETRIES: usize = 3;
+    const VERSION_VERIFY_DELAY_MS: u64 = 500;
     pub fn new(registry: Arc<RwLock<ProviderRegistry>>, settings: Settings) -> Self {
         Self { registry, settings }
     }
@@ -241,6 +245,23 @@ impl Orchestrator {
                 CogniaError::ProviderNotFound(format!("No provider for {}", planned.name))
             })?;
 
+            // Pre-check: Verify provider is available
+            if !provider.is_available().await {
+                let err = CogniaError::Provider(format!(
+                    "Provider {} is not available. Please ensure it is installed and accessible.",
+                    provider.display_name()
+                ));
+                let _ = HistoryManager::record_install(
+                    &planned.name,
+                    &planned.version,
+                    provider.id(),
+                    false,
+                    Some(err.to_string()),
+                )
+                .await;
+                return Err(err);
+            }
+
             let request = InstallRequest {
                 name: planned.name.clone(),
                 version: if planned.version == "*" {
@@ -253,7 +274,16 @@ impl Orchestrator {
             };
 
             match provider.install(request).await {
-                Ok(receipt) => {
+                Ok(mut receipt) => {
+                    // Post-verification: Get actual installed version if receipt.version is empty
+                    if receipt.version.is_empty() {
+                        if let Ok(installed_version) =
+                            self.verify_installed_version(&*provider, &receipt.name).await
+                        {
+                            receipt.version = installed_version;
+                        }
+                    }
+
                     let _ = HistoryManager::record_install(
                         &receipt.name,
                         &receipt.version,
@@ -289,6 +319,29 @@ impl Orchestrator {
         Ok(receipts)
     }
 
+    async fn verify_installed_version(
+        &self,
+        provider: &dyn Provider,
+        package_name: &str,
+    ) -> CogniaResult<String> {
+        for attempt in 0..Self::VERSION_VERIFY_RETRIES {
+            if let Some(version) = provider.get_installed_version(package_name).await? {
+                if !version.is_empty() {
+                    return Ok(version);
+                }
+            }
+
+            if attempt + 1 < Self::VERSION_VERIFY_RETRIES {
+                sleep(Duration::from_millis(Self::VERSION_VERIFY_DELAY_MS)).await;
+            }
+        }
+
+        Err(CogniaError::Installation(format!(
+            "Could not verify installation of {}",
+            package_name
+        )))
+    }
+
     pub async fn install(&self, packages: &[String]) -> CogniaResult<Vec<InstallReceipt>> {
         let plan = self.plan_install(packages).await?;
         self.execute_install(&plan, |_| {}).await
@@ -309,15 +362,10 @@ impl Orchestrator {
                 })?
             };
 
-            let installed_version = provider
-                .list_installed(InstalledFilter {
-                    name_filter: Some(spec.name.clone()),
-                    ..Default::default()
-                })
+            let installed_version = self
+                .get_installed_version(&*provider, &spec.name)
                 .await
-                .ok()
-                .and_then(|packages| packages.first().map(|pkg| pkg.version.clone()))
-                .unwrap_or_else(|| "unknown".to_string());
+                .unwrap_or_else(|_| "unknown".to_string());
 
             match provider
                 .uninstall(crate::provider::UninstallRequest {
@@ -352,5 +400,29 @@ impl Orchestrator {
         }
 
         Ok(())
+    }
+
+    /// Get the installed version of a package from the provider
+    async fn get_installed_version(
+        &self,
+        provider: &dyn Provider,
+        package_name: &str,
+    ) -> CogniaResult<String> {
+        let installed = provider
+            .list_installed(InstalledFilter {
+                name_filter: Some(package_name.to_string()),
+                ..Default::default()
+            })
+            .await?;
+
+        installed
+            .first()
+            .map(|pkg| pkg.version.clone())
+            .ok_or_else(|| {
+                CogniaError::Installation(format!(
+                    "Could not verify installation of {}",
+                    package_name
+                ))
+            })
     }
 }

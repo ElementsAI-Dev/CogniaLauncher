@@ -9,6 +9,8 @@ const mockT = (key: string) => {
     'settings.generalDesc': 'General application settings',
     'settings.parallelDownloads': 'Parallel Downloads',
     'settings.parallelDownloadsDesc': 'Number of concurrent downloads',
+    'settings.minInstallSpace': 'Minimum Install Space',
+    'settings.minInstallSpaceDesc': 'Minimum free disk space required',
     'settings.metadataCacheTtl': 'Metadata Cache TTL',
     'settings.metadataCacheTtlDesc': 'Seconds before metadata cache expires',
     'settings.resolveStrategy': 'Resolve Strategy',
@@ -27,6 +29,7 @@ describe('GeneralSettings', () => {
   const defaultProps = {
     localConfig: {
       'general.parallel_downloads': '4',
+      'general.min_install_space_mb': '100',
       'general.metadata_cache_ttl': '3600',
       'general.resolve_strategy': 'latest',
       'general.auto_update_metadata': 'true',
@@ -52,6 +55,13 @@ describe('GeneralSettings', () => {
 
     expect(screen.getByText('Parallel Downloads')).toBeInTheDocument();
     expect(screen.getByText('Number of concurrent downloads')).toBeInTheDocument();
+  });
+
+  it('should render minimum install space setting', () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText('Minimum Install Space')).toBeInTheDocument();
+    expect(screen.getByText('Minimum free disk space required')).toBeInTheDocument();
   });
 
   it('should render metadata cache TTL setting', () => {
@@ -114,6 +124,7 @@ describe('GeneralSettings', () => {
 
     const inputs = screen.getAllByRole('spinbutton');
     expect(inputs[0]).toHaveValue(4); // default parallel downloads
-    expect(inputs[1]).toHaveValue(3600); // default cache TTL
+    expect(inputs[1]).toHaveValue(100); // default min install space
+    expect(inputs[2]).toHaveValue(3600); // default cache TTL
   });
 });

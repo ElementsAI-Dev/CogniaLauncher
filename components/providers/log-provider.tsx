@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, ReactNode } from 'react';
+import { useEffect, ReactNode, useCallback } from 'react';
 import { useLogStore, type LogLevel } from '@/lib/stores/log';
 import {
   isTauri,
@@ -9,12 +9,7 @@ import {
   listenCommandOutput,
 } from '@/lib/tauri';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-
-function formatSpeed(bytesPerSecond: number): string {
-  if (bytesPerSecond < 1024) return `${bytesPerSecond.toFixed(0)} B/s`;
-  if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
-}
+import { useLocale } from '@/components/providers/locale-provider';
 
 // Store original console methods to prevent infinite loops
 const originalConsole = {
@@ -35,6 +30,18 @@ interface LogProviderProps {
 
 export function LogProvider({ children }: LogProviderProps) {
   const { addLog } = useLogStore();
+  const { t } = useLocale();
+
+  // Helper function to format speed with i18n
+  const formatSpeed = useCallback((bytesPerSecond: number): string => {
+    if (bytesPerSecond < 1024) {
+      return t('logs.messages.speedBps', { value: bytesPerSecond.toFixed(0) });
+    }
+    if (bytesPerSecond < 1024 * 1024) {
+      return t('logs.messages.speedKBps', { value: (bytesPerSecond / 1024).toFixed(1) });
+    }
+    return t('logs.messages.speedMBps', { value: (bytesPerSecond / (1024 * 1024)).toFixed(1) });
+  }, [t]);
 
   // Setup console interception for capturing webview logs
   // Works in both web and desktop modes for universal logging support
@@ -122,23 +129,33 @@ export function LogProvider({ children }: LogProviderProps) {
           let message = `[${progress.envType}@${progress.version}] `;
           switch (progress.step) {
             case 'fetching':
-              message += 'Fetching version information...';
+              message += t('logs.messages.envFetching');
               break;
             case 'downloading':
-              message += `Downloading... ${progress.progress.toFixed(0)}%`;
-              if (progress.speed) message += ` (${formatSpeed(progress.speed)})`;
+              if (progress.speed) {
+                message += t('logs.messages.envDownloadingWithSpeed', {
+                  progress: progress.progress.toFixed(0),
+                  speed: formatSpeed(progress.speed)
+                });
+              } else {
+                message += t('logs.messages.envDownloading', {
+                  progress: progress.progress.toFixed(0)
+                });
+              }
               break;
             case 'extracting':
-              message += 'Extracting...';
+              message += t('logs.messages.envExtracting');
               break;
             case 'configuring':
-              message += 'Configuring...';
+              message += t('logs.messages.envConfiguring');
               break;
             case 'done':
-              message += 'Installation completed successfully';
+              message += t('logs.messages.envDone');
               break;
             case 'error':
-              message += `Error: ${progress.error || 'Unknown error'}`;
+              message += t('logs.messages.envError', {
+                error: progress.error || t('logs.messages.envUnknownError')
+              });
               break;
           }
 
@@ -158,27 +175,54 @@ export function LogProvider({ children }: LogProviderProps) {
 
           switch (progress.type) {
             case 'starting':
-              message = `Starting batch operation (${progress.total} packages)`;
+              message = t('logs.messages.batchStarting', { total: progress.total });
               break;
             case 'resolving':
-              message = `[${progress.current}/${progress.total}] Resolving ${progress.package}...`;
+              message = t('logs.messages.batchResolving', {
+                current: progress.current,
+                total: progress.total,
+                package: progress.package
+              });
               level = 'debug';
               break;
             case 'downloading':
-              message = `[${progress.current}/${progress.total}] Downloading ${progress.package}... ${progress.progress.toFixed(0)}%`;
+              message = t('logs.messages.batchDownloading', {
+                current: progress.current,
+                total: progress.total,
+                package: progress.package,
+                progress: progress.progress.toFixed(0)
+              });
               level = 'debug';
               break;
             case 'installing':
-              message = `[${progress.current}/${progress.total}] Installing ${progress.package}...`;
+              message = t('logs.messages.batchInstalling', {
+                current: progress.current,
+                total: progress.total,
+                package: progress.package
+              });
               break;
             case 'item_completed':
-              message = `[${progress.current}/${progress.total}] ${progress.package}: ${progress.success ? 'Success' : 'Failed'}`;
+              message = progress.success
+                ? t('logs.messages.batchItemSuccess', {
+                    current: progress.current,
+                    total: progress.total,
+                    package: progress.package
+                  })
+                : t('logs.messages.batchItemFailed', {
+                    current: progress.current,
+                    total: progress.total,
+                    package: progress.package
+                  });
               level = progress.success ? 'info' : 'error';
               break;
             case 'completed': {
               const result = progress.result;
+              const successCount = result.successful?.length ?? 0;
               const failedCount = result.failed?.length ?? 0;
-              message = `Batch operation completed: ${result.successful} succeeded, ${failedCount} failed`;
+              message = t('logs.messages.batchCompleted', {
+                successful: successCount,
+                failed: failedCount
+              });
               level = failedCount > 0 ? 'warn' : 'info';
               break;
             }
@@ -204,7 +248,7 @@ export function LogProvider({ children }: LogProviderProps) {
       unlistenFns.forEach((unlisten) => unlisten());
       if (detachConsole) detachConsole();
     };
-  }, [addLog]);
+  }, [addLog, formatSpeed, t]);
 
   return <>{children}</>;
 }

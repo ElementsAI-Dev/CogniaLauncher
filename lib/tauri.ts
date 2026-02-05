@@ -11,6 +11,8 @@ export type {
   EnvVariableConfig,
   DetectionFileConfig,
   EnvironmentSettingsConfig,
+  SystemEnvironmentInfo,
+  EnvironmentTypeMapping,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -90,6 +92,7 @@ export type {
   IssueCategory,
   HealthIssue,
   EnvironmentHealthResult,
+  PackageManagerHealthResult,
   SystemHealthResult,
   ProfileEnvironment,
   EnvironmentProfile,
@@ -105,6 +108,8 @@ import type {
   DetectedEnvironment,
   EnvironmentProviderInfo,
   EnvironmentSettingsConfig,
+  SystemEnvironmentInfo,
+  EnvironmentTypeMapping,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -161,6 +166,7 @@ import type {
   ExtractionTypeInfo,
   SystemHealthResult,
   EnvironmentHealthResult,
+  PackageManagerHealthResult,
   EnvironmentProfile,
   ProfileEnvironment,
   ProfileApplyResult,
@@ -239,6 +245,16 @@ export const envSaveSettings = (settings: EnvironmentSettingsConfig) =>
 export const envLoadSettings = (envType: string) => 
   invoke<EnvironmentSettingsConfig | null>('env_load_settings', { envType });
 
+// System environment detection commands
+export const envDetectSystemAll = () => 
+  invoke<SystemEnvironmentInfo[]>('env_detect_system_all');
+
+export const envDetectSystem = (envType: string) => 
+  invoke<SystemEnvironmentInfo | null>('env_detect_system', { envType });
+
+export const envGetTypeMapping = () => 
+  invoke<EnvironmentTypeMapping>('env_get_type_mapping');
+
 // Package commands
 export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
 export const packageInfo = (name: string, provider?: string) => invoke<PackageInfo>('package_info', { name, provider });
@@ -289,6 +305,45 @@ export const deleteCacheEntries = (keys: string[], useTrash?: boolean) =>
 // Hot files (top accessed)
 export const getTopAccessedEntries = (limit?: number) => 
   invoke<CacheEntryItem[]>('get_top_accessed_entries', { limit });
+
+// External cache management
+export interface ExternalCacheInfo {
+  provider: string;
+  displayName: string;
+  cachePath: string;
+  size: number;
+  sizeHuman: string;
+  isAvailable: boolean;
+  canClean: boolean;
+}
+
+export interface ExternalCacheCleanResult {
+  provider: string;
+  displayName: string;
+  freedBytes: number;
+  freedHuman: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface CombinedCacheStats {
+  internalSize: number;
+  internalSizeHuman: string;
+  externalSize: number;
+  externalSizeHuman: string;
+  totalSize: number;
+  totalSizeHuman: string;
+  externalCaches: ExternalCacheInfo[];
+}
+
+export const discoverExternalCaches = () => 
+  invoke<ExternalCacheInfo[]>('discover_external_caches');
+export const cleanExternalCache = (provider: string, useTrash: boolean) => 
+  invoke<ExternalCacheCleanResult>('clean_external_cache', { provider, useTrash });
+export const cleanAllExternalCaches = (useTrash: boolean) => 
+  invoke<ExternalCacheCleanResult[]>('clean_all_external_caches', { useTrash });
+export const getCombinedCacheStats = () => 
+  invoke<CombinedCacheStats>('get_combined_cache_stats');
 
 // Provider management commands
 export const providerEnable = (providerId: string) => invoke<void>('provider_enable', { providerId });
@@ -666,13 +721,17 @@ export const customRuleExtractionTypes = () =>
 
 // ===== Health Check Commands =====
 
-/** Check health of all environments */
+/** Check health of all environments and package managers */
 export const healthCheckAll = () =>
   invoke<SystemHealthResult>('health_check_all');
 
 /** Check health of a specific environment */
 export const healthCheckEnvironment = (envType: string) =>
   invoke<EnvironmentHealthResult>('health_check_environment', { envType });
+
+/** Check health of all package managers */
+export const healthCheckPackageManagers = () =>
+  invoke<PackageManagerHealthResult[]>('health_check_package_managers');
 
 // ===== Environment Profiles Commands =====
 
@@ -715,3 +774,65 @@ export const profileImport = (json: string) =>
 /** Create a profile from current environment state */
 export const profileCreateFromCurrent = (name: string) =>
   invoke<EnvironmentProfile>('profile_create_from_current', { name });
+
+// ============================================================================
+// GitHub Commands
+// ============================================================================
+
+import type {
+  GitHubBranchInfo,
+  GitHubTagInfo,
+  GitHubReleaseInfo,
+  GitHubAssetInfo,
+  GitHubParsedRepo,
+} from '@/types/github';
+
+export type {
+  GitHubBranchInfo,
+  GitHubTagInfo,
+  GitHubReleaseInfo,
+  GitHubAssetInfo,
+  GitHubParsedRepo,
+};
+
+/** Parse a GitHub URL or owner/repo string */
+export const githubParseUrl = (url: string) =>
+  invoke<GitHubParsedRepo | null>('github_parse_url', { url });
+
+/** Validate if a repository exists */
+export const githubValidateRepo = (repo: string) =>
+  invoke<boolean>('github_validate_repo', { repo });
+
+/** List branches from a repository */
+export const githubListBranches = (repo: string) =>
+  invoke<GitHubBranchInfo[]>('github_list_branches', { repo });
+
+/** List tags from a repository */
+export const githubListTags = (repo: string) =>
+  invoke<GitHubTagInfo[]>('github_list_tags', { repo });
+
+/** List releases from a repository */
+export const githubListReleases = (repo: string) =>
+  invoke<GitHubReleaseInfo[]>('github_list_releases', { repo });
+
+/** Get assets for a specific release by tag */
+export const githubGetReleaseAssets = (repo: string, tag: string) =>
+  invoke<GitHubAssetInfo[]>('github_get_release_assets', { repo, tag });
+
+/** Download a release asset to the download queue */
+export const githubDownloadAsset = (
+  repo: string,
+  assetUrl: string,
+  assetName: string,
+  destination: string
+) =>
+  invoke<string>('github_download_asset', { repo, assetUrl, assetName, destination });
+
+/** Download source archive (zip/tar.gz) to the download queue */
+export const githubDownloadSource = (
+  repo: string,
+  refName: string,
+  format: 'zip' | 'tar.gz',
+  destination: string
+) =>
+  invoke<string>('github_download_source', { repo, refName, format, destination });

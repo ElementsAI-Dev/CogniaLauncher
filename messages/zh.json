@@ -37,7 +37,10 @@
     "unknown": "未知",
     "clear": "清除",
     "info": "信息",
-    "actions": "操作"
+    "actions": "操作",
+    "previous": "上一页",
+    "next": "下一页",
+    "days": "天"
   },
   "breadcrumbs": {
     "label": "面包屑"
@@ -87,7 +90,8 @@
       "clearCache": "清理缓存",
       "refreshAll": "刷新全部",
       "openSettings": "打开设置",
-      "viewLogs": "查看日志"
+      "viewLogs": "查看日志",
+      "moreActions": "更多操作"
     },
     "environmentList": {
       "title": "环境列表",
@@ -187,6 +191,10 @@
     "batchInstallError": "{count} 个版本安装失败",
     "batchUninstallSuccess": "成功卸载 {count} 个版本",
     "batchUninstallError": "{count} 个版本卸载失败",
+    "tooltip": {
+      "size": "大小：",
+      "installedAt": "安装时间："
+    },
     "versionBrowser": {
       "title": "{type} 版本",
       "description": "浏览并安装可用版本",
@@ -263,7 +271,22 @@
       "autoSwitch": "目录切换时自动切换版本",
       "autoSwitchDesc": "根据项目文件自动切换版本",
       "setAsDefault": "设为全局默认",
-      "setAsDefaultDesc": "当没有项目特定版本时使用此版本"
+      "setAsDefaultDesc": "当没有项目特定版本时使用此版本",
+      "providers": {
+        "fnm": "快速 Node 管理器（推荐）",
+        "nvm": "Node 版本管理器",
+        "uv": "快速 Python 包和版本管理器（推荐）",
+        "pyenv": "Python 版本管理",
+        "conda": "Anaconda/Miniconda 环境管理器",
+        "rye": "现代 Python 项目管理器",
+        "mise": "多语言版本管理器（原 rtx）",
+        "goenv": "Go 版本管理",
+        "rustup": "Rust 工具链安装程序",
+        "rbenv": "Ruby 版本管理",
+        "sdkman": "软件开发套件管理器",
+        "phpbrew": "PHP 版本管理器",
+        "dotnet": ".NET SDK"
+      }
     },
     "progress": {
       "title": "正在安装 {name}",
@@ -275,7 +298,8 @@
       "downloadingBinaries": "下载二进制文件",
       "cancel": "取消",
       "runInBackground": "后台运行",
-      "steps": "安装步骤"
+      "steps": "安装步骤",
+      "error": "错误"
     },
     "batch": {
       "selected": "已选择 {count} 个版本",
@@ -344,6 +368,23 @@
         "provider_not_found": "未找到提供程序",
         "shell_integration": "Shell 集成",
         "other": "其他"
+      },
+      "packageManagers": {
+        "title": "包管理器",
+        "description": "系统包管理器健康状态",
+        "noManagers": "未找到包管理器",
+        "installed": "已安装",
+        "notInstalled": "未安装",
+        "version": "版本",
+        "path": "可执行路径",
+        "installInstructions": "安装说明",
+        "notAvailable": "{name} 未安装",
+        "notAvailableDetails": "{name} 包管理器在此系统上不可用",
+        "installToEnable": "安装 {name} 以启用包管理功能",
+        "configIssues": "{name} 可能存在配置问题",
+        "listPackagesFailed": "无法列出软件包: {error}",
+        "providerUnavailable": "提供程序 {name} 不可用。请确保已安装并可访问。",
+        "verifyInstallFailed": "无法验证 {name} 的安装状态"
       }
     },
     "languages": {
@@ -521,7 +562,48 @@
     "providerManagement": "提供商管理",
     "providerManagementDesc": "启用或禁用包提供商",
     "viewAll": "查看全部",
-    "checkAllStatus": "检查全部状态"
+    "checkAllStatus": "检查全部状态",
+    "enterPackageToResolve": "输入包名称以解析依赖",
+    "comparePackages": "对比包",
+    "sideByComparison": "并排对比 {count} 个包",
+    "failedToCompare": "对比包失败",
+    "noDescription": "无描述",
+    "keyDifferences": "主要差异",
+    "commonFeatures": "共同特性",
+    "recommendation": "推荐",
+    "feature": "特性",
+    "featureVersion": "版本",
+    "featureProvider": "提供商",
+    "featureLicense": "许可证",
+    "featureSize": "大小",
+    "featureLastUpdated": "最后更新",
+    "featureHomepage": "主页",
+    "featureDependencies": "依赖项",
+    "featurePlatforms": "平台",
+    "link": "链接",
+    "noneValue": "无",
+    "unknownDate": "未知",
+    "homepage": "主页",
+    "repository": "仓库",
+    "noDescriptionAvailable": "无可用描述",
+    "updatesAvailableTitle": "可用更新",
+    "checkingForUpdates": "正在检查更新...",
+    "updatesCount": "{count} 个可用更新",
+    "checkNow": "立即检查",
+    "allPackagesUpToDate": "所有包都是最新版本！",
+    "lastChecked": "上次检查：{time}",
+    "justNow": "刚刚",
+    "updatedPackagesCount": "已更新 {count} 个包",
+    "failedPackagesCount": "{count} 个失败",
+    "selectedOfTotal": "已选择 {selected} / {total}",
+    "updateSelectedCount": "更新选中的 ({count})",
+    "changeTypeMajor": "主版本",
+    "changeTypeMinor": "次版本",
+    "changeTypePatch": "补丁",
+    "changeTypeUpdate": "更新",
+    "breaking": "破坏性更新",
+    "pinnedAtVersion": "固定于 {version}",
+    "availableVersionLabel": "可用版本：{version}"
   },
   "providers": {
     "title": "提供商",
@@ -733,7 +815,19 @@
     "deleteEntriesFailed": "删除条目失败",
     "moveToTrash": "移至回收站",
     "warningHigh": "缓存使用率已达 {percent}%，建议清理以释放空间。",
-    "warningCritical": "缓存使用率已达临界值 {percent}%！请立即清理以避免问题。"
+    "warningCritical": "缓存使用率已达临界值 {percent}%！请立即清理以避免问题。",
+    "externalCaches": "外部工具缓存",
+    "externalCachesDesc": "管理包管理器和开发工具的缓存",
+    "noExternalCaches": "未找到外部缓存或未安装相关工具",
+    "clean": "清理",
+    "cleanAll": "全部清理",
+    "externalCleanSuccess": "已清理 {provider} 缓存，释放 {size}",
+    "externalCleanFailed": "清理 {provider} 失败：{error}",
+    "externalCleanAllSuccess": "已清理 {count} 个缓存，释放 {size}",
+    "externalCleanAllPartial": "已清理 {success}/{total} 个缓存（部分失败）",
+    "externalCleanAllFailed": "清理外部缓存失败",
+    "externalCleanAllTitle": "清理所有外部缓存",
+    "externalCleanAllDesc": "这将清理 {count} 个包管理器的缓存。此操作不可撤销。"
   },
   "settings": {
     "title": "设置",
@@ -745,6 +839,8 @@
     "generalDesc": "常规应用程序设置",
     "parallelDownloads": "并行下载",
     "parallelDownloadsDesc": "并发下载数量",
+    "minInstallSpace": "最小安装空间",
+    "minInstallSpaceDesc": "安装所需最小可用磁盘空间（MB）",
     "metadataCacheTtl": "元数据缓存 TTL",
     "metadataCacheTtlDesc": "元数据缓存过期时间（秒）",
     "network": "网络",
@@ -781,6 +877,10 @@
     "mirrorPriorityDesc": "优先级更高的镜像将优先使用",
     "mirrorVerifySsl": "验证 SSL",
     "mirrorVerifySslDesc": "验证此镜像的 TLS 证书",
+    "mirrorPresetDefault": "默认（官方源）",
+    "mirrorPresetChina": "中国（淘宝/清华）",
+    "mirrorPresetAliyun": "阿里云",
+    "mirrorPresetUstc": "中科大",
     "systemInfo": "系统信息",
     "systemInfoDesc": "当前系统详情",
     "operatingSystem": "操作系统",
@@ -896,13 +996,18 @@
       "provider": "提供商",
       "system": "系统信息"
     },
-    "sectionReset": "{section} 设置已重置为默认值"
+    "sectionReset": "{section} 设置已重置为默认值",
+    "loading": "加载设置中",
+    "modified": "已修改",
+    "selectAccentColor": "选择{color}强调色"
   },
   "validation": {
     "mustBeNumber": "必须是数字",
     "min": "最小值为 {min}",
     "max": "最大值为 {max}",
-    "invalidFormat": "格式无效"
+    "invalidFormat": "格式无效",
+    "mustBeValidUrl": "必须是有效的 URL",
+    "mustBeValidUrlOrEmpty": "必须是有效的 URL 或留空"
   },
   "about": {
     "title": "关于",
@@ -923,6 +1028,7 @@
     "releaseNotes": "更新说明",
     "releasedOn": "发布日期：{date}",
     "systemInfo": "系统信息",
+    "systemInfoTitle": "CogniaLauncher 系统信息",
     "operatingSystem": "操作系统",
     "architecture": "架构",
     "homeDirectory": "主目录",
@@ -1036,7 +1142,28 @@
     "loadError": "加载日志文件失败",
     "openDirError": "打开日志目录失败",
     "viewerComingSoon": "文件查看器即将推出",
-    "copyEntry": "复制日志条目"
+    "copyEntry": "复制日志条目",
+    "clearSearch": "清除搜索",
+    "messages": {
+      "speedBps": "{value} B/s",
+      "speedKBps": "{value} KB/s",
+      "speedMBps": "{value} MB/s",
+      "envFetching": "正在获取版本信息...",
+      "envDownloading": "下载中... {progress}%",
+      "envDownloadingWithSpeed": "下载中... {progress}% ({speed})",
+      "envExtracting": "解压中...",
+      "envConfiguring": "配置中...",
+      "envDone": "安装成功完成",
+      "envError": "错误：{error}",
+      "envUnknownError": "未知错误",
+      "batchStarting": "开始批量操作（{total} 个包）",
+      "batchResolving": "[{current}/{total}] 正在解析 {package}...",
+      "batchDownloading": "[{current}/{total}] 正在下载 {package}... {progress}%",
+      "batchInstalling": "[{current}/{total}] 正在安装 {package}...",
+      "batchItemSuccess": "[{current}/{total}] {package}：成功",
+      "batchItemFailed": "[{current}/{total}] {package}：失败",
+      "batchCompleted": "批量操作完成：{successful} 个成功，{failed} 个失败"
+    }
   },
   "downloads": {
     "title": "下载",
@@ -1153,7 +1280,37 @@
     "providerPlaceholder": "可选：如 npm、github",
     "selectDestination": "选择下载目标位置",
     "manualPathRequired": "请手动输入路径",
-    "browseFolder": "浏览"
+    "browseFolder": "浏览",
+    "fromGitHub": "从 GitHub",
+    "github": {
+      "dialogTitle": "从 GitHub 下载",
+      "dialogDesc": "浏览仓库并下载发布版本、分支或标签",
+      "repository": "仓库",
+      "repoPlaceholder": "owner/repo 或 GitHub URL",
+      "fetch": "获取",
+      "repoValid": "仓库已找到",
+      "repoInvalid": "仓库未找到或无法访问",
+      "releases": "发布版本",
+      "branches": "分支",
+      "tags": "标签",
+      "noReleases": "没有找到发布版本",
+      "noBranches": "没有找到分支",
+      "noTags": "没有找到标签",
+      "assets": "个文件",
+      "selectAssets": "选择要下载的文件",
+      "prerelease": "预发布",
+      "protected": "受保护",
+      "format": "格式",
+      "destination": "目标位置",
+      "destinationPlaceholder": "选择或输入目标文件夹",
+      "addToQueue": "添加到队列",
+      "noDestination": "请选择目标文件夹",
+      "noSelection": "请至少选择一个要下载的项目",
+      "assetsAdded": "已将 {count} 个文件添加到下载队列",
+      "sourceAdded": "已将源码包添加到下载队列",
+      "yourPlatform": "当前平台",
+      "rosetta": "Rosetta"
+    }
   },
   "errors": {
     "config": "配置错误，请检查设置文件。",

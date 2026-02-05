@@ -1,4 +1,5 @@
 use super::api::update_api_client_from_settings;
+use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
     apk, apt, brew, bun, bundler, cargo, chocolatey, composer, deno, dnf, docker, dotnet, flatpak, fnm,
@@ -50,14 +51,27 @@ impl ProviderRegistry {
         let pypi_mirror = settings.get_mirror_url("pypi");
         let crates_mirror = settings.get_mirror_url("crates");
 
+        // Track which environment types have version managers available
+        let mut has_node_manager = false;
+        let mut has_python_manager = false;
+        let mut has_rust_manager = false;
+        let mut has_go_manager = false;
+        let mut has_ruby_manager = false;
+        let mut has_java_manager = false;
+        let mut has_php_manager = false;
+        let mut has_dotnet_manager = false;
+        let mut has_deno_manager = false;
+
         // Node.js version managers - prefer fnm over nvm
         let fnm_provider = Arc::new(fnm::FnmProvider::new());
         if fnm_provider.is_available().await {
             registry.register_environment_provider(fnm_provider);
+            has_node_manager = true;
         } else {
             let nvm_provider = Arc::new(nvm::NvmProvider::new());
             if nvm_provider.is_available().await {
                 registry.register_environment_provider(nvm_provider);
+                has_node_manager = true;
             }
         }
 
@@ -65,48 +79,129 @@ impl ProviderRegistry {
         let pyenv_provider = Arc::new(pyenv::PyenvProvider::new());
         if pyenv_provider.is_available().await {
             registry.register_environment_provider(pyenv_provider);
+            has_python_manager = true;
         }
 
         // Rust version manager
         let rustup_provider = Arc::new(rustup::RustupProvider::new());
         if rustup_provider.is_available().await {
             registry.register_environment_provider(rustup_provider);
+            has_rust_manager = true;
         }
 
         // Go version manager
         let goenv_provider = Arc::new(goenv::GoenvProvider::new());
         if goenv_provider.is_available().await {
             registry.register_environment_provider(goenv_provider);
+            has_go_manager = true;
         }
 
         // Ruby version manager
         let rbenv_provider = Arc::new(rbenv::RbenvProvider::new());
         if rbenv_provider.is_available().await {
             registry.register_environment_provider(rbenv_provider);
+            has_ruby_manager = true;
         }
 
         // Java version manager (SDKMAN!)
         let sdkman_provider = Arc::new(sdkman::SdkmanProvider::new());
         if sdkman_provider.is_available().await {
             registry.register_environment_provider(sdkman_provider);
+            has_java_manager = true;
         }
 
         // PHP version manager (PHPBrew) - macOS/Linux only
         let phpbrew_provider = Arc::new(phpbrew::PhpbrewProvider::new());
         if phpbrew_provider.is_available().await {
             registry.register_environment_provider(phpbrew_provider);
+            has_php_manager = true;
         }
 
         // .NET SDK version manager
         let dotnet_provider = Arc::new(dotnet::DotnetProvider::new());
         if dotnet_provider.is_available().await {
             registry.register_environment_provider(dotnet_provider);
+            has_dotnet_manager = true;
         }
 
         // Deno runtime version manager
         let deno_provider = Arc::new(deno::DenoProvider::new());
         if deno_provider.is_available().await {
             registry.register_environment_provider(deno_provider);
+            has_deno_manager = true;
+        }
+
+        // Register system environment providers as fallback for environments
+        // that don't have a version manager installed
+        // These detect environments installed via official installers, package managers, etc.
+
+        if !has_node_manager {
+            let system_node = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Node));
+            if system_node.is_available().await {
+                registry.register_environment_provider(system_node);
+            }
+        }
+
+        if !has_python_manager {
+            let system_python = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Python));
+            if system_python.is_available().await {
+                registry.register_environment_provider(system_python);
+            }
+        }
+
+        if !has_go_manager {
+            let system_go = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Go));
+            if system_go.is_available().await {
+                registry.register_environment_provider(system_go);
+            }
+        }
+
+        if !has_rust_manager {
+            let system_rust = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Rust));
+            if system_rust.is_available().await {
+                registry.register_environment_provider(system_rust);
+            }
+        }
+
+        if !has_ruby_manager {
+            let system_ruby = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Ruby));
+            if system_ruby.is_available().await {
+                registry.register_environment_provider(system_ruby);
+            }
+        }
+
+        if !has_java_manager {
+            let system_java = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Java));
+            if system_java.is_available().await {
+                registry.register_environment_provider(system_java);
+            }
+        }
+
+        if !has_php_manager {
+            let system_php = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Php));
+            if system_php.is_available().await {
+                registry.register_environment_provider(system_php);
+            }
+        }
+
+        if !has_dotnet_manager {
+            let system_dotnet = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Dotnet));
+            if system_dotnet.is_available().await {
+                registry.register_environment_provider(system_dotnet);
+            }
+        }
+
+        if !has_deno_manager {
+            let system_deno = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Deno));
+            if system_deno.is_available().await {
+                registry.register_environment_provider(system_deno);
+            }
+        }
+
+        // Bun doesn't have a dedicated version manager, always use system detection
+        let system_bun = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Bun));
+        if system_bun.is_available().await {
+            registry.register_environment_provider(system_bun);
         }
 
         let github_provider = Arc::new(github::GitHubProvider::new());

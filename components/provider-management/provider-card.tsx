@@ -112,17 +112,17 @@ export function ProviderCard({
 
   return (
     <Card className={cn(
-      'transition-all duration-200',
+      'transition-all duration-200 overflow-hidden min-w-0',
       !provider.enabled && 'opacity-60'
     )}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-3 min-w-0">
+      <CardHeader className="pb-3 overflow-hidden max-w-full">
+        <div className="flex items-start justify-between gap-2 w-full max-w-full overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
             <span className="text-2xl flex-shrink-0" aria-hidden="true">
               {getProviderIcon(provider.id)}
             </span>
-            <div className="min-w-0">
-              <CardTitle className="text-lg truncate">{provider.display_name}</CardTitle>
+            <div className="min-w-0 overflow-hidden">
+              <CardTitle className="text-lg truncate max-w-full" title={provider.display_name}>{provider.display_name}</CardTitle>
               <CardDescription className="font-mono text-xs">{provider.id}</CardDescription>
             </div>
           </div>

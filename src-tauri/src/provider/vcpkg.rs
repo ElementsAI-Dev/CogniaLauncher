@@ -49,6 +49,20 @@ impl VcpkgProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package
+    async fn get_pkg_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_vcpkg(&["list", name]).await?;
+        for line in out.lines() {
+            if line.starts_with(name) || line.contains(name) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    return Ok(parts[1].to_string());
+                }
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
 }
 
 impl Default for VcpkgProvider {
@@ -203,15 +217,21 @@ impl Provider for VcpkgProvider {
 
         self.run_vcpkg(&["install", &pkg]).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_pkg_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = self
             .vcpkg_root
             .as_ref()
             .map(|r| r.join("installed"))
-            .unwrap_or_default();
+            .unwrap_or_else(|| PathBuf::from("vcpkg").join("installed"));
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

@@ -180,7 +180,7 @@ export function BatchOperations({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {getOperationIcon()}
-              {getOperationLabel()} Packages
+              {getOperationLabel()} {t('packages.packagesLabel')}
             </DialogTitle>
             <DialogDescription>
               {result 

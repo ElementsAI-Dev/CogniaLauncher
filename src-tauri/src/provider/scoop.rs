@@ -21,6 +21,25 @@ impl ScoopProvider {
         }
     }
 
+    /// Get the installed version of a package
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_scoop(&["info", name]).await?;
+        for line in out.lines() {
+            let line = line.trim();
+            if let Some(version) = line.strip_prefix("Version:") {
+                return Ok(version.trim().to_string());
+            }
+            // Also check "Installed:" line which shows current version
+            if let Some(installed) = line.strip_prefix("Installed:") {
+                let installed = installed.trim();
+                if !installed.is_empty() && installed != "No" {
+                    return Ok(installed.to_string());
+                }
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
+
     fn get_scoop_dir() -> Option<PathBuf> {
         std::env::var("SCOOP").ok().map(PathBuf::from).or_else(|| {
             std::env::var("USERPROFILE")
@@ -61,7 +80,14 @@ impl Provider for ScoopProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("scoop").await.is_some()
+        if process::which("scoop").await.is_none() {
+            return false;
+        }
+        // Verify scoop actually works
+        match process::execute("scoop", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -174,13 +200,19 @@ impl Provider for ScoopProvider {
 
         self.run_scoop(&["install", &pkg]).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = Self::get_scoop_dir()
-            .map(|p| p.join("apps").join(&req.name))
+            .map(|p| p.join("apps").join(&req.name).join("current"))
             .unwrap_or_default();
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

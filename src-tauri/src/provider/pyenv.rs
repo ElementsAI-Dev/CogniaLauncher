@@ -74,7 +74,14 @@ impl Provider for PyenvProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("pyenv").await.is_some()
+        if process::which("pyenv").await.is_none() {
+            return false;
+        }
+        // Verify pyenv actually works
+        match process::execute("pyenv", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -146,14 +153,62 @@ impl Provider for PyenvProvider {
     }
 
     async fn install(&self, request: InstallRequest) -> CogniaResult<InstallReceipt> {
+        self.install_with_progress(request, None).await
+    }
+
+    async fn install_with_progress(
+        &self,
+        request: InstallRequest,
+        progress: Option<ProgressSender>,
+    ) -> CogniaResult<InstallReceipt> {
         let version = request
             .version
+            .clone()
             .ok_or_else(|| CogniaError::Provider("Version required for install".into()))?;
+        
+        let package_name = format!("python@{}", version);
 
-        self.run_pyenv(&["install", &version]).await?;
+        // Stage 1: Fetching metadata
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::fetching(&package_name)).await;
+        }
+
+        // Stage 2: Downloading/compiling (pyenv compiles from source)
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Downloading and compiling Python (this may take several minutes)")).await;
+        }
+
+        // Run the actual installation
+        let result = self.run_pyenv(&["install", &version]).await;
+
+        if let Err(ref e) = result {
+            if let Some(ref tx) = progress {
+                let _ = tx.send(InstallProgressEvent::failed(&package_name, &e.to_string())).await;
+            }
+            return Err(result.unwrap_err());
+        }
+
+        // Stage 3: Verify installation
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Verifying installation")).await;
+        }
 
         let pyenv_root = self.pyenv_root()?;
         let install_path = pyenv_root.join("versions").join(&version);
+
+        // Verify the installation directory exists
+        if !install_path.exists() {
+            let err_msg = format!("Installation path not found: {:?}", install_path);
+            if let Some(ref tx) = progress {
+                let _ = tx.send(InstallProgressEvent::failed(&package_name, &err_msg)).await;
+            }
+            return Err(CogniaError::Installation(err_msg));
+        }
+
+        // Stage 4: Done
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::done(&package_name, &version)).await;
+        }
 
         Ok(InstallReceipt {
             name: "python".to_string(),

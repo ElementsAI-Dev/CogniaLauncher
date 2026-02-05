@@ -95,6 +95,7 @@ export function AppearanceSettings({
           <AccentColorPicker
             accentColor={accentColor}
             onAccentColorChange={setAccentColor}
+            t={t}
             aria-labelledby="accent-color-label"
             aria-describedby="accent-color-desc"
           />

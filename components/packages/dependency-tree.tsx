@@ -398,7 +398,7 @@ export function DependencyTree({
         {!resolution && !loading && (
           <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
             <GitBranch className="h-12 w-12 mb-4 opacity-50" />
-            <span>Enter a package name to resolve dependencies</span>
+            <span>{t('packages.enterPackageToResolve')}</span>
           </div>
         )}
       </CardContent>

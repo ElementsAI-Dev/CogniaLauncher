@@ -48,6 +48,7 @@ pub async fn config_list(
         "general.cache_max_size",
         "general.cache_max_age_days",
         "general.auto_clean_cache",
+        "general.min_install_space_mb",
         "network.timeout",
         "network.retries",
         "network.proxy",

@@ -64,7 +64,14 @@ impl Provider for SnapProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("snap").await.is_some()
+        if process::which("snap").await.is_none() {
+            return false;
+        }
+        // Verify snap actually works
+        match process::execute("snap", &["version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -200,14 +207,33 @@ impl Provider for SnapProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
-            name: req.name,
-            version: req.version.unwrap_or_default(),
+            name: req.name.clone(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::from("/snap"),
+            install_path: PathBuf::from(format!("/snap/{}", req.name)),
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        let out = self.run_snap(&["list", name]).await?;
+        for line in out.lines().skip(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 && parts[0] == name {
+                return Ok(Some(parts[1].to_string()));
+            }
+        }
+        Ok(None)
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

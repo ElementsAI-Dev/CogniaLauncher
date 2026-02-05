@@ -5,7 +5,7 @@ import { usePackageStore } from '@/lib/stores/packages';
 import * as tauri from '@/lib/tauri';
 import { formatError } from '@/lib/errors';
 
-const normalizePackageId = (pkg: string) => {
+export const normalizePackageId = (pkg: string) => {
   const colonIndex = pkg.indexOf(':');
   let provider: string | null = null;
   let rest = pkg;
@@ -21,7 +21,13 @@ const normalizePackageId = (pkg: string) => {
   const versionIndex = rest.lastIndexOf('@');
   if (versionIndex > 0) {
     const potentialVersion = rest.slice(versionIndex + 1);
-    const looksLikeVersion = /^[0-9~^*]/.test(potentialVersion);
+    // Match semver-like versions, ranges, and dist tags
+    // - Digits: 1.0.0, 18.0.0
+    // - Range prefixes: ^1.0.0, ~1.0.0, >=1.0.0, <=1.0.0, >1.0.0, <1.0.0, =1.0.0
+    // - Wildcards: *, x, X
+    // - Version prefix: v1.0.0
+    // - Dist tags: latest, next, beta, alpha, canary, rc, stable, dev, nightly
+    const looksLikeVersion = /^([0-9~^*xX]|[<>=]+[0-9]|v[0-9]|latest|next|beta|alpha|canary|rc|stable|dev|nightly)/i.test(potentialVersion);
     if (looksLikeVersion) {
       rest = rest.slice(0, versionIndex);
     }

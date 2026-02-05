@@ -81,6 +81,23 @@ impl CargoProvider {
     pub fn get_registry_url(&self) -> Option<&String> {
         self.registry_url.as_ref()
     }
+
+    /// Get the installed version of a crate from cargo install --list
+    async fn get_installed_crate_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_cargo(&["install", "--list"]).await?;
+        
+        for line in out.lines() {
+            if !line.starts_with(' ') && !line.is_empty() {
+                // Format: "crate_name v0.1.0:"
+                let parts: Vec<&str> = line.trim_end_matches(':').split_whitespace().collect();
+                if parts.len() >= 2 && parts[0] == name {
+                    return Ok(parts[1].trim_start_matches('v').to_string());
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Crate {} not found in installed list", name)))
+    }
 }
 
 impl Default for CargoProvider {
@@ -114,7 +131,15 @@ impl Provider for CargoProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("cargo").await.is_some()
+        // Check if cargo exists and is actually executable
+        if process::which("cargo").await.is_none() {
+            return false;
+        }
+        // Verify cargo works by running --version
+        match process::execute("cargo", &["--version"], None).await {
+            Ok(output) => output.success && !output.stdout.is_empty(),
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -311,13 +336,19 @@ impl Provider for CargoProvider {
 
         self.run_cargo(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_crate_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = Self::get_cargo_home()
             .map(|p| p.join("bin"))
             .unwrap_or_default();
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

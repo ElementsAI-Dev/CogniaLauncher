@@ -13,14 +13,15 @@ interface ValidationRule {
 
 const VALIDATION_RULES: Record<string, ValidationRule> = {
   'general.parallel_downloads': { min: 1, max: 16 },
+  'general.min_install_space_mb': { min: 10, max: 10240 },
   'general.metadata_cache_ttl': { min: 60, max: 86400 },
   'network.timeout': { min: 5, max: 300 },
   'network.retries': { min: 0, max: 10 },
-  'network.proxy': { pattern: /^(https?:\/\/.*)?$/, patternMessage: 'Must be a valid URL or empty' },
-  'mirrors.npm': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
-  'mirrors.pypi': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
-  'mirrors.crates': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
-  'mirrors.go': { pattern: /^https?:\/\/.+$/, patternMessage: 'Must be a valid URL' },
+  'network.proxy': { pattern: /^(https?:\/\/.*)?$/, patternMessage: 'validation.mustBeValidUrlOrEmpty' },
+  'mirrors.npm': { pattern: /^https?:\/\/.+$/, patternMessage: 'validation.mustBeValidUrl' },
+  'mirrors.pypi': { pattern: /^https?:\/\/.+$/, patternMessage: 'validation.mustBeValidUrl' },
+  'mirrors.crates': { pattern: /^https?:\/\/.+$/, patternMessage: 'validation.mustBeValidUrl' },
+  'mirrors.go': { pattern: /^https?:\/\/.+$/, patternMessage: 'validation.mustBeValidUrl' },
 };
 
 export function validateField(key: string, value: string, t: (key: string, params?: Record<string, string | number>) => string): string | null {
@@ -39,7 +40,7 @@ export function validateField(key: string, value: string, t: (key: string, param
   }
 
   if (rules.pattern && value && !rules.pattern.test(value)) {
-    return rules.patternMessage || t('validation.invalidFormat');
+    return rules.patternMessage ? t(rules.patternMessage) : t('validation.invalidFormat');
   }
 
   return null;
@@ -59,6 +60,7 @@ export interface SettingItemProps {
   disabled?: boolean;
   originalValue?: string;
   highlightMatch?: boolean;
+  modifiedLabel?: string;
 }
 
 export function SettingItem({
@@ -75,6 +77,7 @@ export function SettingItem({
   disabled = false,
   originalValue,
   highlightMatch = false,
+  modifiedLabel = 'Modified',
 }: SettingItemProps) {
   const descId = `${id}-desc`;
   const errorId = `${id}-error`;
@@ -93,8 +96,8 @@ export function SettingItem({
           {isModified && (
             <span
               className="h-2 w-2 rounded-full bg-amber-500"
-              title="Modified"
-              aria-label="This setting has been modified"
+              title={modifiedLabel}
+              aria-label={modifiedLabel}
             />
           )}
         </Label>

@@ -20,6 +20,19 @@ impl WingetProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package using winget show
+    async fn get_installed_version(&self, id: &str) -> CogniaResult<String> {
+        let out = self.run_winget(&["show", "--id", id, "--accept-source-agreements"]).await?;
+        
+        for line in out.lines() {
+            if let Some(version) = line.strip_prefix("Version:") {
+                return Ok(version.trim().to_string());
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Version not found for {}", id)))
+    }
 }
 
 impl Default for WingetProvider {
@@ -53,7 +66,7 @@ impl Provider for WingetProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("winget").await.is_some()
+        system_detection::is_command_available("winget", &["--version"]).await
     }
 
     async fn search(&self, query: &str, _: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
@@ -160,11 +173,23 @@ impl Provider for WingetProvider {
 
         let _out = self.run_winget(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
+        // Winget installs to Program Files typically
+        let install_path = std::env::var("ProgramFiles")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("C:\\Program Files"));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
@@ -180,17 +205,23 @@ impl Provider for WingetProvider {
         let out = self
             .run_winget(&["list", "--accept-source-agreements"])
             .await?;
+        
+        // Common Windows install paths
+        let program_files = std::env::var("ProgramFiles")
+            .unwrap_or_else(|_| "C:\\Program Files".to_string());
+
         Ok(out
             .lines()
             .skip(2)
             .filter_map(|l| {
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 if parts.len() >= 2 {
+                    let name: String = parts[0].into();
                     Some(InstalledPackage {
-                        name: parts[0].into(),
+                        name: name.clone(),
                         version: parts.get(1).unwrap_or(&"").to_string(),
                         provider: self.id().into(),
-                        install_path: PathBuf::new(),
+                        install_path: PathBuf::from(&program_files).join(&name),
                         installed_at: String::new(),
                         is_global: true,
                     })

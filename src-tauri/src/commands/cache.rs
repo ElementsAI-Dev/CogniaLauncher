@@ -1,7 +1,9 @@
 use crate::cache::{
     CacheAccessStats, CacheEntryType,
     CleanupHistory, CleanupRecord, CleanupRecordBuilder,
-    DownloadCache, DownloadResumer, MetadataCache,
+    CombinedCacheStats, DownloadCache, DownloadResumer,
+    ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache,
+    external,
 };
 use crate::platform::fs;
 use crate::config::Settings;
@@ -1096,4 +1098,60 @@ pub async fn get_top_accessed_entries(
         .collect();
 
     Ok(items)
+}
+
+// ============================================================================
+// External Cache Management Commands
+// ============================================================================
+
+/// Discover all external package manager caches on the system
+#[tauri::command]
+pub async fn discover_external_caches() -> Result<Vec<ExternalCacheInfo>, String> {
+    external::discover_all_caches()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Clean cache for a specific external package manager
+#[tauri::command]
+pub async fn clean_external_cache(
+    provider: String,
+    use_trash: bool,
+) -> Result<ExternalCacheCleanResult, String> {
+    external::clean_cache(&provider, use_trash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Clean all external package manager caches
+#[tauri::command]
+pub async fn clean_all_external_caches(
+    use_trash: bool,
+) -> Result<Vec<ExternalCacheCleanResult>, String> {
+    external::clean_all_caches(use_trash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get combined cache statistics (internal + external)
+#[tauri::command]
+pub async fn get_combined_cache_stats(
+    settings: State<'_, SharedSettings>,
+) -> Result<CombinedCacheStats, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    // Get internal cache size
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let download_stats = download_cache.stats().await.map_err(|e| e.to_string())?;
+    let internal_size = download_stats.total_size;
+
+    // Get combined stats
+    external::get_combined_stats(internal_size)
+        .await
+        .map_err(|e| e.to_string())
 }

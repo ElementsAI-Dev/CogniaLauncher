@@ -10,3 +10,6 @@ export * from './errors';
 
 // i18n types
 export * from './i18n';
+
+// GitHub types
+export * from './github';

@@ -194,7 +194,14 @@ impl Provider for DenoProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("deno").await.is_some()
+        if process::which("deno").await.is_none() {
+            return false;
+        }
+        // Verify deno actually works
+        match process::execute("deno", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(

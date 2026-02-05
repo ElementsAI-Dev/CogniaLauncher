@@ -50,7 +50,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2 px-2 py-1">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Layers className="h-4 w-4" />
           </div>
           <div className="sidebar-text flex flex-col">
@@ -129,11 +129,11 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
-        <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:justify-center">
+        <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1">
           <span className="sidebar-text text-xs text-muted-foreground">
             {t('common.version')}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
             <ThemeToggle />
             <LanguageToggle />
           </div>

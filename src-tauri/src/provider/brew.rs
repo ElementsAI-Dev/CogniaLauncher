@@ -20,6 +20,22 @@ impl BrewProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_brew(&["info", "--json=v2", name]).await?;
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            // Check formulae first
+            if let Some(versions) = json["formulae"][0]["installed"][0]["version"].as_str() {
+                return Ok(versions.to_string());
+            }
+            // Check casks
+            if let Some(versions) = json["casks"][0]["installed"].as_str() {
+                return Ok(versions.to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
 }
 
 impl Default for BrewProvider {
@@ -53,7 +69,14 @@ impl Provider for BrewProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("brew").await.is_some()
+        if process::which("brew").await.is_none() {
+            return false;
+        }
+        // Verify brew actually works
+        match process::execute("brew", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(&self, query: &str, _: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
@@ -116,9 +139,15 @@ impl Provider for BrewProvider {
             .await
             .unwrap_or_default();
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from(prefix.trim()),
             files: vec![],
@@ -133,16 +162,21 @@ impl Provider for BrewProvider {
 
     async fn list_installed(&self, _: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let out = self.run_brew(&["list", "--versions"]).await?;
+        let brew_prefix = self.run_brew(&["--prefix"]).await
+            .map(|s| PathBuf::from(s.trim()))
+            .unwrap_or_else(|_| PathBuf::from("/opt/homebrew"));
+
         Ok(out
             .lines()
             .filter_map(|l| {
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 if parts.len() >= 2 {
+                    let name = parts[0];
                     Some(InstalledPackage {
-                        name: parts[0].into(),
+                        name: name.into(),
                         version: parts[1].into(),
                         provider: self.id().into(),
-                        install_path: PathBuf::new(),
+                        install_path: brew_prefix.join("Cellar").join(name),
                         installed_at: String::new(),
                         is_global: true,
                     })

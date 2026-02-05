@@ -71,6 +71,34 @@ impl PnpmProvider {
         }
         None
     }
+
+    /// Get the installed version of a global package
+    async fn get_package_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        let args = if global {
+            vec!["list", "-g", name, "--depth=0", "--json"]
+        } else {
+            vec!["list", name, "--depth=0", "--json"]
+        };
+        
+        let out = self.run_pnpm_raw(&args).await?;
+        
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            // pnpm returns array or object depending on version
+            let deps = json[0]["dependencies"]
+                .as_object()
+                .or_else(|| json["dependencies"].as_object());
+            
+            if let Some(deps) = deps {
+                if let Some(info) = deps.get(name) {
+                    if let Some(version) = info["version"].as_str() {
+                        return Ok(version.to_string());
+                    }
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
 }
 
 impl Default for PnpmProvider {
@@ -104,7 +132,7 @@ impl Provider for PnpmProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("pnpm").await.is_some()
+        system_detection::is_command_available("pnpm", &["--version"]).await
     }
 
     async fn search(
@@ -259,15 +287,21 @@ impl Provider for PnpmProvider {
 
         self.run_pnpm(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_package_version(&req.name, req.global)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = if req.global {
-            self.get_global_dir().await.unwrap_or_default()
+            self.get_global_dir().await.unwrap_or_default().join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

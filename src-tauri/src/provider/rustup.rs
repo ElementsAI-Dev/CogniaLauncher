@@ -83,7 +83,14 @@ impl Provider for RustupProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("rustup").await.is_some()
+        if process::which("rustup").await.is_none() {
+            return false;
+        }
+        // Verify rustup actually works
+        match process::execute("rustup", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(

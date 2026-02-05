@@ -7,9 +7,9 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
-  fallbackTitle?: string;
-  fallbackDescription?: string;
-  retryLabel?: string;
+  fallbackTitle: string;
+  fallbackDescription: string;
+  retryLabel: string;
 }
 
 interface ErrorBoundaryState {
@@ -46,13 +46,12 @@ export class EnvironmentErrorBoundary extends Component<ErrorBoundaryProps, Erro
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>
-            {this.props.fallbackTitle || 'Something went wrong'}
+            {this.props.fallbackTitle}
           </AlertTitle>
           <AlertDescription>
             <div className="space-y-3">
               <p>
-                {this.props.fallbackDescription || 
-                  'An error occurred while loading this component. Please try again.'}
+                {this.props.fallbackDescription}
               </p>
               {this.state.error && (
                 <div className="p-3 rounded-md bg-muted/50 font-mono text-xs text-muted-foreground overflow-auto max-h-24">
@@ -66,7 +65,7 @@ export class EnvironmentErrorBoundary extends Component<ErrorBoundaryProps, Erro
                 className="gap-2"
               >
                 <RefreshCw className="h-4 w-4" />
-                {this.props.retryLabel || 'Try Again'}
+                {this.props.retryLabel}
               </Button>
             </div>
           </AlertDescription>

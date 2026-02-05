@@ -38,35 +38,35 @@ const LANGUAGES = [
   { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-500/10 border-violet-500 dark:bg-violet-500/20' },
 ];
 
-const PROVIDERS: Record<string, { id: string; name: string; description: string }[]> = {
+const PROVIDER_IDS: Record<string, { id: string; name: string }[]> = {
   node: [
-    { id: 'fnm', name: 'fnm', description: 'Fast Node Manager (Recommended)' },
-    { id: 'nvm', name: 'nvm', description: 'Node Version Manager' },
+    { id: 'fnm', name: 'fnm' },
+    { id: 'nvm', name: 'nvm' },
   ],
   python: [
-    { id: 'uv', name: 'uv', description: 'Fast Python package & version manager (Recommended)' },
-    { id: 'pyenv', name: 'pyenv', description: 'Python version management' },
-    { id: 'conda', name: 'Conda', description: 'Anaconda/Miniconda environment manager' },
-    { id: 'rye', name: 'Rye', description: 'Modern Python project manager' },
-    { id: 'mise', name: 'mise', description: 'Polyglot version manager (formerly rtx)' },
+    { id: 'uv', name: 'uv' },
+    { id: 'pyenv', name: 'pyenv' },
+    { id: 'conda', name: 'Conda' },
+    { id: 'rye', name: 'Rye' },
+    { id: 'mise', name: 'mise' },
   ],
   go: [
-    { id: 'goenv', name: 'goenv', description: 'Go version management' },
+    { id: 'goenv', name: 'goenv' },
   ],
   rust: [
-    { id: 'rustup', name: 'rustup', description: 'Rust toolchain installer' },
+    { id: 'rustup', name: 'rustup' },
   ],
   ruby: [
-    { id: 'rbenv', name: 'rbenv', description: 'Ruby version management' },
+    { id: 'rbenv', name: 'rbenv' },
   ],
   java: [
-    { id: 'sdkman', name: 'SDKMAN!', description: 'Software Development Kit Manager' },
+    { id: 'sdkman', name: 'SDKMAN!' },
   ],
   php: [
-    { id: 'phpbrew', name: 'phpbrew', description: 'PHP version manager' },
+    { id: 'phpbrew', name: 'phpbrew' },
   ],
   dotnet: [
-    { id: 'dotnet', name: 'dotnet', description: '.NET SDK' },
+    { id: 'dotnet', name: 'dotnet' },
   ],
 };
 
@@ -109,13 +109,17 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
       .filter(p => p.env_type.toLowerCase() === selectedLanguage.toLowerCase())
       .map(p => ({ id: p.id, name: p.display_name, description: p.description }));
     
-    // If dynamic providers are available, use them; otherwise fallback to static
+    // If dynamic providers are available, use them; otherwise fallback to static with i18n descriptions
     if (dynamicProviders.length > 0) {
       return dynamicProviders;
     }
     
-    return PROVIDERS[selectedLanguage] || [];
-  }, [selectedLanguage, availableProviders]);
+    const staticProviders = PROVIDER_IDS[selectedLanguage] || [];
+    return staticProviders.map(p => ({
+      ...p,
+      description: t(`environments.addDialog.providers.${p.id}`)
+    }));
+  }, [selectedLanguage, availableProviders, t]);
 
   const handleLanguageSelect = (langId: string) => {
     setSelectedLanguage(langId);
@@ -223,7 +227,7 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider) => (
+                  {providers.map((provider: { id: string; name: string; description: string }) => (
                     <SelectItem key={provider.id} value={provider.id}>
                       <div className="flex flex-col items-start">
                         <span className="font-medium">{provider.name}</span>

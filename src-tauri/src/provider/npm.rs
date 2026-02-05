@@ -85,6 +85,30 @@ impl NpmProvider {
             Some(PathBuf::from("/usr/local/lib/node_modules"))
         }
     }
+
+    /// Get the installed version of a package
+    async fn get_package_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        let args = if global {
+            vec!["list", "-g", name, "--depth=0", "--json"]
+        } else {
+            vec!["list", name, "--depth=0", "--json"]
+        };
+
+        let out = self.run_npm_raw(&args).await?;
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            // Try to find the package in dependencies
+            if let Some(deps) = json["dependencies"].as_object() {
+                if let Some(pkg_info) = deps.get(name) {
+                    if let Some(version) = pkg_info["version"].as_str() {
+                        return Ok(version.to_string());
+                    }
+                }
+            }
+        }
+
+        Err(CogniaError::Provider(format!("Could not determine version for {}", name)))
+    }
 }
 
 impl Default for NpmProvider {
@@ -118,7 +142,15 @@ impl Provider for NpmProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("npm").await.is_some()
+        // Check if npm exists and is actually executable
+        if process::which("npm").await.is_none() {
+            return false;
+        }
+        // Verify npm works by running --version
+        match process::execute("npm", &["--version"], None).await {
+            Ok(output) => output.success && !output.stdout.is_empty(),
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -286,20 +318,31 @@ impl Provider for NpmProvider {
 
         self.run_npm(&args).await?;
 
+        // Get the actual installed version by querying npm
+        let actual_version = self
+            .get_package_version(&req.name, req.global)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = if req.global {
-            self.get_global_prefix().unwrap_or_default()
+            self.get_global_prefix().unwrap_or_default().join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    /// Get the installed version of a specific package
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        self.get_package_version(name, true).await.map(Some)
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

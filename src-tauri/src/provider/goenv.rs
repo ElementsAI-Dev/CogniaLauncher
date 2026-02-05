@@ -89,7 +89,14 @@ impl Provider for GoenvProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("goenv").await.is_some()
+        if process::which("goenv").await.is_none() {
+            return false;
+        }
+        // Verify goenv actually works
+        match process::execute("goenv", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(

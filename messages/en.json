@@ -37,7 +37,10 @@
     "unknown": "Unknown",
     "clear": "Clear",
     "info": "Info",
-    "actions": "Actions"
+    "actions": "Actions",
+    "previous": "Previous",
+    "next": "Next",
+    "days": "days"
   },
   "breadcrumbs": {
     "label": "Breadcrumbs"
@@ -87,7 +90,8 @@
       "clearCache": "Clear Cache",
       "refreshAll": "Refresh All",
       "openSettings": "Settings",
-      "viewLogs": "View Logs"
+      "viewLogs": "View Logs",
+      "moreActions": "More actions"
     },
     "environmentList": {
       "title": "Environments",
@@ -187,6 +191,10 @@
     "batchInstallError": "Failed to install {count} version(s)",
     "batchUninstallSuccess": "Successfully uninstalled {count} version(s)",
     "batchUninstallError": "Failed to uninstall {count} version(s)",
+    "tooltip": {
+      "size": "Size:",
+      "installedAt": "Installed:"
+    },
     "versionBrowser": {
       "title": "{type} Versions",
       "description": "Browse and install available versions",
@@ -263,7 +271,22 @@
       "autoSwitch": "Auto-switch on directory change",
       "autoSwitchDesc": "Automatically switch version based on project files",
       "setAsDefault": "Set as global default",
-      "setAsDefaultDesc": "Use this version when no project-specific version is set"
+      "setAsDefaultDesc": "Use this version when no project-specific version is set",
+      "providers": {
+        "fnm": "Fast Node Manager (Recommended)",
+        "nvm": "Node Version Manager",
+        "uv": "Fast Python package & version manager (Recommended)",
+        "pyenv": "Python version management",
+        "conda": "Anaconda/Miniconda environment manager",
+        "rye": "Modern Python project manager",
+        "mise": "Polyglot version manager (formerly rtx)",
+        "goenv": "Go version management",
+        "rustup": "Rust toolchain installer",
+        "rbenv": "Ruby version management",
+        "sdkman": "Software Development Kit Manager",
+        "phpbrew": "PHP version manager",
+        "dotnet": ".NET SDK"
+      }
     },
     "progress": {
       "title": "Installing {name}",
@@ -275,7 +298,8 @@
       "downloadingBinaries": "Downloading binaries",
       "cancel": "Cancel",
       "runInBackground": "Run in Background",
-      "steps": "Installation Steps"
+      "steps": "Installation Steps",
+      "error": "Error"
     },
     "batch": {
       "selected": "{count} version(s) selected",
@@ -344,6 +368,23 @@
         "provider_not_found": "Provider Not Found",
         "shell_integration": "Shell Integration",
         "other": "Other"
+      },
+      "packageManagers": {
+        "title": "Package Managers",
+        "description": "System package manager health status",
+        "noManagers": "No package managers found",
+        "installed": "Installed",
+        "notInstalled": "Not Installed",
+        "version": "Version",
+        "path": "Executable Path",
+        "installInstructions": "Installation Instructions",
+        "notAvailable": "{name} is not installed",
+        "notAvailableDetails": "The {name} package manager is not available on this system",
+        "installToEnable": "Install {name} to enable package management",
+        "configIssues": "{name} may have configuration issues",
+        "listPackagesFailed": "Failed to list packages: {error}",
+        "providerUnavailable": "Provider {name} is not available. Please ensure it is installed and accessible.",
+        "verifyInstallFailed": "Could not verify installation of {name}"
       }
     },
     "languages": {
@@ -521,7 +562,48 @@
     "providerManagement": "Provider Management",
     "providerManagementDesc": "Enable or disable package providers",
     "viewAll": "View All",
-    "checkAllStatus": "Check All Status"
+    "checkAllStatus": "Check All Status",
+    "enterPackageToResolve": "Enter a package name to resolve dependencies",
+    "comparePackages": "Compare Packages",
+    "sideByComparison": "Side-by-side comparison of {count} packages",
+    "failedToCompare": "Failed to compare packages",
+    "noDescription": "No description",
+    "keyDifferences": "Key Differences",
+    "commonFeatures": "Common Features",
+    "recommendation": "Recommendation",
+    "feature": "Feature",
+    "featureVersion": "Version",
+    "featureProvider": "Provider",
+    "featureLicense": "License",
+    "featureSize": "Size",
+    "featureLastUpdated": "Last Updated",
+    "featureHomepage": "Homepage",
+    "featureDependencies": "Dependencies",
+    "featurePlatforms": "Platforms",
+    "link": "Link",
+    "noneValue": "None",
+    "unknownDate": "Unknown",
+    "homepage": "Homepage",
+    "repository": "Repository",
+    "noDescriptionAvailable": "No description available",
+    "updatesAvailableTitle": "Updates Available",
+    "checkingForUpdates": "Checking for updates...",
+    "updatesCount": "{count} update(s) available",
+    "checkNow": "Check Now",
+    "allPackagesUpToDate": "All packages are up to date!",
+    "lastChecked": "Last checked: {time}",
+    "justNow": "just now",
+    "updatedPackagesCount": "Updated {count} package(s)",
+    "failedPackagesCount": "{count} failed",
+    "selectedOfTotal": "{selected} of {total} selected",
+    "updateSelectedCount": "Update Selected ({count})",
+    "changeTypeMajor": "Major",
+    "changeTypeMinor": "Minor",
+    "changeTypePatch": "Patch",
+    "changeTypeUpdate": "Update",
+    "breaking": "Breaking",
+    "pinnedAtVersion": "Pinned at {version}",
+    "availableVersionLabel": "Available: {version}"
   },
   "providers": {
     "title": "Providers",
@@ -650,6 +732,8 @@
     "maxSizeDesc": "Maximum cache storage size in MB",
     "maxAge": "Maximum Age",
     "maxAgeDesc": "Days before cache entries expire",
+    "metadataCacheTtl": "Metadata Cache TTL",
+    "metadataCacheTtlDesc": "Seconds before metadata cache expires",
     "ttlSeconds": "seconds",
     "autoClean": "Auto Clean",
     "autoCleanDesc": "Automatically clean expired cache entries",
@@ -723,7 +807,19 @@
     "deleteEntriesFailed": "Failed to delete entries",
     "moveToTrash": "Move to Trash",
     "warningHigh": "Cache usage is at {percent}%. Consider cleaning up to free space.",
-    "warningCritical": "Cache usage is critical at {percent}%! Clean up immediately to avoid issues."
+    "warningCritical": "Cache usage is critical at {percent}%! Clean up immediately to avoid issues.",
+    "externalCaches": "External Tool Caches",
+    "externalCachesDesc": "Manage caches from package managers and development tools",
+    "noExternalCaches": "No external caches found or no tools installed",
+    "clean": "Clean",
+    "cleanAll": "Clean All",
+    "externalCleanSuccess": "Cleaned {provider} cache, freed {size}",
+    "externalCleanFailed": "Failed to clean {provider}: {error}",
+    "externalCleanAllSuccess": "Cleaned {count} caches, freed {size}",
+    "externalCleanAllPartial": "Cleaned {success} of {total} caches (some failed)",
+    "externalCleanAllFailed": "Failed to clean external caches",
+    "externalCleanAllTitle": "Clean All External Caches",
+    "externalCleanAllDesc": "This will clean caches from {count} package managers. This action cannot be undone."
   },
   "settings": {
     "title": "Settings",
@@ -735,6 +831,8 @@
     "generalDesc": "General application settings",
     "parallelDownloads": "Parallel Downloads",
     "parallelDownloadsDesc": "Number of concurrent downloads",
+    "minInstallSpace": "Minimum Install Space",
+    "minInstallSpaceDesc": "Minimum free disk space required for installations (MB)",
     "metadataCacheTtl": "Metadata Cache TTL",
     "metadataCacheTtlDesc": "Seconds before metadata cache expires",
     "resolveStrategy": "Resolve Strategy",
@@ -779,6 +877,10 @@
     "mirrorPriorityDesc": "Higher priority mirrors are preferred",
     "mirrorVerifySsl": "Verify SSL",
     "mirrorVerifySslDesc": "Verify TLS certificates for this mirror",
+    "mirrorPresetDefault": "Default (Official)",
+    "mirrorPresetChina": "China (Taobao/Tsinghua)",
+    "mirrorPresetAliyun": "Aliyun",
+    "mirrorPresetUstc": "USTC",
     "systemInfo": "System Information",
     "systemInfoDesc": "Current system details",
     "operatingSystem": "Operating System",
@@ -894,13 +996,18 @@
       "provider": "Providers",
       "system": "System Info"
     },
-    "sectionReset": "{section} settings reset to defaults"
+    "sectionReset": "{section} settings reset to defaults",
+    "loading": "Loading settings",
+    "modified": "Modified",
+    "selectAccentColor": "Select {color} accent color"
   },
   "validation": {
     "mustBeNumber": "Must be a number",
     "min": "Minimum value is {min}",
     "max": "Maximum value is {max}",
-    "invalidFormat": "Invalid format"
+    "invalidFormat": "Invalid format",
+    "mustBeValidUrl": "Must be a valid URL",
+    "mustBeValidUrlOrEmpty": "Must be a valid URL or empty"
   },
   "about": {
     "title": "About",
@@ -921,6 +1028,7 @@
     "releaseNotes": "Release Notes",
     "releasedOn": "Released: {date}",
     "systemInfo": "System Information",
+    "systemInfoTitle": "CogniaLauncher System Information",
     "operatingSystem": "Operating System",
     "architecture": "Architecture",
     "homeDirectory": "Home Directory",
@@ -1034,7 +1142,28 @@
     "loadError": "Failed to load log files",
     "openDirError": "Failed to open log directory",
     "viewerComingSoon": "File viewer coming soon",
-    "copyEntry": "Copy log entry"
+    "copyEntry": "Copy log entry",
+    "clearSearch": "Clear search",
+    "messages": {
+      "speedBps": "{value} B/s",
+      "speedKBps": "{value} KB/s",
+      "speedMBps": "{value} MB/s",
+      "envFetching": "Fetching version information...",
+      "envDownloading": "Downloading... {progress}%",
+      "envDownloadingWithSpeed": "Downloading... {progress}% ({speed})",
+      "envExtracting": "Extracting...",
+      "envConfiguring": "Configuring...",
+      "envDone": "Installation completed successfully",
+      "envError": "Error: {error}",
+      "envUnknownError": "Unknown error",
+      "batchStarting": "Starting batch operation ({total} packages)",
+      "batchResolving": "[{current}/{total}] Resolving {package}...",
+      "batchDownloading": "[{current}/{total}] Downloading {package}... {progress}%",
+      "batchInstalling": "[{current}/{total}] Installing {package}...",
+      "batchItemSuccess": "[{current}/{total}] {package}: Success",
+      "batchItemFailed": "[{current}/{total}] {package}: Failed",
+      "batchCompleted": "Batch operation completed: {successful} succeeded, {failed} failed"
+    }
   },
   "downloads": {
     "title": "Downloads",
@@ -1151,7 +1280,37 @@
     "providerPlaceholder": "Optional: e.g., npm, github",
     "selectDestination": "Select download destination",
     "manualPathRequired": "Please enter the path manually",
-    "browseFolder": "Browse"
+    "browseFolder": "Browse",
+    "fromGitHub": "From GitHub",
+    "github": {
+      "dialogTitle": "Download from GitHub",
+      "dialogDesc": "Browse repositories and download releases, branches, or tags",
+      "repository": "Repository",
+      "repoPlaceholder": "owner/repo or GitHub URL",
+      "fetch": "Fetch",
+      "repoValid": "Repository found",
+      "repoInvalid": "Repository not found or inaccessible",
+      "releases": "Releases",
+      "branches": "Branches",
+      "tags": "Tags",
+      "noReleases": "No releases found",
+      "noBranches": "No branches found",
+      "noTags": "No tags found",
+      "assets": "assets",
+      "selectAssets": "Select Assets to Download",
+      "prerelease": "Pre-release",
+      "protected": "Protected",
+      "format": "Format",
+      "destination": "Destination",
+      "destinationPlaceholder": "Select or enter destination folder",
+      "addToQueue": "Add to Queue",
+      "noDestination": "Please select a destination folder",
+      "noSelection": "Please select at least one item to download",
+      "assetsAdded": "{count} asset(s) added to download queue",
+      "sourceAdded": "Source archive added to download queue",
+      "yourPlatform": "Your platform",
+      "rosetta": "Rosetta"
+    }
   },
   "errors": {
     "config": "Configuration error. Check your settings file.",

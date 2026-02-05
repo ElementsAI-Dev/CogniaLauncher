@@ -16,6 +16,7 @@ const mockSetReducedMotion = jest.fn();
 
 const baseConfig: Record<string, string> = {
   'general.parallel_downloads': '4',
+  'general.min_install_space_mb': '100',
   'general.metadata_cache_ttl': '3600',
   'general.resolve_strategy': 'latest',
   'general.auto_update_metadata': 'true',
@@ -105,6 +106,8 @@ const mockMessages = {
       generalDesc: 'General application settings',
       parallelDownloads: 'Parallel Downloads',
       parallelDownloadsDesc: 'Number of concurrent downloads',
+      minInstallSpace: 'Minimum Install Space',
+      minInstallSpaceDesc: 'Minimum free disk space required',
       metadataCacheTtl: 'Metadata Cache TTL',
       metadataCacheTtlDesc: 'Seconds before metadata cache expires',
       resolveStrategy: 'Resolve Strategy',

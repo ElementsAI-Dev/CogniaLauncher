@@ -66,6 +66,7 @@ impl PoetryProvider {
 
     fn parse_poetry_show_output(output: &str) -> Vec<InstalledPackage> {
         let mut packages = Vec::new();
+        let poetry_home = Self::get_poetry_home();
 
         for line in output.lines() {
             let line = line.trim();
@@ -76,11 +77,17 @@ impl PoetryProvider {
             // Poetry show format: package-name version description
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
+                let name = parts[0].to_string();
+                let install_path = poetry_home
+                    .as_ref()
+                    .map(|p| p.join("venv").join("lib").join(&name))
+                    .unwrap_or_else(|| PathBuf::from("pypoetry").join("venv").join("lib").join(&name));
+
                 packages.push(InstalledPackage {
-                    name: parts[0].to_string(),
+                    name,
                     version: parts[1].to_string(),
                     provider: "poetry".into(),
-                    install_path: PathBuf::new(),
+                    install_path,
                     installed_at: String::new(),
                     is_global: false,
                 });
@@ -88,6 +95,18 @@ impl PoetryProvider {
         }
 
         packages
+    }
+
+    /// Get the installed version of a package
+    async fn get_pkg_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_poetry(&["show", name]).await?;
+        for line in out.lines() {
+            if let Some(version) = line.strip_prefix("version") {
+                let version = version.trim().trim_start_matches(':').trim();
+                return Ok(version.to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
     }
 }
 
@@ -128,7 +147,14 @@ impl Provider for PoetryProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("poetry").await.is_some()
+        if process::which("poetry").await.is_none() {
+            return false;
+        }
+        // Verify poetry actually works
+        match process::execute("poetry", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -215,14 +241,25 @@ impl Provider for PoetryProvider {
         // Poetry add command
         self.run_poetry(&["add", &pkg]).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_pkg_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         // Determine install path based on Poetry home
         let install_path = Self::get_poetry_home()
             .map(|p| p.join("venv").join("lib").join(&req.name))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                PathBuf::from("pypoetry")
+                    .join("venv")
+                    .join("lib")
+                    .join(&req.name)
+            });
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

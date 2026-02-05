@@ -26,6 +26,19 @@ impl ApkProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package
+    async fn get_pkg_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_apk(&["info", "-v", name]).await?;
+        // Output format: package-version
+        if let Some(line) = out.lines().next() {
+            let line = line.trim();
+            if let Some(pos) = line.rfind('-') {
+                return Ok(line[pos + 1..].to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
 }
 
 impl Default for ApkProvider {
@@ -65,7 +78,14 @@ impl Provider for ApkProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("apk").await.is_some()
+        if process::which("apk").await.is_none() {
+            return false;
+        }
+        // Verify apk actually works
+        match process::execute("apk", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -170,9 +190,15 @@ impl Provider for ApkProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_pkg_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from("/usr"),
             files: vec![],

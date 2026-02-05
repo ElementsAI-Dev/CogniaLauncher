@@ -11,9 +11,16 @@ interface AccentColorPickerProps {
   accentColor: AccentColor;
   onAccentColorChange: (color: AccentColor) => void;
   className?: string;
+  t?: (key: string, params?: Record<string, string>) => string;
 }
 
-export function AccentColorPicker({ accentColor, onAccentColorChange, className }: AccentColorPickerProps) {
+export function AccentColorPicker({ accentColor, onAccentColorChange, className, t }: AccentColorPickerProps) {
+  const getAriaLabel = (color: AccentColor) => {
+    if (t) {
+      return t('settings.selectAccentColor', { color: ACCENT_COLOR_LABELS[color] });
+    }
+    return `Select ${ACCENT_COLOR_LABELS[color]} accent color`;
+  };
 
   return (
     <TooltipProvider>
@@ -29,7 +36,7 @@ export function AccentColorPicker({ accentColor, onAccentColorChange, className 
                   ACCENT_COLOR_CSS_CLASSES[color],
                   accentColor === color && 'ring-2 ring-offset-2 ring-offset-background ring-foreground'
                 )}
-                aria-label={`Select ${ACCENT_COLOR_LABELS[color]} accent color`}
+                aria-label={getAriaLabel(color)}
                 aria-pressed={accentColor === color}
               >
                 {accentColor === color && (

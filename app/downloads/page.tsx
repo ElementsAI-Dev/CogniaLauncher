@@ -17,6 +17,7 @@ import { useDownloads } from '@/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
 import {
   AddDownloadDialog,
+  GitHubDownloadDialog,
   DownloadToolbar,
   DownloadEmptyState,
   type StatusFilter,
@@ -34,6 +35,7 @@ import {
   Timer,
   Gauge,
   History,
+  Github,
 } from 'lucide-react';
 import { formatEta } from '@/lib/utils';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
@@ -72,6 +74,7 @@ export default function DownloadsPage() {
   const isDesktop = isTauri();
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
@@ -276,6 +279,10 @@ export default function DownloadsPage() {
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <ArrowDownToLine className="h-4 w-4 mr-2" />
               {t('downloads.addDownload')}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setGithubDialogOpen(true)}>
+              <Github className="h-4 w-4 mr-2" />
+              {t('downloads.fromGitHub')}
             </Button>
             <Button
               variant="outline"
@@ -630,6 +637,15 @@ export default function DownloadsPage() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onSubmit={handleAdd}
+      />
+
+      <GitHubDownloadDialog
+        open={githubDialogOpen}
+        onOpenChange={setGithubDialogOpen}
+        onDownloadStarted={() => {
+          refreshTasks();
+          refreshStats();
+        }}
       />
     </div>
   );

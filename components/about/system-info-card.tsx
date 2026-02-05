@@ -12,14 +12,16 @@ import type { SystemInfo } from '@/hooks/use-about-data';
 import type { SelfUpdateInfo } from '@/lib/tauri';
 import { APP_VERSION } from '@/lib/app-version';
 
+
 interface InfoRowProps {
   label: string;
   value: string | undefined;
   isMono?: boolean;
   isLoading: boolean;
+  unknownText: string;
 }
 
-function InfoRow({ label, value, isMono = false, isLoading }: InfoRowProps) {
+function InfoRow({ label, value, isMono = false, isLoading, unknownText }: InfoRowProps) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-[13px] text-muted-foreground">{label}</span>
@@ -38,7 +40,7 @@ function InfoRow({ label, value, isMono = false, isLoading }: InfoRowProps) {
         </Tooltip>
       ) : (
         <span className={`text-[13px] font-medium text-foreground ${isMono ? 'font-mono' : ''}`}>
-          {value || 'Unknown'}
+          {value || unknownText}
         </span>
       )}
     </div>
@@ -64,15 +66,17 @@ export function SystemInfoCard({
 }: SystemInfoCardProps) {
   const [copied, setCopied] = useState(false);
 
+  const unknownText = t('common.unknown');
+
   const copySystemInfo = async () => {
     const info = `
-CogniaLauncher System Information
+${t('about.systemInfoTitle')}
 ================================
-Version: v${updateInfo?.current_version || APP_VERSION}
-OS: ${systemInfo?.os || 'Unknown'}
-Architecture: ${systemInfo?.arch || 'Unknown'}
-Home Directory: ${systemInfo?.homeDir || '~/.cognia'}
-Locale: ${systemInfo?.locale || 'en-US'}
+${t('about.version')}: v${updateInfo?.current_version || APP_VERSION}
+${t('about.operatingSystem')}: ${systemInfo?.os || unknownText}
+${t('about.architecture')}: ${systemInfo?.arch || unknownText}
+${t('about.homeDirectory')}: ${systemInfo?.homeDir || '~/.cognia'}
+${t('about.locale')}: ${systemInfo?.locale || 'en-US'}
     `.trim();
 
     try {
@@ -135,12 +139,12 @@ Locale: ${systemInfo?.locale || 'en-US'}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
-            <InfoRow label={t('about.operatingSystem')} value={systemInfo?.os} isLoading={systemLoading} />
-            <InfoRow label={t('about.architecture')} value={systemInfo?.arch} isLoading={systemLoading} />
+            <InfoRow label={t('about.operatingSystem')} value={systemInfo?.os} isLoading={systemLoading} unknownText={unknownText} />
+            <InfoRow label={t('about.architecture')} value={systemInfo?.arch} isLoading={systemLoading} unknownText={unknownText} />
           </div>
           <div className="space-y-3">
-            <InfoRow label={t('about.homeDirectory')} value={systemInfo?.homeDir} isMono isLoading={systemLoading} />
-            <InfoRow label={t('about.locale')} value={systemInfo?.locale} isLoading={systemLoading} />
+            <InfoRow label={t('about.homeDirectory')} value={systemInfo?.homeDir} isMono isLoading={systemLoading} unknownText={unknownText} />
+            <InfoRow label={t('about.locale')} value={systemInfo?.locale} isLoading={systemLoading} unknownText={unknownText} />
           </div>
         </div>
       </CardContent>

@@ -5,6 +5,8 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -98,6 +100,146 @@ pub struct InstalledFilter {
     pub name_filter: Option<String>,
 }
 
+/// Installation progress stage
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallStage {
+    /// Fetching package metadata
+    Fetching,
+    /// Downloading package files
+    Downloading,
+    /// Extracting archive
+    Extracting,
+    /// Configuring/compiling
+    Configuring,
+    /// Post-install setup
+    PostInstall,
+    /// Installation complete
+    Done,
+    /// Installation failed
+    Failed,
+}
+
+/// Installation progress event with detailed progress info
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallProgressEvent {
+    /// Current installation stage
+    pub stage: InstallStage,
+    /// Package name being installed
+    pub package: String,
+    /// Bytes downloaded so far
+    pub downloaded_bytes: u64,
+    /// Total bytes to download (if known)
+    pub total_bytes: Option<u64>,
+    /// Download speed in bytes per second
+    pub speed_bps: f64,
+    /// Progress percentage (0-100)
+    pub progress_percent: f32,
+    /// Human-readable status message
+    pub message: String,
+}
+
+impl InstallProgressEvent {
+    pub fn new(stage: InstallStage, package: &str) -> Self {
+        Self {
+            stage,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 0.0,
+            message: String::new(),
+        }
+    }
+
+    pub fn fetching(package: &str) -> Self {
+        Self {
+            stage: InstallStage::Fetching,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 0.0,
+            message: format!("Fetching metadata for {}", package),
+        }
+    }
+
+    pub fn downloading(package: &str, downloaded: u64, total: Option<u64>, speed: f64) -> Self {
+        let progress = total.map(|t| if t > 0 { (downloaded as f64 / t as f64 * 100.0) as f32 } else { 0.0 }).unwrap_or(0.0);
+        Self {
+            stage: InstallStage::Downloading,
+            package: package.to_string(),
+            downloaded_bytes: downloaded,
+            total_bytes: total,
+            speed_bps: speed,
+            progress_percent: progress,
+            message: format!("Downloading {}", package),
+        }
+    }
+
+    pub fn extracting(package: &str) -> Self {
+        Self {
+            stage: InstallStage::Extracting,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 0.0,
+            message: format!("Extracting {}", package),
+        }
+    }
+
+    pub fn configuring(package: &str, message: &str) -> Self {
+        Self {
+            stage: InstallStage::Configuring,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 0.0,
+            message: message.to_string(),
+        }
+    }
+
+    pub fn done(package: &str, version: &str) -> Self {
+        Self {
+            stage: InstallStage::Done,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 100.0,
+            message: format!("Successfully installed {} v{}", package, version),
+        }
+    }
+
+    pub fn failed(package: &str, error: &str) -> Self {
+        Self {
+            stage: InstallStage::Failed,
+            package: package.to_string(),
+            downloaded_bytes: 0,
+            total_bytes: None,
+            speed_bps: 0.0,
+            progress_percent: 0.0,
+            message: format!("Failed to install {}: {}", package, error),
+        }
+    }
+}
+
+/// Progress sender for installation callbacks
+pub type ProgressSender = mpsc::Sender<InstallProgressEvent>;
+
+/// Progress callback function type
+pub type ProgressCallback = Arc<dyn Fn(InstallProgressEvent) + Send + Sync>;
+
+/// Installation options with progress support
+#[derive(Clone)]
+pub struct InstallOptions {
+    pub request: InstallRequest,
+    pub progress_sender: Option<ProgressSender>,
+}
+
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn id(&self) -> &str;
@@ -125,6 +267,45 @@ pub trait Provider: Send + Sync {
     }
 
     async fn install(&self, request: InstallRequest) -> CogniaResult<InstallReceipt>;
+
+    /// Install with progress reporting support
+    /// Default implementation calls install() without progress
+    async fn install_with_progress(
+        &self,
+        request: InstallRequest,
+        progress: Option<ProgressSender>,
+    ) -> CogniaResult<InstallReceipt> {
+        // Send initial progress if sender provided
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::fetching(&request.name)).await;
+        }
+        
+        let result = self.install(request.clone()).await;
+        
+        // Send completion or failure progress
+        if let Some(ref tx) = progress {
+            match &result {
+                Ok(receipt) => {
+                    let _ = tx.send(InstallProgressEvent::done(&receipt.name, &receipt.version)).await;
+                }
+                Err(e) => {
+                    let _ = tx.send(InstallProgressEvent::failed(&request.name, &e.to_string())).await;
+                }
+            }
+        }
+        
+        result
+    }
+
+    /// Get the actual installed version of a package
+    /// Used to verify installation and populate InstallReceipt
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        // Default: search in installed packages
+        let installed = self.list_installed(InstalledFilter::default()).await?;
+        Ok(installed.into_iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .map(|p| p.version))
+    }
 
     async fn uninstall(&self, request: UninstallRequest) -> CogniaResult<()>;
 
@@ -183,6 +364,21 @@ pub mod system_detection {
     use crate::error::CogniaResult;
     use crate::platform::process;
     use regex::Regex;
+
+    /// Check if an executable is available and actually works
+    /// More robust than just checking if the command exists
+    pub async fn is_command_available(cmd: &str, test_args: &[&str]) -> bool {
+        // First check if command exists in PATH
+        if process::which(cmd).await.is_none() {
+            return false;
+        }
+
+        // Then verify the command actually works by running it
+        match process::execute(cmd, test_args, None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
+    }
 
     /// Detect version from a system executable using --version flag
     pub async fn detect_from_executable(

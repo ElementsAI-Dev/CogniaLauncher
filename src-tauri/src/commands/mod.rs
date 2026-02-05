@@ -4,6 +4,7 @@ pub mod config;
 pub mod custom_detection;
 pub mod download;
 pub mod environment;
+pub mod github;
 pub mod health_check;
 pub mod launch;
 pub mod log;
@@ -20,7 +21,9 @@ pub use batch::{
     package_unpin, resolve_dependencies,
 };
 pub use cache::{
-    cache_clean, cache_info, cache_repair, cache_verify, get_cache_settings, set_cache_settings,
+    cache_clean, cache_info, cache_repair, cache_verify, clean_all_external_caches,
+    clean_external_cache, discover_external_caches, get_cache_settings, get_combined_cache_stats,
+    set_cache_settings,
 };
 pub use config::{
     config_get, config_list, config_reset, config_set, get_cognia_dir, get_platform_info,
@@ -62,7 +65,11 @@ pub use custom_detection::{
     custom_rule_list_by_env, custom_rule_presets, custom_rule_test, custom_rule_toggle,
     custom_rule_update, custom_rule_validate_regex, SharedCustomDetectionManager,
 };
-pub use health_check::{health_check_all, health_check_environment};
+pub use github::{
+    github_download_asset, github_download_source, github_get_release_assets, github_list_branches,
+    github_list_releases, github_list_tags, github_parse_url, github_validate_repo,
+};
+pub use health_check::{health_check_all, health_check_environment, health_check_package_managers};
 pub use profiles::{
     profile_apply, profile_create, profile_create_from_current, profile_delete, profile_export,
     profile_get, profile_import, profile_list, profile_update,

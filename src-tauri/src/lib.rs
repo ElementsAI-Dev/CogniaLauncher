@@ -157,6 +157,9 @@ pub fn run() {
             commands::environment::env_install_cancel,
             commands::environment::env_save_settings,
             commands::environment::env_load_settings,
+            commands::environment::env_detect_system_all,
+            commands::environment::env_detect_system,
+            commands::environment::env_get_type_mapping,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -199,6 +202,11 @@ pub fn run() {
             commands::cache::delete_cache_entries,
             // Hot files
             commands::cache::get_top_accessed_entries,
+            // External cache management
+            commands::cache::discover_external_caches,
+            commands::cache::clean_external_cache,
+            commands::cache::clean_all_external_caches,
+            commands::cache::get_combined_cache_stats,
             // Batch operations
             commands::batch::batch_install,
             commands::batch::batch_uninstall,
@@ -215,6 +223,7 @@ pub fn run() {
             // Health check commands
             commands::health_check::health_check_all,
             commands::health_check::health_check_environment,
+            commands::health_check::health_check_package_managers,
             // Profile commands
             commands::profiles::profile_list,
             commands::profiles::profile_get,
@@ -286,6 +295,15 @@ pub fn run() {
             // Disk space commands
             commands::download::disk_space_get,
             commands::download::disk_space_check,
+            // GitHub commands
+            commands::github::github_parse_url,
+            commands::github::github_validate_repo,
+            commands::github::github_list_branches,
+            commands::github::github_list_tags,
+            commands::github::github_list_releases,
+            commands::github::github_get_release_assets,
+            commands::github::github_download_asset,
+            commands::github::github_download_source,
             // Tray commands
             tray::tray_set_icon_state,
             tray::tray_update_tooltip,

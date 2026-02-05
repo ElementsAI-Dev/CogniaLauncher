@@ -1,12 +1,13 @@
 use super::traits::*;
+use crate::download::{AssetLike, AssetPicker, LibcType};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
-    env::{current_arch, current_platform, Architecture, Platform},
+    env::{current_arch, current_platform, detect_libc, Architecture, Platform},
     fs,
     network::HttpClient,
 };
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const GITHUB_API: &str = "https://api.github.com";
@@ -38,33 +39,108 @@ impl GitHubProvider {
             .map_err(|e| CogniaError::Network(e.to_string()))
     }
 
+    pub async fn list_branches(&self, repo: &str) -> CogniaResult<Vec<GitHubBranch>> {
+        self.api_get(&format!("/repos/{}/branches?per_page=100", repo))
+            .await
+    }
+
+    pub async fn list_tags(&self, repo: &str) -> CogniaResult<Vec<GitHubTag>> {
+        self.api_get(&format!("/repos/{}/tags?per_page=100", repo))
+            .await
+    }
+
+    pub async fn list_releases(&self, repo: &str) -> CogniaResult<Vec<GitHubRelease>> {
+        self.api_get(&format!("/repos/{}/releases?per_page=30", repo))
+            .await
+    }
+
+    pub async fn get_release_by_tag(&self, repo: &str, tag: &str) -> CogniaResult<GitHubRelease> {
+        self.api_get(&format!("/repos/{}/releases/tags/{}", repo, tag))
+            .await
+    }
+
+    pub async fn get_latest_release(&self, repo: &str) -> CogniaResult<GitHubRelease> {
+        self.api_get(&format!("/repos/{}/releases/latest", repo))
+            .await
+    }
+
+    pub async fn validate_repo(&self, repo: &str) -> bool {
+        #[derive(Deserialize)]
+        struct RepoInfo {
+            #[allow(dead_code)]
+            full_name: String,
+        }
+        self.api_get::<RepoInfo>(&format!("/repos/{}", repo))
+            .await
+            .is_ok()
+    }
+
+    pub fn get_source_archive_url(&self, repo: &str, ref_name: &str, format: &str) -> String {
+        let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
+        format!("https://github.com/{}/{}/{}", repo, ext, ref_name)
+    }
+
+    pub fn parse_repo_url(url: &str) -> Option<(String, String)> {
+        let url = url.trim();
+        
+        // Handle owner/repo format directly
+        if !url.contains('/') || url.starts_with("http") {
+            // Try to parse as URL
+            if let Some(path) = url.strip_prefix("https://github.com/") {
+                let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+                if parts.len() >= 2 {
+                    return Some((parts[0].to_string(), parts[1].to_string()));
+                }
+            }
+            if let Some(path) = url.strip_prefix("http://github.com/") {
+                let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
+                if parts.len() >= 2 {
+                    return Some((parts[0].to_string(), parts[1].to_string()));
+                }
+            }
+            if let Some(path) = url.strip_prefix("git@github.com:") {
+                let path = path.trim_end_matches(".git");
+                let parts: Vec<&str> = path.split('/').collect();
+                if parts.len() >= 2 {
+                    return Some((parts[0].to_string(), parts[1].to_string()));
+                }
+            }
+        } else {
+            // owner/repo format
+            let parts: Vec<&str> = url.split('/').collect();
+            if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                return Some((parts[0].to_string(), parts[1].to_string()));
+            }
+        }
+        None
+    }
+
     fn match_asset<'a>(
         &self,
         assets: &'a [GitHubAsset],
         platform: Platform,
         arch: Architecture,
     ) -> Option<&'a GitHubAsset> {
-        let plat_pat: Vec<&str> = match platform {
-            Platform::Linux => vec!["linux", "Linux", "musl", "gnu"],
-            Platform::MacOS => vec!["darwin", "macos", "apple"],
-            Platform::Windows => vec!["windows", "win64", "win32"],
-            _ => return None,
-        };
-        let arch_pat: Vec<&str> = match arch {
-            Architecture::X86_64 => vec!["x86_64", "amd64", "x64"],
-            Architecture::Aarch64 => vec!["aarch64", "arm64"],
-            _ => vec![],
-        };
-        assets
-            .iter()
-            .filter(|a| !a.name.contains(".sha") && !a.name.contains(".sig"))
-            .filter(|a| plat_pat.iter().any(|p| a.name.to_lowercase().contains(p)))
-            .max_by_key(|a| {
-                arch_pat
-                    .iter()
-                    .filter(|p| a.name.to_lowercase().contains(*p))
-                    .count()
-            })
+        let mut picker = AssetPicker::new(platform, arch);
+
+        // Add libc detection for Linux
+        if platform == Platform::Linux {
+            let libc = detect_libc();
+            let libc_type = match libc.as_str() {
+                "musl" => LibcType::Musl,
+                "glibc" => LibcType::Glibc,
+                _ => LibcType::Unknown,
+            };
+            picker = picker.with_libc(libc_type);
+        }
+
+        picker.pick_best(assets)
+    }
+}
+
+impl AssetLike for GitHubAsset {
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -74,22 +150,47 @@ impl Default for GitHubProvider {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    published_at: Option<String>,
-    #[allow(dead_code)]
-    prerelease: bool,
-    assets: Vec<GitHubAsset>,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubRelease {
+    pub id: u64,
+    pub tag_name: String,
+    pub name: Option<String>,
+    pub body: Option<String>,
+    pub published_at: Option<String>,
+    pub prerelease: bool,
+    pub draft: bool,
+    pub assets: Vec<GitHubAsset>,
 }
 
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-    #[allow(dead_code)]
-    size: u64,
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubAsset {
+    pub id: u64,
+    pub name: String,
+    pub size: u64,
+    pub browser_download_url: String,
+    pub content_type: Option<String>,
+    pub download_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubBranch {
+    pub name: String,
+    pub commit: GitHubCommitRef,
+    #[serde(default)]
+    pub protected: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubCommitRef {
+    pub sha: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubTag {
+    pub name: String,
+    pub commit: GitHubCommitRef,
+    pub zipball_url: Option<String>,
+    pub tarball_url: Option<String>,
 }
 
 #[async_trait]

@@ -99,7 +99,14 @@ impl Provider for FnmProvider {
     } // Higher than nvm
 
     async fn is_available(&self) -> bool {
-        process::which("fnm").await.is_some()
+        if process::which("fnm").await.is_none() {
+            return false;
+        }
+        // Verify fnm actually works
+        match process::execute("fnm", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -164,16 +171,62 @@ impl Provider for FnmProvider {
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
-        let version = req.version.as_deref().unwrap_or("--lts");
+        self.install_with_progress(req, None).await
+    }
 
-        self.run_fnm(&["install", version]).await?;
+    async fn install_with_progress(
+        &self,
+        req: InstallRequest,
+        progress: Option<ProgressSender>,
+    ) -> CogniaResult<InstallReceipt> {
+        let version = req.version.as_deref().unwrap_or("--lts");
+        let package_name = format!("node@{}", version);
+
+        // Stage 1: Fetching
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::fetching(&package_name)).await;
+        }
+
+        // Stage 2: Downloading/Installing (fnm handles this internally)
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::downloading(&package_name, 0, None, 0.0)).await;
+        }
+
+        // Run the actual installation
+        let result = self.run_fnm(&["install", version]).await;
+
+        if let Err(ref e) = result {
+            if let Some(ref tx) = progress {
+                let _ = tx.send(InstallProgressEvent::failed(&package_name, &e.to_string())).await;
+            }
+            return Err(result.unwrap_err());
+        }
+
+        // Stage 3: Post-install - verify actual version
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Verifying installation")).await;
+        }
 
         let fnm_dir = self.fnm_dir()?;
-        let install_path = fnm_dir.join("node-versions").join(version);
+        
+        // Get actual installed version (handle --lts case)
+        let actual_version = if version == "--lts" {
+            // After installing LTS, get the actual version number
+            self.get_current_version().await?.unwrap_or_else(|| version.to_string())
+        } else {
+            version.to_string()
+        };
+
+        let install_path = fnm_dir.join("node-versions").join(&actual_version);
+
+        // Stage 4: Done
+        if let Some(ref tx) = progress {
+            let _ = tx.send(InstallProgressEvent::done(&package_name, &actual_version)).await;
+        }
 
         Ok(InstallReceipt {
             name: "node".to_string(),
-            version: version.to_string(),
+            version: actual_version,
             provider: self.id().to_string(),
             install_path,
             files: vec![],

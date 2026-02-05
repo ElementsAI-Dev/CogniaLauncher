@@ -79,6 +79,7 @@ import {
 } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/layout/page-header';
+import { ExternalCacheSection } from '@/components/cache/external-cache-section';
 
 type CleanType = 'downloads' | 'metadata' | 'all';
 type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
@@ -845,7 +846,10 @@ export default function CachePage() {
         </CardContent>
       </Card>
 
-      {/* Row 4: Cache Settings */}
+      {/* Row 4: External Tool Caches */}
+      <ExternalCacheSection useTrash={useTrash} setUseTrash={setUseTrash} />
+
+      {/* Row 5: Cache Settings */}
       <Card>
         <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
           <CardHeader className="pb-2">
@@ -912,7 +916,7 @@ export default function CachePage() {
                         }}
                           className="w-32"
                         />
-                        <span className="text-sm text-muted-foreground">days</span>
+                        <span className="text-sm text-muted-foreground">{t('common.days')}</span>
                       </div>
                       <p className="text-xs text-muted-foreground">{t('cache.maxAgeDesc')}</p>
                     </div>

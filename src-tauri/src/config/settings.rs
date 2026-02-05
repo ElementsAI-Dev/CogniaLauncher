@@ -54,6 +54,7 @@ pub struct GeneralSettings {
     pub cache_max_size: u64,
     pub cache_max_age_days: u32,
     pub auto_clean_cache: bool,
+    pub min_install_space_mb: u64,
 }
 
 impl Default for GeneralSettings {
@@ -66,6 +67,7 @@ impl Default for GeneralSettings {
             cache_max_size: 5 * 1024 * 1024 * 1024, // 5 GB
             cache_max_age_days: 30,
             auto_clean_cache: true,
+            min_install_space_mb: 100,
         }
     }
 }
@@ -264,6 +266,9 @@ impl Settings {
             ["general", "cache_max_size"] => Some(self.general.cache_max_size.to_string()),
             ["general", "cache_max_age_days"] => Some(self.general.cache_max_age_days.to_string()),
             ["general", "auto_clean_cache"] => Some(self.general.auto_clean_cache.to_string()),
+            ["general", "min_install_space_mb"] => {
+                Some(self.general.min_install_space_mb.to_string())
+            }
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
             ["network", "proxy"] => self.network.proxy.clone(),
@@ -356,6 +361,11 @@ impl Settings {
                 self.general.auto_clean_cache = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["general", "min_install_space_mb"] => {
+                self.general.min_install_space_mb = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for min_install_space_mb".into()))?;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value
@@ -517,6 +527,7 @@ mod tests {
         let settings = Settings::default();
         assert_eq!(settings.general.parallel_downloads, 4);
         assert_eq!(settings.general.resolve_strategy, ResolveStrategy::Latest);
+        assert_eq!(settings.general.min_install_space_mb, 100);
     }
 
     #[test]
@@ -535,6 +546,14 @@ mod tests {
             .set_value("general.resolve_strategy", "minimal")
             .unwrap();
         assert_eq!(settings.general.resolve_strategy, ResolveStrategy::Minimal);
+
+        settings
+            .set_value("general.min_install_space_mb", "250")
+            .unwrap();
+        assert_eq!(
+            settings.get_value("general.min_install_space_mb"),
+            Some("250".to_string())
+        );
     }
 
     #[test]

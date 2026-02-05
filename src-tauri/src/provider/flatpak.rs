@@ -26,6 +26,17 @@ impl FlatpakProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a flatpak app
+    async fn get_app_version(&self, app_id: &str) -> CogniaResult<String> {
+        let out = self.run_flatpak(&["info", app_id]).await?;
+        for line in out.lines() {
+            if let Some(version) = line.strip_prefix("Version:") {
+                return Ok(version.trim().to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", app_id)))
+    }
 }
 
 impl Default for FlatpakProvider {
@@ -64,7 +75,14 @@ impl Provider for FlatpakProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("flatpak").await.is_some()
+        if process::which("flatpak").await.is_none() {
+            return false;
+        }
+        // Verify flatpak actually works
+        match process::execute("flatpak", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -176,9 +194,15 @@ impl Provider for FlatpakProvider {
             .run_flatpak(&["install", "-y", "flathub", &req.name])
             .await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_app_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from("/var/lib/flatpak"),
             files: vec![],

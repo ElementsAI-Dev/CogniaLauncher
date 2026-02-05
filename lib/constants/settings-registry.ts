@@ -134,6 +134,14 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     keywords: ['concurrent', 'download', 'parallel', '并行', '下载', '并发'],
   },
   {
+    key: 'general.min_install_space_mb',
+    section: 'general',
+    labelKey: 'settings.minInstallSpace',
+    descKey: 'settings.minInstallSpaceDesc',
+    type: 'input',
+    keywords: ['disk', 'space', 'install', 'minimum', '磁盘', '空间', '安装'],
+  },
+  {
     key: 'general.metadata_cache_ttl',
     section: 'general',
     labelKey: 'settings.metadataCacheTtl',

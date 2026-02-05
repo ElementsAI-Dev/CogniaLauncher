@@ -184,8 +184,8 @@ export function EnvironmentCard({
                     </TooltipTrigger>
                     <TooltipContent>
                       <div className="text-xs">
-                        <p>Size: {formatSize(v.size)}</p>
-                        {v.installed_at && <p>Installed: {new Date(v.installed_at).toLocaleDateString()}</p>}
+                        <p>{t('environments.tooltip.size')} {formatSize(v.size)}</p>
+                        {v.installed_at && <p>{t('environments.tooltip.installedAt')} {new Date(v.installed_at).toLocaleDateString()}</p>}
                         <p className="text-muted-foreground">{t('environments.setGlobal')}</p>
                       </div>
                     </TooltipContent>

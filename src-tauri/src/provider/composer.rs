@@ -41,6 +41,25 @@ impl ComposerProvider {
         }
     }
 
+    /// Get the installed version of a package
+    async fn get_pkg_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        let args = if global {
+            vec!["global", "show", name, "--format=json"]
+        } else {
+            vec!["show", name, "--format=json"]
+        };
+        let out = self.run_composer(&args).await?;
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            if let Some(version) = json["versions"].as_array().and_then(|v| v.first()).and_then(|v| v.as_str()) {
+                return Ok(version.to_string());
+            }
+            if let Some(version) = json["version"].as_str() {
+                return Ok(version.to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
+
     /// Search Packagist API
     async fn search_packagist(&self, query: &str, limit: usize) -> CogniaResult<PackagistSearchResult> {
         let url = format!(
@@ -279,7 +298,14 @@ impl Provider for ComposerProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("composer").await.is_some()
+        if process::which("composer").await.is_none() {
+            return false;
+        }
+        // Verify composer actually works
+        match process::execute("composer", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -362,6 +388,12 @@ impl Provider for ComposerProvider {
 
         self.run_composer(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_pkg_version(&req.name, req.global)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = if req.global {
             Self::get_composer_home()
                 .map(|p| p.join("vendor").join(&req.name))
@@ -372,7 +404,7 @@ impl Provider for ComposerProvider {
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

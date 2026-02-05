@@ -27,28 +27,28 @@ interface MirrorsSettingsProps {
 // Mirror presets for different regions
 const MIRROR_PRESETS = {
   default: {
-    name: 'Default (Official)',
+    labelKey: 'settings.mirrorPresetDefault',
     npm: 'https://registry.npmjs.org',
     pypi: 'https://pypi.org/simple',
     crates: 'https://crates.io',
     go: 'https://proxy.golang.org',
   },
   china: {
-    name: 'China (淘宝/清华)',
+    labelKey: 'settings.mirrorPresetChina',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://pypi.tuna.tsinghua.edu.cn/simple',
     crates: 'https://rsproxy.cn',
     go: 'https://goproxy.cn',
   },
   aliyun: {
-    name: 'Aliyun (阿里云)',
+    labelKey: 'settings.mirrorPresetAliyun',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://mirrors.aliyun.com/pypi/simple',
     crates: 'https://rsproxy.cn',
     go: 'https://mirrors.aliyun.com/goproxy/',
   },
   ustc: {
-    name: 'USTC (中科大)',
+    labelKey: 'settings.mirrorPresetUstc',
     npm: 'https://registry.npmmirror.com',
     pypi: 'https://pypi.mirrors.ustc.edu.cn/simple',
     crates: 'https://rsproxy.cn',
@@ -136,7 +136,7 @@ export function MirrorsSettings({ localConfig, errors, onValueChange, t }: Mirro
                   key={key}
                   onClick={() => applyPreset(key as PresetKey)}
                 >
-                  {preset.name}
+                  {t(preset.labelKey)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

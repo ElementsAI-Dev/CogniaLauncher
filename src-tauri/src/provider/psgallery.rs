@@ -58,6 +58,21 @@ impl PSGalleryProvider {
             })
         }
     }
+
+    /// Get the installed version of a module
+    async fn get_module_version(&self, name: &str) -> CogniaResult<String> {
+        let script = format!(
+            "Get-InstalledModule -Name '{}' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Version",
+            name
+        );
+        let out = self.run_pwsh(&script).await?;
+        let version = out.trim();
+        if version.is_empty() {
+            Err(CogniaError::Provider(format!("Module {} not found", name)))
+        } else {
+            Ok(version.to_string())
+        }
+    }
 }
 
 impl Default for PSGalleryProvider {
@@ -227,13 +242,19 @@ impl Provider for PSGalleryProvider {
 
         self.run_pwsh(&script).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_module_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = Self::get_modules_path()
             .map(|p| p.join(&req.name))
-            .unwrap_or_default();
+            .unwrap_or_else(|| PathBuf::from("Modules").join(&req.name));
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],
@@ -250,7 +271,8 @@ impl Provider for PSGalleryProvider {
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let script = "Get-InstalledModule | ForEach-Object { \"$($_.Name)|$($_.Version)|$($_.InstalledLocation)\" }";
         let out = self.run_pwsh(script).await?;
-        let modules_path = Self::get_modules_path().unwrap_or_default();
+        let modules_path =
+            Self::get_modules_path().unwrap_or_else(|| PathBuf::from("Modules"));
 
         let packages: Vec<InstalledPackage> = out
             .lines()

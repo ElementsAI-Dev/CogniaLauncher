@@ -68,6 +68,31 @@ impl UvProvider {
         args
     }
 
+    /// Get site-packages directory for the current Python
+    fn get_site_packages_dir() -> Option<PathBuf> {
+        // Try to get from VIRTUAL_ENV first
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            let lib_dir = if cfg!(windows) {
+                PathBuf::from(&venv).join("Lib").join("site-packages")
+            } else {
+                PathBuf::from(&venv).join("lib").join("python3").join("site-packages")
+            };
+            if lib_dir.exists() {
+                return Some(lib_dir);
+            }
+        }
+        // Default user site-packages
+        if cfg!(windows) {
+            std::env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Python").join("site-packages"))
+        } else {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".local").join("lib").join("python3").join("site-packages"))
+        }
+    }
+
     async fn run_uv(&self, args: &[&str]) -> CogniaResult<String> {
         let full_args = self.build_uv_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
@@ -107,6 +132,28 @@ impl UvProvider {
                 }
             })
     }
+
+    /// Get the installed version and location of a package using uv pip show
+    async fn get_package_info_raw(&self, name: &str) -> CogniaResult<(String, PathBuf)> {
+        let output = self.run_uv_raw(&["pip", "show", name]).await?;
+        
+        let mut version = String::new();
+        let mut location = PathBuf::new();
+        
+        for line in output.lines() {
+            if let Some(v) = line.strip_prefix("Version:") {
+                version = v.trim().to_string();
+            } else if let Some(loc) = line.strip_prefix("Location:") {
+                location = PathBuf::from(loc.trim());
+            }
+        }
+        
+        if version.is_empty() {
+            return Err(CogniaError::Provider(format!("Package {} not found", name)));
+        }
+        
+        Ok((version, location))
+    }
 }
 
 impl Default for UvProvider {
@@ -141,7 +188,7 @@ impl Provider for UvProvider {
     } // Higher priority than pip
 
     async fn is_available(&self) -> bool {
-        process::which("uv").await.is_some()
+        system_detection::is_command_available("uv", &["--version"]).await
     }
 
     async fn search(
@@ -322,11 +369,15 @@ impl Provider for UvProvider {
 
         self.run_uv(&["pip", "install", &pkg]).await?;
 
+        // Get the actual installed version and location
+        let (actual_version, install_path) = self.get_package_info_raw(&req.name).await
+            .unwrap_or_else(|_| (req.version.clone().unwrap_or_default(), PathBuf::new()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
@@ -355,11 +406,14 @@ impl Provider for UvProvider {
 
                     let version = p["version"].as_str().unwrap_or("").to_string();
 
+                    // uv packages are stored in site-packages
+                    let site_packages = Self::get_site_packages_dir().unwrap_or_default();
+
                     Some(InstalledPackage {
-                        name,
+                        name: name.clone(),
                         version,
                         provider: self.id().into(),
-                        install_path: PathBuf::new(),
+                        install_path: site_packages.join(&name),
                         installed_at: String::new(),
                         is_global: true,
                     })

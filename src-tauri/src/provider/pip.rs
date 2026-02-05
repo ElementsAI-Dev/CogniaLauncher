@@ -106,16 +106,43 @@ impl PipProvider {
         }
     }
 
-    #[allow(dead_code)]
-    fn get_site_packages() -> Option<PathBuf> {
-        // Get Python site-packages directory
-        if cfg!(windows) {
-            std::env::var("LOCALAPPDATA")
-                .ok()
-                .map(|p| PathBuf::from(p).join("Programs").join("Python"))
-        } else {
-            None
+    /// Get the installed version and location of a package using pip show
+    async fn get_package_info_raw(&self, name: &str) -> CogniaResult<(String, PathBuf)> {
+        let output = self.run_pip_raw(&["show", name]).await?;
+        
+        let mut version = String::new();
+        let mut location = PathBuf::new();
+        
+        for line in output.lines() {
+            if let Some(v) = line.strip_prefix("Version:") {
+                version = v.trim().to_string();
+            } else if let Some(loc) = line.strip_prefix("Location:") {
+                location = PathBuf::from(loc.trim());
+            }
         }
+        
+        if version.is_empty() {
+            return Err(CogniaError::Provider(format!("Package {} not found", name)));
+        }
+        
+        Ok((version, location))
+    }
+
+    /// Get only the installed version of a package
+    async fn get_package_version(&self, name: &str) -> CogniaResult<String> {
+        self.get_package_info_raw(name).await.map(|(v, _)| v)
+    }
+
+    /// Get the installation location of a package
+    async fn get_package_location(&self, name: &str) -> CogniaResult<PathBuf> {
+        self.get_package_info_raw(name).await.map(|(_, p)| p)
+    }
+
+    fn default_site_packages() -> PathBuf {
+        std::env::var("PYTHONUSERBASE")
+            .ok()
+            .map(|p| PathBuf::from(p).join("lib").join("site-packages"))
+            .unwrap_or_else(|| PathBuf::from("site-packages"))
     }
 }
 
@@ -154,7 +181,15 @@ impl Provider for PipProvider {
     } // Lower than uv
 
     async fn is_available(&self) -> bool {
-        process::which("pip").await.is_some()
+        // Check if pip exists and is actually executable
+        if process::which("pip").await.is_none() {
+            return false;
+        }
+        // Verify pip works by running --version
+        match process::execute("pip", &["--version"], None).await {
+            Ok(output) => output.success && !output.stdout.is_empty(),
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -329,6 +364,10 @@ impl Provider for PipProvider {
         Ok(vec![])
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        self.get_package_version(name).await.map(Some)
+    }
+
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let pkg = if let Some(v) = &req.version {
             format!("{}=={}", req.name, v)
@@ -338,11 +377,22 @@ impl Provider for PipProvider {
 
         self.run_pip(&["install", &pkg]).await?;
 
+        // Get the actual installed version and location
+        let (actual_version, install_path) = self
+            .get_package_info_raw(&req.name)
+            .await
+            .unwrap_or_else(|_| {
+                (
+                    req.version.clone().unwrap_or_default(),
+                    Self::default_site_packages(),
+                )
+            });
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
@@ -358,29 +408,36 @@ impl Provider for PipProvider {
         let output = self.run_pip_raw(&["list", "--format", "json"]).await?;
 
         if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&output) {
-            return Ok(packages
-                .iter()
-                .filter_map(|p| {
-                    let name = p["name"].as_str()?.to_string();
+            let mut results = Vec::new();
+            for pkg in packages {
+                let name = match pkg["name"].as_str() {
+                    Some(value) => value.to_string(),
+                    None => continue,
+                };
 
-                    if let Some(ref name_filter) = filter.name_filter {
-                        if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
-                            return None;
-                        }
+                if let Some(ref name_filter) = filter.name_filter {
+                    if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                        continue;
                     }
+                }
 
-                    let version = p["version"].as_str().unwrap_or("").to_string();
+                let version = pkg["version"].as_str().unwrap_or("").to_string();
+                let install_path = self
+                    .get_package_location(&name)
+                    .await
+                    .unwrap_or_else(|_| Self::default_site_packages());
 
-                    Some(InstalledPackage {
-                        name,
-                        version,
-                        provider: self.id().into(),
-                        install_path: PathBuf::new(),
-                        installed_at: String::new(),
-                        is_global: true,
-                    })
-                })
-                .collect());
+                results.push(InstalledPackage {
+                    name,
+                    version,
+                    provider: self.id().into(),
+                    install_path,
+                    installed_at: String::new(),
+                    is_global: true,
+                });
+            }
+
+            return Ok(results);
         }
 
         Ok(vec![])

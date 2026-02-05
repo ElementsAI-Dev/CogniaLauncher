@@ -304,6 +304,67 @@ impl Architecture {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LibcType {
+    Glibc,
+    Musl,
+    Unknown,
+}
+
+impl LibcType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LibcType::Glibc => "glibc",
+            LibcType::Musl => "musl",
+            LibcType::Unknown => "unknown",
+        }
+    }
+}
+
+/// Detect the libc type on Linux systems
+#[cfg(target_os = "linux")]
+pub fn detect_libc() -> LibcType {
+    use std::process::Command;
+
+    // Method 1: Check ldd --version output
+    if let Ok(output) = Command::new("ldd").arg("--version").output() {
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if combined.contains("musl") {
+            return LibcType::Musl;
+        }
+        if combined.contains("GLIBC") || combined.contains("GNU libc") {
+            return LibcType::Glibc;
+        }
+    }
+
+    // Method 2: Check for musl dynamic linker
+    let musl_paths = [
+        "/lib/ld-musl-x86_64.so.1",
+        "/lib/ld-musl-aarch64.so.1",
+        "/lib/ld-musl-armhf.so.1",
+        "/lib/ld-musl-i386.so.1",
+    ];
+    for path in musl_paths {
+        if std::path::Path::new(path).exists() {
+            return LibcType::Musl;
+        }
+    }
+
+    // Default to glibc on Linux
+    LibcType::Glibc
+}
+
+/// Detect the libc type (non-Linux always returns Unknown)
+#[cfg(not(target_os = "linux"))]
+pub fn detect_libc() -> LibcType {
+    LibcType::Unknown
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -129,7 +129,7 @@ export function QuickActions({
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
                 <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">More actions</span>
+                <span className="sr-only">{t('dashboard.quickActions.moreActions')}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">

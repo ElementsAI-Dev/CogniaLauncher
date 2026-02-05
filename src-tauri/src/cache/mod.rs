@@ -2,6 +2,7 @@ pub mod db;
 pub mod download;
 pub mod download_history;
 pub mod enhanced;
+pub mod external;
 pub mod history;
 pub mod metadata;
 pub mod sqlite_db;
@@ -17,3 +18,6 @@ pub use enhanced::{
 pub use history::{CleanedFileInfo, CleanupHistory, CleanupRecord, CleanupRecordBuilder, CleanupSummary};
 pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
 pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};
+pub use external::{
+    CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo, ExternalCacheProvider,
+};

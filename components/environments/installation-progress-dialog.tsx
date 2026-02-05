@@ -88,7 +88,7 @@ export function InstallationProgressDialog() {
                 "text-sm font-semibold font-mono",
                 step === 'error' ? 'text-destructive' : 'text-green-600'
               )}>
-                {step === 'error' ? 'Error' : `${progress}%`}
+                {step === 'error' ? t('environments.progress.error') : `${progress}%`}
               </span>
             </div>
             <Progress 

@@ -21,6 +21,18 @@ impl ChocolateyProvider {
         }
     }
 
+    /// Get the installed version of a package
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_choco(&["list", "-r", "--local-only"]).await?;
+        for line in out.lines() {
+            let parts: Vec<&str> = line.split('|').collect();
+            if parts.len() >= 2 && parts[0].eq_ignore_ascii_case(name) {
+                return Ok(parts[1].to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Package {} not installed", name)))
+    }
+
     fn get_choco_dir() -> PathBuf {
         std::env::var("ChocolateyInstall")
             .ok()
@@ -60,7 +72,14 @@ impl Provider for ChocolateyProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("choco").await.is_some()
+        if process::which("choco").await.is_none() {
+            return false;
+        }
+        // Verify choco actually works
+        match process::execute("choco", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -183,11 +202,17 @@ impl Provider for ChocolateyProvider {
 
         self.run_choco(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = Self::get_choco_dir().join("lib").join(&req.name);
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

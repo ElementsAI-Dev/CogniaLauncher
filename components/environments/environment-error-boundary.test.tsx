@@ -18,10 +18,17 @@ afterAll(() => {
   console.error = originalError;
 });
 
+// Default props for EnvironmentErrorBoundary tests
+const defaultProps = {
+  fallbackTitle: 'Something went wrong',
+  fallbackDescription: 'An error occurred while loading this component. Please try again.',
+  retryLabel: 'Try Again',
+};
+
 describe('EnvironmentErrorBoundary', () => {
   it('renders children when no error occurs', () => {
     render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <div>Test content</div>
       </EnvironmentErrorBoundary>
     );
@@ -30,7 +37,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('renders fallback UI when error occurs', () => {
     render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -40,7 +47,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('renders custom fallback title when provided', () => {
     render(
-      <EnvironmentErrorBoundary fallbackTitle="Custom Error Title">
+      <EnvironmentErrorBoundary {...defaultProps} fallbackTitle="Custom Error Title">
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -49,7 +56,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('renders custom fallback description when provided', () => {
     render(
-      <EnvironmentErrorBoundary fallbackDescription="Custom error description">
+      <EnvironmentErrorBoundary {...defaultProps} fallbackDescription="Custom error description">
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -58,7 +65,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('renders custom retry label when provided', () => {
     render(
-      <EnvironmentErrorBoundary retryLabel="Retry Now">
+      <EnvironmentErrorBoundary {...defaultProps} retryLabel="Retry Now">
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -67,7 +74,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('displays error message in error state', () => {
     render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -76,7 +83,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('renders Try Again button', () => {
     render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -85,7 +92,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('retry button is clickable', () => {
     render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );
@@ -101,7 +108,7 @@ describe('EnvironmentErrorBoundary', () => {
 
   it('has destructive styling for error card', () => {
     const { container } = render(
-      <EnvironmentErrorBoundary>
+      <EnvironmentErrorBoundary {...defaultProps}>
         <ThrowError shouldThrow={true} />
       </EnvironmentErrorBoundary>
     );

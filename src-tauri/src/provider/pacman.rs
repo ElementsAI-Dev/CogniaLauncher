@@ -26,6 +26,17 @@ impl PacmanProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a package
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_pacman(&["-Q", name]).await?;
+        let parts: Vec<&str> = out.trim().split_whitespace().collect();
+        if parts.len() >= 2 {
+            Ok(parts[1].to_string())
+        } else {
+            Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        }
+    }
 }
 
 impl Default for PacmanProvider {
@@ -65,7 +76,14 @@ impl Provider for PacmanProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("pacman").await.is_some()
+        if process::which("pacman").await.is_none() {
+            return false;
+        }
+        // Verify pacman actually works
+        match process::execute("pacman", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -172,9 +190,15 @@ impl Provider for PacmanProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_installed_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from("/usr"),
             files: vec![],

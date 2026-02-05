@@ -83,6 +83,53 @@ impl YarnProvider {
                 .map(|h| PathBuf::from(h).join(".yarn").join("global"))
         }
     }
+
+    /// Get the installed version of a global package
+    async fn get_package_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        let args = if global {
+            vec!["global", "list", "--depth=0", "--json"]
+        } else {
+            vec!["list", "--depth=0", "--json"]
+        };
+        
+        let output = self.run_yarn_raw(&args).await?;
+        
+        // Parse yarn list output to find the package
+        for line in output.lines() {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(data) = json.get("data") {
+                    if let Some(trees) = data.as_str() {
+                        // Look for package@version pattern
+                        for part in trees.split(',') {
+                            let part = part.trim();
+                            if part.contains('@') {
+                                // Extract package name before @ for exact matching
+                                let parts: Vec<&str> = part.splitn(2, '@').collect();
+                                if parts.len() == 2 && parts[0] == name {
+                                    return Ok(parts[1].trim().to_string());
+                                }
+                            }
+                        }
+                    }
+                    // Also handle trees as array (Yarn 2+)
+                    if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
+                        for tree in trees {
+                            if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
+                                if tree_name.contains('@') {
+                                    let parts: Vec<&str> = tree_name.splitn(2, '@').collect();
+                                    if parts.len() == 2 && parts[0] == name {
+                                        return Ok(parts[1].trim().to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
 }
 
 impl Default for YarnProvider {
@@ -121,7 +168,7 @@ impl Provider for YarnProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("yarn").await.is_some()
+        system_detection::is_command_available("yarn", &["--version"]).await
     }
 
     async fn search(
@@ -247,15 +294,21 @@ impl Provider for YarnProvider {
 
         self.run_yarn(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_package_version(&req.name, req.global)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = if req.global {
-            Self::get_global_dir().unwrap_or_default()
+            Self::get_global_dir().unwrap_or_default().join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],

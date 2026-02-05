@@ -41,6 +41,24 @@ impl DotnetProvider {
         }
     }
 
+    /// Get NuGet packages directory
+    fn get_nuget_packages_dir() -> Option<PathBuf> {
+        // Check NUGET_PACKAGES env var first
+        if let Ok(path) = std::env::var("NUGET_PACKAGES") {
+            return Some(PathBuf::from(path));
+        }
+        // Default: ~/.nuget/packages
+        if cfg!(windows) {
+            std::env::var("USERPROFILE")
+                .ok()
+                .map(|p| PathBuf::from(p).join(".nuget").join("packages"))
+        } else {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".nuget").join("packages"))
+        }
+    }
+
     /// Search NuGet API
     async fn search_nuget(&self, query: &str, limit: usize) -> CogniaResult<NuGetSearchResults> {
         let url = format!(
@@ -184,6 +202,24 @@ impl DotnetProvider {
         fs::write_file(&global_json_path, json.as_bytes()).await?;
         Ok(())
     }
+
+    /// Get the installed version of a NuGet package from dotnet list package output
+    async fn get_package_version(&self, name: &str) -> CogniaResult<String> {
+        let output = self.run_dotnet(&["list", "package"]).await?;
+        
+        for line in output.lines() {
+            let line = line.trim();
+            if line.starts_with('>') && line.to_lowercase().contains(&name.to_lowercase()) {
+                // Format: "> PackageName    RequestedVersion    ResolvedVersion"
+                let parts: Vec<&str> = line[1..].split_whitespace().collect();
+                if parts.len() >= 3 {
+                    return Ok(parts[parts.len() - 1].to_string());
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
 }
 
 impl Default for DotnetProvider {
@@ -310,7 +346,7 @@ impl Provider for DotnetProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("dotnet").await.is_some()
+        system_detection::is_command_available("dotnet", &["--version"]).await
     }
 
     async fn search(
@@ -391,11 +427,21 @@ impl Provider for DotnetProvider {
 
         self.run_dotnet(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_package_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
+        // NuGet packages are stored in the global packages folder
+        let install_path = Self::get_nuget_packages_dir()
+            .unwrap_or_else(|| PathBuf::from(".nuget").join("packages"));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
@@ -433,11 +479,16 @@ impl Provider for DotnetProvider {
                         }
                     }
 
+                    // NuGet packages are typically in ~/.nuget/packages or project-local
+                    let nuget_path = Self::get_nuget_packages_dir()
+                        .map(|p| p.join(&name.to_lowercase()).join(&version))
+                        .unwrap_or_default();
+
                     packages.push(InstalledPackage {
                         name,
                         version,
                         provider: self.id().into(),
-                        install_path: PathBuf::new(),
+                        install_path: nuget_path,
                         installed_at: String::new(),
                         is_global: false,
                     });

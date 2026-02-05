@@ -83,6 +83,36 @@ impl BunProvider {
                 .map(|h| PathBuf::from(h).join(".bun").join("install").join("global"))
         }
     }
+
+    /// Get the installed version of a package using bun pm ls
+    async fn get_package_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        let args = if global {
+            vec!["pm", "ls", "-g"]
+        } else {
+            vec!["pm", "ls"]
+        };
+        
+        let output = self.run_bun_raw(&args).await?;
+        
+        // Parse bun pm ls output: package@version format
+        for line in output.lines() {
+            let line = line.trim();
+            if line.contains('@') {
+                // Format: package@version or package@version (extra info)
+                if let Some(at_pos) = line.find('@') {
+                    let pkg_name = &line[..at_pos];
+                    // Use exact match to avoid prefix false positives (e.g., "react" vs "react-dom")
+                    if pkg_name == name {
+                        let after_at = &line[at_pos + 1..];
+                        let version = after_at.split_whitespace().next().unwrap_or(after_at);
+                        return Ok(version.to_string());
+                    }
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
 }
 
 impl Default for BunProvider {
@@ -120,7 +150,7 @@ impl Provider for BunProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("bun").await.is_some()
+        system_detection::is_command_available("bun", &["--version"]).await
     }
 
     async fn search(
@@ -203,15 +233,21 @@ impl Provider for BunProvider {
 
         self.run_bun(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_package_version(&req.name, req.global)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         let install_path = if req.global {
-            Self::get_global_dir().unwrap_or_default()
+            Self::get_global_dir().unwrap_or_default().join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
 
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path,
             files: vec![],
@@ -257,11 +293,20 @@ impl Provider for BunProvider {
                     }
                 }
 
+                // Determine install path based on global or local
+                let install_path = if filter.global_only {
+                    Self::get_global_dir()
+                        .map(|p| p.join("install").join("global").join("node_modules").join(&name))
+                        .unwrap_or_default()
+                } else {
+                    PathBuf::from("node_modules").join(&name)
+                };
+
                 packages.push(InstalledPackage {
                     name,
                     version,
                     provider: self.id().into(),
-                    install_path: PathBuf::new(),
+                    install_path,
                     installed_at: String::new(),
                     is_global: filter.global_only,
                 });

@@ -26,6 +26,19 @@ impl MacPortsProvider {
             Err(CogniaError::Provider(out.stderr))
         }
     }
+
+    /// Get the installed version of a port
+    async fn get_port_version(&self, name: &str) -> CogniaResult<String> {
+        let out = self.run_port(&["installed", name]).await?;
+        for line in out.lines().skip(1) {
+            let line = line.trim();
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 && parts[0] == name {
+                return Ok(parts[1].trim_start_matches('@').to_string());
+            }
+        }
+        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+    }
 }
 
 impl Default for MacPortsProvider {
@@ -65,7 +78,14 @@ impl Provider for MacPortsProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("port").await.is_some()
+        if process::which("port").await.is_none() {
+            return false;
+        }
+        // Verify port actually works
+        match process::execute("port", &["version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -161,9 +181,15 @@ impl Provider for MacPortsProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_port_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
             install_path: PathBuf::from("/opt/local"),
             files: vec![],

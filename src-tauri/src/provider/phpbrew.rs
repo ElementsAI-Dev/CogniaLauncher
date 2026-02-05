@@ -72,9 +72,14 @@ impl PhpbrewProvider {
                 .unwrap_or("");
 
             if let Some(version) = version_part.strip_prefix("php-") {
+                // PHPBrew installs PHP versions in ~/.phpbrew/php/php-x.x.x
+                let install_path = Self::detect_phpbrew_root()
+                    .map(|root| root.join("php").join(format!("php-{}", version)))
+                    .unwrap_or_default();
+
                 versions.push(InstalledVersion {
                     version: version.to_string(),
-                    install_path: PathBuf::new(),
+                    install_path,
                     size: None,
                     installed_at: None,
                     is_current,
@@ -140,7 +145,14 @@ impl Provider for PhpbrewProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("phpbrew").await.is_some()
+        if process::which("phpbrew").await.is_none() {
+            return false;
+        }
+        // Verify phpbrew actually works
+        match process::execute("phpbrew", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(

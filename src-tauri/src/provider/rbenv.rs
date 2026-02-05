@@ -86,7 +86,14 @@ impl Provider for RbenvProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("rbenv").await.is_some()
+        if process::which("rbenv").await.is_none() {
+            return false;
+        }
+        // Verify rbenv actually works
+        match process::execute("rbenv", &["--version"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(

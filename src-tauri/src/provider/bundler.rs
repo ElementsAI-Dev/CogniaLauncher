@@ -180,11 +180,18 @@ impl BundlerProvider {
                         .trim_end_matches(')')
                         .to_string();
 
+                    let gem_name = name.trim().to_string();
+                    // Ruby gems are typically installed in GEM_HOME or vendor/bundle
+                    let install_path = std::env::var("GEM_HOME")
+                        .ok()
+                        .map(|p| PathBuf::from(p).join("gems").join(format!("{}-{}", &gem_name, &version)))
+                        .unwrap_or_else(|| PathBuf::from("vendor/bundle/gems").join(format!("{}-{}", &gem_name, &version)));
+
                     packages.push(InstalledPackage {
-                        name: name.trim().to_string(),
+                        name: gem_name,
                         version,
                         provider: "bundler".into(),
-                        install_path: PathBuf::new(),
+                        install_path,
                         installed_at: String::new(),
                         is_global: false,
                     });
@@ -193,6 +200,48 @@ impl BundlerProvider {
         }
 
         packages
+    }
+
+    /// Get the installed version of a gem from bundle list output
+    async fn get_gem_version(&self, name: &str) -> CogniaResult<String> {
+        let output = self.run_bundle(&["list"]).await?;
+        
+        for line in output.lines() {
+            let line = line.trim();
+            // Format: "  * gem_name (version)"
+            // Extract gem name from line for exact matching
+            let gem_name = line
+                .trim_start_matches('*')
+                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
+            
+            // Use exact match (case-insensitive) to avoid substring false positives
+            if gem_name.eq_ignore_ascii_case(name) {
+                if let Some((_, version_part)) = line.rsplit_once(' ') {
+                    let version = version_part
+                        .trim_start_matches('(')
+                        .trim_end_matches(')')
+                        .to_string();
+                    return Ok(version);
+                }
+            }
+        }
+        
+        Err(CogniaError::Provider(format!("Gem {} not found", name)))
+    }
+
+    /// Get Ruby gems installation directory
+    fn get_gem_home() -> Option<PathBuf> {
+        std::env::var("GEM_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join(".gem"))
+            })
     }
 }
 
@@ -280,7 +329,7 @@ impl Provider for BundlerProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("bundle").await.is_some()
+        system_detection::is_command_available("bundle", &["--version"]).await
     }
 
     async fn search(
@@ -343,11 +392,19 @@ impl Provider for BundlerProvider {
 
         self.run_bundle(&args).await?;
 
+        // Get the actual installed version
+        let actual_version = self
+            .get_gem_version(&req.name)
+            .await
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
+
+        let install_path = Self::get_gem_home().unwrap_or_default();
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_default(),
+            version: actual_version,
             provider: self.id().into(),
-            install_path: PathBuf::new(),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })

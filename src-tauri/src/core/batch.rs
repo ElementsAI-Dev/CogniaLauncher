@@ -1,6 +1,7 @@
 use crate::config::Settings;
-use crate::error::{CogniaError, CogniaResult};
 use crate::core::HistoryManager;
+use crate::error::{CogniaError, CogniaResult};
+use crate::platform::disk;
 use crate::provider::{InstallRequest, InstalledFilter, ProviderRegistry, UninstallRequest};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -185,6 +186,17 @@ impl BatchManager {
             .iter()
             .map(|p| PackageSpec::parse(p))
             .collect();
+
+        // Ensure there is enough disk space for installations
+        if !request.dry_run {
+            let cache_dir = self.settings.get_cache_dir();
+            let required = self
+                .settings
+                .general
+                .min_install_space_mb
+                .saturating_mul(1024 * 1024);
+            disk::ensure_space(&cache_dir, required).await?;
+        }
 
         // Check for already installed packages (if not forcing)
         let registry = self.registry.read().await;
@@ -855,6 +867,51 @@ pub struct PackageSpec {
 }
 
 impl PackageSpec {
+    /// Check if a string looks like a version specifier
+    fn looks_like_version(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+
+        // Common dist tags
+        let dist_tags = [
+            "latest", "next", "beta", "alpha", "canary", "rc", "stable", "dev", "nightly",
+        ];
+        let s_lower = s.to_lowercase();
+        if dist_tags.iter().any(|tag| s_lower == *tag || s_lower.starts_with(&format!("{}-", tag))) {
+            return true;
+        }
+
+        let first_char = s.chars().next().unwrap();
+
+        // Starts with digit: 1.0.0, 18.0.0
+        if first_char.is_ascii_digit() {
+            return true;
+        }
+
+        // Range prefixes: ^, ~, *, x, X
+        if matches!(first_char, '^' | '~' | '*' | 'x' | 'X') {
+            return true;
+        }
+
+        // Comparison operators followed by digit: >=1.0.0, <=2.0.0, >0.5, <3, =1.0
+        if matches!(first_char, '>' | '<' | '=') {
+            let rest = s.trim_start_matches(|c| c == '>' || c == '<' || c == '=');
+            if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                return true;
+            }
+        }
+
+        // Version prefix: v1.0.0, V1.0.0
+        if matches!(first_char, 'v' | 'V') {
+            if s.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn parse(input: &str) -> Self {
         let input = input.trim();
 
@@ -872,13 +929,14 @@ impl PackageSpec {
         // Check for version suffix: package@version
         let (name, version) = if let Some(idx) = rest.rfind('@') {
             let potential_version = &rest[idx + 1..];
-            // Check if it looks like a version
-            if potential_version
-                .chars()
-                .next()
-                .map(|c| c.is_ascii_digit() || c == '^' || c == '~' || c == '*')
-                .unwrap_or(false)
-            {
+            // Check if it looks like a version:
+            // - Digits: 1.0.0, 18.0.0
+            // - Range prefixes: ^1.0.0, ~1.0.0, >=1.0.0, <=1.0.0, >1.0.0, <1.0.0, =1.0.0
+            // - Wildcards: *, x, X
+            // - Version prefix: v1.0.0
+            // - Dist tags: latest, next, beta, alpha, canary, rc, stable, dev, nightly
+            let looks_like_version = Self::looks_like_version(potential_version);
+            if looks_like_version {
                 (rest[..idx].to_string(), Some(potential_version.to_string()))
             } else {
                 (rest.to_string(), None)
@@ -928,6 +986,81 @@ mod tests {
         let spec = PackageSpec::parse("@types/node@18.0.0");
         assert_eq!(spec.name, "@types/node");
         assert_eq!(spec.version, Some("18.0.0".into()));
+    }
+
+    #[test]
+    fn test_package_spec_scoped_no_version() {
+        let spec = PackageSpec::parse("@vue/cli-service");
+        assert_eq!(spec.name, "@vue/cli-service");
+        assert!(spec.version.is_none());
+    }
+
+    #[test]
+    fn test_package_spec_with_provider_scoped() {
+        let spec = PackageSpec::parse("npm:@types/node@18.0.0");
+        assert_eq!(spec.name, "@types/node");
+        assert_eq!(spec.version, Some("18.0.0".into()));
+        assert_eq!(spec.provider, Some("npm".into()));
+    }
+
+    #[test]
+    fn test_package_spec_comparison_operators() {
+        let spec = PackageSpec::parse("lodash@>=4.0.0");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some(">=4.0.0".into()));
+
+        let spec = PackageSpec::parse("lodash@<=4.0.0");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("<=4.0.0".into()));
+
+        let spec = PackageSpec::parse("lodash@>4.0.0");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some(">4.0.0".into()));
+
+        let spec = PackageSpec::parse("lodash@<4.0.0");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("<4.0.0".into()));
+
+        let spec = PackageSpec::parse("lodash@=4.0.0");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("=4.0.0".into()));
+    }
+
+    #[test]
+    fn test_package_spec_dist_tags() {
+        let spec = PackageSpec::parse("lodash@latest");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("latest".into()));
+
+        let spec = PackageSpec::parse("lodash@next");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("next".into()));
+
+        let spec = PackageSpec::parse("lodash@beta");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("beta".into()));
+
+        let spec = PackageSpec::parse("lodash@alpha");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("alpha".into()));
+    }
+
+    #[test]
+    fn test_package_spec_version_prefix() {
+        let spec = PackageSpec::parse("lodash@v4.17.21");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("v4.17.21".into()));
+    }
+
+    #[test]
+    fn test_package_spec_wildcards() {
+        let spec = PackageSpec::parse("lodash@*");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("*".into()));
+
+        let spec = PackageSpec::parse("lodash@x");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("x".into()));
     }
 
     #[test]

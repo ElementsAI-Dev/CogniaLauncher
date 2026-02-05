@@ -43,6 +43,17 @@ export interface DetectedEnvironment {
   source_path: string | null;
 }
 
+/** System-detected environment information (not managed by version managers) */
+export interface SystemEnvironmentInfo {
+  env_type: string;
+  version: string;
+  executable_path: string | null;
+  source: string;
+}
+
+/** Environment type mapping from provider ID to logical type */
+export type EnvironmentTypeMapping = Record<string, string>;
+
 export interface EnvironmentProviderInfo {
   id: string;
   display_name: string;
@@ -802,10 +813,23 @@ export interface EnvironmentHealthResult {
   checked_at: string;
 }
 
+/** Result of a health check for a package manager */
+export interface PackageManagerHealthResult {
+  provider_id: string;
+  display_name: string;
+  status: HealthStatus;
+  version: string | null;
+  executable_path: string | null;
+  issues: HealthIssue[];
+  install_instructions: string | null;
+  checked_at: string;
+}
+
 /** Result of a full system health check */
 export interface SystemHealthResult {
   overall_status: HealthStatus;
   environments: EnvironmentHealthResult[];
+  package_managers: PackageManagerHealthResult[];
   system_issues: HealthIssue[];
   checked_at: string;
 }

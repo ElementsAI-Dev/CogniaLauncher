@@ -540,7 +540,7 @@ export default function SettingsPage() {
       )}
 
       {!initialLoadComplete ? (
-        <SettingsSkeleton />
+        <SettingsSkeleton loadingLabel={t('settings.loading')} />
       ) : (
         <div className="flex gap-6">
           {/* Sidebar Navigation - Hidden on mobile */}

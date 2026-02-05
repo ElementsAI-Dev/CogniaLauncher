@@ -41,6 +41,18 @@ export function GeneralSettings({ localConfig, errors, onValueChange, t }: Gener
         />
         <Separator />
         <SettingItem
+          id="min-install-space"
+          label={t('settings.minInstallSpace')}
+          description={t('settings.minInstallSpaceDesc')}
+          value={localConfig['general.min_install_space_mb'] || '100'}
+          onChange={(v) => onValueChange('general.min_install_space_mb', v)}
+          type="number"
+          min={10}
+          max={10240}
+          error={errors['general.min_install_space_mb']}
+        />
+        <Separator />
+        <SettingItem
           id="metadata-cache-ttl"
           label={t('settings.metadataCacheTtl')}
           description={t('settings.metadataCacheTtlDesc')}

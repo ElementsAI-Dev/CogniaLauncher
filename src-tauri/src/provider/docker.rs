@@ -53,7 +53,14 @@ impl Provider for DockerProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("docker").await.is_some()
+        if process::which("docker").await.is_none() {
+            return false;
+        }
+        // Verify docker daemon is running
+        match process::execute("docker", &["info"], None).await {
+            Ok(output) => output.success,
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -238,11 +245,20 @@ impl Provider for DockerProvider {
                 let created = json["CreatedAt"].as_str().unwrap_or("").to_string();
                 let _size = json["Size"].as_str().unwrap_or("").to_string();
 
+                // Docker images are stored in the Docker data directory
+                let docker_data = if cfg!(windows) {
+                    PathBuf::from("C:\\ProgramData\\Docker\\windowsfilter")
+                } else if cfg!(target_os = "macos") {
+                    PathBuf::from("/var/lib/docker/image")
+                } else {
+                    PathBuf::from("/var/lib/docker/image")
+                };
+
                 Some(InstalledPackage {
-                    name,
+                    name: name.clone(),
                     version: tag.into(),
                     provider: self.id().into(),
-                    install_path: PathBuf::new(),
+                    install_path: docker_data.join(&name),
                     installed_at: created,
                     is_global: true,
                 })
