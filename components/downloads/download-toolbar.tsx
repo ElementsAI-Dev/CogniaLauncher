@@ -1,19 +1,18 @@
-'use client';
+"use client";
 
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Search,
-  Pause,
-  Play,
-  X,
-  RefreshCw,
-  Trash2,
-} from 'lucide-react';
-import type { QueueStats } from '@/lib/stores/download';
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Pause, Play, X, RefreshCw, Trash2 } from "lucide-react";
+import type { QueueStats } from "@/lib/stores/download";
 
-export type StatusFilter = 'all' | 'downloading' | 'queued' | 'paused' | 'completed' | 'failed';
+export type StatusFilter =
+  | "all"
+  | "downloading"
+  | "queued"
+  | "paused"
+  | "completed"
+  | "failed";
 
 export interface DownloadToolbarProps {
   searchQuery: string;
@@ -54,7 +53,7 @@ export function DownloadToolbar({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
-            placeholder={t('downloads.toolbar.searchPlaceholder')}
+            placeholder={t("downloads.toolbar.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="pl-9"
@@ -69,7 +68,7 @@ export function DownloadToolbar({
             className="gap-2"
           >
             <Pause className="h-4 w-4" />
-            {t('downloads.actions.pauseAll')}
+            {t("downloads.actions.pauseAll")}
           </Button>
           <Button
             variant="outline"
@@ -79,7 +78,7 @@ export function DownloadToolbar({
             className="gap-2"
           >
             <Play className="h-4 w-4" />
-            {t('downloads.actions.resumeAll')}
+            {t("downloads.actions.resumeAll")}
           </Button>
           <Button
             variant="outline"
@@ -89,7 +88,7 @@ export function DownloadToolbar({
             className="gap-2"
           >
             <RefreshCw className="h-4 w-4" />
-            {t('downloads.actions.retryFailed')}
+            {t("downloads.actions.retryFailed")}
           </Button>
           <Button
             variant="outline"
@@ -99,7 +98,7 @@ export function DownloadToolbar({
             className="gap-2"
           >
             <Trash2 className="h-4 w-4" />
-            {t('downloads.actions.clearFinished')}
+            {t("downloads.actions.clearFinished")}
           </Button>
           <Button
             variant="destructive"
@@ -109,7 +108,7 @@ export function DownloadToolbar({
             className="gap-2"
           >
             <X className="h-4 w-4" />
-            {t('downloads.actions.cancelAll')}
+            {t("downloads.actions.cancelAll")}
           </Button>
         </div>
       </div>
@@ -120,22 +119,22 @@ export function DownloadToolbar({
       >
         <TabsList>
           <TabsTrigger value="all">
-            {t('downloads.toolbar.filterAll')} ({stats.totalTasks})
+            {t("downloads.toolbar.filterAll")} ({stats.totalTasks})
           </TabsTrigger>
           <TabsTrigger value="downloading">
-            {t('downloads.toolbar.filterDownloading')} ({stats.downloading})
+            {t("downloads.toolbar.filterDownloading")} ({stats.downloading})
           </TabsTrigger>
           <TabsTrigger value="queued">
-            {t('downloads.toolbar.filterQueued')} ({stats.queued})
+            {t("downloads.toolbar.filterQueued")} ({stats.queued})
           </TabsTrigger>
           <TabsTrigger value="paused">
-            {t('downloads.toolbar.filterPaused')} ({stats.paused})
+            {t("downloads.toolbar.filterPaused")} ({stats.paused})
           </TabsTrigger>
           <TabsTrigger value="completed">
-            {t('downloads.toolbar.filterCompleted')} ({stats.completed})
+            {t("downloads.toolbar.filterCompleted")} ({stats.completed})
           </TabsTrigger>
           <TabsTrigger value="failed">
-            {t('downloads.toolbar.filterFailed')} ({stats.failed})
+            {t("downloads.toolbar.filterFailed")} ({stats.failed})
           </TabsTrigger>
         </TabsList>
       </Tabs>

@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { ThemeProvider as NextThemesProvider, useTheme } from 'next-themes';
-import { useAppearanceStore } from '@/lib/stores/appearance';
-import { applyAccentColor } from '@/lib/theme/colors';
+import * as React from "react";
+import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
+import { useAppearanceStore } from "@/lib/stores/appearance";
+import { applyAccentColor } from "@/lib/theme/colors";
 
 /**
  * Manages accent color application based on theme and user preferences.
@@ -20,19 +20,19 @@ function AccentColorManager({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (!mounted) return;
-    
-    const isDark = resolvedTheme === 'dark';
+
+    const isDark = resolvedTheme === "dark";
     applyAccentColor(accentColor, isDark);
   }, [resolvedTheme, accentColor, mounted]);
 
   React.useEffect(() => {
     if (!mounted) return;
-    
+
     const root = document.documentElement;
     if (reducedMotion) {
-      root.classList.add('no-transitions');
+      root.classList.add("no-transitions");
     } else {
-      root.classList.remove('no-transitions');
+      root.classList.remove("no-transitions");
     }
   }, [reducedMotion, mounted]);
 

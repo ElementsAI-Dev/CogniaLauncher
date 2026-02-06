@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,12 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Download,
   Upload,
@@ -23,30 +23,39 @@ import {
   Check,
   Package,
   Loader2,
-} from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import { usePackageExport, ExportedPackageList } from '@/hooks/use-package-export';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import {
+  usePackageExport,
+  ExportedPackageList,
+} from "@/hooks/use-package-export";
+import { toast } from "sonner";
 
 interface ExportImportDialogProps {
   trigger?: React.ReactNode;
   onImport?: (data: ExportedPackageList) => Promise<void>;
 }
 
-export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProps) {
+export function ExportImportDialog({
+  trigger,
+  onImport,
+}: ExportImportDialogProps) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
-  const [importedData, setImportedData] = useState<ExportedPackageList | null>(null);
+  const [activeTab, setActiveTab] = useState<"export" | "import">("export");
+  const [importedData, setImportedData] = useState<ExportedPackageList | null>(
+    null,
+  );
   const [selectedForImport, setSelectedForImport] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { exportPackages, importPackages, exportToClipboard } = usePackageExport();
+  const { exportPackages, importPackages, exportToClipboard } =
+    usePackageExport();
 
   const handleExportJson = useCallback(() => {
     exportPackages();
-    toast.success(t('packages.exportSuccess'));
+    toast.success(t("packages.exportSuccess"));
   }, [exportPackages, t]);
 
   const handleExportClipboard = useCallback(async () => {
@@ -65,10 +74,10 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
       }
 
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     },
-    [importPackages]
+    [importPackages],
   );
 
   const handleImportConfirm = useCallback(async () => {
@@ -77,7 +86,7 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
     const filteredData: ExportedPackageList = {
       ...importedData,
       packages: importedData.packages.filter((p) =>
-        selectedForImport.includes(p.name)
+        selectedForImport.includes(p.name),
       ),
     };
 
@@ -85,13 +94,13 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
     try {
       await onImport(filteredData);
       toast.success(
-        t('packages.importCompleted', { count: filteredData.packages.length })
+        t("packages.importCompleted", { count: filteredData.packages.length }),
       );
       setOpen(false);
       setImportedData(null);
       setSelectedForImport([]);
     } catch (err) {
-      toast.error(t('packages.importFailed', { error: String(err) }));
+      toast.error(t("packages.importFailed", { error: String(err) }));
     } finally {
       setIsImporting(false);
     }
@@ -99,7 +108,7 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
 
   const togglePackageSelection = useCallback((name: string) => {
     setSelectedForImport((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     );
   }, []);
 
@@ -118,27 +127,30 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
         {trigger || (
           <Button variant="outline" size="sm">
             <FileJson className="h-4 w-4 mr-2" />
-            {t('packages.exportImport')}
+            {t("packages.exportImport")}
           </Button>
         )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{t('packages.exportImportTitle')}</DialogTitle>
+          <DialogTitle>{t("packages.exportImportTitle")}</DialogTitle>
           <DialogDescription>
-            {t('packages.exportImportDesc')}
+            {t("packages.exportImportDesc")}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'export' | 'import')}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as "export" | "import")}
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="export" className="gap-2">
               <Download className="h-4 w-4" />
-              {t('packages.export')}
+              {t("packages.export")}
             </TabsTrigger>
             <TabsTrigger value="import" className="gap-2">
               <Upload className="h-4 w-4" />
-              {t('packages.import')}
+              {t("packages.import")}
             </TabsTrigger>
           </TabsList>
 
@@ -151,9 +163,11 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
               >
                 <FileJson className="h-5 w-5 mr-3 text-blue-500" />
                 <div className="text-left">
-                  <div className="font-medium">{t('packages.exportAsJson')}</div>
+                  <div className="font-medium">
+                    {t("packages.exportAsJson")}
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {t('packages.exportAsJsonDesc')}
+                    {t("packages.exportAsJsonDesc")}
                   </div>
                 </div>
               </Button>
@@ -165,9 +179,11 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
               >
                 <Copy className="h-5 w-5 mr-3 text-green-500" />
                 <div className="text-left">
-                  <div className="font-medium">{t('packages.exportToClipboard')}</div>
+                  <div className="font-medium">
+                    {t("packages.exportToClipboard")}
+                  </div>
                   <div className="text-xs text-muted-foreground">
-                    {t('packages.exportToClipboardDesc')}
+                    {t("packages.exportToClipboardDesc")}
                   </div>
                 </div>
               </Button>
@@ -191,9 +207,11 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                 >
                   <FileText className="h-5 w-5 mr-3 text-orange-500" />
                   <div className="text-left">
-                    <div className="font-medium">{t('packages.selectFile')}</div>
+                    <div className="font-medium">
+                      {t("packages.selectFile")}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      {t('packages.selectFileDesc')}
+                      {t("packages.selectFileDesc")}
                     </div>
                   </div>
                 </Button>
@@ -204,11 +222,11 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                   <div className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-green-500" />
                     <span className="text-sm font-medium">
-                      {t('packages.fileLoaded')}
+                      {t("packages.fileLoaded")}
                     </span>
                   </div>
                   <Badge variant="secondary">
-                    {importedData.packages.length} {t('packages.packagesLabel')}
+                    {importedData.packages.length} {t("packages.packagesLabel")}
                   </Badge>
                 </div>
 
@@ -221,8 +239,10 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                   />
                   <span className="text-sm text-muted-foreground">
                     {selectedForImport.length > 0
-                      ? t('packages.selected', { count: selectedForImport.length })
-                      : t('packages.selectAll')}
+                      ? t("packages.selected", {
+                          count: selectedForImport.length,
+                        })
+                      : t("packages.selectAll")}
                   </span>
                 </div>
 
@@ -236,12 +256,17 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                       >
                         <Checkbox
                           checked={selectedForImport.includes(pkg.name)}
-                          onCheckedChange={() => togglePackageSelection(pkg.name)}
+                          onCheckedChange={() =>
+                            togglePackageSelection(pkg.name)
+                          }
                         />
                         <Package className="h-4 w-4 text-muted-foreground" />
                         <span className="text-sm flex-1">{pkg.name}</span>
                         {pkg.version && (
-                          <Badge variant="outline" className="text-xs font-mono">
+                          <Badge
+                            variant="outline"
+                            className="text-xs font-mono"
+                          >
                             {pkg.version}
                           </Badge>
                         )}
@@ -264,7 +289,7 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                       setSelectedForImport([]);
                     }}
                   >
-                    {t('common.cancel')}
+                    {t("common.cancel")}
                   </Button>
                   <Button
                     className="flex-1"
@@ -276,7 +301,7 @@ export function ExportImportDialog({ trigger, onImport }: ExportImportDialogProp
                     ) : (
                       <Download className="h-4 w-4 mr-2" />
                     )}
-                    {t('packages.installSelected', {
+                    {t("packages.installSelected", {
                       count: selectedForImport.length,
                     })}
                   </Button>

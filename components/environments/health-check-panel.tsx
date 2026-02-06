@@ -1,17 +1,23 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+} from "@/components/ui/collapsible";
 import {
   AlertCircle,
   AlertTriangle,
@@ -23,18 +29,19 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
-} from 'lucide-react';
-import { useHealthCheck } from '@/hooks/use-health-check';
-import type { HealthIssue, HealthStatus, Severity } from '@/lib/tauri';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { useHealthCheck } from "@/hooks/use-health-check";
+import type { HealthIssue, HealthStatus, Severity } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 
 interface HealthCheckPanelProps {
   className?: string;
 }
 
 export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
-  const t = useTranslations('environments.healthCheck');
-  const { systemHealth, loading, error, checkAll, getStatusColor } = useHealthCheck();
+  const t = useTranslations("environments.healthCheck");
+  const { systemHealth, loading, error, checkAll, getStatusColor } =
+    useHealthCheck();
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
 
   const toggleExpanded = (envType: string) => {
@@ -51,11 +58,11 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
 
   const getStatusIcon = (status: HealthStatus) => {
     switch (status) {
-      case 'healthy':
+      case "healthy":
         return <CheckCircle2 className="h-4 w-4 text-green-600" />;
-      case 'warning':
+      case "warning":
         return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
-      case 'error':
+      case "error":
         return <AlertCircle className="h-4 w-4 text-red-600" />;
       default:
         return <HelpCircle className="h-4 w-4 text-gray-400" />;
@@ -67,12 +74,12 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
   };
 
   return (
-    <Card className={cn('', className)}>
+    <Card className={cn("", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5" />
-            <CardTitle className="text-lg">{t('title')}</CardTitle>
+            <CardTitle className="text-lg">{t("title")}</CardTitle>
           </div>
           <Button
             variant="outline"
@@ -85,10 +92,10 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
             ) : (
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
-            {t('runCheck')}
+            {t("runCheck")}
           </Button>
         </div>
-        <CardDescription>{t('description')}</CardDescription>
+        <CardDescription>{t("description")}</CardDescription>
       </CardHeader>
 
       <CardContent>
@@ -102,8 +109,8 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
         {!systemHealth && !loading && (
           <div className="text-center py-8 text-muted-foreground">
             <ShieldCheck className="h-12 w-12 mx-auto mb-3 opacity-50" />
-            <p>{t('noResults')}</p>
-            <p className="text-sm mt-1">{t('clickToCheck')}</p>
+            <p>{t("noResults")}</p>
+            <p className="text-sm mt-1">{t("clickToCheck")}</p>
           </div>
         )}
 
@@ -112,8 +119,8 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
             {/* Overall Status */}
             <div
               className={cn(
-                'p-4 rounded-lg border',
-                getStatusColor(systemHealth.overall_status)
+                "p-4 rounded-lg border",
+                getStatusColor(systemHealth.overall_status),
               )}
             >
               <div className="flex items-center gap-2">
@@ -123,7 +130,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                 </span>
               </div>
               <p className="text-sm mt-1 opacity-80">
-                {t('checkedAt', {
+                {t("checkedAt", {
                   time: new Date(systemHealth.checked_at).toLocaleTimeString(),
                 })}
               </p>
@@ -132,9 +139,14 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
             {/* System Issues */}
             {systemHealth.system_issues.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">{t('systemIssues')}</h4>
+                <h4 className="text-sm font-medium">{t("systemIssues")}</h4>
                 {systemHealth.system_issues.map((issue, idx) => (
-                  <IssueCard key={idx} issue={issue} onCopy={copyToClipboard} t={t} />
+                  <IssueCard
+                    key={idx}
+                    issue={issue}
+                    onCopy={copyToClipboard}
+                    t={t}
+                  />
                 ))}
               </div>
             )}
@@ -151,10 +163,10 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                     <CollapsibleTrigger asChild>
                       <div
                         className={cn(
-                          'flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors',
-                          env.status === 'healthy' && 'border-green-200',
-                          env.status === 'warning' && 'border-yellow-200',
-                          env.status === 'error' && 'border-red-200'
+                          "flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors",
+                          env.status === "healthy" && "border-green-200",
+                          env.status === "warning" && "border-yellow-200",
+                          env.status === "error" && "border-red-200",
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -173,19 +185,19 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                         <div className="flex items-center gap-2">
                           <Badge
                             variant={
-                              env.status === 'healthy'
-                                ? 'default'
-                                : env.status === 'warning'
-                                ? 'secondary'
-                                : 'destructive'
+                              env.status === "healthy"
+                                ? "default"
+                                : env.status === "warning"
+                                  ? "secondary"
+                                  : "destructive"
                             }
                           >
-                            {env.issues.length} {t('issues')}
+                            {env.issues.length} {t("issues")}
                           </Badge>
                           <ChevronDown
                             className={cn(
-                              'h-4 w-4 transition-transform',
-                              expandedEnvs.has(env.env_type) && 'rotate-180'
+                              "h-4 w-4 transition-transform",
+                              expandedEnvs.has(env.env_type) && "rotate-180",
                             )}
                           />
                         </div>
@@ -223,11 +235,12 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                           </div>
                         )}
 
-                        {env.issues.length === 0 && env.suggestions.length === 0 && (
-                          <p className="text-sm text-muted-foreground py-2">
-                            {t('noIssues')}
-                          </p>
-                        )}
+                        {env.issues.length === 0 &&
+                          env.suggestions.length === 0 && (
+                            <p className="text-sm text-muted-foreground py-2">
+                              {t("noIssues")}
+                            </p>
+                          )}
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -248,24 +261,24 @@ interface IssueCardProps {
 }
 
 function IssueCard({ issue, onCopy, t }: IssueCardProps) {
-  const getAlertVariant = (severity: Severity): 'default' | 'destructive' => {
+  const getAlertVariant = (severity: Severity): "default" | "destructive" => {
     switch (severity) {
-      case 'critical':
-      case 'error':
-        return 'destructive';
+      case "critical":
+      case "error":
+        return "destructive";
       default:
-        return 'default';
+        return "default";
     }
   };
 
   const getSeverityIcon = (severity: Severity) => {
     switch (severity) {
-      case 'critical':
-      case 'error':
+      case "critical":
+      case "error":
         return <AlertCircle className="h-4 w-4" />;
-      case 'warning':
+      case "warning":
         return <AlertTriangle className="h-4 w-4" />;
-      case 'info':
+      case "info":
       default:
         return <Info className="h-4 w-4" />;
     }
@@ -289,7 +302,7 @@ function IssueCard({ issue, onCopy, t }: IssueCardProps) {
               size="sm"
               className="h-6 w-6 p-0"
               onClick={() => onCopy(issue.fix_command!)}
-              title={t('copyCommand')}
+              title={t("copyCommand")}
             >
               <Copy className="h-3 w-3" />
             </Button>

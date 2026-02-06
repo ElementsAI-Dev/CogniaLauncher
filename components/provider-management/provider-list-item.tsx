@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { useState, useCallback } from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
+import { useState, useCallback } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { Loader2, CheckCircle2, XCircle, Activity } from 'lucide-react';
-import type { ProviderInfo } from '@/lib/tauri';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/tooltip";
+import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import type { ProviderInfo } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 
 export interface ProviderListItemProps {
   provider: ProviderInfo;
@@ -23,33 +23,33 @@ export interface ProviderListItemProps {
 }
 
 const PROVIDER_ICONS: Record<string, string> = {
-  npm: '📦',
-  pnpm: '⚡',
-  uv: '🐍',
-  cargo: '🦀',
-  chocolatey: '🍫',
-  scoop: '🥄',
-  winget: '🪟',
-  brew: '🍺',
-  apt: '🐧',
-  dnf: '🎩',
-  pacman: '👻',
-  zypper: '🦎',
-  apk: '🏔️',
-  vcpkg: '📚',
-  docker: '🐳',
-  psgallery: '💠',
-  github: '🐙',
-  nvm: '💚',
-  fnm: '⚡',
-  pyenv: '🐍',
-  rustup: '🦀',
-  goenv: '🔵',
-  flatpak: '📦',
-  snap: '🔶',
-  macports: '🚢',
-  pip: '🐍',
-  yarn: '🧶',
+  npm: "📦",
+  pnpm: "⚡",
+  uv: "🐍",
+  cargo: "🦀",
+  chocolatey: "🍫",
+  scoop: "🥄",
+  winget: "🪟",
+  brew: "🍺",
+  apt: "🐧",
+  dnf: "🎩",
+  pacman: "👻",
+  zypper: "🦎",
+  apk: "🏔️",
+  vcpkg: "📚",
+  docker: "🐳",
+  psgallery: "💠",
+  github: "🐙",
+  nvm: "💚",
+  fnm: "⚡",
+  pyenv: "🐍",
+  rustup: "🦀",
+  goenv: "🔵",
+  flatpak: "📦",
+  snap: "🔶",
+  macports: "🚢",
+  pip: "🐍",
+  yarn: "🧶",
 };
 
 export function ProviderListItem({
@@ -61,7 +61,9 @@ export function ProviderListItem({
   t,
 }: ProviderListItemProps) {
   const [isChecking, setIsChecking] = useState(false);
-  const [localAvailable, setLocalAvailable] = useState<boolean | undefined>(isAvailable);
+  const [localAvailable, setLocalAvailable] = useState<boolean | undefined>(
+    isAvailable,
+  );
 
   const handleCheckStatus = useCallback(async () => {
     setIsChecking(true);
@@ -74,7 +76,7 @@ export function ProviderListItem({
   }, [onCheckStatus, provider.id]);
 
   const getProviderIcon = (providerId: string) => {
-    return PROVIDER_ICONS[providerId] || '📦';
+    return PROVIDER_ICONS[providerId] || "📦";
   };
 
   const availabilityStatus = localAvailable ?? isAvailable;
@@ -82,8 +84,8 @@ export function ProviderListItem({
   return (
     <div
       className={cn(
-        'flex items-center justify-between p-4 border rounded-lg transition-all duration-200 hover:bg-muted/50',
-        !provider.enabled && 'opacity-60'
+        "flex items-center justify-between p-4 border rounded-lg transition-all duration-200 hover:bg-muted/50",
+        !provider.enabled && "opacity-60",
       )}
     >
       <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -93,23 +95,26 @@ export function ProviderListItem({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-medium truncate">{provider.display_name}</span>
-            <span className="text-xs text-muted-foreground font-mono">({provider.id})</span>
+            <span className="font-medium truncate">
+              {provider.display_name}
+            </span>
+            <span className="text-xs text-muted-foreground font-mono">
+              ({provider.id})
+            </span>
           </div>
           <div className="flex items-center gap-2 mt-1">
             {provider.is_environment_provider && (
               <Badge variant="outline" className="text-xs">
-                {t('providers.filterEnvironment')}
+                {t("providers.filterEnvironment")}
               </Badge>
             )}
             <span className="text-xs text-muted-foreground">
-              {t('providers.priority')}: {provider.priority}
+              {t("providers.priority")}: {provider.priority}
             </span>
+            <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs text-muted-foreground">
-              •
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {provider.capabilities.length} {t('providers.capabilities').toLowerCase()}
+              {provider.capabilities.length}{" "}
+              {t("providers.capabilities").toLowerCase()}
             </span>
           </div>
         </div>
@@ -118,21 +123,21 @@ export function ProviderListItem({
       <div className="flex items-center gap-4 flex-shrink-0">
         {availabilityStatus !== undefined && (
           <Badge
-            variant={availabilityStatus ? 'default' : 'destructive'}
+            variant={availabilityStatus ? "default" : "destructive"}
             className={cn(
-              'text-xs whitespace-nowrap gap-1',
-              availabilityStatus && 'bg-green-600 hover:bg-green-700'
+              "text-xs whitespace-nowrap gap-1",
+              availabilityStatus && "bg-green-600 hover:bg-green-700",
             )}
           >
             {availabilityStatus ? (
               <>
                 <CheckCircle2 className="h-3 w-3" />
-                {t('providers.statusAvailable')}
+                {t("providers.statusAvailable")}
               </>
             ) : (
               <>
                 <XCircle className="h-3 w-3" />
-                {t('providers.statusUnavailable')}
+                {t("providers.statusUnavailable")}
               </>
             )}
           </Badge>
@@ -155,7 +160,7 @@ export function ProviderListItem({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('providers.checkStatus')}</p>
+            <p>{t("providers.checkStatus")}</p>
           </TooltipContent>
         </Tooltip>
 

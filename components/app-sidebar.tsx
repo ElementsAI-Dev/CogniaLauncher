@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   Home,
   Package,
@@ -12,7 +12,7 @@ import {
   Info,
   ScrollText,
   ArrowDownToLine,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -25,21 +25,21 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from '@/components/ui/sidebar';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { LanguageToggle } from '@/components/language-toggle';
-import { useLocale } from '@/components/providers/locale-provider';
+} from "@/components/ui/sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useLocale } from "@/components/providers/locale-provider";
 
 const navItems = [
-  { href: '/', labelKey: 'nav.dashboard', icon: Home },
-  { href: '/environments', labelKey: 'nav.environments', icon: Layers },
-  { href: '/packages', labelKey: 'nav.packages', icon: Package },
-  { href: '/providers', labelKey: 'nav.providers', icon: Server },
-  { href: '/cache', labelKey: 'nav.cache', icon: HardDrive },
-  { href: '/downloads', labelKey: 'nav.downloads', icon: ArrowDownToLine },
-  { href: '/logs', labelKey: 'nav.logs', icon: ScrollText },
-  { href: '/settings', labelKey: 'nav.settings', icon: Settings },
-  { href: '/about', labelKey: 'nav.about', icon: Info },
+  { href: "/", labelKey: "nav.dashboard", icon: Home },
+  { href: "/environments", labelKey: "nav.environments", icon: Layers },
+  { href: "/packages", labelKey: "nav.packages", icon: Package },
+  { href: "/providers", labelKey: "nav.providers", icon: Server },
+  { href: "/cache", labelKey: "nav.cache", icon: HardDrive },
+  { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine },
+  { href: "/logs", labelKey: "nav.logs", icon: ScrollText },
+  { href: "/settings", labelKey: "nav.settings", icon: Settings },
+  { href: "/about", labelKey: "nav.about", icon: Info },
 ];
 
 export function AppSidebar() {
@@ -54,15 +54,17 @@ export function AppSidebar() {
             <Layers className="h-4 w-4" />
           </div>
           <div className="sidebar-text flex flex-col">
-            <span className="text-sm font-semibold">{t('common.appName')}</span>
-            <span className="text-xs text-muted-foreground">{t('common.appDescription')}</span>
+            <span className="text-sm font-semibold">{t("common.appName")}</span>
+            <span className="text-xs text-muted-foreground">
+              {t("common.appDescription")}
+            </span>
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>{t('nav.dashboard')}</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("nav.dashboard")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.slice(0, 1).map((item) => {
@@ -70,7 +72,11 @@ export function AppSidebar() {
                 const isActive = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      tooltip={t(item.labelKey)}
+                    >
                       <Link href={item.href}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
@@ -84,7 +90,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>{t('nav.environments')}</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("nav.environments")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.slice(1, 6).map((item) => {
@@ -92,7 +98,11 @@ export function AppSidebar() {
                 const isActive = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      tooltip={t(item.labelKey)}
+                    >
                       <Link href={item.href}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
@@ -106,7 +116,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>{t('nav.settings')}</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("nav.settings")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.slice(6).map((item) => {
@@ -114,7 +124,11 @@ export function AppSidebar() {
                 const isActive = pathname === item.href;
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      tooltip={t(item.labelKey)}
+                    >
                       <Link href={item.href}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
@@ -131,7 +145,7 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1">
           <span className="sidebar-text text-xs text-muted-foreground">
-            {t('common.version')}
+            {t("common.version")}
           </span>
           <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
             <ThemeToggle />

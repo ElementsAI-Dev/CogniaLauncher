@@ -1,64 +1,66 @@
-import { render, screen } from '@testing-library/react';
-import { LogPanel } from './log-panel';
-import { useLogStore } from '@/lib/stores/log';
+import { render, screen } from "@testing-library/react";
+import { LogPanel } from "./log-panel";
+import { useLogStore } from "@/lib/stores/log";
 
 // Mock tauri module
-jest.mock('@/lib/tauri', () => ({
+jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn(() => true),
 }));
 
 // Mock locale provider
-jest.mock('@/components/providers/locale-provider', () => ({
+jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
-        'logs.searchPlaceholder': 'Search logs...',
-        'logs.filter': 'Filter',
-        'logs.logLevels': 'Log Levels',
-        'logs.pause': 'Pause',
-        'logs.resume': 'Resume',
-        'logs.autoScrollOn': 'Auto-scroll enabled',
-        'logs.autoScrollOff': 'Auto-scroll disabled',
-        'logs.timeRange': 'Time range',
-        'logs.timeRangeAll': 'All time',
-        'logs.timeRangeLastHour': 'Last hour',
-        'logs.timeRangeLast24Hours': 'Last 24 hours',
-        'logs.timeRangeLast7Days': 'Last 7 days',
-        'logs.timeRangeCustom': 'Custom range',
-        'logs.timeRangeStart': 'Start time',
-        'logs.timeRangeEnd': 'End time',
-        'logs.timeRangeTo': 'to',
-        'logs.regex': 'Regex',
-        'logs.maxLogs': 'Max logs',
-        'logs.export': 'Export logs',
-        'logs.exportTxt': 'Export TXT',
-        'logs.exportJson': 'Export JSON',
-        'logs.clear': 'Clear logs',
-        'logs.total': 'Total',
-        'logs.paused': 'Paused',
-        'logs.entries': 'entries',
-        'logs.noLogs': 'No logs yet',
-        'logs.noLogsDescription': 'Logs will appear here as the application runs',
-        'logs.notAvailable': 'Logs not available',
-        'logs.notAvailableDescription': 'Log viewer is only available in the desktop application',
-        'logs.expand': 'Expand',
-        'logs.collapse': 'Collapse',
-        'common.copy': 'Copy',
+        "logs.searchPlaceholder": "Search logs...",
+        "logs.filter": "Filter",
+        "logs.logLevels": "Log Levels",
+        "logs.pause": "Pause",
+        "logs.resume": "Resume",
+        "logs.autoScrollOn": "Auto-scroll enabled",
+        "logs.autoScrollOff": "Auto-scroll disabled",
+        "logs.timeRange": "Time range",
+        "logs.timeRangeAll": "All time",
+        "logs.timeRangeLastHour": "Last hour",
+        "logs.timeRangeLast24Hours": "Last 24 hours",
+        "logs.timeRangeLast7Days": "Last 7 days",
+        "logs.timeRangeCustom": "Custom range",
+        "logs.timeRangeStart": "Start time",
+        "logs.timeRangeEnd": "End time",
+        "logs.timeRangeTo": "to",
+        "logs.regex": "Regex",
+        "logs.maxLogs": "Max logs",
+        "logs.export": "Export logs",
+        "logs.exportTxt": "Export TXT",
+        "logs.exportJson": "Export JSON",
+        "logs.clear": "Clear logs",
+        "logs.total": "Total",
+        "logs.paused": "Paused",
+        "logs.entries": "entries",
+        "logs.noLogs": "No logs yet",
+        "logs.noLogsDescription":
+          "Logs will appear here as the application runs",
+        "logs.notAvailable": "Logs not available",
+        "logs.notAvailableDescription":
+          "Log viewer is only available in the desktop application",
+        "logs.expand": "Expand",
+        "logs.collapse": "Collapse",
+        "common.copy": "Copy",
       };
       return translations[key] || key;
     },
   }),
 }));
 
-describe('LogPanel', () => {
+describe("LogPanel", () => {
   beforeEach(() => {
     // Reset store state
     useLogStore.setState({
       logs: [],
       maxLogs: 1000,
       filter: {
-        levels: ['info', 'warn', 'error'],
-        search: '',
+        levels: ["info", "warn", "error"],
+        search: "",
         useRegex: false,
         startTime: null,
         endTime: null,
@@ -71,123 +73,127 @@ describe('LogPanel', () => {
     });
   });
 
-  it('renders without crashing', () => {
+  it("renders without crashing", () => {
     render(<LogPanel />);
-    expect(screen.getByText('No logs yet')).toBeInTheDocument();
+    expect(screen.getByText("No logs yet")).toBeInTheDocument();
   });
 
-  it('shows empty state when no logs', () => {
+  it("shows empty state when no logs", () => {
     render(<LogPanel />);
-    expect(screen.getByText('No logs yet')).toBeInTheDocument();
-    expect(screen.getByText('Logs will appear here as the application runs')).toBeInTheDocument();
+    expect(screen.getByText("No logs yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Logs will appear here as the application runs"),
+    ).toBeInTheDocument();
   });
 
-  it('renders toolbar by default', () => {
+  it("renders toolbar by default", () => {
     render(<LogPanel />);
-    expect(screen.getByPlaceholderText('Search logs...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search logs...")).toBeInTheDocument();
   });
 
-  it('hides toolbar when showToolbar is false', () => {
+  it("hides toolbar when showToolbar is false", () => {
     render(<LogPanel showToolbar={false} />);
-    expect(screen.queryByPlaceholderText('Search logs...')).not.toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText("Search logs..."),
+    ).not.toBeInTheDocument();
   });
 
-  it('renders log entries when logs exist', () => {
+  it("renders log entries when logs exist", () => {
     useLogStore.getState().addLogs([
-      { timestamp: Date.now(), level: 'info', message: 'Test message 1' },
-      { timestamp: Date.now(), level: 'warn', message: 'Test message 2' },
+      { timestamp: Date.now(), level: "info", message: "Test message 1" },
+      { timestamp: Date.now(), level: "warn", message: "Test message 2" },
     ]);
 
     render(<LogPanel />);
-    
-    expect(screen.getByText('Test message 1')).toBeInTheDocument();
-    expect(screen.getByText('Test message 2')).toBeInTheDocument();
+
+    expect(screen.getByText("Test message 1")).toBeInTheDocument();
+    expect(screen.getByText("Test message 2")).toBeInTheDocument();
   });
 
-  it('filters logs based on level filter', () => {
+  it("filters logs based on level filter", () => {
     useLogStore.getState().addLogs([
-      { timestamp: Date.now(), level: 'debug', message: 'Debug message' },
-      { timestamp: Date.now(), level: 'info', message: 'Info message' },
-      { timestamp: Date.now(), level: 'error', message: 'Error message' },
+      { timestamp: Date.now(), level: "debug", message: "Debug message" },
+      { timestamp: Date.now(), level: "info", message: "Info message" },
+      { timestamp: Date.now(), level: "error", message: "Error message" },
     ]);
 
     render(<LogPanel />);
-    
+
     // Default filter excludes debug
-    expect(screen.queryByText('Debug message')).not.toBeInTheDocument();
-    expect(screen.getByText('Info message')).toBeInTheDocument();
-    expect(screen.getByText('Error message')).toBeInTheDocument();
+    expect(screen.queryByText("Debug message")).not.toBeInTheDocument();
+    expect(screen.getByText("Info message")).toBeInTheDocument();
+    expect(screen.getByText("Error message")).toBeInTheDocument();
   });
 
-  it('filters logs based on search', () => {
+  it("filters logs based on search", () => {
     useLogStore.getState().addLogs([
-      { timestamp: Date.now(), level: 'info', message: 'Apple' },
-      { timestamp: Date.now(), level: 'info', message: 'Banana' },
-      { timestamp: Date.now(), level: 'info', message: 'Cherry' },
+      { timestamp: Date.now(), level: "info", message: "Apple" },
+      { timestamp: Date.now(), level: "info", message: "Banana" },
+      { timestamp: Date.now(), level: "info", message: "Cherry" },
     ]);
-    useLogStore.getState().setSearch('Banana');
+    useLogStore.getState().setSearch("Banana");
 
     render(<LogPanel />);
-    
-    expect(screen.queryByText('Apple')).not.toBeInTheDocument();
-    expect(screen.getByText('Banana')).toBeInTheDocument();
-    expect(screen.queryByText('Cherry')).not.toBeInTheDocument();
+
+    expect(screen.queryByText("Apple")).not.toBeInTheDocument();
+    expect(screen.getByText("Banana")).toBeInTheDocument();
+    expect(screen.queryByText("Cherry")).not.toBeInTheDocument();
   });
 
-  it('applies custom className', () => {
+  it("applies custom className", () => {
     const { container } = render(<LogPanel className="custom-class" />);
-    expect(container.firstChild).toHaveClass('custom-class');
+    expect(container.firstChild).toHaveClass("custom-class");
   });
 
-  it('applies custom maxHeight', () => {
+  it("applies custom maxHeight", () => {
     const { container } = render(<LogPanel maxHeight="500px" />);
     const panel = container.firstChild as HTMLElement;
-    expect(panel.style.maxHeight).toBe('500px');
+    expect(panel.style.maxHeight).toBe("500px");
   });
 
-  describe('log display', () => {
-    it('shows level badges for each log', () => {
+  describe("log display", () => {
+    it("shows level badges for each log", () => {
       useLogStore.getState().addLogs([
-        { timestamp: Date.now(), level: 'info', message: 'Info' },
-        { timestamp: Date.now(), level: 'warn', message: 'Warning' },
-        { timestamp: Date.now(), level: 'error', message: 'Error' },
+        { timestamp: Date.now(), level: "info", message: "Info" },
+        { timestamp: Date.now(), level: "warn", message: "Warning" },
+        { timestamp: Date.now(), level: "error", message: "Error" },
       ]);
 
       render(<LogPanel />);
-      
-      expect(screen.getByText('INF')).toBeInTheDocument();
-      expect(screen.getByText('WRN')).toBeInTheDocument();
-      expect(screen.getByText('ERR')).toBeInTheDocument();
+
+      expect(screen.getByText("INF")).toBeInTheDocument();
+      expect(screen.getByText("WRN")).toBeInTheDocument();
+      expect(screen.getByText("ERR")).toBeInTheDocument();
     });
 
-    it('shows target when provided', () => {
+    it("shows target when provided", () => {
       useLogStore.getState().addLog({
         timestamp: Date.now(),
-        level: 'info',
-        message: 'Test',
-        target: 'my-module',
+        level: "info",
+        message: "Test",
+        target: "my-module",
       });
 
       render(<LogPanel />);
-      
-      expect(screen.getByText('my-module')).toBeInTheDocument();
+
+      expect(screen.getByText("my-module")).toBeInTheDocument();
     });
   });
 
-  describe('auto-scroll behavior', () => {
-    it('respects autoScroll setting', () => {
+  describe("auto-scroll behavior", () => {
+    it("respects autoScroll setting", () => {
       useLogStore.setState({ ...useLogStore.getState(), autoScroll: true });
-      
+
       useLogStore.getState().addLogs([
-        { timestamp: Date.now(), level: 'info', message: 'Message 1' },
-        { timestamp: Date.now(), level: 'info', message: 'Message 2' },
+        { timestamp: Date.now(), level: "info", message: "Message 1" },
+        { timestamp: Date.now(), level: "info", message: "Message 2" },
       ]);
 
       render(<LogPanel />);
-      
+
       // Auto-scroll behavior is tested by verifying logs render
-      expect(screen.getByText('Message 1')).toBeInTheDocument();
-      expect(screen.getByText('Message 2')).toBeInTheDocument();
+      expect(screen.getByText("Message 1")).toBeInTheDocument();
+      expect(screen.getByText("Message 2")).toBeInTheDocument();
     });
   });
 });

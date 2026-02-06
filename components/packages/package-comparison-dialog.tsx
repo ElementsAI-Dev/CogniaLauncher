@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -19,14 +19,19 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { 
-  GitCompare, Check, X, ExternalLink, 
-  Package, AlertCircle, Scale
-} from 'lucide-react';
-import type { PackageComparison } from '@/lib/tauri';
-import { formatSize } from '@/lib/utils';
-import { useLocale } from '@/components/providers/locale-provider';
+} from "@/components/ui/table";
+import {
+  GitCompare,
+  Check,
+  X,
+  ExternalLink,
+  Package,
+  AlertCircle,
+  Scale,
+} from "lucide-react";
+import type { PackageComparison } from "@/lib/tauri";
+import { formatSize } from "@/lib/utils";
+import { useLocale } from "@/components/providers/locale-provider";
 
 interface PackageComparisonDialogProps {
   open: boolean;
@@ -35,16 +40,19 @@ interface PackageComparisonDialogProps {
   onCompare: (packageIds: string[]) => Promise<PackageComparison>;
 }
 
-
 const COMPARISON_FEATURE_KEYS = [
-  { nameKey: 'featureVersion', key: 'version', type: 'string' as const },
-  { nameKey: 'featureProvider', key: 'provider', type: 'string' as const },
-  { nameKey: 'featureLicense', key: 'license', type: 'string' as const },
-  { nameKey: 'featureSize', key: 'size', type: 'size' as const },
-  { nameKey: 'featureLastUpdated', key: 'updated_at', type: 'string' as const },
-  { nameKey: 'featureHomepage', key: 'homepage', type: 'string' as const },
-  { nameKey: 'featureDependencies', key: 'dependencies', type: 'array' as const },
-  { nameKey: 'featurePlatforms', key: 'platforms', type: 'array' as const },
+  { nameKey: "featureVersion", key: "version", type: "string" as const },
+  { nameKey: "featureProvider", key: "provider", type: "string" as const },
+  { nameKey: "featureLicense", key: "license", type: "string" as const },
+  { nameKey: "featureSize", key: "size", type: "size" as const },
+  { nameKey: "featureLastUpdated", key: "updated_at", type: "string" as const },
+  { nameKey: "featureHomepage", key: "homepage", type: "string" as const },
+  {
+    nameKey: "featureDependencies",
+    key: "dependencies",
+    type: "array" as const,
+  },
+  { nameKey: "featurePlatforms", key: "platforms", type: "array" as const },
 ];
 
 export function PackageComparisonDialog({
@@ -68,7 +76,9 @@ export function PackageComparisonDialog({
       const result = await onCompare(packageIds);
       setComparison(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('packages.failedToCompare'));
+      setError(
+        err instanceof Error ? err.message : t("packages.failedToCompare"),
+      );
     } finally {
       setLoading(false);
     }
@@ -81,7 +91,7 @@ export function PackageComparisonDialog({
   }, [open, loadComparison, packageIds.length]);
 
   const formatDate = (dateStr?: string) => {
-    if (!dateStr) return t('packages.unknownDate');
+    if (!dateStr) return t("packages.unknownDate");
     try {
       return new Date(dateStr).toLocaleDateString();
     } catch {
@@ -89,7 +99,11 @@ export function PackageComparisonDialog({
     }
   };
 
-  const renderFeatureValue = (pkg: Record<string, unknown>, featureKey: string, featureType: 'boolean' | 'string' | 'array' | 'size') => {
+  const renderFeatureValue = (
+    pkg: Record<string, unknown>,
+    featureKey: string,
+    featureType: "boolean" | "string" | "array" | "size",
+  ) => {
     const value = pkg[featureKey];
 
     if (value === undefined || value === null) {
@@ -97,19 +111,24 @@ export function PackageComparisonDialog({
     }
 
     switch (featureType) {
-      case 'boolean':
+      case "boolean":
         return value ? (
           <Check className="h-4 w-4 text-green-500" />
         ) : (
           <X className="h-4 w-4 text-red-500" />
         );
-      
-      case 'size':
+
+      case "size":
         return formatSize(value as number);
-      
-      case 'array':
+
+      case "array":
         const arr = value as string[];
-        if (arr.length === 0) return <span className="text-muted-foreground">{t('packages.noneValue')}</span>;
+        if (arr.length === 0)
+          return (
+            <span className="text-muted-foreground">
+              {t("packages.noneValue")}
+            </span>
+          );
         return (
           <div className="flex flex-wrap gap-1">
             {arr.slice(0, 3).map((item, i) => (
@@ -124,35 +143,39 @@ export function PackageComparisonDialog({
             )}
           </div>
         );
-      
-      case 'string':
+
+      case "string":
       default:
-        if (featureKey === 'homepage' && typeof value === 'string') {
+        if (featureKey === "homepage" && typeof value === "string") {
           return (
-            <a 
-              href={value} 
-              target="_blank" 
+            <a
+              href={value}
+              target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline inline-flex items-center gap-1"
             >
-              {t('packages.link')} <ExternalLink className="h-3 w-3" />
+              {t("packages.link")} <ExternalLink className="h-3 w-3" />
             </a>
           );
         }
-        if (featureKey === 'updated_at') {
+        if (featureKey === "updated_at") {
           return formatDate(value as string);
         }
         return <span className="truncate max-w-[150px]">{String(value)}</span>;
     }
   };
 
-  const getHighlightClass = (featureKey: string, value: unknown, allValues: unknown[]) => {
+  const getHighlightClass = (
+    featureKey: string,
+    value: unknown,
+    allValues: unknown[],
+  ) => {
     // Highlight differences
-    const uniqueValues = new Set(allValues.map(v => JSON.stringify(v)));
+    const uniqueValues = new Set(allValues.map((v) => JSON.stringify(v)));
     if (uniqueValues.size > 1) {
-      return 'bg-yellow-500/5';
+      return "bg-yellow-500/5";
     }
-    return '';
+    return "";
   };
 
   return (
@@ -161,10 +184,10 @@ export function PackageComparisonDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitCompare className="h-5 w-5" />
-            {t('packages.comparePackages')}
+            {t("packages.comparePackages")}
           </DialogTitle>
           <DialogDescription>
-            {t('packages.sideByComparison', { count: packageIds.length })}
+            {t("packages.sideByComparison", { count: packageIds.length })}
           </DialogDescription>
         </DialogHeader>
 
@@ -190,12 +213,14 @@ export function PackageComparisonDialog({
           <ScrollArea className="max-h-[60vh]">
             <div className="space-y-6 pr-4">
               {/* Package Headers */}
-              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${comparison.packages.length}, 1fr)` }}>
+              <div
+                className="grid gap-4"
+                style={{
+                  gridTemplateColumns: `repeat(${comparison.packages.length}, 1fr)`,
+                }}
+              >
                 {comparison.packages.map((pkg, i) => (
-                  <div 
-                    key={i}
-                    className="p-4 border rounded-lg bg-card"
-                  >
+                  <div key={i} className="p-4 border rounded-lg bg-card">
                     <div className="flex items-start gap-3">
                       <div className="p-2 bg-primary/10 rounded">
                         <Package className="h-5 w-5 text-primary" />
@@ -203,7 +228,7 @@ export function PackageComparisonDialog({
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold truncate">{pkg.name}</h3>
                         <p className="text-sm text-muted-foreground truncate">
-                          {pkg.description || t('packages.noDescription')}
+                          {pkg.description || t("packages.noDescription")}
                         </p>
                         <div className="flex items-center gap-2 mt-2">
                           <Badge variant="outline">{pkg.provider}</Badge>
@@ -220,7 +245,7 @@ export function PackageComparisonDialog({
                 <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
                   <h4 className="font-medium flex items-center gap-2 mb-2">
                     <Scale className="h-4 w-4 text-yellow-600" />
-                    {t('packages.keyDifferences')}
+                    {t("packages.keyDifferences")}
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {comparison.differences.map((diff, i) => (
@@ -236,7 +261,9 @@ export function PackageComparisonDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[150px]">{t('packages.feature')}</TableHead>
+                    <TableHead className="w-[150px]">
+                      {t("packages.feature")}
+                    </TableHead>
                     {comparison.packages.map((pkg, i) => (
                       <TableHead key={i}>{pkg.name}</TableHead>
                     ))}
@@ -244,19 +271,29 @@ export function PackageComparisonDialog({
                 </TableHeader>
                 <TableBody>
                   {COMPARISON_FEATURE_KEYS.map((feature) => {
-                    const allValues = comparison.packages.map(pkg => pkg[feature.key]);
-                    
+                    const allValues = comparison.packages.map(
+                      (pkg) => pkg[feature.key],
+                    );
+
                     return (
                       <TableRow key={feature.key}>
                         <TableCell className="font-medium">
                           {t(`packages.${feature.nameKey}`)}
                         </TableCell>
                         {comparison.packages.map((pkg, i) => (
-                          <TableCell 
+                          <TableCell
                             key={i}
-                            className={getHighlightClass(feature.key, pkg[feature.key], allValues)}
+                            className={getHighlightClass(
+                              feature.key,
+                              pkg[feature.key],
+                              allValues,
+                            )}
                           >
-                            {renderFeatureValue(pkg as Record<string, unknown>, feature.key, feature.type)}
+                            {renderFeatureValue(
+                              pkg as Record<string, unknown>,
+                              feature.key,
+                              feature.type,
+                            )}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -266,26 +303,33 @@ export function PackageComparisonDialog({
               </Table>
 
               {/* Common Features */}
-              {comparison.common_features && comparison.common_features.length > 0 && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                  <h4 className="font-medium flex items-center gap-2 mb-2">
-                    <Check className="h-4 w-4 text-green-600" />
-                    {t('packages.commonFeatures')}
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {comparison.common_features.map((feature, i) => (
-                      <Badge key={i} variant="outline" className="border-green-500/30">
-                        {feature}
-                      </Badge>
-                    ))}
+              {comparison.common_features &&
+                comparison.common_features.length > 0 && (
+                  <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+                    <h4 className="font-medium flex items-center gap-2 mb-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      {t("packages.commonFeatures")}
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {comparison.common_features.map((feature, i) => (
+                        <Badge
+                          key={i}
+                          variant="outline"
+                          className="border-green-500/30"
+                        >
+                          {feature}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Recommendation */}
               {comparison.recommendation && (
                 <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-                  <h4 className="font-medium mb-2">{t('packages.recommendation')}</h4>
+                  <h4 className="font-medium mb-2">
+                    {t("packages.recommendation")}
+                  </h4>
                   <p className="text-sm text-muted-foreground">
                     {comparison.recommendation}
                   </p>
@@ -297,7 +341,7 @@ export function PackageComparisonDialog({
 
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.close')}
+            {t("common.close")}
           </Button>
         </div>
       </DialogContent>

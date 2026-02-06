@@ -1,13 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { AddDownloadDialog } from './add-download-dialog';
-import { LocaleProvider } from '@/components/providers/locale-provider';
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { AddDownloadDialog } from "./add-download-dialog";
+import { LocaleProvider } from "@/components/providers/locale-provider";
 
-jest.mock('@/lib/tauri', () => ({
+jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn().mockReturnValue(false),
 }));
 
-jest.mock('sonner', () => ({
+jest.mock("sonner", () => ({
   toast: {
     success: jest.fn(),
     error: jest.fn(),
@@ -18,23 +18,23 @@ jest.mock('sonner', () => ({
 const mockMessages = {
   en: {
     common: {
-      cancel: 'Cancel',
-      loading: 'Loading...',
-      add: 'Add',
+      cancel: "Cancel",
+      loading: "Loading...",
+      add: "Add",
     },
     downloads: {
-      addDownload: 'Add Download',
-      description: 'Add a new download task',
-      url: 'URL',
-      destination: 'Destination',
-      name: 'Name',
-      priority: 'Priority',
-      checksum: 'Checksum',
-      provider: 'Provider',
-      providerPlaceholder: 'Optional: e.g., npm, github',
-      selectDestination: 'Select download destination',
-      manualPathRequired: 'Please enter the path manually',
-      browseFolder: 'Browse',
+      addDownload: "Add Download",
+      description: "Add a new download task",
+      url: "URL",
+      destination: "Destination",
+      name: "Name",
+      priority: "Priority",
+      checksum: "Checksum",
+      provider: "Provider",
+      providerPlaceholder: "Optional: e.g., npm, github",
+      selectDestination: "Select download destination",
+      manualPathRequired: "Please enter the path manually",
+      browseFolder: "Browse",
     },
   },
   zh: {
@@ -44,10 +44,12 @@ const mockMessages = {
 };
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
-  return <LocaleProvider messages={mockMessages as never}>{children}</LocaleProvider>;
+  return (
+    <LocaleProvider messages={mockMessages as never}>{children}</LocaleProvider>
+  );
 }
 
-describe('AddDownloadDialog', () => {
+describe("AddDownloadDialog", () => {
   const defaultProps = {
     open: true,
     onOpenChange: jest.fn(),
@@ -58,94 +60,108 @@ describe('AddDownloadDialog', () => {
     jest.clearAllMocks();
   });
 
-  it('renders dialog with all form fields', () => {
+  it("renders dialog with all form fields", () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    expect(screen.getByText('Add Download')).toBeInTheDocument();
-    expect(screen.getByLabelText('URL')).toBeInTheDocument();
-    expect(screen.getByLabelText('Destination')).toBeInTheDocument();
-    expect(screen.getByLabelText('Name')).toBeInTheDocument();
-    expect(screen.getByLabelText('Provider')).toBeInTheDocument();
-    expect(screen.getByLabelText('Priority')).toBeInTheDocument();
-    expect(screen.getByLabelText('Checksum')).toBeInTheDocument();
+    expect(screen.getByText("Add Download")).toBeInTheDocument();
+    expect(screen.getByLabelText("URL")).toBeInTheDocument();
+    expect(screen.getByLabelText("Destination")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Provider")).toBeInTheDocument();
+    expect(screen.getByLabelText("Priority")).toBeInTheDocument();
+    expect(screen.getByLabelText("Checksum")).toBeInTheDocument();
   });
 
-  it('renders browse folder button', () => {
+  it("renders browse folder button", () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    expect(screen.getByTitle('Browse')).toBeInTheDocument();
+    expect(screen.getByTitle("Browse")).toBeInTheDocument();
   });
 
-  it('renders provider field with placeholder', () => {
+  it("renders provider field with placeholder", () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    expect(screen.getByPlaceholderText('Optional: e.g., npm, github')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Optional: e.g., npm, github"),
+    ).toBeInTheDocument();
   });
 
-  it('disables submit button when required fields are empty', () => {
+  it("disables submit button when required fields are empty", () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
   });
 
-  it('enables submit button when required fields are filled', async () => {
+  it("enables submit button when required fields are filled", async () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    await userEvent.type(screen.getByLabelText('URL'), 'https://example.com/file.zip');
-    await userEvent.type(screen.getByLabelText('Destination'), '/downloads/file.zip');
-    await userEvent.type(screen.getByLabelText('Name'), 'file.zip');
+    await userEvent.type(
+      screen.getByLabelText("URL"),
+      "https://example.com/file.zip",
+    );
+    await userEvent.type(
+      screen.getByLabelText("Destination"),
+      "/downloads/file.zip",
+    );
+    await userEvent.type(screen.getByLabelText("Name"), "file.zip");
 
-    expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add" })).not.toBeDisabled();
   });
 
-  it('name field is editable', async () => {
+  it("name field is editable", async () => {
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    const nameInput = screen.getByLabelText('Name');
-    await userEvent.type(nameInput, 'my-custom-file.zip');
+    const nameInput = screen.getByLabelText("Name");
+    await userEvent.type(nameInput, "my-custom-file.zip");
 
-    expect(nameInput).toHaveValue('my-custom-file.zip');
+    expect(nameInput).toHaveValue("my-custom-file.zip");
   });
 
-  it('submits form with provider field', async () => {
+  it("submits form with provider field", async () => {
     const onSubmit = jest.fn().mockResolvedValue(undefined);
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} onSubmit={onSubmit} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
     // Fill all required fields manually
-    await userEvent.type(screen.getByLabelText('URL'), 'https://example.com/file.zip');
-    await userEvent.type(screen.getByLabelText('Destination'), '/downloads/file.zip');
-    await userEvent.type(screen.getByLabelText('Name'), 'custom-name.zip');
-    await userEvent.type(screen.getByLabelText('Provider'), 'npm');
+    await userEvent.type(
+      screen.getByLabelText("URL"),
+      "https://example.com/file.zip",
+    );
+    await userEvent.type(
+      screen.getByLabelText("Destination"),
+      "/downloads/file.zip",
+    );
+    await userEvent.type(screen.getByLabelText("Name"), "custom-name.zip");
+    await userEvent.type(screen.getByLabelText("Provider"), "npm");
 
-    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalled();
@@ -154,20 +170,20 @@ describe('AddDownloadDialog', () => {
     // Verify provider is included in the call
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: 'npm',
-      })
+        provider: "npm",
+      }),
     );
   });
 
-  it('calls onOpenChange when cancel is clicked', async () => {
+  it("calls onOpenChange when cancel is clicked", async () => {
     const onOpenChange = jest.fn();
     render(
       <TestWrapper>
         <AddDownloadDialog {...defaultProps} onOpenChange={onOpenChange} />
-      </TestWrapper>
+      </TestWrapper>,
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

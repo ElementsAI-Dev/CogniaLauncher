@@ -1,16 +1,26 @@
-'use client';
+"use client";
 
-import { useState, useCallback } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState, useCallback } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   ChevronDown,
   MoreHorizontal,
@@ -26,11 +36,14 @@ import {
   Package,
   Info,
   type LucideIcon,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { SettingsSection } from '@/lib/constants/settings-registry';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { SettingsSection } from "@/lib/constants/settings-registry";
 
-type TranslateFunction = (key: string, params?: Record<string, string | number>) => string;
+type TranslateFunction = (
+  key: string,
+  params?: Record<string, string | number>,
+) => string;
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
   Settings2,
@@ -63,7 +76,7 @@ export function CollapsibleSection({
   id,
   title,
   description,
-  icon = 'Settings2',
+  icon = "Settings2",
   defaultOpen = true,
   children,
   hasChanges = false,
@@ -80,7 +93,7 @@ export function CollapsibleSection({
       setOpen(newOpen);
       onOpenChange?.(id, newOpen);
     },
-    [id, onOpenChange]
+    [id, onOpenChange],
   );
 
   const handleResetClick = useCallback(
@@ -88,7 +101,7 @@ export function CollapsibleSection({
       e.stopPropagation();
       onResetSection?.(id);
     },
-    [id, onResetSection]
+    [id, onResetSection],
   );
 
   return (
@@ -106,7 +119,7 @@ export function CollapsibleSection({
                 {title}
                 {hasChanges && (
                   <Badge variant="secondary" className="ml-2 text-xs">
-                    {t('settings.section.modified')}
+                    {t("settings.section.modified")}
                   </Badge>
                 )}
               </CardTitle>
@@ -119,7 +132,7 @@ export function CollapsibleSection({
                         size="icon"
                         className="h-8 w-8"
                         onClick={(e) => e.stopPropagation()}
-                        aria-label={t('settings.section.moreActions')}
+                        aria-label={t("settings.section.moreActions")}
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
@@ -127,15 +140,15 @@ export function CollapsibleSection({
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={handleResetClick}>
                         <RotateCcw className="mr-2 h-4 w-4" />
-                        {t('settings.section.resetToDefaults')}
+                        {t("settings.section.resetToDefaults")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
                 <ChevronDown
                   className={cn(
-                    'h-5 w-5 text-muted-foreground transition-transform duration-200',
-                    open && 'rotate-180'
+                    "h-5 w-5 text-muted-foreground transition-transform duration-200",
+                    open && "rotate-180",
                   )}
                   aria-hidden="true"
                 />

@@ -1,19 +1,23 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { EmptyState } from './empty-state';
+import { render, screen, fireEvent } from "@testing-library/react";
+import { EmptyState } from "./empty-state";
 
-describe('EmptyState', () => {
+describe("EmptyState", () => {
   const mockOnAddEnvironment = jest.fn();
   const mockT = (key: string) => {
     const translations: Record<string, string> = {
-      'environments.emptyState.title': 'No Environments Configured',
-      'environments.noEnvironments': 'Get started by adding your first development environment',
-      'environments.addEnvironment': 'Add Environment',
-      'environments.emptyState.feature1Title': 'Version Management',
-      'environments.emptyState.feature1Desc': 'Install and switch between versions easily',
-      'environments.emptyState.feature2Title': 'Multiple Languages',
-      'environments.emptyState.feature2Desc': 'Support for Node.js, Python, Go, Rust & more',
-      'environments.emptyState.feature3Title': 'Auto Detection',
-      'environments.emptyState.feature3Desc': 'Automatically detect project versions',
+      "environments.emptyState.title": "No Environments Configured",
+      "environments.noEnvironments":
+        "Get started by adding your first development environment",
+      "environments.addEnvironment": "Add Environment",
+      "environments.emptyState.feature1Title": "Version Management",
+      "environments.emptyState.feature1Desc":
+        "Install and switch between versions easily",
+      "environments.emptyState.feature2Title": "Multiple Languages",
+      "environments.emptyState.feature2Desc":
+        "Support for Node.js, Python, Go, Rust & more",
+      "environments.emptyState.feature3Title": "Auto Detection",
+      "environments.emptyState.feature3Desc":
+        "Automatically detect project versions",
     };
     return translations[key] || key;
   };
@@ -27,61 +31,73 @@ describe('EmptyState', () => {
     jest.clearAllMocks();
   });
 
-  it('renders empty state title', () => {
+  it("renders empty state title", () => {
     render(<EmptyState {...defaultProps} />);
-    expect(screen.getByText('No Environments Configured')).toBeInTheDocument();
+    expect(screen.getByText("No Environments Configured")).toBeInTheDocument();
   });
 
-  it('renders empty state description', () => {
+  it("renders empty state description", () => {
     render(<EmptyState {...defaultProps} />);
-    expect(screen.getByText('Get started by adding your first development environment')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Get started by adding your first development environment",
+      ),
+    ).toBeInTheDocument();
   });
 
-  it('renders add environment button', () => {
+  it("renders add environment button", () => {
     render(<EmptyState {...defaultProps} />);
-    expect(screen.getByText('Add Environment')).toBeInTheDocument();
+    expect(screen.getByText("Add Environment")).toBeInTheDocument();
   });
 
-  it('calls onAddEnvironment when button is clicked', () => {
+  it("calls onAddEnvironment when button is clicked", () => {
     render(<EmptyState {...defaultProps} />);
-    const addButton = screen.getByText('Add Environment');
+    const addButton = screen.getByText("Add Environment");
     fireEvent.click(addButton);
     expect(mockOnAddEnvironment).toHaveBeenCalledTimes(1);
   });
 
-  it('renders feature cards', () => {
+  it("renders feature cards", () => {
     render(<EmptyState {...defaultProps} />);
-    expect(screen.getByText('Version Management')).toBeInTheDocument();
-    expect(screen.getByText('Multiple Languages')).toBeInTheDocument();
-    expect(screen.getByText('Auto Detection')).toBeInTheDocument();
+    expect(screen.getByText("Version Management")).toBeInTheDocument();
+    expect(screen.getByText("Multiple Languages")).toBeInTheDocument();
+    expect(screen.getByText("Auto Detection")).toBeInTheDocument();
   });
 
-  it('renders feature descriptions', () => {
+  it("renders feature descriptions", () => {
     render(<EmptyState {...defaultProps} />);
-    expect(screen.getByText('Install and switch between versions easily')).toBeInTheDocument();
-    expect(screen.getByText('Support for Node.js, Python, Go, Rust & more')).toBeInTheDocument();
-    expect(screen.getByText('Automatically detect project versions')).toBeInTheDocument();
+    expect(
+      screen.getByText("Install and switch between versions easily"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Support for Node.js, Python, Go, Rust & more"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Automatically detect project versions"),
+    ).toBeInTheDocument();
   });
 
-  it('renders illustration icons', () => {
+  it("renders illustration icons", () => {
     render(<EmptyState {...defaultProps} />);
     // Check that the main illustration container exists
-    const card = screen.getByText('No Environments Configured').closest('.border-dashed');
+    const card = screen
+      .getByText("No Environments Configured")
+      .closest(".border-dashed");
     expect(card).toBeInTheDocument();
   });
 
-  it('has correct structure with card component', () => {
+  it("has correct structure with card component", () => {
     const { container } = render(<EmptyState {...defaultProps} />);
     // Check for dashed border card
-    expect(container.querySelector('.border-dashed')).toBeInTheDocument();
+    expect(container.querySelector(".border-dashed")).toBeInTheDocument();
   });
 
-  it('renders three feature cards', () => {
+  it("renders three feature cards", () => {
     render(<EmptyState {...defaultProps} />);
     const featureTitles = [
-      screen.getByText('Version Management'),
-      screen.getByText('Multiple Languages'),
-      screen.getByText('Auto Detection'),
+      screen.getByText("Version Management"),
+      screen.getByText("Multiple Languages"),
+      screen.getByText("Auto Detection"),
     ];
     expect(featureTitles).toHaveLength(3);
   });

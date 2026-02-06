@@ -1,40 +1,40 @@
-import { render, screen } from '@testing-library/react';
-import { LogProvider } from './log-provider';
+import { render, screen } from "@testing-library/react";
+import { LogProvider } from "./log-provider";
 
-jest.mock('@/lib/tauri', () => ({
+jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
 }));
 
 const mockAddLog = jest.fn();
 
-jest.mock('@/lib/stores/log', () => ({
+jest.mock("@/lib/stores/log", () => ({
   useLogStore: () => ({
     addLog: mockAddLog,
   }),
 }));
 
-describe('LogProvider', () => {
+describe("LogProvider", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders children', () => {
+  it("renders children", () => {
     render(
       <LogProvider>
         <div data-testid="child">Child content</div>
-      </LogProvider>
+      </LogProvider>,
     );
 
-    expect(screen.getByTestId('child')).toBeInTheDocument();
+    expect(screen.getByTestId("child")).toBeInTheDocument();
   });
 
-  it('provides log context to children', () => {
+  it("provides log context to children", () => {
     render(
       <LogProvider>
         <div>Test</div>
-      </LogProvider>
+      </LogProvider>,
     );
 
-    expect(screen.getByText('Test')).toBeInTheDocument();
+    expect(screen.getByText("Test")).toBeInTheDocument();
   });
 });

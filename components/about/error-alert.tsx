@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, RefreshCw } from "lucide-react";
 
 interface ErrorAlertProps {
   error: string | null;
@@ -18,21 +18,21 @@ export function ErrorAlert({ error, onRetry, onDismiss, t }: ErrorAlertProps) {
 
   const getErrorMessage = (errorKey: string): string => {
     switch (errorKey) {
-      case 'network_error':
-        return t('about.networkError');
-      case 'timeout_error':
-        return t('about.timeoutError');
-      case 'update_check_failed':
-        return t('about.updateCheckFailed');
+      case "network_error":
+        return t("about.networkError");
+      case "timeout_error":
+        return t("about.timeoutError");
+      case "update_check_failed":
+        return t("about.updateCheckFailed");
       default:
         return errorKey;
     }
   };
 
   return (
-    <Alert 
-      variant="destructive" 
-      role="alert" 
+    <Alert
+      variant="destructive"
+      role="alert"
       aria-live="assertive"
       className="flex items-center justify-between"
     >
@@ -48,14 +48,14 @@ export function ErrorAlert({ error, onRetry, onDismiss, t }: ErrorAlertProps) {
           className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
         >
           <RefreshCw className="h-3 w-3 mr-1" aria-hidden="true" />
-          {t('common.retry')}
+          {t("common.retry")}
         </Button>
         <Button
           variant="ghost"
           size="sm"
           onClick={onDismiss}
           className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
-          aria-label={t('common.close')}
+          aria-label={t("common.close")}
         >
           ×
         </Button>

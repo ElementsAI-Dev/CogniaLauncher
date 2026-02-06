@@ -1,27 +1,27 @@
-import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { NetworkSettings } from './network-settings';
+import React from "react";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { NetworkSettings } from "./network-settings";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
-    'settings.network': 'Network',
-    'settings.networkDesc': 'Network and proxy settings',
-    'settings.timeout': 'Timeout',
-    'settings.timeoutDesc': 'Request timeout in seconds',
-    'settings.retries': 'Retries',
-    'settings.retriesDesc': 'Number of retry attempts',
-    'settings.proxy': 'Proxy',
-    'settings.proxyDesc': 'HTTP proxy URL (leave empty to disable)',
+    "settings.network": "Network",
+    "settings.networkDesc": "Network and proxy settings",
+    "settings.timeout": "Timeout",
+    "settings.timeoutDesc": "Request timeout in seconds",
+    "settings.retries": "Retries",
+    "settings.retriesDesc": "Number of retry attempts",
+    "settings.proxy": "Proxy",
+    "settings.proxyDesc": "HTTP proxy URL (leave empty to disable)",
   };
   return translations[key] || key;
 };
 
-describe('NetworkSettings', () => {
+describe("NetworkSettings", () => {
   const defaultProps = {
     localConfig: {
-      'network.timeout': '30',
-      'network.retries': '3',
-      'network.proxy': '',
+      "network.timeout": "30",
+      "network.retries": "3",
+      "network.proxy": "",
     },
     errors: {},
     onValueChange: jest.fn(),
@@ -32,58 +32,63 @@ describe('NetworkSettings', () => {
     jest.clearAllMocks();
   });
 
-  it('should render network settings card', () => {
+  it("should render network settings card", () => {
     render(<NetworkSettings {...defaultProps} />);
 
-    expect(screen.getByText('Network')).toBeInTheDocument();
-    expect(screen.getByText('Network and proxy settings')).toBeInTheDocument();
+    expect(screen.getByText("Network")).toBeInTheDocument();
+    expect(screen.getByText("Network and proxy settings")).toBeInTheDocument();
   });
 
-  it('should render timeout setting', () => {
+  it("should render timeout setting", () => {
     render(<NetworkSettings {...defaultProps} />);
 
-    expect(screen.getByText('Timeout')).toBeInTheDocument();
-    expect(screen.getByText('Request timeout in seconds')).toBeInTheDocument();
+    expect(screen.getByText("Timeout")).toBeInTheDocument();
+    expect(screen.getByText("Request timeout in seconds")).toBeInTheDocument();
   });
 
-  it('should render retries setting', () => {
+  it("should render retries setting", () => {
     render(<NetworkSettings {...defaultProps} />);
 
-    expect(screen.getByText('Retries')).toBeInTheDocument();
+    expect(screen.getByText("Retries")).toBeInTheDocument();
   });
 
-  it('should render proxy setting', () => {
+  it("should render proxy setting", () => {
     render(<NetworkSettings {...defaultProps} />);
 
-    expect(screen.getByText('Proxy')).toBeInTheDocument();
+    expect(screen.getByText("Proxy")).toBeInTheDocument();
   });
 
-  it('should call onValueChange when timeout is changed', () => {
+  it("should call onValueChange when timeout is changed", () => {
     const onValueChange = jest.fn();
     render(<NetworkSettings {...defaultProps} onValueChange={onValueChange} />);
 
-    const inputs = screen.getAllByRole('spinbutton');
-    fireEvent.change(inputs[0], { target: { value: '60' } });
+    const inputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "60" } });
 
-    expect(onValueChange).toHaveBeenCalledWith('network.timeout', '60');
+    expect(onValueChange).toHaveBeenCalledWith("network.timeout", "60");
   });
 
-  it('should call onValueChange when proxy is changed', () => {
+  it("should call onValueChange when proxy is changed", () => {
     const onValueChange = jest.fn();
     render(<NetworkSettings {...defaultProps} onValueChange={onValueChange} />);
 
-    const proxyInput = screen.getByRole('textbox');
-    fireEvent.change(proxyInput, { target: { value: 'http://proxy.example.com' } });
+    const proxyInput = screen.getByRole("textbox");
+    fireEvent.change(proxyInput, {
+      target: { value: "http://proxy.example.com" },
+    });
 
-    expect(onValueChange).toHaveBeenCalledWith('network.proxy', 'http://proxy.example.com');
+    expect(onValueChange).toHaveBeenCalledWith(
+      "network.proxy",
+      "http://proxy.example.com",
+    );
   });
 
-  it('should display validation errors for proxy', () => {
+  it("should display validation errors for proxy", () => {
     const errors = {
-      'network.proxy': 'Invalid proxy URL format',
+      "network.proxy": "Invalid proxy URL format",
     };
     render(<NetworkSettings {...defaultProps} errors={errors} />);
 
-    expect(screen.getByText('Invalid proxy URL format')).toBeInTheDocument();
+    expect(screen.getByText("Invalid proxy URL format")).toBeInTheDocument();
   });
 });

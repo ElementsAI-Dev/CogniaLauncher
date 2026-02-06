@@ -1,26 +1,37 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { 
-  Layers, ChevronRight, CheckCircle2, XCircle, 
-  ChevronDown, ChevronUp, ExternalLink
-} from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import { cn } from '@/lib/utils';
-import type { EnvironmentInfo } from '@/lib/tauri';
+} from "@/components/ui/select";
+import {
+  Layers,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+} from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import { cn } from "@/lib/utils";
+import type { EnvironmentInfo } from "@/lib/tauri";
 
-type FilterType = 'all' | 'available' | 'unavailable';
+type FilterType = "all" | "available" | "unavailable";
 
 interface EnvironmentListProps {
   environments: EnvironmentInfo[];
@@ -28,23 +39,23 @@ interface EnvironmentListProps {
   initialLimit?: number;
 }
 
-export function EnvironmentList({ 
-  environments, 
+export function EnvironmentList({
+  environments,
   className,
-  initialLimit = 4
+  initialLimit = 4,
 }: EnvironmentListProps) {
   const router = useRouter();
   const { t } = useLocale();
-  
-  const [filter, setFilter] = useState<FilterType>('all');
+
+  const [filter, setFilter] = useState<FilterType>("all");
   const [expanded, setExpanded] = useState(false);
 
   const filteredEnvironments = useMemo(() => {
     switch (filter) {
-      case 'available':
-        return environments.filter(env => env.available);
-      case 'unavailable':
-        return environments.filter(env => !env.available);
+      case "available":
+        return environments.filter((env) => env.available);
+      case "unavailable":
+        return environments.filter((env) => !env.available);
       default:
         return environments;
     }
@@ -57,44 +68,56 @@ export function EnvironmentList({
 
   const hasMore = filteredEnvironments.length > initialLimit;
 
-  const handleEnvironmentClick = useCallback((envType: string) => {
-    router.push(`/environments?selected=${encodeURIComponent(envType)}`);
-  }, [router]);
+  const handleEnvironmentClick = useCallback(
+    (envType: string) => {
+      router.push(`/environments?selected=${encodeURIComponent(envType)}`);
+    },
+    [router],
+  );
 
   const handleViewAll = useCallback(() => {
-    router.push('/environments');
+    router.push("/environments");
   }, [router]);
 
   return (
-    <Card className={cn('', className)}>
+    <Card className={cn("", className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-base font-medium">
-              {t('dashboard.environmentList.title')}
+              {t("dashboard.environmentList.title")}
             </CardTitle>
             <CardDescription>
-              {t('dashboard.activeEnvironmentsDesc')}
+              {t("dashboard.activeEnvironmentsDesc")}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={filter} onValueChange={(v) => setFilter(v as FilterType)}>
+            <Select
+              value={filter}
+              onValueChange={(v) => setFilter(v as FilterType)}
+            >
               <SelectTrigger className="h-8 w-[120px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t('dashboard.environmentList.all')}</SelectItem>
-                <SelectItem value="available">{t('dashboard.environmentList.available')}</SelectItem>
-                <SelectItem value="unavailable">{t('dashboard.environmentList.unavailable')}</SelectItem>
+                <SelectItem value="all">
+                  {t("dashboard.environmentList.all")}
+                </SelectItem>
+                <SelectItem value="available">
+                  {t("dashboard.environmentList.available")}
+                </SelectItem>
+                <SelectItem value="unavailable">
+                  {t("dashboard.environmentList.unavailable")}
+                </SelectItem>
               </SelectContent>
             </Select>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="sm"
               onClick={handleViewAll}
               className="gap-1"
             >
-              {t('dashboard.packageList.viewAll')}
+              {t("dashboard.packageList.viewAll")}
               <ExternalLink className="h-3 w-3" />
             </Button>
           </div>
@@ -105,10 +128,9 @@ export function EnvironmentList({
           <div className="py-6 text-center">
             <Layers className="mx-auto h-8 w-8 text-muted-foreground/50" />
             <p className="mt-2 text-sm text-muted-foreground">
-              {filter === 'all' 
-                ? t('dashboard.noEnvironments')
-                : t('dashboard.environmentList.noResults')
-              }
+              {filter === "all"
+                ? t("dashboard.noEnvironments")
+                : t("dashboard.environmentList.noResults")}
             </p>
           </div>
         ) : (
@@ -134,12 +156,12 @@ export function EnvironmentList({
                 {expanded ? (
                   <>
                     <ChevronUp className="h-4 w-4" />
-                    {t('dashboard.environmentList.showLess')}
+                    {t("dashboard.environmentList.showLess")}
                   </>
                 ) : (
                   <>
                     <ChevronDown className="h-4 w-4" />
-                    {t('dashboard.environmentList.showMore')}
+                    {t("dashboard.environmentList.showMore")}
                   </>
                 )}
               </Button>
@@ -158,22 +180,27 @@ interface EnvironmentItemProps {
 }
 
 function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
-  const { env_type, provider, current_version, available, installed_versions } = environment;
+  const { env_type, provider, current_version, available, installed_versions } =
+    environment;
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'flex w-full items-center justify-between rounded-lg border p-3',
-        'transition-colors hover:bg-accent/50',
-        'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
+        "flex w-full items-center justify-between rounded-lg border p-3",
+        "transition-colors hover:bg-accent/50",
+        "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
       )}
     >
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
-          available ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
-        )}>
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+            available
+              ? "bg-primary/10 text-primary"
+              : "bg-muted text-muted-foreground",
+          )}
+        >
           <Layers className="h-5 w-5" />
         </div>
         <div className="text-left min-w-0">
@@ -190,7 +217,10 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
             {installed_versions.length > 0 && (
               <>
                 <span>•</span>
-                <span>{installed_versions.length} {t('environments.details.versions')}</span>
+                <span>
+                  {installed_versions.length}{" "}
+                  {t("environments.details.versions")}
+                </span>
               </>
             )}
           </div>
@@ -199,11 +229,16 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
 
       <div className="flex items-center gap-2 shrink-0">
         {current_version ? (
-          <Badge variant="secondary" className="font-mono text-xs max-w-[140px] truncate">
+          <Badge
+            variant="secondary"
+            className="font-mono text-xs max-w-[140px] truncate"
+          >
             {current_version}
           </Badge>
         ) : (
-          <span className="text-xs text-muted-foreground">{t('common.none')}</span>
+          <span className="text-xs text-muted-foreground">
+            {t("common.none")}
+          </span>
         )}
         <ChevronRight className="h-4 w-4 text-muted-foreground" />
       </div>

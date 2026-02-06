@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useTraySync } from '@/hooks/use-tray-sync';
+import { useTraySync } from "@/hooks/use-tray-sync";
 
 interface TrayProviderProps {
   children: React.ReactNode;

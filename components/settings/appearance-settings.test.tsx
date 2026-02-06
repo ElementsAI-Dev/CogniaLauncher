@@ -1,20 +1,20 @@
-import { render, screen } from '@testing-library/react';
-import { AppearanceSettings } from './appearance-settings';
+import { render, screen } from "@testing-library/react";
+import { AppearanceSettings } from "./appearance-settings";
 
-jest.mock('@/components/providers/locale-provider', () => ({
+jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
-    locale: 'en',
+    locale: "en",
     setLocale: jest.fn(),
     t: (key: string) => {
       const translations: Record<string, string> = {
-        'settings.appearance': 'Appearance',
-        'settings.theme': 'Theme',
-        'settings.themeLight': 'Light',
-        'settings.themeDark': 'Dark',
-        'settings.themeSystem': 'System',
-        'settings.language': 'Language',
-        'settings.accentColor': 'Accent Color',
-        'settings.reducedMotion': 'Reduced Motion',
+        "settings.appearance": "Appearance",
+        "settings.theme": "Theme",
+        "settings.themeLight": "Light",
+        "settings.themeDark": "Dark",
+        "settings.themeSystem": "System",
+        "settings.language": "Language",
+        "settings.accentColor": "Accent Color",
+        "settings.reducedMotion": "Reduced Motion",
       };
       return translations[key] || key;
     },
@@ -22,53 +22,53 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 const defaultProps = {
-  theme: 'system',
+  theme: "system",
   setTheme: jest.fn(),
-  locale: 'en',
+  locale: "en",
   setLocale: jest.fn(),
-  accentColor: 'blue' as const,
+  accentColor: "blue" as const,
   setAccentColor: jest.fn(),
   reducedMotion: false,
   setReducedMotion: jest.fn(),
   t: (key: string) => {
     const translations: Record<string, string> = {
-      'settings.appearance': 'Appearance',
-      'settings.appearanceDesc': 'Customize appearance',
-      'settings.theme': 'Theme',
-      'settings.themeLight': 'Light',
-      'settings.themeDark': 'Dark',
-      'settings.themeSystem': 'System',
-      'settings.language': 'Language',
-      'settings.accentColor': 'Accent Color',
-      'settings.reducedMotion': 'Reduced Motion',
+      "settings.appearance": "Appearance",
+      "settings.appearanceDesc": "Customize appearance",
+      "settings.theme": "Theme",
+      "settings.themeLight": "Light",
+      "settings.themeDark": "Dark",
+      "settings.themeSystem": "System",
+      "settings.language": "Language",
+      "settings.accentColor": "Accent Color",
+      "settings.reducedMotion": "Reduced Motion",
     };
     return translations[key] || key;
   },
 };
 
-describe('AppearanceSettings', () => {
-  it('renders appearance settings section', () => {
+describe("AppearanceSettings", () => {
+  it("renders appearance settings section", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
+    expect(screen.getByText("Appearance")).toBeInTheDocument();
   });
 
-  it('renders theme selection', () => {
+  it("renders theme selection", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText('Theme')).toBeInTheDocument();
+    expect(screen.getByText("Theme")).toBeInTheDocument();
   });
 
-  it('renders language selection', () => {
+  it("renders language selection", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText('Language')).toBeInTheDocument();
+    expect(screen.getByText("Language")).toBeInTheDocument();
   });
 
-  it('renders accent color picker', () => {
+  it("renders accent color picker", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText('Accent Color')).toBeInTheDocument();
+    expect(screen.getByText("Accent Color")).toBeInTheDocument();
   });
 
-  it('renders reduced motion toggle', () => {
+  it("renders reduced motion toggle", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText('Reduced Motion')).toBeInTheDocument();
+    expect(screen.getByText("Reduced Motion")).toBeInTheDocument();
   });
 });

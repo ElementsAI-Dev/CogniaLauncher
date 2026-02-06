@@ -1,11 +1,20 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Minus, Square, X, Pin, PinOff, Maximize2, Move, MonitorUp } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { isTauri } from '@/lib/tauri';
-import { useSettingsStore } from '@/lib/stores/settings';
-import { useLocale } from '@/components/providers/locale-provider';
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  Minus,
+  Square,
+  X,
+  Pin,
+  PinOff,
+  Maximize2,
+  Move,
+  MonitorUp,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { isTauri } from "@/lib/tauri";
+import { useSettingsStore } from "@/lib/stores/settings";
+import { useLocale } from "@/components/providers/locale-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,10 +22,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuCheckboxItem,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 
 type TauriWindow = Awaited<
-  ReturnType<typeof import('@tauri-apps/api/window').getCurrentWindow>
+  ReturnType<typeof import("@tauri-apps/api/window").getCurrentWindow>
 >;
 
 export function Titlebar() {
@@ -30,8 +39,11 @@ export function Titlebar() {
   const [isDesktopMode, setIsDesktopMode] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
-  
+  const [contextMenuPosition, setContextMenuPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+
   const unlistenResizeRef = useRef<(() => void) | null>(null);
   const unlistenFocusRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
@@ -43,19 +55,19 @@ export function Titlebar() {
 
   useEffect(() => {
     if (!mounted) return;
-    
+
     let active = true;
 
     const initTauri = async () => {
       // Use the shared isTauri() detection from lib/tauri
       if (!isTauri()) return;
-      
+
       try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
-        
+
         if (!active) return;
-        
+
         setAppWindow(win);
         setIsDesktopMode(true);
 
@@ -64,9 +76,9 @@ export function Titlebar() {
           win.isFullscreen(),
           win.isAlwaysOnTop(),
         ]);
-        
+
         if (!active) return;
-          
+
         setIsMaximized(maximized);
         setIsFullscreen(fullscreen);
         setIsAlwaysOnTop(alwaysOnTop);
@@ -83,27 +95,28 @@ export function Titlebar() {
           }
         });
 
-        unlistenFocusRef.current = await win.onFocusChanged(({ payload: focused }) => {
-          if (active) {
-            setIsFocused(focused);
-          }
-        });
+        unlistenFocusRef.current = await win.onFocusChanged(
+          ({ payload: focused }) => {
+            if (active) {
+              setIsFocused(focused);
+            }
+          },
+        );
 
         unlistenCloseRef.current = await win.onCloseRequested(async (event) => {
           const hasUnsavedChanges = checkGlobalUnsavedChanges();
           if (hasUnsavedChanges) {
             event.preventDefault();
             const confirmed = await window.confirm(
-              'You have unsaved changes. Are you sure you want to close?'
+              "You have unsaved changes. Are you sure you want to close?",
             );
             if (confirmed) {
               await win.destroy();
             }
           }
         });
-
       } catch (e) {
-        console.error('Failed to initialize Tauri window:', e);
+        console.error("Failed to initialize Tauri window:", e);
       }
     };
 
@@ -148,20 +161,20 @@ export function Titlebar() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!appWindow) return;
-      
-      if (e.key === 'F11') {
+
+      if (e.key === "F11") {
         e.preventDefault();
         handleToggleFullscreen();
       }
-      
-      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+
+      if (e.ctrlKey && e.shiftKey && e.key === "T") {
         e.preventDefault();
         handleToggleAlwaysOnTop();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [appWindow, handleToggleFullscreen, handleToggleAlwaysOnTop]);
 
   const handleClose = useCallback(async () => {
@@ -172,11 +185,15 @@ export function Titlebar() {
     }
   }, [appWindow, appSettings.minimizeToTray]);
 
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('button')) return;
-    if ((e.target as HTMLElement).closest('[data-radix-menu-content]')) return;
-    handleMaximize();
-  }, [handleMaximize]);
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("button")) return;
+      if ((e.target as HTMLElement).closest("[data-radix-menu-content]"))
+        return;
+      handleMaximize();
+    },
+    [handleMaximize],
+  );
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -206,33 +223,35 @@ export function Titlebar() {
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         className={cn(
-          'flex h-8 w-full select-none items-center justify-between border-b transition-opacity',
-          isFocused 
-            ? 'bg-background/80 backdrop-blur-sm' 
-            : 'bg-background/60 backdrop-blur-sm opacity-80'
+          "flex h-8 w-full select-none items-center justify-between border-b transition-opacity",
+          isFocused
+            ? "bg-background/80 backdrop-blur-sm"
+            : "bg-background/60 backdrop-blur-sm opacity-80",
         )}
       >
         <div className="flex h-full flex-1 items-center gap-2 px-3">
           <div className="flex items-center gap-2">
             <svg
               className={cn(
-                'h-4 w-4 transition-colors',
-                isFocused ? 'text-primary' : 'text-muted-foreground'
+                "h-4 w-4 transition-colors",
+                isFocused ? "text-primary" : "text-muted-foreground",
               )}
               viewBox="0 0 24 24"
               fill="currentColor"
             >
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
-            <span className={cn(
-              'text-xs font-medium transition-colors',
-              isFocused ? 'text-muted-foreground' : 'text-muted-foreground/60'
-            )}>
+            <span
+              className={cn(
+                "text-xs font-medium transition-colors",
+                isFocused
+                  ? "text-muted-foreground"
+                  : "text-muted-foreground/60",
+              )}
+            >
               CogniaLauncher
             </span>
-            {isAlwaysOnTop && (
-              <Pin className="h-3 w-3 text-primary" />
-            )}
+            {isAlwaysOnTop && <Pin className="h-3 w-3 text-primary" />}
           </div>
         </div>
 
@@ -240,13 +259,17 @@ export function Titlebar() {
           <button
             onClick={handleToggleAlwaysOnTop}
             className={cn(
-              'inline-flex h-full w-11 items-center justify-center',
-              'text-muted-foreground transition-colors',
-              'hover:bg-muted hover:text-foreground',
-              isAlwaysOnTop && 'text-primary'
+              "inline-flex h-full w-11 items-center justify-center",
+              "text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground",
+              isAlwaysOnTop && "text-primary",
             )}
-            aria-label={isAlwaysOnTop ? t('titlebar.unpinFromTop') : t('titlebar.pinOnTop')}
-            title={`${isAlwaysOnTop ? t('titlebar.unpinFromTop') : t('titlebar.pinOnTop')} (Ctrl+Shift+T)`}
+            aria-label={
+              isAlwaysOnTop
+                ? t("titlebar.unpinFromTop")
+                : t("titlebar.pinOnTop")
+            }
+            title={`${isAlwaysOnTop ? t("titlebar.unpinFromTop") : t("titlebar.pinOnTop")} (Ctrl+Shift+T)`}
           >
             {isAlwaysOnTop ? (
               <PinOff className="h-3.5 w-3.5" />
@@ -258,12 +281,12 @@ export function Titlebar() {
           <button
             onClick={handleMinimize}
             className={cn(
-              'inline-flex h-full w-11 items-center justify-center',
-              'text-muted-foreground transition-colors',
-              'hover:bg-muted hover:text-foreground'
+              "inline-flex h-full w-11 items-center justify-center",
+              "text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground",
             )}
-            aria-label={t('titlebar.minimize')}
-            title={t('titlebar.minimize')}
+            aria-label={t("titlebar.minimize")}
+            title={t("titlebar.minimize")}
           >
             <Minus className="h-4 w-4" />
           </button>
@@ -271,12 +294,14 @@ export function Titlebar() {
           <button
             onClick={handleMaximize}
             className={cn(
-              'inline-flex h-full w-11 items-center justify-center',
-              'text-muted-foreground transition-colors',
-              'hover:bg-muted hover:text-foreground'
+              "inline-flex h-full w-11 items-center justify-center",
+              "text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground",
             )}
-            aria-label={isMaximized ? t('titlebar.restore') : t('titlebar.maximize')}
-            title={isMaximized ? t('titlebar.restore') : t('titlebar.maximize')}
+            aria-label={
+              isMaximized ? t("titlebar.restore") : t("titlebar.maximize")
+            }
+            title={isMaximized ? t("titlebar.restore") : t("titlebar.maximize")}
           >
             {isMaximized ? (
               <RestoreIcon className="h-3.5 w-3.5" />
@@ -288,12 +313,16 @@ export function Titlebar() {
           <button
             onClick={handleClose}
             className={cn(
-              'inline-flex h-full w-11 items-center justify-center',
-              'text-muted-foreground transition-colors',
-              'hover:bg-destructive hover:text-destructive-foreground'
+              "inline-flex h-full w-11 items-center justify-center",
+              "text-muted-foreground transition-colors",
+              "hover:bg-destructive hover:text-destructive-foreground",
             )}
-            aria-label={t('titlebar.close')}
-            title={appSettings.minimizeToTray ? t('titlebar.minimizeToTray') : t('titlebar.close')}
+            aria-label={t("titlebar.close")}
+            title={
+              appSettings.minimizeToTray
+                ? t("titlebar.minimizeToTray")
+                : t("titlebar.close")
+            }
           >
             <X className="h-4 w-4" />
           </button>
@@ -303,14 +332,14 @@ export function Titlebar() {
       <DropdownMenu open={contextMenuOpen} onOpenChange={setContextMenuOpen}>
         <div
           style={{
-            position: 'fixed',
+            position: "fixed",
             left: contextMenuPosition.x,
             top: contextMenuPosition.y,
           }}
         />
         <DropdownMenuContent
           style={{
-            position: 'fixed',
+            position: "fixed",
             left: contextMenuPosition.x,
             top: contextMenuPosition.y,
           }}
@@ -318,43 +347,45 @@ export function Titlebar() {
         >
           <DropdownMenuItem onClick={handleMinimize}>
             <Minus className="h-4 w-4" />
-            {t('titlebar.minimize')}
+            {t("titlebar.minimize")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleMaximize}>
             {isMaximized ? (
               <>
                 <RestoreIcon className="h-4 w-4" />
-                {t('titlebar.restore')}
+                {t("titlebar.restore")}
               </>
             ) : (
               <>
                 <Square className="h-4 w-4" />
-                {t('titlebar.maximize')}
+                {t("titlebar.maximize")}
               </>
             )}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleToggleFullscreen}>
             <Maximize2 className="h-4 w-4" />
-            {t('titlebar.fullscreen')}
+            {t("titlebar.fullscreen")}
             <DropdownMenuShortcut>F11</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleCenter}>
             <Move className="h-4 w-4" />
-            {t('titlebar.centerWindow')}
+            {t("titlebar.centerWindow")}
           </DropdownMenuItem>
           <DropdownMenuCheckboxItem
             checked={isAlwaysOnTop}
             onCheckedChange={handleToggleAlwaysOnTop}
           >
             <MonitorUp className="h-4 w-4" />
-            {t('titlebar.alwaysOnTop')}
+            {t("titlebar.alwaysOnTop")}
             <DropdownMenuShortcut>Ctrl+Shift+T</DropdownMenuShortcut>
           </DropdownMenuCheckboxItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleClose} variant="destructive">
             <X className="h-4 w-4" />
-            {appSettings.minimizeToTray ? t('titlebar.minimizeToTray') : t('titlebar.close')}
+            {appSettings.minimizeToTray
+              ? t("titlebar.minimizeToTray")
+              : t("titlebar.close")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -378,10 +409,10 @@ function RestoreIcon({ className }: { className?: string }) {
 }
 
 function checkGlobalUnsavedChanges(): boolean {
-  if (typeof window === 'undefined') return false;
-  const event = new CustomEvent('cognia:check-unsaved', { 
+  if (typeof window === "undefined") return false;
+  const event = new CustomEvent("cognia:check-unsaved", {
     detail: { hasChanges: false },
-    cancelable: true 
+    cancelable: true,
   });
   window.dispatchEvent(event);
   return (event as CustomEvent<{ hasChanges: boolean }>).detail.hasChanges;

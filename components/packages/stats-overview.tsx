@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useMemo, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+} from "@/components/ui/collapsible";
 import {
   Package,
   Server,
@@ -17,9 +17,9 @@ import {
   Star,
   ChevronDown,
   ChevronUp,
-} from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import type { InstalledPackage, ProviderInfo, UpdateInfo } from '@/lib/tauri';
+} from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import type { InstalledPackage, ProviderInfo, UpdateInfo } from "@/lib/tauri";
 
 interface StatsOverviewProps {
   installedPackages: InstalledPackage[];
@@ -35,15 +35,21 @@ interface StatCardProps {
   label: string;
   value: number | string;
   subLabel?: string;
-  variant?: 'default' | 'success' | 'warning' | 'info';
+  variant?: "default" | "success" | "warning" | "info";
 }
 
-function StatCard({ icon, label, value, subLabel, variant = 'default' }: StatCardProps) {
+function StatCard({
+  icon,
+  label,
+  value,
+  subLabel,
+  variant = "default",
+}: StatCardProps) {
   const variantClasses = {
-    default: 'bg-card',
-    success: 'bg-green-500/10 border-green-500/20',
-    warning: 'bg-orange-500/10 border-orange-500/20',
-    info: 'bg-blue-500/10 border-blue-500/20',
+    default: "bg-card",
+    success: "bg-green-500/10 border-green-500/20",
+    warning: "bg-orange-500/10 border-orange-500/20",
+    info: "bg-blue-500/10 border-blue-500/20",
   };
 
   return (
@@ -85,7 +91,7 @@ export function StatsOverview({
 
   const enabledProviders = useMemo(
     () => providers.filter((p) => p.enabled && !p.is_environment_provider),
-    [providers]
+    [providers],
   );
 
   const topProviders = useMemo(() => {
@@ -112,7 +118,7 @@ export function StatsOverview({
             ) : (
               <ChevronDown className="h-4 w-4" />
             )}
-            {t('packages.statsOverview')}
+            {t("packages.statsOverview")}
           </Button>
         </CollapsibleTrigger>
       </div>
@@ -121,29 +127,29 @@ export function StatsOverview({
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
           <StatCard
             icon={<Package className="h-5 w-5 text-primary" />}
-            label={t('packages.totalInstalled')}
+            label={t("packages.totalInstalled")}
             value={installedPackages.length}
           />
           <StatCard
             icon={<Server className="h-5 w-5 text-blue-500" />}
-            label={t('packages.activeProviders')}
+            label={t("packages.activeProviders")}
             value={enabledProviders.length}
-            subLabel={t('packages.ofTotal', { count: providers.length })}
+            subLabel={t("packages.ofTotal", { count: providers.length })}
           />
           <StatCard
             icon={<ArrowUp className="h-5 w-5 text-green-500" />}
-            label={t('packages.updatesAvailableShort')}
+            label={t("packages.updatesAvailableShort")}
             value={updates.length}
-            variant={updates.length > 0 ? 'success' : 'default'}
+            variant={updates.length > 0 ? "success" : "default"}
           />
           <StatCard
             icon={<Pin className="h-5 w-5 text-orange-500" />}
-            label={t('packages.pinnedPackages')}
+            label={t("packages.pinnedPackages")}
             value={pinnedCount}
           />
           <StatCard
             icon={<Star className="h-5 w-5 text-yellow-500" />}
-            label={t('packages.bookmarked')}
+            label={t("packages.bookmarked")}
             value={bookmarkedCount}
           />
         </div>
@@ -151,7 +157,7 @@ export function StatsOverview({
         {topProviders.length > 0 && (
           <div className="flex flex-wrap gap-2 items-center mb-4">
             <span className="text-xs text-muted-foreground">
-              {t('packages.packagesByProvider')}:
+              {t("packages.packagesByProvider")}:
             </span>
             {topProviders.map((provider) => (
               <Badge key={provider.id} variant="secondary" className="gap-1">

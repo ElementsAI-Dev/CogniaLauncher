@@ -1,21 +1,21 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { AppShell } from './app-shell';
+import { render, screen, fireEvent } from "@testing-library/react";
+import { AppShell } from "./app-shell";
 
 const mockToggleDrawer = jest.fn();
 const mockFetchConfig = jest.fn();
 
-jest.mock('@/components/providers/locale-provider', () => ({
+jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
-        'commandPalette.buttonLabel': 'Search',
+        "commandPalette.buttonLabel": "Search",
       };
       return translations[key] || key;
     },
   }),
 }));
 
-jest.mock('@/lib/stores/log', () => ({
+jest.mock("@/lib/stores/log", () => ({
   useLogStore: () => ({
     toggleDrawer: mockToggleDrawer,
     getLogStats: () => ({
@@ -26,114 +26,118 @@ jest.mock('@/lib/stores/log', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-settings', () => ({
+jest.mock("@/hooks/use-settings", () => ({
   useSettings: () => ({
     config: null,
     fetchConfig: mockFetchConfig,
   }),
 }));
 
-jest.mock('@/hooks/use-appearance-config-sync', () => ({
+jest.mock("@/hooks/use-appearance-config-sync", () => ({
   useAppearanceConfigSync: jest.fn(),
 }));
 
-jest.mock('@/lib/tauri', () => ({
+jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
 }));
 
-jest.mock('@/components/ui/sidebar', () => ({
-  SidebarInset: ({ children }: { children: React.ReactNode }) => <div data-testid="sidebar-inset">{children}</div>,
-  SidebarProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="sidebar-provider">{children}</div>,
+jest.mock("@/components/ui/sidebar", () => ({
+  SidebarInset: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="sidebar-inset">{children}</div>
+  ),
+  SidebarProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="sidebar-provider">{children}</div>
+  ),
   SidebarTrigger: () => <button data-testid="sidebar-trigger">Toggle</button>,
 }));
 
-jest.mock('@/components/app-sidebar', () => ({
+jest.mock("@/components/app-sidebar", () => ({
   AppSidebar: () => <div data-testid="app-sidebar">Sidebar</div>,
 }));
 
-jest.mock('@/components/layout/titlebar', () => ({
+jest.mock("@/components/layout/titlebar", () => ({
   Titlebar: () => null,
 }));
 
-jest.mock('@/components/log/log-drawer', () => ({
+jest.mock("@/components/log/log-drawer", () => ({
   LogDrawer: () => <div data-testid="log-drawer">LogDrawer</div>,
 }));
 
-jest.mock('@/components/layout/breadcrumb', () => ({
+jest.mock("@/components/layout/breadcrumb", () => ({
   Breadcrumb: () => <div data-testid="breadcrumb">Breadcrumb</div>,
 }));
 
-jest.mock('@/components/command-palette', () => ({
-  CommandPalette: ({ open }: { open: boolean }) => 
+jest.mock("@/components/command-palette", () => ({
+  CommandPalette: ({ open }: { open: boolean }) =>
     open ? <div data-testid="command-palette">Command Palette</div> : null,
 }));
 
-describe('AppShell', () => {
+describe("AppShell", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('renders children content', () => {
+  it("renders children content", () => {
     render(
       <AppShell>
         <div data-testid="child-content">Child Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    expect(screen.getByTestId('child-content')).toBeInTheDocument();
+    expect(screen.getByTestId("child-content")).toBeInTheDocument();
   });
 
-  it('renders sidebar components', () => {
+  it("renders sidebar components", () => {
     render(
       <AppShell>
         <div>Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    expect(screen.getByTestId('sidebar-provider')).toBeInTheDocument();
-    expect(screen.getByTestId('app-sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-provider")).toBeInTheDocument();
+    expect(screen.getByTestId("app-sidebar")).toBeInTheDocument();
   });
 
-  it('renders breadcrumb in header', () => {
+  it("renders breadcrumb in header", () => {
     render(
       <AppShell>
         <div>Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    expect(screen.getByTestId('breadcrumb')).toBeInTheDocument();
+    expect(screen.getByTestId("breadcrumb")).toBeInTheDocument();
   });
 
-  it('renders log drawer', () => {
+  it("renders log drawer", () => {
     render(
       <AppShell>
         <div>Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    expect(screen.getByTestId('log-drawer')).toBeInTheDocument();
+    expect(screen.getByTestId("log-drawer")).toBeInTheDocument();
   });
 
-  it('toggles log drawer on Ctrl+Shift+L', () => {
+  it("toggles log drawer on Ctrl+Shift+L", () => {
     render(
       <AppShell>
         <div>Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    fireEvent.keyDown(window, { key: 'L', ctrlKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "L", ctrlKey: true, shiftKey: true });
 
     expect(mockToggleDrawer).toHaveBeenCalledTimes(1);
   });
 
-  it('has search button that opens command palette', () => {
+  it("has search button that opens command palette", () => {
     render(
       <AppShell>
         <div>Content</div>
-      </AppShell>
+      </AppShell>,
     );
 
-    const searchButton = screen.getByTitle('Search');
+    const searchButton = screen.getByTitle("Search");
     expect(searchButton).toBeInTheDocument();
   });
 });

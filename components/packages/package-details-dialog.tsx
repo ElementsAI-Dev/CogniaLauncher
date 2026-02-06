@@ -1,29 +1,38 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import type { PackageInfo, PackageSummary } from '@/lib/tauri';
-import { ExternalLink, Download, Globe, FileCode, Scale, Calendar, RotateCcw, Pin } from 'lucide-react';
-import { toast } from 'sonner';
-import { useLocale } from '@/components/providers/locale-provider';
+} from "@/components/ui/select";
+import type { PackageInfo, PackageSummary } from "@/lib/tauri";
+import {
+  ExternalLink,
+  Download,
+  Globe,
+  FileCode,
+  Scale,
+  Calendar,
+  RotateCcw,
+  Pin,
+} from "lucide-react";
+import { toast } from "sonner";
+import { useLocale } from "@/components/providers/locale-provider";
 
 interface PackageDetailsDialogProps {
   pkg: PackageSummary | null;
@@ -32,7 +41,10 @@ interface PackageDetailsDialogProps {
   onInstall: (name: string, version?: string) => Promise<void>;
   onRollback?: (name: string, version: string) => Promise<void>;
   onPin?: (name: string, version: string) => Promise<void>;
-  fetchPackageInfo: (name: string, provider?: string) => Promise<PackageInfo | null>;
+  fetchPackageInfo: (
+    name: string,
+    provider?: string,
+  ) => Promise<PackageInfo | null>;
   isInstalled?: boolean;
   currentVersion?: string;
 }
@@ -50,7 +62,7 @@ export function PackageDetailsDialog({
 }: PackageDetailsDialogProps) {
   const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string>('');
+  const [selectedVersion, setSelectedVersion] = useState<string>("");
   const [installing, setInstalling] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const { t } = useLocale();
@@ -59,8 +71,8 @@ export function PackageDetailsDialog({
     if (open && pkg) {
       setLoading(true);
       setPackageInfo(null);
-      setSelectedVersion('');
-      
+      setSelectedVersion("");
+
       fetchPackageInfo(pkg.name, pkg.provider)
         .then((info) => {
           setPackageInfo(info);
@@ -77,10 +89,15 @@ export function PackageDetailsDialog({
     setInstalling(true);
     try {
       await onInstall(pkg.name, selectedVersion || undefined);
-      toast.success(t('packages.installing', { name: pkg.name, version: selectedVersion || 'latest' }));
+      toast.success(
+        t("packages.installing", {
+          name: pkg.name,
+          version: selectedVersion || "latest",
+        }),
+      );
       onOpenChange(false);
     } catch (err) {
-      toast.error(t('packages.installFailed', { error: String(err) }));
+      toast.error(t("packages.installFailed", { error: String(err) }));
     } finally {
       setInstalling(false);
     }
@@ -91,10 +108,15 @@ export function PackageDetailsDialog({
     setRollingBack(true);
     try {
       await onRollback(pkg.name, selectedVersion);
-      toast.success(t('packages.rollbackSuccess', { name: pkg.name, version: selectedVersion }));
+      toast.success(
+        t("packages.rollbackSuccess", {
+          name: pkg.name,
+          version: selectedVersion,
+        }),
+      );
       onOpenChange(false);
     } catch (err) {
-      toast.error(t('packages.rollbackFailed', { error: String(err) }));
+      toast.error(t("packages.rollbackFailed", { error: String(err) }));
     } finally {
       setRollingBack(false);
     }
@@ -104,9 +126,11 @@ export function PackageDetailsDialog({
     if (!pkg || !onPin || !selectedVersion) return;
     try {
       await onPin(pkg.name, selectedVersion);
-      toast.success(t('packages.pinned', { name: pkg.name }));
+      toast.success(t("packages.pinned", { name: pkg.name }));
     } catch (err) {
-      toast.error(t('packages.pinFailed', { name: pkg.name, error: String(err) }));
+      toast.error(
+        t("packages.pinFailed", { name: pkg.name, error: String(err) }),
+      );
     }
   };
 
@@ -127,7 +151,9 @@ export function PackageDetailsDialog({
               {loading ? (
                 <Skeleton className="h-4 w-3/4" />
               ) : (
-                packageInfo?.description || pkg?.description || t('packages.noDescriptionAvailable')
+                packageInfo?.description ||
+                pkg?.description ||
+                t("packages.noDescriptionAvailable")
               )}
             </div>
           </DialogDescription>
@@ -152,7 +178,7 @@ export function PackageDetailsDialog({
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:underline flex items-center gap-1"
                     >
-                      {t('packages.homepage')}
+                      {t("packages.homepage")}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -166,7 +192,7 @@ export function PackageDetailsDialog({
                       rel="noopener noreferrer"
                       className="text-blue-500 hover:underline flex items-center gap-1"
                     >
-                      {t('packages.repository')}
+                      {t("packages.repository")}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </div>
@@ -183,16 +209,24 @@ export function PackageDetailsDialog({
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium">{t('packages.selectVersion')}</h4>
+                  <h4 className="text-sm font-medium">
+                    {t("packages.selectVersion")}
+                  </h4>
                   {isInstalled && currentVersion && (
                     <span className="text-xs text-muted-foreground">
-                      {t('packages.currentVersionLabel')}: <span className="font-mono">{currentVersion}</span>
+                      {t("packages.currentVersionLabel")}:{" "}
+                      <span className="font-mono">{currentVersion}</span>
                     </span>
                   )}
                 </div>
-                <Select value={selectedVersion} onValueChange={setSelectedVersion}>
+                <Select
+                  value={selectedVersion}
+                  onValueChange={setSelectedVersion}
+                >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t('packages.selectVersionPlaceholder')} />
+                    <SelectValue
+                      placeholder={t("packages.selectVersionPlaceholder")}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {packageInfo.versions.map((v) => (
@@ -201,12 +235,12 @@ export function PackageDetailsDialog({
                           <span>{v.version}</span>
                           {v.deprecated && (
                             <Badge variant="destructive" className="text-xs">
-                              {t('packages.deprecated')}
+                              {t("packages.deprecated")}
                             </Badge>
                           )}
                           {v.yanked && (
                             <Badge variant="secondary" className="text-xs">
-                              {t('packages.yanked')}
+                              {t("packages.yanked")}
                             </Badge>
                           )}
                         </div>
@@ -217,7 +251,9 @@ export function PackageDetailsDialog({
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">{t('packages.versionHistory')}</h4>
+                <h4 className="text-sm font-medium">
+                  {t("packages.versionHistory")}
+                </h4>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {packageInfo.versions.slice(0, 10).map((v) => (
                     <div
@@ -227,7 +263,9 @@ export function PackageDetailsDialog({
                       <div className="flex items-center gap-2">
                         <span className="font-mono">{v.version}</span>
                         {v.deprecated && (
-                          <Badge variant="outline" className="text-xs">{t('packages.deprecated')}</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {t("packages.deprecated")}
+                          </Badge>
                         )}
                       </div>
                       {v.release_date && (
@@ -240,7 +278,9 @@ export function PackageDetailsDialog({
                   ))}
                   {packageInfo.versions.length > 10 && (
                     <p className="text-xs text-muted-foreground text-center py-2">
-                      {t('packages.moreVersions', { count: packageInfo.versions.length - 10 })}
+                      {t("packages.moreVersions", {
+                        count: packageInfo.versions.length - 10,
+                      })}
                     </p>
                   )}
                 </div>
@@ -248,16 +288,16 @@ export function PackageDetailsDialog({
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              {t('packages.loadFailed')}
+              {t("packages.loadFailed")}
             </div>
           )}
         </ScrollArea>
 
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common.cancel')}
+            {t("common.cancel")}
           </Button>
-          
+
           {/* Pin button - only for installed packages */}
           {isInstalled && onPin && selectedVersion && (
             <Button
@@ -266,28 +306,37 @@ export function PackageDetailsDialog({
               disabled={loading || !packageInfo}
             >
               <Pin className="h-4 w-4 mr-2" />
-              {t('packages.pinVersion')}
+              {t("packages.pinVersion")}
             </Button>
           )}
 
           {/* Rollback button - only for installed packages with version different from current */}
-          {isInstalled && onRollback && selectedVersion && selectedVersion !== currentVersion && (
-            <Button
-              variant="secondary"
-              onClick={handleRollback}
-              disabled={rollingBack || loading || !packageInfo}
-            >
-              <RotateCcw className="h-4 w-4 mr-2" />
-              {rollingBack ? t('packages.rollingBack') : t('packages.rollback')}
-            </Button>
-          )}
-          
+          {isInstalled &&
+            onRollback &&
+            selectedVersion &&
+            selectedVersion !== currentVersion && (
+              <Button
+                variant="secondary"
+                onClick={handleRollback}
+                disabled={rollingBack || loading || !packageInfo}
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {rollingBack
+                  ? t("packages.rollingBack")
+                  : t("packages.rollback")}
+              </Button>
+            )}
+
           <Button
             onClick={handleInstall}
             disabled={installing || loading || !packageInfo}
           >
             <Download className="h-4 w-4 mr-2" />
-            {installing ? t('packages.installing', { name: '', version: '' }) : t('packages.installVersion', { version: selectedVersion || t('packages.latest') })}
+            {installing
+              ? t("packages.installing", { name: "", version: "" })
+              : t("packages.installVersion", {
+                  version: selectedVersion || t("packages.latest"),
+                })}
           </Button>
         </div>
       </DialogContent>

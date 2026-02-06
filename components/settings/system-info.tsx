@@ -1,9 +1,15 @@
-'use client';
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Server } from 'lucide-react';
-import type { PlatformInfo } from '@/lib/tauri';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Server } from "lucide-react";
+import type { PlatformInfo } from "@/lib/tauri";
 
 interface SystemInfoProps {
   loading: boolean;
@@ -17,9 +23,9 @@ export function SystemInfo({ loading, platformInfo, t }: SystemInfoProps) {
       <CardHeader>
         <CardTitle id="system-info-heading" className="flex items-center gap-2">
           <Server className="h-5 w-5" aria-hidden="true" />
-          {t('settings.systemInfo')}
+          {t("settings.systemInfo")}
         </CardTitle>
-        <CardDescription>{t('settings.systemInfoDesc')}</CardDescription>
+        <CardDescription>{t("settings.systemInfoDesc")}</CardDescription>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -30,12 +36,20 @@ export function SystemInfo({ loading, platformInfo, t }: SystemInfoProps) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-muted-foreground">{t('settings.operatingSystem')}</p>
-              <p className="font-medium">{platformInfo?.os || t('common.unknown')}</p>
+              <p className="text-muted-foreground">
+                {t("settings.operatingSystem")}
+              </p>
+              <p className="font-medium">
+                {platformInfo?.os || t("common.unknown")}
+              </p>
             </div>
             <div>
-              <p className="text-muted-foreground">{t('settings.architecture')}</p>
-              <p className="font-medium">{platformInfo?.arch || t('common.unknown')}</p>
+              <p className="text-muted-foreground">
+                {t("settings.architecture")}
+              </p>
+              <p className="font-medium">
+                {platformInfo?.arch || t("common.unknown")}
+              </p>
             </div>
           </div>
         )}

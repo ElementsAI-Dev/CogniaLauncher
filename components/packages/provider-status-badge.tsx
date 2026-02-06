@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { useState, useCallback, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
+} from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Server,
   ChevronDown,
@@ -18,12 +18,12 @@ import {
   XCircle,
   Loader2,
   ExternalLink,
-} from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import type { ProviderInfo } from '@/lib/tauri';
-import * as tauri from '@/lib/tauri';
-import { toast } from 'sonner';
-import Link from 'next/link';
+} from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import type { ProviderInfo } from "@/lib/tauri";
+import * as tauri from "@/lib/tauri";
+import { toast } from "sonner";
+import Link from "next/link";
 
 interface ProviderStatusBadgeProps {
   providers: ProviderInfo[];
@@ -39,20 +39,23 @@ export function ProviderStatusBadge({
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [togglingProvider, setTogglingProvider] = useState<string | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState<Record<string, boolean>>({});
-  const [providerAvailability, setProviderAvailability] = useState<Record<string, boolean>>({});
+  const [checkingStatus, setCheckingStatus] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [providerAvailability, setProviderAvailability] = useState<
+    Record<string, boolean>
+  >({});
 
   const enabledCount = useMemo(
     () => providers.filter((p) => p.enabled).length,
-    [providers]
+    [providers],
   );
 
   const availableCount = useMemo(
     () =>
-      providers.filter(
-        (p) => p.enabled && providerAvailability[p.id] !== false
-      ).length,
-    [providers, providerAvailability]
+      providers.filter((p) => p.enabled && providerAvailability[p.id] !== false)
+        .length,
+    [providers, providerAvailability],
   );
 
   const handleToggle = useCallback(
@@ -68,21 +71,25 @@ export function ProviderStatusBadge({
         const provider = providers.find((p) => p.id === providerId);
         toast.success(
           enabled
-            ? t('providers.enableSuccess', { name: provider?.display_name || providerId })
-            : t('providers.disableSuccess', { name: provider?.display_name || providerId })
+            ? t("providers.enableSuccess", {
+                name: provider?.display_name || providerId,
+              })
+            : t("providers.disableSuccess", {
+                name: provider?.display_name || providerId,
+              }),
         );
         onRefresh?.();
       } catch {
         toast.error(
           enabled
-            ? t('providers.enableError', { name: providerId })
-            : t('providers.disableError', { name: providerId })
+            ? t("providers.enableError", { name: providerId })
+            : t("providers.disableError", { name: providerId }),
         );
       } finally {
         setTogglingProvider(null);
       }
     },
-    [providers, onProviderToggle, onRefresh, t]
+    [providers, onProviderToggle, onRefresh, t],
   );
 
   const handleCheckStatus = useCallback(async (providerId: string) => {
@@ -97,7 +104,7 @@ export function ProviderStatusBadge({
 
   const packageProviders = useMemo(
     () => providers.filter((p) => !p.is_environment_provider),
-    [providers]
+    [providers],
   );
 
   return (
@@ -105,9 +112,9 @@ export function ProviderStatusBadge({
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="h-9 gap-2">
           <Server className="h-4 w-4" />
-          <span className="hidden sm:inline">{t('packages.providers')}</span>
+          <span className="hidden sm:inline">{t("packages.providers")}</span>
           <Badge
-            variant={availableCount > 0 ? 'default' : 'secondary'}
+            variant={availableCount > 0 ? "default" : "secondary"}
             className="ml-1 text-xs"
           >
             {enabledCount}/{providers.length}
@@ -118,14 +125,19 @@ export function ProviderStatusBadge({
       <PopoverContent className="w-80 p-0" align="end" collisionPadding={16}>
         <div className="p-3 border-b">
           <div className="flex items-center justify-between">
-            <h4 className="font-medium text-sm">{t('packages.providerManagement')}</h4>
-            <Link href="/providers" className="text-xs text-primary hover:underline flex items-center gap-1">
-              {t('packages.viewAll')}
+            <h4 className="font-medium text-sm">
+              {t("packages.providerManagement")}
+            </h4>
+            <Link
+              href="/providers"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              {t("packages.viewAll")}
               <ExternalLink className="h-3 w-3" />
             </Link>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {t('packages.providerManagementDesc')}
+            {t("packages.providerManagementDesc")}
           </p>
         </div>
 
@@ -177,13 +189,15 @@ export function ProviderStatusBadge({
                       {isChecking ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        t('providers.checkStatus')
+                        t("providers.checkStatus")
                       )}
                     </Button>
                     <Switch
                       id={`provider-${provider.id}`}
                       checked={provider.enabled}
-                      onCheckedChange={(checked) => handleToggle(provider.id, checked)}
+                      onCheckedChange={(checked) =>
+                        handleToggle(provider.id, checked)
+                      }
                       disabled={isToggling}
                     />
                   </div>
@@ -206,7 +220,7 @@ export function ProviderStatusBadge({
               });
             }}
           >
-            {t('providers.checkAllStatus')}
+            {t("providers.checkAllStatus")}
           </Button>
         </div>
       </PopoverContent>

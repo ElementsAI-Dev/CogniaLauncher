@@ -1,88 +1,93 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { SystemInfo } from './system-info';
+import React from "react";
+import { render, screen } from "@testing-library/react";
+import { SystemInfo } from "./system-info";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
-    'settings.systemInfo': 'System Information',
-    'settings.systemInfoDesc': 'Current system details',
-    'settings.operatingSystem': 'Operating System',
-    'settings.architecture': 'Architecture',
-    'common.unknown': 'Unknown',
+    "settings.systemInfo": "System Information",
+    "settings.systemInfoDesc": "Current system details",
+    "settings.operatingSystem": "Operating System",
+    "settings.architecture": "Architecture",
+    "common.unknown": "Unknown",
   };
   return translations[key] || key;
 };
 
-describe('SystemInfo', () => {
+describe("SystemInfo", () => {
   const defaultProps = {
     loading: false,
     platformInfo: {
-      os: 'Windows 11',
-      arch: 'x86_64',
+      os: "Windows 11",
+      arch: "x86_64",
     },
     t: mockT,
   };
 
-  it('should render system info card', () => {
+  it("should render system info card", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText('System Information')).toBeInTheDocument();
-    expect(screen.getByText('Current system details')).toBeInTheDocument();
+    expect(screen.getByText("System Information")).toBeInTheDocument();
+    expect(screen.getByText("Current system details")).toBeInTheDocument();
   });
 
-  it('should display platform information', () => {
+  it("should display platform information", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText('Windows 11')).toBeInTheDocument();
-    expect(screen.getByText('x86_64')).toBeInTheDocument();
+    expect(screen.getByText("Windows 11")).toBeInTheDocument();
+    expect(screen.getByText("x86_64")).toBeInTheDocument();
   });
 
-  it('should display operating system label', () => {
+  it("should display operating system label", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText('Operating System')).toBeInTheDocument();
+    expect(screen.getByText("Operating System")).toBeInTheDocument();
   });
 
-  it('should display architecture label', () => {
+  it("should display architecture label", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText('Architecture')).toBeInTheDocument();
+    expect(screen.getByText("Architecture")).toBeInTheDocument();
   });
 
-  it('should show skeleton when loading', () => {
-    const { container } = render(<SystemInfo {...defaultProps} loading={true} />);
+  it("should show skeleton when loading", () => {
+    const { container } = render(
+      <SystemInfo {...defaultProps} loading={true} />,
+    );
 
     // Check for skeleton elements
     const skeletons = container.querySelectorAll('[class*="animate-pulse"]');
     expect(skeletons.length).toBeGreaterThan(0);
   });
 
-  it('should show unknown when platform info is null', () => {
+  it("should show unknown when platform info is null", () => {
     render(<SystemInfo {...defaultProps} platformInfo={null} />);
 
-    const unknownElements = screen.getAllByText('Unknown');
+    const unknownElements = screen.getAllByText("Unknown");
     expect(unknownElements.length).toBe(2);
   });
 
-  it('should show unknown for missing os', () => {
+  it("should show unknown for missing os", () => {
     render(
       <SystemInfo
         {...defaultProps}
-        platformInfo={{ os: undefined as unknown as string, arch: 'x86_64' }}
-      />
+        platformInfo={{ os: undefined as unknown as string, arch: "x86_64" }}
+      />,
     );
 
-    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
   });
 
-  it('should show unknown for missing arch', () => {
+  it("should show unknown for missing arch", () => {
     render(
       <SystemInfo
         {...defaultProps}
-        platformInfo={{ os: 'Windows 11', arch: undefined as unknown as string }}
-      />
+        platformInfo={{
+          os: "Windows 11",
+          arch: undefined as unknown as string,
+        }}
+      />,
     );
 
-    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
   });
 });

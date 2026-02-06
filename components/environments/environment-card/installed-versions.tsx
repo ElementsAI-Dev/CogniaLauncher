@@ -1,10 +1,14 @@
-'use client';
+"use client";
 
-import { Badge } from '@/components/ui/badge';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Check } from 'lucide-react';
-import { formatSize } from '@/lib/utils';
-import type { InstalledVersion } from '@/lib/tauri';
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Check } from "lucide-react";
+import { formatSize } from "@/lib/utils";
+import type { InstalledVersion } from "@/lib/tauri";
 
 interface InstalledVersionsProps {
   versions: InstalledVersion[];
@@ -13,16 +17,16 @@ interface InstalledVersionsProps {
   t: (key: string, params?: Record<string, string>) => string;
 }
 
-export function InstalledVersions({ 
-  versions, 
-  currentVersion, 
-  onSetGlobal, 
-  t 
+export function InstalledVersions({
+  versions,
+  currentVersion,
+  onSetGlobal,
+  t,
 }: InstalledVersionsProps) {
   if (versions.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        {t('environments.notInstalled')}
+        {t("environments.notInstalled")}
       </p>
     );
   }
@@ -33,7 +37,7 @@ export function InstalledVersions({
         <Tooltip key={v.version}>
           <TooltipTrigger asChild>
             <Badge
-              variant={currentVersion === v.version ? 'default' : 'secondary'}
+              variant={currentVersion === v.version ? "default" : "secondary"}
               className="cursor-pointer hover:opacity-80 transition-opacity gap-1"
               onClick={() => onSetGlobal(v.version)}
             >
@@ -43,11 +47,18 @@ export function InstalledVersions({
           </TooltipTrigger>
           <TooltipContent>
             <div className="text-xs">
-              <p>{t('environments.tooltip.size')} {formatSize(v.size)}</p>
+              <p>
+                {t("environments.tooltip.size")} {formatSize(v.size)}
+              </p>
               {v.installed_at && (
-                <p>{t('environments.tooltip.installedAt')} {new Date(v.installed_at).toLocaleDateString()}</p>
+                <p>
+                  {t("environments.tooltip.installedAt")}{" "}
+                  {new Date(v.installed_at).toLocaleDateString()}
+                </p>
               )}
-              <p className="text-muted-foreground">{t('environments.setGlobal')}</p>
+              <p className="text-muted-foreground">
+                {t("environments.setGlobal")}
+              </p>
             </div>
           </TooltipContent>
         </Tooltip>

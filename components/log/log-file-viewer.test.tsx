@@ -1,24 +1,24 @@
-import { render, waitFor } from '@testing-library/react';
-import { LogFileViewer } from './log-file-viewer';
-import { useLogStore } from '@/lib/stores/log';
+import { render, waitFor } from "@testing-library/react";
+import { LogFileViewer } from "./log-file-viewer";
+import { useLogStore } from "@/lib/stores/log";
 
 const mockQueryLogFile = jest.fn();
 const mockExportLogFile = jest.fn();
 
-jest.mock('@/hooks/use-logs', () => ({
+jest.mock("@/hooks/use-logs", () => ({
   useLogs: () => ({
     queryLogFile: mockQueryLogFile,
     exportLogFile: mockExportLogFile,
   }),
 }));
 
-jest.mock('@/components/providers/locale-provider', () => ({
+jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string) => key,
   }),
 }));
 
-describe('LogFileViewer', () => {
+describe("LogFileViewer", () => {
   beforeEach(() => {
     mockQueryLogFile.mockReset();
     mockExportLogFile.mockReset();
@@ -26,8 +26,8 @@ describe('LogFileViewer', () => {
       logs: [],
       maxLogs: 1000,
       filter: {
-        levels: ['info', 'warn', 'error'],
-        search: '',
+        levels: ["info", "warn", "error"],
+        search: "",
         useRegex: false,
         startTime: null,
         endTime: null,
@@ -40,14 +40,14 @@ describe('LogFileViewer', () => {
     });
   });
 
-  it('calls queryLogFile when opened', async () => {
+  it("calls queryLogFile when opened", async () => {
     mockQueryLogFile.mockResolvedValue({
       entries: [
         {
-          timestamp: '2026-02-02T12:00:00Z',
-          level: 'INFO',
-          target: 'app',
-          message: 'File entry message',
+          timestamp: "2026-02-02T12:00:00Z",
+          level: "INFO",
+          target: "app",
+          message: "File entry message",
           lineNumber: 1,
         },
       ],
@@ -56,11 +56,7 @@ describe('LogFileViewer', () => {
     });
 
     render(
-      <LogFileViewer
-        open
-        fileName="app.log"
-        onOpenChange={() => undefined}
-      />
+      <LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />,
     );
 
     await waitFor(() => {

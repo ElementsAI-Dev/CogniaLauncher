@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Package, CloudDownload, Check } from 'lucide-react';
-import { APP_VERSION } from '@/lib/app-version';
-import type { SelfUpdateInfo } from '@/lib/tauri';
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Package, CloudDownload, Check } from "lucide-react";
+import { APP_VERSION } from "@/lib/app-version";
+import type { SelfUpdateInfo } from "@/lib/tauri";
 
 interface VersionCardsProps {
   loading: boolean;
@@ -14,38 +14,49 @@ interface VersionCardsProps {
 
 export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
   const currentVersion = updateInfo?.current_version || APP_VERSION;
-  const latestVersion = updateInfo?.latest_version || updateInfo?.current_version || APP_VERSION;
+  const latestVersion =
+    updateInfo?.latest_version || updateInfo?.current_version || APP_VERSION;
 
   return (
-    <div className="grid gap-4 grid-cols-1 md:grid-cols-2" role="group" aria-label={t('about.versionInfo')}>
+    <div
+      className="grid gap-4 grid-cols-1 md:grid-cols-2"
+      role="group"
+      aria-label={t("about.versionInfo")}
+    >
       {/* Current Version Card */}
       <Card className="rounded-xl border bg-card">
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center gap-2">
             <Package className="h-5 w-5 text-blue-500" aria-hidden="true" />
-            <span className="text-sm font-medium text-foreground" id="current-version-label">
-              {t('about.currentVersion')}
+            <span
+              className="text-sm font-medium text-foreground"
+              id="current-version-label"
+            >
+              {t("about.currentVersion")}
             </span>
           </div>
           {loading ? (
-            <Skeleton className="h-10 w-32" aria-label={t('common.loading')} />
+            <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
             <>
-              <span 
+              <span
                 className="text-[32px] font-bold text-foreground block"
                 aria-labelledby="current-version-label"
               >
                 v{currentVersion}
               </span>
               {updateInfo?.update_available === false && (
-                <div 
+                <div
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-100 dark:bg-green-900/30"
                   role="status"
                   aria-live="polite"
                 >
-                  <Check className="h-3 w-3 text-green-600 dark:text-green-400" aria-hidden="true" />
+                  <Check
+                    className="h-3 w-3 text-green-600 dark:text-green-400"
+                    aria-hidden="true"
+                  />
                   <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                    {t('about.upToDate')}
+                    {t("about.upToDate")}
                   </span>
                 </div>
               )}
@@ -58,16 +69,22 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
       <Card className="rounded-xl border bg-card">
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <CloudDownload className="h-5 w-5 text-purple-500" aria-hidden="true" />
-            <span className="text-sm font-medium text-foreground" id="latest-version-label">
-              {t('about.latestVersion')}
+            <CloudDownload
+              className="h-5 w-5 text-purple-500"
+              aria-hidden="true"
+            />
+            <span
+              className="text-sm font-medium text-foreground"
+              id="latest-version-label"
+            >
+              {t("about.latestVersion")}
             </span>
           </div>
           {loading ? (
-            <Skeleton className="h-10 w-32" aria-label={t('common.loading')} />
+            <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
             <>
-              <span 
+              <span
                 className="text-[32px] font-bold text-foreground block"
                 aria-labelledby="latest-version-label"
               >
@@ -75,7 +92,7 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
               </span>
               {updateInfo?.update_available && (
                 <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                  {t('about.updateAvailable')}
+                  {t("about.updateAvailable")}
                 </span>
               )}
             </>

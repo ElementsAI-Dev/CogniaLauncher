@@ -1,33 +1,33 @@
-'use client';
+"use client";
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { useLocale } from '@/components/providers/locale-provider';
-import { useGitHubDownloads } from '@/hooks/use-github-downloads';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useLocale } from "@/components/providers/locale-provider";
+import { useGitHubDownloads } from "@/hooks/use-github-downloads";
 import {
   useAssetMatcher,
   getPlatformLabel,
   getArchLabel,
   type ParsedAsset,
-} from '@/hooks/use-asset-matcher';
-import { isTauri } from '@/lib/tauri';
-import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+} from "@/hooks/use-asset-matcher";
+import { isTauri } from "@/lib/tauri";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import {
   Github,
   Search,
@@ -43,8 +43,12 @@ import {
   FileArchive,
   Calendar,
   Star,
-} from 'lucide-react';
-import type { GitHubAssetInfo, GitHubArchiveFormat, GitHubSourceType } from '@/types/github';
+} from "lucide-react";
+import type {
+  GitHubAssetInfo,
+  GitHubArchiveFormat,
+  GitHubSourceType,
+} from "@/types/github";
 
 interface GitHubDownloadDialogProps {
   open: boolean;
@@ -81,12 +85,13 @@ export function GitHubDownloadDialog({
 
   const { parseAssets, currentPlatform, currentArch } = useAssetMatcher();
 
-  const [destination, setDestination] = useState('');
+  const [destination, setDestination] = useState("");
   const [selectedRelease, setSelectedRelease] = useState<string | null>(null);
   const [selectedAssets, setSelectedAssets] = useState<GitHubAssetInfo[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [archiveFormat, setArchiveFormat] = useState<GitHubArchiveFormat>('zip');
+  const [archiveFormat, setArchiveFormat] =
+    useState<GitHubArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
 
   const currentRelease = useMemo(() => {
@@ -100,7 +105,7 @@ export function GitHubDownloadDialog({
 
   const handleClose = useCallback(() => {
     reset();
-    setDestination('');
+    setDestination("");
     setSelectedRelease(null);
     setSelectedAssets([]);
     setSelectedBranch(null);
@@ -115,16 +120,21 @@ export function GitHubDownloadDialog({
   const handlePickFolder = useCallback(async () => {
     if (!isDesktop) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dialogModule = await import('@tauri-apps/plugin-dialog' as any).catch(() => null);
+      const dialogModule = await import(
+        /* @ts-expect-error dynamic Tauri plugin import */
+        "@tauri-apps/plugin-dialog"
+      ).catch(() => null);
       if (dialogModule?.open) {
-        const selected = await dialogModule.open({ directory: true, multiple: false });
-        if (selected && typeof selected === 'string') {
+        const selected = await dialogModule.open({
+          directory: true,
+          multiple: false,
+        });
+        if (selected && typeof selected === "string") {
           setDestination(selected);
         }
       }
     } catch (err) {
-      console.error('Failed to open folder picker', err);
+      console.error("Failed to open folder picker", err);
     }
   }, [isDesktop]);
 
@@ -140,29 +150,39 @@ export function GitHubDownloadDialog({
 
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
-      toast.error(t('downloads.github.noDestination'));
+      toast.error(t("downloads.github.noDestination"));
       return;
     }
 
     setIsDownloading(true);
 
     try {
-      if (sourceType === 'release' && selectedAssets.length > 0) {
+      if (sourceType === "release" && selectedAssets.length > 0) {
         for (const asset of selectedAssets) {
           const taskId = await downloadAsset(asset, destination);
           onDownloadStarted?.(taskId);
         }
-        toast.success(t('downloads.github.assetsAdded', { count: selectedAssets.length }));
-      } else if (sourceType === 'branch' && selectedBranch) {
-        const taskId = await downloadSource(selectedBranch, archiveFormat, destination);
+        toast.success(
+          t("downloads.github.assetsAdded", { count: selectedAssets.length }),
+        );
+      } else if (sourceType === "branch" && selectedBranch) {
+        const taskId = await downloadSource(
+          selectedBranch,
+          archiveFormat,
+          destination,
+        );
         onDownloadStarted?.(taskId);
-        toast.success(t('downloads.github.sourceAdded'));
-      } else if (sourceType === 'tag' && selectedTag) {
-        const taskId = await downloadSource(selectedTag, archiveFormat, destination);
+        toast.success(t("downloads.github.sourceAdded"));
+      } else if (sourceType === "tag" && selectedTag) {
+        const taskId = await downloadSource(
+          selectedTag,
+          archiveFormat,
+          destination,
+        );
         onDownloadStarted?.(taskId);
-        toast.success(t('downloads.github.sourceAdded'));
+        toast.success(t("downloads.github.sourceAdded"));
       } else {
-        toast.error(t('downloads.github.noSelection'));
+        toast.error(t("downloads.github.noSelection"));
         return;
       }
 
@@ -188,9 +208,9 @@ export function GitHubDownloadDialog({
 
   const canDownload =
     destination.trim() &&
-    ((sourceType === 'release' && selectedAssets.length > 0) ||
-      (sourceType === 'branch' && selectedBranch) ||
-      (sourceType === 'tag' && selectedTag));
+    ((sourceType === "release" && selectedAssets.length > 0) ||
+      (sourceType === "branch" && selectedBranch) ||
+      (sourceType === "tag" && selectedTag));
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -198,22 +218,24 @@ export function GitHubDownloadDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Github className="h-5 w-5" />
-            {t('downloads.github.dialogTitle')}
+            {t("downloads.github.dialogTitle")}
           </DialogTitle>
-          <DialogDescription>{t('downloads.github.dialogDesc')}</DialogDescription>
+          <DialogDescription>
+            {t("downloads.github.dialogDesc")}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
           {/* Repository Input */}
           <div className="space-y-2">
-            <Label>{t('downloads.github.repository')}</Label>
+            <Label>{t("downloads.github.repository")}</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
-                  placeholder={t('downloads.github.repoPlaceholder')}
+                  placeholder={t("downloads.github.repoPlaceholder")}
                   value={repoInput}
                   onChange={(e) => setRepoInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
+                  onKeyDown={(e) => e.key === "Enter" && handleValidate()}
                   className="pr-10"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -226,14 +248,18 @@ export function GitHubDownloadDialog({
                   ) : null}
                 </div>
               </div>
-              <Button onClick={handleValidate} disabled={isValidating || !repoInput.trim()}>
+              <Button
+                onClick={handleValidate}
+                disabled={isValidating || !repoInput.trim()}
+              >
                 <Search className="h-4 w-4 mr-2" />
-                {t('downloads.github.fetch')}
+                {t("downloads.github.fetch")}
               </Button>
             </div>
             {parsedRepo && isValid && (
               <p className="text-sm text-muted-foreground">
-                {t('downloads.github.repoValid')}: <code>{parsedRepo.fullName}</code>
+                {t("downloads.github.repoValid")}:{" "}
+                <code>{parsedRepo.fullName}</code>
               </p>
             )}
           </div>
@@ -255,21 +281,21 @@ export function GitHubDownloadDialog({
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="release" className="gap-2">
                   <Package className="h-4 w-4" />
-                  {t('downloads.github.releases')}
+                  {t("downloads.github.releases")}
                   <Badge variant="secondary" className="ml-1">
                     {releases.length}
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="branch" className="gap-2">
                   <GitBranch className="h-4 w-4" />
-                  {t('downloads.github.branches')}
+                  {t("downloads.github.branches")}
                   <Badge variant="secondary" className="ml-1">
                     {branches.length}
                   </Badge>
                 </TabsTrigger>
                 <TabsTrigger value="tag" className="gap-2">
                   <Tag className="h-4 w-4" />
-                  {t('downloads.github.tags')}
+                  {t("downloads.github.tags")}
                   <Badge variant="secondary" className="ml-1">
                     {tags.length}
                   </Badge>
@@ -285,11 +311,14 @@ export function GitHubDownloadDialog({
               ) : (
                 <>
                   {/* Releases Tab */}
-                  <TabsContent value="release" className="flex-1 overflow-hidden mt-2">
+                  <TabsContent
+                    value="release"
+                    className="flex-1 overflow-hidden mt-2"
+                  >
                     <ScrollArea className="h-[200px] border rounded-md">
                       {releases.length === 0 ? (
                         <div className="p-4 text-center text-muted-foreground">
-                          {t('downloads.github.noReleases')}
+                          {t("downloads.github.noReleases")}
                         </div>
                       ) : (
                         <div className="p-2 space-y-1">
@@ -297,10 +326,10 @@ export function GitHubDownloadDialog({
                             <div
                               key={release.id}
                               className={cn(
-                                'p-3 rounded-md cursor-pointer transition-colors',
+                                "p-3 rounded-md cursor-pointer transition-colors",
                                 selectedRelease === release.tagName
-                                  ? 'bg-primary/10 border border-primary'
-                                  : 'hover:bg-muted'
+                                  ? "bg-primary/10 border border-primary"
+                                  : "hover:bg-muted",
                               )}
                               onClick={() => {
                                 setSelectedRelease(release.tagName);
@@ -309,25 +338,33 @@ export function GitHubDownloadDialog({
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-medium">{release.tagName}</span>
-                                  {release.name && release.name !== release.tagName && (
-                                    <span className="text-sm text-muted-foreground">
-                                      {release.name}
-                                    </span>
-                                  )}
+                                  <span className="font-medium">
+                                    {release.tagName}
+                                  </span>
+                                  {release.name &&
+                                    release.name !== release.tagName && (
+                                      <span className="text-sm text-muted-foreground">
+                                        {release.name}
+                                      </span>
+                                    )}
                                   {release.prerelease && (
-                                    <Badge variant="secondary">{t('downloads.github.prerelease')}</Badge>
+                                    <Badge variant="secondary">
+                                      {t("downloads.github.prerelease")}
+                                    </Badge>
                                   )}
                                 </div>
                                 {release.publishedAt && (
                                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />
-                                    {new Date(release.publishedAt).toLocaleDateString()}
+                                    {new Date(
+                                      release.publishedAt,
+                                    ).toLocaleDateString()}
                                   </span>
                                 )}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
-                                {release.assets.length} {t('downloads.github.assets')}
+                                {release.assets.length}{" "}
+                                {t("downloads.github.assets")}
                               </div>
                             </div>
                           ))}
@@ -339,59 +376,82 @@ export function GitHubDownloadDialog({
                     {currentRelease && parsedAssets.length > 0 && (
                       <div className="mt-3">
                         <div className="flex items-center justify-between mb-2">
-                          <Label>{t('downloads.github.selectAssets')}</Label>
-                          {currentPlatform !== 'unknown' && (
+                          <Label>{t("downloads.github.selectAssets")}</Label>
+                          {currentPlatform !== "unknown" && (
                             <span className="text-xs text-muted-foreground">
-                              {t('downloads.github.yourPlatform')}: {getPlatformLabel(currentPlatform)} {getArchLabel(currentArch)}
+                              {t("downloads.github.yourPlatform")}:{" "}
+                              {getPlatformLabel(currentPlatform)}{" "}
+                              {getArchLabel(currentArch)}
                             </span>
                           )}
                         </div>
                         <ScrollArea className="h-[140px] border rounded-md">
                           <div className="p-2 space-y-1">
-                            {parsedAssets.map(({ asset, platform, arch, isRecommended, isFallback }) => (
-                              <div
-                                key={asset.id}
-                                className={cn(
-                                  'flex items-center justify-between p-2 rounded cursor-pointer transition-colors',
-                                  selectedAssets.find((a) => a.id === asset.id)
-                                    ? 'bg-primary/10 border border-primary'
-                                    : isRecommended
-                                      ? 'bg-green-500/5 hover:bg-green-500/10 border border-green-500/20'
-                                      : 'hover:bg-muted'
-                                )}
-                                onClick={() => handleAssetToggle(asset)}
-                              >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {isRecommended && (
-                                    <Star className="h-4 w-4 text-green-500 flex-shrink-0" />
+                            {parsedAssets.map(
+                              ({
+                                asset,
+                                platform,
+                                arch,
+                                isRecommended,
+                                isFallback,
+                              }) => (
+                                <div
+                                  key={asset.id}
+                                  className={cn(
+                                    "flex items-center justify-between p-2 rounded cursor-pointer transition-colors",
+                                    selectedAssets.find(
+                                      (a) => a.id === asset.id,
+                                    )
+                                      ? "bg-primary/10 border border-primary"
+                                      : isRecommended
+                                        ? "bg-green-500/5 hover:bg-green-500/10 border border-green-500/20"
+                                        : "hover:bg-muted",
                                   )}
-                                  {!isRecommended && (
-                                    <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                  )}
-                                  <span className="text-sm font-mono truncate">
-                                    {asset.name}
-                                  </span>
+                                  onClick={() => handleAssetToggle(asset)}
+                                >
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {isRecommended && (
+                                      <Star className="h-4 w-4 text-green-500 flex-shrink-0" />
+                                    )}
+                                    {!isRecommended && (
+                                      <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                    )}
+                                    <span className="text-sm font-mono truncate">
+                                      {asset.name}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                    {platform !== "unknown" && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs"
+                                      >
+                                        {getPlatformLabel(platform)}
+                                      </Badge>
+                                    )}
+                                    {arch !== "unknown" && (
+                                      <Badge
+                                        variant="secondary"
+                                        className="text-xs"
+                                      >
+                                        {getArchLabel(arch)}
+                                      </Badge>
+                                    )}
+                                    {isFallback && (
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs text-amber-500 border-amber-500/50"
+                                      >
+                                        {t("downloads.github.rosetta")}
+                                      </Badge>
+                                    )}
+                                    <span className="text-xs text-muted-foreground">
+                                      {asset.sizeHuman}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                  {platform !== 'unknown' && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {getPlatformLabel(platform)}
-                                    </Badge>
-                                  )}
-                                  {arch !== 'unknown' && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      {getArchLabel(arch)}
-                                    </Badge>
-                                  )}
-                                  {isFallback && (
-                                    <Badge variant="outline" className="text-xs text-amber-500 border-amber-500/50">
-                                      {t('downloads.github.rosetta')}
-                                    </Badge>
-                                  )}
-                                  <span className="text-xs text-muted-foreground">{asset.sizeHuman}</span>
-                                </div>
-                              </div>
-                            ))}
+                              ),
+                            )}
                           </div>
                         </ScrollArea>
                       </div>
@@ -399,15 +459,18 @@ export function GitHubDownloadDialog({
                   </TabsContent>
 
                   {/* Branches Tab */}
-                  <TabsContent value="branch" className="flex-1 overflow-hidden mt-2">
+                  <TabsContent
+                    value="branch"
+                    className="flex-1 overflow-hidden mt-2"
+                  >
                     <ScrollArea className="h-[200px] border rounded-md">
                       {branches.length === 0 ? (
                         <div className="p-4 text-center text-muted-foreground">
-                          {t('downloads.github.noBranches')}
+                          {t("downloads.github.noBranches")}
                         </div>
                       ) : (
                         <RadioGroup
-                          value={selectedBranch || ''}
+                          value={selectedBranch || ""}
                           onValueChange={setSelectedBranch}
                           className="p-2"
                         >
@@ -416,14 +479,19 @@ export function GitHubDownloadDialog({
                               key={branch.name}
                               className="flex items-center space-x-2 p-2 rounded hover:bg-muted"
                             >
-                              <RadioGroupItem value={branch.name} id={`branch-${branch.name}`} />
+                              <RadioGroupItem
+                                value={branch.name}
+                                id={`branch-${branch.name}`}
+                              />
                               <Label
                                 htmlFor={`branch-${branch.name}`}
                                 className="flex-1 cursor-pointer flex items-center justify-between"
                               >
                                 <span className="font-mono">{branch.name}</span>
                                 {branch.protected && (
-                                  <Badge variant="outline">{t('downloads.github.protected')}</Badge>
+                                  <Badge variant="outline">
+                                    {t("downloads.github.protected")}
+                                  </Badge>
                                 )}
                               </Label>
                             </div>
@@ -435,10 +503,12 @@ export function GitHubDownloadDialog({
                     {/* Archive Format Selection */}
                     {selectedBranch && (
                       <div className="mt-3 flex items-center gap-4">
-                        <Label>{t('downloads.github.format')}:</Label>
+                        <Label>{t("downloads.github.format")}:</Label>
                         <RadioGroup
                           value={archiveFormat}
-                          onValueChange={(v) => setArchiveFormat(v as GitHubArchiveFormat)}
+                          onValueChange={(v) =>
+                            setArchiveFormat(v as GitHubArchiveFormat)
+                          }
                           className="flex gap-4"
                         >
                           <div className="flex items-center space-x-2">
@@ -455,15 +525,18 @@ export function GitHubDownloadDialog({
                   </TabsContent>
 
                   {/* Tags Tab */}
-                  <TabsContent value="tag" className="flex-1 overflow-hidden mt-2">
+                  <TabsContent
+                    value="tag"
+                    className="flex-1 overflow-hidden mt-2"
+                  >
                     <ScrollArea className="h-[200px] border rounded-md">
                       {tags.length === 0 ? (
                         <div className="p-4 text-center text-muted-foreground">
-                          {t('downloads.github.noTags')}
+                          {t("downloads.github.noTags")}
                         </div>
                       ) : (
                         <RadioGroup
-                          value={selectedTag || ''}
+                          value={selectedTag || ""}
                           onValueChange={setSelectedTag}
                           className="p-2"
                         >
@@ -472,7 +545,10 @@ export function GitHubDownloadDialog({
                               key={tag.name}
                               className="flex items-center space-x-2 p-2 rounded hover:bg-muted"
                             >
-                              <RadioGroupItem value={tag.name} id={`tag-${tag.name}`} />
+                              <RadioGroupItem
+                                value={tag.name}
+                                id={`tag-${tag.name}`}
+                              />
                               <Label
                                 htmlFor={`tag-${tag.name}`}
                                 className="flex-1 cursor-pointer font-mono"
@@ -488,10 +564,12 @@ export function GitHubDownloadDialog({
                     {/* Archive Format Selection */}
                     {selectedTag && (
                       <div className="mt-3 flex items-center gap-4">
-                        <Label>{t('downloads.github.format')}:</Label>
+                        <Label>{t("downloads.github.format")}:</Label>
                         <RadioGroup
                           value={archiveFormat}
-                          onValueChange={(v) => setArchiveFormat(v as GitHubArchiveFormat)}
+                          onValueChange={(v) =>
+                            setArchiveFormat(v as GitHubArchiveFormat)
+                          }
                           className="flex gap-4"
                         >
                           <div className="flex items-center space-x-2">
@@ -499,7 +577,10 @@ export function GitHubDownloadDialog({
                             <Label htmlFor="tag-format-zip">ZIP</Label>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="tar.gz" id="tag-format-tar" />
+                            <RadioGroupItem
+                              value="tar.gz"
+                              id="tag-format-tar"
+                            />
                             <Label htmlFor="tag-format-tar">TAR.GZ</Label>
                           </div>
                         </RadioGroup>
@@ -514,10 +595,10 @@ export function GitHubDownloadDialog({
           {/* Destination */}
           {isValid && (
             <div className="space-y-2">
-              <Label>{t('downloads.github.destination')}</Label>
+              <Label>{t("downloads.github.destination")}</Label>
               <div className="flex gap-2">
                 <Input
-                  placeholder={t('downloads.github.destinationPlaceholder')}
+                  placeholder={t("downloads.github.destinationPlaceholder")}
                   value={destination}
                   onChange={(e) => setDestination(e.target.value)}
                   className="flex-1"
@@ -535,15 +616,18 @@ export function GitHubDownloadDialog({
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-4 border-t">
           <Button variant="outline" onClick={handleClose}>
-            {t('common.cancel')}
+            {t("common.cancel")}
           </Button>
-          <Button onClick={handleDownload} disabled={!canDownload || isDownloading}>
+          <Button
+            onClick={handleDownload}
+            disabled={!canDownload || isDownloading}
+          >
             {isDownloading ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Download className="h-4 w-4 mr-2" />
             )}
-            {t('downloads.github.addToQueue')}
+            {t("downloads.github.addToQueue")}
           </Button>
         </div>
       </DialogContent>

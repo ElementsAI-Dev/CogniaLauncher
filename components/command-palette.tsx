@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useLocale } from '@/components/providers/locale-provider';
-import { useLogStore } from '@/lib/stores/log';
-import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useLocale } from "@/components/providers/locale-provider";
+import { useLogStore } from "@/lib/stores/log";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import {
   CommandDialog,
   CommandInput,
@@ -14,7 +14,7 @@ import {
   CommandItem,
   CommandSeparator,
   CommandShortcut,
-} from '@/components/ui/command';
+} from "@/components/ui/command";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -25,44 +25,44 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
   const { t } = useLocale();
   const { toggleDrawer } = useLogStore();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
 
   const navigationItems = useMemo(
     () => [
-      { href: '/', label: t('nav.dashboard') },
-      { href: '/environments', label: t('nav.environments') },
-      { href: '/packages', label: t('nav.packages') },
-      { href: '/providers', label: t('nav.providers') },
-      { href: '/cache', label: t('nav.cache') },
-      { href: '/logs', label: t('nav.logs') },
-      { href: '/settings', label: t('nav.settings') },
-      { href: '/about', label: t('nav.about') },
+      { href: "/", label: t("nav.dashboard") },
+      { href: "/environments", label: t("nav.environments") },
+      { href: "/packages", label: t("nav.packages") },
+      { href: "/providers", label: t("nav.providers") },
+      { href: "/cache", label: t("nav.cache") },
+      { href: "/logs", label: t("nav.logs") },
+      { href: "/settings", label: t("nav.settings") },
+      { href: "/about", label: t("nav.about") },
     ],
-    [t]
+    [t],
   );
 
   const closePalette = useCallback(() => {
-    setSearch('');
+    setSearch("");
     onOpenChange(false);
   }, [onOpenChange]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
-        setSearch('');
+        setSearch("");
       }
       onOpenChange(nextOpen);
     },
-    [onOpenChange]
+    [onOpenChange],
   );
 
   useKeyboardShortcuts({
     shortcuts: [
       {
-        key: 'k',
+        key: "k",
         ctrlKey: true,
         action: () => onOpenChange(true),
-        description: t('commandPalette.open'),
+        description: t("commandPalette.open"),
       },
     ],
   });
@@ -70,13 +70,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   return (
     <CommandDialog open={open} onOpenChange={handleOpenChange}>
       <CommandInput
-        placeholder={t('commandPalette.placeholder')}
+        placeholder={t("commandPalette.placeholder")}
         value={search}
         onValueChange={setSearch}
       />
       <CommandList>
-        <CommandEmpty>{t('commandPalette.noResults')}</CommandEmpty>
-        <CommandGroup heading={t('commandPalette.groups.navigation')}>
+        <CommandEmpty>{t("commandPalette.noResults")}</CommandEmpty>
+        <CommandGroup heading={t("commandPalette.groups.navigation")}>
           {navigationItems.map((item) => (
             <CommandItem
               key={item.href}
@@ -91,15 +91,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           ))}
         </CommandGroup>
         <CommandSeparator />
-        <CommandGroup heading={t('commandPalette.groups.actions')}>
+        <CommandGroup heading={t("commandPalette.groups.actions")}>
           <CommandItem
-            value={t('commandPalette.actions.toggleLogs')}
+            value={t("commandPalette.actions.toggleLogs")}
             onSelect={() => {
               toggleDrawer();
               closePalette();
             }}
           >
-            {t('commandPalette.actions.toggleLogs')}
+            {t("commandPalette.actions.toggleLogs")}
             <CommandShortcut>Ctrl+Shift+L</CommandShortcut>
           </CommandItem>
         </CommandGroup>

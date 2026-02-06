@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Package, Terminal, Sparkles } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Plus, Package, Terminal, Sparkles } from "lucide-react";
 
 interface EmptyStateProps {
   onAddEnvironment: () => void;
@@ -27,10 +27,11 @@ export function EmptyState({ onAddEnvironment, t }: EmptyStateProps) {
           {/* Text Content */}
           <div className="space-y-2 max-w-md">
             <h3 className="text-lg font-semibold">
-              {t('environments.emptyState.title') || 'No Environments Configured'}
+              {t("environments.emptyState.title") ||
+                "No Environments Configured"}
             </h3>
             <p className="text-muted-foreground text-sm">
-              {t('environments.noEnvironments')}
+              {t("environments.noEnvironments")}
             </p>
           </div>
 
@@ -38,7 +39,7 @@ export function EmptyState({ onAddEnvironment, t }: EmptyStateProps) {
           <div className="flex flex-col sm:flex-row gap-3">
             <Button onClick={onAddEnvironment} className="gap-2">
               <Plus className="h-4 w-4" />
-              {t('environments.addEnvironment')}
+              {t("environments.addEnvironment")}
             </Button>
           </div>
 
@@ -46,18 +47,35 @@ export function EmptyState({ onAddEnvironment, t }: EmptyStateProps) {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 w-full max-w-2xl">
             <FeatureCard
               icon={<Terminal className="h-5 w-5" />}
-              title={t('environments.emptyState.feature1Title') || 'Version Management'}
-              description={t('environments.emptyState.feature1Desc') || 'Install and switch between versions easily'}
+              title={
+                t("environments.emptyState.feature1Title") ||
+                "Version Management"
+              }
+              description={
+                t("environments.emptyState.feature1Desc") ||
+                "Install and switch between versions easily"
+              }
             />
             <FeatureCard
               icon={<Package className="h-5 w-5" />}
-              title={t('environments.emptyState.feature2Title') || 'Multiple Languages'}
-              description={t('environments.emptyState.feature2Desc') || 'Support for Node.js, Python, Go, Rust & more'}
+              title={
+                t("environments.emptyState.feature2Title") ||
+                "Multiple Languages"
+              }
+              description={
+                t("environments.emptyState.feature2Desc") ||
+                "Support for Node.js, Python, Go, Rust & more"
+              }
             />
             <FeatureCard
               icon={<Sparkles className="h-5 w-5" />}
-              title={t('environments.emptyState.feature3Title') || 'Auto Detection'}
-              description={t('environments.emptyState.feature3Desc') || 'Automatically detect project versions'}
+              title={
+                t("environments.emptyState.feature3Title") || "Auto Detection"
+              }
+              description={
+                t("environments.emptyState.feature3Desc") ||
+                "Automatically detect project versions"
+              }
             />
           </div>
         </div>

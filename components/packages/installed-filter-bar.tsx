@@ -1,24 +1,24 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useCallback } from 'react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { Search, X, Server } from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import type { InstalledPackage, ProviderInfo } from '@/lib/tauri';
+} from "@/components/ui/tooltip";
+import { Search, X, Server } from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import type { InstalledPackage, ProviderInfo } from "@/lib/tauri";
 
 export interface InstalledFilterState {
   query: string;
@@ -56,21 +56,21 @@ export function InstalledFilterBar({
     (query: string) => {
       onFilterChange({ ...filter, query });
     },
-    [filter, onFilterChange]
+    [filter, onFilterChange],
   );
 
   const handleProviderChange = useCallback(
     (provider: string) => {
       onFilterChange({
         ...filter,
-        provider: provider === 'all' ? null : provider,
+        provider: provider === "all" ? null : provider,
       });
     },
-    [filter, onFilterChange]
+    [filter, onFilterChange],
   );
 
   const handleClear = useCallback(() => {
-    onFilterChange({ query: '', provider: null });
+    onFilterChange({ query: "", provider: null });
   }, [onFilterChange]);
 
   const hasFilters = filter.query || filter.provider;
@@ -81,7 +81,7 @@ export function InstalledFilterBar({
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
-          placeholder={t('packages.filterInstalled')}
+          placeholder={t("packages.filterInstalled")}
           value={filter.query}
           onChange={(e) => handleQueryChange(e.target.value)}
           className="h-9 pl-9 pr-9"
@@ -92,30 +92,30 @@ export function InstalledFilterBar({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => handleQueryChange('')}
+                onClick={() => handleQueryChange("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
-                aria-label={t('common.clear')}
+                aria-label={t("common.clear")}
               >
                 <X className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('common.clear')}</TooltipContent>
+            <TooltipContent>{t("common.clear")}</TooltipContent>
           </Tooltip>
         )}
       </div>
 
       <div className="flex items-center gap-2">
         <Select
-          value={filter.provider || 'all'}
+          value={filter.provider || "all"}
           onValueChange={handleProviderChange}
         >
           <SelectTrigger className="h-9 w-[180px]">
             <Server className="h-4 w-4 mr-2 text-muted-foreground" />
-            <SelectValue placeholder={t('packages.allProviders')} />
+            <SelectValue placeholder={t("packages.allProviders")} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">
-              {t('packages.allProviders')} ({packages.length})
+              {t("packages.allProviders")} ({packages.length})
             </SelectItem>
             {availableProviders.map((provider) => (
               <SelectItem key={provider.id} value={provider.id}>
@@ -138,7 +138,7 @@ export function InstalledFilterBar({
             className="h-9 px-3"
           >
             <X className="h-4 w-4 mr-1" />
-            {t('packages.clearFilters')}
+            {t("packages.clearFilters")}
           </Button>
         )}
       </div>
@@ -148,7 +148,7 @@ export function InstalledFilterBar({
 
 export function useInstalledFilter(packages: InstalledPackage[]) {
   const [filter, setFilter] = useState<InstalledFilterState>({
-    query: '',
+    query: "",
     provider: null,
   });
 
@@ -164,7 +164,7 @@ export function useInstalledFilter(packages: InstalledPackage[]) {
       result = result.filter(
         (pkg) =>
           pkg.name.toLowerCase().includes(query) ||
-          pkg.version.toLowerCase().includes(query)
+          pkg.version.toLowerCase().includes(query),
       );
     }
 

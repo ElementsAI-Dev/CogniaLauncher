@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,66 +8,94 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useLocale } from '@/components/providers/locale-provider';
-import { useEnvironmentStore } from '@/lib/stores/environment';
-import { useEnvironments } from '@/hooks/use-environments';
-import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { X, Check, RefreshCw, Globe } from 'lucide-react';
+} from "@/components/ui/select";
+import { useLocale } from "@/components/providers/locale-provider";
+import { useEnvironmentStore } from "@/lib/stores/environment";
+import { useEnvironments } from "@/hooks/use-environments";
+import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { X, Check, RefreshCw, Globe } from "lucide-react";
 
 const LANGUAGES = [
-  { id: 'node', name: 'Node.js', icon: '🟢', color: 'bg-green-500/10 border-green-500 dark:bg-green-500/20' },
-  { id: 'python', name: 'Python', icon: '🐍', color: 'bg-blue-500/10 border-blue-500 dark:bg-blue-500/20' },
-  { id: 'go', name: 'Go', icon: '🔵', color: 'bg-cyan-500/10 border-cyan-500 dark:bg-cyan-500/20' },
-  { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-500/10 border-orange-500 dark:bg-orange-500/20' },
-  { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-500/10 border-red-500 dark:bg-red-500/20' },
-  { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-500/10 border-amber-500 dark:bg-amber-500/20' },
-  { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-500/10 border-purple-500 dark:bg-purple-500/20' },
-  { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-500/10 border-violet-500 dark:bg-violet-500/20' },
+  {
+    id: "node",
+    name: "Node.js",
+    icon: "🟢",
+    color: "bg-green-500/10 border-green-500 dark:bg-green-500/20",
+  },
+  {
+    id: "python",
+    name: "Python",
+    icon: "🐍",
+    color: "bg-blue-500/10 border-blue-500 dark:bg-blue-500/20",
+  },
+  {
+    id: "go",
+    name: "Go",
+    icon: "🔵",
+    color: "bg-cyan-500/10 border-cyan-500 dark:bg-cyan-500/20",
+  },
+  {
+    id: "rust",
+    name: "Rust",
+    icon: "🦀",
+    color: "bg-orange-500/10 border-orange-500 dark:bg-orange-500/20",
+  },
+  {
+    id: "ruby",
+    name: "Ruby",
+    icon: "💎",
+    color: "bg-red-500/10 border-red-500 dark:bg-red-500/20",
+  },
+  {
+    id: "java",
+    name: "Java",
+    icon: "☕",
+    color: "bg-amber-500/10 border-amber-500 dark:bg-amber-500/20",
+  },
+  {
+    id: "php",
+    name: "PHP",
+    icon: "🐘",
+    color: "bg-purple-500/10 border-purple-500 dark:bg-purple-500/20",
+  },
+  {
+    id: "dotnet",
+    name: ".NET",
+    icon: "🔷",
+    color: "bg-violet-500/10 border-violet-500 dark:bg-violet-500/20",
+  },
 ];
 
 const PROVIDER_IDS: Record<string, { id: string; name: string }[]> = {
   node: [
-    { id: 'fnm', name: 'fnm' },
-    { id: 'nvm', name: 'nvm' },
+    { id: "fnm", name: "fnm" },
+    { id: "nvm", name: "nvm" },
   ],
   python: [
-    { id: 'uv', name: 'uv' },
-    { id: 'pyenv', name: 'pyenv' },
-    { id: 'conda', name: 'Conda' },
-    { id: 'rye', name: 'Rye' },
-    { id: 'mise', name: 'mise' },
+    { id: "uv", name: "uv" },
+    { id: "pyenv", name: "pyenv" },
+    { id: "conda", name: "Conda" },
+    { id: "rye", name: "Rye" },
+    { id: "mise", name: "mise" },
   ],
-  go: [
-    { id: 'goenv', name: 'goenv' },
-  ],
-  rust: [
-    { id: 'rustup', name: 'rustup' },
-  ],
-  ruby: [
-    { id: 'rbenv', name: 'rbenv' },
-  ],
-  java: [
-    { id: 'sdkman', name: 'SDKMAN!' },
-  ],
-  php: [
-    { id: 'phpbrew', name: 'phpbrew' },
-  ],
-  dotnet: [
-    { id: 'dotnet', name: 'dotnet' },
-  ],
+  go: [{ id: "goenv", name: "goenv" }],
+  rust: [{ id: "rustup", name: "rustup" }],
+  ruby: [{ id: "rbenv", name: "rbenv" }],
+  java: [{ id: "sdkman", name: "SDKMAN!" }],
+  php: [{ id: "phpbrew", name: "phpbrew" }],
+  dotnet: [{ id: "dotnet", name: "dotnet" }],
 };
 
 export interface AddEnvironmentOptions {
@@ -76,19 +104,27 @@ export interface AddEnvironmentOptions {
 }
 
 interface AddEnvironmentDialogProps {
-  onAdd?: (language: string, provider: string, version: string, options: AddEnvironmentOptions) => Promise<void>;
+  onAdd?: (
+    language: string,
+    provider: string,
+    version: string,
+    options: AddEnvironmentOptions,
+  ) => Promise<void>;
 }
 
 export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
   const { t } = useLocale();
-  const { addDialogOpen, closeAddDialog, availableProviders } = useEnvironmentStore();
+  const { addDialogOpen, closeAddDialog, availableProviders } =
+    useEnvironmentStore();
   const { fetchProviders } = useEnvironments();
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [versionType, setVersionType] = useState<'lts' | 'latest' | 'specific'>('lts');
-  const [specificVersion, setSpecificVersion] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState<string>("");
+  const [versionType, setVersionType] = useState<"lts" | "latest" | "specific">(
+    "lts",
+  );
+  const [specificVersion, setSpecificVersion] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Advanced options
   const [autoSwitch, setAutoSwitch] = useState(true);
   const [setAsDefault, setSetAsDefault] = useState(true);
@@ -103,28 +139,34 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
   // Get providers for selected language - use dynamic providers if available, fallback to static
   const currentProviders = useMemo(() => {
     if (!selectedLanguage) return [];
-    
+
     // First try to get dynamic providers from the store
     const dynamicProviders = availableProviders
-      .filter(p => p.env_type.toLowerCase() === selectedLanguage.toLowerCase())
-      .map(p => ({ id: p.id, name: p.display_name, description: p.description }));
-    
+      .filter(
+        (p) => p.env_type.toLowerCase() === selectedLanguage.toLowerCase(),
+      )
+      .map((p) => ({
+        id: p.id,
+        name: p.display_name,
+        description: p.description,
+      }));
+
     // If dynamic providers are available, use them; otherwise fallback to static with i18n descriptions
     if (dynamicProviders.length > 0) {
       return dynamicProviders;
     }
-    
+
     const staticProviders = PROVIDER_IDS[selectedLanguage] || [];
-    return staticProviders.map(p => ({
+    return staticProviders.map((p) => ({
       ...p,
-      description: t(`environments.addDialog.providers.${p.id}`)
+      description: t(`environments.addDialog.providers.${p.id}`),
     }));
   }, [selectedLanguage, availableProviders, t]);
 
   const handleLanguageSelect = (langId: string) => {
     setSelectedLanguage(langId);
     // Reset provider when language changes - will be set after currentProviders updates
-    setSelectedProvider('');
+    setSelectedProvider("");
   };
 
   // Auto-select first provider when currentProviders changes
@@ -136,10 +178,11 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
 
   const handleSubmit = async () => {
     if (!selectedLanguage || !selectedProvider) return;
-    
+
     setIsSubmitting(true);
     try {
-      const version = versionType === 'specific' ? specificVersion : versionType;
+      const version =
+        versionType === "specific" ? specificVersion : versionType;
       await onAdd?.(selectedLanguage, selectedProvider, version, {
         autoSwitch,
         setAsDefault,
@@ -154,9 +197,9 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
 
   const handleClose = () => {
     setSelectedLanguage(null);
-    setSelectedProvider('');
-    setVersionType('lts');
-    setSpecificVersion('');
+    setSelectedProvider("");
+    setVersionType("lts");
+    setSpecificVersion("");
     setAutoSwitch(true);
     setSetAsDefault(true);
     closeAddDialog();
@@ -166,15 +209,27 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
   const providers = currentProviders;
 
   return (
-    <Dialog open={addDialogOpen} onOpenChange={(open) => !open && handleClose()}>
+    <Dialog
+      open={addDialogOpen}
+      onOpenChange={(open) => !open && handleClose()}
+    >
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
-              <DialogTitle className="text-xl">{t('environments.addDialog.title')}</DialogTitle>
-              <DialogDescription>{t('environments.addDialog.description')}</DialogDescription>
+              <DialogTitle className="text-xl">
+                {t("environments.addDialog.title")}
+              </DialogTitle>
+              <DialogDescription>
+                {t("environments.addDialog.description")}
+              </DialogDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleClose} className="h-8 w-8">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleClose}
+              className="h-8 w-8"
+            >
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -184,11 +239,11 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
           {/* Language Selection */}
           <div className="space-y-3">
             <Label id="language-label" className="text-sm font-medium">
-              {t('environments.addDialog.selectLanguage')}
+              {t("environments.addDialog.selectLanguage")}
             </Label>
             <ToggleGroup
               type="single"
-              value={selectedLanguage || ''}
+              value={selectedLanguage || ""}
               onValueChange={(value) => value && handleLanguageSelect(value)}
               className="grid grid-cols-4 gap-3"
               aria-labelledby="language-label"
@@ -198,15 +253,20 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                   key={lang.id}
                   value={lang.id}
                   className={cn(
-                    'relative flex flex-col items-center gap-2 p-4 h-auto rounded-lg border-2 transition-all',
-                    'data-[state=on]:border-primary',
-                    selectedLanguage === lang.id && lang.color
+                    "relative flex flex-col items-center gap-2 p-4 h-auto rounded-lg border-2 transition-all",
+                    "data-[state=on]:border-primary",
+                    selectedLanguage === lang.id && lang.color,
                   )}
                 >
-                  <span className="text-2xl" aria-hidden="true">{lang.icon}</span>
+                  <span className="text-2xl" aria-hidden="true">
+                    {lang.icon}
+                  </span>
                   <span className="text-sm font-medium">{lang.name}</span>
                   {selectedLanguage === lang.id && (
-                    <Check className="h-4 w-4 text-primary absolute top-2 right-2" aria-hidden="true" />
+                    <Check
+                      className="h-4 w-4 text-primary absolute top-2 right-2"
+                      aria-hidden="true"
+                    />
                   )}
                 </ToggleGroupItem>
               ))}
@@ -217,24 +277,37 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
           {selectedLanguage && providers.length > 0 && (
             <div className="space-y-3">
               <div>
-                <Label className="text-sm font-medium">{t('environments.addDialog.versionManager')}</Label>
+                <Label className="text-sm font-medium">
+                  {t("environments.addDialog.versionManager")}
+                </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('environments.addDialog.versionManagerDesc')}
+                  {t("environments.addDialog.versionManagerDesc")}
                 </p>
               </div>
-              <Select value={selectedProvider} onValueChange={setSelectedProvider}>
+              <Select
+                value={selectedProvider}
+                onValueChange={setSelectedProvider}
+              >
                 <SelectTrigger className="h-12">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {providers.map((provider: { id: string; name: string; description: string }) => (
-                    <SelectItem key={provider.id} value={provider.id}>
-                      <div className="flex flex-col items-start">
-                        <span className="font-medium">{provider.name}</span>
-                        <span className="text-xs text-muted-foreground">{provider.description}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {providers.map(
+                    (provider: {
+                      id: string;
+                      name: string;
+                      description: string;
+                    }) => (
+                      <SelectItem key={provider.id} value={provider.id}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{provider.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {provider.description}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ),
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -244,40 +317,42 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
           {selectedLanguage && selectedProvider && (
             <div className="space-y-3">
               <div>
-                <Label className="text-sm font-medium">{t('environments.addDialog.selectVersion')}</Label>
+                <Label className="text-sm font-medium">
+                  {t("environments.addDialog.selectVersion")}
+                </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('environments.addDialog.selectVersionDesc')}
+                  {t("environments.addDialog.selectVersionDesc")}
                 </p>
               </div>
               <div className="flex gap-2">
                 <Button
                   type="button"
-                  variant={versionType === 'lts' ? 'default' : 'outline'}
-                  onClick={() => setVersionType('lts')}
+                  variant={versionType === "lts" ? "default" : "outline"}
+                  onClick={() => setVersionType("lts")}
                   className="flex-1"
                 >
-                  {t('environments.addDialog.latestLts')}
+                  {t("environments.addDialog.latestLts")}
                 </Button>
                 <Button
                   type="button"
-                  variant={versionType === 'latest' ? 'default' : 'outline'}
-                  onClick={() => setVersionType('latest')}
+                  variant={versionType === "latest" ? "default" : "outline"}
+                  onClick={() => setVersionType("latest")}
                   className="flex-1"
                 >
-                  {t('environments.addDialog.latestStable')}
+                  {t("environments.addDialog.latestStable")}
                 </Button>
                 <Button
                   type="button"
-                  variant={versionType === 'specific' ? 'default' : 'outline'}
-                  onClick={() => setVersionType('specific')}
+                  variant={versionType === "specific" ? "default" : "outline"}
+                  onClick={() => setVersionType("specific")}
                   className="flex-1"
                 >
-                  {t('environments.addDialog.specific')}
+                  {t("environments.addDialog.specific")}
                 </Button>
               </div>
-              {versionType === 'specific' && (
+              {versionType === "specific" && (
                 <Input
-                  placeholder={t('environments.versionPlaceholder')}
+                  placeholder={t("environments.versionPlaceholder")}
                   value={specificVersion}
                   onChange={(e) => setSpecificVersion(e.target.value)}
                 />
@@ -288,28 +363,41 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
           {/* Advanced Options */}
           {selectedLanguage && selectedProvider && (
             <div className="space-y-3 pt-4 border-t">
-              <Label className="text-sm font-medium">{t('environments.addDialog.options')}</Label>
-              
+              <Label className="text-sm font-medium">
+                {t("environments.addDialog.options")}
+              </Label>
+
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-3">
                   <RefreshCw className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">{t('environments.addDialog.autoSwitch')}</p>
-                    <p className="text-xs text-muted-foreground">{t('environments.addDialog.autoSwitchDesc')}</p>
+                    <p className="text-sm font-medium">
+                      {t("environments.addDialog.autoSwitch")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("environments.addDialog.autoSwitchDesc")}
+                    </p>
                   </div>
                 </div>
                 <Switch checked={autoSwitch} onCheckedChange={setAutoSwitch} />
               </div>
-              
+
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-3">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium">{t('environments.addDialog.setAsDefault')}</p>
-                    <p className="text-xs text-muted-foreground">{t('environments.addDialog.setAsDefaultDesc')}</p>
+                    <p className="text-sm font-medium">
+                      {t("environments.addDialog.setAsDefault")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("environments.addDialog.setAsDefaultDesc")}
+                    </p>
                   </div>
                 </div>
-                <Switch checked={setAsDefault} onCheckedChange={setSetAsDefault} />
+                <Switch
+                  checked={setAsDefault}
+                  onCheckedChange={setSetAsDefault}
+                />
               </div>
             </div>
           )}
@@ -317,13 +405,18 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
-            {t('environments.addDialog.cancel')}
+            {t("environments.addDialog.cancel")}
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!selectedLanguage || !selectedProvider || isSubmitting || (versionType === 'specific' && !specificVersion)}
+            disabled={
+              !selectedLanguage ||
+              !selectedProvider ||
+              isSubmitting ||
+              (versionType === "specific" && !specificVersion)
+            }
           >
-            {t('environments.addDialog.addEnvironment')}
+            {t("environments.addDialog.addEnvironment")}
           </Button>
         </DialogFooter>
       </DialogContent>

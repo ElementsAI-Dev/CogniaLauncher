@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { Scan } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import type { DetectedEnvironment } from '@/lib/tauri';
+import { Scan } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import type { DetectedEnvironment } from "@/lib/tauri";
 
 interface CardHeaderProps {
   envType: string;
@@ -15,12 +15,12 @@ export function CardHeader({ envType, detectedVersion, t }: CardHeaderProps) {
     <>
       {/* Detected Version Badge */}
       {detectedVersion && (
-        <Badge 
-          variant="outline" 
+        <Badge
+          variant="outline"
           className="gap-2 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
         >
           <Scan className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-          {t('environments.detectedVersion', {
+          {t("environments.detectedVersion", {
             version: detectedVersion.version,
             source: detectedVersion.source,
           })}

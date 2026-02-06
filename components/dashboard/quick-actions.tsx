@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+} from "@/components/ui/dropdown-menu";
 import {
   Layers,
   Package,
@@ -19,9 +19,9 @@ import {
   FileText,
   MoreHorizontal,
   Plus,
-} from 'lucide-react';
-import { useLocale } from '@/components/providers/locale-provider';
-import { cn } from '@/lib/utils';
+} from "lucide-react";
+import { useLocale } from "@/components/providers/locale-provider";
+import { cn } from "@/lib/utils";
 
 interface QuickAction {
   id: string;
@@ -29,7 +29,7 @@ interface QuickAction {
   icon: React.ReactNode;
   href?: string;
   action?: () => void;
-  variant?: 'default' | 'secondary' | 'outline';
+  variant?: "default" | "secondary" | "outline";
   shortcut?: string;
 }
 
@@ -39,72 +39,77 @@ interface QuickActionsProps {
   className?: string;
 }
 
-export function QuickActions({ 
-  onRefreshAll, 
+export function QuickActions({
+  onRefreshAll,
   isRefreshing = false,
-  className 
+  className,
 }: QuickActionsProps) {
   const router = useRouter();
   const { t } = useLocale();
 
   const primaryActions: QuickAction[] = [
     {
-      id: 'add-environment',
-      label: t('dashboard.quickActions.addEnvironment'),
+      id: "add-environment",
+      label: t("dashboard.quickActions.addEnvironment"),
       icon: <Layers className="h-4 w-4" />,
-      href: '/environments',
-      variant: 'default',
+      href: "/environments",
+      variant: "default",
     },
     {
-      id: 'install-package',
-      label: t('dashboard.quickActions.installPackage'),
+      id: "install-package",
+      label: t("dashboard.quickActions.installPackage"),
       icon: <Package className="h-4 w-4" />,
-      href: '/packages',
-      variant: 'secondary',
+      href: "/packages",
+      variant: "secondary",
     },
     {
-      id: 'refresh-all',
-      label: t('dashboard.quickActions.refreshAll'),
-      icon: <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />,
+      id: "refresh-all",
+      label: t("dashboard.quickActions.refreshAll"),
+      icon: (
+        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+      ),
       action: onRefreshAll,
-      variant: 'outline',
+      variant: "outline",
     },
   ];
 
   const secondaryActions: QuickAction[] = [
     {
-      id: 'clear-cache',
-      label: t('dashboard.quickActions.clearCache'),
+      id: "clear-cache",
+      label: t("dashboard.quickActions.clearCache"),
       icon: <Trash2 className="h-4 w-4" />,
-      href: '/cache',
+      href: "/cache",
     },
     {
-      id: 'settings',
-      label: t('dashboard.quickActions.openSettings'),
+      id: "settings",
+      label: t("dashboard.quickActions.openSettings"),
       icon: <Settings className="h-4 w-4" />,
-      href: '/settings',
+      href: "/settings",
     },
     {
-      id: 'view-logs',
-      label: t('dashboard.quickActions.viewLogs'),
+      id: "view-logs",
+      label: t("dashboard.quickActions.viewLogs"),
       icon: <FileText className="h-4 w-4" />,
-      href: '/logs',
+      href: "/logs",
     },
   ];
 
-  const handleAction = useCallback((action: QuickAction) => {
-    if (action.action) {
-      action.action();
-    } else if (action.href) {
-      router.push(action.href);
-    }
-  }, [router]);
+  const handleAction = useCallback(
+    (action: QuickAction) => {
+      if (action.action) {
+        action.action();
+      } else if (action.href) {
+        router.push(action.href);
+      }
+    },
+    [router],
+  );
 
   return (
-    <Card className={cn('', className)}>
+    <Card className={cn("", className)}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-medium">
-          {t('dashboard.quickActions.title')}
+          {t("dashboard.quickActions.title")}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -113,10 +118,10 @@ export function QuickActions({
           {primaryActions.map((action) => (
             <Button
               key={action.id}
-              variant={action.variant || 'outline'}
+              variant={action.variant || "outline"}
               size="sm"
               onClick={() => handleAction(action)}
-              disabled={action.id === 'refresh-all' && isRefreshing}
+              disabled={action.id === "refresh-all" && isRefreshing}
               className="gap-2"
             >
               {action.icon}
@@ -129,7 +134,9 @@ export function QuickActions({
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
                 <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">{t('dashboard.quickActions.moreActions')}</span>
+                <span className="sr-only">
+                  {t("dashboard.quickActions.moreActions")}
+                </span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
@@ -157,24 +164,26 @@ interface QuickActionsInlineProps {
   className?: string;
 }
 
-export function QuickActionsInline({ 
+export function QuickActionsInline({
   onRefreshAll,
   isRefreshing = false,
-  className 
+  className,
 }: QuickActionsInlineProps) {
   const router = useRouter();
   const { t } = useLocale();
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={cn("flex items-center gap-2", className)}>
       <Button
         variant="default"
         size="sm"
-        onClick={() => router.push('/environments')}
+        onClick={() => router.push("/environments")}
         className="gap-2"
       >
         <Plus className="h-4 w-4" />
-        <span className="hidden sm:inline">{t('dashboard.quickActions.addEnvironment')}</span>
+        <span className="hidden sm:inline">
+          {t("dashboard.quickActions.addEnvironment")}
+        </span>
       </Button>
       <Button
         variant="outline"
@@ -183,8 +192,10 @@ export function QuickActionsInline({
         disabled={isRefreshing}
         className="gap-2"
       >
-        <RefreshCw className={cn('h-4 w-4', isRefreshing && 'animate-spin')} />
-        <span className="hidden sm:inline">{t('dashboard.quickActions.refreshAll')}</span>
+        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+        <span className="hidden sm:inline">
+          {t("dashboard.quickActions.refreshAll")}
+        </span>
       </Button>
     </div>
   );

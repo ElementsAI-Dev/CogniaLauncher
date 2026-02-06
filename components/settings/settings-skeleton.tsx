@@ -1,13 +1,15 @@
-'use client';
+"use client";
 
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface SettingsSkeletonProps {
   loadingLabel?: string;
 }
 
-export function SettingsSkeleton({ loadingLabel = 'Loading settings' }: SettingsSkeletonProps) {
+export function SettingsSkeleton({
+  loadingLabel = "Loading settings",
+}: SettingsSkeletonProps) {
   return (
     <div className="space-y-6" aria-busy="true" aria-label={loadingLabel}>
       {/* General Settings Skeleton */}

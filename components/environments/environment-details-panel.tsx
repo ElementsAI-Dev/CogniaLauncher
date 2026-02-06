@@ -1,31 +1,46 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useLocale } from '@/components/providers/locale-provider';
-import type { EnvironmentInfo, DetectedEnvironment } from '@/lib/tauri';
-import { useEnvironmentStore, type EnvironmentSettings } from '@/lib/stores/environment';
-import { useEnvironments } from '@/hooks/use-environments';
-import { 
-  Check, 
-  Globe, 
-  FolderOpen, 
-  Plus, 
-  X, 
-  FileCode, 
+import { useState, useEffect } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useLocale } from "@/components/providers/locale-provider";
+import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
+import {
+  useEnvironmentStore,
+  type EnvironmentSettings,
+} from "@/lib/stores/environment";
+import { useEnvironments } from "@/hooks/use-environments";
+import {
+  Check,
+  Globe,
+  FolderOpen,
+  Plus,
+  X,
+  FileCode,
   Settings2,
   Cpu,
   HardDrive,
   Trash2,
   Download,
-  RefreshCw
-} from 'lucide-react';
+  RefreshCw,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,11 +51,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
-import { isTauri } from '@/lib/tauri';
-import { toast } from 'sonner';
-import { formatSize } from '@/lib/utils';
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { isTauri } from "@/lib/tauri";
+import { toast } from "sonner";
+import { formatSize } from "@/lib/utils";
 
 interface EnvironmentDetailsPanelProps {
   env: EnvironmentInfo | null;
@@ -53,7 +68,6 @@ interface EnvironmentDetailsPanelProps {
   onRefresh?: () => Promise<void>;
 }
 
-
 export function EnvironmentDetailsPanel({
   env,
   detectedVersion,
@@ -65,24 +79,26 @@ export function EnvironmentDetailsPanel({
   onRefresh,
 }: EnvironmentDetailsPanelProps) {
   const { t } = useLocale();
-  const [localProjectPath, setLocalProjectPath] = useState('');
-  const [selectedLocalVersion, setSelectedLocalVersion] = useState('');
+  const [localProjectPath, setLocalProjectPath] = useState("");
+  const [selectedLocalVersion, setSelectedLocalVersion] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(null);
+  const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(
+    null,
+  );
   // Get persisted environment settings from store
   const { getEnvSettings } = useEnvironmentStore();
   const { loadEnvSettings, saveEnvSettings } = useEnvironments();
   const envSettings = env ? getEnvSettings(env.env_type) : null;
   const envVariables = envSettings?.envVariables || [];
   const detectionFileSettings = envSettings?.detectionFiles || [];
-  const [newVarKey, setNewVarKey] = useState('');
-  const [newVarValue, setNewVarValue] = useState('');
+  const [newVarKey, setNewVarKey] = useState("");
+  const [newVarValue, setNewVarValue] = useState("");
 
   // Reset state when panel closes
   useEffect(() => {
     if (!open) {
-      setLocalProjectPath('');
-      setSelectedLocalVersion('');
+      setLocalProjectPath("");
+      setSelectedLocalVersion("");
     }
   }, [open]);
 
@@ -108,7 +124,12 @@ export function EnvironmentDetailsPanel({
   const handleSetGlobal = async (version: string) => {
     try {
       await onSetGlobal(version);
-      toast.success(t('environments.details.globalVersionSet').replace('{version}', version));
+      toast.success(
+        t("environments.details.globalVersionSet").replace(
+          "{version}",
+          version,
+        ),
+      );
     } catch (err) {
       toast.error(String(err));
     }
@@ -118,8 +139,8 @@ export function EnvironmentDetailsPanel({
     if (!localProjectPath || !selectedLocalVersion) return;
     try {
       await onSetLocal(selectedLocalVersion, localProjectPath);
-      toast.success(t('environments.details.localVersionSet'));
-      setLocalProjectPath('');
+      toast.success(t("environments.details.localVersionSet"));
+      setLocalProjectPath("");
     } catch (err) {
       toast.error(String(err));
     }
@@ -129,27 +150,35 @@ export function EnvironmentDetailsPanel({
     if (!newVarKey.trim() || !envSettings || !env) return;
     await updateSettings({
       ...envSettings,
-      envVariables: [...envSettings.envVariables, { key: newVarKey, value: newVarValue, enabled: true }],
+      envVariables: [
+        ...envSettings.envVariables,
+        { key: newVarKey, value: newVarValue, enabled: true },
+      ],
     });
-    setNewVarKey('');
-    setNewVarValue('');
-    toast.success(t('environments.details.envVarAdded'));
+    setNewVarKey("");
+    setNewVarValue("");
+    toast.success(t("environments.details.envVarAdded"));
   };
 
   const handleRemoveEnvVariable = async (key: string) => {
     if (!envSettings || !env) return;
     await updateSettings({
       ...envSettings,
-      envVariables: envSettings.envVariables.filter((variable) => variable.key !== key),
+      envVariables: envSettings.envVariables.filter(
+        (variable) => variable.key !== key,
+      ),
     });
   };
 
-  const handleToggleDetectionFile = async (fileName: string, enabled: boolean) => {
+  const handleToggleDetectionFile = async (
+    fileName: string,
+    enabled: boolean,
+  ) => {
     if (!envSettings || !env) return;
     await updateSettings({
       ...envSettings,
       detectionFiles: envSettings.detectionFiles.map((file) =>
-        file.fileName === fileName ? { ...file, enabled } : file
+        file.fileName === fileName ? { ...file, enabled } : file,
       ),
     });
   };
@@ -162,7 +191,10 @@ export function EnvironmentDetailsPanel({
     });
   };
 
-  const totalSize = env.installed_versions.reduce((acc, v) => acc + (v.size || 0), 0);
+  const totalSize = env.installed_versions.reduce(
+    (acc, v) => acc + (v.size || 0),
+    0,
+  );
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -179,7 +211,12 @@ export function EnvironmentDetailsPanel({
     setUninstallingVersion(version);
     try {
       await onUninstall(version);
-      toast.success(t('environments.details.versionUninstalled').replace('{version}', version));
+      toast.success(
+        t("environments.details.versionUninstalled").replace(
+          "{version}",
+          version,
+        ),
+      );
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -189,29 +226,31 @@ export function EnvironmentDetailsPanel({
 
   const handleBrowseFolder = async () => {
     if (!isTauri()) {
-      toast.info(t('environments.details.manualPathRequired'));
+      toast.info(t("environments.details.manualPathRequired"));
       return;
     }
-    
+
     try {
       // Try to import the dialog plugin dynamically
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const dialogModule = await import('@tauri-apps/plugin-dialog' as any).catch(() => null);
+      const dialogModule = await import(
+        /* @ts-expect-error dynamic Tauri plugin import */
+        "@tauri-apps/plugin-dialog"
+      ).catch(() => null);
       if (dialogModule?.open) {
         const selected = await dialogModule.open({
           directory: true,
           multiple: false,
-          title: t('environments.details.selectProjectFolder'),
+          title: t("environments.details.selectProjectFolder"),
         });
-        if (selected && typeof selected === 'string') {
+        if (selected && typeof selected === "string") {
           setLocalProjectPath(selected);
         }
       } else {
-        toast.info(t('environments.details.manualPathRequired'));
+        toast.info(t("environments.details.manualPathRequired"));
       }
     } catch {
       // Dialog plugin not available, prompt for manual input
-      toast.info(t('environments.details.manualPathRequired'));
+      toast.info(t("environments.details.manualPathRequired"));
     }
   };
 
@@ -227,7 +266,10 @@ export function EnvironmentDetailsPanel({
               <div>
                 <SheetTitle className="text-xl">{env.env_type}</SheetTitle>
                 <SheetDescription>
-                  {t('environments.details.subtitle').replace('{provider}', env.provider)}
+                  {t("environments.details.subtitle").replace(
+                    "{provider}",
+                    env.provider,
+                  )}
                 </SheetDescription>
               </div>
             </div>
@@ -239,7 +281,9 @@ export function EnvironmentDetailsPanel({
                 disabled={isRefreshing}
                 className="h-8 w-8"
               >
-                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+                />
               </Button>
             )}
           </div>
@@ -251,26 +295,39 @@ export function EnvironmentDetailsPanel({
             <section className="space-y-3">
               <h3 className="text-sm font-medium flex items-center gap-2">
                 <Cpu className="h-4 w-4" />
-                {t('environments.details.status')}
+                {t("environments.details.status")}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-muted/50 space-y-1">
-                  <p className="text-xs text-muted-foreground">{t('environments.details.currentVersion')}</p>
-                  <p className="font-mono font-medium">{env.current_version || t('common.none')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("environments.details.currentVersion")}
+                  </p>
+                  <p className="font-mono font-medium">
+                    {env.current_version || t("common.none")}
+                  </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/50 space-y-1">
-                  <p className="text-xs text-muted-foreground">{t('environments.details.installedCount')}</p>
-                  <p className="font-medium">{env.installed_versions.length} {t('environments.details.versions')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("environments.details.installedCount")}
+                  </p>
+                  <p className="font-medium">
+                    {env.installed_versions.length}{" "}
+                    {t("environments.details.versions")}
+                  </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/50 space-y-1">
-                  <p className="text-xs text-muted-foreground">{t('environments.details.totalSize')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("environments.details.totalSize")}
+                  </p>
                   <div className="flex items-center gap-1">
                     <HardDrive className="h-3 w-3" />
                     <p className="font-medium">{formatSize(totalSize)}</p>
                   </div>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/50 space-y-1">
-                  <p className="text-xs text-muted-foreground">{t('environments.details.provider')}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("environments.details.provider")}
+                  </p>
                   <p className="font-medium">{env.provider}</p>
                 </div>
               </div>
@@ -280,10 +337,10 @@ export function EnvironmentDetailsPanel({
                   <Check className="h-4 w-4 text-green-600" />
                   <div className="text-sm">
                     <span className="text-green-700 dark:text-green-300 font-medium">
-                      {t('environments.detected')}: {detectedVersion.version}
+                      {t("environments.detected")}: {detectedVersion.version}
                     </span>
                     <span className="text-green-600 dark:text-green-400 ml-2">
-                      ({detectedVersion.source.replace('_', ' ')})
+                      ({detectedVersion.source.replace("_", " ")})
                     </span>
                   </div>
                 </div>
@@ -297,14 +354,16 @@ export function EnvironmentDetailsPanel({
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium flex items-center gap-2">
                   <Download className="h-4 w-4" />
-                  {t('environments.installedVersions')}
+                  {t("environments.installedVersions")}
                 </h3>
-                <Badge variant="secondary">{env.installed_versions.length}</Badge>
+                <Badge variant="secondary">
+                  {env.installed_versions.length}
+                </Badge>
               </div>
 
               {env.installed_versions.length === 0 ? (
                 <div className="p-4 rounded-lg bg-muted/30 text-center text-muted-foreground text-sm">
-                  {t('environments.details.noVersionsInstalled')}
+                  {t("environments.details.noVersionsInstalled")}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -312,14 +371,18 @@ export function EnvironmentDetailsPanel({
                     <div
                       key={v.version}
                       className={`flex items-center justify-between p-3 rounded-lg border ${
-                        v.is_current ? 'bg-primary/5 border-primary/20' : 'bg-muted/30'
+                        v.is_current
+                          ? "bg-primary/5 border-primary/20"
+                          : "bg-muted/30"
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-medium">{v.version}</span>
+                        <span className="font-mono font-medium">
+                          {v.version}
+                        </span>
                         {v.is_current && (
                           <Badge variant="default" className="text-xs">
-                            {t('environments.currentVersion')}
+                            {t("environments.currentVersion")}
                           </Badge>
                         )}
                         <span className="text-xs text-muted-foreground">
@@ -334,7 +397,7 @@ export function EnvironmentDetailsPanel({
                             onClick={() => handleSetGlobal(v.version)}
                             className="h-7 text-xs"
                           >
-                            {t('environments.setGlobal')}
+                            {t("environments.setGlobal")}
                           </Button>
                         )}
                         {onUninstall && (
@@ -351,20 +414,24 @@ export function EnvironmentDetailsPanel({
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>{t('common.confirm')}</AlertDialogTitle>
+                                <AlertDialogTitle>
+                                  {t("common.confirm")}
+                                </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  {t('environments.details.confirmUninstall')
-                                    .replace('{type}', env.env_type)
-                                    .replace('{version}', v.version)}
+                                  {t("environments.details.confirmUninstall")
+                                    .replace("{type}", env.env_type)
+                                    .replace("{version}", v.version)}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                                <AlertDialogCancel>
+                                  {t("common.cancel")}
+                                </AlertDialogCancel>
                                 <AlertDialogAction
                                   onClick={() => handleUninstall(v.version)}
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                 >
-                                  {t('common.uninstall')}
+                                  {t("common.uninstall")}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -384,10 +451,10 @@ export function EnvironmentDetailsPanel({
               <div>
                 <h3 className="text-sm font-medium flex items-center gap-2">
                   <Globe className="h-4 w-4" />
-                  {t('environments.details.versionPinning')}
+                  {t("environments.details.versionPinning")}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('environments.details.versionPinningDesc')}
+                  {t("environments.details.versionPinningDesc")}
                 </p>
               </div>
 
@@ -395,17 +462,21 @@ export function EnvironmentDetailsPanel({
               <div className="p-4 rounded-lg bg-muted/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">{t('environments.details.globalVersion')}</p>
+                    <p className="text-sm font-medium">
+                      {t("environments.details.globalVersion")}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {t('environments.details.globalVersionDesc')}
+                      {t("environments.details.globalVersionDesc")}
                     </p>
                   </div>
                   <Select
-                    value={env.current_version || ''}
+                    value={env.current_version || ""}
                     onValueChange={handleSetGlobal}
                   >
                     <SelectTrigger className="w-[140px] h-9">
-                      <SelectValue placeholder={t('environments.selectVersion')} />
+                      <SelectValue
+                        placeholder={t("environments.selectVersion")}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {env.installed_versions.map((v) => (
@@ -424,9 +495,11 @@ export function EnvironmentDetailsPanel({
               {/* Local Version */}
               <div className="p-4 rounded-lg bg-muted/30 space-y-3">
                 <div>
-                  <p className="text-sm font-medium">{t('environments.details.localVersion')}</p>
+                  <p className="text-sm font-medium">
+                    {t("environments.details.localVersion")}
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    {t('environments.details.localVersionDesc')}
+                    {t("environments.details.localVersionDesc")}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -435,7 +508,9 @@ export function EnvironmentDetailsPanel({
                     onValueChange={setSelectedLocalVersion}
                   >
                     <SelectTrigger className="w-[140px] h-9">
-                      <SelectValue placeholder={t('environments.selectVersion')} />
+                      <SelectValue
+                        placeholder={t("environments.selectVersion")}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {env.installed_versions.map((v) => (
@@ -447,7 +522,7 @@ export function EnvironmentDetailsPanel({
                   </Select>
                   <div className="flex-1 flex gap-1">
                     <Input
-                      placeholder={t('environments.projectPath')}
+                      placeholder={t("environments.projectPath")}
                       value={localProjectPath}
                       onChange={(e) => setLocalProjectPath(e.target.value)}
                       className="flex-1 h-9"
@@ -457,7 +532,7 @@ export function EnvironmentDetailsPanel({
                       size="icon"
                       className="h-9 w-9 shrink-0"
                       onClick={handleBrowseFolder}
-                      title={t('environments.details.browseFolder')}
+                      title={t("environments.details.browseFolder")}
                     >
                       <FolderOpen className="h-4 w-4" />
                     </Button>
@@ -467,7 +542,7 @@ export function EnvironmentDetailsPanel({
                     onClick={handleSetLocal}
                     disabled={!localProjectPath || !selectedLocalVersion}
                   >
-                    {t('environments.setLocal')}
+                    {t("environments.setLocal")}
                   </Button>
                 </div>
               </div>
@@ -478,9 +553,11 @@ export function EnvironmentDetailsPanel({
             {/* Environment Variables Section */}
             <section className="space-y-3">
               <div>
-                <h3 className="text-sm font-medium">{t('environments.details.envVariables')}</h3>
+                <h3 className="text-sm font-medium">
+                  {t("environments.details.envVariables")}
+                </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('environments.details.envVariablesDesc')}
+                  {t("environments.details.envVariablesDesc")}
                 </p>
               </div>
 
@@ -512,13 +589,13 @@ export function EnvironmentDetailsPanel({
 
                 <div className="flex gap-2">
                   <Input
-                    placeholder={t('environments.details.varKey')}
+                    placeholder={t("environments.details.varKey")}
                     value={newVarKey}
                     onChange={(e) => setNewVarKey(e.target.value)}
                     className="w-[120px] h-9 font-mono text-xs"
                   />
                   <Input
-                    placeholder={t('environments.details.varValue')}
+                    placeholder={t("environments.details.varValue")}
                     value={newVarValue}
                     onChange={(e) => setNewVarValue(e.target.value)}
                     className="flex-1 h-9"
@@ -531,7 +608,7 @@ export function EnvironmentDetailsPanel({
                     className="gap-1"
                   >
                     <Plus className="h-3 w-3" />
-                    {t('common.add')}
+                    {t("common.add")}
                   </Button>
                 </div>
               </div>
@@ -544,10 +621,10 @@ export function EnvironmentDetailsPanel({
               <div>
                 <h3 className="text-sm font-medium flex items-center gap-2">
                   <FileCode className="h-4 w-4" />
-                  {t('environments.details.projectDetection')}
+                  {t("environments.details.projectDetection")}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('environments.details.projectDetectionDesc')}
+                  {t("environments.details.projectDetectionDesc")}
                 </p>
               </div>
 
@@ -556,13 +633,15 @@ export function EnvironmentDetailsPanel({
                 <div className="flex items-center gap-2">
                   <RefreshCw className="h-4 w-4 text-primary" />
                   <div>
-                    <span className="text-sm font-medium">{t('environments.details.autoSwitch')}</span>
+                    <span className="text-sm font-medium">
+                      {t("environments.details.autoSwitch")}
+                    </span>
                     <p className="text-xs text-muted-foreground">
-                      {t('environments.details.autoSwitchDesc')}
+                      {t("environments.details.autoSwitchDesc")}
                     </p>
                   </div>
                 </div>
-                <Switch 
+                <Switch
                   checked={envSettings?.autoSwitch || false}
                   onCheckedChange={handleToggleAutoSwitch}
                 />
@@ -578,9 +657,11 @@ export function EnvironmentDetailsPanel({
                       <FileCode className="h-4 w-4 text-muted-foreground" />
                       <code className="font-mono text-sm">{file.fileName}</code>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={file.enabled}
-                      onCheckedChange={(checked) => handleToggleDetectionFile(file.fileName, checked)}
+                      onCheckedChange={(checked) =>
+                        handleToggleDetectionFile(file.fileName, checked)
+                      }
                     />
                   </div>
                 ))}
@@ -590,8 +671,12 @@ export function EnvironmentDetailsPanel({
         </ScrollArea>
 
         <div className="p-4 border-t">
-          <Button variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
-            {t('common.close')}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onOpenChange(false)}
+          >
+            {t("common.close")}
           </Button>
         </div>
       </SheetContent>

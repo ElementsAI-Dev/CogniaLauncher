@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface StatsCardProps {
   title: string;
@@ -16,16 +16,16 @@ interface StatsCardProps {
   onClick?: () => void;
   loading?: boolean;
   trend?: {
-    direction: 'up' | 'down' | 'stable';
+    direction: "up" | "down" | "stable";
     label?: string;
   };
 }
 
-export function StatsCard({ 
-  title, 
-  value, 
-  description, 
-  icon, 
+export function StatsCard({
+  title,
+  value,
+  description,
+  icon,
   className,
   href,
   onClick,
@@ -46,7 +46,7 @@ export function StatsCard({
 
   if (loading) {
     return (
-      <Card className={cn('', className)}>
+      <Card className={cn("", className)}>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-4 w-4 rounded" />
@@ -60,35 +60,43 @@ export function StatsCard({
   }
 
   return (
-    <Card 
+    <Card
       className={cn(
-        'transition-all duration-200',
+        "transition-all duration-200",
         isClickable && [
-          'cursor-pointer',
-          'hover:shadow-md hover:border-primary/20',
-          'hover:scale-[1.02]',
-          'active:scale-[0.98]',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          "cursor-pointer",
+          "hover:shadow-md hover:border-primary/20",
+          "hover:scale-[1.02]",
+          "active:scale-[0.98]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         ],
-        className
+        className,
       )}
       onClick={isClickable ? handleClick : undefined}
       tabIndex={isClickable ? 0 : undefined}
-      role={isClickable ? 'button' : undefined}
-      onKeyDown={isClickable ? (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handleClick();
-        }
-      } : undefined}
+      role={isClickable ? "button" : undefined}
+      onKeyDown={
+        isClickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleClick();
+              }
+            }
+          : undefined
+      }
     >
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">
+          {title}
+        </CardTitle>
         {icon && (
-          <div className={cn(
-            'text-muted-foreground transition-colors',
-            isClickable && 'group-hover:text-primary'
-          )}>
+          <div
+            className={cn(
+              "text-muted-foreground transition-colors",
+              isClickable && "group-hover:text-primary",
+            )}
+          >
             {icon}
           </div>
         )}
@@ -109,25 +117,25 @@ export function StatsCard({
 }
 
 interface TrendIndicatorProps {
-  direction: 'up' | 'down' | 'stable';
+  direction: "up" | "down" | "stable";
   label?: string;
 }
 
 function TrendIndicator({ direction, label }: TrendIndicatorProps) {
   const colors = {
-    up: 'text-green-500',
-    down: 'text-red-500',
-    stable: 'text-muted-foreground',
+    up: "text-green-500",
+    down: "text-red-500",
+    stable: "text-muted-foreground",
   };
 
   const icons = {
-    up: '↑',
-    down: '↓',
-    stable: '→',
+    up: "↑",
+    down: "↓",
+    stable: "→",
   };
 
   return (
-    <span className={cn('text-xs font-medium', colors[direction])}>
+    <span className={cn("text-xs font-medium", colors[direction])}>
       {icons[direction]}
       {label && <span className="ml-0.5">{label}</span>}
     </span>
@@ -136,7 +144,7 @@ function TrendIndicator({ direction, label }: TrendIndicatorProps) {
 
 export function StatsCardSkeleton({ className }: { className?: string }) {
   return (
-    <Card className={cn('', className)}>
+    <Card className={cn("", className)}>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <Skeleton className="h-4 w-24" />
         <Skeleton className="h-4 w-4 rounded" />

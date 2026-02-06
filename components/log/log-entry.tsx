@@ -1,47 +1,59 @@
-'use client';
+"use client";
 
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState, useCallback, useMemo, type ReactNode } from 'react';
-import { useLocale } from '@/components/providers/locale-provider';
-import type { LogEntry as LogEntryType, LogLevel } from '@/lib/stores/log';
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useCallback, useMemo, type ReactNode } from "react";
+import { useLocale } from "@/components/providers/locale-provider";
+import type { LogEntry as LogEntryType, LogLevel } from "@/lib/stores/log";
 
-const LEVEL_STYLES: Record<LogLevel, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; className: string; indicator: string }> = {
+const LEVEL_STYLES: Record<
+  LogLevel,
+  {
+    variant: "default" | "secondary" | "destructive" | "outline";
+    className: string;
+    indicator: string;
+  }
+> = {
   trace: {
-    variant: 'secondary',
-    className: 'bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:bg-slate-400/10 dark:text-slate-400',
-    indicator: 'bg-slate-400',
+    variant: "secondary",
+    className:
+      "bg-slate-500/10 text-slate-600 hover:bg-slate-500/20 dark:bg-slate-400/10 dark:text-slate-400",
+    indicator: "bg-slate-400",
   },
   debug: {
-    variant: 'secondary',
-    className: 'bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:bg-blue-400/10 dark:text-blue-400',
-    indicator: 'bg-blue-500',
+    variant: "secondary",
+    className:
+      "bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 dark:bg-blue-400/10 dark:text-blue-400",
+    indicator: "bg-blue-500",
   },
   info: {
-    variant: 'secondary',
-    className: 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-400',
-    indicator: 'bg-emerald-500',
+    variant: "secondary",
+    className:
+      "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:bg-emerald-400/10 dark:text-emerald-400",
+    indicator: "bg-emerald-500",
   },
   warn: {
-    variant: 'secondary',
-    className: 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:bg-amber-400/10 dark:text-amber-400',
-    indicator: 'bg-amber-500',
+    variant: "secondary",
+    className:
+      "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:bg-amber-400/10 dark:text-amber-400",
+    indicator: "bg-amber-500",
   },
   error: {
-    variant: 'destructive',
-    className: 'bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:bg-red-400/10 dark:text-red-400',
-    indicator: 'bg-red-500',
+    variant: "destructive",
+    className:
+      "bg-red-500/10 text-red-600 hover:bg-red-500/20 dark:bg-red-400/10 dark:text-red-400",
+    indicator: "bg-red-500",
   },
 };
 
 const LEVEL_LABELS: Record<LogLevel, string> = {
-  trace: 'TRC',
-  debug: 'DBG',
-  info: 'INF',
-  warn: 'WRN',
-  error: 'ERR',
+  trace: "TRC",
+  debug: "DBG",
+  info: "INF",
+  warn: "WRN",
+  error: "ERR",
 };
 
 interface LogEntryProps {
@@ -54,7 +66,7 @@ interface LogEntryProps {
 }
 
 function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function LogEntry({
@@ -69,22 +81,24 @@ export function LogEntry({
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const style = LEVEL_STYLES[entry.level];
-  const isExpandable = allowCollapse && (entry.message.length > 160 || entry.message.includes('\n'));
+  const isExpandable =
+    allowCollapse &&
+    (entry.message.length > 160 || entry.message.includes("\n"));
 
   const formatTimestamp = useCallback((timestamp: number) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', {
+    return date.toLocaleTimeString("en-US", {
       hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
       fractionalSecondDigits: 3,
     });
   }, []);
 
   const handleCopy = useCallback(async () => {
     try {
-      const text = `[${formatTimestamp(entry.timestamp)}][${entry.level.toUpperCase()}]${entry.target ? `[${entry.target}]` : ''} ${entry.message}`;
+      const text = `[${formatTimestamp(entry.timestamp)}][${entry.level.toUpperCase()}]${entry.target ? `[${entry.target}]` : ""} ${entry.message}`;
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -96,11 +110,13 @@ export function LogEntry({
   const highlightNodes = useMemo(() => {
     if (!highlightText) return entry.message;
 
-    const pattern = highlightRegex ? highlightText : escapeRegExp(highlightText);
+    const pattern = highlightRegex
+      ? highlightText
+      : escapeRegExp(highlightText);
     let regex: RegExp | null = null;
 
     try {
-      regex = new RegExp(pattern, 'gi');
+      regex = new RegExp(pattern, "gi");
     } catch {
       regex = null;
     }
@@ -126,9 +142,12 @@ export function LogEntry({
         nodes.push(entry.message.slice(lastIndex, start));
       }
       nodes.push(
-        <mark key={`${entry.id}-${start}`} className="rounded bg-yellow-200/60 px-0.5 text-yellow-900 dark:bg-yellow-400/20 dark:text-yellow-200">
+        <mark
+          key={`${entry.id}-${start}`}
+          className="rounded bg-yellow-200/60 px-0.5 text-yellow-900 dark:bg-yellow-400/20 dark:text-yellow-200"
+        >
           {match[0]}
-        </mark>
+        </mark>,
       );
       lastIndex = end;
     }
@@ -143,26 +162,31 @@ export function LogEntry({
   return (
     <div
       className={cn(
-        'group relative flex items-start gap-3 px-4 py-2.5 font-mono text-xs transition-colors',
-        'hover:bg-muted/40 dark:hover:bg-muted/20'
+        "group relative flex items-start gap-3 px-4 py-2.5 font-mono text-xs transition-colors",
+        "hover:bg-muted/40 dark:hover:bg-muted/20",
       )}
     >
       {/* Level indicator bar */}
-      <div className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-r', style.indicator)} />
-      
+      <div
+        className={cn(
+          "absolute left-0 top-0 bottom-0 w-1 rounded-r",
+          style.indicator,
+        )}
+      />
+
       {/* Timestamp */}
       {showTimestamp && (
         <span className="shrink-0 text-muted-foreground/70 tabular-nums text-[11px] pt-0.5">
           {formatTimestamp(entry.timestamp)}
         </span>
       )}
-      
+
       {/* Level badge */}
       <Badge
         variant={style.variant}
         className={cn(
-          'shrink-0 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide',
-          style.className
+          "shrink-0 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+          style.className,
         )}
       >
         {LEVEL_LABELS[entry.level]}
@@ -178,9 +202,13 @@ export function LogEntry({
       {/* Message content */}
       <span
         className={cn(
-          'flex-1 break-words whitespace-pre-wrap leading-relaxed text-foreground/90',
-          isExpandable && !expanded && 'max-h-[3.5rem] overflow-hidden relative',
-          isExpandable && !expanded && 'after:absolute after:bottom-0 after:left-0 after:right-0 after:h-4 after:bg-gradient-to-t after:from-background/80 after:to-transparent'
+          "flex-1 break-words whitespace-pre-wrap leading-relaxed text-foreground/90",
+          isExpandable &&
+            !expanded &&
+            "max-h-[3.5rem] overflow-hidden relative",
+          isExpandable &&
+            !expanded &&
+            "after:absolute after:bottom-0 after:left-0 after:right-0 after:h-4 after:bg-gradient-to-t after:from-background/80 after:to-transparent",
         )}
       >
         {highlightNodes}
@@ -194,7 +222,7 @@ export function LogEntry({
             size="icon"
             className="h-7 w-7"
             onClick={() => setExpanded((prev) => !prev)}
-            aria-label={expanded ? t('logs.collapse') : t('logs.expand')}
+            aria-label={expanded ? t("logs.collapse") : t("logs.expand")}
           >
             {expanded ? (
               <ChevronUp className="h-3.5 w-3.5" />
@@ -209,8 +237,8 @@ export function LogEntry({
           size="icon"
           className="h-7 w-7"
           onClick={handleCopy}
-          title={t('logs.copyEntry')}
-          aria-label={t('logs.copyEntry')}
+          title={t("logs.copyEntry")}
+          aria-label={t("logs.copyEntry")}
         >
           {copied ? (
             <Check className="h-3.5 w-3.5 text-green-500" />

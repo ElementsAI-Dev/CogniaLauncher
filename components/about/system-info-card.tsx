@@ -1,17 +1,20 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { Monitor, Copy, Check, RefreshCw, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
-import type { SystemInfo } from '@/hooks/use-about-data';
-import type { SelfUpdateInfo } from '@/lib/tauri';
-import { APP_VERSION } from '@/lib/app-version';
-
+import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import { Monitor, Copy, Check, RefreshCw, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
+import type { SystemInfo } from "@/hooks/use-about-data";
+import type { SelfUpdateInfo } from "@/lib/tauri";
+import { APP_VERSION } from "@/lib/app-version";
 
 interface InfoRowProps {
   label: string;
@@ -21,7 +24,13 @@ interface InfoRowProps {
   unknownText: string;
 }
 
-function InfoRow({ label, value, isMono = false, isLoading, unknownText }: InfoRowProps) {
+function InfoRow({
+  label,
+  value,
+  isMono = false,
+  isLoading,
+  unknownText,
+}: InfoRowProps) {
   return (
     <div className="flex justify-between items-center">
       <span className="text-[13px] text-muted-foreground">{label}</span>
@@ -39,7 +48,9 @@ function InfoRow({ label, value, isMono = false, isLoading, unknownText }: InfoR
           </TooltipContent>
         </Tooltip>
       ) : (
-        <span className={`text-[13px] font-medium text-foreground ${isMono ? 'font-mono' : ''}`}>
+        <span
+          className={`text-[13px] font-medium text-foreground ${isMono ? "font-mono" : ""}`}
+        >
           {value || unknownText}
         </span>
       )}
@@ -66,37 +77,44 @@ export function SystemInfoCard({
 }: SystemInfoCardProps) {
   const [copied, setCopied] = useState(false);
 
-  const unknownText = t('common.unknown');
+  const unknownText = t("common.unknown");
 
   const copySystemInfo = async () => {
     const info = `
-${t('about.systemInfoTitle')}
+${t("about.systemInfoTitle")}
 ================================
-${t('about.version')}: v${updateInfo?.current_version || APP_VERSION}
-${t('about.operatingSystem')}: ${systemInfo?.os || unknownText}
-${t('about.architecture')}: ${systemInfo?.arch || unknownText}
-${t('about.homeDirectory')}: ${systemInfo?.homeDir || '~/.cognia'}
-${t('about.locale')}: ${systemInfo?.locale || 'en-US'}
+${t("about.version")}: v${updateInfo?.current_version || APP_VERSION}
+${t("about.operatingSystem")}: ${systemInfo?.os || unknownText}
+${t("about.architecture")}: ${systemInfo?.arch || unknownText}
+${t("about.homeDirectory")}: ${systemInfo?.homeDir || "~/.cognia"}
+${t("about.locale")}: ${systemInfo?.locale || "en-US"}
     `.trim();
 
     try {
       await navigator.clipboard.writeText(info);
       setCopied(true);
-      toast.success(t('about.copiedToClipboard'));
+      toast.success(t("about.copiedToClipboard"));
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error(t('about.copyFailed'));
+      toast.error(t("about.copyFailed"));
     }
   };
 
   return (
-    <Card className="rounded-xl border bg-card" role="region" aria-labelledby="system-info-heading">
+    <Card
+      className="rounded-xl border bg-card"
+      role="region"
+      aria-labelledby="system-info-heading"
+    >
       <CardContent className="p-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Monitor className="h-5 w-5 text-foreground" aria-hidden="true" />
-            <span id="system-info-heading" className="text-base font-semibold text-foreground">
-              {t('about.systemInfo')}
+            <span
+              id="system-info-heading"
+              className="text-base font-semibold text-foreground"
+            >
+              {t("about.systemInfo")}
             </span>
           </div>
           <Tooltip>
@@ -106,7 +124,7 @@ ${t('about.locale')}: ${systemInfo?.locale || 'en-US'}
                 size="sm"
                 onClick={copySystemInfo}
                 className="h-8 px-2"
-                aria-label={t('about.copySystemInfo')}
+                aria-label={t("about.copySystemInfo")}
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-500" />
@@ -115,15 +133,22 @@ ${t('about.locale')}: ${systemInfo?.locale || 'en-US'}
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('about.copySystemInfo')}</TooltipContent>
+            <TooltipContent>{t("about.copySystemInfo")}</TooltipContent>
           </Tooltip>
         </div>
 
         {systemError && (
-          <Alert variant="destructive" role="alert" className="flex items-center justify-between">
+          <Alert
+            variant="destructive"
+            role="alert"
+            className="flex items-center justify-between"
+          >
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-              <AlertDescription>{t('about.systemInfoFailed')}</AlertDescription>
+              <AlertCircle
+                className="h-4 w-4 flex-shrink-0"
+                aria-hidden="true"
+              />
+              <AlertDescription>{t("about.systemInfoFailed")}</AlertDescription>
             </div>
             <Button
               variant="ghost"
@@ -132,19 +157,40 @@ ${t('about.locale')}: ${systemInfo?.locale || 'en-US'}
               className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
             >
               <RefreshCw className="h-3 w-3 mr-1" aria-hidden="true" />
-              {t('about.systemInfoRetry')}
+              {t("about.systemInfoRetry")}
             </Button>
           </Alert>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-3">
-            <InfoRow label={t('about.operatingSystem')} value={systemInfo?.os} isLoading={systemLoading} unknownText={unknownText} />
-            <InfoRow label={t('about.architecture')} value={systemInfo?.arch} isLoading={systemLoading} unknownText={unknownText} />
+            <InfoRow
+              label={t("about.operatingSystem")}
+              value={systemInfo?.os}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.architecture")}
+              value={systemInfo?.arch}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
           </div>
           <div className="space-y-3">
-            <InfoRow label={t('about.homeDirectory')} value={systemInfo?.homeDir} isMono isLoading={systemLoading} unknownText={unknownText} />
-            <InfoRow label={t('about.locale')} value={systemInfo?.locale} isLoading={systemLoading} unknownText={unknownText} />
+            <InfoRow
+              label={t("about.homeDirectory")}
+              value={systemInfo?.homeDir}
+              isMono
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.locale")}
+              value={systemInfo?.locale}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
           </div>
         </div>
       </CardContent>
