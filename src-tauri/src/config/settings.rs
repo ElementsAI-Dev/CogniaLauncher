@@ -55,6 +55,12 @@ pub struct GeneralSettings {
     pub cache_max_age_days: u32,
     pub auto_clean_cache: bool,
     pub min_install_space_mb: u64,
+    /// Threshold percentage (0-100) to trigger auto-cleanup when cache usage exceeds this
+    pub cache_auto_clean_threshold: u8,
+    /// Size monitoring interval in seconds (0 = disabled)
+    pub cache_monitor_interval: u64,
+    /// Whether to include external caches in size monitoring
+    pub cache_monitor_external: bool,
 }
 
 impl Default for GeneralSettings {
@@ -68,6 +74,9 @@ impl Default for GeneralSettings {
             cache_max_age_days: 30,
             auto_clean_cache: true,
             min_install_space_mb: 100,
+            cache_auto_clean_threshold: 80,
+            cache_monitor_interval: 300, // 5 minutes
+            cache_monitor_external: false,
         }
     }
 }
@@ -257,7 +266,12 @@ impl Settings {
         match parts.as_slice() {
             ["general", "parallel_downloads"] => Some(self.general.parallel_downloads.to_string()),
             ["general", "resolve_strategy"] => {
-                Some(format!("{:?}", self.general.resolve_strategy).to_lowercase())
+                Some(match self.general.resolve_strategy {
+                    ResolveStrategy::Latest => "latest",
+                    ResolveStrategy::Minimal => "minimal",
+                    ResolveStrategy::Locked => "locked",
+                    ResolveStrategy::PreferLocked => "prefer-locked",
+                }.to_string())
             }
             ["general", "auto_update_metadata"] => {
                 Some(self.general.auto_update_metadata.to_string())
@@ -268,6 +282,15 @@ impl Settings {
             ["general", "auto_clean_cache"] => Some(self.general.auto_clean_cache.to_string()),
             ["general", "min_install_space_mb"] => {
                 Some(self.general.min_install_space_mb.to_string())
+            }
+            ["general", "cache_auto_clean_threshold"] => {
+                Some(self.general.cache_auto_clean_threshold.to_string())
+            }
+            ["general", "cache_monitor_interval"] => {
+                Some(self.general.cache_monitor_interval.to_string())
+            }
+            ["general", "cache_monitor_external"] => {
+                Some(self.general.cache_monitor_external.to_string())
             }
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
@@ -366,6 +389,25 @@ impl Settings {
                 self.general.min_install_space_mb = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid value for min_install_space_mb".into()))?;
+            }
+            ["general", "cache_auto_clean_threshold"] => {
+                let v: u8 = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for cache_auto_clean_threshold".into()))?;
+                if v > 100 {
+                    return Err(CogniaError::Config("Threshold must be 0-100".into()));
+                }
+                self.general.cache_auto_clean_threshold = v;
+            }
+            ["general", "cache_monitor_interval"] => {
+                self.general.cache_monitor_interval = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for cache_monitor_interval".into()))?;
+            }
+            ["general", "cache_monitor_external"] => {
+                self.general.cache_monitor_external = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value

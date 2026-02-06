@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -216,6 +217,48 @@ impl Provider for BunProvider {
                 yanked: false,
             })
             .collect())
+    }
+
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use npm registry API since bun uses the same registry
+        let api = get_api_client();
+        if let Ok(_pkg) = api.get_npm_package(name).await {
+            // npm API returns dependencies as a map
+            // We need to get the specific version's dependencies
+            let url = if version.is_empty() {
+                format!("https://registry.npmjs.org/{}/latest", name)
+            } else {
+                format!("https://registry.npmjs.org/{}/{}", name, version)
+            };
+
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+            if let Ok(resp) = client.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(deps) = json["dependencies"].as_object() {
+                            return Ok(deps
+                                .iter()
+                                .filter_map(|(dep_name, constraint_val)| {
+                                    let constraint_str = constraint_val.as_str()?;
+                                    let parsed = constraint_str
+                                        .parse::<VersionConstraint>()
+                                        .unwrap_or(VersionConstraint::Any);
+                                    Some(Dependency {
+                                        name: dep_name.to_string(),
+                                        constraint: parsed,
+                                    })
+                                })
+                                .collect());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(vec![])
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {

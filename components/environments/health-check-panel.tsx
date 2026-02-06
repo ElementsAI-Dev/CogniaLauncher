@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale } from "@/components/providers/locale-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -39,7 +39,8 @@ interface HealthCheckPanelProps {
 }
 
 export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
-  const t = useTranslations("environments.healthCheck");
+  const { t: _t } = useLocale();
+  const t = (key: string, params?: Record<string, string | number>) => _t(`environments.healthCheck.${key}`, params);
   const { systemHealth, loading, error, checkAll, getStatusColor } =
     useHealthCheck();
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
@@ -257,7 +258,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
 interface IssueCardProps {
   issue: HealthIssue;
   onCopy: (text: string) => void;
-  t: ReturnType<typeof useTranslations>;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 function IssueCard({ issue, onCopy, t }: IssueCardProps) {

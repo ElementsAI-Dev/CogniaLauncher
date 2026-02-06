@@ -21,8 +21,8 @@ impl BrewProvider {
         }
     }
 
-    /// Get the installed version of a package
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+    /// Get the installed version of a package using brew info JSON
+    async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_brew(&["info", "--json=v2", name]).await?;
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
             // Check formulae first
@@ -95,9 +95,44 @@ impl Provider for BrewProvider {
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
+        // Use JSON API for richer info (description, homepage, license)
+        let out = self.run_brew(&["info", "--json=v2", name]).await?;
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            // Try formulae first, then casks
+            let pkg = json["formulae"].get(0)
+                .or_else(|| json["casks"].get(0));
+
+            if let Some(pkg) = pkg {
+                let version = pkg["versions"]["stable"].as_str()
+                    .or_else(|| pkg["version"].as_str())
+                    .map(|s| s.to_string());
+
+                return Ok(PackageInfo {
+                    name: name.into(),
+                    display_name: pkg["full_name"].as_str()
+                        .or_else(|| pkg["token"].as_str())
+                        .map(|s| s.to_string()),
+                    description: pkg["desc"].as_str().map(|s| s.to_string()),
+                    homepage: pkg["homepage"].as_str().map(|s| s.to_string()),
+                    license: pkg["license"].as_str().map(|s| s.to_string()),
+                    repository: None,
+                    versions: version
+                        .map(|v| vec![VersionInfo {
+                            version: v,
+                            release_date: None,
+                            deprecated: pkg["deprecated"].as_bool().unwrap_or(false),
+                            yanked: false,
+                        }])
+                        .unwrap_or_default(),
+                    provider: self.id().into(),
+                });
+            }
+        }
+
+        // Fallback to text parsing
         let out = self.run_brew(&["info", name]).await?;
         let first_line = out.lines().next().unwrap_or("");
-        let parts: Vec<&str> = first_line.split(':').collect();
+        let parts: Vec<&str> = first_line.splitn(2, ':').collect();
         let desc = parts.get(1).map(|s| s.trim().to_string());
 
         Ok(PackageInfo {
@@ -141,7 +176,7 @@ impl Provider for BrewProvider {
 
         // Get the actual installed version
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -153,6 +188,13 @@ impl Provider for BrewProvider {
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

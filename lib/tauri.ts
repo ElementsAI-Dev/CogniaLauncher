@@ -74,6 +74,7 @@ export type {
   DownloadHistoryStats,
   DiskSpaceInfo,
   DownloadRequest,
+  VerifyResult,
   DownloadEvent,
   TrayIconState,
   TrayLanguage,
@@ -154,6 +155,7 @@ import type {
   DownloadHistoryStats,
   DiskSpaceInfo,
   DownloadRequest,
+  VerifyResult,
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
@@ -345,6 +347,127 @@ export const cleanAllExternalCaches = (useTrash: boolean) =>
 export const getCombinedCacheStats = () => 
   invoke<CombinedCacheStats>('get_combined_cache_stats');
 
+// Cache size monitoring
+export interface CacheSizeMonitor {
+  internalSize: number;
+  internalSizeHuman: string;
+  externalSize: number;
+  externalSizeHuman: string;
+  totalSize: number;
+  totalSizeHuman: string;
+  maxSize: number;
+  maxSizeHuman: string;
+  usagePercent: number;
+  threshold: number;
+  exceedsThreshold: boolean;
+  diskTotal: number;
+  diskAvailable: number;
+  diskAvailableHuman: string;
+  externalCaches: ExternalCacheSizeInfo[];
+}
+
+export interface ExternalCacheSizeInfo {
+  provider: string;
+  displayName: string;
+  size: number;
+  sizeHuman: string;
+  cachePath: string;
+}
+
+export const cacheSizeMonitor = (includeExternal?: boolean) =>
+  invoke<CacheSizeMonitor>('cache_size_monitor', { includeExternal });
+
+// Cache path management
+export interface CachePathInfo {
+  currentPath: string;
+  defaultPath: string;
+  isCustom: boolean;
+  isSymlink: boolean;
+  symlinkTarget: string | null;
+  exists: boolean;
+  writable: boolean;
+  diskTotal: number;
+  diskAvailable: number;
+  diskAvailableHuman: string;
+}
+
+export const getCachePathInfo = () => invoke<CachePathInfo>('get_cache_path_info');
+export const setCachePath = (newPath: string) => invoke<void>('set_cache_path', { newPath });
+export const resetCachePath = () => invoke<string>('reset_cache_path');
+
+// Cache migration
+export interface MigrationValidation {
+  isValid: boolean;
+  sourceExists: boolean;
+  sourceSize: number;
+  sourceSizeHuman: string;
+  sourceFileCount: number;
+  destinationExists: boolean;
+  destinationWritable: boolean;
+  destinationSpaceAvailable: number;
+  destinationSpaceHuman: string;
+  hasEnoughSpace: boolean;
+  isSameDrive: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface MigrationResult {
+  success: boolean;
+  mode: string;
+  source: string;
+  destination: string;
+  bytesMigrated: number;
+  bytesMigratedHuman: string;
+  filesCount: number;
+  symlinkCreated: boolean;
+  error: string | null;
+}
+
+export const cacheMigrationValidate = (destination: string) =>
+  invoke<MigrationValidation>('cache_migration_validate', { destination });
+export const cacheMigrate = (destination: string, mode: 'move' | 'move_and_link') =>
+  invoke<MigrationResult>('cache_migrate', { destination, mode });
+
+// Force clean
+export const cacheForceClean = (useTrash?: boolean) =>
+  invoke<EnhancedCleanResult>('cache_force_clean', { useTrash });
+export const cacheForceCleanExternal = (provider: string, useCommand?: boolean, useTrash?: boolean) =>
+  invoke<ExternalCacheCleanResult>('cache_force_clean_external', { provider, useCommand, useTrash });
+
+// External cache paths
+export interface ExternalCachePathInfo {
+  provider: string;
+  displayName: string;
+  cachePath: string | null;
+  exists: boolean;
+  size: number;
+  sizeHuman: string;
+  isAvailable: boolean;
+  hasCleanCommand: boolean;
+  cleanCommand: string | null;
+  envVarsChecked: string[];
+}
+
+export const getExternalCachePaths = () =>
+  invoke<ExternalCachePathInfo[]>('get_external_cache_paths');
+
+// Enhanced cache settings
+export interface EnhancedCacheSettings {
+  maxSize: number;
+  maxAgeDays: number;
+  metadataCacheTtl: number;
+  autoClean: boolean;
+  autoCleanThreshold: number;
+  monitorInterval: number;
+  monitorExternal: boolean;
+}
+
+export const getEnhancedCacheSettings = () =>
+  invoke<EnhancedCacheSettings>('get_enhanced_cache_settings');
+export const setEnhancedCacheSettings = (newSettings: EnhancedCacheSettings) =>
+  invoke<void>('set_enhanced_cache_settings', { newSettings });
+
 // Provider management commands
 export const providerEnable = (providerId: string) => invoke<void>('provider_enable', { providerId });
 export const providerDisable = (providerId: string) => invoke<void>('provider_disable', { providerId });
@@ -497,6 +620,33 @@ export const downloadGetSpeedLimit = () =>
 
 export const downloadSetMaxConcurrent = (max: number) =>
   invoke<void>('download_set_max_concurrent', { max });
+
+export const downloadGetMaxConcurrent = () =>
+  invoke<number>('download_get_max_concurrent');
+
+export const downloadVerifyFile = (path: string, expectedChecksum: string) =>
+  invoke<VerifyResult>('download_verify_file', { path, expectedChecksum });
+
+export const downloadOpenFile = (path: string) =>
+  invoke<void>('download_open_file', { path });
+
+export const downloadRevealFile = (path: string) =>
+  invoke<void>('download_reveal_file', { path });
+
+export const downloadBatchPause = (taskIds: string[]) =>
+  invoke<number>('download_batch_pause', { taskIds });
+
+export const downloadBatchResume = (taskIds: string[]) =>
+  invoke<number>('download_batch_resume', { taskIds });
+
+export const downloadBatchCancel = (taskIds: string[]) =>
+  invoke<number>('download_batch_cancel', { taskIds });
+
+export const downloadBatchRemove = (taskIds: string[]) =>
+  invoke<number>('download_batch_remove', { taskIds });
+
+export const downloadShutdown = () =>
+  invoke<void>('download_shutdown');
 
 // Download history commands
 export const downloadHistoryList = (limit?: number) =>

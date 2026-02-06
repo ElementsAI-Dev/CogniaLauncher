@@ -3,12 +3,14 @@ use crate::cache::{
     CleanupHistory, CleanupRecord, CleanupRecordBuilder,
     CombinedCacheStats, DownloadCache, DownloadResumer,
     ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache,
-    external,
+    MigrationMode, MigrationResult, MigrationValidation,
+    external, migration,
 };
-use crate::platform::fs;
+use crate::platform::{disk, fs};
 use crate::config::Settings;
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
@@ -318,7 +320,16 @@ pub struct CacheSettings {
     pub max_age_days: u32,
     pub metadata_cache_ttl: u64,
     pub auto_clean: bool,
+    #[serde(default = "default_threshold")]
+    pub auto_clean_threshold: u8,
+    #[serde(default = "default_monitor_interval")]
+    pub monitor_interval: u64,
+    #[serde(default)]
+    pub monitor_external: bool,
 }
+
+fn default_threshold() -> u8 { 80 }
+fn default_monitor_interval() -> u64 { 300 }
 
 #[tauri::command]
 pub async fn get_cache_settings(
@@ -330,6 +341,9 @@ pub async fn get_cache_settings(
         max_age_days: s.general.cache_max_age_days,
         metadata_cache_ttl: s.general.metadata_cache_ttl,
         auto_clean: s.general.auto_clean_cache,
+        auto_clean_threshold: s.general.cache_auto_clean_threshold,
+        monitor_interval: s.general.cache_monitor_interval,
+        monitor_external: s.general.cache_monitor_external,
     })
 }
 
@@ -343,6 +357,9 @@ pub async fn set_cache_settings(
     s.general.cache_max_age_days = new_settings.max_age_days;
     s.general.metadata_cache_ttl = new_settings.metadata_cache_ttl;
     s.general.auto_clean_cache = new_settings.auto_clean;
+    s.general.cache_auto_clean_threshold = new_settings.auto_clean_threshold;
+    s.general.cache_monitor_interval = new_settings.monitor_interval;
+    s.general.cache_monitor_external = new_settings.monitor_external;
     s.save().await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -1154,4 +1171,637 @@ pub async fn get_combined_cache_stats(
     external::get_combined_stats(internal_size)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Cache Size Monitoring
+// ============================================================================
+
+/// Real-time cache size monitoring result
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheSizeMonitor {
+    pub internal_size: u64,
+    pub internal_size_human: String,
+    pub external_size: u64,
+    pub external_size_human: String,
+    pub total_size: u64,
+    pub total_size_human: String,
+    pub max_size: u64,
+    pub max_size_human: String,
+    pub usage_percent: f32,
+    pub threshold: u8,
+    pub exceeds_threshold: bool,
+    pub disk_total: u64,
+    pub disk_available: u64,
+    pub disk_available_human: String,
+    pub external_caches: Vec<ExternalCacheSizeInfo>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalCacheSizeInfo {
+    pub provider: String,
+    pub display_name: String,
+    pub size: u64,
+    pub size_human: String,
+    pub cache_path: String,
+}
+
+/// Get comprehensive cache size monitoring data
+#[tauri::command]
+pub async fn cache_size_monitor(
+    include_external: Option<bool>,
+    settings: State<'_, SharedSettings>,
+) -> Result<CacheSizeMonitor, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    let max_size = s.general.cache_max_size;
+    let threshold = s.general.cache_auto_clean_threshold;
+    let include_ext = include_external.unwrap_or(s.general.cache_monitor_external);
+    drop(s);
+
+    // Get internal cache size
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    let dl_stats = download_cache.stats().await.map_err(|e| e.to_string())?;
+    let internal_size = dl_stats.total_size;
+
+    // Get external cache sizes if requested
+    let (external_size, external_caches) = if include_ext {
+        let caches = external::discover_all_caches()
+            .await
+            .map_err(|e| e.to_string())?;
+        let ext_size: u64 = caches.iter().map(|c| c.size).sum();
+        let ext_info: Vec<ExternalCacheSizeInfo> = caches
+            .into_iter()
+            .filter(|c| c.size > 0)
+            .map(|c| ExternalCacheSizeInfo {
+                provider: c.provider,
+                display_name: c.display_name,
+                size: c.size,
+                size_human: c.size_human,
+                cache_path: c.cache_path,
+            })
+            .collect();
+        (ext_size, ext_info)
+    } else {
+        (0, Vec::new())
+    };
+
+    let total_size = internal_size + external_size;
+    let usage_percent = if max_size > 0 {
+        (internal_size as f64 / max_size as f64 * 100.0) as f32
+    } else {
+        0.0
+    };
+
+    let exceeds_threshold = threshold > 0 && usage_percent >= threshold as f32;
+
+    // Get disk space info
+    let (disk_total, disk_available) = match disk::get_disk_space(&cache_dir).await {
+        Ok(space) => (space.total, space.available),
+        Err(_) => (0, 0),
+    };
+
+    Ok(CacheSizeMonitor {
+        internal_size,
+        internal_size_human: format_size(internal_size),
+        external_size,
+        external_size_human: format_size(external_size),
+        total_size,
+        total_size_human: format_size(total_size),
+        max_size,
+        max_size_human: format_size(max_size),
+        usage_percent,
+        threshold,
+        exceeds_threshold,
+        disk_total,
+        disk_available,
+        disk_available_human: format_size(disk_available),
+        external_caches,
+    })
+}
+
+// ============================================================================
+// Cache Path Management
+// ============================================================================
+
+/// Get current cache path info
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachePathInfo {
+    pub current_path: String,
+    pub default_path: String,
+    pub is_custom: bool,
+    pub is_symlink: bool,
+    pub symlink_target: Option<String>,
+    pub exists: bool,
+    pub writable: bool,
+    pub disk_total: u64,
+    pub disk_available: u64,
+    pub disk_available_human: String,
+}
+
+#[tauri::command]
+pub async fn get_cache_path_info(
+    settings: State<'_, SharedSettings>,
+) -> Result<CachePathInfo, String> {
+    let s = settings.read().await;
+    let current_path = s.get_cache_dir();
+    let default_path = s.get_root_dir().join("cache");
+    let is_custom = s.paths.cache.is_some();
+    drop(s);
+
+    let exists = fs::exists(&current_path).await;
+
+    // Check if it's a symlink
+    let (is_symlink, symlink_target) = if exists {
+        match tokio::fs::symlink_metadata(&current_path).await {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let target = tokio::fs::read_link(&current_path)
+                    .await
+                    .ok()
+                    .map(|p| p.display().to_string());
+                (true, target)
+            }
+            _ => (false, None),
+        }
+    } else {
+        (false, None)
+    };
+
+    // Check writability
+    let writable = if exists {
+        let test_file = current_path.join(".cognia_write_test");
+        match tokio::fs::write(&test_file, b"test").await {
+            Ok(_) => {
+                let _ = tokio::fs::remove_file(&test_file).await;
+                true
+            }
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+
+    // Disk space
+    let (disk_total, disk_available) = if exists {
+        match disk::get_disk_space(&current_path).await {
+            Ok(space) => (space.total, space.available),
+            Err(_) => (0, 0),
+        }
+    } else {
+        (0, 0)
+    };
+
+    Ok(CachePathInfo {
+        current_path: current_path.display().to_string(),
+        default_path: default_path.display().to_string(),
+        is_custom,
+        is_symlink,
+        symlink_target,
+        exists,
+        writable,
+        disk_total,
+        disk_available,
+        disk_available_human: format_size(disk_available),
+    })
+}
+
+/// Change cache directory path (does NOT migrate data)
+#[tauri::command]
+pub async fn set_cache_path(
+    new_path: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    let path = PathBuf::from(&new_path);
+
+    // Validate the path
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            return Err("Parent directory does not exist".to_string());
+        }
+    }
+
+    // Create the directory if it doesn't exist
+    fs::create_dir_all(&path)
+        .await
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    // Test writability
+    let test_file = path.join(".cognia_write_test");
+    tokio::fs::write(&test_file, b"test")
+        .await
+        .map_err(|_| "Destination path is not writable".to_string())?;
+    let _ = tokio::fs::remove_file(&test_file).await;
+
+    // Update settings
+    let mut s = settings.write().await;
+    s.paths.cache = if new_path.is_empty() {
+        None
+    } else {
+        Some(path)
+    };
+    s.save().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Reset cache path to default
+#[tauri::command]
+pub async fn reset_cache_path(
+    settings: State<'_, SharedSettings>,
+) -> Result<String, String> {
+    let mut s = settings.write().await;
+    s.paths.cache = None;
+    s.save().await.map_err(|e| e.to_string())?;
+    let default_path = s.get_cache_dir();
+    Ok(default_path.display().to_string())
+}
+
+// ============================================================================
+// Cache Migration Commands
+// ============================================================================
+
+/// Validate migration before executing
+#[tauri::command]
+pub async fn cache_migration_validate(
+    destination: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<MigrationValidation, String> {
+    let s = settings.read().await;
+    let source = s.get_cache_dir();
+    drop(s);
+
+    let dest = PathBuf::from(&destination);
+    migration::validate_migration(&source, &dest)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Execute cache migration
+#[tauri::command]
+pub async fn cache_migrate(
+    destination: String,
+    mode: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<MigrationResult, String> {
+    let s = settings.read().await;
+    let source = s.get_cache_dir();
+    drop(s);
+
+    let dest = PathBuf::from(&destination);
+    let migration_mode = match mode.as_str() {
+        "move" => MigrationMode::Move,
+        "move_and_link" => MigrationMode::MoveAndLink,
+        _ => return Err(format!("Invalid migration mode: {}. Use 'move' or 'move_and_link'", mode)),
+    };
+
+    let result = migration::migrate_cache(&source, &dest, migration_mode)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // If migration succeeded with Move mode, update the config to point to new path
+    if result.success && migration_mode == MigrationMode::Move {
+        let mut s = settings.write().await;
+        s.paths.cache = Some(dest);
+        if let Err(e) = s.save().await {
+            // Migration succeeded but config save failed - warn but don't fail
+            log::warn!("Cache migrated but config update failed: {}", e);
+        }
+    }
+    // For MoveAndLink mode, the old path still works via symlink, no config change needed
+
+    Ok(result)
+}
+
+// ============================================================================
+// Force Clean Commands
+// ============================================================================
+
+/// Force clean all internal caches (ignores age/size limits, deletes everything)
+#[tauri::command]
+pub async fn cache_force_clean(
+    use_trash: Option<bool>,
+    settings: State<'_, SharedSettings>,
+) -> Result<EnhancedCleanResult, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
+    drop(s);
+
+    let use_trash = use_trash.unwrap_or(false);
+
+    // Build history record
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    let metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut builder = CleanupRecordBuilder::new("force_all", use_trash);
+
+    for entry in download_cache
+        .preview_clean()
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+    }
+    for entry in metadata_cache
+        .preview_clean()
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+    }
+
+    let record = builder.build();
+    let history_id = record.id.clone();
+    let deleted_count = record.file_count;
+
+    // Force clean everything
+    let mut download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let dl_freed = download_cache
+        .clean_with_option(use_trash)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let md_size_before = metadata_cache
+        .stats()
+        .await
+        .map_err(|e| e.to_string())?
+        .total_size;
+    let _md = metadata_cache
+        .clean_all_with_option(use_trash)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Clean all partial downloads
+    let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
+        .await
+        .map_err(|e| e.to_string())?;
+    let partial_freed =
+        clean_partials_with_option(&mut resumer, Duration::from_secs(0), use_trash).await?;
+
+    let total_freed = dl_freed + md_size_before + partial_freed;
+
+    // Save history
+    let mut history = CleanupHistory::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+    history.add(record).await.map_err(|e| e.to_string())?;
+
+    Ok(EnhancedCleanResult {
+        freed_bytes: total_freed,
+        freed_human: format_size(total_freed),
+        deleted_count,
+        use_trash,
+        history_id,
+    })
+}
+
+/// Force clean a specific external cache provider via command or direct delete
+#[tauri::command]
+pub async fn cache_force_clean_external(
+    provider: String,
+    use_command: Option<bool>,
+    use_trash: Option<bool>,
+) -> Result<ExternalCacheCleanResult, String> {
+    let provider_enum = external::ExternalCacheProvider::from_str(&provider)
+        .ok_or_else(|| format!("Unknown provider: {}", provider))?;
+
+    let use_command = use_command.unwrap_or(true);
+    let use_trash = use_trash.unwrap_or(false);
+
+    let cache_path = provider_enum.cache_path();
+    let size_before = if let Some(ref path) = cache_path {
+        external::calculate_dir_size(path).await
+    } else {
+        0
+    };
+
+    // Use command if requested and available, otherwise direct delete
+    let clean_result = if use_command {
+        if let Some((cmd, args)) = provider_enum.clean_command() {
+            match crate::platform::process::execute(cmd, args, None).await {
+                Ok(output) if output.success => Ok(()),
+                Ok(output) => Err(format!("Command failed: {}", output.stderr)),
+                Err(e) => Err(format!("Command error: {}", e)),
+            }
+        } else {
+            // No command available, do direct delete
+            if let Some(ref path) = cache_path {
+                if path.exists() {
+                    if use_trash {
+                        fs::remove_dir_with_option(path, true)
+                            .await
+                            .map_err(|e| e.to_string())
+                    } else {
+                        fs::remove_dir_all(path)
+                            .await
+                            .map_err(|e| e.to_string())
+                    }
+                } else {
+                    Ok(())
+                }
+            } else {
+                Ok(())
+            }
+        }
+    } else {
+        // Direct delete mode (bypasses provider command)
+        if let Some(ref path) = cache_path {
+            if path.exists() {
+                if use_trash {
+                    fs::remove_dir_with_option(path, true)
+                        .await
+                        .map_err(|e| e.to_string())
+                } else {
+                    fs::remove_dir_all(path)
+                        .await
+                        .map_err(|e| e.to_string())
+                }
+            } else {
+                Ok(())
+            }
+        } else {
+            Ok(())
+        }
+    };
+
+    let size_after = if let Some(ref path) = cache_path {
+        external::calculate_dir_size(path).await
+    } else {
+        0
+    };
+    let freed = size_before.saturating_sub(size_after);
+
+    match clean_result {
+        Ok(()) => Ok(ExternalCacheCleanResult {
+            provider: provider_enum.id().to_string(),
+            display_name: provider_enum.display_name().to_string(),
+            freed_bytes: freed,
+            freed_human: format_size(freed),
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(ExternalCacheCleanResult {
+            provider: provider_enum.id().to_string(),
+            display_name: provider_enum.display_name().to_string(),
+            freed_bytes: freed,
+            freed_human: format_size(freed),
+            success: false,
+            error: Some(e),
+        }),
+    }
+}
+
+// ============================================================================
+// External Cache Path Query
+// ============================================================================
+
+/// Get detailed path info for a specific external cache provider
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalCachePathInfo {
+    pub provider: String,
+    pub display_name: String,
+    pub cache_path: Option<String>,
+    pub exists: bool,
+    pub size: u64,
+    pub size_human: String,
+    pub is_available: bool,
+    pub has_clean_command: bool,
+    pub clean_command: Option<String>,
+    pub env_vars_checked: Vec<String>,
+}
+
+/// Get path info for all external cache providers
+#[tauri::command]
+pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, String> {
+    let mut results = Vec::new();
+
+    for provider in external::ExternalCacheProvider::all() {
+        let cache_path = provider.cache_path();
+        let exists = cache_path
+            .as_ref()
+            .map(|p| p.exists())
+            .unwrap_or(false);
+        let size = if let Some(ref p) = cache_path {
+            if exists {
+                external::calculate_dir_size(p).await
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let is_available = external::is_provider_available(provider).await;
+
+        let clean_cmd = provider.clean_command().map(|(cmd, args)| {
+            format!("{} {}", cmd, args.join(" "))
+        });
+        let has_clean_command = clean_cmd.is_some();
+
+        // Get environment variables that were checked for this provider
+        let env_vars = get_provider_env_vars(provider);
+
+        results.push(ExternalCachePathInfo {
+            provider: provider.id().to_string(),
+            display_name: provider.display_name().to_string(),
+            cache_path: cache_path.map(|p| p.display().to_string()),
+            exists,
+            size,
+            size_human: format_size(size),
+            is_available,
+            has_clean_command,
+            clean_command: clean_cmd,
+            env_vars_checked: env_vars,
+        });
+    }
+
+    Ok(results)
+}
+
+/// Get environment variables checked for a provider's cache path
+fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<String> {
+    match provider {
+        external::ExternalCacheProvider::Uv => vec!["UV_CACHE_DIR".into()],
+        external::ExternalCacheProvider::Cargo => vec!["CARGO_HOME".into()],
+        external::ExternalCacheProvider::Go => vec!["GOMODCACHE".into(), "GOPATH".into()],
+        external::ExternalCacheProvider::Composer => vec!["COMPOSER_CACHE_DIR".into()],
+        external::ExternalCacheProvider::Poetry => vec!["POETRY_CACHE_DIR".into()],
+        external::ExternalCacheProvider::Conda => vec!["CONDA_PKGS_DIRS".into()],
+        external::ExternalCacheProvider::Deno => vec!["DENO_DIR".into()],
+        external::ExternalCacheProvider::Bun => vec!["BUN_INSTALL_CACHE_DIR".into(), "BUN_INSTALL".into()],
+        external::ExternalCacheProvider::Gradle => vec!["GRADLE_USER_HOME".into()],
+        #[cfg(not(windows))]
+        external::ExternalCacheProvider::Brew => vec!["HOMEBREW_CACHE".into()],
+        #[cfg(windows)]
+        external::ExternalCacheProvider::Scoop => vec!["SCOOP".into()],
+        #[cfg(windows)]
+        external::ExternalCacheProvider::Chocolatey => vec!["ChocolateyInstall".into()],
+        _ => vec![],
+    }
+}
+
+// ============================================================================
+// Enhanced Cache Settings (with threshold & monitoring)
+// ============================================================================
+
+/// Enhanced cache settings with monitoring fields
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnhancedCacheSettings {
+    pub max_size: u64,
+    pub max_age_days: u32,
+    pub metadata_cache_ttl: u64,
+    pub auto_clean: bool,
+    pub auto_clean_threshold: u8,
+    pub monitor_interval: u64,
+    pub monitor_external: bool,
+}
+
+#[tauri::command]
+pub async fn get_enhanced_cache_settings(
+    settings: State<'_, SharedSettings>,
+) -> Result<EnhancedCacheSettings, String> {
+    let s = settings.read().await;
+    Ok(EnhancedCacheSettings {
+        max_size: s.general.cache_max_size,
+        max_age_days: s.general.cache_max_age_days,
+        metadata_cache_ttl: s.general.metadata_cache_ttl,
+        auto_clean: s.general.auto_clean_cache,
+        auto_clean_threshold: s.general.cache_auto_clean_threshold,
+        monitor_interval: s.general.cache_monitor_interval,
+        monitor_external: s.general.cache_monitor_external,
+    })
+}
+
+#[tauri::command]
+pub async fn set_enhanced_cache_settings(
+    new_settings: EnhancedCacheSettings,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    let mut s = settings.write().await;
+    s.general.cache_max_size = new_settings.max_size;
+    s.general.cache_max_age_days = new_settings.max_age_days;
+    s.general.metadata_cache_ttl = new_settings.metadata_cache_ttl;
+    s.general.auto_clean_cache = new_settings.auto_clean;
+    s.general.cache_auto_clean_threshold = new_settings.auto_clean_threshold;
+    s.general.cache_monitor_interval = new_settings.monitor_interval;
+    s.general.cache_monitor_external = new_settings.monitor_external;
+    s.save().await.map_err(|e| e.to_string())?;
+    Ok(())
 }

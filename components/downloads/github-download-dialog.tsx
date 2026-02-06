@@ -121,7 +121,6 @@ export function GitHubDownloadDialog({
     if (!isDesktop) return;
     try {
       const dialogModule = await import(
-        /* @ts-expect-error dynamic Tauri plugin import */
         "@tauri-apps/plugin-dialog"
       ).catch(() => null);
       if (dialogModule?.open) {

@@ -2,9 +2,10 @@ use super::api::update_api_client_from_settings;
 use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
-    apk, apt, brew, bun, bundler, cargo, chocolatey, composer, deno, dnf, docker, dotnet, flatpak, fnm,
-    github, goenv, macports, npm, nvm, pacman, phpbrew, pip, pnpm, poetry, psgallery, pyenv, rbenv,
-    rustup, scoop, sdkman, snap, uv, vcpkg, winget, yarn, zypper,
+    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conda, deno, dnf, docker,
+    dotnet, flatpak, fnm, gem, github, goenv, macports, mise, nix, npm, nvm, pacman, phpbrew, pip,
+    pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta,
+    winget, yarn, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -62,16 +63,34 @@ impl ProviderRegistry {
         let mut has_dotnet_manager = false;
         let mut has_deno_manager = false;
 
-        // Node.js version managers - prefer fnm over nvm
-        let fnm_provider = Arc::new(fnm::FnmProvider::new());
-        if fnm_provider.is_available().await {
-            registry.register_environment_provider(fnm_provider);
+        // Node.js version managers - prefer volta > fnm > nvm
+        let volta_provider = Arc::new(volta::VoltaProvider::new());
+        if volta_provider.is_available().await {
+            registry.register_environment_provider(volta_provider);
             has_node_manager = true;
         } else {
-            let nvm_provider = Arc::new(nvm::NvmProvider::new());
-            if nvm_provider.is_available().await {
-                registry.register_environment_provider(nvm_provider);
+            let fnm_provider = Arc::new(fnm::FnmProvider::new());
+            if fnm_provider.is_available().await {
+                registry.register_environment_provider(fnm_provider);
                 has_node_manager = true;
+            } else {
+                let nvm_provider = Arc::new(nvm::NvmProvider::new());
+                if nvm_provider.is_available().await {
+                    registry.register_environment_provider(nvm_provider);
+                    has_node_manager = true;
+                }
+            }
+        }
+
+        // mise - modern polyglot version manager (preferred over asdf)
+        let mise_provider = Arc::new(mise::MiseProvider::new());
+        if mise_provider.is_available().await {
+            registry.register_environment_provider(mise_provider);
+        } else {
+            // asdf - polyglot version manager (macOS/Linux only)
+            let asdf_provider = Arc::new(asdf::AsdfProvider::new());
+            if asdf_provider.is_available().await {
+                registry.register_environment_provider(asdf_provider);
             }
         }
 
@@ -301,10 +320,28 @@ impl ProviderRegistry {
             registry.register_provider(bundler_provider);
         }
 
+        // Register RubyGems provider (standalone gem management)
+        let gem_provider = Arc::new(gem::GemProvider::new());
+        if gem_provider.is_available().await {
+            registry.register_provider(gem_provider);
+        }
+
         // Register Composer provider (PHP dependency management)
         let composer_provider = Arc::new(composer::ComposerProvider::new());
         if composer_provider.is_available().await {
             registry.register_provider(composer_provider);
+        }
+
+        // Register Conda provider (Python data science package manager)
+        let conda_provider = Arc::new(conda::CondaProvider::new());
+        if conda_provider.is_available().await {
+            registry.register_provider(conda_provider);
+        }
+
+        // Register pipx provider (isolated Python CLI tools)
+        let pipx_provider = Arc::new(pipx::PipxProvider::new());
+        if pipx_provider.is_available().await {
+            registry.register_provider(pipx_provider);
         }
 
         let platform = current_platform();
@@ -352,6 +389,12 @@ impl ProviderRegistry {
                 if flatpak_provider.is_available().await {
                     registry.register_provider(flatpak_provider);
                 }
+
+                // Nix (Linux)
+                let nix_provider = Arc::new(nix::NixProvider::new());
+                if nix_provider.is_available().await {
+                    registry.register_provider(nix_provider);
+                }
             }
             Platform::MacOS => {
                 // Homebrew
@@ -364,6 +407,12 @@ impl ProviderRegistry {
                 let macports_provider = Arc::new(macports::MacPortsProvider::new());
                 if macports_provider.is_available().await {
                     registry.register_provider(macports_provider);
+                }
+
+                // Nix (macOS)
+                let nix_provider = Arc::new(nix::NixProvider::new());
+                if nix_provider.is_available().await {
+                    registry.register_provider(nix_provider);
                 }
             }
             Platform::Windows => {

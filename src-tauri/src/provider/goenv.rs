@@ -232,7 +232,41 @@ impl Provider for GoenvProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        Ok(vec![])
+        // Compare installed goenv versions with latest available
+        let installed = self.run_goenv(&["versions", "--bare"]).await.unwrap_or_default();
+        let available = self.run_goenv(&["install", "--list"]).await.unwrap_or_default();
+
+        // Find latest stable version from available list
+        let latest = available
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.contains("beta") && !l.contains("rc"))
+            .filter(|l| l.chars().next().map_or(false, |c| c.is_ascii_digit()))
+            .last()
+            .unwrap_or("")
+            .to_string();
+
+        if latest.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut updates = Vec::new();
+        for line in installed.lines() {
+            let version = line.trim();
+            if version.is_empty() {
+                continue;
+            }
+            if version != latest && !version.starts_with(&latest) {
+                updates.push(UpdateInfo {
+                    name: format!("go@{}", version),
+                    current_version: version.to_string(),
+                    latest_version: latest.clone(),
+                    provider: self.id().into(),
+                });
+            }
+        }
+
+        Ok(updates)
     }
 }
 
@@ -443,7 +477,13 @@ impl Provider for GoModProvider {
     }
 
     async fn is_available(&self) -> bool {
-        process::which("go").await.is_some()
+        if process::which("go").await.is_none() {
+            return false;
+        }
+        match process::execute("go", &["version"], None).await {
+            Ok(output) => output.success && !output.stdout.is_empty(),
+            Err(_) => false,
+        }
     }
 
     async fn search(
@@ -472,13 +512,54 @@ impl Provider for GoModProvider {
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
-        // Get package info using go list
-        let _output = self.run_go(&["list", "-m", "-json", name]).await;
+        // Get package info using go list -m -json
+        let query = format!("{}@latest", name);
+        if let Ok(output) = self.run_go(&["list", "-m", "-json", &query]).await {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&output) {
+                let version = json["Version"].as_str().map(|s| s.to_string());
+                let path = json["Path"].as_str().unwrap_or(name);
+
+                // Determine repository URL from module path
+                let repo_url = if path.starts_with("github.com/") {
+                    Some(format!("https://{}", path))
+                } else if path.starts_with("gitlab.com/") || path.starts_with("bitbucket.org/") {
+                    Some(format!("https://{}", path))
+                } else {
+                    None
+                };
+
+                let versions = self.get_versions(name).await.unwrap_or_default();
+
+                return Ok(PackageInfo {
+                    name: name.into(),
+                    display_name: Some(path.to_string()),
+                    description: Some(format!("Go module: {}", path)),
+                    homepage: Some(format!("https://pkg.go.dev/{}", name)),
+                    license: None,
+                    repository: repo_url,
+                    versions: if versions.is_empty() {
+                        version
+                            .map(|v| {
+                                vec![VersionInfo {
+                                    version: v,
+                                    release_date: None,
+                                    deprecated: json["Deprecated"].as_str().is_some(),
+                                    yanked: json["Retracted"].as_array().map_or(false, |a| !a.is_empty()),
+                                }]
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        versions
+                    },
+                    provider: self.id().into(),
+                });
+            }
+        }
 
         Ok(PackageInfo {
             name: name.into(),
             display_name: Some(name.into()),
-            description: Some("Go package".into()),
+            description: Some("Go module".into()),
             homepage: Some(format!("https://pkg.go.dev/{}", name)),
             license: None,
             repository: None,
@@ -524,9 +605,25 @@ impl Provider for GoModProvider {
             })
             .unwrap_or_default();
 
+        // Resolve actual version: query `go list -m -json <module>@latest`
+        let actual_version = if req.version.is_none() || req.version.as_deref() == Some("latest") {
+            // Try to get the resolved version from go list
+            let list_pkg = format!("{}@latest", req.name);
+            if let Ok(out) = self.run_go(&["list", "-m", "-json", &list_pkg]).await {
+                serde_json::from_str::<serde_json::Value>(&out)
+                    .ok()
+                    .and_then(|j| j["Version"].as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| req.version.clone().unwrap_or_else(|| "unknown".into()))
+            } else {
+                req.version.clone().unwrap_or_else(|| "unknown".into())
+            }
+        } else {
+            req.version.clone().unwrap_or_else(|| "unknown".into())
+        };
+
         Ok(InstallReceipt {
             name: req.name,
-            version: req.version.unwrap_or_else(|| "latest".into()),
+            version: actual_version,
             provider: self.id().into(),
             install_path: gopath.join("bin"),
             files: vec![],

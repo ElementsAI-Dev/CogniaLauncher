@@ -88,19 +88,21 @@ impl Provider for SnapProvider {
             .filter(|l| !l.is_empty())
             .take(limit)
             .filter_map(|line| {
+                // snap find output: Name  Version  Publisher  Notes  Summary
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
+                if parts.len() >= 2 {
                     let name = parts[0].to_string();
                     let version = parts[1].to_string();
-                    let description = parts[4..].join(" ");
+                    // Summary starts at index 4 (after Name, Version, Publisher, Notes)
+                    let description = if parts.len() > 4 {
+                        Some(parts[4..].join(" "))
+                    } else {
+                        None
+                    };
 
                     Some(PackageSummary {
                         name,
-                        description: if description.is_empty() {
-                            None
-                        } else {
-                            Some(description)
-                        },
+                        description,
                         latest_version: Some(version),
                         provider: self.id().into(),
                     })

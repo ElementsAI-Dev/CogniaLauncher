@@ -1,9 +1,11 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{env::Platform, process};
+use crate::platform::{env::Platform, process::{self, ProcessOptions}};
+use crate::resolver::Dependency;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct VcpkgProvider {
     vcpkg_root: Option<PathBuf>,
@@ -205,6 +207,38 @@ impl Provider for VcpkgProvider {
             }
         }
 
+        Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use vcpkg depend-info to get package dependencies
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
+        let out = process::execute("vcpkg", &["depend-info", name], Some(opts)).await;
+        if let Ok(result) = out {
+            if result.success {
+                // Output format: "package[core]: dep1, dep2, dep3"
+                return Ok(result
+                    .stdout
+                    .lines()
+                    .filter(|l| !l.trim().is_empty() && l.contains(':'))
+                    .flat_map(|line| {
+                        let deps_part = line.split(':').nth(1).unwrap_or("");
+                        deps_part
+                            .split(',')
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|dep| {
+                                let dep_name = dep.trim().split('[').next().unwrap_or("").trim();
+                                Dependency {
+                                    name: dep_name.to_string(),
+                                    constraint: crate::resolver::VersionConstraint::Any,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|d| !d.name.is_empty() && d.name != name)
+                    .collect());
+            }
+        }
         Ok(vec![])
     }
 

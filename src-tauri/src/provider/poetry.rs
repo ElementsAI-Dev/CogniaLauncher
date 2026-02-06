@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -229,6 +230,60 @@ impl Provider for PoetryProvider {
 
         versions.sort_by(|a, b| b.version.cmp(&a.version));
         Ok(versions)
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use poetry show to get dependencies for a specific package
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(15));
+        let out = process::execute("poetry", &["show", name], Some(opts)).await;
+        if let Ok(result) = out {
+            if result.success {
+                let mut deps = Vec::new();
+                let mut in_deps_section = false;
+                for line in result.stdout.lines() {
+                    let line = line.trim();
+                    if line.starts_with("dependencies") || line.starts_with("requires") {
+                        in_deps_section = true;
+                        continue;
+                    }
+                    if in_deps_section {
+                        if line.is_empty() || line.starts_with("required") {
+                            break;
+                        }
+                        // Format: " - package_name (>=1.0,<2.0)"
+                        let dep_line = line.trim_start_matches(" - ").trim();
+                        if !dep_line.is_empty() {
+                            let dep_name = dep_line
+                                .split_whitespace()
+                                .next()
+                                .unwrap_or("")
+                                .to_string();
+                            let constraint = dep_line
+                                .find('(')
+                                .and_then(|start| {
+                                    dep_line.find(')').map(|end| {
+                                        dep_line[start + 1..end]
+                                            .parse::<VersionConstraint>()
+                                            .unwrap_or(VersionConstraint::Any)
+                                    })
+                                })
+                                .unwrap_or(VersionConstraint::Any);
+
+                            if !dep_name.is_empty() {
+                                deps.push(Dependency {
+                                    name: dep_name,
+                                    constraint,
+                                });
+                            }
+                        }
+                    }
+                }
+                if !deps.is_empty() {
+                    return Ok(deps);
+                }
+            }
+        }
+        Ok(vec![])
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {

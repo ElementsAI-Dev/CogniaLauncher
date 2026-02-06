@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   SETTINGS_REGISTRY,
   SETTINGS_SECTIONS,
@@ -171,34 +171,50 @@ export function useActiveSection(sectionIds: SettingsSection[]) {
   const [activeSection, setActiveSection] = useState<SettingsSection | null>(
     sectionIds[0] ?? null
   );
+  const manualScrollRef = useRef(false);
 
-  const observerCallback = useCallback(
-    (entries: IntersectionObserverEntry[]) => {
-      // Find the first visible section
-      const visibleEntries = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return;
 
-      if (visibleEntries.length > 0) {
-        const sectionId = visibleEntries[0].target.id.replace('section-', '') as SettingsSection;
-        setActiveSection(sectionId);
-      }
-    },
-    []
-  );
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (manualScrollRef.current) return;
+        const visibleEntries = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+        if (visibleEntries.length > 0) {
+          const sectionId = visibleEntries[0].target.id.replace('section-', '') as SettingsSection;
+          setActiveSection(sectionId);
+        }
+      },
+      { rootMargin: '-10% 0px -80% 0px', threshold: 0 }
+    );
+
+    for (const id of sectionIds) {
+      const el = document.getElementById(`section-${id}`);
+      if (el) observer.observe(el);
+    }
+
+    return () => observer.disconnect();
+  }, [sectionIds]);
 
   const scrollToSection = useCallback((sectionId: SettingsSection) => {
     const element = document.getElementById(`section-${sectionId}`);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      manualScrollRef.current = true;
       setActiveSection(sectionId);
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // Re-enable observer after scroll completes
+      setTimeout(() => {
+        manualScrollRef.current = false;
+      }, 600);
     }
   }, []);
 
   return {
     activeSection,
     setActiveSection,
-    observerCallback,
     scrollToSection,
   };
 }

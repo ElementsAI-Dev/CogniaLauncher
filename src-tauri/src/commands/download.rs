@@ -120,50 +120,260 @@ pub async fn init_download_manager(
         auto_start: true,
     };
 
+    let cache_dir = settings.get_cache_dir();
+
     let mut manager = DownloadManager::new(config);
     let mut rx = manager.create_event_channel();
+
+    // Clean up stale partial downloads on startup (older than 7 days)
+    let cleaned = manager
+        .cleanup_stale_partials(std::time::Duration::from_secs(7 * 86400))
+        .await;
+    if cleaned > 0 {
+        log::info!("Cleaned {} stale partial download files on startup", cleaned);
+    }
 
     // Start the manager
     manager.start().await;
 
-    // Spawn event forwarding task
+    let shared_manager = Arc::new(RwLock::new(manager));
+
+    // Spawn event forwarding task (also records download history)
     let app_clone = app.clone();
+    let manager_clone = shared_manager.clone();
+    let cache_dir_clone = cache_dir.clone();
     tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
-            let event_name = match &event {
-                DownloadEvent::TaskAdded { .. } => "download-task-added",
-                DownloadEvent::TaskStarted { .. } => "download-task-started",
-                DownloadEvent::TaskProgress { .. } => "download-task-progress",
-                DownloadEvent::TaskCompleted { .. } => "download-task-completed",
-                DownloadEvent::TaskFailed { .. } => "download-task-failed",
-                DownloadEvent::TaskPaused { .. } => "download-task-paused",
-                DownloadEvent::TaskResumed { .. } => "download-task-resumed",
-                DownloadEvent::TaskCancelled { .. } => "download-task-cancelled",
-                DownloadEvent::QueueUpdated { .. } => "download-queue-updated",
-            };
+            // Emit events to frontend with enriched payloads where needed
+            match &event {
+                DownloadEvent::TaskProgress { task_id, progress } => {
+                    // Enrich with human-readable fields the frontend expects
+                    // Note: task_id stays snake_case to match existing frontend event listeners
+                    #[derive(Serialize)]
+                    struct ProgressPayload {
+                        task_id: String,
+                        progress: DownloadProgressInfo,
+                    }
+                    let payload = ProgressPayload {
+                        task_id: task_id.clone(),
+                        progress: DownloadProgressInfo {
+                            downloaded_bytes: progress.downloaded_bytes,
+                            total_bytes: progress.total_bytes,
+                            speed: progress.speed,
+                            speed_human: progress.speed_human(),
+                            percent: progress.percent,
+                            eta_secs: progress.eta_secs,
+                            eta_human: progress.eta_human(),
+                            downloaded_human: progress.downloaded_human(),
+                            total_human: progress.total_human(),
+                        },
+                    };
+                    let _ = app_clone.emit("download-task-progress", &payload);
+                }
+                DownloadEvent::QueueUpdated { stats } => {
+                    // Enrich with human-readable fields
+                    let total = stats.total_bytes;
+                    let downloaded = stats.downloaded_bytes;
+                    let overall_progress = if total > 0 {
+                        (downloaded as f64 / total as f64 * 100.0) as f32
+                    } else {
+                        0.0
+                    };
+                    let enriched = QueueStatsInfo {
+                        total_tasks: stats.total_tasks,
+                        queued: stats.queued,
+                        downloading: stats.downloading,
+                        paused: stats.paused,
+                        completed: stats.completed,
+                        failed: stats.failed,
+                        cancelled: stats.cancelled,
+                        total_bytes: total,
+                        downloaded_bytes: downloaded,
+                        total_human: format_size(total),
+                        downloaded_human: format_size(downloaded),
+                        overall_progress,
+                    };
+                    #[derive(Serialize)]
+                    struct QueuePayload {
+                        stats: QueueStatsInfo,
+                    }
+                    let _ = app_clone.emit("download-queue-updated", &QueuePayload { stats: enriched });
+                }
+                _ => {
+                    // Other events emit as-is (they only contain task_id / error strings)
+                    let event_name = match &event {
+                        DownloadEvent::TaskAdded { .. } => "download-task-added",
+                        DownloadEvent::TaskStarted { .. } => "download-task-started",
+                        DownloadEvent::TaskCompleted { .. } => "download-task-completed",
+                        DownloadEvent::TaskFailed { .. } => "download-task-failed",
+                        DownloadEvent::TaskPaused { .. } => "download-task-paused",
+                        DownloadEvent::TaskResumed { .. } => "download-task-resumed",
+                        DownloadEvent::TaskCancelled { .. } => "download-task-cancelled",
+                        _ => unreachable!(),
+                    };
+                    let _ = app_clone.emit(event_name, &event);
+                }
+            }
 
-            let _ = app_clone.emit(event_name, &event);
+            // Record completed/failed/cancelled downloads to history
+            match &event {
+                DownloadEvent::TaskCompleted { task_id } => {
+                    let mgr = manager_clone.read().await;
+                    if let Some(task) = mgr.get_task(task_id).await {
+                        let record = DownloadRecord::completed(
+                            task.url.clone(),
+                            task.name.clone(),
+                            task.destination.clone(),
+                            task.progress.downloaded_bytes,
+                            task.expected_checksum.clone(),
+                            task.started_at.unwrap_or(task.created_at),
+                            task.provider.clone(),
+                        );
+                        let dest = task.destination.clone();
+                        let checksum = task.expected_checksum.clone();
+                        drop(mgr);
+
+                        // Record to history
+                        if let Ok(mut history) = DownloadHistory::open(&cache_dir_clone).await {
+                            if let Err(e) = history.add(record).await {
+                                log::warn!("Failed to record download history: {}", e);
+                            }
+                        }
+
+                        // Add to download cache for deduplication (only if checksum is available)
+                        if let Some(ref checksum_val) = checksum {
+                            if let Ok(mut dl_cache) =
+                                crate::cache::DownloadCache::open(&cache_dir_clone).await
+                            {
+                                match dl_cache.add_file(&dest, checksum_val).await {
+                                    Ok(cached_path) => {
+                                        log::info!(
+                                            "Cached completed download: {} -> {:?}",
+                                            checksum_val,
+                                            cached_path
+                                        );
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to cache download: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                DownloadEvent::TaskFailed { task_id, error } => {
+                    let mgr = manager_clone.read().await;
+                    if let Some(task) = mgr.get_task(task_id).await {
+                        let record = DownloadRecord::failed(
+                            task.url.clone(),
+                            task.name.clone(),
+                            task.destination.clone(),
+                            task.started_at.unwrap_or(task.created_at),
+                            error.clone(),
+                            task.provider.clone(),
+                        );
+                        drop(mgr);
+                        if let Ok(mut history) = DownloadHistory::open(&cache_dir_clone).await {
+                            if let Err(e) = history.add(record).await {
+                                log::warn!("Failed to record download history: {}", e);
+                            }
+                        }
+                    }
+                }
+                DownloadEvent::TaskCancelled { task_id } => {
+                    let mgr = manager_clone.read().await;
+                    if let Some(task) = mgr.get_task(task_id).await {
+                        let record = DownloadRecord::cancelled(
+                            task.url.clone(),
+                            task.name.clone(),
+                            task.destination.clone(),
+                            task.progress.downloaded_bytes,
+                            task.started_at.unwrap_or(task.created_at),
+                            task.provider.clone(),
+                        );
+                        drop(mgr);
+                        if let Ok(mut history) = DownloadHistory::open(&cache_dir_clone).await {
+                            if let Err(e) = history.add(record).await {
+                                log::warn!("Failed to record download history: {}", e);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     });
 
-    Arc::new(RwLock::new(manager))
+    shared_manager
 }
 
 /// Add a new download task
+///
+/// If the request includes a checksum and the file already exists in the download cache,
+/// the cached file is copied to the destination directly (cache-hit shortcut).
+/// Returns the task ID on normal download, or `"cache-hit:<checksum>"` if served from cache.
 #[tauri::command]
 pub async fn download_add(
     request: DownloadRequest,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<String, String> {
-    let task = DownloadTask::builder(
+    let destination = PathBuf::from(&request.destination);
+
+    // Cache-hit shortcut: if checksum provided, check if already cached
+    if let Some(ref checksum) = request.checksum {
+        if !checksum.is_empty() {
+            let s = settings.read().await;
+            let cache_dir = s.get_cache_dir();
+            drop(s);
+
+            if let Ok(dl_cache) = crate::cache::DownloadCache::open(&cache_dir).await {
+                if let Ok(Some(cached_path)) = dl_cache.get_by_checksum(checksum).await {
+                    // File is in cache — copy to destination
+                    if let Some(parent) = destination.parent() {
+                        let _ = tokio::fs::create_dir_all(parent).await;
+                    }
+                    match tokio::fs::copy(&cached_path, &destination).await {
+                        Ok(_) => {
+                            log::info!(
+                                "Download cache hit: {} -> {:?}",
+                                checksum,
+                                destination
+                            );
+                            return Ok(format!("cache-hit:{}", checksum));
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Cache hit copy failed (falling back to download): {}",
+                                e
+                            );
+                            // Fall through to normal download
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut builder = DownloadTask::builder(
         request.url,
-        PathBuf::from(request.destination),
+        destination,
         request.name,
     )
-    .with_priority(request.priority.unwrap_or(0))
-    .with_checksum(request.checksum.unwrap_or_default())
-    .with_provider(request.provider.unwrap_or_default())
-    .build();
+    .with_priority(request.priority.unwrap_or(0));
+
+    if let Some(ref checksum) = request.checksum {
+        if !checksum.is_empty() {
+            builder = builder.with_checksum(checksum.clone());
+        }
+    }
+    if let Some(ref provider) = request.provider {
+        if !provider.is_empty() {
+            builder = builder.with_provider(provider.clone());
+        }
+    }
+
+    let task = builder.build();
 
     let mgr = manager.read().await;
     let task_id = mgr.add_task(task).await;
@@ -338,6 +548,183 @@ pub async fn download_set_max_concurrent(
     let mgr = manager.read().await;
     mgr.set_max_concurrent(max).await;
     Ok(())
+}
+
+/// Gracefully shut down the download manager (call on app exit)
+#[tauri::command]
+pub async fn download_shutdown(
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<(), String> {
+    let mgr = manager.read().await;
+    mgr.shutdown().await;
+    Ok(())
+}
+
+/// Get max concurrent downloads
+#[tauri::command]
+pub async fn download_get_max_concurrent(
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<usize, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.get_max_concurrent().await)
+}
+
+/// Verify a downloaded file's checksum
+#[tauri::command]
+pub async fn download_verify_file(
+    path: String,
+    expected_checksum: String,
+) -> Result<VerifyResult, String> {
+    use crate::platform::fs;
+
+    let file_path = PathBuf::from(&path);
+
+    if !file_path.exists() {
+        return Ok(VerifyResult {
+            valid: false,
+            actual_checksum: None,
+            expected_checksum: expected_checksum.clone(),
+            error: Some("File not found".to_string()),
+        });
+    }
+
+    match fs::calculate_sha256(&file_path).await {
+        Ok(actual) => {
+            let valid = actual == expected_checksum;
+            Ok(VerifyResult {
+                valid,
+                actual_checksum: Some(actual),
+                expected_checksum,
+                error: if !valid {
+                    Some("Checksum mismatch".to_string())
+                } else {
+                    None
+                },
+            })
+        }
+        Err(e) => Ok(VerifyResult {
+            valid: false,
+            actual_checksum: None,
+            expected_checksum,
+            error: Some(format!("Failed to calculate checksum: {}", e)),
+        }),
+    }
+}
+
+/// Result of file verification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyResult {
+    pub valid: bool,
+    pub actual_checksum: Option<String>,
+    pub expected_checksum: String,
+    pub error: Option<String>,
+}
+
+/// Open a downloaded file with the system default application
+#[tauri::command]
+pub async fn download_open_file(path: String) -> Result<(), String> {
+    open::that(&path).map_err(|e| format!("Failed to open file: {}", e))
+}
+
+/// Reveal a downloaded file in the system file manager
+#[tauri::command]
+pub async fn download_reveal_file(path: String) -> Result<(), String> {
+    let file_path = PathBuf::from(&path);
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {}", e))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Try xdg-open on the parent directory
+        if let Some(parent) = file_path.parent() {
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("Failed to reveal file: {}", e))?;
+        }
+    }
+
+    let _ = file_path; // suppress unused warning on non-targeted platforms
+    Ok(())
+}
+
+/// Batch pause selected downloads
+#[tauri::command]
+pub async fn download_batch_pause(
+    task_ids: Vec<String>,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<usize, String> {
+    let mgr = manager.read().await;
+    let mut count = 0;
+    for task_id in &task_ids {
+        if mgr.pause(task_id).await.is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Batch resume selected downloads
+#[tauri::command]
+pub async fn download_batch_resume(
+    task_ids: Vec<String>,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<usize, String> {
+    let mgr = manager.read().await;
+    let mut count = 0;
+    for task_id in &task_ids {
+        if mgr.resume(task_id).await.is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Batch cancel selected downloads
+#[tauri::command]
+pub async fn download_batch_cancel(
+    task_ids: Vec<String>,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<usize, String> {
+    let mgr = manager.read().await;
+    let mut count = 0;
+    for task_id in &task_ids {
+        if mgr.cancel(task_id).await.is_ok() {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Batch remove selected downloads
+#[tauri::command]
+pub async fn download_batch_remove(
+    task_ids: Vec<String>,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<usize, String> {
+    let mgr = manager.read().await;
+    let mut count = 0;
+    for task_id in &task_ids {
+        if mgr.remove(task_id).await.is_some() {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 // ===== Download History Commands =====

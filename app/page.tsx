@@ -1,17 +1,17 @@
 'use client';
 
 import { useEffect, useCallback, useState } from 'react';
-import { StatsCard, StatsCardSkeleton } from '@/components/dashboard/stats-card';
-import { QuickSearch } from '@/components/dashboard/quick-search';
-import { QuickActionsInline } from '@/components/dashboard/quick-actions';
-import { EnvironmentList } from '@/components/dashboard/environment-list';
-import { PackageList } from '@/components/dashboard/package-list';
 import { PageHeader } from '@/components/layout/page-header';
+import { WidgetGrid } from '@/components/dashboard/widget-grid';
+import { CustomizeDialog } from '@/components/dashboard/customize-dialog';
+import { Button } from '@/components/ui/button';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useEnvironments } from '@/hooks/use-environments';
 import { usePackages } from '@/hooks/use-packages';
 import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
-import { Layers, Package, HardDrive, Activity } from 'lucide-react';
+import { useDashboardStore } from '@/lib/stores/dashboard';
+import { Settings2, Pencil, Check } from 'lucide-react';
 
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading } = useEnvironments();
@@ -27,11 +27,16 @@ export default function DashboardPage() {
     fetchCacheInfo, 
     platformInfo, 
     fetchPlatformInfo,
+    cogniaDir,
     loading: settingsLoading 
   } = useSettings();
   const { t } = useLocale();
   
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const isCustomizing = useDashboardStore((s) => s.isCustomizing);
+  const isEditMode = useDashboardStore((s) => s.isEditMode);
+  const setIsCustomizing = useDashboardStore((s) => s.setIsCustomizing);
+  const setIsEditMode = useDashboardStore((s) => s.setIsEditMode);
 
   useEffect(() => {
     fetchEnvironments();
@@ -56,88 +61,74 @@ export default function DashboardPage() {
     }
   }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
 
-  const activeEnvs = environments.filter((e) => e.available).length;
-  const totalVersions = environments.reduce((acc, e) => acc + e.installed_versions.length, 0);
-  
   const isLoading = envsLoading || pkgsLoading || settingsLoading;
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      {/* Header with Search and Actions */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <PageHeader 
-          title={t('dashboard.title')} 
-          description={t('dashboard.description')} 
-        />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center lg:flex-row-reverse">
-          <QuickActionsInline 
-            onRefreshAll={handleRefreshAll}
-            isRefreshing={isRefreshing}
+    <TooltipProvider delayDuration={200}>
+      <div className="p-4 md:p-6 space-y-6">
+        {/* Header with Customize Controls */}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <PageHeader 
+            title={t('dashboard.title')} 
+            description={t('dashboard.description')} 
           />
+          <div className="flex items-center gap-2">
+            <Button
+              variant={isEditMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsEditMode(!isEditMode)}
+              className="gap-2"
+            >
+              {isEditMode ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('dashboard.widgets.doneEditing')}</span>
+                </>
+              ) : (
+                <>
+                  <Pencil className="h-4 w-4" />
+                  <span className="hidden sm:inline">{t('dashboard.widgets.editLayout')}</span>
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCustomizing(true)}
+              className="gap-2"
+            >
+              <Settings2 className="h-4 w-4" />
+              <span className="hidden sm:inline">{t('dashboard.widgets.customize')}</span>
+            </Button>
+          </div>
         </div>
-      </div>
 
-      {/* Quick Search */}
-      <QuickSearch 
-        environments={environments}
-        packages={installedPackages}
-        className="max-w-2xl"
-      />
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        {isLoading ? (
-          <>
-            <StatsCardSkeleton />
-            <StatsCardSkeleton />
-            <StatsCardSkeleton />
-            <StatsCardSkeleton />
-          </>
-        ) : (
-          <>
-            <StatsCard
-              title={t('dashboard.environments')}
-              value={activeEnvs}
-              description={t('dashboard.versionsInstalled', { count: totalVersions })}
-              icon={<Layers className="h-4 w-4" />}
-              href="/environments"
-            />
-            <StatsCard
-              title={t('dashboard.packages')}
-              value={installedPackages.length}
-              description={t('dashboard.fromProviders', { count: providers.length })}
-              icon={<Package className="h-4 w-4" />}
-              href="/packages"
-            />
-            <StatsCard
-              title={t('dashboard.cache')}
-              value={cacheInfo?.total_size_human || '0 B'}
-              description={t('dashboard.cachedItems', { count: cacheInfo?.download_cache.entry_count || 0 })}
-              icon={<HardDrive className="h-4 w-4" />}
-              href="/cache"
-            />
-            <StatsCard
-              title={t('dashboard.platform')}
-              value={platformInfo?.os || t('common.unknown')}
-              description={platformInfo?.arch || ''}
-              icon={<Activity className="h-4 w-4" />}
-              href="/settings"
-            />
-          </>
+        {/* Edit Mode Banner */}
+        {isEditMode && (
+          <div className="rounded-lg border border-dashed border-primary/50 bg-primary/5 p-3 text-center text-sm text-primary">
+            {t('dashboard.widgets.editModeHint')}
+          </div>
         )}
-      </div>
 
-      {/* Main Content - Environment and Package Lists */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        <EnvironmentList 
+        {/* Customizable Widget Grid */}
+        <WidgetGrid
           environments={environments}
-          initialLimit={4}
-        />
-        <PackageList 
           packages={installedPackages}
-          initialLimit={5}
+          providers={providers}
+          cacheInfo={cacheInfo}
+          platformInfo={platformInfo}
+          cogniaDir={cogniaDir}
+          isLoading={isLoading}
+          onRefreshAll={handleRefreshAll}
+          isRefreshing={isRefreshing}
+        />
+
+        {/* Customize Dialog */}
+        <CustomizeDialog
+          open={isCustomizing}
+          onOpenChange={setIsCustomizing}
         />
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

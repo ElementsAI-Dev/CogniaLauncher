@@ -353,6 +353,12 @@ impl DownloadManager {
         self.speed_limiter.get_limit().await
     }
 
+    /// Get max concurrent downloads
+    pub async fn get_max_concurrent(&self) -> usize {
+        let config = self.config.read().await;
+        config.max_concurrent
+    }
+
     /// Set max concurrent downloads
     pub async fn set_max_concurrent(&self, max: usize) {
         let mut queue = self.queue.write().await;
@@ -404,6 +410,70 @@ impl DownloadManager {
         drop(queue);
         self.emit_queue_stats().await;
         count
+    }
+
+    /// Clean up stale partial download files older than the given max age
+    pub async fn cleanup_stale_partials(&self, max_age: Duration) -> usize {
+        let config = self.config.read().await;
+        let partials_dir = config.partials_dir.clone();
+        drop(config);
+
+        if !partials_dir.exists() {
+            return 0;
+        }
+
+        let mut cleaned = 0;
+        let now = std::time::SystemTime::now();
+
+        let mut entries = match tokio::fs::read_dir(&partials_dir).await {
+            Ok(entries) => entries,
+            Err(_) => return 0,
+        };
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Ok(metadata) = entry.metadata().await {
+                let age = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|m| now.duration_since(m).ok())
+                    .unwrap_or_default();
+
+                if age > max_age {
+                    if let Ok(()) = tokio::fs::remove_file(entry.path()).await {
+                        cleaned += 1;
+                        log::info!("Cleaned stale partial download: {:?}", entry.path());
+                    }
+                }
+            }
+        }
+
+        cleaned
+    }
+
+    /// Graceful shutdown: stop the processor loop and cancel all active downloads
+    pub async fn shutdown(&self) {
+        self.running.store(false, Ordering::SeqCst);
+
+        // Cancel all active downloads
+        let active_ids: Vec<String> = {
+            let queue = self.queue.read().await;
+            queue.list_active().iter().map(|t| t.id.clone()).collect()
+        };
+
+        for task_id in &active_ids {
+            let controls = self.task_controls.read().await;
+            if let Some(control) = controls.get(task_id) {
+                control.cancel();
+            }
+        }
+
+        // Give workers a moment to clean up
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        log::info!(
+            "Download manager shutdown: cancelled {} active downloads",
+            active_ids.len()
+        );
     }
 
     /// Start the download manager background processing
@@ -544,20 +614,35 @@ impl DownloadManager {
                     return;
                 }
 
+                // Get retry count before failing (for backoff calculation)
+                let retry_count = {
+                    let q = queue.read().await;
+                    q.get(&task_id).map(|t| t.retries).unwrap_or(0)
+                };
+
                 let mut q = queue.write().await;
                 let will_retry = q.fail(&task_id, err.clone()).unwrap_or(false);
 
-                if !will_retry {
+                if will_retry {
+                    // Exponential backoff: 2^retry * 1s, capped at 60s
+                    let backoff_secs = (2u64.pow(retry_count)).min(60);
+                    drop(q); // Release lock during sleep
+                    log::info!(
+                        "Download {} failed (attempt {}), retrying in {}s: {}",
+                        task_id, retry_count + 1, backoff_secs, err
+                    );
+                    tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                } else {
                     if let Some(ref tx) = event_tx {
                         let _ = tx.send(DownloadEvent::TaskFailed {
                             task_id: task_id.clone(),
                             error: err.to_string(),
                         });
                     }
-                }
 
-                if let Some(ref tx) = event_tx {
-                    let _ = tx.send(DownloadEvent::QueueUpdated { stats: q.stats() });
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(DownloadEvent::QueueUpdated { stats: q.stats() });
+                    }
                 }
             }
         }

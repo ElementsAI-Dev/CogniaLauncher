@@ -138,6 +138,98 @@ export function GeneralSettings({
             }
           />
         </div>
+        <Separator />
+        <SettingItem
+          id="cache-max-size"
+          label={t("settings.cacheMaxSize")}
+          description={t("settings.cacheMaxSizeDesc")}
+          value={localConfig["general.cache_max_size"] || String(5 * 1024 * 1024 * 1024)}
+          onChange={(v) => onValueChange("general.cache_max_size", v)}
+          type="number"
+          min={104857600}
+          max={107374182400}
+          error={errors["general.cache_max_size"]}
+        />
+        <Separator />
+        <SettingItem
+          id="cache-max-age-days"
+          label={t("settings.cacheMaxAgeDays")}
+          description={t("settings.cacheMaxAgeDaysDesc")}
+          value={localConfig["general.cache_max_age_days"] || "30"}
+          onChange={(v) => onValueChange("general.cache_max_age_days", v)}
+          type="number"
+          min={1}
+          max={365}
+          error={errors["general.cache_max_age_days"]}
+        />
+        <Separator />
+        <div className="flex items-center justify-between py-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="auto-clean-cache">
+              {t("settings.autoCleanCache")}
+            </Label>
+            <p
+              id="auto-clean-cache-desc"
+              className="text-sm text-muted-foreground"
+            >
+              {t("settings.autoCleanCacheDesc")}
+            </p>
+          </div>
+          <Switch
+            id="auto-clean-cache"
+            aria-describedby="auto-clean-cache-desc"
+            checked={localConfig["general.auto_clean_cache"] !== "false"}
+            onCheckedChange={(checked) =>
+              onValueChange("general.auto_clean_cache", checked.toString())
+            }
+          />
+        </div>
+        <Separator />
+        <SettingItem
+          id="cache-auto-clean-threshold"
+          label={t("settings.cacheAutoCleanThreshold")}
+          description={t("settings.cacheAutoCleanThresholdDesc")}
+          value={localConfig["general.cache_auto_clean_threshold"] || "80"}
+          onChange={(v) => onValueChange("general.cache_auto_clean_threshold", v)}
+          type="number"
+          min={0}
+          max={100}
+          error={errors["general.cache_auto_clean_threshold"]}
+        />
+        <Separator />
+        <SettingItem
+          id="cache-monitor-interval"
+          label={t("settings.cacheMonitorInterval")}
+          description={t("settings.cacheMonitorIntervalDesc")}
+          value={localConfig["general.cache_monitor_interval"] || "300"}
+          onChange={(v) => onValueChange("general.cache_monitor_interval", v)}
+          type="number"
+          min={0}
+          max={3600}
+          error={errors["general.cache_monitor_interval"]}
+        />
+        <Separator />
+        <div className="flex items-center justify-between py-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="cache-monitor-external">
+              {t("settings.cacheMonitorExternal")}
+            </Label>
+            <p
+              id="cache-monitor-external-desc"
+              className="text-sm text-muted-foreground"
+            >
+              {t("settings.cacheMonitorExternalDesc")}
+            </p>
+          </div>
+          <Switch
+            id="cache-monitor-external"
+            aria-describedby="cache-monitor-external-desc"
+            checked={localConfig["general.cache_monitor_external"] === "true"}
+            onCheckedChange={(checked) =>
+              onValueChange("general.cache_monitor_external", checked.toString())
+            }
+          />
+        </div>
       </CardContent>
     </Card>
   );

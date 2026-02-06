@@ -216,6 +216,9 @@ export interface CacheSettings {
   max_age_days: number;
   metadata_cache_ttl: number;
   auto_clean: boolean;
+  auto_clean_threshold?: number;
+  monitor_interval?: number;
+  monitor_external?: boolean;
 }
 
 export interface CleanPreviewItem {
@@ -659,6 +662,13 @@ export interface DownloadRequest {
   checksum?: string;
   priority?: number;
   provider?: string;
+}
+
+export interface VerifyResult {
+  valid: boolean;
+  actualChecksum: string | null;
+  expectedChecksum: string;
+  error: string | null;
 }
 
 export type DownloadEvent =

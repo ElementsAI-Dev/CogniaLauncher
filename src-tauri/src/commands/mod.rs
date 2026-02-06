@@ -21,9 +21,12 @@ pub use batch::{
     package_unpin, resolve_dependencies,
 };
 pub use cache::{
-    cache_clean, cache_info, cache_repair, cache_verify, clean_all_external_caches,
-    clean_external_cache, discover_external_caches, get_cache_settings, get_combined_cache_stats,
-    set_cache_settings,
+    cache_clean, cache_force_clean, cache_force_clean_external, cache_info, cache_migrate,
+    cache_migration_validate, cache_repair, cache_size_monitor, cache_verify,
+    clean_all_external_caches, clean_external_cache, discover_external_caches,
+    get_cache_path_info, get_cache_settings, get_combined_cache_stats,
+    get_enhanced_cache_settings, get_external_cache_paths, reset_cache_path, set_cache_path,
+    set_cache_settings, set_enhanced_cache_settings,
 };
 pub use config::{
     config_get, config_list, config_reset, config_set, get_cognia_dir, get_platform_info,

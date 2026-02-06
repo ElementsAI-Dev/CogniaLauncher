@@ -21,9 +21,10 @@ impl ChocolateyProvider {
         }
     }
 
-    /// Get the installed version of a package
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
-        let out = self.run_choco(&["list", "-r", "--local-only"]).await?;
+    /// Get the installed version of a package using choco list
+    async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
+        // In Chocolatey v2+, `choco list` only lists local packages (--local-only was removed)
+        let out = self.run_choco(&["list", "-r"]).await?;
         for line in out.lines() {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 2 && parts[0].eq_ignore_ascii_case(name) {
@@ -204,7 +205,7 @@ impl Provider for ChocolateyProvider {
 
         // Get the actual installed version
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -218,6 +219,13 @@ impl Provider for ChocolateyProvider {
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

@@ -11,6 +11,7 @@ pub mod tray;
 
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
+use commands::download::init_download_manager;
 use config::Settings;
 use core::custom_detection::CustomDetectionManager;
 use log::info;
@@ -75,8 +76,11 @@ pub fn run() {
             // Get config directory for custom detection rules
             let config_dir = app.path().app_config_dir().unwrap_or_default();
 
+            // Get app handle before the async block (needed for download manager event forwarding)
+            let app_handle_for_download = app.handle().clone();
+
             // Use block_on to ensure initialization completes before app starts accepting commands
-            tauri::async_runtime::block_on(async move {
+            let download_manager = tauri::async_runtime::block_on(async move {
                 // Load settings from disk
                 match Settings::load().await {
                     Ok(loaded_settings) => {
@@ -114,10 +118,21 @@ pub fn run() {
                 }
                 drop(custom_detection_guard);
 
+                // Initialize download manager
+                let settings_guard = settings.read().await;
+                let download_manager = init_download_manager(app_handle_for_download, &settings_guard).await;
+                drop(settings_guard);
+                info!("Download manager initialized");
+
                 // Mark initialization as complete
                 INITIALIZED.store(true, Ordering::SeqCst);
                 info!("Application initialization complete");
+
+                download_manager
             });
+
+            // Register download manager as Tauri managed state
+            app.manage(download_manager);
 
             // Initialize system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -207,6 +222,23 @@ pub fn run() {
             commands::cache::clean_external_cache,
             commands::cache::clean_all_external_caches,
             commands::cache::get_combined_cache_stats,
+            // Cache size monitoring
+            commands::cache::cache_size_monitor,
+            // Cache path management
+            commands::cache::get_cache_path_info,
+            commands::cache::set_cache_path,
+            commands::cache::reset_cache_path,
+            // Cache migration
+            commands::cache::cache_migration_validate,
+            commands::cache::cache_migrate,
+            // Force clean
+            commands::cache::cache_force_clean,
+            commands::cache::cache_force_clean_external,
+            // External cache paths
+            commands::cache::get_external_cache_paths,
+            // Enhanced cache settings
+            commands::cache::get_enhanced_cache_settings,
+            commands::cache::set_enhanced_cache_settings,
             // Batch operations
             commands::batch::batch_install,
             commands::batch::batch_uninstall,
@@ -286,6 +318,15 @@ pub fn run() {
             commands::download::download_set_speed_limit,
             commands::download::download_get_speed_limit,
             commands::download::download_set_max_concurrent,
+            commands::download::download_get_max_concurrent,
+            commands::download::download_verify_file,
+            commands::download::download_open_file,
+            commands::download::download_reveal_file,
+            commands::download::download_batch_pause,
+            commands::download::download_batch_resume,
+            commands::download::download_batch_cancel,
+            commands::download::download_batch_remove,
+            commands::download::download_shutdown,
             // Download history commands
             commands::download::download_history_list,
             commands::download::download_history_search,
@@ -336,6 +377,7 @@ pub fn run() {
             commands::custom_detection::custom_rule_extraction_types,
         ])
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
@@ -364,6 +406,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
         let max_size = s.general.cache_max_size;
         let max_age_days = s.general.cache_max_age_days;
         let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
+        let threshold = s.general.cache_auto_clean_threshold;
         drop(s);
 
         // Clean expired metadata entries
@@ -393,12 +436,29 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             }
             match download_cache.stats().await {
                 Ok(stats) => {
-                    if stats.total_size > max_size {
-                        match download_cache.evict_to_size(max_size).await {
+                    // Threshold-based cleanup: if usage exceeds threshold %, evict to threshold level
+                    let threshold_size = if threshold > 0 && threshold < 100 {
+                        (max_size as f64 * threshold as f64 / 100.0) as u64
+                    } else {
+                        max_size
+                    };
+
+                    let evict_target = if stats.total_size > max_size {
+                        // Over hard limit, evict to max_size
+                        max_size
+                    } else if threshold > 0 && stats.total_size > threshold_size {
+                        // Over threshold, evict to 90% of threshold to avoid frequent triggers
+                        (threshold_size as f64 * 0.9) as u64
+                    } else {
+                        0 // No eviction needed
+                    };
+
+                    if evict_target > 0 {
+                        match download_cache.evict_to_size(evict_target).await {
                             Ok(count) if count > 0 => {
                                 info!(
-                                    "Auto-cleanup: evicted {} download entries to meet size limit",
-                                    count
+                                    "Auto-cleanup: evicted {} download entries (usage: {}, target: {})",
+                                    count, stats.total_size, evict_target
                                 );
                             }
                             Err(e) => {

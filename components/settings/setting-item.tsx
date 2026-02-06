@@ -37,6 +37,10 @@ const VALIDATION_RULES: Record<string, ValidationRule> = {
     pattern: /^https?:\/\/.+$/,
     patternMessage: "validation.mustBeValidUrl",
   },
+  "general.cache_max_size": { min: 104857600, max: 107374182400 },
+  "general.cache_max_age_days": { min: 1, max: 365 },
+  "general.cache_auto_clean_threshold": { min: 0, max: 100 },
+  "general.cache_monitor_interval": { min: 0, max: 3600 },
 };
 
 export function validateField(

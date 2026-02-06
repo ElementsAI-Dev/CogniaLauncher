@@ -254,7 +254,58 @@ impl Provider for PyenvProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        Ok(vec![])
+        // Compare installed pyenv versions with latest available
+        let installed = self.run_pyenv(&["versions", "--bare"]).await.unwrap_or_default();
+        let available = self.run_pyenv(&["install", "--list"]).await.unwrap_or_default();
+
+        // Find latest stable CPython version (e.g., "3.13.2", not "3.13.2t" or "miniconda")
+        let latest = available
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .filter(|l| {
+                // Only match pure version numbers like "3.x.y"
+                l.chars().next().map_or(false, |c| c.is_ascii_digit())
+                    && !l.contains('-')
+                    && !l.contains('a')
+                    && !l.contains('b')
+                    && !l.contains("rc")
+                    && !l.ends_with('t')
+            })
+            .last()
+            .unwrap_or("")
+            .to_string();
+
+        if latest.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let mut updates = Vec::new();
+        for line in installed.lines() {
+            let version = line.trim();
+            if version.is_empty() || !version.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                continue;
+            }
+            // Compare major.minor: only suggest update if same major.minor has newer patch
+            let installed_parts: Vec<&str> = version.splitn(3, '.').collect();
+            let latest_parts: Vec<&str> = latest.splitn(3, '.').collect();
+
+            if installed_parts.len() >= 2
+                && latest_parts.len() >= 2
+                && installed_parts[0] == latest_parts[0]
+                && installed_parts[1] == latest_parts[1]
+                && version != latest
+            {
+                updates.push(UpdateInfo {
+                    name: "python".into(),
+                    current_version: version.to_string(),
+                    latest_version: latest.clone(),
+                    provider: self.id().into(),
+                });
+            }
+        }
+
+        Ok(updates)
     }
 }
 

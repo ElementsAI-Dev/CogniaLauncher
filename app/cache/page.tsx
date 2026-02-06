@@ -80,6 +80,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/layout/page-header';
 import { ExternalCacheSection } from '@/components/cache/external-cache-section';
+import { CacheMonitorCard } from '@/components/cache/cache-monitor-card';
+import { CachePathCard } from '@/components/cache/cache-path-card';
 
 type CleanType = 'downloads' | 'metadata' | 'all';
 type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
@@ -136,6 +138,10 @@ export default function CachePage() {
 
   // Hot files state
   const [hotFiles, setHotFiles] = useState<CacheEntryItem[]>([]);
+
+  // Force clean & monitor state
+  const [forceCleanLoading, setForceCleanLoading] = useState(false);
+  const [monitorRefreshTrigger, setMonitorRefreshTrigger] = useState(0);
 
   useEffect(() => {
     fetchCacheInfo();
@@ -312,9 +318,26 @@ export default function CachePage() {
   const handleRefresh = async () => {
     try {
       await fetchCacheInfo();
+      setMonitorRefreshTrigger(prev => prev + 1);
       toast.success(t('cache.refreshSuccess'));
     } catch {
       toast.error(t('cache.refreshFailed'));
+    }
+  };
+
+  const handleForceClean = async () => {
+    if (!isTauri()) return;
+    setForceCleanLoading(true);
+    try {
+      const { cacheForceClean } = await import('@/lib/tauri');
+      const result = await cacheForceClean(useTrash);
+      toast.success(t('cache.forceCleanSuccess', { count: result.deleted_count, size: result.freed_human }));
+      fetchCacheInfo();
+      setMonitorRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      toast.error(`${t('cache.forceCleanFailed')}: ${err}`);
+    } finally {
+      setForceCleanLoading(false);
     }
   };
 
@@ -414,6 +437,31 @@ export default function CachePage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={isLoading || forceCleanLoading}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {forceCleanLoading ? t('cache.clearing') : t('cache.forceClean')}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('cache.forceCleanConfirmTitle')}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t('cache.forceCleanConfirmDesc')}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleForceClean}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {t('cache.forceClean')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               {t('common.refresh')}
@@ -442,6 +490,18 @@ export default function CachePage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* Cache Size Monitor */}
+      <CacheMonitorCard refreshTrigger={monitorRefreshTrigger} />
+
+      {/* Cache Path Management */}
+      <CachePathCard
+        refreshTrigger={monitorRefreshTrigger}
+        onPathChanged={() => {
+          fetchCacheInfo();
+          setMonitorRefreshTrigger(prev => prev + 1);
+        }}
+      />
 
       {/* Row 0: Hit Rate Stats + Hot Files */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
@@ -955,6 +1015,66 @@ export default function CachePage() {
                       onCheckedChange={(checked) => handleSettingsChange('auto_clean', checked)}
                     />
                   </div>
+
+                  {localSettings.auto_clean && (
+                    <div className="grid gap-6 md:grid-cols-3 pl-4 border-l-2 border-muted">
+                      <div className="space-y-2">
+                        <Label htmlFor="autoCleanThreshold">{t('cache.autoCleanThreshold')}</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="autoCleanThreshold"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={localSettings.auto_clean_threshold ?? 80}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              if (!isNaN(val) && val >= 0 && val <= 100) {
+                                handleSettingsChange('auto_clean_threshold' as keyof CacheSettings, val);
+                              }
+                            }}
+                            className="w-24"
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{t('cache.autoCleanThresholdDesc')}</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="monitorInterval">{t('cache.monitorInterval')}</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="monitorInterval"
+                            type="number"
+                            min={0}
+                            max={86400}
+                            value={localSettings.monitor_interval ?? 300}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              if (!isNaN(val) && val >= 0) {
+                                handleSettingsChange('monitor_interval' as keyof CacheSettings, val);
+                              }
+                            }}
+                            className="w-24"
+                          />
+                          <span className="text-sm text-muted-foreground">{t('cache.ttlSeconds')}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{t('cache.monitorIntervalDesc')}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between md:col-span-1">
+                        <div className="space-y-0.5">
+                          <Label htmlFor="monitorExternal">{t('cache.monitorExternal')}</Label>
+                          <p className="text-xs text-muted-foreground">{t('cache.monitorExternalDesc')}</p>
+                        </div>
+                        <Switch
+                          id="monitorExternal"
+                          checked={localSettings.monitor_external ?? false}
+                          onCheckedChange={(checked) => handleSettingsChange('monitor_external' as keyof CacheSettings, checked)}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {settingsDirty && (
                     <div className="flex justify-end">

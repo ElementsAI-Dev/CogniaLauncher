@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
@@ -373,6 +374,51 @@ impl Provider for ComposerProvider {
             .collect())
     }
 
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use Packagist API to get package dependencies
+        let url = format!("https://repo.packagist.org/p2/{}.json", name);
+        let client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+        if let Ok(resp) = client
+            .get(&url)
+            .header("User-Agent", "CogniaLauncher/1.0")
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    // Packagist p2 format: {"packages": {"vendor/name": [{"version": ..., "require": {...}}]}}
+                    if let Some(versions_arr) = json["packages"][name].as_array() {
+                        // Get the latest non-dev version
+                        if let Some(latest) = versions_arr.first() {
+                            if let Some(require) = latest["require"].as_object() {
+                                return Ok(require
+                                    .iter()
+                                    .filter(|(k, _)| *k != "php" && !k.starts_with("ext-"))
+                                    .filter_map(|(dep_name, constraint_val)| {
+                                        let constraint_str = constraint_val.as_str()?;
+                                        let constraint = constraint_str
+                                            .parse::<VersionConstraint>()
+                                            .unwrap_or(VersionConstraint::Any);
+                                        Some(Dependency {
+                                            name: dep_name.to_string(),
+                                            constraint,
+                                        })
+                                    })
+                                    .collect());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(vec![])
+    }
+
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let pkg = if let Some(v) = &req.version {
             format!("{}:{}", req.name, v)
@@ -413,6 +459,8 @@ impl Provider for ComposerProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        // Try global remove first, then local
+        // Composer doesn't have a global flag in UninstallRequest, so try local first
         self.run_composer(&["remove", &req.name]).await?;
         Ok(())
     }

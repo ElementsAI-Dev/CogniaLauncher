@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
@@ -379,6 +380,45 @@ impl Provider for BundlerProvider {
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         self.get_gem_versions_detailed(name).await
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use rubygems.org API to get gem dependencies
+        let url = format!("https://rubygems.org/api/v1/gems/{}.json", name);
+        let client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+        if let Ok(resp) = client
+            .get(&url)
+            .header("User-Agent", "CogniaLauncher/1.0")
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(deps) = json["dependencies"]["runtime"].as_array() {
+                        return Ok(deps
+                            .iter()
+                            .filter_map(|d| {
+                                let dep_name = d["name"].as_str()?.to_string();
+                                let req_str = d["requirements"].as_str().unwrap_or(">= 0");
+                                let constraint = req_str
+                                    .parse::<VersionConstraint>()
+                                    .unwrap_or(VersionConstraint::Any);
+                                Some(Dependency {
+                                    name: dep_name,
+                                    constraint,
+                                })
+                            })
+                            .collect());
+                    }
+                }
+            }
+        }
+
+        Ok(vec![])
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {

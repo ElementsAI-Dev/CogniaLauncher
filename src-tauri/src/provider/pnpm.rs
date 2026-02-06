@@ -1,10 +1,15 @@
+use super::api::get_api_client;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{env::Platform, process};
+use crate::platform::{
+    env::Platform,
+    process::{self, ProcessOptions},
+};
 use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// pnpm - Performant npm
 ///
@@ -140,27 +145,48 @@ impl Provider for PnpmProvider {
         query: &str,
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
-        let out = process::execute("npm", &["search", query, "--json"], None).await?;
-        if !out.success {
-            return Ok(vec![]);
-        }
-
         let limit = options.limit.unwrap_or(20);
+        let api = get_api_client();
 
-        if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&out.stdout) {
+        // Use npm registry API for search (pnpm shares the same registry)
+        if let Ok(packages) = api.search_npm(query, limit).await {
             return Ok(packages
-                .iter()
-                .take(limit)
-                .filter_map(|p| {
-                    Some(PackageSummary {
-                        name: p["name"].as_str()?.into(),
-                        description: p["description"].as_str().map(|s| s.into()),
-                        latest_version: p["version"].as_str().map(|s| s.into()),
-                        provider: self.id().into(),
-                    })
+                .into_iter()
+                .map(|p| PackageSummary {
+                    name: p.name,
+                    description: p.description,
+                    latest_version: Some(p.version),
+                    provider: self.id().into(),
                 })
                 .collect());
         }
+
+        // Fallback to pnpm CLI search (pnpm search uses the same registry)
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
+        let full_args = self.build_pnpm_args(&["search", query, "--json"]);
+        let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
+        let out = process::execute("pnpm", &args_refs, Some(opts)).await;
+
+        if let Ok(result) = out {
+            if result.success {
+                if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&result.stdout)
+                {
+                    return Ok(packages
+                        .iter()
+                        .take(limit)
+                        .filter_map(|p| {
+                            Some(PackageSummary {
+                                name: p["name"].as_str()?.into(),
+                                description: p["description"].as_str().map(|s| s.into()),
+                                latest_version: p["version"].as_str().map(|s| s.into()),
+                                provider: self.id().into(),
+                            })
+                        })
+                        .collect());
+                }
+            }
+        }
+
         Ok(vec![])
     }
 
@@ -193,12 +219,9 @@ impl Provider for PnpmProvider {
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
-        let out = process::execute("npm", &["view", name, "--json"], None).await?;
-        if !out.success {
-            return Err(CogniaError::Provider(format!("Package {} not found", name)));
-        }
+        let out = self.run_pnpm(&["view", name, "--json"]).await?;
 
-        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&out.stdout) {
+        if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&out) {
             let versions = if let Some(v) = pkg["versions"].as_array() {
                 v.iter()
                     .filter_map(|ver| {
@@ -243,12 +266,12 @@ impl Provider for PnpmProvider {
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
-        let out = process::execute("npm", &["view", name, "versions", "--json"], None).await?;
-        if !out.success {
-            return Ok(vec![]);
-        }
+        let out = match self.run_pnpm(&["view", name, "versions", "--json"]).await {
+            Ok(s) => s,
+            Err(_) => return Ok(vec![]),
+        };
 
-        if let Ok(versions) = serde_json::from_str::<Vec<String>>(&out.stdout) {
+        if let Ok(versions) = serde_json::from_str::<Vec<String>>(&out) {
             return Ok(versions
                 .into_iter()
                 .map(|v| VersionInfo {
@@ -260,7 +283,7 @@ impl Provider for PnpmProvider {
                 .collect());
         }
 
-        if let Ok(version) = serde_json::from_str::<String>(&out.stdout) {
+        if let Ok(version) = serde_json::from_str::<String>(&out) {
             return Ok(vec![VersionInfo {
                 version,
                 release_date: None,

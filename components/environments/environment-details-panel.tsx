@@ -233,7 +233,6 @@ export function EnvironmentDetailsPanel({
     try {
       // Try to import the dialog plugin dynamically
       const dialogModule = await import(
-        /* @ts-expect-error dynamic Tauri plugin import */
         "@tauri-apps/plugin-dialog"
       ).catch(() => null);
       if (dialogModule?.open) {

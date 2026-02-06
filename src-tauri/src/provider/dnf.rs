@@ -27,8 +27,8 @@ impl DnfProvider {
         }
     }
 
-    /// Get the installed version of a package using rpm
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+    /// Get the installed version of a package using rpm (more reliable than dnf info)
+    async fn query_installed_version_rpm(&self, name: &str) -> CogniaResult<String> {
         let out = process::execute("rpm", &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name], None).await?;
         if out.success {
             Ok(out.stdout.trim().to_string())
@@ -124,14 +124,18 @@ impl Provider for DnfProvider {
 
         for line in out.lines() {
             let line = line.trim();
-            if line.starts_with("Version") {
-                version = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.starts_with("Description") {
-                description = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.starts_with("License") {
-                license = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.starts_with("URL") {
-                homepage = line.split(':').nth(1).map(|s| s.trim().into());
+            // Use splitn(2, ':') to avoid breaking URLs or values containing colons
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                let value = parts[1].trim();
+                match key {
+                    "Version" => version = Some(value.into()),
+                    "Description" => description = Some(value.into()),
+                    "License" => license = Some(value.into()),
+                    "URL" => homepage = Some(value.into()),
+                    _ => {}
+                }
             }
         }
 
@@ -190,9 +194,9 @@ impl Provider for DnfProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
-        // Get the actual installed version
+        // Get the actual installed version via rpm query
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version_rpm(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -204,6 +208,13 @@ impl Provider for DnfProvider {
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version_rpm(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

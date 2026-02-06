@@ -21,8 +21,8 @@ impl ScoopProvider {
         }
     }
 
-    /// Get the installed version of a package
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+    /// Get the installed version of a package using scoop info
+    async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_scoop(&["info", name]).await?;
         for line in out.lines() {
             let line = line.trim();
@@ -202,7 +202,7 @@ impl Provider for ScoopProvider {
 
         // Get the actual installed version
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -218,6 +218,13 @@ impl Provider for ScoopProvider {
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

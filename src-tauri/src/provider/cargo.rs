@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -318,6 +319,63 @@ impl Provider for CargoProvider {
                             deprecated: false,
                             yanked: false,
                         }]);
+                    }
+                }
+            }
+        }
+
+        Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use crates.io API to get dependencies
+        let api = get_api_client();
+        if let Ok(crate_info) = api.get_crate(name).await {
+            let target_version = if version.is_empty() {
+                crate_info.max_version.clone()
+            } else {
+                version.to_string()
+            };
+
+            // Use crates.io dependencies API: /api/v1/crates/{name}/{version}/dependencies
+            let url = format!(
+                "https://crates.io/api/v1/crates/{}/{}/dependencies",
+                name, target_version
+            );
+
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()
+                .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+            if let Ok(resp) = client
+                .get(&url)
+                .header("User-Agent", "CogniaLauncher/1.0")
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(deps) = json["dependencies"].as_array() {
+                            return Ok(deps
+                                .iter()
+                                .filter(|d| {
+                                    d["kind"].as_str().unwrap_or("normal") == "normal"
+                                        && !d["optional"].as_bool().unwrap_or(false)
+                                })
+                                .filter_map(|d| {
+                                    let dep_name = d["crate_id"].as_str()?.to_string();
+                                    let req_str = d["req"].as_str().unwrap_or("*");
+                                    let constraint = req_str
+                                        .parse::<VersionConstraint>()
+                                        .unwrap_or(VersionConstraint::Any);
+                                    Some(Dependency {
+                                        name: dep_name,
+                                        constraint,
+                                    })
+                                })
+                                .collect());
+                        }
                     }
                 }
             }

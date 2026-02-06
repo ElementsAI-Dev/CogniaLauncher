@@ -27,8 +27,8 @@ impl ZypperProvider {
         }
     }
 
-    /// Get the installed version of a package using rpm
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+    /// Get the installed version of a package using rpm (more reliable than zypper info)
+    async fn query_installed_version_rpm(&self, name: &str) -> CogniaResult<String> {
         let out = process::execute("rpm", &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name], None).await?;
         if out.success {
             Ok(out.stdout.trim().to_string())
@@ -184,12 +184,11 @@ impl Provider for ZypperProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
-        // Get the actual installed version
+        // Get the actual installed version via rpm query
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version_rpm(&req.name)
             .await
-            .ok()
-            .unwrap_or_else(|| req.version.clone().unwrap_or_else(|| "unknown".into()));
+            .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
         Ok(InstallReceipt {
             name: req.name,
@@ -202,13 +201,20 @@ impl Provider for ZypperProvider {
     }
 
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
-        let out = self.run_zypper(&["info", name]).await?;
-        for line in out.lines() {
-            if let Some(version) = line.strip_prefix("Version:") {
-                return Ok(Some(version.trim().to_string()));
+        // Use rpm query for accurate version detection
+        match self.query_installed_version_rpm(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => {
+                // Fallback to zypper info
+                let out = self.run_zypper(&["info", name]).await?;
+                for line in out.lines() {
+                    if let Some(version) = line.strip_prefix("Version:") {
+                        return Ok(Some(version.trim().to_string()));
+                    }
+                }
+                Ok(None)
             }
         }
-        Ok(None)
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {

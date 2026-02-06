@@ -22,7 +22,7 @@ impl AptProvider {
     }
 
     /// Get the installed version of a package using dpkg
-    async fn get_installed_version(&self, name: &str) -> CogniaResult<String> {
+    async fn query_installed_version_dpkg(&self, name: &str) -> CogniaResult<String> {
         let out = process::execute("dpkg", &["-s", name], None).await?;
         if !out.success {
             return Err(CogniaError::Provider(format!("Package {} not installed", name)));
@@ -163,9 +163,9 @@ impl Provider for AptProvider {
             return Err(CogniaError::Installation(out.stderr));
         }
 
-        // Get the actual installed version
+        // Get the actual installed version via dpkg query
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version_dpkg(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -177,6 +177,13 @@ impl Provider for AptProvider {
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version_dpkg(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
@@ -212,7 +219,41 @@ impl Provider for AptProvider {
             .collect())
     }
 
-    async fn check_updates(&self, _: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // Use apt list --upgradable to find available updates
+        let out = process::execute("apt", &["list", "--upgradable"], None).await;
+
+        if let Ok(result) = out {
+            if result.success {
+                return Ok(result.stdout
+                    .lines()
+                    .filter(|l| !l.is_empty() && l.contains("upgradable"))
+                    .filter_map(|line| {
+                        // Format: "package/source version arch [upgradable from: old_version]"
+                        let name = line.split('/').next()?.to_string();
+
+                        if !packages.is_empty() && !packages.contains(&name) {
+                            return None;
+                        }
+
+                        let latest = line.split_whitespace().nth(1)?.to_string();
+                        let current = line
+                            .rsplit("from: ")
+                            .next()
+                            .map(|s| s.trim_end_matches(']').to_string())
+                            .unwrap_or_default();
+
+                        Some(UpdateInfo {
+                            name,
+                            current_version: current,
+                            latest_version: latest,
+                            provider: self.id().into(),
+                        })
+                    })
+                    .collect());
+            }
+        }
+
         Ok(vec![])
     }
 }

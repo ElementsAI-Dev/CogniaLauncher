@@ -5,6 +5,7 @@ use crate::platform::{
     fs,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -413,6 +414,74 @@ impl Provider for DotnetProvider {
                 yanked: false,
             })
             .collect())
+    }
+
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use NuGet API to get package dependencies
+        let target_version = if version.is_empty() { "index" } else { version };
+        let url = format!(
+            "https://api.nuget.org/v3/registration5-gz-semver2/{}/index.json",
+            name.to_lowercase()
+        );
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+        if let Ok(resp) = client
+            .get(&url)
+            .header("User-Agent", "CogniaLauncher/1.0")
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    // Navigate to the latest catalog entry
+                    if let Some(items) = json["items"].as_array() {
+                        if let Some(last_page) = items.last() {
+                            if let Some(page_items) = last_page["items"].as_array() {
+                                // Find matching version or last entry
+                                let entry = if target_version != "index" {
+                                    page_items.iter().find(|e| {
+                                        e["catalogEntry"]["version"].as_str() == Some(target_version)
+                                    })
+                                } else {
+                                    page_items.last()
+                                };
+
+                                if let Some(entry) = entry {
+                                    if let Some(dep_groups) = entry["catalogEntry"]["dependencyGroups"].as_array() {
+                                        let mut deps = Vec::new();
+                                        for group in dep_groups {
+                                            if let Some(group_deps) = group["dependencies"].as_array() {
+                                                for d in group_deps {
+                                                    if let Some(dep_name) = d["id"].as_str() {
+                                                        let range = d["range"].as_str().unwrap_or("*");
+                                                        let constraint = range
+                                                            .parse::<VersionConstraint>()
+                                                            .unwrap_or(VersionConstraint::Any);
+                                                        deps.push(Dependency {
+                                                            name: dep_name.to_string(),
+                                                            constraint,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if !deps.is_empty() {
+                                            return Ok(deps);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(vec![])
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {

@@ -79,7 +79,6 @@ export function AddDownloadDialog({
 
     try {
       const dialogModule = await import(
-        /* @ts-expect-error dynamic Tauri plugin import */
         "@tauri-apps/plugin-dialog"
       ).catch(() => null);
       if (dialogModule?.save) {

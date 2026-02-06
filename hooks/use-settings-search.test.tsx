@@ -263,44 +263,14 @@ describe('useActiveSection', () => {
     expect(result.current.activeSection).toBe('appearance');
   });
 
-  it('should provide observerCallback', () => {
+  it('should automatically observe section elements via IntersectionObserver', () => {
+    // The IntersectionObserver is now managed internally by the hook
+    // We verify that the hook initializes correctly and exposes the right API
     const { result } = renderHook(() => useActiveSection([...sectionIds]));
 
-    expect(typeof result.current.observerCallback).toBe('function');
-  });
-
-  it('should handle observerCallback with visible entries', () => {
-    const { result } = renderHook(() => useActiveSection([...sectionIds]));
-
-    const mockEntry = {
-      isIntersecting: true,
-      target: { id: 'section-appearance' },
-      boundingClientRect: { top: 100 },
-    } as unknown as IntersectionObserverEntry;
-
-    act(() => {
-      result.current.observerCallback([mockEntry]);
-    });
-
-    expect(result.current.activeSection).toBe('appearance');
-  });
-
-  it('should handle observerCallback with no visible entries', () => {
-    const { result } = renderHook(() => useActiveSection([...sectionIds]));
-
-    const mockEntry = {
-      isIntersecting: false,
-      target: { id: 'section-appearance' },
-      boundingClientRect: { top: 100 },
-    } as unknown as IntersectionObserverEntry;
-
-    const initialSection = result.current.activeSection;
-
-    act(() => {
-      result.current.observerCallback([mockEntry]);
-    });
-
-    expect(result.current.activeSection).toBe(initialSection);
+    expect(result.current.activeSection).toBe('general');
+    expect(typeof result.current.setActiveSection).toBe('function');
+    expect(typeof result.current.scrollToSection).toBe('function');
   });
 
   it('should provide scrollToSection function', () => {

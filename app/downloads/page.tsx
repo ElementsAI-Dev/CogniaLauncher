@@ -36,6 +36,8 @@ import {
   Gauge,
   History,
   Github,
+  FolderOpen,
+  ExternalLink,
 } from 'lucide-react';
 import { formatEta } from '@/lib/utils';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
@@ -103,6 +105,8 @@ export default function DownloadsPage() {
     retryFailed,
     setSpeedLimit,
     setMaxConcurrent,
+    openFile,
+    revealFile,
     refreshTasks,
     refreshStats,
     refreshHistory,
@@ -455,6 +459,28 @@ export default function DownloadsPage() {
                                   <X className="h-4 w-4" />
                                 </Button>
                               ) : null}
+                              {task.state === 'completed' && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => openFile(task.destination)}
+                                    title={t('downloads.actions.open')}
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => revealFile(task.destination)}
+                                    title={t('downloads.actions.reveal')}
+                                  >
+                                    <FolderOpen className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
                               <Button
                                 variant="ghost"
                                 size="icon"

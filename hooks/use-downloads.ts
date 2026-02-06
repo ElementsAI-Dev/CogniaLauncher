@@ -136,10 +136,38 @@ export function useDownloads() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTasks, refreshHistory]);
 
-  // Initial data fetch
+  // Initial data fetch and sync settings from backend
   useEffect(() => {
     refreshTasks();
     refreshStats();
+
+    // Sync speed limit and concurrency from backend
+    const syncSettings = async () => {
+      if (!tauri.isTauri()) return;
+      try {
+        const [backendSpeed, backendConcurrent] = await Promise.all([
+          tauri.downloadGetSpeedLimit(),
+          tauri.downloadGetMaxConcurrent(),
+        ]);
+        store.setSpeedLimit(backendSpeed);
+        store.setMaxConcurrent(backendConcurrent);
+      } catch (err) {
+        console.error('Failed to sync download settings:', err);
+      }
+    };
+    syncSettings();
+
+    // Graceful shutdown: cancel active downloads on window close
+    const handleBeforeUnload = () => {
+      if (tauri.isTauri()) {
+        tauri.downloadShutdown().catch(() => {});
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTasks, refreshStats]);
 
   // Add a new download
@@ -244,6 +272,81 @@ export function useDownloads() {
     [store]
   );
 
+  // Get max concurrent downloads
+  const getMaxConcurrent = useCallback(async (): Promise<number> => {
+    if (!tauri.isTauri()) return 4;
+    return await tauri.downloadGetMaxConcurrent();
+  }, []);
+
+  // Verify a downloaded file's checksum
+  const verifyFile = useCallback(
+    async (path: string, expectedChecksum: string) => {
+      if (!tauri.isTauri()) {
+        throw new Error('Tauri not available');
+      }
+      return await tauri.downloadVerifyFile(path, expectedChecksum);
+    },
+    []
+  );
+
+  // Open a downloaded file with system default app
+  const openFile = useCallback(async (path: string) => {
+    if (!tauri.isTauri()) return;
+    await tauri.downloadOpenFile(path);
+  }, []);
+
+  // Reveal a downloaded file in system file manager
+  const revealFile = useCallback(async (path: string) => {
+    if (!tauri.isTauri()) return;
+    await tauri.downloadRevealFile(path);
+  }, []);
+
+  // Batch pause selected downloads
+  const batchPause = useCallback(
+    async (taskIds?: string[]): Promise<number> => {
+      if (!tauri.isTauri()) return 0;
+      const ids = taskIds ?? [...store.selectedTaskIds];
+      if (ids.length === 0) return 0;
+      return await tauri.downloadBatchPause(ids);
+    },
+    [store.selectedTaskIds]
+  );
+
+  // Batch resume selected downloads
+  const batchResume = useCallback(
+    async (taskIds?: string[]): Promise<number> => {
+      if (!tauri.isTauri()) return 0;
+      const ids = taskIds ?? [...store.selectedTaskIds];
+      if (ids.length === 0) return 0;
+      return await tauri.downloadBatchResume(ids);
+    },
+    [store.selectedTaskIds]
+  );
+
+  // Batch cancel selected downloads
+  const batchCancel = useCallback(
+    async (taskIds?: string[]): Promise<number> => {
+      if (!tauri.isTauri()) return 0;
+      const ids = taskIds ?? [...store.selectedTaskIds];
+      if (ids.length === 0) return 0;
+      return await tauri.downloadBatchCancel(ids);
+    },
+    [store.selectedTaskIds]
+  );
+
+  // Batch remove selected downloads
+  const batchRemove = useCallback(
+    async (taskIds?: string[]): Promise<number> => {
+      if (!tauri.isTauri()) return 0;
+      const ids = taskIds ?? [...store.selectedTaskIds];
+      if (ids.length === 0) return 0;
+      const count = await tauri.downloadBatchRemove(ids);
+      await refreshTasks();
+      return count;
+    },
+    [store.selectedTaskIds, refreshTasks]
+  );
+
   // Search history
   const searchHistory = useCallback(async (query: string): Promise<HistoryRecord[]> => {
     if (!tauri.isTauri()) return [];
@@ -328,6 +431,18 @@ export function useDownloads() {
     setSpeedLimit,
     getSpeedLimit,
     setMaxConcurrent,
+    getMaxConcurrent,
+
+    // Actions - File
+    verifyFile,
+    openFile,
+    revealFile,
+
+    // Actions - Batch
+    batchPause,
+    batchResume,
+    batchCancel,
+    batchRemove,
 
     // Actions - History
     refreshHistory,

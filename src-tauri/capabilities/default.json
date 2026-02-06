@@ -39,6 +39,7 @@
     "core:tray:allow-set-show-menu-on-left-click",
     "updater:default",
     "log:default",
-    "opener:default"
+    "opener:default",
+    "dialog:default"
   ]
 }

@@ -101,10 +101,20 @@ impl Provider for SdkmanProvider {
     }
 
     async fn is_available(&self) -> bool {
-        if let Some(sdkman_dir) = &self.sdkman_dir {
-            sdkman_dir.join("bin").join("sdkman-init.sh").exists()
-        } else {
-            false
+        let Some(sdkman_dir) = &self.sdkman_dir else {
+            return false;
+        };
+        // Check init script exists
+        if !sdkman_dir.join("bin").join("sdkman-init.sh").exists() {
+            return false;
+        }
+        // Verify sdk command actually works
+        match self.run_sdk(&["version"]).await {
+            Ok(out) => !out.is_empty(),
+            Err(_) => {
+                // Fallback: if run_sdk fails but init script exists, it's still available
+                true
+            }
         }
     }
 

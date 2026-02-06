@@ -22,7 +22,7 @@ impl WingetProvider {
     }
 
     /// Get the installed version of a package using winget show
-    async fn get_installed_version(&self, id: &str) -> CogniaResult<String> {
+    async fn query_installed_version(&self, id: &str) -> CogniaResult<String> {
         let out = self.run_winget(&["show", "--id", id, "--accept-source-agreements"]).await?;
         
         for line in out.lines() {
@@ -32,6 +32,54 @@ impl WingetProvider {
         }
         
         Err(CogniaError::Provider(format!("Version not found for {}", id)))
+    }
+
+    /// Parse winget's column-based output by finding the separator line (---) 
+    /// and using it to determine column positions.
+    /// Returns (data_lines, column_starts) where column_starts are byte offsets.
+    fn parse_winget_columns(output: &str) -> (Vec<&str>, Vec<usize>) {
+        let lines: Vec<&str> = output.lines().collect();
+        let mut separator_idx = None;
+        let mut column_starts = Vec::new();
+
+        // Find the separator line containing only dashes and spaces
+        for (i, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && trimmed.chars().all(|c| c == '-' || c == ' ') {
+                separator_idx = Some(i);
+                // Determine column boundaries from dash groups
+                let mut in_dash = false;
+                for (j, ch) in line.char_indices() {
+                    if ch == '-' && !in_dash {
+                        column_starts.push(j);
+                        in_dash = true;
+                    } else if ch != '-' {
+                        in_dash = false;
+                    }
+                }
+                break;
+            }
+        }
+
+        let data_lines = if let Some(idx) = separator_idx {
+            lines[idx + 1..].to_vec()
+        } else {
+            // Fallback: skip first 2 lines (header + possible separator)
+            if lines.len() > 2 { lines[2..].to_vec() } else { vec![] }
+        };
+
+        (data_lines, column_starts)
+    }
+
+    /// Extract a column value from a line given column start positions
+    fn extract_column(line: &str, col_starts: &[usize], col_index: usize) -> String {
+        let start = col_starts.get(col_index).copied().unwrap_or(0);
+        let end = col_starts.get(col_index + 1).copied().unwrap_or(line.len());
+        if start >= line.len() {
+            return String::new();
+        }
+        let end = end.min(line.len());
+        line[start..end].trim().to_string()
     }
 }
 
@@ -73,21 +121,31 @@ impl Provider for WingetProvider {
         let out = self
             .run_winget(&["search", query, "--accept-source-agreements"])
             .await?;
-        Ok(out
-            .lines()
-            .skip(2)
-            .filter_map(|l| {
-                let parts: Vec<&str> = l.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    Some(PackageSummary {
-                        name: parts[0].into(),
-                        description: None,
-                        latest_version: parts.get(1).map(|s| s.to_string()),
-                        provider: self.id().into(),
-                    })
-                } else {
-                    None
+
+        // Winget search output columns: Name, Id, Version, Match, Source
+        let (data_lines, col_starts) = Self::parse_winget_columns(&out);
+
+        Ok(data_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| {
+                let name = Self::extract_column(line, &col_starts, 0);
+                let id = Self::extract_column(line, &col_starts, 1);
+                let version = Self::extract_column(line, &col_starts, 2);
+
+                if name.is_empty() && id.is_empty() {
+                    return None;
                 }
+
+                // Prefer Id as the package identifier (more reliable)
+                let pkg_name = if !id.is_empty() { id } else { name };
+
+                Some(PackageSummary {
+                    name: pkg_name,
+                    description: None,
+                    latest_version: if version.is_empty() { None } else { Some(version) },
+                    provider: self.id().into(),
+                })
             })
             .take(20)
             .collect())
@@ -175,7 +233,7 @@ impl Provider for WingetProvider {
 
         // Get the actual installed version
         let actual_version = self
-            .get_installed_version(&req.name)
+            .query_installed_version(&req.name)
             .await
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
@@ -195,6 +253,13 @@ impl Provider for WingetProvider {
         })
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.query_installed_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
         self.run_winget(&["uninstall", "--id", &req.name, "--accept-source-agreements"])
             .await?;
@@ -206,51 +271,73 @@ impl Provider for WingetProvider {
             .run_winget(&["list", "--accept-source-agreements"])
             .await?;
         
-        // Common Windows install paths
         let program_files = std::env::var("ProgramFiles")
             .unwrap_or_else(|_| "C:\\Program Files".to_string());
 
-        Ok(out
-            .lines()
-            .skip(2)
-            .filter_map(|l| {
-                let parts: Vec<&str> = l.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    let name: String = parts[0].into();
-                    Some(InstalledPackage {
-                        name: name.clone(),
-                        version: parts.get(1).unwrap_or(&"").to_string(),
-                        provider: self.id().into(),
-                        install_path: PathBuf::from(&program_files).join(&name),
-                        installed_at: String::new(),
-                        is_global: true,
-                    })
-                } else {
-                    None
+        // Winget list output columns: Name, Id, Version, Available, Source
+        let (data_lines, col_starts) = Self::parse_winget_columns(&out);
+
+        Ok(data_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| {
+                let name = Self::extract_column(line, &col_starts, 0);
+                let id = Self::extract_column(line, &col_starts, 1);
+                let version = Self::extract_column(line, &col_starts, 2);
+
+                if name.is_empty() && id.is_empty() {
+                    return None;
                 }
+
+                let pkg_id = if !id.is_empty() { id } else { name.clone() };
+
+                Some(InstalledPackage {
+                    name: pkg_id.clone(),
+                    version,
+                    provider: self.id().into(),
+                    install_path: PathBuf::from(&program_files).join(&pkg_id),
+                    installed_at: String::new(),
+                    is_global: true,
+                })
             })
             .collect())
     }
 
-    async fn check_updates(&self, _: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let out = self
             .run_winget(&["upgrade", "--accept-source-agreements"])
             .await?;
-        Ok(out
-            .lines()
-            .skip(2)
-            .filter_map(|l| {
-                let parts: Vec<&str> = l.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    Some(UpdateInfo {
-                        name: parts[0].into(),
-                        current_version: parts[1].into(),
-                        latest_version: parts[2].into(),
-                        provider: self.id().into(),
-                    })
-                } else {
-                    None
+
+        // Winget upgrade output columns: Name, Id, Version, Available, Source
+        let (data_lines, col_starts) = Self::parse_winget_columns(&out);
+
+        Ok(data_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| {
+                // Skip summary line like "X upgrades available."
+                if line.contains("upgrades available") || line.contains("upgrade available") {
+                    return None;
                 }
+
+                let id = Self::extract_column(line, &col_starts, 1);
+                let current = Self::extract_column(line, &col_starts, 2);
+                let available = Self::extract_column(line, &col_starts, 3);
+
+                if id.is_empty() || available.is_empty() {
+                    return None;
+                }
+
+                if !packages.is_empty() && !packages.contains(&id) {
+                    return None;
+                }
+
+                Some(UpdateInfo {
+                    name: id,
+                    current_version: current,
+                    latest_version: available,
+                    provider: self.id().into(),
+                })
             })
             .collect())
     }

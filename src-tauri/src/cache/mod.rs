@@ -5,6 +5,7 @@ pub mod enhanced;
 pub mod external;
 pub mod history;
 pub mod metadata;
+pub mod migration;
 pub mod sqlite_db;
 
 // Re-export main types (avoiding glob conflicts)
@@ -20,4 +21,7 @@ pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
 pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};
 pub use external::{
     CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo, ExternalCacheProvider,
+};
+pub use migration::{
+    MigrationMode, MigrationResult, MigrationValidation,
 };

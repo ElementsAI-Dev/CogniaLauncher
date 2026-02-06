@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -356,6 +357,31 @@ impl Provider for PipProvider {
                                 yanked: false,
                             })
                             .collect());
+                    }
+                }
+            }
+        }
+
+        Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use pip show to get requirements for the installed package
+        let out = process::execute("pip", &["show", name], None).await;
+        if let Ok(result) = out {
+            if result.success {
+                for line in result.stdout.lines() {
+                    if let Some(reqs) = line.strip_prefix("Requires:") {
+                        let deps: Vec<Dependency> = reqs
+                            .trim()
+                            .split(',')
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|dep| Dependency {
+                                name: dep.trim().to_string(),
+                                constraint: VersionConstraint::Any,
+                            })
+                            .collect();
+                        return Ok(deps);
                     }
                 }
             }

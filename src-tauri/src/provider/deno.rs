@@ -275,19 +275,25 @@ impl Provider for DenoProvider {
             }
         }
 
+        // Resolve actual installed version (especially when "latest" was requested)
+        let actual_version = self
+            .get_deno_version()
+            .await
+            .unwrap_or_else(|_| version.to_string());
+
         let deno_dir = self.deno_dir()?;
         let install_path = if Self::has_dvm() {
             Self::dvm_dir()
                 .unwrap_or(deno_dir.clone())
                 .join("versions")
-                .join(version)
+                .join(&actual_version)
         } else {
             deno_dir.join("bin")
         };
 
         Ok(InstallReceipt {
             name: "deno".to_string(),
-            version: version.to_string(),
+            version: actual_version,
             provider: self.id().to_string(),
             install_path,
             files: vec![],
@@ -375,6 +381,24 @@ impl Provider for DenoProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // Compare current version with latest GitHub release
+        let current = match self.get_deno_version().await {
+            Ok(v) => v,
+            Err(_) => return Ok(vec![]),
+        };
+
+        let versions = self.fetch_available_versions().await.unwrap_or_default();
+        if let Some(latest) = versions.first() {
+            if *latest != current {
+                return Ok(vec![UpdateInfo {
+                    name: "deno".into(),
+                    current_version: current,
+                    latest_version: latest.clone(),
+                    provider: self.id().into(),
+                }]);
+            }
+        }
+
         Ok(vec![])
     }
 }

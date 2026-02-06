@@ -5,6 +5,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -215,21 +216,24 @@ impl Provider for UvProvider {
             _ => {}
         }
 
-        // Fallback to pip index versions with timeout
+        // Fallback to uv pip (not raw pip) for version lookup
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
-        let out = process::execute("pip", &["index", "versions", query], Some(opts)).await;
+        let out = process::execute("uv", &["pip", "show", query], Some(opts)).await;
 
         if let Ok(result) = out {
             if result.success && !result.stdout.is_empty() {
-                let first_line = result.stdout.lines().next().unwrap_or("");
-                if first_line.to_lowercase().contains(&query.to_lowercase()) {
+                // Parse `uv pip show` output for Version field
+                let mut version = None;
+                for line in result.stdout.lines() {
+                    if let Some(v) = line.strip_prefix("Version:") {
+                        version = Some(v.trim().to_string());
+                    }
+                }
+                if version.is_some() {
                     return Ok(vec![PackageSummary {
                         name: query.into(),
                         description: None,
-                        latest_version: first_line
-                            .split_whitespace()
-                            .last()
-                            .map(|s| s.trim_matches(|c| c == '(' || c == ')').into()),
+                        latest_version: version,
                         provider: self.id().into(),
                     }]);
                 }
@@ -280,9 +284,9 @@ impl Provider for UvProvider {
             });
         }
 
-        // Fallback to pip show
+        // Fallback to uv pip show (not raw pip)
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
-        let out = process::execute("pip", &["show", name], Some(opts)).await;
+        let out = process::execute("uv", &["pip", "show", name], Some(opts)).await;
 
         let mut description = None;
         let mut version = None;
@@ -333,8 +337,27 @@ impl Provider for UvProvider {
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
-        // Use pip index versions
-        let out = process::execute("pip", &["index", "versions", name], None).await;
+        // Use PyPI API first via get_api_client
+        let api = get_api_client();
+        if let Ok(pkg) = api.get_pypi_package(name).await {
+            let versions: Vec<VersionInfo> = pkg
+                .releases
+                .into_iter()
+                .filter(|v| !v.is_empty())
+                .map(|v| VersionInfo {
+                    version: v,
+                    release_date: None,
+                    deprecated: false,
+                    yanked: false,
+                })
+                .collect();
+            if !versions.is_empty() {
+                return Ok(versions);
+            }
+        }
+
+        // Fallback to pip index versions via uv
+        let out = process::execute("uv", &["pip", "index", "versions", name], None).await;
 
         if let Ok(result) = out {
             if result.success {
@@ -357,6 +380,31 @@ impl Provider for UvProvider {
             }
         }
 
+        Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Use uv pip show to get requirements for the installed package
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+        let out = process::execute("uv", &["pip", "show", name], Some(opts)).await;
+        if let Ok(result) = out {
+            if result.success {
+                for line in result.stdout.lines() {
+                    if let Some(reqs) = line.strip_prefix("Requires:") {
+                        let deps: Vec<Dependency> = reqs
+                            .trim()
+                            .split(',')
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|dep| Dependency {
+                                name: dep.trim().to_string(),
+                                constraint: VersionConstraint::Any,
+                            })
+                            .collect();
+                        return Ok(deps);
+                    }
+                }
+            }
+        }
         Ok(vec![])
     }
 
