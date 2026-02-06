@@ -1,5 +1,6 @@
 //! Download state management
 
+use crate::platform::disk::format_size;
 use serde::{Deserialize, Serialize};
 
 /// Represents the current state of a download task
@@ -148,21 +149,6 @@ impl DownloadError {
     }
 }
 
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -248,5 +234,200 @@ mod tests {
             available: 1024 * 1024 * 50,
         };
         assert!(err.to_string().contains("Insufficient disk space"));
+    }
+
+    #[test]
+    fn test_download_state_is_active() {
+        assert!(DownloadState::Queued.is_active());
+        assert!(DownloadState::Downloading.is_active());
+        assert!(!DownloadState::Paused.is_active());
+        assert!(!DownloadState::Cancelled.is_active());
+        assert!(!DownloadState::Completed.is_active());
+        assert!(!DownloadState::Failed {
+            error: "test".into(),
+            recoverable: true
+        }
+        .is_active());
+    }
+
+    #[test]
+    fn test_download_state_status_text() {
+        assert_eq!(DownloadState::Queued.status_text(), "queued");
+        assert_eq!(DownloadState::Downloading.status_text(), "downloading");
+        assert_eq!(DownloadState::Paused.status_text(), "paused");
+        assert_eq!(DownloadState::Cancelled.status_text(), "cancelled");
+        assert_eq!(DownloadState::Completed.status_text(), "completed");
+        assert_eq!(
+            DownloadState::Failed {
+                error: "err".into(),
+                recoverable: false
+            }
+            .status_text(),
+            "failed"
+        );
+    }
+
+    #[test]
+    fn test_download_state_default() {
+        let state = DownloadState::default();
+        assert_eq!(state, DownloadState::Queued);
+    }
+
+    #[test]
+    fn test_download_error_to_failed_state() {
+        let err = DownloadError::Network {
+            message: "timeout".into(),
+        };
+        let state = err.to_failed_state();
+        match state {
+            DownloadState::Failed {
+                error,
+                recoverable,
+            } => {
+                assert!(error.contains("Network error: timeout"));
+                assert!(recoverable);
+            }
+            _ => panic!("Expected Failed state"),
+        }
+
+        let err = DownloadError::ChecksumMismatch {
+            expected: "abc".into(),
+            actual: "def".into(),
+        };
+        let state = err.to_failed_state();
+        match state {
+            DownloadState::Failed {
+                error,
+                recoverable,
+            } => {
+                assert!(error.contains("Checksum mismatch"));
+                assert!(!recoverable);
+            }
+            _ => panic!("Expected Failed state"),
+        }
+    }
+
+    #[test]
+    fn test_download_error_display_all_variants() {
+        assert!(DownloadError::Network {
+            message: "conn reset".into()
+        }
+        .to_string()
+        .contains("Network error"));
+
+        assert!(DownloadError::FileSystem {
+            message: "disk full".into()
+        }
+        .to_string()
+        .contains("File system error"));
+
+        assert!(DownloadError::ChecksumMismatch {
+            expected: "abc".into(),
+            actual: "def".into(),
+        }
+        .to_string()
+        .contains("Checksum mismatch"));
+
+        assert!(DownloadError::Interrupted
+            .to_string()
+            .contains("interrupted"));
+
+        assert!(DownloadError::InvalidUrl {
+            url: "bad://url".into()
+        }
+        .to_string()
+        .contains("Invalid URL"));
+
+        assert!(DownloadError::HttpError {
+            status: 404,
+            message: "Not Found".into(),
+        }
+        .to_string()
+        .contains("HTTP error 404"));
+
+        assert!(DownloadError::Timeout { seconds: 30 }
+            .to_string()
+            .contains("timeout"));
+
+        assert!(DownloadError::RateLimited { retry_after: 60 }
+            .to_string()
+            .contains("Rate limited"));
+
+        assert!(DownloadError::TaskNotFound {
+            id: "abc".into()
+        }
+        .to_string()
+        .contains("not found"));
+
+        assert!(DownloadError::InvalidOperation {
+            state: "paused".into(),
+            operation: "pause".into(),
+        }
+        .to_string()
+        .contains("Cannot pause"));
+    }
+
+    #[test]
+    fn test_download_error_http_500_is_recoverable() {
+        assert!(DownloadError::HttpError {
+            status: 500,
+            message: "Internal Server Error".into()
+        }
+        .is_recoverable());
+        assert!(DownloadError::HttpError {
+            status: 502,
+            message: "Bad Gateway".into()
+        }
+        .is_recoverable());
+        assert!(DownloadError::HttpError {
+            status: 503,
+            message: "Service Unavailable".into()
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_download_error_http_4xx_not_recoverable() {
+        assert!(!DownloadError::HttpError {
+            status: 400,
+            message: "Bad Request".into()
+        }
+        .is_recoverable());
+        assert!(!DownloadError::HttpError {
+            status: 401,
+            message: "Unauthorized".into()
+        }
+        .is_recoverable());
+        assert!(!DownloadError::HttpError {
+            status: 403,
+            message: "Forbidden".into()
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_download_error_filesystem_not_recoverable() {
+        assert!(!DownloadError::FileSystem {
+            message: "disk full".into()
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_download_error_insufficient_space_not_recoverable() {
+        assert!(!DownloadError::InsufficientSpace {
+            required: 1000,
+            available: 500,
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(500), "500 B");
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
     }
 }

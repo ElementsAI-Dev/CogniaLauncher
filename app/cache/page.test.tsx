@@ -54,6 +54,22 @@ jest.mock('@/lib/tauri', () => ({
     permanent_cleanups: 1,
   }),
   clearCleanupHistory: jest.fn().mockResolvedValue(2),
+  getCacheAccessStats: jest.fn().mockResolvedValue({
+    hits: 100,
+    misses: 20,
+    hit_rate: 83.3,
+    total_requests: 120,
+    last_reset: null,
+  }),
+  resetCacheAccessStats: jest.fn().mockResolvedValue(undefined),
+  getTopAccessedEntries: jest.fn().mockResolvedValue([
+    { key: 'hot-file-1', entry_type: 'download', size: 1024, size_human: '1 KB', hit_count: 50 },
+  ]),
+  listCacheEntries: jest.fn().mockResolvedValue({
+    entries: [],
+    total_count: 0,
+  }),
+  deleteCacheEntries: jest.fn().mockResolvedValue(0),
 }));
 
 // Mock useSettings hook

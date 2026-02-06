@@ -173,14 +173,69 @@ export function ExternalCacheSection({
         return "🥟";
       case "gradle":
         return "🐘";
+      case "maven":
+        return "☕";
+      case "gem":
+        return "💎";
+      case "rustup":
+        return "🦀";
       case "scoop":
         return "🥄";
       case "chocolatey":
         return "🍫";
+      case "windows_temp":
+        return "🗑️";
+      case "windows_thumbnail":
+        return "🖼️";
+      case "macos_cache":
+        return "🍎";
+      case "macos_logs":
+        return "📋";
+      case "linux_cache":
+        return "🐧";
+      case "docker":
+        return "🐳";
+      case "flutter":
+        return "💙";
+      case "cocoapods":
+        return "🫛";
+      case "cypress":
+        return "🌲";
+      case "electron":
+        return "⚡";
+      case "vcpkg":
+        return "📐";
+      case "sbt":
+        return "⚙️";
       default:
         return "📁";
     }
   };
+
+  const getCategoryLabel = (category: string) => {
+    switch (category) {
+      case "system":
+        return t("cache.categorySystem");
+      case "devtools":
+        return t("cache.categoryDevtools");
+      case "package_manager":
+        return t("cache.categoryPackageManager");
+      default:
+        return category;
+    }
+  };
+
+  const groupedCaches = externalCaches.reduce<Record<string, ExternalCacheInfo[]>>(
+    (acc, cache) => {
+      const cat = cache.category || "package_manager";
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(cache);
+      return acc;
+    },
+    {},
+  );
+
+  const categoryOrder = ["system", "package_manager", "devtools"];
 
   return (
     <Card>
@@ -276,7 +331,7 @@ export function ExternalCacheSection({
               </div>
             </div>
 
-            {/* Cache list */}
+            {/* Cache list grouped by category */}
             {loading ? (
               <div className="space-y-3">
                 <Skeleton className="h-16 w-full" />
@@ -288,51 +343,69 @@ export function ExternalCacheSection({
                 {t("cache.noExternalCaches")}
               </p>
             ) : (
-              <div className="space-y-2">
-                {externalCaches.map((cache) => (
-                  <div
-                    key={cache.provider}
-                    className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-xl">
-                        {getProviderIcon(cache.provider)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{cache.displayName}</p>
-                          {cache.isAvailable ? (
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
-                          ) : (
-                            <XCircle className="h-3 w-3 text-muted-foreground" />
-                          )}
+              <div className="space-y-4">
+                {categoryOrder
+                  .filter((cat) => groupedCaches[cat]?.length > 0)
+                  .map((cat) => (
+                    <div key={cat} className="space-y-2">
+                      <h4 className="text-sm font-medium text-muted-foreground px-1">
+                        {getCategoryLabel(cat)}
+                      </h4>
+                      {groupedCaches[cat].map((cache) => (
+                        <div
+                          key={cache.provider}
+                          className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span className="text-xl">
+                              {getProviderIcon(cache.provider)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">
+                                  {cache.displayName}
+                                </p>
+                                {cache.isAvailable ? (
+                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <FolderOpen className="h-3 w-3" />
+                                <span className="truncate">
+                                  {cache.cachePath || t("cache.managedByTool")}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 ml-4">
+                            <Badge
+                              variant={cache.size > 0 ? "default" : "secondary"}
+                            >
+                              {cache.sizeHuman}
+                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={
+                                !cache.canClean ||
+                                cleaning === cache.provider
+                              }
+                              onClick={() =>
+                                handleCleanCache(cache.provider)
+                              }
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              {cleaning === cache.provider
+                                ? t("cache.clearing")
+                                : t("cache.clean")}
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <FolderOpen className="h-3 w-3" />
-                          <span className="truncate">{cache.cachePath}</span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                    <div className="flex items-center gap-3 ml-4">
-                      <Badge variant={cache.size > 0 ? "default" : "secondary"}>
-                        {cache.sizeHuman}
-                      </Badge>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={
-                          !cache.canClean || cleaning === cache.provider
-                        }
-                        onClick={() => handleCleanCache(cache.provider)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        {cleaning === cache.provider
-                          ? t("cache.clearing")
-                          : t("cache.clean")}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </CardContent>

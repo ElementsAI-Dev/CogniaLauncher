@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 export function useAppearanceConfigSync(config: Record<string, string>) {
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, reducedMotion, setReducedMotion } = useAppearanceStore();
   const appearanceConfigRef = useRef<string>('');
 
   useEffect(() => {
@@ -19,6 +19,7 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
     const appearanceSnapshot = JSON.stringify({
       theme: config['appearance.theme'],
       accentColor: config['appearance.accent_color'],
+      chartColorTheme: config['appearance.chart_color_theme'],
       reducedMotion: config['appearance.reduced_motion'],
       language: config['appearance.language'],
     });
@@ -33,6 +34,10 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
 
     if (parsed.accentColor && parsed.accentColor !== accentColor) {
       setAccentColor(parsed.accentColor);
+    }
+
+    if (parsed.chartColorTheme && parsed.chartColorTheme !== chartColorTheme) {
+      setChartColorTheme(parsed.chartColorTheme);
     }
 
     if (typeof parsed.reducedMotion === 'boolean' && parsed.reducedMotion !== reducedMotion) {
@@ -51,6 +56,8 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
               return t('settings.theme');
             case 'accentColor':
               return t('settings.accentColor');
+            case 'chartColorTheme':
+              return t('settings.chartColorTheme');
             case 'reducedMotion':
               return t('settings.reducedMotion');
             case 'language':
@@ -65,5 +72,5 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
     }
 
     appearanceConfigRef.current = appearanceSnapshot;
-  }, [config, theme, accentColor, reducedMotion, locale, setTheme, setAccentColor, setReducedMotion, setLocale, t]);
+  }, [config, theme, accentColor, chartColorTheme, reducedMotion, locale, setTheme, setAccentColor, setChartColorTheme, setReducedMotion, setLocale, t]);
 }

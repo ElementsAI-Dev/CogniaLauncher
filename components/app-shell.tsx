@@ -8,16 +8,19 @@ import {
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Titlebar } from "@/components/layout/titlebar";
+import { useWindowStateStore } from "@/lib/stores/window-state";
 import { LogDrawer } from "@/components/log/log-drawer";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { CommandPalette } from "@/components/command-palette";
 import { SplashScreen } from "@/components/splash-screen";
+import { OnboardingWizard, TourOverlay } from "@/components/onboarding";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
 import { useAppInit } from "@/hooks/use-app-init";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import { isTauri } from "@/lib/tauri";
 import { ScrollText, Search } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useState } from "react";
@@ -26,8 +29,11 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-// Titlebar height in desktop mode (matches Titlebar h-8 = 2rem = 32px)
+// Titlebar base height in desktop mode (matches Titlebar h-8 = 2rem = 32px)
 const TITLEBAR_HEIGHT = "2rem";
+
+// Windows frameless maximize padding (must match titlebar.tsx WIN_MAXIMIZE_PADDING)
+const WIN_MAXIMIZE_PADDING = 8;
 
 export function AppShell({ children }: AppShellProps) {
   const { toggleDrawer, getLogStats } = useLogStore();
@@ -47,6 +53,11 @@ export function AppShell({ children }: AppShellProps) {
 
   // Check desktop mode - safe to call during render as it's synchronous
   const isDesktopMode = isTauri();
+
+  // Window state from shared Zustand store (set by Titlebar component)
+  const { isMaximized: windowMaximized, isWindows } = useWindowStateStore();
+  const maximizePadding =
+    isDesktopMode && isWindows && windowMaximized ? WIN_MAXIMIZE_PADDING : 0;
 
   useAppearanceConfigSync(config);
 
@@ -68,6 +79,9 @@ export function AppShell({ children }: AppShellProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleDrawer]);
 
+  // Onboarding state
+  const onboarding = useOnboarding();
+
   // Show splash screen during Tauri initialization
   const showSplash = isDesktopMode && !splashDismissed;
 
@@ -87,7 +101,18 @@ export function AppShell({ children }: AppShellProps) {
         style={{ visibility: showSplash && !isReady ? "hidden" : "visible" }}
       >
         <Titlebar />
-        <div className="flex flex-1 overflow-hidden">
+        <div
+          className="flex flex-1 overflow-hidden"
+          style={
+            maximizePadding > 0
+              ? {
+                  paddingLeft: maximizePadding,
+                  paddingRight: maximizePadding,
+                  paddingBottom: maximizePadding,
+                }
+              : undefined
+          }
+        >
           <SidebarProvider
             style={
               isDesktopMode
@@ -113,6 +138,7 @@ export function AppShell({ children }: AppShellProps) {
                   className="h-8 w-8"
                   onClick={() => setCommandOpen(true)}
                   title={t("commandPalette.buttonLabel")}
+                  data-tour="command-palette-btn"
                 >
                   <Search className="h-4 w-4" />
                 </Button>
@@ -135,6 +161,34 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
         <LogDrawer />
+
+        {/* Onboarding wizard - shown on first run or when re-triggered from settings */}
+        <OnboardingWizard
+          open={onboarding.shouldShowWizard}
+          currentStep={onboarding.currentStep}
+          totalSteps={onboarding.totalSteps}
+          progress={onboarding.progress}
+          isFirstStep={onboarding.isFirstStep}
+          isLastStep={onboarding.isLastStep}
+          tourCompleted={onboarding.tourCompleted}
+          onNext={onboarding.next}
+          onPrev={onboarding.prev}
+          onGoTo={onboarding.goTo}
+          onComplete={onboarding.complete}
+          onSkip={onboarding.skip}
+          onStartTour={onboarding.startTour}
+          onClose={onboarding.closeWizard}
+        />
+
+        {/* Guided tour overlay */}
+        <TourOverlay
+          active={onboarding.tourActive}
+          currentStep={onboarding.tourStep}
+          onNext={onboarding.nextTourStep}
+          onPrev={onboarding.prevTourStep}
+          onComplete={onboarding.completeTour}
+          onStop={onboarding.stopTour}
+        />
       </div>
     </>
   );

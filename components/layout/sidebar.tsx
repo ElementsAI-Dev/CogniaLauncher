@@ -11,6 +11,7 @@ import {
   Layers,
   Server,
   Info,
+  Terminal,
 } from "lucide-react";
 
 const navItems = [
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/packages", label: "Packages", icon: Package },
   { href: "/providers", label: "Providers", icon: Server },
   { href: "/cache", label: "Cache", icon: HardDrive },
+  { href: "/wsl", label: "WSL", icon: Terminal },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/about", label: "About", icon: Info },
 ];

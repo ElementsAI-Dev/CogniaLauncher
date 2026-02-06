@@ -117,7 +117,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-hidden;
   }
 }
 
@@ -153,6 +153,7 @@ html:not(.no-transitions) [data-state="closed"] {
 
 /* Tauri frameless window - titlebar drag region */
 [data-tauri-drag-region] {
+  app-region: drag;
   -webkit-app-region: drag;
 }
 
@@ -165,10 +166,18 @@ html:not(.no-transitions) [data-state="closed"] {
 [data-tauri-drag-region] [role="button"],
 [data-tauri-drag-region] [role="link"],
 [data-tauri-drag-region] [role="menuitem"],
+[data-tauri-drag-region] [role="menuitemcheckbox"],
+[data-tauri-drag-region] [role="menuitemradio"],
 [data-tauri-drag-region] [role="option"],
 [data-tauri-drag-region] [role="tab"],
+[data-tauri-drag-region] [role="switch"],
+[data-tauri-drag-region] [role="slider"],
+[data-tauri-drag-region] [role="combobox"],
 [data-tauri-drag-region] [tabindex]:not([tabindex="-1"]),
-[data-tauri-drag-region] label {
+[data-tauri-drag-region] label,
+[data-tauri-drag-region] [data-radix-collection-item],
+[data-tauri-drag-region] [data-slot="sidebar-trigger"] {
+  app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
@@ -387,6 +396,125 @@ html:not(.no-transitions) [data-state="closed"] {
   to { transform: translateX(100%); }
 }
 
+/* ===== Error & Status Page Animations ===== */
+
+/* Floating entrance for error/status icons */
+.error-icon-float {
+  animation: error-icon-entrance 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes error-icon-entrance {
+  from {
+    opacity: 0;
+    transform: scale(0.5) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Gentle pulse glow behind icon */
+.error-glow {
+  animation: error-glow-pulse 3s ease-in-out infinite;
+}
+
+@keyframes error-glow-pulse {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(1.08); }
+}
+
+/* Staggered content fade-in */
+.error-content-1 { animation: error-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both; }
+.error-content-2 { animation: error-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both; }
+.error-content-3 { animation: error-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
+.error-content-4 { animation: error-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both; }
+
+@keyframes error-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 404 number animation */
+.not-found-number {
+  animation: not-found-scale 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes not-found-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+    letter-spacing: -0.05em;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Enhanced skeleton shimmer */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(1 0 0 / 6%) 40%,
+    oklch(1 0 0 / 10%) 50%,
+    oklch(1 0 0 / 6%) 60%,
+    transparent 100%
+  );
+  animation: skeleton-wave 2s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(1 0 0 / 4%) 40%,
+    oklch(1 0 0 / 8%) 50%,
+    oklch(1 0 0 / 4%) 60%,
+    transparent 100%
+  );
+}
+
+@keyframes skeleton-wave {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* Skeleton card entrance stagger */
+.skeleton-card-1 { animation: skeleton-card-in 0.4s ease-out 0.05s both; }
+.skeleton-card-2 { animation: skeleton-card-in 0.4s ease-out 0.1s both; }
+.skeleton-card-3 { animation: skeleton-card-in 0.4s ease-out 0.15s both; }
+.skeleton-card-4 { animation: skeleton-card-in 0.4s ease-out 0.2s both; }
+.skeleton-card-5 { animation: skeleton-card-in 0.4s ease-out 0.25s both; }
+.skeleton-card-6 { animation: skeleton-card-in 0.4s ease-out 0.3s both; }
+
+@keyframes skeleton-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .splash-orb,
@@ -395,7 +523,21 @@ html:not(.no-transitions) [data-state="closed"] {
   .splash-title,
   .splash-version,
   .splash-message,
-  .splash-progress::after {
+  .splash-progress::after,
+  .error-icon-float,
+  .error-glow,
+  .error-content-1,
+  .error-content-2,
+  .error-content-3,
+  .error-content-4,
+  .not-found-number,
+  .skeleton-shimmer::after,
+  .skeleton-card-1,
+  .skeleton-card-2,
+  .skeleton-card-3,
+  .skeleton-card-4,
+  .skeleton-card-5,
+  .skeleton-card-6 {
     animation: none !important;
   }
   .splash-ring {

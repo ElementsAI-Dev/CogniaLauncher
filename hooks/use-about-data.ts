@@ -8,6 +8,16 @@ import { toast } from 'sonner';
 export interface SystemInfo {
   os: string;
   arch: string;
+  osVersion: string;
+  osLongVersion: string;
+  kernelVersion: string;
+  hostname: string;
+  cpuModel: string;
+  cpuCores: number;
+  totalMemory: number;
+  availableMemory: number;
+  uptime: number;
+  appVersion: string;
   homeDir: string;
   locale: string;
 }
@@ -88,6 +98,16 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       setSystemInfo({
         os: 'Web',
         arch: 'Browser',
+        osVersion: '',
+        osLongVersion: '',
+        kernelVersion: '',
+        hostname: '',
+        cpuModel: '',
+        cpuCores: 0,
+        totalMemory: 0,
+        availableMemory: 0,
+        uptime: 0,
+        appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
       });
@@ -104,6 +124,16 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       setSystemInfo({
         os: platformInfo.os,
         arch: platformInfo.arch,
+        osVersion: platformInfo.os_version,
+        osLongVersion: platformInfo.os_long_version,
+        kernelVersion: platformInfo.kernel_version,
+        hostname: platformInfo.hostname,
+        cpuModel: platformInfo.cpu_model,
+        cpuCores: platformInfo.cpu_cores,
+        totalMemory: platformInfo.total_memory,
+        availableMemory: platformInfo.available_memory,
+        uptime: platformInfo.uptime,
+        appVersion: platformInfo.app_version || APP_VERSION,
         homeDir: cogniaDir,
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
       });
@@ -113,6 +143,16 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       setSystemInfo({
         os: 'Unknown',
         arch: 'Unknown',
+        osVersion: '',
+        osLongVersion: '',
+        kernelVersion: '',
+        hostname: '',
+        cpuModel: '',
+        cpuCores: 0,
+        totalMemory: 0,
+        availableMemory: 0,
+        uptime: 0,
+        appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
       });

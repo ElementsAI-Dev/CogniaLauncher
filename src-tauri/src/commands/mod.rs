@@ -16,6 +16,7 @@ pub mod profiles;
 pub mod search;
 pub mod shim;
 pub mod updater;
+pub mod wsl;
 
 pub use batch::{
     batch_install, batch_uninstall, batch_update, check_updates, clear_install_history,
@@ -43,9 +44,10 @@ pub use download::{
     download_set_speed_limit, download_stats, init_download_manager, SharedDownloadManager,
 };
 pub use environment::{
-    env_available_versions, env_detect, env_detect_all, env_get, env_install, env_install_cancel,
-    env_list, env_list_providers, env_load_settings, env_resolve_alias, env_save_settings,
-    env_uninstall, env_use_global, env_use_local,
+    env_available_versions, env_current_version, env_detect, env_detect_all, env_get,
+    env_install, env_install_cancel, env_installed_versions, env_list, env_list_providers,
+    env_load_settings, env_resolve_alias, env_save_settings, env_uninstall, env_use_global,
+    env_use_local, env_verify_install,
 };
 pub use launch::{
     env_activate, env_get_info, exec_shell_with_env, launch_with_env, launch_with_streaming,
@@ -84,4 +86,9 @@ pub use health_check::{health_check_all, health_check_environment, health_check_
 pub use profiles::{
     profile_apply, profile_create, profile_create_from_current, profile_delete, profile_export,
     profile_get, profile_import, profile_list, profile_update,
+};
+pub use wsl::{
+    wsl_export, wsl_import, wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online,
+    wsl_list_running, wsl_set_default, wsl_set_default_version, wsl_set_version, wsl_shutdown,
+    wsl_status, wsl_terminate, wsl_update,
 };

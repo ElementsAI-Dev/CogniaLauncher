@@ -175,6 +175,18 @@ export function useEnvironments() {
     try {
       await tauri.envInstall(envType, resolvedVersion, resolvedProviderId);
       
+      // Post-install verification
+      if (tauri.isTauri()) {
+        try {
+          const verifyResult = await tauri.envVerifyInstall(envType, resolvedVersion);
+          if (verifyResult && !verifyResult.installed) {
+            console.warn(`[env] Post-install verification failed for ${envType}@${resolvedVersion}`, verifyResult);
+          }
+        } catch {
+          // Verification is best-effort, don't fail the flow
+        }
+      }
+      
       // Refresh environment data after successful install
       const updatedEnv = await tauri.envGet(envType);
       updateEnvironment(updatedEnv);
@@ -289,6 +301,33 @@ export function useEnvironments() {
     }
   }, [currentInstallation, setCurrentInstallation, closeProgressDialog]);
 
+  const verifyInstall = useCallback(async (envType: string, version: string) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.envVerifyInstall(envType, version);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const getInstalledVersions = useCallback(async (envType: string) => {
+    if (!tauri.isTauri()) return [];
+    try {
+      return await tauri.envInstalledVersions(envType);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const getCurrentVersion = useCallback(async (envType: string) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.envCurrentVersion(envType);
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Get full store for return (read-only state values)
   const store = useEnvironmentStore();
 
@@ -305,5 +344,8 @@ export function useEnvironments() {
     fetchAvailableVersions,
     fetchProviders,
     cancelInstallation,
+    verifyInstall,
+    getInstalledVersions,
+    getCurrentVersion,
   };
 }

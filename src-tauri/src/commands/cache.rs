@@ -6,7 +6,7 @@ use crate::cache::{
     MigrationMode, MigrationResult, MigrationValidation,
     external, migration,
 };
-use crate::platform::{disk, fs};
+use crate::platform::{disk, disk::format_size, fs};
 use crate::config::Settings;
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -98,18 +98,25 @@ pub async fn cache_clean(
         .await
         .map_err(|e| e.to_string())?;
 
-    let clean_type = clean_type.as_deref().unwrap_or("all");
+    let clean_type_str = clean_type.as_deref().unwrap_or("all");
     let max_age = Duration::from_secs(max_age_days as u64 * 86400);
-    let mut partial_freed = 0u64;
 
     let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
         .await
         .map_err(|e| e.to_string())?;
 
-    let (dl_freed, md_freed) = match clean_type {
+    // Build history record before cleaning
+    let mut builder = CleanupRecordBuilder::new(clean_type_str, false);
+    build_cleanup_record(
+        &mut builder, &download_cache, &metadata_cache, &mut resumer,
+        clean_type_str, max_age,
+    ).await?;
+    let record = builder.build();
+    let deleted_count = record.file_count;
+
+    let (dl_freed, md_freed) = match clean_type_str {
         "downloads" => {
             let freed = download_cache.clean().await.map_err(|e| e.to_string())?;
-            partial_freed = clean_partials(&mut resumer, Duration::from_secs(0)).await?;
             (freed, 0)
         }
         "metadata" => {
@@ -121,9 +128,7 @@ pub async fn cache_clean(
             (0, md_size_before)
         }
         "expired" => {
-            let md_stats = metadata_cache.stats().await.map_err(|e| e.to_string())?;
-            let expired_size = md_stats.total_size * md_stats.expired_count as u64
-                / md_stats.entry_count.max(1) as u64;
+            let md_freed = measure_metadata_expired_size(&metadata_cache).await?;
             let dl_freed = download_cache
                 .clean_expired(max_age)
                 .await
@@ -132,8 +137,7 @@ pub async fn cache_clean(
                 .clean_expired()
                 .await
                 .map_err(|e| e.to_string())?;
-            partial_freed = clean_partials(&mut resumer, max_age).await?;
-            (dl_freed, expired_size)
+            (dl_freed, md_freed)
         }
         _ => {
             let dl = download_cache.clean().await.map_err(|e| e.to_string())?;
@@ -142,12 +146,24 @@ pub async fn cache_clean(
                 .clean_all()
                 .await
                 .map_err(|e| e.to_string())?;
-            partial_freed = clean_partials(&mut resumer, Duration::from_secs(0)).await?;
             (dl, md_size_before)
         }
     };
 
+    let partial_freed = match clean_type_str {
+        "metadata" => 0,
+        "expired" => clean_partials(&mut resumer, max_age).await?,
+        _ => clean_partials(&mut resumer, Duration::from_secs(0)).await?,
+    };
+
     let total_freed = dl_freed + md_freed + partial_freed;
+
+    // Record in cleanup history (was previously missing)
+    if deleted_count > 0 {
+        if let Ok(mut history) = CleanupHistory::open(&cache_dir).await {
+            let _ = history.add(record).await;
+        }
+    }
 
     Ok(CleanResult {
         freed_bytes: total_freed,
@@ -185,12 +201,21 @@ pub async fn cache_verify(
 ) -> Result<CacheVerificationResult, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let download_cache = DownloadCache::open(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
-    let entries = download_cache
+    let metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let dl_entries = download_cache
+        .preview_clean()
+        .await
+        .map_err(|e| e.to_string())?;
+    let md_entries = metadata_cache
         .preview_clean()
         .await
         .map_err(|e| e.to_string())?;
@@ -201,7 +226,8 @@ pub async fn cache_verify(
     let mut corrupted_files = 0usize;
     let mut size_mismatches = 0usize;
 
-    for entry in entries {
+    // Verify download cache entries (full checksum verification)
+    for entry in dl_entries {
         if !fs::exists(&entry.file_path).await {
             missing_files += 1;
             details.push(CacheIssue {
@@ -241,6 +267,34 @@ pub async fn cache_verify(
         valid_entries += 1;
     }
 
+    // Verify metadata cache entries (existence + size check)
+    for entry in md_entries {
+        if !fs::exists(&entry.file_path).await {
+            missing_files += 1;
+            details.push(CacheIssue {
+                entry_key: format!("metadata:{}", entry.key),
+                issue_type: "missing".to_string(),
+                description: "Metadata file not found on disk".to_string(),
+            });
+            continue;
+        }
+
+        let actual_size = fs::file_size(&entry.file_path)
+            .await
+            .unwrap_or(entry.size);
+        if actual_size != entry.size {
+            size_mismatches += 1;
+            details.push(CacheIssue {
+                entry_key: format!("metadata:{}", entry.key),
+                issue_type: "size_mismatch".to_string(),
+                description: format!("Expected {} bytes, got {} bytes", entry.size, actual_size),
+            });
+            continue;
+        }
+
+        valid_entries += 1;
+    }
+
     Ok(CacheVerificationResult {
         valid_entries,
         missing_files,
@@ -266,20 +320,31 @@ pub async fn cache_repair(
 ) -> Result<CacheRepairResult, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
+    let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
     drop(s);
 
     let mut download_cache = DownloadCache::open(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
-    let entries = download_cache
+    let mut metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let dl_entries = download_cache
+        .preview_clean()
+        .await
+        .map_err(|e| e.to_string())?;
+    let md_entries = metadata_cache
         .preview_clean()
         .await
         .map_err(|e| e.to_string())?;
 
     let mut removed_entries = 0usize;
+    let mut recovered_entries = 0usize;
     let mut freed_bytes = 0u64;
 
-    for entry in entries {
+    // Repair download cache entries
+    for entry in dl_entries {
         let exists = fs::exists(&entry.file_path).await;
         let actual_size = if exists {
             fs::file_size(&entry.file_path).await.unwrap_or(entry.size)
@@ -287,27 +352,62 @@ pub async fn cache_repair(
             0
         };
 
-        let remove_entry = if !exists || actual_size != entry.size {
-            true
-        } else {
-            let actual_checksum = fs::calculate_sha256(&entry.file_path)
-                .await
-                .map_err(|e| e.to_string())?;
-            actual_checksum != entry.checksum
-        };
-
-        if remove_entry {
-            if exists {
-                freed_bytes += actual_size.max(entry.size);
-            }
+        if !exists {
+            // File missing: remove orphaned DB record
             let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+            removed_entries += 1;
+            continue;
+        }
+
+        if actual_size != entry.size {
+            // Size mismatch: remove entry and corrupted file
+            freed_bytes += actual_size;
+            let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+            removed_entries += 1;
+            continue;
+        }
+
+        // Verify checksum
+        match fs::calculate_sha256(&entry.file_path).await {
+            Ok(actual_checksum) if actual_checksum != entry.checksum => {
+                // Corrupted checksum in DB: re-register with correct checksum so the entry stays valid
+                let _ = download_cache.remove(&entry.checksum).await;
+                match download_cache.add_file(&entry.file_path, &actual_checksum).await {
+                    Ok(_) => {
+                        recovered_entries += 1;
+                    }
+                    Err(_) => {
+                        removed_entries += 1;
+                        freed_bytes += actual_size;
+                    }
+                }
+            }
+            Err(_) => {
+                // Cannot verify: remove
+                freed_bytes += actual_size;
+                let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+                removed_entries += 1;
+            }
+            _ => {
+                // Valid entry, no action needed
+            }
+        }
+    }
+
+    // Repair metadata cache entries (remove orphaned records where file is missing)
+    for entry in md_entries {
+        if !fs::exists(&entry.file_path).await {
+            // preview_clean returns keys with "metadata:" prefix; remove() adds it again,
+            // so we strip the prefix to avoid double-prefixing
+            let raw_key = entry.key.strip_prefix("metadata:").unwrap_or(&entry.key);
+            let _ = metadata_cache.remove(raw_key).await.map_err(|e| e.to_string())?;
             removed_entries += 1;
         }
     }
 
     Ok(CacheRepairResult {
         removed_entries,
-        recovered_entries: 0,
+        recovered_entries,
         freed_bytes,
         freed_human: format_size(freed_bytes),
     })
@@ -364,21 +464,6 @@ pub async fn set_cache_settings(
     Ok(())
 }
 
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 fn format_timestamp(timestamp: i64) -> String {
     Utc.timestamp_opt(timestamp, 0)
@@ -439,6 +524,33 @@ async fn append_partial_record(
     Ok(())
 }
 
+async fn fs_clean_path(
+    cache_path: &Option<PathBuf>,
+    preserve_dir: bool,
+    use_trash: bool,
+) -> Result<(), String> {
+    if let Some(ref path) = cache_path {
+        if !path.exists() {
+            return Ok(());
+        }
+        if preserve_dir {
+            external::clean_cache_contents_public(path, use_trash)
+                .await
+                .map_err(|e| e.to_string())
+        } else if use_trash {
+            fs::remove_dir_with_option(path, true)
+                .await
+                .map_err(|e| e.to_string())
+        } else {
+            fs::remove_dir_all(path)
+                .await
+                .map_err(|e| e.to_string())
+        }
+    } else {
+        Ok(())
+    }
+}
+
 async fn clean_partials(resumer: &mut DownloadResumer, max_age: Duration) -> Result<u64, String> {
     clean_partials_with_option(resumer, max_age, false).await
 }
@@ -466,6 +578,58 @@ async fn clean_partials_with_option(
         .await
         .map_err(|e| e.to_string())?;
     Ok(total_size)
+}
+
+/// Shared helper: build cleanup record for any clean type (avoids duplication across cache_clean / cache_clean_enhanced / cache_force_clean)
+async fn build_cleanup_record(
+    builder: &mut CleanupRecordBuilder,
+    download_cache: &DownloadCache,
+    metadata_cache: &MetadataCache,
+    resumer: &mut DownloadResumer,
+    clean_type: &str,
+    max_age: Duration,
+) -> Result<(), String> {
+    match clean_type {
+        "downloads" => {
+            for entry in download_cache.preview_clean().await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            }
+            append_partial_record(builder, resumer, Duration::from_secs(0)).await?;
+        }
+        "metadata" => {
+            for entry in metadata_cache.preview_clean().await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            }
+        }
+        "expired" => {
+            for entry in download_cache.preview_expired(max_age).await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            }
+            for entry in metadata_cache.preview_expired().await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            }
+            append_partial_record(builder, resumer, max_age).await?;
+        }
+        _ => {
+            for entry in download_cache.preview_clean().await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            }
+            for entry in metadata_cache.preview_clean().await.map_err(|e| e.to_string())? {
+                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            }
+            append_partial_record(builder, resumer, Duration::from_secs(0)).await?;
+        }
+    }
+    Ok(())
+}
+
+/// Accurately measure expired metadata size by summing actual entry sizes (replaces inaccurate proportional estimation)
+async fn measure_metadata_expired_size(metadata_cache: &MetadataCache) -> Result<u64, String> {
+    let expired_entries = metadata_cache
+        .preview_expired()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(expired_entries.iter().map(|e| e.size).sum())
 }
 
 // ==================== Clean Preview ====================
@@ -655,113 +819,26 @@ pub async fn cache_clean_enhanced(
     let clean_type_str = clean_type.as_deref().unwrap_or("all");
     let max_age = Duration::from_secs(max_age_days as u64 * 86400);
 
-    // Collect files for history before cleaning
-    let download_cache = DownloadCache::open(&cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-    let metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut builder = CleanupRecordBuilder::new(clean_type_str, use_trash);
-
-    // Build record based on what will be cleaned
-    match clean_type_str {
-        "downloads" => {
-            for entry in download_cache
-                .preview_clean()
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "download",
-                );
-            }
-            append_partial_record(&mut builder, &mut resumer, Duration::from_secs(0)).await?;
-        }
-        "metadata" => {
-            for entry in metadata_cache
-                .preview_clean()
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "metadata",
-                );
-            }
-        }
-        "expired" => {
-            for entry in download_cache
-                .preview_expired(max_age)
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "download",
-                );
-            }
-            for entry in metadata_cache
-                .preview_expired()
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "metadata",
-                );
-            }
-            append_partial_record(&mut builder, &mut resumer, max_age).await?;
-        }
-        _ => {
-            for entry in download_cache
-                .preview_clean()
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "download",
-                );
-            }
-            for entry in metadata_cache
-                .preview_clean()
-                .await
-                .map_err(|e| e.to_string())?
-            {
-                builder.add_file(
-                    entry.file_path.display().to_string(),
-                    entry.size,
-                    "metadata",
-                );
-            }
-            append_partial_record(&mut builder, &mut resumer, Duration::from_secs(0)).await?;
-        }
-    }
-
-    // Build the record before cleaning
-    let record = builder.build();
-    let history_id = record.id.clone();
-    let deleted_count = record.file_count;
-
-    // Now perform the actual cleaning
+    // Open caches once (no double-open)
     let mut download_cache = DownloadCache::open(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
     let mut metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
         .await
         .map_err(|e| e.to_string())?;
+    let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Build history record using shared helper
+    let mut builder = CleanupRecordBuilder::new(clean_type_str, use_trash);
+    build_cleanup_record(
+        &mut builder, &download_cache, &metadata_cache, &mut resumer,
+        clean_type_str, max_age,
+    ).await?;
+    let record = builder.build();
+    let history_id = record.id.clone();
+    let deleted_count = record.file_count;
 
     let (dl_freed, md_freed) = match clean_type_str {
         "downloads" => {
@@ -780,9 +857,7 @@ pub async fn cache_clean_enhanced(
             (0, md_size_before)
         }
         "expired" => {
-            let md_stats = metadata_cache.stats().await.map_err(|e| e.to_string())?;
-            let expired_size =
-                md_stats.total_size * md_stats.expired_count as u64 / md_stats.entry_count.max(1) as u64;
+            let md_freed = measure_metadata_expired_size(&metadata_cache).await?;
             let dl_freed = download_cache
                 .clean_expired_with_option(max_age, use_trash)
                 .await
@@ -791,7 +866,7 @@ pub async fn cache_clean_enhanced(
                 .clean_expired_with_option(use_trash)
                 .await
                 .map_err(|e| e.to_string())?;
-            (dl_freed, expired_size)
+            (dl_freed, md_freed)
         }
         _ => {
             let dl = download_cache
@@ -1494,42 +1569,26 @@ pub async fn cache_force_clean(
 
     let use_trash = use_trash.unwrap_or(false);
 
-    // Build history record
-    let download_cache = DownloadCache::open(&cache_dir)
-        .await
-        .map_err(|e| e.to_string())?;
-    let metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut builder = CleanupRecordBuilder::new("force_all", use_trash);
-
-    for entry in download_cache
-        .preview_clean()
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
-    }
-    for entry in metadata_cache
-        .preview_clean()
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
-    }
-
-    let record = builder.build();
-    let history_id = record.id.clone();
-    let deleted_count = record.file_count;
-
-    // Force clean everything
+    // Open caches once (no double-open)
     let mut download_cache = DownloadCache::open(&cache_dir)
         .await
         .map_err(|e| e.to_string())?;
     let mut metadata_cache = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl)
         .await
         .map_err(|e| e.to_string())?;
+    let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Build history record using shared helper
+    let mut builder = CleanupRecordBuilder::new("force_all", use_trash);
+    build_cleanup_record(
+        &mut builder, &download_cache, &metadata_cache, &mut resumer,
+        "all", Duration::from_secs(0),
+    ).await?;
+    let record = builder.build();
+    let history_id = record.id.clone();
+    let deleted_count = record.file_count;
 
     let dl_freed = download_cache
         .clean_with_option(use_trash)
@@ -1546,10 +1605,7 @@ pub async fn cache_force_clean(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Clean all partial downloads
-    let mut resumer = DownloadResumer::new(&cache_dir.join("downloads"))
-        .await
-        .map_err(|e| e.to_string())?;
+    // Clean all partial downloads (resumer already opened above)
     let partial_freed =
         clean_partials_with_option(&mut resumer, Duration::from_secs(0), use_trash).await?;
 
@@ -1590,7 +1646,9 @@ pub async fn cache_force_clean_external(
         0
     };
 
-    // Use command if requested and available, otherwise direct delete
+    let preserve_dir = provider_enum.should_preserve_dir();
+
+    // Use command if requested and available, otherwise filesystem clean
     let clean_result = if use_command {
         if let Some((cmd, args)) = provider_enum.clean_command() {
             match crate::platform::process::execute(cmd, args, None).await {
@@ -1599,44 +1657,10 @@ pub async fn cache_force_clean_external(
                 Err(e) => Err(format!("Command error: {}", e)),
             }
         } else {
-            // No command available, do direct delete
-            if let Some(ref path) = cache_path {
-                if path.exists() {
-                    if use_trash {
-                        fs::remove_dir_with_option(path, true)
-                            .await
-                            .map_err(|e| e.to_string())
-                    } else {
-                        fs::remove_dir_all(path)
-                            .await
-                            .map_err(|e| e.to_string())
-                    }
-                } else {
-                    Ok(())
-                }
-            } else {
-                Ok(())
-            }
+            fs_clean_path(&cache_path, preserve_dir, use_trash).await
         }
     } else {
-        // Direct delete mode (bypasses provider command)
-        if let Some(ref path) = cache_path {
-            if path.exists() {
-                if use_trash {
-                    fs::remove_dir_with_option(path, true)
-                        .await
-                        .map_err(|e| e.to_string())
-                } else {
-                    fs::remove_dir_all(path)
-                        .await
-                        .map_err(|e| e.to_string())
-                }
-            } else {
-                Ok(())
-            }
-        } else {
-            Ok(())
-        }
+        fs_clean_path(&cache_path, preserve_dir, use_trash).await
     };
 
     let size_after = if let Some(ref path) = cache_path {
@@ -1746,6 +1770,9 @@ fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<Strin
         external::ExternalCacheProvider::Deno => vec!["DENO_DIR".into()],
         external::ExternalCacheProvider::Bun => vec!["BUN_INSTALL_CACHE_DIR".into(), "BUN_INSTALL".into()],
         external::ExternalCacheProvider::Gradle => vec!["GRADLE_USER_HOME".into()],
+        external::ExternalCacheProvider::Maven => vec!["MAVEN_REPO_LOCAL".into()],
+        external::ExternalCacheProvider::Gem => vec!["GEM_HOME".into()],
+        external::ExternalCacheProvider::Rustup => vec!["RUSTUP_HOME".into()],
         #[cfg(not(windows))]
         external::ExternalCacheProvider::Brew => vec!["HOMEBREW_CACHE".into()],
         #[cfg(windows)]

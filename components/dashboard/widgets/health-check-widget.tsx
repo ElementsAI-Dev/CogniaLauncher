@@ -1,0 +1,140 @@
+'use client';
+
+import { useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useLocale } from '@/components/providers/locale-provider';
+import { useHealthCheck } from '@/hooks/use-health-check';
+import { isTauri } from '@/lib/tauri';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  ShieldQuestion,
+  RefreshCw,
+  ExternalLink,
+  Loader2,
+} from 'lucide-react';
+import Link from 'next/link';
+import type { HealthStatus } from '@/types/tauri';
+
+interface HealthCheckWidgetProps {
+  className?: string;
+}
+
+const STATUS_CONFIG: Record<HealthStatus, { icon: typeof ShieldCheck; color: string; bg: string }> = {
+  healthy: { icon: ShieldCheck, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/30' },
+  warning: { icon: ShieldAlert, color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-950/30' },
+  error: { icon: ShieldX, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30' },
+  unknown: { icon: ShieldQuestion, color: 'text-muted-foreground', bg: 'bg-muted/50' },
+};
+
+export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
+  const { t } = useLocale();
+  const { systemHealth, loading, checkAll } = useHealthCheck();
+
+  useEffect(() => {
+    if (isTauri()) {
+      checkAll();
+    }
+  }, [checkAll]);
+
+  const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
+  const config = STATUS_CONFIG[overallStatus];
+  const StatusIcon = config.icon;
+
+  const envCount = systemHealth?.environments.length ?? 0;
+  const healthyCount = systemHealth?.environments.filter((e) => e.status === 'healthy').length ?? 0;
+  const warningCount = systemHealth?.environments.filter((e) => e.status === 'warning').length ?? 0;
+  const errorCount = systemHealth?.environments.filter((e) => e.status === 'error').length ?? 0;
+  const issueCount = systemHealth?.system_issues.length ?? 0;
+
+  return (
+    <Card className={className}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-medium">
+              {t('dashboard.widgets.healthCheck')}
+            </CardTitle>
+            <CardDescription>
+              {t('dashboard.widgets.healthCheckDesc')}
+            </CardDescription>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={checkAll}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {/* Overall Status */}
+        <div className={`flex items-center gap-3 rounded-lg p-3 mb-3 ${config.bg}`}>
+          <StatusIcon className={`h-8 w-8 ${config.color}`} />
+          <div>
+            <div className={`font-semibold ${config.color}`}>
+              {t(`dashboard.widgets.healthStatus_${overallStatus}`)}
+            </div>
+            {issueCount > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {t('dashboard.widgets.healthIssues', { count: issueCount })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Environment Breakdown */}
+        {envCount > 0 && (
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="text-center rounded-md border p-2">
+              <div className="text-lg font-bold text-green-600">{healthyCount}</div>
+              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthHealthy')}</div>
+            </div>
+            <div className="text-center rounded-md border p-2">
+              <div className="text-lg font-bold text-yellow-600">{warningCount}</div>
+              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthWarnings')}</div>
+            </div>
+            <div className="text-center rounded-md border p-2">
+              <div className="text-lg font-bold text-red-600">{errorCount}</div>
+              <div className="text-[10px] text-muted-foreground">{t('dashboard.widgets.healthErrors')}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Top Issues */}
+        {systemHealth && systemHealth.system_issues.length > 0 && (
+          <div className="space-y-1.5 mb-3">
+            {systemHealth.system_issues.slice(0, 3).map((issue, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <Badge
+                  variant={issue.severity === 'critical' || issue.severity === 'error' ? 'destructive' : 'secondary'}
+                  className="text-[10px] shrink-0"
+                >
+                  {issue.severity}
+                </Badge>
+                <span className="text-muted-foreground line-clamp-1">{issue.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+          <Link href="/environments">
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('dashboard.widgets.healthViewDetails')}
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}

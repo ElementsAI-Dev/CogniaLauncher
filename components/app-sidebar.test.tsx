@@ -20,6 +20,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "nav.providers": "Providers",
         "nav.cache": "Cache",
         "nav.downloads": "Downloads",
+        "nav.wsl": "WSL",
         "nav.logs": "Logs",
         "nav.settings": "Settings",
         "nav.about": "About",
@@ -96,6 +97,7 @@ describe("AppSidebar", () => {
     expect(screen.getAllByText("Packages").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Providers").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cache").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("WSL").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Settings").length).toBeGreaterThan(0);
     expect(screen.getAllByText("About").length).toBeGreaterThan(0);
   });

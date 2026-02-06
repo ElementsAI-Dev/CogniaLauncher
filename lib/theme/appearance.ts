@@ -1,11 +1,12 @@
 import { locales, type Locale } from '@/lib/i18n';
-import { isAccentColor, isThemeMode, type AccentColor, type ThemeMode } from './types';
+import { isAccentColor, isChartColorTheme, isThemeMode, type AccentColor, type ChartColorTheme, type ThemeMode } from './types';
 
-export type AppearanceConfigKey = 'theme' | 'accentColor' | 'reducedMotion' | 'language';
+export type AppearanceConfigKey = 'theme' | 'accentColor' | 'chartColorTheme' | 'reducedMotion' | 'language';
 
 export interface ParsedAppearanceConfig {
   theme?: ThemeMode;
   accentColor?: AccentColor;
+  chartColorTheme?: ChartColorTheme;
   reducedMotion?: boolean;
   locale?: Locale;
   invalidKeys: AppearanceConfigKey[];
@@ -35,6 +36,10 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
   const accentColor = accentColorValue && isAccentColor(accentColorValue) ? accentColorValue : undefined;
   if (accentColorValue && !accentColor) invalidKeys.push('accentColor');
 
+  const chartColorThemeValue = config['appearance.chart_color_theme'];
+  const chartColorTheme = chartColorThemeValue && isChartColorTheme(chartColorThemeValue) ? chartColorThemeValue : undefined;
+  if (chartColorThemeValue && !chartColorTheme) invalidKeys.push('chartColorTheme');
+
   const reducedMotion = reducedMotionValue ? parseReducedMotion(reducedMotionValue) : undefined;
   if (reducedMotionValue && typeof reducedMotion !== 'boolean') invalidKeys.push('reducedMotion');
 
@@ -44,6 +49,7 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
   return {
     theme,
     accentColor,
+    chartColorTheme,
     reducedMotion,
     locale,
     invalidKeys,

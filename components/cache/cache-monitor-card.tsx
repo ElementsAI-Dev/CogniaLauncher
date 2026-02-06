@@ -14,9 +14,10 @@ import type { CacheSizeMonitor } from '@/lib/tauri';
 
 interface CacheMonitorCardProps {
   refreshTrigger?: number;
+  autoRefreshInterval?: number; // in seconds, 0 = disabled
 }
 
-export function CacheMonitorCard({ refreshTrigger }: CacheMonitorCardProps) {
+export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: CacheMonitorCardProps) {
   const { t } = useLocale();
   const [open, setOpen] = useState(true);
   const [monitor, setMonitor] = useState<CacheSizeMonitor | null>(null);
@@ -39,6 +40,16 @@ export function CacheMonitorCard({ refreshTrigger }: CacheMonitorCardProps) {
   useEffect(() => {
     fetchMonitor();
   }, [fetchMonitor, refreshTrigger]);
+
+  // Auto-refresh based on monitor_interval setting
+  useEffect(() => {
+    if (!autoRefreshInterval || autoRefreshInterval <= 0) return;
+    const intervalMs = autoRefreshInterval * 1000;
+    const timer = setInterval(() => {
+      fetchMonitor();
+    }, intervalMs);
+    return () => clearInterval(timer);
+  }, [autoRefreshInterval, fetchMonitor]);
 
   const usageColor = (percent: number) => {
     if (percent >= 90) return 'text-destructive';

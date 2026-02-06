@@ -85,65 +85,70 @@ describe('useHealthCheck', () => {
   });
 
   it('should set loading state during check', async () => {
-    mockHealthCheckAll.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({}), 100)));
+    let resolvePromise: (value: unknown) => void;
+    mockHealthCheckAll.mockImplementation(() => new Promise(resolve => { resolvePromise = resolve; }));
 
     const { result } = renderHook(() => useHealthCheck());
 
-    let loadingDuringCheck = false;
     act(() => {
       result.current.checkAll();
-      loadingDuringCheck = result.current.loading;
     });
 
-    expect(loadingDuringCheck).toBe(true);
+    await waitFor(() => {
+      expect(result.current.loading).toBe(true);
+    });
+
+    await act(async () => {
+      resolvePromise!({ environments: [] });
+    });
   });
 
   it('should return status color for healthy', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('healthy')).toBe('text-green-500');
+    expect(result.current.getStatusColor('healthy')).toBe('text-green-600 bg-green-50 border-green-200');
   });
 
   it('should return status color for warning', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('warning')).toBe('text-yellow-500');
+    expect(result.current.getStatusColor('warning')).toBe('text-yellow-600 bg-yellow-50 border-yellow-200');
   });
 
   it('should return status color for error', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('error')).toBe('text-red-500');
+    expect(result.current.getStatusColor('error')).toBe('text-red-600 bg-red-50 border-red-200');
   });
 
   it('should return status color for unknown', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('unknown')).toBe('text-gray-500');
+    expect(result.current.getStatusColor('unknown')).toBe('text-gray-600 bg-gray-50 border-gray-200');
   });
 
   it('should return status icon for healthy', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusIcon('healthy')).toBe('check-circle');
+    expect(result.current.getStatusIcon('healthy')).toBe('✓');
   });
 
   it('should return status icon for warning', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusIcon('warning')).toBe('alert-triangle');
+    expect(result.current.getStatusIcon('warning')).toBe('⚠');
   });
 
   it('should return status icon for error', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusIcon('error')).toBe('x-circle');
+    expect(result.current.getStatusIcon('error')).toBe('✗');
   });
 
   it('should return status icon for unknown', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusIcon('unknown')).toBe('help-circle');
+    expect(result.current.getStatusIcon('unknown')).toBe('?');
   });
 
   it('should check multiple environments', async () => {
@@ -170,11 +175,7 @@ describe('useHealthCheck', () => {
     const { result } = renderHook(() => useHealthCheck());
 
     await act(async () => {
-      try {
-        await result.current.checkAll();
-      } catch {
-        // Expected
-      }
+      await result.current.checkAll();
     });
 
     await waitFor(() => {
@@ -182,7 +183,7 @@ describe('useHealthCheck', () => {
     });
 
     // Then succeed
-    mockHealthCheckAll.mockResolvedValueOnce({ status: 'healthy' });
+    mockHealthCheckAll.mockResolvedValueOnce({ environments: [] });
 
     await act(async () => {
       await result.current.checkAll();

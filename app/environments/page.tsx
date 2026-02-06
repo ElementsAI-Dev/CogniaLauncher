@@ -149,9 +149,9 @@ export default function EnvironmentsPage() {
 
   const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
     await installVersion(provider, version, provider);
-    // Apply options after installation completes
-    // Note: autoSwitch and setAsDefault settings are stored via the environment settings
-    if (options.autoSwitch || options.setAsDefault) {
+    
+    // Apply autoSwitch setting
+    if (options.autoSwitch) {
       const { setEnvSettings, getEnvSettings } = useEnvironmentStore.getState();
       const currentSettings = getEnvSettings(provider);
       setEnvSettings(provider, {
@@ -159,7 +159,23 @@ export default function EnvironmentsPage() {
         autoSwitch: options.autoSwitch,
       });
     }
-  }, [installVersion]);
+    
+    // Set as default/global version after successful installation
+    if (options.setAsDefault) {
+      try {
+        // Resolve the version if it's an alias (lts, latest)
+        const resolvedVersion = version.trim().toLowerCase();
+        const isAlias = ['latest', 'newest', 'current', 'lts', 'stable'].includes(resolvedVersion);
+        if (!isAlias) {
+          await setGlobalVersion(provider, version);
+        }
+        // For aliases, the install already resolved the version, 
+        // and the backend may have set it as default during install
+      } catch {
+        // Setting as default is best-effort, don't fail the whole operation
+      }
+    }
+  }, [installVersion, setGlobalVersion]);
 
   // Memoized handlers to prevent unnecessary re-renders
   const handleInstallVersion = useCallback(async (envType: string, version: string, providerId?: string) => {
@@ -297,6 +313,7 @@ export default function EnvironmentsPage() {
           open={versionBrowserOpen}
           onOpenChange={(open) => !open && closeVersionBrowser()}
           onInstall={(version, providerId) => handleInstallVersion(currentBrowserEnv.env_type, version, providerId)}
+          onUninstall={(version) => handleUninstallVersion(currentBrowserEnv.env_type, version)}
           installedVersions={currentBrowserEnv.installed_versions.map((v) => v.version)}
           providerId={getSelectedProvider(currentBrowserEnv.env_type)}
         />

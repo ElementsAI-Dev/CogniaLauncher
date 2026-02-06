@@ -151,10 +151,7 @@ export function PackageList({
                 className="mt-3 w-full gap-1"
               >
                 <ChevronDown className="h-4 w-4" />
-                {t("dashboard.packageList.showMore").replace(
-                  "{count}",
-                  String(remainingCount),
-                )}
+                {t("dashboard.packageList.showMore", { count: remainingCount })}
               </Button>
             )}
 

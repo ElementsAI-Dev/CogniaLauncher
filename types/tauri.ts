@@ -61,6 +61,14 @@ export interface EnvironmentProviderInfo {
   description: string;
 }
 
+/** Result of verifying an environment installation */
+export interface EnvVerifyResult {
+  installed: boolean;
+  providerAvailable: boolean;
+  currentVersion: string | null;
+  requestedVersion: string;
+}
+
 // ============================================================================
 // Environment Settings Types
 // ============================================================================
@@ -279,6 +287,16 @@ export interface CleanupHistorySummary {
 export interface PlatformInfo {
   os: string;
   arch: string;
+  os_version: string;
+  os_long_version: string;
+  kernel_version: string;
+  hostname: string;
+  cpu_model: string;
+  cpu_cores: number;
+  total_memory: number;
+  available_memory: number;
+  uptime: number;
+  app_version: string;
 }
 
 // ============================================================================
@@ -337,6 +355,29 @@ export interface UpdateInfo {
   latest_version: string;
   provider: string;
   update_type?: string;
+}
+
+export interface UpdateCheckProgress {
+  phase: string; // "collecting" | "checking" | "done"
+  current: number;
+  total: number;
+  current_package: string | null;
+  current_provider: string | null;
+  found_updates: number;
+  errors: number;
+}
+
+export interface UpdateCheckError {
+  provider: string;
+  package: string | null;
+  message: string;
+}
+
+export interface UpdateCheckSummary {
+  updates: UpdateInfo[];
+  total_checked: number;
+  total_providers: number;
+  errors: UpdateCheckError[];
 }
 
 export interface SelfUpdateInfo {
@@ -890,6 +931,93 @@ export interface ProfileEnvironmentSkipped {
   env_type: string;
   version: string;
   reason: string;
+}
+
+// ============================================================================
+// WSL Types
+// ============================================================================
+
+/** WSL distribution status info */
+export interface WslDistroStatus {
+  name: string;
+  state: string;
+  wsl_version: string;
+  is_default: boolean;
+}
+
+/** WSL system-level status */
+export interface WslStatus {
+  version: string;
+  status_info: string;
+  running_distros: string[];
+}
+
+/** Options for importing a WSL distribution */
+export interface WslImportOptions {
+  name: string;
+  install_location: string;
+  file_path: string;
+  wsl_version?: number;
+  as_vhd: boolean;
+}
+
+// ============================================================================
+// Launch Types
+// ============================================================================
+
+/** Request to launch a program with a specific environment */
+export interface LaunchRequest {
+  program: string;
+  args: string[];
+  cwd?: string;
+  envType?: string;
+  envVersion?: string;
+  extraEnv?: Record<string, string>;
+  timeoutSecs?: number;
+}
+
+/** Result of launching a program */
+export interface LaunchResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  success: boolean;
+}
+
+/** Shell activation script for an environment */
+export interface ActivationScript {
+  shell: string;
+  script: string;
+  envVars: Record<string, string>;
+  pathAdditions: string[];
+}
+
+/** Environment info for display */
+export interface EnvInfoResult {
+  envType: string;
+  version: string;
+  binPath: string | null;
+  envVars: Record<string, string>;
+}
+
+// ============================================================================
+// Shim & PATH Types
+// ============================================================================
+
+/** Information about a shim */
+export interface ShimInfo {
+  binaryName: string;
+  envType: string;
+  version: string | null;
+  targetPath: string;
+  shimPath: string;
+}
+
+/** PATH status info */
+export interface PathStatusInfo {
+  shimDir: string;
+  isInPath: boolean;
+  addCommand: string;
 }
 
 /** Result of path validation from backend */

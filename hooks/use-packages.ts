@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { usePackageStore } from '@/lib/stores/packages';
 import * as tauri from '@/lib/tauri';
 import { formatError } from '@/lib/errors';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export const normalizePackageId = (pkg: string) => {
   const colonIndex = pkg.indexOf(':');
@@ -207,18 +208,43 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const progressUnlistenRef = useRef<UnlistenFn | null>(null);
+
+  // Clean up progress listener on unmount
+  useEffect(() => {
+    return () => {
+      progressUnlistenRef.current?.();
+      progressUnlistenRef.current = null;
+    };
+  }, []);
+
   const checkForUpdates = useCallback(async (packages?: string[]) => {
-    store.setLoading(true);
+    store.setIsCheckingUpdates(true);
     store.setError(null);
+    store.setUpdateCheckProgress(null);
+    store.setUpdateCheckErrors([]);
+
+    // Set up progress listener
+    let unlisten: UnlistenFn | null = null;
     try {
-      const updates = await tauri.checkUpdates(packages);
-      store.setAvailableUpdates(updates);
-      return updates;
+      unlisten = await tauri.listenUpdateCheckProgress((progress) => {
+        store.setUpdateCheckProgress(progress);
+      });
+      progressUnlistenRef.current = unlisten;
+
+      const summary = await tauri.checkUpdates(packages);
+      store.setAvailableUpdates(summary.updates);
+      store.setUpdateCheckErrors(summary.errors);
+      store.setLastUpdateCheck(Date.now());
+      return summary.updates;
     } catch (err) {
       store.setError(formatError(err));
       return [];
     } finally {
-      store.setLoading(false);
+      store.setIsCheckingUpdates(false);
+      // Clean up listener
+      unlisten?.();
+      progressUnlistenRef.current = null;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -321,6 +347,24 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const fetchPackageVersions = useCallback(async (name: string, provider?: string) => {
+    try {
+      return await tauri.packageVersions(name, provider);
+    } catch (err) {
+      store.setError(formatError(err));
+      return [];
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const checkPackageInstalled = useCallback(async (name: string) => {
+    try {
+      return await tauri.packageCheckInstalled(name);
+    } catch {
+      return false;
+    }
+  }, []);
+
   return {
     ...store,
     searchPackages,
@@ -343,5 +387,7 @@ export function usePackages() {
     getInstallHistory,
     getPackageHistory,
     clearInstallHistory,
+    fetchPackageVersions,
+    checkPackageInstalled,
   };
 }

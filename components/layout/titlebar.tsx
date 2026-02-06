@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { isTauri } from "@/lib/tauri";
 import { useSettingsStore } from "@/lib/stores/settings";
+import { useWindowStateStore } from "@/lib/stores/window-state";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
   DropdownMenu,
@@ -28,6 +29,14 @@ type TauriWindow = Awaited<
   ReturnType<typeof import("@tauri-apps/api/window").getCurrentWindow>
 >;
 
+/**
+ * On Windows, frameless maximized windows have an invisible border
+ * (typically 7-8px at 100% scale) that clips content. We must add
+ * padding to compensate. This value is the Windows default thick-frame
+ * border in CSS pixels.
+ */
+const WIN_MAXIMIZE_PADDING = 8;
+
 export function Titlebar() {
   const { appSettings } = useSettingsStore();
   const { t } = useLocale();
@@ -38,6 +47,8 @@ export function Titlebar() {
   const [isFocused, setIsFocused] = useState(true);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [isWindows, setIsWindows] = useState(false);
+  const windowStateStore = useWindowStateStore();
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState({
     x: 0,
@@ -70,6 +81,15 @@ export function Titlebar() {
 
         setAppWindow(win);
         setIsDesktopMode(true);
+        windowStateStore.setDesktopMode(true);
+
+        // Detect Windows for maximize padding compensation
+        // Use navigator.platform/userAgent which is reliable in Tauri webview
+        const detectedWindows =
+          navigator.userAgent.includes("Windows") ||
+          navigator.platform?.startsWith("Win");
+        setIsWindows(detectedWindows);
+        windowStateStore.setWindows(detectedWindows);
 
         const [maximized, fullscreen, alwaysOnTop] = await Promise.all([
           win.isMaximized(),
@@ -82,6 +102,8 @@ export function Titlebar() {
         setIsMaximized(maximized);
         setIsFullscreen(fullscreen);
         setIsAlwaysOnTop(alwaysOnTop);
+        windowStateStore.setMaximized(maximized);
+        windowStateStore.setFullscreen(fullscreen);
 
         unlistenResizeRef.current = await win.onResized(async () => {
           if (!active) return;
@@ -92,6 +114,8 @@ export function Titlebar() {
           if (active) {
             setIsMaximized(max);
             setIsFullscreen(full);
+            windowStateStore.setMaximized(max);
+            windowStateStore.setFullscreen(full);
           }
         });
 
@@ -99,6 +123,7 @@ export function Titlebar() {
           ({ payload: focused }) => {
             if (active) {
               setIsFocused(focused);
+              windowStateStore.setFocused(focused);
             }
           },
         );
@@ -128,7 +153,7 @@ export function Titlebar() {
       unlistenFocusRef.current?.();
       unlistenCloseRef.current?.();
     };
-  }, [mounted]);
+  }, [mounted, windowStateStore]);
 
   const handleMinimize = useCallback(async () => {
     await appWindow?.minimize();
@@ -201,6 +226,11 @@ export function Titlebar() {
     setContextMenuOpen(true);
   }, []);
 
+  // Maximize padding: on Windows frameless, maximized windows need padding
+  // to prevent content clipping by the invisible thick-frame border
+  const maximizePadding =
+    isDesktopMode && isWindows && isMaximized ? WIN_MAXIMIZE_PADDING : 0;
+
   // Don't render on server or before hydration
   if (!mounted) {
     return null;
@@ -223,11 +253,17 @@ export function Titlebar() {
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         className={cn(
-          "flex h-8 w-full select-none items-center justify-between border-b transition-opacity",
+          "flex w-full select-none items-center justify-between border-b transition-opacity",
           isFocused
             ? "bg-background/80 backdrop-blur-sm"
             : "bg-background/60 backdrop-blur-sm opacity-80",
         )}
+        style={{
+          height: `calc(2rem + ${maximizePadding}px)`,
+          paddingTop: maximizePadding,
+          paddingLeft: maximizePadding,
+          paddingRight: maximizePadding,
+        }}
       >
         <div className="flex h-full flex-1 items-center gap-2 px-3">
           <div className="flex items-center gap-2">

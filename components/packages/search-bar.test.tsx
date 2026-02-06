@@ -93,7 +93,7 @@ describe("SearchBar", () => {
     const input = screen.getByPlaceholderText("Search packages...");
     await user.type(input, "test");
 
-    expect(screen.getByTitle("Clear")).toBeInTheDocument();
+    expect(screen.getByLabelText("Clear")).toBeInTheDocument();
   });
 
   it("clears input when clear button is clicked", async () => {
@@ -102,7 +102,7 @@ describe("SearchBar", () => {
 
     const input = screen.getByPlaceholderText("Search packages...");
     await user.type(input, "test");
-    await user.click(screen.getByTitle("Clear"));
+    await user.click(screen.getByLabelText("Clear"));
 
     expect(input).toHaveValue("");
   });

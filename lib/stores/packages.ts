@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { PackageSummary, PackageInfo, InstalledPackage, ProviderInfo, UpdateInfo, SearchFacets } from '../tauri';
+import type { PackageSummary, PackageInfo, InstalledPackage, ProviderInfo, UpdateInfo, UpdateCheckProgress, UpdateCheckError, SearchFacets } from '../tauri';
 
 interface SearchMeta {
   total: number;
@@ -24,6 +24,10 @@ interface PackageState {
   selectedPackages: string[];
   searchMeta: SearchMeta | null;
   bookmarkedPackages: string[];
+  updateCheckProgress: UpdateCheckProgress | null;
+  updateCheckErrors: UpdateCheckError[];
+  isCheckingUpdates: boolean;
+  lastUpdateCheck: number | null;
 
   setSearchResults: (results: PackageSummary[]) => void;
   setInstalledPackages: (packages: InstalledPackage[]) => void;
@@ -43,6 +47,10 @@ interface PackageState {
   selectAllPackages: (names: string[]) => void;
   setSearchMeta: (meta: SearchMeta | null) => void;
   toggleBookmark: (name: string) => void;
+  setUpdateCheckProgress: (progress: UpdateCheckProgress | null) => void;
+  setUpdateCheckErrors: (errors: UpdateCheckError[]) => void;
+  setIsCheckingUpdates: (checking: boolean) => void;
+  setLastUpdateCheck: (timestamp: number | null) => void;
 }
 
 export const usePackageStore = create<PackageState>()(
@@ -62,6 +70,10 @@ export const usePackageStore = create<PackageState>()(
       selectedPackages: [],
       searchMeta: null,
       bookmarkedPackages: [],
+      updateCheckProgress: null,
+      updateCheckErrors: [],
+      isCheckingUpdates: false,
+      lastUpdateCheck: null,
 
       setSearchResults: (searchResults) => set({ searchResults }),
       setInstalledPackages: (installedPackages) => set({ installedPackages }),
@@ -95,6 +107,10 @@ export const usePackageStore = create<PackageState>()(
           ? state.bookmarkedPackages.filter((n) => n !== name)
           : [...state.bookmarkedPackages, name]
       })),
+      setUpdateCheckProgress: (updateCheckProgress) => set({ updateCheckProgress }),
+      setUpdateCheckErrors: (updateCheckErrors) => set({ updateCheckErrors }),
+      setIsCheckingUpdates: (isCheckingUpdates) => set({ isCheckingUpdates }),
+      setLastUpdateCheck: (lastUpdateCheck) => set({ lastUpdateCheck }),
     }),
     {
       name: 'cognia-packages',

@@ -74,6 +74,9 @@ urlencoding = "2.1"
 # Trash support (cross-platform recycle bin)
 trash = "3"
 
+# System information
+sysinfo = "0.33"
+
 # Open URLs/paths
 open = "5"
 

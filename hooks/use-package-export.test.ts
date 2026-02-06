@@ -25,7 +25,7 @@ Object.assign(URL, {
 });
 
 // Mock package store
-jest.mock('@/lib/stores/package', () => ({
+jest.mock('@/lib/stores/packages', () => ({
   usePackageStore: jest.fn(() => ({
     installedPackages: [
       { name: 'react', version: '18.0.0' },
@@ -38,12 +38,23 @@ jest.mock('@/lib/stores/package', () => ({
 describe('usePackageExport', () => {
   let mockLink: { href: string; download: string; click: jest.Mock };
 
+  const originalCreateElement = document.createElement.bind(document);
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockLink = { href: '', download: '', click: jest.fn() };
-    jest.spyOn(document, 'createElement').mockReturnValue(mockLink as unknown as HTMLElement);
-    jest.spyOn(document.body, 'appendChild').mockImplementation(() => mockLink as unknown as Node);
-    jest.spyOn(document.body, 'removeChild').mockImplementation(() => mockLink as unknown as Node);
+    jest.spyOn(document, 'createElement').mockImplementation((tagName: string, options?: ElementCreationOptions) => {
+      if (tagName === 'a') return mockLink as unknown as HTMLElement;
+      return originalCreateElement(tagName, options);
+    });
+    jest.spyOn(document.body, 'appendChild').mockImplementation((node) => {
+      if (node === (mockLink as unknown)) return mockLink as unknown as Node;
+      return Node.prototype.appendChild.call(document.body, node);
+    });
+    jest.spyOn(document.body, 'removeChild').mockImplementation((node) => {
+      if (node === (mockLink as unknown)) return mockLink as unknown as Node;
+      return Node.prototype.removeChild.call(document.body, node);
+    });
   });
 
   afterEach(() => {

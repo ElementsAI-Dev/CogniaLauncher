@@ -3,12 +3,16 @@ import { PackageComparisonDialog } from "./package-comparison-dialog";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
-    t: (key: string) => {
+    t: (key: string, params?: Record<string, string | number>) => {
       const translations: Record<string, string> = {
         "packages.compareVersions": "Compare Versions",
+        "packages.comparePackages": "Compare Packages",
+        "packages.sideByComparison": `Side-by-side comparison of ${params?.count ?? ""} packages`,
         "packages.currentVersion": "Current",
         "packages.newVersion": "New",
         "packages.close": "Close",
+        "packages.failedToCompare": "Failed to compare packages",
+        "packages.unknownDate": "Unknown",
       };
       return translations[key] || key;
     },

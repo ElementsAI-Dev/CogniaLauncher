@@ -57,8 +57,17 @@ pub async fn env_install(
     version: String,
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
+    tokens: State<'_, CancellationTokens>,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Create a cancellation token for this installation
+    let cancel_key = get_cancel_key(&env_type, &version);
+    let cancel_token = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.insert(cancel_key.clone(), cancel_token.clone());
+    }
+    
     // Create a progress channel
     let (tx, mut rx): (ProgressSender, mpsc::Receiver<InstallProgressEvent>) =
         mpsc::channel(32);
@@ -67,10 +76,16 @@ pub async fn env_install(
     let env_type_clone = env_type.clone();
     let version_clone = version.clone();
     let app_clone = app.clone();
+    let cancel_token_clone = cancel_token.clone();
     
     // Spawn a task to forward progress events to the frontend
     let progress_task = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
+            // Check cancellation before forwarding progress
+            if cancel_token_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            
             let step = match event.stage {
                 InstallStage::Fetching => "fetching",
                 InstallStage::Downloading => "downloading",
@@ -112,6 +127,14 @@ pub async fn env_install(
         force: false,
     };
     
+    // Check cancellation before starting install
+    if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        // Cleanup cancellation token
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.remove(&cancel_key);
+        return Err("Installation cancelled by user".to_string());
+    }
+    
     // Perform installation with progress reporting
     let result = provider
         .install_with_progress(request, Some(tx))
@@ -123,9 +146,33 @@ pub async fn env_install(
     // Wait for progress task to complete
     let _ = progress_task.await;
     
+    // Cleanup cancellation token
+    {
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.remove(&cancel_key);
+    }
+    
+    // Check if cancelled during installation
+    if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Installation cancelled by user".to_string());
+    }
+    
     // Handle result
     match result {
-        Ok(_receipt) => Ok(()),
+        Ok(_receipt) => {
+            // Emit final success event
+            let _ = app.emit("env-install-progress", EnvInstallProgress {
+                env_type: env_type.clone(),
+                version: version.clone(),
+                step: "done".to_string(),
+                progress: 100.0,
+                downloaded_size: None,
+                total_size: None,
+                speed: None,
+                error: None,
+            });
+            Ok(())
+        }
         Err(e) => {
             // Emit final error event
             let _ = app.emit("env-install-progress", EnvInstallProgress {
@@ -238,9 +285,26 @@ pub async fn env_list_providers(
                     "node",
                     "Node Version Manager - POSIX-compliant bash script",
                 ),
+                "volta" => (
+                    "node",
+                    "Hassle-free JavaScript tool manager with seamless per-project versions",
+                ),
                 "pyenv" => ("python", "Simple Python version management"),
+                "conda" => ("python", "Conda package, dependency, and environment manager"),
                 "rustup" => ("rust", "The Rust toolchain installer"),
-                "goenv" => ("go", "Go version management"),
+                "goenv" => ("go", "Go version management, like pyenv for Go"),
+                "rbenv" => ("ruby", "Seamless Ruby version management"),
+                "sdkman" => ("java", "SDKMAN! - Software Development Kit Manager for JVM"),
+                "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
+                "dotnet" => ("dotnet", ".NET SDK version management"),
+                "deno" => ("deno", "Deno runtime version management"),
+                "mise" => ("polyglot", "Modern polyglot version manager (successor to rtx/asdf)"),
+                "asdf" => ("polyglot", "Extendable version manager for multiple runtimes"),
+                "nix" => ("polyglot", "Nix package manager with reproducible builds"),
+                _ if provider_id.starts_with("system-") => {
+                    let env = provider_id.strip_prefix("system-").unwrap_or(provider_id);
+                    (env, "System-installed runtime (not managed by a version manager)")
+                }
                 _ => (provider_id, provider.display_name()),
             };
 
@@ -279,10 +343,15 @@ pub async fn env_resolve_alias(
     
     let alias_lower = alias.to_lowercase();
     let alias_env_type = match env_type.as_str() {
-        "fnm" | "nvm" => "node",
-        "pyenv" => "python",
+        "fnm" | "nvm" | "volta" => "node",
+        "pyenv" | "conda" | "pipx" => "python",
         "goenv" => "go",
         "rustup" => "rust",
+        "rbenv" => "ruby",
+        "sdkman" => "java",
+        "phpbrew" => "php",
+        "dotnet" => "dotnet",
+        "deno" => "deno",
         _ => env_type.as_str(),
     };
     
@@ -519,7 +588,9 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     // Version managers to environment types
     mapping.insert("fnm".to_string(), "node".to_string());
     mapping.insert("nvm".to_string(), "node".to_string());
+    mapping.insert("volta".to_string(), "node".to_string());
     mapping.insert("pyenv".to_string(), "python".to_string());
+    mapping.insert("conda".to_string(), "python".to_string());
     mapping.insert("goenv".to_string(), "go".to_string());
     mapping.insert("rbenv".to_string(), "ruby".to_string());
     mapping.insert("rustup".to_string(), "rust".to_string());
@@ -527,6 +598,10 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("phpbrew".to_string(), "php".to_string());
     mapping.insert("dotnet".to_string(), "dotnet".to_string());
     mapping.insert("deno".to_string(), "deno".to_string());
+    mapping.insert("mise".to_string(), "polyglot".to_string());
+    mapping.insert("asdf".to_string(), "polyglot".to_string());
+    mapping.insert("nix".to_string(), "polyglot".to_string());
+    mapping.insert("pipx".to_string(), "python".to_string());
     
     // System providers
     mapping.insert("system-node".to_string(), "node".to_string());
@@ -541,4 +616,77 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("system-bun".to_string(), "bun".to_string());
     
     Ok(mapping)
+}
+
+/// Verify that a specific version was installed successfully
+#[tauri::command]
+pub async fn env_verify_install(
+    env_type: String,
+    version: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<EnvVerifyResult, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider(&env_type)
+        .ok_or_else(|| format!("Provider not found: {}", env_type))?;
+    
+    // Check if the version appears in installed versions
+    let installed = provider.list_installed_versions().await.unwrap_or_default();
+    let found = installed.iter().any(|v| v.version == version || v.version.contains(&version));
+    
+    // Check if the provider is still available (sanity check)
+    let provider_available = provider.is_available().await;
+    
+    // Get the current version to verify switching worked
+    let current = provider.get_current_version().await.ok().flatten();
+    
+    Ok(EnvVerifyResult {
+        installed: found,
+        provider_available,
+        current_version: current,
+        requested_version: version,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVerifyResult {
+    pub installed: bool,
+    pub provider_available: bool,
+    pub current_version: Option<String>,
+    pub requested_version: String,
+}
+
+/// Get installed versions for a specific environment provider
+#[tauri::command]
+pub async fn env_installed_versions(
+    env_type: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<Vec<crate::provider::InstalledVersion>, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider(&env_type)
+        .ok_or_else(|| format!("Provider not found: {}", env_type))?;
+    
+    provider
+        .list_installed_versions()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the current active version for a specific environment provider
+#[tauri::command]
+pub async fn env_current_version(
+    env_type: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<Option<String>, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider(&env_type)
+        .ok_or_else(|| format!("Provider not found: {}", env_type))?;
+    
+    provider
+        .get_current_version()
+        .await
+        .map_err(|e| e.to_string())
 }

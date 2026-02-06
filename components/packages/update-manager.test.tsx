@@ -9,6 +9,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.updates": "Updates",
         "packages.noUpdates": "No updates available",
         "packages.checkForUpdates": "Check for updates",
+        "packages.checkNow": "Check Now",
         "packages.updateAll": "Update all",
         "packages.updateSelected": "Update selected",
         "packages.currentVersion": "Current",
@@ -16,6 +17,11 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.pin": "Pin",
         "packages.unpin": "Unpin",
         "packages.pinnedPackages": "Pinned packages",
+        "packages.allPackagesUpToDate": "All packages are up to date!",
+        "packages.lastChecked": "Last checked",
+        "packages.justNow": "just now",
+        "packages.updatesAvailable": "Updates Available",
+        "packages.manageUpdates": "Manage package updates",
       };
       return translations[key] || key;
     },

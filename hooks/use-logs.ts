@@ -7,6 +7,7 @@ import {
   logClear,
   logGetDir,
   logExport,
+  logGetTotalSize,
 } from '@/lib/tauri';
 
 /**
@@ -154,6 +155,18 @@ export function useLogs() {
     }
   }, []);
 
+  // Get total size of all log files
+  const getTotalSize = useCallback(async () => {
+    if (!isTauri()) return 0;
+
+    try {
+      return await logGetTotalSize();
+    } catch (error) {
+      console.error('Failed to get total log size:', error);
+      return 0;
+    }
+  }, []);
+
   return {
     // State
     logs,
@@ -189,5 +202,6 @@ export function useLogs() {
     getLogDirectory,
     exportLogs,
     exportLogFile,
+    getTotalSize,
   };
 }

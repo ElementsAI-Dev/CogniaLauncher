@@ -761,13 +761,8 @@ impl BatchManager {
         for provider_id in registry.list() {
             if let Some(p) = registry.get(provider_id) {
                 if p.is_available().await {
-                    if let Ok(installed) = p
-                        .list_installed(crate::provider::InstalledFilter::default())
-                        .await
-                    {
-                        if installed.iter().any(|i| i.name.eq_ignore_ascii_case(name)) {
-                            return true;
-                        }
+                    if let Ok(Some(_)) = p.get_installed_version(name).await {
+                        return true;
                     }
                 }
             }
@@ -790,26 +785,20 @@ impl BatchManager {
         for provider_id in provider_ids {
             if let Some(p) = registry.get(&provider_id) {
                 if p.is_available().await {
-                    if let Ok(installed) = p
-                        .list_installed(crate::provider::InstalledFilter::default())
-                        .await
-                    {
-                        if let Some(pkg) = installed.iter().find(|i| i.name.eq_ignore_ascii_case(name))
-                        {
-                            // Get latest version
-                            if let Ok(versions) = p.get_versions(name).await {
-                                if let Some(latest) = versions.first() {
-                                    if latest.version != pkg.version {
-                                        return Ok(Some((
-                                            pkg.version.clone(),
-                                            latest.version.clone(),
-                                            provider_id.to_string(),
-                                        )));
-                                    }
+                    if let Ok(Some(current_version)) = p.get_installed_version(name).await {
+                        // Get latest version
+                        if let Ok(versions) = p.get_versions(name).await {
+                            if let Some(latest) = versions.first() {
+                                if latest.version != current_version {
+                                    return Ok(Some((
+                                        current_version,
+                                        latest.version.clone(),
+                                        provider_id.to_string(),
+                                    )));
                                 }
                             }
-                            return Ok(None);
                         }
+                        return Ok(None);
                     }
                 }
             }

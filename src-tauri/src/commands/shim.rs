@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 pub type SharedSettings = Arc<RwLock<Settings>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ShimInfo {
     pub binary_name: String,
     pub env_type: String,
@@ -19,6 +20,7 @@ pub struct ShimInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PathStatus {
     pub shim_dir: String,
     pub is_in_path: bool,

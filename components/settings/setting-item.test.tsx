@@ -9,6 +9,8 @@ const mockT = (key: string, params?: Record<string, string | number>) => {
     "validation.min": `Minimum value is ${params?.min ?? ""}`,
     "validation.max": `Maximum value is ${params?.max ?? ""}`,
     "validation.invalidFormat": "Invalid format",
+    "validation.mustBeValidUrl": "Must be a valid URL",
+    "validation.mustBeValidUrlOrEmpty": "Must be a valid URL or empty",
   };
   return translations[key] || key;
 };

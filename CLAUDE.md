@@ -243,6 +243,7 @@ cn("base-classes", condition && "conditional", className)
 | Cache | `app/cache/page.tsx` | Cache management interface |
 | Settings | `app/settings/page.tsx` | Application settings |
 | Downloads | `app/downloads/page.tsx` | **NEW** Download management |
+| WSL | `app/wsl/page.tsx` | **NEW** WSL distribution management |
 | Logs | `app/logs/page.tsx` | **NEW** Log viewer |
 | About | `app/about/page.tsx` | System info and updates |
 

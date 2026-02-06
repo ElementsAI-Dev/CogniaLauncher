@@ -5,7 +5,7 @@ use crate::config::Settings;
 use crate::download::{
     DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadTask,
 };
-use crate::platform::disk::{self, DiskSpace};
+use crate::platform::disk::{self, format_size, DiskSpace};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -960,31 +960,350 @@ pub async fn disk_space_check(path: String, required: u64) -> Result<bool, Strin
         .map_err(|e| e.to_string())
 }
 
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::download::DownloadTask;
 
     #[test]
     fn test_format_size() {
         assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
         assert_eq!(format_size(1024), "1.00 KB");
         assert_eq!(format_size(1024 * 1024), "1.00 MB");
         assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+
+    #[test]
+    fn test_download_task_info_from() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert_eq!(info.id, task.id);
+        assert_eq!(info.url, "https://example.com/file.zip");
+        assert_eq!(info.name, "Test File");
+        assert_eq!(info.state, "queued");
+        assert!(info.error.is_none());
+        assert!(info.provider.is_none());
+        assert!(!info.created_at.is_empty());
+        assert!(info.started_at.is_none());
+        assert!(info.completed_at.is_none());
+    }
+
+    #[test]
+    fn test_download_task_info_from_with_progress() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+        task.mark_started();
+        task.update_progress(500, Some(1000), 100.0);
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert_eq!(info.state, "downloading");
+        assert_eq!(info.progress.downloaded_bytes, 500);
+        assert_eq!(info.progress.total_bytes, Some(1000));
+        assert_eq!(info.progress.percent, 50.0);
+        assert!(info.started_at.is_some());
+    }
+
+    #[test]
+    fn test_download_task_info_from_failed() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+        task.mark_failed(crate::download::DownloadError::Network {
+            message: "Connection reset".to_string(),
+        });
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert_eq!(info.state, "failed");
+        assert!(info.error.is_some());
+    }
+
+    #[test]
+    fn test_download_task_info_from_completed() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+        task.mark_started();
+        task.mark_completed();
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert_eq!(info.state, "completed");
+        assert!(info.started_at.is_some());
+        assert!(info.completed_at.is_some());
+    }
+
+    #[test]
+    fn test_download_task_info_from_with_provider() {
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        )
+        .with_provider("github:user/repo".to_string())
+        .build();
+
+        let info = DownloadTaskInfo::from(&task);
+        assert_eq!(info.provider, Some("github:user/repo".to_string()));
+    }
+
+    #[test]
+    fn test_verify_result_valid() {
+        let result = VerifyResult {
+            valid: true,
+            actual_checksum: Some("abc123".to_string()),
+            expected_checksum: "abc123".to_string(),
+            error: None,
+        };
+
+        assert!(result.valid);
+        assert_eq!(result.actual_checksum, Some("abc123".to_string()));
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_verify_result_invalid() {
+        let result = VerifyResult {
+            valid: false,
+            actual_checksum: Some("def456".to_string()),
+            expected_checksum: "abc123".to_string(),
+            error: None,
+        };
+
+        assert!(!result.valid);
+        assert_ne!(result.actual_checksum.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn test_verify_result_error() {
+        let result = VerifyResult {
+            valid: false,
+            actual_checksum: None,
+            expected_checksum: "abc123".to_string(),
+            error: Some("File not found".to_string()),
+        };
+
+        assert!(!result.valid);
+        assert!(result.actual_checksum.is_none());
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_history_record_info_from() {
+        let record = DownloadRecord {
+            id: "rec-1".to_string(),
+            url: "https://example.com/file.zip".to_string(),
+            filename: "file.zip".to_string(),
+            destination: PathBuf::from("/tmp/file.zip"),
+            size: 1024 * 1024,
+            checksum: Some("abc123".to_string()),
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            duration_secs: 10,
+            average_speed: 102400.0,
+            status: DownloadStatus::Completed,
+            error: None,
+            provider: Some("github".to_string()),
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let info = HistoryRecordInfo::from(&record);
+
+        assert_eq!(info.id, "rec-1");
+        assert_eq!(info.url, "https://example.com/file.zip");
+        assert_eq!(info.filename, "file.zip");
+        assert_eq!(info.size, 1024 * 1024);
+        assert_eq!(info.checksum, Some("abc123".to_string()));
+        assert_eq!(info.duration_secs, 10);
+        assert_eq!(info.status, "completed");
+        assert!(info.error.is_none());
+        assert_eq!(info.provider, Some("github".to_string()));
+        assert!(!info.size_human.is_empty());
+        assert!(!info.speed_human.is_empty());
+        assert!(!info.duration_human.is_empty());
+    }
+
+    #[test]
+    fn test_history_record_info_from_failed() {
+        let record = DownloadRecord {
+            id: "rec-2".to_string(),
+            url: "https://example.com/file.zip".to_string(),
+            filename: "file.zip".to_string(),
+            destination: PathBuf::from("/tmp/file.zip"),
+            size: 0,
+            checksum: None,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            duration_secs: 5,
+            average_speed: 0.0,
+            status: DownloadStatus::Failed,
+            error: Some("Network error".to_string()),
+            provider: None,
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let info = HistoryRecordInfo::from(&record);
+
+        assert_eq!(info.status, "failed");
+        assert_eq!(info.error, Some("Network error".to_string()));
+    }
+
+    #[test]
+    fn test_history_record_info_from_cancelled() {
+        let record = DownloadRecord {
+            id: "rec-3".to_string(),
+            url: "https://example.com/file.zip".to_string(),
+            filename: "file.zip".to_string(),
+            destination: PathBuf::from("/tmp/file.zip"),
+            size: 500,
+            checksum: None,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            duration_secs: 2,
+            average_speed: 250.0,
+            status: DownloadStatus::Cancelled,
+            error: None,
+            provider: None,
+            metadata: std::collections::HashMap::new(),
+        };
+
+        let info = HistoryRecordInfo::from(&record);
+        assert_eq!(info.status, "cancelled");
+    }
+
+    #[test]
+    fn test_history_stats_info_from() {
+        let stats = HistoryStats {
+            total_count: 100,
+            completed_count: 80,
+            failed_count: 15,
+            cancelled_count: 5,
+            total_bytes: 1024 * 1024 * 500,
+            average_speed: 1024.0 * 100.0,
+        };
+
+        let info = HistoryStatsInfo::from(stats);
+
+        assert_eq!(info.total_count, 100);
+        assert_eq!(info.completed_count, 80);
+        assert_eq!(info.failed_count, 15);
+        assert_eq!(info.cancelled_count, 5);
+        assert_eq!(info.total_bytes, 1024 * 1024 * 500);
+        assert!(!info.total_bytes_human.is_empty());
+        assert!(!info.average_speed_human.is_empty());
+        assert_eq!(info.success_rate, 80.0);
+    }
+
+    #[test]
+    fn test_history_stats_info_from_empty() {
+        let stats = HistoryStats {
+            total_count: 0,
+            completed_count: 0,
+            failed_count: 0,
+            cancelled_count: 0,
+            total_bytes: 0,
+            average_speed: 0.0,
+        };
+
+        let info = HistoryStatsInfo::from(stats);
+
+        assert_eq!(info.total_count, 0);
+        assert_eq!(info.success_rate, 0.0);
+    }
+
+    #[test]
+    fn test_download_request_deserialization() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File",
+            "checksum": "abc123",
+            "priority": 5,
+            "provider": "github"
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.url, "https://example.com/file.zip");
+        assert_eq!(request.destination, "/tmp/file.zip");
+        assert_eq!(request.name, "Test File");
+        assert_eq!(request.checksum, Some("abc123".to_string()));
+        assert_eq!(request.priority, Some(5));
+        assert_eq!(request.provider, Some("github".to_string()));
+    }
+
+    #[test]
+    fn test_download_request_minimal() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File"
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.url, "https://example.com/file.zip");
+        assert!(request.checksum.is_none());
+        assert!(request.priority.is_none());
+        assert!(request.provider.is_none());
+    }
+
+    #[test]
+    fn test_download_task_info_serialization() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+
+        let info = DownloadTaskInfo::from(&task);
+        let json = serde_json::to_string(&info).unwrap();
+        let deserialized: DownloadTaskInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id, info.id);
+        assert_eq!(deserialized.url, info.url);
+        assert_eq!(deserialized.name, info.name);
+        assert_eq!(deserialized.state, info.state);
+    }
+
+    #[test]
+    fn test_queue_stats_info_serialization() {
+        let info = QueueStatsInfo {
+            total_tasks: 5,
+            queued: 2,
+            downloading: 1,
+            paused: 1,
+            completed: 1,
+            failed: 0,
+            cancelled: 0,
+            total_bytes: 10000,
+            downloaded_bytes: 5000,
+            total_human: "10 KB".to_string(),
+            downloaded_human: "5 KB".to_string(),
+            overall_progress: 50.0,
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let deserialized: QueueStatsInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.total_tasks, 5);
+        assert_eq!(deserialized.overall_progress, 50.0);
     }
 }

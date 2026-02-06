@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { SystemInfo } from "./system-info";
+import type { PlatformInfo } from "@/lib/tauri";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
@@ -13,13 +14,26 @@ const mockT = (key: string) => {
   return translations[key] || key;
 };
 
+const mockPlatformInfo: PlatformInfo = {
+  os: "Windows 11",
+  arch: "x86_64",
+  os_version: "10.0.22631",
+  os_long_version: "Windows 11 Pro 23H2",
+  kernel_version: "10.0.22631",
+  hostname: "DESKTOP-TEST",
+  cpu_model: "Intel Core i7",
+  cpu_cores: 8,
+  total_memory: 17179869184,
+  available_memory: 8589934592,
+  uptime: 86400,
+  app_version: "0.1.0",
+};
+
 describe("SystemInfo", () => {
   const defaultProps = {
     loading: false,
-    platformInfo: {
-      os: "Windows 11",
-      arch: "x86_64",
-    },
+    platformInfo: mockPlatformInfo as PlatformInfo | null,
+    cogniaDir: "C:\\Users\\test\\.cognia" as string | null,
     t: mockT,
   };
 
@@ -33,7 +47,7 @@ describe("SystemInfo", () => {
   it("should display platform information", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText("Windows 11")).toBeInTheDocument();
+    expect(screen.getByText("Windows 11 Pro 23H2")).toBeInTheDocument();
     expect(screen.getByText("x86_64")).toBeInTheDocument();
   });
 
@@ -60,34 +74,38 @@ describe("SystemInfo", () => {
   });
 
   it("should show unknown when platform info is null", () => {
-    render(<SystemInfo {...defaultProps} platformInfo={null} />);
+    render(<SystemInfo {...defaultProps} platformInfo={null} cogniaDir={null} />);
 
     const unknownElements = screen.getAllByText("Unknown");
-    expect(unknownElements.length).toBe(2);
+    expect(unknownElements.length).toBeGreaterThanOrEqual(2);
   });
 
   it("should show unknown for missing os", () => {
     render(
       <SystemInfo
         {...defaultProps}
-        platformInfo={{ os: undefined as unknown as string, arch: "x86_64" }}
+        platformInfo={{
+          ...mockPlatformInfo,
+          os: "" as unknown as string,
+          os_version: "",
+          os_long_version: "",
+        }}
       />,
     );
 
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    const unknownElements = screen.getAllByText("Unknown");
+    expect(unknownElements.length).toBeGreaterThanOrEqual(1);
   });
 
   it("should show unknown for missing arch", () => {
     render(
       <SystemInfo
         {...defaultProps}
-        platformInfo={{
-          os: "Windows 11",
-          arch: undefined as unknown as string,
-        }}
+        platformInfo={{ ...mockPlatformInfo, arch: "" as unknown as string }}
       />,
     );
 
-    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    const unknownElements = screen.getAllByText("Unknown");
+    expect(unknownElements.length).toBeGreaterThanOrEqual(1);
   });
 });

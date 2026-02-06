@@ -9,12 +9,15 @@ jest.mock('next-themes', () => ({
 
 // Mock appearance store
 const mockSetAccentColor = jest.fn();
+const mockSetChartColorTheme = jest.fn();
 const mockSetReducedMotion = jest.fn();
 jest.mock('@/lib/stores/appearance', () => ({
   useAppearanceStore: jest.fn(() => ({
     accentColor: 'blue',
+    chartColorTheme: 'default',
     reducedMotion: false,
     setAccentColor: mockSetAccentColor,
+    setChartColorTheme: mockSetChartColorTheme,
     setReducedMotion: mockSetReducedMotion,
   })),
 }));
@@ -42,6 +45,7 @@ jest.mock('@/lib/theme', () => ({
   parseAppearanceConfig: (config: Record<string, string>) => ({
     theme: config['appearance.theme'] || config.theme,
     accentColor: config['appearance.accent_color'] || config.accentColor,
+    chartColorTheme: config['appearance.chart_color_theme'] || config.chartColorTheme,
     reducedMotion: config.reducedMotion === 'true',
     locale: config['appearance.language'],
     invalidKeys: [],
@@ -81,16 +85,25 @@ describe('useAppearanceConfigSync', () => {
     expect(mockSetReducedMotion).toHaveBeenCalledWith(true);
   });
 
+  it('should sync chart color theme from config', () => {
+    const config = { chartColorTheme: 'ocean' };
+    renderHook(() => useAppearanceConfigSync(config));
+
+    expect(mockSetChartColorTheme).toHaveBeenCalledWith('ocean');
+  });
+
   it('should sync all appearance settings from config', () => {
     const config = {
       theme: 'dark',
       accentColor: 'green',
+      chartColorTheme: 'vibrant',
       reducedMotion: 'true',
     };
     renderHook(() => useAppearanceConfigSync(config));
 
     expect(mockSetTheme).toHaveBeenCalledWith('dark');
     expect(mockSetAccentColor).toHaveBeenCalledWith('green');
+    expect(mockSetChartColorTheme).toHaveBeenCalledWith('vibrant');
     expect(mockSetReducedMotion).toHaveBeenCalledWith(true);
   });
 

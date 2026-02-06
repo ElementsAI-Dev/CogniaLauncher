@@ -55,3 +55,11 @@ export function isThemeMode(value?: string): value is ThemeMode {
 export function isAccentColor(value?: string): value is AccentColor {
   return typeof value === 'string' && (ACCENT_COLORS as readonly string[]).includes(value);
 }
+
+export type ChartColorTheme = 'default' | 'vibrant' | 'pastel' | 'ocean' | 'sunset' | 'monochrome';
+
+export const CHART_COLOR_THEMES: ChartColorTheme[] = ['default', 'vibrant', 'pastel', 'ocean', 'sunset', 'monochrome'];
+
+export function isChartColorTheme(value?: string): value is ChartColorTheme {
+  return typeof value === 'string' && (CHART_COLOR_THEMES as readonly string[]).includes(value);
+}

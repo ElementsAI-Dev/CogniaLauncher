@@ -1,6 +1,7 @@
 //! Download task definition
 
 use super::state::{DownloadError, DownloadState};
+use crate::platform::disk::{format_size, format_duration};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -274,35 +275,6 @@ impl DownloadTaskBuilder {
     }
 }
 
-fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-fn format_duration(secs: u64) -> String {
-    if secs >= 3600 {
-        let hours = secs / 3600;
-        let mins = (secs % 3600) / 60;
-        format!("{}h {}m", hours, mins)
-    } else if secs >= 60 {
-        let mins = secs / 60;
-        let secs = secs % 60;
-        format!("{}m {}s", mins, secs)
-    } else {
-        format!("{}s", secs)
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -418,5 +390,193 @@ mod tests {
         assert_eq!(format_duration(30), "30s");
         assert_eq!(format_duration(90), "1m 30s");
         assert_eq!(format_duration(3661), "1h 1m");
+    }
+
+    #[test]
+    fn test_download_task_filename() {
+        let task = DownloadTask::new(
+            "https://example.com/path/to/file.zip".to_string(),
+            PathBuf::from("/tmp/downloads/file.zip"),
+            "My Download".to_string(),
+        );
+
+        assert_eq!(task.filename(), "file.zip");
+    }
+
+    #[test]
+    fn test_download_task_mark_failed() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+
+        task.mark_started();
+        task.mark_failed(DownloadError::Network {
+            message: "Network error".to_string(),
+        });
+
+        match &task.state {
+            DownloadState::Failed { error, recoverable } => {
+                assert!(error.contains("Network error"));
+                assert!(*recoverable);
+            }
+            _ => panic!("Expected Failed state"),
+        }
+        assert!(task.error.is_some());
+    }
+
+    #[test]
+    fn test_download_task_mark_cancelled() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+
+        task.mark_cancelled();
+        assert_eq!(task.state, DownloadState::Cancelled);
+        assert!(task.state.is_terminal());
+    }
+
+    #[test]
+    fn test_download_task_update_progress() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+
+        task.mark_started();
+        task.update_progress(500, Some(1000), 100.0);
+
+        assert_eq!(task.progress.downloaded_bytes, 500);
+        assert_eq!(task.progress.total_bytes, Some(1000));
+        assert_eq!(task.progress.percent, 50.0);
+        assert_eq!(task.progress.speed, 100.0);
+    }
+
+    #[test]
+    fn test_download_task_builder_with_config() {
+        let config = DownloadConfig {
+            max_retries: 10,
+            timeout_secs: 120,
+            verify_checksum: false,
+            speed_limit: 1024 * 1024,
+            allow_resume: false,
+        };
+
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        )
+        .with_config(config.clone())
+        .build();
+
+        assert_eq!(task.config.max_retries, 10);
+        assert_eq!(task.config.timeout_secs, 120);
+        assert!(!task.config.verify_checksum);
+        assert_eq!(task.config.speed_limit, 1024 * 1024);
+        assert!(!task.config.allow_resume);
+    }
+
+    #[test]
+    fn test_download_progress_completed() {
+        let progress = DownloadProgress::new(1000, Some(1000), 500.0);
+        assert_eq!(progress.percent, 100.0);
+        assert_eq!(progress.eta_secs, Some(0));
+    }
+
+    #[test]
+    fn test_download_progress_zero_total() {
+        let progress = DownloadProgress::new(0, Some(0), 0.0);
+        // 0/0 should not panic; percent depends on implementation
+        assert!(progress.percent.is_finite());
+    }
+
+    #[test]
+    fn test_download_config_default() {
+        let config = DownloadConfig::default();
+        assert_eq!(config.max_retries, 3);
+        assert!(config.verify_checksum);
+        assert!(config.timeout_secs > 0);
+        assert!(config.allow_resume);
+    }
+
+    #[test]
+    fn test_download_task_retry_count() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        );
+        task.config.max_retries = 2;
+
+        assert_eq!(task.retries, 0);
+        assert!(task.can_retry());
+
+        task.increment_retry();
+        assert_eq!(task.retries, 1);
+        assert!(task.can_retry());
+
+        task.increment_retry();
+        assert_eq!(task.retries, 2);
+        assert!(!task.can_retry());
+    }
+
+    #[test]
+    fn test_download_task_builder_with_metadata() {
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_metadata("key1".to_string(), "val1".to_string())
+        .with_metadata("key2".to_string(), "val2".to_string())
+        .build();
+
+        assert_eq!(task.metadata.len(), 2);
+        assert_eq!(task.metadata.get("key1"), Some(&"val1".to_string()));
+        assert_eq!(task.metadata.get("key2"), Some(&"val2".to_string()));
+    }
+
+    #[test]
+    fn test_format_size() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(512), "512 B");
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1024 * 512), "512.00 KB");
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+    }
+
+    #[test]
+    fn test_format_duration_edge_cases() {
+        assert_eq!(format_duration(0), "0s");
+        assert_eq!(format_duration(59), "59s");
+        assert_eq!(format_duration(60), "1m 0s");
+        assert_eq!(format_duration(3600), "1h 0m");
+        assert_eq!(format_duration(7200), "2h 0m");
+        assert_eq!(format_duration(86400), "24h 0m");
+    }
+
+    #[test]
+    fn test_download_progress_eta_human() {
+        let progress = DownloadProgress::new(500, Some(1000), 100.0);
+        let eta = progress.eta_human();
+        assert!(eta.is_some());
+        assert_eq!(eta.unwrap(), "5s");
+    }
+
+    #[test]
+    fn test_download_task_supports_resume_default() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        // Default should be false until server confirms
+        assert!(!task.supports_resume);
     }
 }

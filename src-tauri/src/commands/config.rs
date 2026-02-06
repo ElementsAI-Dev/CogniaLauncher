@@ -60,6 +60,7 @@ pub async fn config_list(
         "security.allow_self_signed",
         "appearance.theme",
         "appearance.accent_color",
+        "appearance.chart_color_theme",
         "appearance.language",
         "appearance.reduced_motion",
         "paths.root",
@@ -114,11 +115,45 @@ pub fn get_cognia_dir() -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_platform_info() -> Result<PlatformInfo, String> {
+    use sysinfo::System;
+
+    let os_name = crate::platform::env::current_platform()
+        .as_str()
+        .to_string();
+    let arch = crate::platform::env::current_arch().as_str().to_string();
+
+    let os_version = System::os_version().unwrap_or_default();
+    let os_long_version = System::long_os_version().unwrap_or_default();
+    let kernel_version = System::kernel_version().unwrap_or_default();
+    let hostname = System::host_name().unwrap_or_default();
+
+    let mut sys = System::new();
+    sys.refresh_cpu_all();
+    sys.refresh_memory();
+
+    let cpu_model = sys
+        .cpus()
+        .first()
+        .map(|cpu| cpu.brand().to_string())
+        .unwrap_or_default();
+    let cpu_cores = sys.cpus().len() as u32;
+    let total_memory = sys.total_memory();
+    let available_memory = sys.available_memory();
+    let uptime = System::uptime();
+
     Ok(PlatformInfo {
-        os: crate::platform::env::current_platform()
-            .as_str()
-            .to_string(),
-        arch: crate::platform::env::current_arch().as_str().to_string(),
+        os: os_name,
+        arch,
+        os_version,
+        os_long_version,
+        kernel_version,
+        hostname,
+        cpu_model,
+        cpu_cores,
+        total_memory,
+        available_memory,
+        uptime,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
     })
 }
 
@@ -126,6 +161,16 @@ pub fn get_platform_info() -> Result<PlatformInfo, String> {
 pub struct PlatformInfo {
     pub os: String,
     pub arch: String,
+    pub os_version: String,
+    pub os_long_version: String,
+    pub kernel_version: String,
+    pub hostname: String,
+    pub cpu_model: String,
+    pub cpu_cores: u32,
+    pub total_memory: u64,
+    pub available_memory: u64,
+    pub uptime: u64,
+    pub app_version: String,
 }
 
 #[derive(serde::Serialize)]

@@ -1,11 +1,14 @@
 import { render, screen, act } from "@testing-library/react";
 import { LocaleProvider, useLocale } from "./locale-provider";
 
-// Mock the i18n module
+// Mock the i18n module with stateful locale tracking
+let mockCurrentLocale = "en";
 jest.mock("@/lib/i18n", () => ({
   defaultLocale: "en",
-  getLocaleFromCookie: jest.fn(() => "en"),
-  setLocaleCookie: jest.fn(),
+  getLocaleFromCookie: jest.fn(() => mockCurrentLocale),
+  setLocaleCookie: jest.fn((locale: string) => {
+    mockCurrentLocale = locale;
+  }),
 }));
 
 // Test messages with error translations
@@ -100,6 +103,10 @@ function TestConsumer() {
 }
 
 describe("LocaleProvider", () => {
+  beforeEach(() => {
+    mockCurrentLocale = "en";
+  });
+
   describe("basic functionality", () => {
     it("provides default locale", () => {
       render(

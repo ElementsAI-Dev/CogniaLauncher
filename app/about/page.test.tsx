@@ -15,7 +15,20 @@ jest.mock("@/lib/tauri", () => ({
     release_notes: null,
   }),
   selfUpdate: jest.fn().mockResolvedValue(undefined),
-  getPlatformInfo: jest.fn().mockResolvedValue({ os: "Windows", arch: "x64" }),
+  getPlatformInfo: jest.fn().mockResolvedValue({
+    os: "windows",
+    arch: "x86_64",
+    os_version: "10.0.22631",
+    os_long_version: "Windows 11 23H2",
+    kernel_version: "10.0.22631",
+    hostname: "TEST-PC",
+    cpu_model: "Intel Core i7-12700K",
+    cpu_cores: 12,
+    total_memory: 34359738368,
+    available_memory: 17179869184,
+    uptime: 86400,
+    app_version: "0.1.0",
+  }),
   getCogniaDir: jest.fn().mockResolvedValue("C:\\Users\\Test\\.cognia"),
 }));
 
@@ -55,13 +68,25 @@ const mockMessages = {
       systemInfo: "System Information",
       operatingSystem: "Operating System",
       architecture: "Architecture",
+      kernelVersion: "Kernel Version",
+      hostname: "Hostname",
+      cpu: "CPU",
+      cpuCores: "CPU Cores",
+      cores: "cores",
+      memory: "Memory",
+      totalMemory: "Total Memory",
+      uptime: "Uptime",
+      appVersion: "App Version",
+      deviceInfo: "Device",
+      hardwareInfo: "Hardware",
+      runtimeInfo: "Runtime",
       homeDirectory: "Home Directory",
       locale: "Locale",
       copySystemInfo: "Copy system information",
       copiedToClipboard: "Copied to clipboard",
       copyFailed: "Failed to copy",
       systemInfoFailed: "Failed to load system info",
-      systemInfoRetry: "Retry system info",
+      systemInfoRetry: "Refresh",
       buildDependencies: "Build Dependencies",
       openInNewTab: "Opens in new tab",
       licenseCertificates: "License & Certificates",
@@ -175,7 +200,7 @@ describe("About Page", () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("Windows")).toBeInTheDocument();
+        expect(screen.getByText("Windows 11 23H2")).toBeInTheDocument();
       });
     });
 
@@ -183,7 +208,23 @@ describe("About Page", () => {
       renderWithProviders(<AboutPage />);
 
       await waitFor(() => {
-        expect(screen.getByText("x64")).toBeInTheDocument();
+        expect(screen.getByText("x86_64")).toBeInTheDocument();
+      });
+    });
+
+    it("displays hostname", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("TEST-PC")).toBeInTheDocument();
+      });
+    });
+
+    it("displays CPU info", async () => {
+      renderWithProviders(<AboutPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Intel Core i7-12700K")).toBeInTheDocument();
       });
     });
   });

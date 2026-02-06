@@ -28,6 +28,8 @@ const defaultProps = {
   setLocale: jest.fn(),
   accentColor: "blue" as const,
   setAccentColor: jest.fn(),
+  chartColorTheme: "default" as const,
+  setChartColorTheme: jest.fn(),
   reducedMotion: false,
   setReducedMotion: jest.fn(),
   t: (key: string) => {
@@ -40,6 +42,7 @@ const defaultProps = {
       "settings.themeSystem": "System",
       "settings.language": "Language",
       "settings.accentColor": "Accent Color",
+      "settings.chartColorTheme": "Chart Color Theme",
       "settings.reducedMotion": "Reduced Motion",
     };
     return translations[key] || key;
@@ -65,6 +68,11 @@ describe("AppearanceSettings", () => {
   it("renders accent color picker", () => {
     render(<AppearanceSettings {...defaultProps} />);
     expect(screen.getByText("Accent Color")).toBeInTheDocument();
+  });
+
+  it("renders chart color theme selection", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+    expect(screen.getByText("Chart Color Theme")).toBeInTheDocument();
   });
 
   it("renders reduced motion toggle", () => {

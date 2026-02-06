@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 // Re-export all types from types/tauri.ts
 export type {
   EnvInstallProgressEvent,
+  EnvVerifyResult,
   EnvironmentInfo,
   InstalledVersion,
   DetectedEnvironment,
@@ -42,6 +43,9 @@ export type {
   BatchItemError,
   BatchItemSkipped,
   UpdateInfo,
+  UpdateCheckProgress,
+  UpdateCheckError,
+  UpdateCheckSummary,
   SelfUpdateInfo,
   SelfUpdateProgressEvent,
   InstallHistoryEntry,
@@ -102,11 +106,22 @@ export type {
   ProfileEnvironmentError,
   ProfileEnvironmentSkipped,
   PathValidationResult,
+  WslDistroStatus,
+  WslStatus,
+  WslImportOptions,
+  LaunchRequest,
+  LaunchResult,
+  ActivationScript,
+  EnvInfoResult,
+  ShimInfo,
+  PathStatusInfo,
 } from '@/types/tauri';
 
 import type {
   EnvInstallProgressEvent,
+  EnvVerifyResult,
   EnvironmentInfo,
+  InstalledVersion,
   DetectedEnvironment,
   EnvironmentProviderInfo,
   EnvironmentSettingsConfig,
@@ -133,7 +148,8 @@ import type {
   BatchProgress,
   BatchResult,
   BatchInstallOptions,
-  UpdateInfo,
+  UpdateCheckProgress,
+  UpdateCheckSummary,
   SelfUpdateInfo,
   SelfUpdateProgressEvent,
   InstallHistoryEntry,
@@ -174,6 +190,15 @@ import type {
   ProfileEnvironment,
   ProfileApplyResult,
   PathValidationResult,
+  WslDistroStatus,
+  WslStatus,
+  WslImportOptions,
+  LaunchRequest,
+  LaunchResult,
+  ActivationScript,
+  EnvInfoResult,
+  ShimInfo,
+  PathStatusInfo,
 } from '@/types/tauri';
 
 // Check if running in Tauri environment
@@ -259,6 +284,16 @@ export const envDetectSystem = (envType: string) =>
 export const envGetTypeMapping = () => 
   invoke<EnvironmentTypeMapping>('env_get_type_mapping');
 
+// Environment verification and query commands
+export const envVerifyInstall = (envType: string, version: string) =>
+  invoke<EnvVerifyResult>('env_verify_install', { envType, version });
+
+export const envInstalledVersions = (envType: string) =>
+  invoke<InstalledVersion[]>('env_installed_versions', { envType });
+
+export const envCurrentVersion = (envType: string) =>
+  invoke<string | null>('env_current_version', { envType });
+
 // Package commands
 export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
 export const packageInfo = (name: string, provider?: string) => invoke<PackageInfo>('package_info', { name, provider });
@@ -266,6 +301,8 @@ export const packageInstall = (packages: string[]) => invoke<string[]>('package_
 export const packageUninstall = (packages: string[]) => invoke<void>('package_uninstall', { packages });
 export const packageList = (provider?: string) => invoke<InstalledPackage[]>('package_list', { provider });
 export const providerList = () => invoke<ProviderInfo[]>('provider_list');
+export const packageCheckInstalled = (name: string) => invoke<boolean>('package_check_installed', { name });
+export const packageVersions = (name: string, provider?: string) => invoke<VersionInfo[]>('package_versions', { name, provider });
 
 // App initialization status
 export interface AppInitStatus {
@@ -327,6 +364,7 @@ export interface ExternalCacheInfo {
   sizeHuman: string;
   isAvailable: boolean;
   canClean: boolean;
+  category: string;
 }
 
 export interface ExternalCacheCleanResult {
@@ -510,7 +548,16 @@ export const batchUpdate = (packages?: string[]) =>
   invoke<BatchResult>('batch_update', { packages });
 
 // Update checking commands
-export const checkUpdates = (packages?: string[]) => invoke<UpdateInfo[]>('check_updates', { packages });
+export const checkUpdates = (packages?: string[]) => invoke<UpdateCheckSummary>('check_updates', { packages });
+
+// Listen for update check progress events
+export async function listenUpdateCheckProgress(
+  callback: (progress: UpdateCheckProgress) => void
+): Promise<UnlistenFn> {
+  return listen<UpdateCheckProgress>('update-check-progress', (event) => {
+    callback(event.payload);
+  });
+}
 
 // Package pinning
 export const packagePin = (name: string, version?: string) => 
@@ -571,6 +618,7 @@ export const logQuery = (options: LogQueryOptions) => invoke<LogQueryResult>('lo
 export const logClear = (fileName?: string) => invoke<void>('log_clear', { fileName });
 export const logGetDir = () => invoke<string>('log_get_dir');
 export const logExport = (options: LogExportOptions) => invoke<LogExportResult>('log_export', { options });
+export const logGetTotalSize = () => invoke<number>('log_get_total_size');
 
 // Command output streaming event
 export async function listenCommandOutput(
@@ -1072,3 +1120,159 @@ export const gitlabDownloadSource = (
 /** Validate a filesystem path (existence, permissions, traversal, cross-platform) */
 export const validatePath = (path: string, expectDirectory: boolean = true) =>
   invoke<PathValidationResult>('validate_path', { path, expectDirectory });
+
+// ============================================================================
+// WSL Commands
+// ============================================================================
+
+/** Check if WSL is available on this system */
+export const wslIsAvailable = () =>
+  invoke<boolean>('wsl_is_available');
+
+/** List all installed WSL distributions with state and version */
+export const wslListDistros = () =>
+  invoke<WslDistroStatus[]>('wsl_list_distros');
+
+/** List available WSL distributions from the online store */
+export const wslListOnline = () =>
+  invoke<[string, string][]>('wsl_list_online');
+
+/** Get WSL system status (version, kernel, running distros) */
+export const wslGetStatus = () =>
+  invoke<WslStatus>('wsl_status');
+
+/** Terminate a specific running WSL distribution */
+export const wslTerminate = (name: string) =>
+  invoke<void>('wsl_terminate', { name });
+
+/** Shutdown all running WSL instances */
+export const wslShutdown = () =>
+  invoke<void>('wsl_shutdown');
+
+/** Set the default WSL distribution */
+export const wslSetDefault = (name: string) =>
+  invoke<void>('wsl_set_default', { name });
+
+/** Set WSL version (1 or 2) for a specific distribution */
+export const wslSetVersion = (name: string, version: number) =>
+  invoke<void>('wsl_set_version', { name, version });
+
+/** Set the default WSL version for new installations */
+export const wslSetDefaultVersion = (version: number) =>
+  invoke<void>('wsl_set_default_version', { version });
+
+/** Export a WSL distribution to a tar/vhdx file */
+export const wslExport = (name: string, filePath: string, asVhd?: boolean) =>
+  invoke<void>('wsl_export', { name, filePath, asVhd });
+
+/** Import a WSL distribution from a tar/vhdx file */
+export const wslImport = (options: WslImportOptions) =>
+  invoke<void>('wsl_import', { options });
+
+/** Update the WSL kernel to the latest version */
+export const wslUpdate = () =>
+  invoke<string>('wsl_update');
+
+/** Launch/start a WSL distribution */
+export const wslLaunch = (name: string, user?: string) =>
+  invoke<void>('wsl_launch', { name, user });
+
+/** List currently running WSL distributions */
+export const wslListRunning = () =>
+  invoke<string[]>('wsl_list_running');
+
+// ============================================================================
+// Launch Commands
+// ============================================================================
+
+/** Launch a program with a specific environment version */
+export const launchWithEnv = (request: LaunchRequest) =>
+  invoke<LaunchResult>('launch_with_env', { request });
+
+/** Launch a program with streaming output via events */
+export const launchWithStreaming = (request: LaunchRequest) =>
+  invoke<LaunchResult>('launch_with_streaming', { request });
+
+/** Get shell activation script for a specific environment */
+export const envActivate = (
+  envType: string,
+  version?: string,
+  projectPath?: string,
+  shell?: string
+) =>
+  invoke<ActivationScript>('env_activate', { envType, version, projectPath, shell });
+
+/** Get environment info for display */
+export const envGetInfo = (envType: string, version: string) =>
+  invoke<EnvInfoResult>('env_get_info', { envType, version });
+
+/** Execute a shell command with a specific environment */
+export const execShellWithEnv = (
+  command: string,
+  envType?: string,
+  envVersion?: string,
+  cwd?: string
+) =>
+  invoke<LaunchResult>('exec_shell_with_env', { command, envType, envVersion, cwd });
+
+/** Check which version of a program would be used */
+export const whichProgram = (
+  program: string,
+  envType?: string,
+  envVersion?: string,
+  cwd?: string
+) =>
+  invoke<string | null>('which_program', { program, envType, envVersion, cwd });
+
+// ============================================================================
+// Shim Commands
+// ============================================================================
+
+/** Create a new shim for a binary */
+export const shimCreate = (
+  binaryName: string,
+  envType: string,
+  version: string | null,
+  targetPath: string
+) =>
+  invoke<string>('shim_create', { binaryName, envType, version, targetPath });
+
+/** Remove a shim */
+export const shimRemove = (binaryName: string) =>
+  invoke<boolean>('shim_remove', { binaryName });
+
+/** List all shims */
+export const shimList = () =>
+  invoke<ShimInfo[]>('shim_list');
+
+/** Update a shim to point to a new version */
+export const shimUpdate = (binaryName: string, version?: string) =>
+  invoke<void>('shim_update', { binaryName, version });
+
+/** Regenerate all shims */
+export const shimRegenerateAll = () =>
+  invoke<void>('shim_regenerate_all');
+
+// ============================================================================
+// PATH Management Commands
+// ============================================================================
+
+/** Get PATH status and shim directory info */
+export const pathStatus = () =>
+  invoke<PathStatusInfo>('path_status');
+
+/** Add shim directory to PATH */
+export const pathSetup = () =>
+  invoke<void>('path_setup');
+
+/** Remove shim directory from PATH */
+export const pathRemove = () =>
+  invoke<void>('path_remove');
+
+/** Check if shim directory is in PATH */
+export const pathCheck = () =>
+  invoke<boolean>('path_check');
+
+/** Get the command to manually add shim directory to PATH */
+export const pathGetAddCommand = () =>
+  invoke<string>('path_get_add_command');

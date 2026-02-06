@@ -176,6 +176,21 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+/// Format duration in seconds as human-readable string
+pub fn format_duration(secs: u64) -> String {
+    if secs >= 3600 {
+        let hours = secs / 3600;
+        let mins = (secs % 3600) / 60;
+        format!("{}h {}m", hours, mins)
+    } else if secs >= 60 {
+        let mins = secs / 60;
+        let secs = secs % 60;
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    }
+}
+
 /// Parse a human-readable size string to bytes
 pub fn parse_size(s: &str) -> Option<u64> {
     let s = s.trim().to_uppercase();

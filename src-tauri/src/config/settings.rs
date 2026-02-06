@@ -22,6 +22,7 @@ pub struct Settings {
 pub struct AppearanceSettings {
     pub theme: String,
     pub accent_color: String,
+    pub chart_color_theme: String,
     pub language: String,
     pub reduced_motion: bool,
 }
@@ -31,6 +32,7 @@ impl Default for AppearanceSettings {
         Self {
             theme: "system".into(),
             accent_color: "blue".into(),
+            chart_color_theme: "default".into(),
             language: "en".into(),
             reduced_motion: false,
         }
@@ -329,6 +331,7 @@ impl Settings {
             ),
             ["appearance", "theme"] => Some(self.appearance.theme.clone()),
             ["appearance", "accent_color"] => Some(self.appearance.accent_color.clone()),
+            ["appearance", "chart_color_theme"] => Some(self.appearance.chart_color_theme.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
             ["mirrors", provider] => {
@@ -369,6 +372,11 @@ impl Settings {
                 self.general.auto_update_metadata = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["general", "metadata_cache_ttl"] => {
+                self.general.metadata_cache_ttl = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for metadata_cache_ttl".into()))?;
             }
             ["general", "cache_max_size"] => {
                 self.general.cache_max_size = value
@@ -489,6 +497,12 @@ impl Settings {
                     return Err(CogniaError::Config("Invalid accent color value".into()));
                 }
                 self.appearance.accent_color = value.to_string();
+            }
+            ["appearance", "chart_color_theme"] => {
+                if !["default", "vibrant", "pastel", "ocean", "sunset", "monochrome"].contains(&value) {
+                    return Err(CogniaError::Config("Invalid chart color theme value".into()));
+                }
+                self.appearance.chart_color_theme = value.to_string();
             }
             ["appearance", "language"] => {
                 if !["en", "zh"].contains(&value) {

@@ -62,7 +62,7 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
       <Card className={className}>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-medium">
-            {t("dashboard.widgets.activityTimeline")}
+            {t("dashboard.widgets.distributionOverview")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -78,10 +78,10 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
     <Card className={className}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-medium">
-          {t("dashboard.widgets.activityTimeline")}
+          {t("dashboard.widgets.distributionOverview")}
         </CardTitle>
         <CardDescription>
-          {t("dashboard.widgets.activityTimelineDesc")}
+          {t("dashboard.widgets.distributionOverviewDesc")}
         </CardDescription>
       </CardHeader>
       <CardContent>

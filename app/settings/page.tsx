@@ -44,6 +44,7 @@ import { SettingsNav } from '@/components/settings/settings-nav';
 import { CollapsibleSection } from '@/components/settings/collapsible-section';
 import { PageHeader } from '@/components/layout/page-header';
 import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
+import { useOnboardingStore } from '@/lib/stores/onboarding';
 import { toast } from 'sonner';
 import { type SettingsSection } from '@/lib/constants/settings-registry';
 
@@ -68,10 +69,10 @@ const SECTION_IDS: SettingsSection[] = [
 
 export default function SettingsPage() {
   const { config, loading, error, fetchConfig, updateConfigValue, resetConfig, platformInfo, fetchPlatformInfo } = useSettings();
-  const { appSettings, setAppSettings } = useSettingsStore();
+  const { appSettings, setAppSettings, cogniaDir } = useSettingsStore();
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, reducedMotion, setReducedMotion } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [originalConfig, setOriginalConfig] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
@@ -335,6 +336,17 @@ export default function SettingsPage() {
       }
     }
   }, [setAccentColor, updateConfigValue]);
+
+  const handleChartColorThemeChange = useCallback(async (theme: string) => {
+    setChartColorTheme(theme as import('@/lib/theme/types').ChartColorTheme);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.chart_color_theme', theme);
+      } catch (err) {
+        console.error('Failed to sync chart color theme to backend:', err);
+      }
+    }
+  }, [setChartColorTheme, updateConfigValue]);
 
   const handleReducedMotionChange = useCallback(async (reduced: boolean) => {
     setReducedMotion(reduced);
@@ -658,6 +670,8 @@ export default function SettingsPage() {
                 setLocale={handleLocaleChange}
                 accentColor={accentColor}
                 setAccentColor={handleAccentColorChange}
+                chartColorTheme={chartColorTheme}
+                setChartColorTheme={handleChartColorThemeChange}
                 reducedMotion={reducedMotion}
                 setReducedMotion={handleReducedMotionChange}
                 t={t}
@@ -749,12 +763,59 @@ export default function SettingsPage() {
               <SystemInfo
                 loading={loading}
                 platformInfo={platformInfo}
+                cogniaDir={cogniaDir}
                 t={t}
               />
             </CollapsibleSection>
+
+            {/* Onboarding Controls */}
+            <OnboardingSettingsCard t={t} />
           </div>
         </div>
       )}
     </main>
+  );
+}
+
+function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
+  const { completed, skipped, tourCompleted, resetOnboarding, startTour } = useOnboardingStore();
+  const hasBeenThrough = completed || skipped;
+
+  return (
+    <div className="rounded-lg border bg-card p-6 space-y-4">
+      <div className="space-y-1">
+        <h3 className="text-lg font-semibold">{t('settings.onboardingTitle')}</h3>
+        <p className="text-sm text-muted-foreground">{t('settings.onboardingDesc')}</p>
+      </div>
+      <div className="flex flex-col sm:flex-row gap-3">
+        <Button
+          variant="outline"
+          onClick={() => {
+            resetOnboarding();
+            toast.success(t('settings.onboardingResetSuccess'));
+          }}
+        >
+          <RotateCcw className="h-4 w-4 mr-2" />
+          {t('settings.onboardingRerun')}
+        </Button>
+        {!tourCompleted && hasBeenThrough && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              startTour();
+              toast.info(t('settings.onboardingTourStarted'));
+            }}
+          >
+            {t('settings.onboardingStartTour')}
+          </Button>
+        )}
+      </div>
+      {hasBeenThrough && (
+        <p className="text-xs text-muted-foreground">
+          {completed ? t('settings.onboardingStatusCompleted') : t('settings.onboardingStatusSkipped')}
+          {tourCompleted ? ` · ${t('settings.onboardingTourDone')}` : ''}
+        </p>
+      )}
+    </div>
   );
 }

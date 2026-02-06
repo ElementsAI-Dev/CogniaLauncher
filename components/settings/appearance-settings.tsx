@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Palette } from "lucide-react";
 import { AccentColorPicker } from "./accent-color-picker";
-import type { AccentColor } from "@/lib/theme/types";
+import type { AccentColor, ChartColorTheme } from "@/lib/theme/types";
 
 interface AppearanceSettingsProps {
   theme: string | undefined;
@@ -28,6 +28,8 @@ interface AppearanceSettingsProps {
   setLocale: (locale: "en" | "zh") => void;
   accentColor: AccentColor;
   setAccentColor: (color: AccentColor) => void;
+  chartColorTheme: ChartColorTheme;
+  setChartColorTheme: (theme: string) => void;
   reducedMotion: boolean;
   setReducedMotion: (reduced: boolean) => void;
   t: (key: string) => string;
@@ -40,6 +42,8 @@ export function AppearanceSettings({
   setLocale,
   accentColor,
   setAccentColor,
+  chartColorTheme,
+  setChartColorTheme,
   reducedMotion,
   setReducedMotion,
   t,
@@ -116,6 +120,52 @@ export function AppearanceSettings({
             aria-labelledby="accent-color-label"
             aria-describedby="accent-color-desc"
           />
+        </div>
+        <Separator />
+        <div className="flex items-center justify-between py-2">
+          <div className="space-y-0.5">
+            <Label htmlFor="chart-color-theme">
+              {t("settings.chartColorTheme")}
+            </Label>
+            <p
+              id="chart-color-theme-desc"
+              className="text-sm text-muted-foreground"
+            >
+              {t("settings.chartColorThemeDesc")}
+            </p>
+          </div>
+          <Select
+            value={chartColorTheme}
+            onValueChange={setChartColorTheme}
+          >
+            <SelectTrigger
+              id="chart-color-theme"
+              className="w-40"
+              aria-describedby="chart-color-theme-desc"
+            >
+              <SelectValue placeholder={t("settings.chartColorTheme")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">
+                {t("settings.chartThemeDefault")}
+              </SelectItem>
+              <SelectItem value="vibrant">
+                {t("settings.chartThemeVibrant")}
+              </SelectItem>
+              <SelectItem value="pastel">
+                {t("settings.chartThemePastel")}
+              </SelectItem>
+              <SelectItem value="ocean">
+                {t("settings.chartThemeOcean")}
+              </SelectItem>
+              <SelectItem value="sunset">
+                {t("settings.chartThemeSunset")}
+              </SelectItem>
+              <SelectItem value="monochrome">
+                {t("settings.chartThemeMonochrome")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <Separator />
         <div className="flex items-center justify-between py-2">

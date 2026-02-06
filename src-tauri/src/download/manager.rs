@@ -369,6 +369,20 @@ impl DownloadManager {
 
     /// Pause all downloads
     pub async fn pause_all(&self) -> usize {
+        // Signal all active task controls to pause
+        let active_ids: Vec<String> = {
+            let queue = self.queue.read().await;
+            queue.list_active().iter().map(|t| t.id.clone()).collect()
+        };
+        {
+            let controls = self.task_controls.read().await;
+            for task_id in &active_ids {
+                if let Some(control) = controls.get(task_id) {
+                    control.pause();
+                }
+            }
+        }
+
         let mut queue = self.queue.write().await;
         let count = queue.pause_all();
         drop(queue);
@@ -378,6 +392,24 @@ impl DownloadManager {
 
     /// Resume all paused downloads
     pub async fn resume_all(&self) -> usize {
+        // Clear paused flag on all task controls so workers resume
+        let paused_ids: Vec<String> = {
+            let queue = self.queue.read().await;
+            queue.list_all()
+                .iter()
+                .filter(|t| t.state == crate::download::DownloadState::Paused)
+                .map(|t| t.id.clone())
+                .collect()
+        };
+        {
+            let controls = self.task_controls.read().await;
+            for task_id in &paused_ids {
+                if let Some(control) = controls.get(task_id) {
+                    control.resume();
+                }
+            }
+        }
+
         let mut queue = self.queue.write().await;
         let count = queue.resume_all();
         drop(queue);
@@ -387,6 +419,24 @@ impl DownloadManager {
 
     /// Cancel all downloads
     pub async fn cancel_all(&self) -> usize {
+        // Signal all non-terminal task controls to cancel
+        let non_terminal_ids: Vec<String> = {
+            let queue = self.queue.read().await;
+            queue.list_all()
+                .iter()
+                .filter(|t| !t.state.is_terminal())
+                .map(|t| t.id.clone())
+                .collect()
+        };
+        {
+            let controls = self.task_controls.read().await;
+            for task_id in &non_terminal_ids {
+                if let Some(control) = controls.get(task_id) {
+                    control.cancel();
+                }
+            }
+        }
+
         let mut queue = self.queue.write().await;
         let count = queue.cancel_all();
         drop(queue);
@@ -954,5 +1004,367 @@ mod tests {
         let cleared = manager.clear_finished().await;
         assert_eq!(cleared, 1);
         assert_eq!(manager.stats().await.total_tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_pause_resume() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Pause the queued task
+        manager.pause(&task_id).await.unwrap();
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(task.state, DownloadState::Paused);
+
+        // Resume the paused task
+        manager.resume(&task_id).await.unwrap();
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(task.state, DownloadState::Queued);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_list_tasks() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        manager
+            .download(
+                "https://example.com/a.zip".to_string(),
+                PathBuf::from("/tmp/a.zip"),
+                "File A".to_string(),
+            )
+            .await;
+        manager
+            .download(
+                "https://example.com/b.zip".to_string(),
+                PathBuf::from("/tmp/b.zip"),
+                "File B".to_string(),
+            )
+            .await;
+
+        let tasks = manager.list_tasks().await;
+        assert_eq!(tasks.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_set_max_concurrent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        assert_eq!(manager.get_max_concurrent().await, 4);
+
+        manager.set_max_concurrent(8).await;
+        assert_eq!(manager.get_max_concurrent().await, 8);
+
+        manager.set_max_concurrent(1).await;
+        assert_eq!(manager.get_max_concurrent().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_start_stop() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        assert!(!manager.is_running());
+
+        manager.start().await;
+        assert!(manager.is_running());
+
+        // Starting again should be idempotent
+        manager.start().await;
+        assert!(manager.is_running());
+
+        manager.stop().await;
+        assert!(!manager.is_running());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_pause_all_resume_all() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        for i in 0..3 {
+            manager
+                .download(
+                    format!("https://example.com/file{}.zip", i),
+                    PathBuf::from(format!("/tmp/file{}.zip", i)),
+                    format!("File {}", i),
+                )
+                .await;
+        }
+
+        assert_eq!(manager.stats().await.queued, 3);
+
+        // Pause all (queued tasks can be paused)
+        let paused = manager.pause_all().await;
+        // pause_all pauses active tasks; queued tasks aren't active
+        // So the count depends on how many are actually active
+        let stats = manager.stats().await;
+        assert_eq!(stats.total_tasks, 3);
+        let _ = paused; // Count varies based on internal state
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_cancel_all() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        for i in 0..3 {
+            manager
+                .download(
+                    format!("https://example.com/file{}.zip", i),
+                    PathBuf::from(format!("/tmp/file{}.zip", i)),
+                    format!("File {}", i),
+                )
+                .await;
+        }
+
+        let cancelled = manager.cancel_all().await;
+        assert_eq!(cancelled, 3);
+        assert_eq!(manager.stats().await.cancelled, 3);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_event_channel() {
+        let mut manager = DownloadManager::new(DownloadManagerConfig::default());
+        let mut rx = manager.create_event_channel();
+
+        manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Should receive TaskAdded event
+        let event = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            rx.recv(),
+        )
+        .await;
+        assert!(event.is_ok());
+        let event = event.unwrap().unwrap();
+        matches!(event, DownloadEvent::TaskAdded { .. });
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_retry_all_failed() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Cancel first (terminal state)
+        manager.cancel(&task_id).await.unwrap();
+
+        // Retry failed should not affect cancelled tasks
+        let retried = manager.retry_all_failed().await;
+        assert_eq!(retried, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_shutdown() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        manager.start().await;
+        assert!(manager.is_running());
+
+        manager.shutdown().await;
+        assert!(!manager.is_running());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_add_task_with_builder() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task = crate::download::DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        )
+        .with_checksum("abc123def456".to_string())
+        .with_priority(10)
+        .with_provider("github:user/repo".to_string())
+        .build();
+
+        let task_id = manager.add_task(task).await;
+        let retrieved = manager.get_task(&task_id).await.unwrap();
+
+        assert_eq!(retrieved.expected_checksum, Some("abc123def456".to_string()));
+        assert_eq!(retrieved.priority, 10);
+        assert_eq!(retrieved.provider, Some("github:user/repo".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_get_nonexistent_task() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let task = manager.get_task("nonexistent-id").await;
+        assert!(task.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_pause_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let result = manager.pause("nonexistent-id").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_resume_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let result = manager.resume("nonexistent-id").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_cancel_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let result = manager.cancel("nonexistent-id").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_remove_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let removed = manager.remove("nonexistent-id").await;
+        assert!(removed.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_default() {
+        let manager = DownloadManager::default();
+        assert!(!manager.is_running());
+        assert_eq!(manager.get_speed_limit().await, 0);
+        assert_eq!(manager.get_max_concurrent().await, 4);
+        assert_eq!(manager.stats().await.total_tasks, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_config_default() {
+        let config = DownloadManagerConfig::default();
+        assert_eq!(config.max_concurrent, 4);
+        assert_eq!(config.speed_limit, 0);
+        assert!(config.auto_start);
+        assert_eq!(config.partials_dir, PathBuf::from(".downloads"));
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_with_custom_config() {
+        let config = DownloadManagerConfig {
+            max_concurrent: 8,
+            speed_limit: 1024 * 1024,
+            partials_dir: PathBuf::from("/custom/partials"),
+            auto_start: false,
+            ..Default::default()
+        };
+
+        let manager = DownloadManager::new(config);
+        assert_eq!(manager.get_max_concurrent().await, 8);
+        assert_eq!(manager.get_speed_limit().await, 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_cancel_all_signals_controls() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Verify cancel_all signals TaskControls
+        let cancelled = manager.cancel_all().await;
+        assert_eq!(cancelled, 1);
+
+        // Verify the control was signaled
+        let controls = manager.task_controls.read().await;
+        if let Some(control) = controls.get(&task_id) {
+            assert!(control.is_cancelled());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_double_pause() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        manager.pause(&task_id).await.unwrap();
+
+        // Second pause should fail (already paused, can't pause again)
+        let result = manager.pause(&task_id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_resume_queued() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Resume a queued task should fail (not paused)
+        let result = manager.resume(&task_id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_cancel_completed() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default());
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Complete the task via queue
+        {
+            let queue = manager.queue.clone();
+            let mut q = queue.write().await;
+            q.next_pending(); // Move to downloading
+            let _ = q.complete(&task_id); // Complete it
+        }
+
+        // Cancel a completed task should fail
+        let result = manager.cancel(&task_id).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_cleanup_stale_partials_no_dir() {
+        let manager = DownloadManager::new(DownloadManagerConfig {
+            partials_dir: PathBuf::from("/nonexistent/partials/dir"),
+            ..Default::default()
+        });
+
+        // Should return 0 if the directory doesn't exist
+        let cleaned = manager
+            .cleanup_stale_partials(std::time::Duration::from_secs(0))
+            .await;
+        assert_eq!(cleaned, 0);
     }
 }

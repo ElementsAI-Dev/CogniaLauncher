@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
-use tokio::time::{interval, Duration};
+use tokio::time::Duration;
 use tray::{SharedTrayState, TrayState};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
@@ -58,6 +58,15 @@ pub fn run() {
                         Target::new(TargetKind::Webview),
                         Target::new(TargetKind::LogDir { file_name: None }),
                     ])
+                    .format(|out, message, record| {
+                        out.finish(format_args!(
+                            "[{}][{}][{}] {}",
+                            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                            record.level(),
+                            record.target(),
+                            message
+                        ))
+                    })
                     .rotation_strategy(RotationStrategy::KeepSome(5))
                     .max_file_size(10_000_000) // 10MB per log file
                     .level(log_level)
@@ -175,6 +184,9 @@ pub fn run() {
             commands::environment::env_detect_system_all,
             commands::environment::env_detect_system,
             commands::environment::env_get_type_mapping,
+            commands::environment::env_verify_install,
+            commands::environment::env_installed_versions,
+            commands::environment::env_current_version,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -299,6 +311,7 @@ pub fn run() {
             commands::log::log_clear,
             commands::log::log_get_dir,
             commands::log::log_export,
+            commands::log::log_get_total_size,
             // Manifest commands
             commands::manifest::manifest_read,
             commands::manifest::manifest_init,
@@ -386,13 +399,38 @@ pub fn run() {
             commands::custom_detection::custom_rule_import,
             commands::custom_detection::custom_rule_list_by_env,
             commands::custom_detection::custom_rule_extraction_types,
+            // WSL commands
+            commands::wsl::wsl_list_distros,
+            commands::wsl::wsl_list_online,
+            commands::wsl::wsl_status,
+            commands::wsl::wsl_terminate,
+            commands::wsl::wsl_shutdown,
+            commands::wsl::wsl_set_default,
+            commands::wsl::wsl_set_version,
+            commands::wsl::wsl_set_default_version,
+            commands::wsl::wsl_export,
+            commands::wsl::wsl_import,
+            commands::wsl::wsl_update,
+            commands::wsl::wsl_launch,
+            commands::wsl::wsl_list_running,
+            commands::wsl::wsl_is_available,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                        | tauri_plugin_window_state::StateFlags::VISIBLE
+                        | tauri_plugin_window_state::StateFlags::FULLSCREEN,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -404,11 +442,25 @@ pub fn run() {
 
 /// Background task for automatic cache cleanup
 async fn cache_cleanup_task(settings: SharedSettings) {
-    const CLEANUP_INTERVAL_HOURS: u64 = 1;
-    let mut cleanup_interval = interval(Duration::from_secs(CLEANUP_INTERVAL_HOURS * 3600));
+    // Default fallback interval: 1 hour
+    const DEFAULT_INTERVAL_SECS: u64 = 3600;
+    // Minimum interval to prevent tight loops: 60 seconds
+    const MIN_INTERVAL_SECS: u64 = 60;
 
     loop {
-        cleanup_interval.tick().await;
+        // Read the interval from settings each cycle so changes take effect immediately
+        let sleep_secs = {
+            let s = settings.read().await;
+            let configured = s.general.cache_monitor_interval;
+            if configured >= MIN_INTERVAL_SECS {
+                configured
+            } else if configured == 0 {
+                DEFAULT_INTERVAL_SECS
+            } else {
+                MIN_INTERVAL_SECS
+            }
+        };
+        tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
 
         let s = settings.read().await;
         if !s.general.auto_clean_cache {

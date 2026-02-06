@@ -30,10 +30,34 @@ pub enum ExternalCacheProvider {
     Deno,
     Bun,
     Gradle,
+    // Extended providers
+    Maven,
+    Gem,
+    Rustup,
     #[cfg(windows)]
     Scoop,
     #[cfg(windows)]
     Chocolatey,
+    // System caches
+    #[cfg(windows)]
+    WindowsTemp,
+    #[cfg(windows)]
+    WindowsThumbnail,
+    #[cfg(target_os = "macos")]
+    MacOsCache,
+    #[cfg(target_os = "macos")]
+    MacOsLogs,
+    #[cfg(target_os = "linux")]
+    LinuxCache,
+    // Developer tool caches
+    Docker,
+    Flutter,
+    #[cfg(target_os = "macos")]
+    CocoaPods,
+    Cypress,
+    Electron,
+    Vcpkg,
+    Sbt,
 }
 
 impl ExternalCacheProvider {
@@ -58,10 +82,33 @@ impl ExternalCacheProvider {
             Self::Deno,
             Self::Bun,
             Self::Gradle,
+            Self::Maven,
+            Self::Gem,
+            Self::Rustup,
             #[cfg(windows)]
             Self::Scoop,
             #[cfg(windows)]
             Self::Chocolatey,
+            // System caches
+            #[cfg(windows)]
+            Self::WindowsTemp,
+            #[cfg(windows)]
+            Self::WindowsThumbnail,
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache,
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs,
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache,
+            // Developer tool caches
+            Self::Docker,
+            Self::Flutter,
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods,
+            Self::Cypress,
+            Self::Electron,
+            Self::Vcpkg,
+            Self::Sbt,
         ]
     }
 
@@ -85,10 +132,33 @@ impl ExternalCacheProvider {
             Self::Deno => "deno",
             Self::Bun => "bun",
             Self::Gradle => "gradle",
+            Self::Maven => "maven",
+            Self::Gem => "gem",
+            Self::Rustup => "rustup",
             #[cfg(windows)]
             Self::Scoop => "scoop",
             #[cfg(windows)]
             Self::Chocolatey => "chocolatey",
+            // System caches
+            #[cfg(windows)]
+            Self::WindowsTemp => "windows_temp",
+            #[cfg(windows)]
+            Self::WindowsThumbnail => "windows_thumbnail",
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache => "macos_cache",
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs => "macos_logs",
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => "linux_cache",
+            // Developer tool caches
+            Self::Docker => "docker",
+            Self::Flutter => "flutter",
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => "cocoapods",
+            Self::Cypress => "cypress",
+            Self::Electron => "electron",
+            Self::Vcpkg => "vcpkg",
+            Self::Sbt => "sbt",
         }
     }
 
@@ -112,10 +182,33 @@ impl ExternalCacheProvider {
             Self::Deno => "Deno",
             Self::Bun => "Bun",
             Self::Gradle => "Gradle (Java)",
+            Self::Maven => "Maven (Java)",
+            Self::Gem => "RubyGems",
+            Self::Rustup => "Rustup (Rust)",
             #[cfg(windows)]
             Self::Scoop => "Scoop (Windows)",
             #[cfg(windows)]
             Self::Chocolatey => "Chocolatey (Windows)",
+            // System caches
+            #[cfg(windows)]
+            Self::WindowsTemp => "Windows Temp Files",
+            #[cfg(windows)]
+            Self::WindowsThumbnail => "Windows Thumbnails",
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache => "macOS User Cache",
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs => "macOS User Logs",
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => "Linux User Cache",
+            // Developer tool caches
+            Self::Docker => "Docker Build Cache",
+            Self::Flutter => "Flutter/Dart Pub",
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => "CocoaPods",
+            Self::Cypress => "Cypress",
+            Self::Electron => "Electron",
+            Self::Vcpkg => "vcpkg (C++)",
+            Self::Sbt => "sbt/Ivy (Scala)",
         }
     }
 
@@ -139,10 +232,33 @@ impl ExternalCacheProvider {
             Self::Deno => "deno",
             Self::Bun => "bun",
             Self::Gradle => "gradle",
+            Self::Maven => "mvn",
+            Self::Gem => "gem",
+            Self::Rustup => "rustup",
             #[cfg(windows)]
             Self::Scoop => "scoop",
             #[cfg(windows)]
             Self::Chocolatey => "choco",
+            // System caches - use always-available OS commands
+            #[cfg(windows)]
+            Self::WindowsTemp => "cmd",
+            #[cfg(windows)]
+            Self::WindowsThumbnail => "cmd",
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache => "sw_vers",
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs => "sw_vers",
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => "uname",
+            // Developer tool caches
+            Self::Docker => "docker",
+            Self::Flutter => "flutter",
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => "pod",
+            Self::Cypress => "cypress",
+            Self::Electron => "electron",
+            Self::Vcpkg => "vcpkg",
+            Self::Sbt => "sbt",
         }
     }
 
@@ -166,10 +282,33 @@ impl ExternalCacheProvider {
             Self::Deno => get_deno_cache_path(),
             Self::Bun => get_bun_cache_path(),
             Self::Gradle => get_gradle_cache_path(),
+            Self::Maven => get_maven_cache_path(),
+            Self::Gem => get_gem_cache_path(),
+            Self::Rustup => get_rustup_cache_path(),
             #[cfg(windows)]
             Self::Scoop => get_scoop_cache_path(),
             #[cfg(windows)]
             Self::Chocolatey => get_chocolatey_cache_path(),
+            // System caches
+            #[cfg(windows)]
+            Self::WindowsTemp => get_windows_temp_path(),
+            #[cfg(windows)]
+            Self::WindowsThumbnail => get_windows_thumbnail_path(),
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache => get_macos_cache_path(),
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs => get_macos_logs_path(),
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => get_linux_cache_path(),
+            // Developer tool caches
+            Self::Docker => get_docker_cache_path(),
+            Self::Flutter => get_flutter_cache_path(),
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => get_cocoapods_cache_path(),
+            Self::Cypress => get_cypress_cache_path(),
+            Self::Electron => get_electron_cache_path(),
+            Self::Vcpkg => get_vcpkg_cache_path(),
+            Self::Sbt => get_sbt_cache_path(),
         }
     }
 
@@ -188,15 +327,38 @@ impl ExternalCacheProvider {
             Self::Brew => Some(("brew", &["cleanup", "--prune=all"])),
             Self::Dotnet => Some(("dotnet", &["nuget", "locals", "all", "--clear"])),
             Self::Composer => Some(("composer", &["clear-cache"])),
-            Self::Poetry => Some(("poetry", &["cache", "clear", "--all", ".", "-n"])),
+            Self::Poetry => None, // Direct delete; poetry cache clear requires specifying cache names
             Self::Conda => Some(("conda", &["clean", "--all", "-y"])),
             Self::Deno => Some(("deno", &["clean"])),
             Self::Bun => None, // Direct delete
             Self::Gradle => None, // Direct delete (daemon should be stopped first)
+            Self::Maven => None, // Direct delete of .m2/repository
+            Self::Gem => None, // Direct delete of gem cache dir
+            Self::Rustup => None, // Direct delete of downloads dir
             #[cfg(windows)]
             Self::Scoop => Some(("scoop", &["cache", "rm", "*"])),
             #[cfg(windows)]
-            Self::Chocolatey => Some(("choco", &["cache", "remove", "-y"])),
+            Self::Chocolatey => None, // Direct delete; choco cache command unavailable in many versions
+            // System caches - all use direct content cleaning
+            #[cfg(windows)]
+            Self::WindowsTemp => None,
+            #[cfg(windows)]
+            Self::WindowsThumbnail => None,
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache => None,
+            #[cfg(target_os = "macos")]
+            Self::MacOsLogs => None,
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => None,
+            // Developer tool caches
+            Self::Docker => Some(("docker", &["builder", "prune", "-f"])),
+            Self::Flutter => None, // Direct delete of pub-cache
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => Some(("pod", &["cache", "clean", "--all"])),
+            Self::Cypress => None, // Direct delete
+            Self::Electron => None, // Direct delete
+            Self::Vcpkg => None, // Direct delete of binary cache
+            Self::Sbt => None, // Direct delete of ivy cache
         }
     }
 
@@ -220,11 +382,67 @@ impl ExternalCacheProvider {
             "deno" => Some(Self::Deno),
             "bun" => Some(Self::Bun),
             "gradle" => Some(Self::Gradle),
+            "maven" | "mvn" => Some(Self::Maven),
+            "gem" | "rubygems" => Some(Self::Gem),
+            "rustup" => Some(Self::Rustup),
             #[cfg(windows)]
             "scoop" => Some(Self::Scoop),
             #[cfg(windows)]
             "chocolatey" | "choco" => Some(Self::Chocolatey),
+            // System caches
+            #[cfg(windows)]
+            "windows_temp" | "temp" => Some(Self::WindowsTemp),
+            #[cfg(windows)]
+            "windows_thumbnail" | "thumbnail" | "thumbcache" => Some(Self::WindowsThumbnail),
+            #[cfg(target_os = "macos")]
+            "macos_cache" | "macos_user_cache" => Some(Self::MacOsCache),
+            #[cfg(target_os = "macos")]
+            "macos_logs" | "macos_user_logs" => Some(Self::MacOsLogs),
+            #[cfg(target_os = "linux")]
+            "linux_cache" | "linux_user_cache" => Some(Self::LinuxCache),
+            // Developer tool caches
+            "docker" => Some(Self::Docker),
+            "flutter" | "dart" | "pub" => Some(Self::Flutter),
+            #[cfg(target_os = "macos")]
+            "cocoapods" | "pod" | "pods" => Some(Self::CocoaPods),
+            "cypress" => Some(Self::Cypress),
+            "electron" => Some(Self::Electron),
+            "vcpkg" => Some(Self::Vcpkg),
+            "sbt" | "ivy" | "ivy2" => Some(Self::Sbt),
             _ => None,
+        }
+    }
+
+    /// Get the provider category for UI grouping
+    pub fn category(&self) -> &'static str {
+        match self {
+            // System caches
+            #[cfg(windows)]
+            Self::WindowsTemp | Self::WindowsThumbnail => "system",
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache | Self::MacOsLogs => "system",
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => "system",
+            // Developer tool caches
+            Self::Docker | Self::Flutter | Self::Cypress
+            | Self::Electron | Self::Vcpkg | Self::Sbt => "devtools",
+            #[cfg(target_os = "macos")]
+            Self::CocoaPods => "devtools",
+            // Package managers
+            _ => "package_manager",
+        }
+    }
+
+    /// Whether the cache directory should be preserved (only clean contents, not delete the dir)
+    pub fn should_preserve_dir(&self) -> bool {
+        match self {
+            #[cfg(windows)]
+            Self::WindowsTemp | Self::WindowsThumbnail => true,
+            #[cfg(target_os = "macos")]
+            Self::MacOsCache | Self::MacOsLogs => true,
+            #[cfg(target_os = "linux")]
+            Self::LinuxCache => true,
+            _ => false,
         }
     }
 }
@@ -240,6 +458,7 @@ pub struct ExternalCacheInfo {
     pub size_human: String,
     pub is_available: bool,
     pub can_clean: bool,
+    pub category: String,
 }
 
 /// Result of cleaning external cache
@@ -607,6 +826,211 @@ fn get_chocolatey_cache_path() -> Option<PathBuf> {
 }
 
 // ============================================================================
+// Extended provider cache path functions
+// ============================================================================
+
+fn get_maven_cache_path() -> Option<PathBuf> {
+    // Check MAVEN_REPO_LOCAL first (custom local repo)
+    if let Ok(repo) = std::env::var("MAVEN_REPO_LOCAL") {
+        return Some(PathBuf::from(repo));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(|p| PathBuf::from(p).join(".m2").join("repository"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".m2").join("repository"))
+    }
+}
+
+fn get_gem_cache_path() -> Option<PathBuf> {
+    // Check GEM_HOME first
+    if let Ok(gem_home) = std::env::var("GEM_HOME") {
+        return Some(PathBuf::from(gem_home).join("cache"));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(|p| PathBuf::from(p).join(".gem").join("cache"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".gem").join("cache"))
+    }
+}
+
+fn get_rustup_cache_path() -> Option<PathBuf> {
+    // Check RUSTUP_HOME first
+    if let Ok(rustup_home) = std::env::var("RUSTUP_HOME") {
+        return Some(PathBuf::from(rustup_home).join("downloads"));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(|p| PathBuf::from(p).join(".rustup").join("downloads"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".rustup").join("downloads"))
+    }
+}
+
+// ============================================================================
+// System cache path functions
+// ============================================================================
+
+#[cfg(windows)]
+fn get_windows_temp_path() -> Option<PathBuf> {
+    std::env::var("TEMP")
+        .ok()
+        .or_else(|| std::env::var("TMP").ok())
+        .map(PathBuf::from)
+}
+
+#[cfg(windows)]
+fn get_windows_thumbnail_path() -> Option<PathBuf> {
+    std::env::var("LOCALAPPDATA")
+        .ok()
+        .map(|p| PathBuf::from(p).join("Microsoft").join("Windows").join("Explorer"))
+}
+
+#[cfg(target_os = "macos")]
+fn get_macos_cache_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join("Library").join("Caches"))
+}
+
+#[cfg(target_os = "macos")]
+fn get_macos_logs_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join("Library").join("Logs"))
+}
+
+#[cfg(target_os = "linux")]
+fn get_linux_cache_path() -> Option<PathBuf> {
+    std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".cache")))
+}
+
+// ============================================================================
+// Developer tool cache path functions
+// ============================================================================
+
+fn get_docker_cache_path() -> Option<PathBuf> {
+    // Docker manages its own storage via the daemon; no single user-accessible cache directory.
+    // The clean_command (docker builder prune) handles cleanup.
+    // Return None so discovery relies on is_available instead of has_cache_dir.
+    None
+}
+
+fn get_flutter_cache_path() -> Option<PathBuf> {
+    // Check PUB_CACHE first
+    if let Ok(pub_cache) = std::env::var("PUB_CACHE") {
+        return Some(PathBuf::from(pub_cache));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("Pub").join("Cache"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".pub-cache"))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn get_cocoapods_cache_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join("Library").join("Caches").join("CocoaPods"))
+}
+
+fn get_cypress_cache_path() -> Option<PathBuf> {
+    // Check CYPRESS_CACHE_FOLDER first
+    if let Ok(cache) = std::env::var("CYPRESS_CACHE_FOLDER") {
+        return Some(PathBuf::from(cache));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("Cypress").join("Cache"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir().map(|h| h.join("Library").join("Caches").join("Cypress"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        dirs::home_dir().map(|h| h.join(".cache").join("Cypress"))
+    }
+}
+
+fn get_electron_cache_path() -> Option<PathBuf> {
+    // Check ELECTRON_CACHE first
+    if let Ok(cache) = std::env::var("ELECTRON_CACHE") {
+        return Some(PathBuf::from(cache));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("electron").join("Cache"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir().map(|h| h.join("Library").join("Caches").join("electron"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        dirs::home_dir().map(|h| h.join(".cache").join("electron"))
+    }
+}
+
+fn get_vcpkg_cache_path() -> Option<PathBuf> {
+    // Check VCPKG_DEFAULT_BINARY_CACHE first
+    if let Ok(cache) = std::env::var("VCPKG_DEFAULT_BINARY_CACHE") {
+        return Some(PathBuf::from(cache));
+    }
+
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("vcpkg").join("archives"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".cache").join("vcpkg").join("archives"))
+    }
+}
+
+fn get_sbt_cache_path() -> Option<PathBuf> {
+    // sbt uses ivy2 for dependency cache
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE")
+            .ok()
+            .map(|p| PathBuf::from(p).join(".ivy2").join("cache"))
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::home_dir().map(|h| h.join(".ivy2").join("cache"))
+    }
+}
+
+// ============================================================================
 // Core functions
 // ============================================================================
 
@@ -646,6 +1070,71 @@ fn calculate_dir_size_sync(path: &PathBuf) -> u64 {
     total_size
 }
 
+/// Direct delete a cache directory (with optional move-to-trash support)
+async fn direct_delete_cache(path: &PathBuf, use_trash: bool) -> Result<(), CogniaError> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if use_trash {
+        fs::remove_dir_with_option(path, true)
+            .await
+            .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))
+    } else {
+        fs::remove_dir_all(path)
+            .await
+            .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))
+    }
+}
+
+/// Clean the contents of a cache directory without deleting the directory itself.
+/// Used for system caches (e.g. %TEMP%, ~/Library/Caches, ~/.cache) where the
+/// parent directory must continue to exist.
+/// Silently skips entries that are locked or in-use.
+async fn clean_cache_contents(path: &PathBuf, use_trash: bool) -> Result<(), CogniaError> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let path = path.clone();
+    let entries: Vec<PathBuf> = tokio::task::spawn_blocking(move || {
+        let mut items = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(&path) {
+            for entry in read_dir.flatten() {
+                items.push(entry.path());
+            }
+        }
+        items
+    })
+    .await
+    .unwrap_or_default();
+
+    for entry_path in entries {
+        let is_dir = entry_path.is_dir();
+        let result = if is_dir {
+            if use_trash {
+                fs::remove_dir_with_option(&entry_path, true).await
+            } else {
+                fs::remove_dir_all(&entry_path).await
+            }
+        } else if use_trash {
+            fs::remove_file_with_option(&entry_path, true).await
+        } else {
+            fs::remove_file(&entry_path).await
+        };
+        // Silently skip entries that fail (e.g. locked files)
+        if let Err(_e) = result {
+            // In-use or permission error - skip
+        }
+    }
+
+    Ok(())
+}
+
+/// Public wrapper for clean_cache_contents, used by force-clean commands
+pub async fn clean_cache_contents_public(path: &PathBuf, use_trash: bool) -> CogniaResult<()> {
+    clean_cache_contents(path, use_trash).await
+}
+
 /// Discover all external caches on the system
 pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
     let mut caches = Vec::new();
@@ -665,8 +1154,12 @@ pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
             (String::new(), 0)
         };
 
-        // Only include if the cache path exists and has content, or if the tool is available
-        if is_available || size > 0 {
+        // Include if the tool is available or the cache directory exists on disk
+        let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        if is_available || has_cache_dir {
+            // Can clean if there's data to delete OR if the tool has a clean command
+            // (e.g. Docker where we can't measure size but can still clean)
+            let has_clean_command = is_available && provider.clean_command().is_some();
             caches.push(ExternalCacheInfo {
                 provider: provider.id().to_string(),
                 display_name: provider.display_name().to_string(),
@@ -674,7 +1167,8 @@ pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
                 size,
                 size_human: format_size(size),
                 is_available,
-                can_clean: is_available && size > 0,
+                can_clean: size > 0 || has_clean_command,
+                category: provider.category().to_string(),
             });
         }
     }
@@ -695,34 +1189,37 @@ pub async fn clean_cache(
     })?;
 
     let cache_path = provider.cache_path();
+    let preserve_dir = provider.should_preserve_dir();
     let size_before = if let Some(ref path) = cache_path {
         calculate_dir_size(path).await
     } else {
         0
     };
 
-    // Try to clean using the provider's command first
+    // Try to clean using the provider's command first, fall back to direct delete
     let result: Result<(), CogniaError> = if let Some((cmd, args)) = provider.clean_command() {
         match process::execute(cmd, args, None).await {
             Ok(output) if output.success => Ok(()),
-            Ok(output) => Err(CogniaError::Provider(output.stderr)),
-            Err(e) => Err(CogniaError::Internal(e.to_string())),
+            // Command failed or not found → fall back to directory clean
+            _ => {
+                if let Some(ref path) = cache_path {
+                    if preserve_dir {
+                        clean_cache_contents(path, use_trash).await
+                    } else {
+                        direct_delete_cache(path, use_trash).await
+                    }
+                } else {
+                    Ok(())
+                }
+            }
         }
     } else {
-        // Direct delete for providers without clean command (e.g., cargo)
+        // No clean command available - use direct delete or content cleaning
         if let Some(ref path) = cache_path {
-            if path.exists() {
-                if use_trash {
-                    fs::remove_dir_with_option(path, true)
-                        .await
-                        .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))
-                } else {
-                    fs::remove_dir_all(path)
-                        .await
-                        .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))
-                }
+            if preserve_dir {
+                clean_cache_contents(path, use_trash).await
             } else {
-                Ok(())
+                direct_delete_cache(path, use_trash).await
             }
         } else {
             Ok(())
@@ -808,6 +1305,9 @@ mod tests {
         assert_eq!(ExternalCacheProvider::Deno.id(), "deno");
         assert_eq!(ExternalCacheProvider::Bun.id(), "bun");
         assert_eq!(ExternalCacheProvider::Gradle.id(), "gradle");
+        assert_eq!(ExternalCacheProvider::Maven.id(), "maven");
+        assert_eq!(ExternalCacheProvider::Gem.id(), "gem");
+        assert_eq!(ExternalCacheProvider::Rustup.id(), "rustup");
     }
 
     #[cfg(windows)]
@@ -815,6 +1315,59 @@ mod tests {
     fn test_windows_provider_ids() {
         assert_eq!(ExternalCacheProvider::Scoop.id(), "scoop");
         assert_eq!(ExternalCacheProvider::Chocolatey.id(), "chocolatey");
+        assert_eq!(ExternalCacheProvider::WindowsTemp.id(), "windows_temp");
+        assert_eq!(ExternalCacheProvider::WindowsThumbnail.id(), "windows_thumbnail");
+    }
+
+    #[test]
+    fn test_devtools_provider_ids() {
+        assert_eq!(ExternalCacheProvider::Docker.id(), "docker");
+        assert_eq!(ExternalCacheProvider::Flutter.id(), "flutter");
+        assert_eq!(ExternalCacheProvider::Cypress.id(), "cypress");
+        assert_eq!(ExternalCacheProvider::Electron.id(), "electron");
+        assert_eq!(ExternalCacheProvider::Vcpkg.id(), "vcpkg");
+        assert_eq!(ExternalCacheProvider::Sbt.id(), "sbt");
+    }
+
+    #[test]
+    fn test_devtools_provider_from_str() {
+        assert_eq!(ExternalCacheProvider::from_str("docker"), Some(ExternalCacheProvider::Docker));
+        assert_eq!(ExternalCacheProvider::from_str("flutter"), Some(ExternalCacheProvider::Flutter));
+        assert_eq!(ExternalCacheProvider::from_str("dart"), Some(ExternalCacheProvider::Flutter));
+        assert_eq!(ExternalCacheProvider::from_str("cypress"), Some(ExternalCacheProvider::Cypress));
+        assert_eq!(ExternalCacheProvider::from_str("electron"), Some(ExternalCacheProvider::Electron));
+        assert_eq!(ExternalCacheProvider::from_str("vcpkg"), Some(ExternalCacheProvider::Vcpkg));
+        assert_eq!(ExternalCacheProvider::from_str("sbt"), Some(ExternalCacheProvider::Sbt));
+        assert_eq!(ExternalCacheProvider::from_str("ivy"), Some(ExternalCacheProvider::Sbt));
+    }
+
+    #[test]
+    fn test_provider_categories() {
+        assert_eq!(ExternalCacheProvider::Npm.category(), "package_manager");
+        assert_eq!(ExternalCacheProvider::Docker.category(), "devtools");
+        assert_eq!(ExternalCacheProvider::Flutter.category(), "devtools");
+        assert_eq!(ExternalCacheProvider::Cypress.category(), "devtools");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_system_cache_categories() {
+        assert_eq!(ExternalCacheProvider::WindowsTemp.category(), "system");
+        assert_eq!(ExternalCacheProvider::WindowsThumbnail.category(), "system");
+    }
+
+    #[test]
+    fn test_should_preserve_dir() {
+        // Package managers and devtools should NOT preserve dir
+        assert!(!ExternalCacheProvider::Npm.should_preserve_dir());
+        assert!(!ExternalCacheProvider::Docker.should_preserve_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_system_cache_preserve_dir() {
+        assert!(ExternalCacheProvider::WindowsTemp.should_preserve_dir());
+        assert!(ExternalCacheProvider::WindowsThumbnail.should_preserve_dir());
     }
 
     #[test]
@@ -828,6 +1381,30 @@ mod tests {
             Some(ExternalCacheProvider::Npm)
         );
         assert_eq!(ExternalCacheProvider::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn test_extended_provider_from_str() {
+        assert_eq!(
+            ExternalCacheProvider::from_str("maven"),
+            Some(ExternalCacheProvider::Maven)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("mvn"),
+            Some(ExternalCacheProvider::Maven)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("gem"),
+            Some(ExternalCacheProvider::Gem)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("rubygems"),
+            Some(ExternalCacheProvider::Gem)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("rustup"),
+            Some(ExternalCacheProvider::Rustup)
+        );
     }
 
     #[test]
@@ -900,6 +1477,9 @@ mod tests {
         let _ = get_deno_cache_path();
         let _ = get_bun_cache_path();
         let _ = get_gradle_cache_path();
+        let _ = get_maven_cache_path();
+        let _ = get_gem_cache_path();
+        let _ = get_rustup_cache_path();
     }
 
     #[cfg(windows)]
@@ -907,6 +1487,24 @@ mod tests {
     fn test_windows_cache_paths_not_panic() {
         let _ = get_scoop_cache_path();
         let _ = get_chocolatey_cache_path();
+        let _ = get_windows_temp_path();
+        let _ = get_windows_thumbnail_path();
+    }
+
+    #[test]
+    fn test_devtools_cache_paths_not_panic() {
+        let _ = get_docker_cache_path();
+        let _ = get_flutter_cache_path();
+        let _ = get_cypress_cache_path();
+        let _ = get_electron_cache_path();
+        let _ = get_vcpkg_cache_path();
+        let _ = get_sbt_cache_path();
+    }
+
+    #[test]
+    fn test_docker_cache_path_is_none() {
+        // Docker manages its own storage, no filesystem path
+        assert!(get_docker_cache_path().is_none());
     }
 
     #[tokio::test]

@@ -2,34 +2,94 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import DashboardPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 
-// Mock the Tauri API with all required functions
-jest.mock("@/lib/tauri", () => ({
-  envList: jest.fn().mockResolvedValue([
-    {
-      env_type: "node",
-      provider: "nvm",
-      provider_id: "nvm",
-      available: true,
-      current_version: "20.0.0",
-      installed_versions: ["18.0.0", "20.0.0"],
-    },
-  ]),
-  envGet: jest.fn().mockResolvedValue(null),
-  packageSearch: jest.fn().mockResolvedValue([]),
-  packageList: jest.fn().mockResolvedValue([
-    { name: "typescript", version: "5.0.0", provider: "npm" },
-  ]),
-  providerList: jest.fn().mockResolvedValue([{ id: "npm", display_name: "NPM" }]),
-  configList: jest.fn().mockResolvedValue([]),
-  cacheInfo: jest.fn().mockResolvedValue({
-    download_cache: { entry_count: 5, size: 1024, size_human: "1 KB", location: "" },
-    metadata_cache: { entry_count: 10, size: 2048, size_human: "2 KB", location: "" },
-    total_size: 3072,
-    total_size_human: "3 KB",
-  }),
-  getPlatformInfo: jest.fn().mockResolvedValue({ os: "Test OS", arch: "x64" }),
-  getCogniaDir: jest.fn().mockResolvedValue("/mock/cognia/dir"),
+// Mock next/navigation
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
 }));
+
+// Mock the Tauri API
+jest.mock("@/lib/tauri", () => ({
+  isTauri: jest.fn().mockReturnValue(false),
+}));
+
+// Mock hooks used by the dashboard page
+jest.mock("@/hooks/use-environments", () => ({
+  useEnvironments: () => ({
+    environments: [
+      {
+        env_type: "node",
+        provider: "nvm",
+        provider_id: "nvm",
+        available: true,
+        current_version: "20.0.0",
+        installed_versions: ["18.0.0", "20.0.0"],
+      },
+    ],
+    fetchEnvironments: jest.fn().mockResolvedValue(undefined),
+    loading: false,
+    error: null,
+  }),
+}));
+
+jest.mock("@/hooks/use-packages", () => ({
+  usePackages: () => ({
+    installedPackages: [
+      { name: "typescript", version: "5.0.0", provider: "npm" },
+    ],
+    fetchInstalledPackages: jest.fn().mockResolvedValue(undefined),
+    fetchProviders: jest.fn().mockResolvedValue(undefined),
+    providers: [{ id: "npm", display_name: "NPM" }],
+    loading: false,
+    error: null,
+  }),
+}));
+
+jest.mock("@/hooks/use-settings", () => ({
+  useSettings: () => ({
+    cacheInfo: {
+      download_cache: { entry_count: 5, size: 1024, size_human: "1 KB", location: "" },
+      metadata_cache: { entry_count: 10, size: 2048, size_human: "2 KB", location: "" },
+      total_size: 3072,
+      total_size_human: "3 KB",
+    },
+    fetchCacheInfo: jest.fn().mockResolvedValue(undefined),
+    platformInfo: { os: "Test OS", arch: "x64" },
+    fetchPlatformInfo: jest.fn().mockResolvedValue(undefined),
+    cogniaDir: "/mock/cognia/dir",
+    loading: false,
+    error: null,
+  }),
+}));
+
+jest.mock("@/lib/stores/dashboard", () => {
+  const actual = jest.requireActual("@/lib/stores/dashboard");
+  return {
+    ...actual,
+    useDashboardStore: (selector: (s: Record<string, unknown>) => unknown) => {
+      const state = {
+        isCustomizing: false,
+        isEditMode: false,
+        setIsCustomizing: jest.fn(),
+        setIsEditMode: jest.fn(),
+        widgets: [
+          { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
+          { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
+          { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
+          { id: 'w-pkgs', type: 'package-list', size: 'md', visible: true },
+          { id: 'w-cache', type: 'cache-usage', size: 'md', visible: true },
+          { id: 'w-system', type: 'system-info', size: 'md', visible: true },
+          { id: 'w-actions', type: 'quick-actions', size: 'full', visible: true },
+        ],
+        layout: [],
+        reorderWidgets: jest.fn(),
+        removeWidget: jest.fn(),
+        toggleWidgetVisibility: jest.fn(),
+        updateWidget: jest.fn(),
+      };
+      return selector(state);
+    },
+  };
+});
 
 // Mock messages with new dashboard translations
 const mockMessages = {
@@ -170,7 +230,8 @@ describe("Dashboard Page", () => {
     renderWithProviders(<DashboardPage />);
     
     await waitFor(() => {
-      expect(screen.getByText("Test OS")).toBeInTheDocument();
+      const matches = screen.getAllByText("Test OS");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -232,7 +293,8 @@ describe("Dashboard Page", () => {
     renderWithProviders(<DashboardPage />);
     
     await waitFor(() => {
-      expect(screen.getByText("3 KB")).toBeInTheDocument();
+      const matches = screen.getAllByText("3 KB");
+      expect(matches.length).toBeGreaterThanOrEqual(1);
     });
   });
 });

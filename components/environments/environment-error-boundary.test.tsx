@@ -127,7 +127,7 @@ describe("EnvironmentErrorBoundary", () => {
       </EnvironmentErrorBoundary>,
     );
     expect(
-      container.querySelector(".border-destructive\\/50"),
+      container.querySelector('[role="alert"]'),
     ).toBeInTheDocument();
   });
 });

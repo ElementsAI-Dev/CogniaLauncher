@@ -162,6 +162,16 @@ describe('useSettingsStore', () => {
         const platformInfo: PlatformInfo = {
           os: 'windows',
           arch: 'x86_64',
+          os_version: '10.0.22631',
+          os_long_version: 'Windows 11 Pro 23H2',
+          kernel_version: '10.0.22631',
+          hostname: 'test-pc',
+          cpu_model: 'Intel Core i7',
+          cpu_cores: 8,
+          total_memory: 16384,
+          available_memory: 8192,
+          uptime: 3600,
+          app_version: '0.1.0',
         };
 
         useSettingsStore.getState().setPlatformInfo(platformInfo);

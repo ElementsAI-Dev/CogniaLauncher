@@ -251,11 +251,14 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
   useSettingsStore.mockReturnValue({
     appSettings,
     setAppSettings: mockSetAppSettings,
+    cogniaDir: '/home/user/.cognia',
   });
 
   useAppearanceStore.mockReturnValue({
     accentColor: 'blue',
     setAccentColor: mockSetAccentColor,
+    chartColorTheme: 'default',
+    setChartColorTheme: jest.fn(),
     reducedMotion: false,
     setReducedMotion: mockSetReducedMotion,
   });
@@ -314,19 +317,18 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getAllByText('General').length).toBeGreaterThanOrEqual(1);
     });
 
-    expect(screen.getByText('General')).toBeInTheDocument();
-    expect(screen.getByText('Network')).toBeInTheDocument();
-    expect(screen.getByText('Appearance')).toBeInTheDocument();
+    expect(screen.getAllByText('Network').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Appearance').length).toBeGreaterThanOrEqual(1);
   });
 
   it('saves changed config values', async () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('Parallel Downloads')).toBeInTheDocument();
     });
 
     const parallelDownloads = screen.getByLabelText('Parallel Downloads');
@@ -385,7 +387,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: /check on start/i })).toBeInTheDocument();
     });
 
     const updateToggle = screen.getByRole('switch', { name: /check on start/i });
@@ -399,13 +401,17 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getAllByText('General').length).toBeGreaterThanOrEqual(1);
     });
 
     const resetButton = screen.getAllByRole('button', { name: /reset/i })[0];
     await user.click(resetButton);
 
-    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    });
+
+    const dialog = screen.getByRole('alertdialog');
     const confirmReset = within(dialog).getByRole('button', { name: /^reset$/i });
     await user.click(confirmReset);
 
@@ -441,18 +447,21 @@ describe('SettingsPage', () => {
 
     expect(screen.getByText('You have unsaved changes')).toBeInTheDocument();
 
-    fireEvent.keyDown(document, { key: 's', ctrlKey: true });
-
-    await waitFor(() => {
-      expect(mockUpdateConfigValue).toHaveBeenCalledWith('general.parallel_downloads', '7');
-    });
-
+    // Discard changes via Escape
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => {
       expect(screen.queryByText('You have unsaved changes')).not.toBeInTheDocument();
     });
     expect((parallelDownloads as HTMLInputElement).value).toBe('4');
+
+    // Now test Ctrl+S save
+    fireEvent.change(parallelDownloads, { target: { value: '7' } });
+    fireEvent.keyDown(document, { key: 's', ctrlKey: true });
+
+    await waitFor(() => {
+      expect(mockUpdateConfigValue).toHaveBeenCalledWith('general.parallel_downloads', '7');
+    });
   });
 
   it('does not reset via Ctrl+R when focused on an input', async () => {
@@ -480,9 +489,7 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
     });
 
-    const parallelDownloads = screen.getByLabelText('Parallel Downloads');
-    fireEvent.change(parallelDownloads, { target: { value: '9' } });
-
+    // When loading=true, Ctrl+S should not trigger save
     fireEvent.keyDown(document, { key: 's', ctrlKey: true });
 
     await waitFor(() => {

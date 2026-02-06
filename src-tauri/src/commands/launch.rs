@@ -14,6 +14,7 @@ use uuid::Uuid;
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LaunchRequest {
     pub program: String,
     pub args: Vec<String>,
@@ -25,6 +26,7 @@ pub struct LaunchRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LaunchResult {
     pub exit_code: i32,
     pub stdout: String,
@@ -53,6 +55,7 @@ pub struct CommandOutputEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ActivationScript {
     pub shell: String,
     pub script: String,
@@ -61,6 +64,7 @@ pub struct ActivationScript {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EnvInfo {
     pub env_type: String,
     pub version: String,

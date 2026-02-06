@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -143,13 +143,38 @@ export default function CachePage() {
   const [forceCleanLoading, setForceCleanLoading] = useState(false);
   const [monitorRefreshTrigger, setMonitorRefreshTrigger] = useState(0);
 
+  // Fetch cache access stats (useCallback must be defined before useEffect that references it)
+  const fetchAccessStats = useCallback(async () => {
+    if (!isTauri()) return;
+    setAccessStatsLoading(true);
+    try {
+      const stats = await tauri.getCacheAccessStats();
+      setAccessStats(stats);
+    } catch (err) {
+      console.error('Failed to fetch access stats:', err);
+    } finally {
+      setAccessStatsLoading(false);
+    }
+  }, []);
+
+  // Fetch hot files (top accessed)
+  const fetchHotFiles = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const entries = await tauri.getTopAccessedEntries(5);
+      setHotFiles(entries);
+    } catch (err) {
+      console.error('Failed to fetch hot files:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchCacheInfo();
     fetchPlatformInfo();
     fetchCacheSettings();
     fetchAccessStats();
     fetchHotFiles();
-  }, [fetchCacheInfo, fetchPlatformInfo, fetchCacheSettings]);
+  }, [fetchCacheInfo, fetchPlatformInfo, fetchCacheSettings, fetchAccessStats, fetchHotFiles]);
 
   useEffect(() => {
     if (cacheSettings && !localSettings) {
@@ -227,20 +252,6 @@ export default function CachePage() {
     }
   };
 
-  // Fetch cache access stats
-  const fetchAccessStats = async () => {
-    if (!isTauri()) return;
-    setAccessStatsLoading(true);
-    try {
-      const stats = await tauri.getCacheAccessStats();
-      setAccessStats(stats);
-    } catch (err) {
-      console.error('Failed to fetch access stats:', err);
-    } finally {
-      setAccessStatsLoading(false);
-    }
-  };
-
   // Reset cache access stats
   const handleResetAccessStats = async () => {
     if (!isTauri()) return;
@@ -254,10 +265,10 @@ export default function CachePage() {
   };
 
   // Fetch cache entries for browser
-  const fetchBrowserEntries = async (resetPage = false) => {
+  const fetchBrowserEntries = async (resetPage = false, explicitPage?: number) => {
     if (!isTauri()) return;
     setBrowserLoading(true);
-    const page = resetPage ? 0 : browserPage;
+    const page = resetPage ? 0 : (explicitPage ?? browserPage);
     if (resetPage) setBrowserPage(0);
     try {
       const result = await tauri.listCacheEntries({
@@ -288,17 +299,6 @@ export default function CachePage() {
       await fetchCacheInfo();
     } catch (err) {
       toast.error(`${t('cache.deleteEntriesFailed')}: ${err}`);
-    }
-  };
-
-  // Fetch hot files (top accessed)
-  const fetchHotFiles = async () => {
-    if (!isTauri()) return;
-    try {
-      const entries = await tauri.getTopAccessedEntries(5);
-      setHotFiles(entries);
-    } catch (err) {
-      console.error('Failed to fetch hot files:', err);
     }
   };
 
@@ -492,7 +492,10 @@ export default function CachePage() {
       )}
 
       {/* Cache Size Monitor */}
-      <CacheMonitorCard refreshTrigger={monitorRefreshTrigger} />
+      <CacheMonitorCard
+        refreshTrigger={monitorRefreshTrigger}
+        autoRefreshInterval={localSettings?.monitor_interval ?? 0}
+      />
 
       {/* Cache Path Management */}
       <CachePathCard
@@ -598,14 +601,6 @@ export default function CachePage() {
           {t('cache.browseEntries')}
         </Button>
       </div>
-
-      {/* Original Error Alert location - now handled above */}
-      {false && error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       {/* Row 1: Total Size + Cache Location */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
@@ -1448,8 +1443,9 @@ export default function CachePage() {
                 size="sm"
                 disabled={browserPage === 0}
                 onClick={() => {
-                  setBrowserPage(p => p - 1);
-                  fetchBrowserEntries();
+                  const newPage = browserPage - 1;
+                  setBrowserPage(newPage);
+                  fetchBrowserEntries(false, newPage);
                 }}
               >
                 {t('common.previous')}
@@ -1459,8 +1455,9 @@ export default function CachePage() {
                 size="sm"
                 disabled={(browserPage + 1) * 20 >= browserTotalCount}
                 onClick={() => {
-                  setBrowserPage(p => p + 1);
-                  fetchBrowserEntries();
+                  const newPage = browserPage + 1;
+                  setBrowserPage(newPage);
+                  fetchBrowserEntries(false, newPage);
                 }}
               >
                 {t('common.next')}

@@ -571,12 +571,11 @@ mod tests {
         let mut queue = DownloadQueue::new(4);
 
         queue.add(create_test_task("queued", 0));
+        queue.add(create_test_task("downloading", 0));
 
-        let task = create_test_task("downloading", 0);
-        let id = task.id.clone();
-        queue.add(task);
-        queue.next_pending();
-        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Downloading);
+        // next_pending picks the first queued task
+        let started_id = queue.next_pending().unwrap();
+        assert_eq!(queue.get(&started_id).unwrap().state, DownloadState::Downloading);
 
         let stats = queue.stats();
         assert_eq!(stats.total_tasks, 2);
@@ -631,5 +630,318 @@ mod tests {
         let resumed = queue.resume_all();
         assert_eq!(resumed, 3);
         assert_eq!(queue.stats().queued, 3);
+    }
+
+    #[test]
+    fn test_queue_set_priority() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task_low = create_test_task("low", 0);
+        let id_low = task_low.id.clone();
+        queue.add(task_low);
+
+        let task_high = create_test_task("high", 10);
+        queue.add(task_high);
+
+        // low is at the end; change its priority to be highest
+        queue.set_priority(&id_low, 20).unwrap();
+
+        // Now low should be first in pending
+        let pending: Vec<_> = queue.list_pending().iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(pending[0], "low");
+    }
+
+    #[test]
+    fn test_queue_set_priority_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.set_priority("nonexistent", 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_list_by_state() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task1 = create_test_task("task1", 0);
+        let id1 = task1.id.clone();
+        queue.add(task1);
+
+        let task2 = create_test_task("task2", 0);
+        queue.add(task2);
+
+        // Start task1 → Downloading
+        queue.next_pending();
+
+        let downloading = queue.list_by_state(&DownloadState::Downloading);
+        assert_eq!(downloading.len(), 1);
+        assert_eq!(downloading[0].id, id1);
+
+        let queued = queue.list_by_state(&DownloadState::Queued);
+        assert_eq!(queued.len(), 1);
+    }
+
+    #[test]
+    fn test_queue_cancel_all() {
+        let mut queue = DownloadQueue::new(4);
+
+        for i in 0..4 {
+            queue.add(create_test_task(&format!("task{}", i), 0));
+        }
+
+        // Start 2 tasks
+        queue.next_pending();
+        queue.next_pending();
+
+        let cancelled = queue.cancel_all();
+        assert_eq!(cancelled, 4);
+        assert_eq!(queue.stats().cancelled, 4);
+        assert_eq!(queue.active_count(), 0);
+    }
+
+    #[test]
+    fn test_queue_clear_failed() {
+        let mut queue = DownloadQueue::new(4);
+
+        // Create and fail a task (non-recoverable so it stays failed)
+        let task = create_test_task("fail_task", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        let err = DownloadError::ChecksumMismatch {
+            expected: "abc".into(),
+            actual: "def".into(),
+        };
+        // Fail with non-recoverable error
+        queue.fail(&id, err).unwrap();
+
+        // Add a normal queued task
+        queue.add(create_test_task("good_task", 0));
+
+        assert_eq!(queue.stats().total_tasks, 2);
+
+        let cleared = queue.clear_failed();
+        assert_eq!(cleared, 1);
+        assert_eq!(queue.stats().total_tasks, 1);
+    }
+
+    #[test]
+    fn test_queue_has_available_slots() {
+        let mut queue = DownloadQueue::new(1);
+
+        assert!(queue.has_available_slots());
+
+        queue.add(create_test_task("task1", 0));
+        queue.next_pending();
+
+        assert!(!queue.has_available_slots());
+    }
+
+    #[test]
+    fn test_queue_pending_count() {
+        let mut queue = DownloadQueue::new(4);
+
+        queue.add(create_test_task("task1", 0));
+        queue.add(create_test_task("task2", 0));
+        queue.add(create_test_task("task3", 0));
+
+        assert_eq!(queue.pending_count(), 3);
+
+        // Start one, pending should decrease
+        queue.next_pending();
+        assert_eq!(queue.pending_count(), 2);
+    }
+
+    #[test]
+    fn test_queue_fail_max_retries() {
+        let mut queue = DownloadQueue::new(4);
+
+        let mut task = create_test_task("retry_task", 0);
+        task.config.max_retries = 2; // Only allow 2 retries
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        let err = DownloadError::Network {
+            message: "timeout".into(),
+        };
+
+        // First fail: should retry (retries=1)
+        let will_retry = queue.fail(&id, err.clone()).unwrap();
+        assert!(will_retry);
+        assert_eq!(queue.get(&id).unwrap().retries, 1);
+        queue.next_pending(); // Re-download
+
+        // Second fail: should retry (retries=2)
+        let will_retry = queue.fail(&id, err.clone()).unwrap();
+        assert!(will_retry);
+        assert_eq!(queue.get(&id).unwrap().retries, 2);
+        queue.next_pending(); // Re-download
+
+        // Third fail: max retries reached, should NOT retry
+        let will_retry = queue.fail(&id, err).unwrap();
+        assert!(!will_retry);
+        assert!(queue.get(&id).unwrap().state.is_terminal());
+    }
+
+    #[test]
+    fn test_queue_remove() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+
+        assert_eq!(queue.stats().total_tasks, 1);
+
+        let removed = queue.remove(&id);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().name, "task1");
+        assert_eq!(queue.stats().total_tasks, 0);
+    }
+
+    #[test]
+    fn test_queue_remove_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let removed = queue.remove("nonexistent");
+        assert!(removed.is_none());
+    }
+
+    #[test]
+    fn test_queue_retry_all_failed() {
+        let mut queue = DownloadQueue::new(4);
+
+        // Create task with high max_retries
+        let mut task = create_test_task("fail_task", 0);
+        task.config.max_retries = 0; // No retries allowed normally
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        // Fail with recoverable error
+        let err = DownloadError::Network {
+            message: "timeout".into(),
+        };
+        let _ = queue.fail(&id, err);
+
+        // The task should now be in a failed state (no retries left)
+        // retry_all_failed should re-queue recoverable failures
+        let retried = queue.retry_all_failed();
+        assert_eq!(retried, 1);
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Queued);
+    }
+
+    #[test]
+    fn test_queue_list_active() {
+        let mut queue = DownloadQueue::new(4);
+
+        queue.add(create_test_task("task1", 0));
+        queue.add(create_test_task("task2", 0));
+        queue.add(create_test_task("task3", 0));
+
+        // Start 2
+        queue.next_pending();
+        queue.next_pending();
+
+        let active = queue.list_active();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn test_queue_get_mut() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+
+        // Modify via get_mut
+        if let Some(t) = queue.get_mut(&id) {
+            t.name = "modified".to_string();
+        }
+
+        assert_eq!(queue.get(&id).unwrap().name, "modified");
+    }
+
+    #[test]
+    fn test_queue_stats_comprehensive() {
+        let mut queue = DownloadQueue::new(10);
+
+        // Add 6 tasks, each will end in a different state
+        let task_q = create_test_task("queued_task", 0);
+        let task_dl = create_test_task("downloading_task", 0);
+        let task_p = create_test_task("paused_task", 0);
+        let task_c = create_test_task("completed_task", 0);
+        let task_x = create_test_task("cancelled_task", 0);
+        let task_f = create_test_task("failed_task", 0);
+
+        queue.add(task_q);
+        queue.add(task_dl);
+        queue.add(task_p);
+        queue.add(task_c);
+        queue.add(task_x);
+        queue.add(task_f);
+
+        // Start 4 tasks via next_pending (they become Downloading)
+        let id1 = queue.next_pending().unwrap();
+        let id2 = queue.next_pending().unwrap();
+        let id3 = queue.next_pending().unwrap();
+        let id4 = queue.next_pending().unwrap();
+
+        // Leave one downloading (id1), pause id2, complete id3, fail id4
+        queue.pause(&id2).unwrap();
+        queue.complete(&id3).unwrap();
+        let err = DownloadError::ChecksumMismatch {
+            expected: "a".into(),
+            actual: "b".into(),
+        };
+        queue.fail(&id4, err).unwrap();
+
+        // Cancel one of the remaining queued tasks
+        let queued_tasks: Vec<String> = queue
+            .list_by_state(&DownloadState::Queued)
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+        if let Some(qid) = queued_tasks.first() {
+            queue.cancel(qid).unwrap();
+        }
+
+        let stats = queue.stats();
+        assert_eq!(stats.total_tasks, 6);
+        assert_eq!(stats.downloading, 1);
+        assert_eq!(stats.paused, 1);
+        assert_eq!(stats.completed, 1);
+        assert_eq!(stats.failed, 1);
+        assert_eq!(stats.cancelled, 1);
+        assert_eq!(stats.queued, 1);
+    }
+
+    #[test]
+    fn test_queue_pause_queued_task() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+
+        // Pause a queued (not yet downloading) task
+        queue.pause(&id).unwrap();
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Paused);
+    }
+
+    #[test]
+    fn test_queue_cancel_paused_task() {
+        let mut queue = DownloadQueue::new(4);
+
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        queue.pause(&id).unwrap();
+        queue.cancel(&id).unwrap();
+
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Cancelled);
     }
 }

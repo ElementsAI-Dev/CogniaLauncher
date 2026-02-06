@@ -59,6 +59,21 @@ jest.mock("@/components/layout/titlebar", () => ({
   Titlebar: () => null,
 }));
 
+jest.mock("@/lib/stores/window-state", () => ({
+  useWindowStateStore: () => ({
+    isMaximized: false,
+    isFullscreen: false,
+    isDesktopMode: false,
+    isFocused: true,
+    isWindows: false,
+    setMaximized: jest.fn(),
+    setFullscreen: jest.fn(),
+    setDesktopMode: jest.fn(),
+    setFocused: jest.fn(),
+    setWindows: jest.fn(),
+  }),
+}));
+
 jest.mock("@/components/log/log-drawer", () => ({
   LogDrawer: () => <div data-testid="log-drawer">LogDrawer</div>,
 }));

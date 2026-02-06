@@ -76,26 +76,45 @@ const LANGUAGES = [
     icon: "🔷",
     color: "bg-violet-500/10 border-violet-500 dark:bg-violet-500/20",
   },
+  {
+    id: "deno",
+    name: "Deno",
+    icon: "🦕",
+    color: "bg-teal-500/10 border-teal-500 dark:bg-teal-500/20",
+  },
+  {
+    id: "bun",
+    name: "Bun",
+    icon: "🧅",
+    color: "bg-yellow-500/10 border-yellow-500 dark:bg-yellow-500/20",
+  },
 ];
 
 const PROVIDER_IDS: Record<string, { id: string; name: string }[]> = {
   node: [
+    { id: "volta", name: "Volta" },
     { id: "fnm", name: "fnm" },
     { id: "nvm", name: "nvm" },
   ],
   python: [
-    { id: "uv", name: "uv" },
     { id: "pyenv", name: "pyenv" },
     { id: "conda", name: "Conda" },
-    { id: "rye", name: "Rye" },
     { id: "mise", name: "mise" },
   ],
-  go: [{ id: "goenv", name: "goenv" }],
+  go: [
+    { id: "goenv", name: "goenv" },
+    { id: "mise", name: "mise" },
+  ],
   rust: [{ id: "rustup", name: "rustup" }],
-  ruby: [{ id: "rbenv", name: "rbenv" }],
+  ruby: [
+    { id: "rbenv", name: "rbenv" },
+    { id: "mise", name: "mise" },
+  ],
   java: [{ id: "sdkman", name: "SDKMAN!" }],
   php: [{ id: "phpbrew", name: "phpbrew" }],
   dotnet: [{ id: "dotnet", name: "dotnet" }],
+  deno: [{ id: "deno", name: "Deno" }],
+  bun: [{ id: "system-bun", name: "System Bun" }],
 };
 
 export interface AddEnvironmentOptions {
@@ -245,7 +264,7 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
               type="single"
               value={selectedLanguage || ""}
               onValueChange={(value) => value && handleLanguageSelect(value)}
-              className="grid grid-cols-4 gap-3"
+              className="grid grid-cols-5 gap-3"
               aria-labelledby="language-label"
             >
               {LANGUAGES.map((lang) => (

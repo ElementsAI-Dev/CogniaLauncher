@@ -173,7 +173,7 @@ export function QuickActionsInline({
   const { t } = useLocale();
 
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <Button
         variant="default"
         size="sm"
@@ -183,6 +183,17 @@ export function QuickActionsInline({
         <Plus className="h-4 w-4" />
         <span className="hidden sm:inline">
           {t("dashboard.quickActions.addEnvironment")}
+        </span>
+      </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => router.push("/packages")}
+        className="gap-2"
+      >
+        <Package className="h-4 w-4" />
+        <span className="hidden sm:inline">
+          {t("dashboard.quickActions.installPackage")}
         </span>
       </Button>
       <Button
@@ -197,6 +208,32 @@ export function QuickActionsInline({
           {t("dashboard.quickActions.refreshAll")}
         </span>
       </Button>
+
+      {/* Secondary Actions Dropdown */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" className="gap-2">
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">
+              {t("dashboard.quickActions.moreActions")}
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={() => router.push("/cache")} className="gap-2">
+            <Trash2 className="h-4 w-4" />
+            {t("dashboard.quickActions.clearCache")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/settings")} className="gap-2">
+            <Settings className="h-4 w-4" />
+            {t("dashboard.quickActions.openSettings")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => router.push("/logs")} className="gap-2">
+            <FileText className="h-4 w-4" />
+            {t("dashboard.quickActions.viewLogs")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

@@ -7,6 +7,21 @@ jest.mock("@/lib/tauri", () => ({
   isTauri: () => mockIsTauri,
 }));
 
+jest.mock("@/lib/stores/window-state", () => ({
+  useWindowStateStore: () => ({
+    isMaximized: false,
+    isFullscreen: false,
+    isDesktopMode: false,
+    isFocused: true,
+    isWindows: false,
+    setMaximized: jest.fn(),
+    setFullscreen: jest.fn(),
+    setDesktopMode: jest.fn(),
+    setFocused: jest.fn(),
+    setWindows: jest.fn(),
+  }),
+}));
+
 const mockMinimize = jest.fn();
 const mockToggleMaximize = jest.fn();
 const mockClose = jest.fn();

@@ -20,6 +20,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "dashboard.quickActions.clearCache": "Clear Cache",
         "dashboard.quickActions.openSettings": "Settings",
         "dashboard.quickActions.viewLogs": "View Logs",
+        "dashboard.quickActions.moreActions": "More Actions",
       };
       return translations[key] || key;
     },

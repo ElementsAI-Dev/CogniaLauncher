@@ -5,7 +5,7 @@ use super::{
     apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conda, deno, dnf, docker,
     dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm, pacman,
     phpbrew, pip, pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop, sdkman, snap, uv,
-    vcpkg, volta, winget, yarn, zypper,
+    vcpkg, volta, winget, wsl, yarn, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -457,6 +457,12 @@ impl ProviderRegistry {
                 if chocolatey_provider.is_available().await {
                     registry.register_provider(chocolatey_provider);
                 }
+
+                // Register WSL provider (Windows only)
+                let wsl_provider = Arc::new(wsl::WslProvider::new());
+                if wsl_provider.is_available().await {
+                    registry.register_provider(wsl_provider);
+                }
             }
             _ => {}
         }
@@ -573,7 +579,7 @@ impl ProviderRegistry {
         let platform = current_platform();
 
         let system_providers = match platform {
-            Platform::Windows => vec!["winget", "scoop", "chocolatey"],
+            Platform::Windows => vec!["winget", "scoop", "chocolatey", "wsl"],
             Platform::MacOS => vec!["brew", "macports"],
             Platform::Linux => vec!["apt", "dnf", "pacman", "zypper", "apk", "snap", "flatpak"],
             _ => vec![],

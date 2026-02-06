@@ -493,3 +493,9 @@ pub fn log_get_dir(app: AppHandle) -> Result<String, String> {
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Failed to get log directory".to_string())
 }
+
+#[tauri::command]
+pub async fn log_get_total_size(app: AppHandle) -> Result<u64, String> {
+    let files = log_list_files(app).await?;
+    Ok(files.iter().map(|f| f.size).sum())
+}

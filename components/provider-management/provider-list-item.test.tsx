@@ -115,8 +115,13 @@ describe("ProviderListItem", () => {
     const user = userEvent.setup();
     render(<ProviderListItem {...defaultProps} />);
 
-    const checkButton = screen.getByTitle("Check Status");
-    await user.click(checkButton);
+    // The check status button uses Tooltip (not title attr), find by button role
+    const buttons = screen.getAllByRole("button");
+    const checkButton = buttons.find(
+      (btn) => btn.className.includes("px-2"),
+    );
+    expect(checkButton).toBeDefined();
+    await user.click(checkButton!);
 
     await waitFor(() => {
       expect(defaultProps.onCheckStatus).toHaveBeenCalledWith("npm");

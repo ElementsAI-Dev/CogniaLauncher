@@ -248,6 +248,7 @@ describe('useKeyboardShortcuts', () => {
 
     const div = document.createElement('div');
     div.contentEditable = 'true';
+    Object.defineProperty(div, 'isContentEditable', { value: true, configurable: true });
     const event = new KeyboardEvent('keydown', {
       key: 'k',
       ctrlKey: true,

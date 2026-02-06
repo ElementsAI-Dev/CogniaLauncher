@@ -334,6 +334,9 @@ export default function ProvidersPage() {
             <li>
               <strong>{t('providers.infoCustom')}</strong>: {t('providers.infoCustomDesc')}
             </li>
+            <li>
+              <strong>{t('providers.infoWsl')}</strong>: {t('providers.infoWslDesc')}
+            </li>
           </ul>
         </CardContent>
       </Card>

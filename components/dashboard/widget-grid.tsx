@@ -27,6 +27,10 @@ import { CacheChart } from "@/components/dashboard/widgets/cache-chart";
 import { ActivityChart } from "@/components/dashboard/widgets/activity-chart";
 import { SystemInfoWidget } from "@/components/dashboard/widgets/system-info-widget";
 import { DownloadStatsWidget } from "@/components/dashboard/widgets/download-stats-widget";
+import { WslStatusWidget } from "@/components/dashboard/widgets/wsl-status-widget";
+import { HealthCheckWidget } from "@/components/dashboard/widgets/health-check-widget";
+import { UpdatesWidget } from "@/components/dashboard/widgets/updates-widget";
+import { WelcomeWidget } from "@/components/dashboard/widgets/welcome-widget";
 import { QuickActionsInline } from "@/components/dashboard/quick-actions";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Layers, Package, HardDrive, Activity } from "lucide-react";
@@ -132,7 +136,7 @@ export function WidgetGrid({
               />
               <StatsCard
                 title={t("dashboard.platform")}
-                value={platformInfo?.os || t("common.unknown")}
+                value={platformInfo?.os_long_version || (platformInfo?.os_version ? `${platformInfo.os} ${platformInfo.os_version}` : platformInfo?.os) || t("common.unknown")}
                 description={platformInfo?.arch || ""}
                 icon={<Activity className="h-4 w-4" />}
                 href="/settings"
@@ -162,11 +166,24 @@ export function WidgetGrid({
           return <EnvironmentList environments={environments} initialLimit={4} />;
         case "package-list":
           return <PackageList packages={packages} initialLimit={5} />;
+        case "wsl-status":
+          return <WslStatusWidget />;
         case "quick-actions":
           return (
             <QuickActionsInline
               onRefreshAll={onRefreshAll}
               isRefreshing={isRefreshing}
+            />
+          );
+        case "health-check":
+          return <HealthCheckWidget />;
+        case "updates-available":
+          return <UpdatesWidget />;
+        case "welcome":
+          return (
+            <WelcomeWidget
+              hasEnvironments={environments.length > 0}
+              hasPackages={packages.length > 0}
             />
           );
         default:
@@ -192,7 +209,7 @@ export function WidgetGrid({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2" data-tour="dashboard-widgets">
           {widgets.map((widget) => (
             <WidgetWrapper
               key={widget.id}

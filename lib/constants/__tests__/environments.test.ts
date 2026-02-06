@@ -17,7 +17,7 @@ describe('Environment Constants', () => {
     });
 
     it('contains all expected languages', () => {
-      const expectedIds = ['node', 'deno', 'python', 'go', 'rust', 'ruby', 'java', 'php', 'dotnet'];
+      const expectedIds = ['node', 'python', 'go', 'rust', 'ruby', 'java', 'php', 'dotnet', 'deno', 'bun'];
       expectedIds.forEach((id) => {
         const lang = LANGUAGES.find((l) => l.id === id);
         expect(lang).toBeDefined();

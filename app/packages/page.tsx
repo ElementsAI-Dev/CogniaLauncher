@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { SearchBar } from '@/components/packages/search-bar';
 import { PackageList } from '@/components/packages/package-list';
@@ -60,6 +61,10 @@ export default function PackagesPage() {
     clearPackageSelection,
     bookmarkedPackages,
     toggleBookmark,
+    updateCheckProgress,
+    isCheckingUpdates,
+    updateCheckErrors,
+    lastUpdateCheck,
   } = usePackageStore();
   
   const { t } = useLocale();
@@ -68,7 +73,6 @@ export default function PackagesPage() {
   const [selectedPackage, setSelectedPackage] = useState<PackageSummary | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [updates, setUpdates] = useState<UpdateInfo[]>([]);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [dependencyResolution, setDependencyResolution] = useState<ResolutionResult | null>(null);
   const [resolvingDeps, setResolvingDeps] = useState(false);
@@ -130,20 +134,17 @@ export default function PackagesPage() {
   );
 
   const handleCheckUpdates = async () => {
-    setCheckingUpdates(true);
     try {
       const packageNames = installedPackages.map(p => p.name);
-      const availableUpdates = await checkForUpdates(packageNames);
-      setUpdates(availableUpdates);
-      if (availableUpdates.length > 0) {
-        toast.success(t('packages.updatesFound', { count: availableUpdates.length }));
+      const foundUpdates = await checkForUpdates(packageNames);
+      setUpdates(foundUpdates);
+      if (foundUpdates.length > 0) {
+        toast.success(t('packages.updatesFound', { count: foundUpdates.length }));
       } else {
         toast.info(t('packages.allUpToDate'));
       }
     } catch (err) {
       toast.error(t('packages.checkUpdatesFailed', { error: String(err) }));
-    } finally {
-      setCheckingUpdates(false);
     }
   };
 
@@ -458,14 +459,19 @@ export default function PackagesPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {lastUpdateCheck && !isCheckingUpdates && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('packages.lastChecked', { time: new Date(lastUpdateCheck).toLocaleTimeString() })}
+                  </span>
+                )}
                 <Button 
                   variant="outline" 
                   size="sm"
                   onClick={handleCheckUpdates}
-                  disabled={checkingUpdates || installedPackages.length === 0}
+                  disabled={isCheckingUpdates || installedPackages.length === 0}
                 >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${checkingUpdates ? 'animate-spin' : ''}`} />
-                  {checkingUpdates ? t('packages.checking') : t('packages.checkForUpdates')}
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isCheckingUpdates ? 'animate-spin' : ''}`} />
+                  {isCheckingUpdates ? t('packages.checking') : t('packages.checkForUpdates')}
                 </Button>
                 {availableUpdates.length > 0 && (
                   <Button 
@@ -479,24 +485,85 @@ export default function PackagesPage() {
               </div>
             </div>
 
-            {checkingUpdates ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-            ) : updates.length === 0 ? (
+            {isCheckingUpdates ? (
               <Card>
-                <CardContent className="py-12 text-center">
-                  <div className="p-3 bg-green-500/10 rounded-full inline-block mb-4">
-                    <RefreshCw className="h-8 w-8 text-green-500" />
+                <CardContent className="py-6 space-y-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {updateCheckProgress?.phase === 'collecting'
+                        ? t('packages.updateCheckCollecting')
+                        : updateCheckProgress?.phase === 'checking' && updateCheckProgress.current_package
+                          ? t('packages.updateCheckChecking', {
+                              current: updateCheckProgress.current,
+                              total: updateCheckProgress.total,
+                              package: updateCheckProgress.current_package,
+                            })
+                          : t('packages.checking')}
+                    </span>
+                    {updateCheckProgress?.phase === 'checking' && updateCheckProgress.total > 0 && (
+                      <span className="text-xs font-mono text-muted-foreground">
+                        {Math.round((updateCheckProgress.current / updateCheckProgress.total) * 100)}%
+                      </span>
+                    )}
                   </div>
-                  <h3 className="font-medium mb-1">{t('packages.allUpToDate')}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {t('packages.noUpdates')}
-                  </p>
+                  <Progress
+                    value={
+                      updateCheckProgress?.phase === 'collecting'
+                        ? undefined
+                        : updateCheckProgress?.total
+                          ? (updateCheckProgress.current / updateCheckProgress.total) * 100
+                          : 0
+                    }
+                    className="h-2"
+                  />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {updateCheckProgress?.found_updates
+                        ? t('packages.updatesFound', { count: updateCheckProgress.found_updates })
+                        : t('packages.updateCheckProgress', {
+                            current: updateCheckProgress?.current ?? 0,
+                            total: updateCheckProgress?.total ?? 0,
+                          })}
+                    </span>
+                    {(updateCheckProgress?.errors ?? 0) > 0 && (
+                      <span className="text-yellow-600">
+                        {t('packages.updateCheckErrors', { count: updateCheckProgress?.errors ?? 0 })}
+                      </span>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
+            ) : updates.length === 0 ? (
+              <div className="space-y-4">
+                {updateCheckErrors.length > 0 && (
+                  <Alert variant="destructive" className="border-yellow-500/50 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      {t('packages.updateCheckErrors', { count: updateCheckErrors.length })}
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs">{t('common.details')}</summary>
+                        <ul className="mt-1 text-xs space-y-0.5 list-disc pl-4">
+                          {updateCheckErrors.slice(0, 5).map((err, i) => (
+                            <li key={i}>{err.provider}{err.package ? ` / ${err.package}` : ''}: {err.message}</li>
+                          ))}
+                          {updateCheckErrors.length > 5 && <li>...{updateCheckErrors.length - 5} more</li>}
+                        </ul>
+                      </details>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <div className="p-3 bg-green-500/10 rounded-full inline-block mb-4">
+                      <RefreshCw className="h-8 w-8 text-green-500" />
+                    </div>
+                    <h3 className="font-medium mb-1">{t('packages.allUpToDate')}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t('packages.noUpdates')}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
             ) : (
               <div className="space-y-4">
                 {/* Available Updates */}

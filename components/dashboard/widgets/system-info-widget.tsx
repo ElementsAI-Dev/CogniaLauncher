@@ -1,10 +1,18 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Monitor, Cpu, HardDrive } from "lucide-react";
+import { Monitor, Cpu, HardDrive, MemoryStick, Server } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { PlatformInfo } from "@/lib/tauri";
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
+}
 
 interface SystemInfoWidgetProps {
   platformInfo: PlatformInfo | null;
@@ -32,16 +40,33 @@ export function SystemInfoWidget({ platformInfo, cogniaDir, className }: SystemI
     );
   }
 
+  const osDisplay = platformInfo.os_long_version
+    || (platformInfo.os_version ? `${platformInfo.os} ${platformInfo.os_version}` : platformInfo.os);
+
   const infoItems = [
     {
       icon: <Monitor className="h-4 w-4" />,
       label: t("dashboard.widgets.operatingSystem"),
-      value: platformInfo.os,
+      value: osDisplay,
     },
     {
       icon: <Cpu className="h-4 w-4" />,
-      label: t("dashboard.widgets.architecture"),
-      value: platformInfo.arch,
+      label: t("dashboard.widgets.cpu"),
+      value: platformInfo.cpu_model
+        ? `${platformInfo.cpu_model} (${platformInfo.cpu_cores} cores)`
+        : platformInfo.arch,
+    },
+    {
+      icon: <MemoryStick className="h-4 w-4" />,
+      label: t("dashboard.widgets.memory"),
+      value: platformInfo.total_memory
+        ? formatBytes(platformInfo.total_memory)
+        : t("common.unknown"),
+    },
+    {
+      icon: <Server className="h-4 w-4" />,
+      label: t("dashboard.widgets.hostname"),
+      value: platformInfo.hostname || t("common.unknown"),
     },
     {
       icon: <HardDrive className="h-4 w-4" />,

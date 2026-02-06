@@ -90,6 +90,8 @@ describe("AddEnvironmentDialog", () => {
     expect(screen.getByText("Java")).toBeInTheDocument();
     expect(screen.getByText("PHP")).toBeInTheDocument();
     expect(screen.getByText(".NET")).toBeInTheDocument();
+    expect(screen.getByText("Deno")).toBeInTheDocument();
+    expect(screen.getByText("Bun")).toBeInTheDocument();
   });
 
   it("selects language when clicked", async () => {
@@ -151,7 +153,7 @@ describe("AddEnvironmentDialog", () => {
     await user.click(addButton);
 
     await waitFor(() => {
-      expect(mockOnAdd).toHaveBeenCalledWith("node", "fnm", "lts", {
+      expect(mockOnAdd).toHaveBeenCalledWith("node", "volta", "lts", {
         autoSwitch: true,
         setAsDefault: true,
       });
@@ -202,11 +204,12 @@ describe("AddEnvironmentDialog", () => {
   });
 
   it("supports keyboard navigation for language selection", async () => {
+    const user = userEvent.setup();
     render(<AddEnvironmentDialog onAdd={mockOnAdd} />);
     const nodeOption = screen.getByText("Node.js").closest("button");
 
     nodeOption?.focus();
-    fireEvent.keyDown(nodeOption!, { key: "Enter" });
+    await user.keyboard("{Enter}");
 
     await waitFor(() => {
       expect(screen.getByText("Version Manager")).toBeInTheDocument();

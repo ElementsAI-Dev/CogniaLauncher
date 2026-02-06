@@ -45,6 +45,7 @@ pub mod uv;
 pub mod vcpkg;
 pub mod volta;
 pub mod winget;
+pub mod wsl;
 pub mod yarn;
 pub mod zypper;
 

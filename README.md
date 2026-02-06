@@ -103,6 +103,7 @@ This starts the Next.js development server at [http://localhost:3000](http://loc
 - `app/settings/page.tsx` - Application settings
 - `app/about/page.tsx` - About page with system information
 - `app/downloads/page.tsx` - Download management
+- `app/wsl/page.tsx` - WSL distribution management (Windows)
 - `app/logs/page.tsx` - Application logs viewer
 - `components/ui/` - Reusable UI components (shadcn/ui)
 - `lib/tauri.ts` - Tauri API bindings for Rust backend

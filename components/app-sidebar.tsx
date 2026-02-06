@@ -12,6 +12,7 @@ import {
   Info,
   ScrollText,
   ArrowDownToLine,
+  Terminal,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,23 +32,24 @@ import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 
 const navItems = [
-  { href: "/", labelKey: "nav.dashboard", icon: Home },
-  { href: "/environments", labelKey: "nav.environments", icon: Layers },
-  { href: "/packages", labelKey: "nav.packages", icon: Package },
-  { href: "/providers", labelKey: "nav.providers", icon: Server },
-  { href: "/cache", labelKey: "nav.cache", icon: HardDrive },
-  { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine },
-  { href: "/logs", labelKey: "nav.logs", icon: ScrollText },
-  { href: "/settings", labelKey: "nav.settings", icon: Settings },
-  { href: "/about", labelKey: "nav.about", icon: Info },
-];
+  { href: "/", labelKey: "nav.dashboard", icon: Home, tourId: undefined },
+  { href: "/environments", labelKey: "nav.environments", icon: Layers, tourId: "nav-environments" },
+  { href: "/packages", labelKey: "nav.packages", icon: Package, tourId: "nav-packages" },
+  { href: "/providers", labelKey: "nav.providers", icon: Server, tourId: undefined },
+  { href: "/cache", labelKey: "nav.cache", icon: HardDrive, tourId: undefined },
+  { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine, tourId: undefined },
+  { href: "/wsl", labelKey: "nav.wsl", icon: Terminal, tourId: undefined },
+  { href: "/logs", labelKey: "nav.logs", icon: ScrollText, tourId: undefined },
+  { href: "/settings", labelKey: "nav.settings", icon: Settings, tourId: "nav-settings" },
+  { href: "/about", labelKey: "nav.about", icon: Info, tourId: undefined },
+] as const;
 
 export function AppSidebar() {
   const pathname = usePathname();
   const { t } = useLocale();
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" data-tour="sidebar">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2 px-2 py-1">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
@@ -77,7 +79,7 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={t(item.labelKey)}
                     >
-                      <Link href={item.href}>
+                      <Link href={item.href} {...(item.tourId ? { 'data-tour': item.tourId } : {})}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
                       </Link>
@@ -93,7 +95,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.environments")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(1, 6).map((item) => {
+              {navItems.slice(1, 7).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -103,7 +105,7 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={t(item.labelKey)}
                     >
-                      <Link href={item.href}>
+                      <Link href={item.href} {...(item.tourId ? { 'data-tour': item.tourId } : {})}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
                       </Link>
@@ -119,7 +121,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.settings")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(6).map((item) => {
+              {navItems.slice(7).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -129,7 +131,7 @@ export function AppSidebar() {
                       isActive={isActive}
                       tooltip={t(item.labelKey)}
                     >
-                      <Link href={item.href}>
+                      <Link href={item.href} {...(item.tourId ? { 'data-tour': item.tourId } : {})}>
                         <Icon className="h-4 w-4" />
                         <span>{t(item.labelKey)}</span>
                       </Link>

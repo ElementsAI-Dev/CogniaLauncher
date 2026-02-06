@@ -43,9 +43,12 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
 
     const totalEntries =
       cacheInfo.download_cache.entry_count + cacheInfo.metadata_cache.entry_count;
-    const hitRate = cacheInfo.download_cache.entry_count > 0 ? 75 : 0;
+    // Calculate actual usage ratio based on entry distribution
+    const usagePercent = totalEntries > 0
+      ? Math.round((cacheInfo.download_cache.entry_count / Math.max(totalEntries, 1)) * 100)
+      : 0;
 
-    const radial = [{ name: "usage", value: hitRate, fill: "url(#cacheGradient0)" }];
+    const radial = [{ name: "usage", value: usagePercent, fill: "url(#cacheGradient0)" }];
 
     const cfg: ChartConfig = {
       downloadCache: { label: t("dashboard.widgets.downloadCache"), color: "#3B82F6" },

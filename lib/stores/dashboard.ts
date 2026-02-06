@@ -21,7 +21,11 @@ export type WidgetType =
   | 'quick-search'
   | 'environment-list'
   | 'package-list'
-  | 'quick-actions';
+  | 'quick-actions'
+  | 'wsl-status'
+  | 'health-check'
+  | 'updates-available'
+  | 'welcome';
 
 export interface WidgetDefinition {
   type: WidgetType;
@@ -72,8 +76,8 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
   },
   'activity-timeline': {
     type: 'activity-timeline',
-    titleKey: 'dashboard.widgets.activityTimeline',
-    descriptionKey: 'dashboard.widgets.activityTimelineDesc',
+    titleKey: 'dashboard.widgets.distributionOverview',
+    descriptionKey: 'dashboard.widgets.distributionOverviewDesc',
     icon: 'Activity',
     defaultSize: 'md',
     minSize: 'sm',
@@ -133,11 +137,50 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     minSize: 'lg',
     category: 'tools',
   },
+  'wsl-status': {
+    type: 'wsl-status',
+    titleKey: 'dashboard.widgets.wslStatus',
+    descriptionKey: 'dashboard.widgets.wslStatusDesc',
+    icon: 'Terminal',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+  },
+  'health-check': {
+    type: 'health-check',
+    titleKey: 'dashboard.widgets.healthCheck',
+    descriptionKey: 'dashboard.widgets.healthCheckDesc',
+    icon: 'ShieldCheck',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+  },
+  'updates-available': {
+    type: 'updates-available',
+    titleKey: 'dashboard.widgets.updatesAvailable',
+    descriptionKey: 'dashboard.widgets.updatesAvailableDesc',
+    icon: 'ArrowUpCircle',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'overview',
+  },
+  'welcome': {
+    type: 'welcome',
+    titleKey: 'dashboard.widgets.welcomeTitle',
+    descriptionKey: 'dashboard.widgets.welcomeDesc',
+    icon: 'Sparkles',
+    defaultSize: 'full',
+    minSize: 'lg',
+    category: 'overview',
+  },
 };
 
 const DEFAULT_WIDGETS: WidgetConfig[] = [
+  { id: 'w-welcome', type: 'welcome', size: 'full', visible: true },
   { id: 'w-stats', type: 'stats-overview', size: 'full', visible: true },
   { id: 'w-search', type: 'quick-search', size: 'full', visible: true },
+  { id: 'w-health', type: 'health-check', size: 'md', visible: true },
+  { id: 'w-updates', type: 'updates-available', size: 'md', visible: true },
   { id: 'w-env-chart', type: 'environment-chart', size: 'md', visible: true },
   { id: 'w-pkg-chart', type: 'package-chart', size: 'md', visible: true },
   { id: 'w-envs', type: 'environment-list', size: 'md', visible: true },
@@ -146,6 +189,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'w-activity', type: 'activity-timeline', size: 'md', visible: true },
   { id: 'w-system', type: 'system-info', size: 'md', visible: true },
   { id: 'w-downloads', type: 'download-stats', size: 'md', visible: true },
+  { id: 'w-wsl', type: 'wsl-status', size: 'md', visible: true },
 ];
 
 interface DashboardState {
@@ -229,7 +273,24 @@ export const useDashboardStore = create<DashboardState>()(
     {
       name: 'cognia-dashboard',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (version < 2) {
+          // Add new widgets that didn't exist in v1
+          const state = persistedState as { widgets: WidgetConfig[] };
+          const existingTypes = new Set(state.widgets.map((w) => w.type));
+          if (!existingTypes.has('health-check')) {
+            state.widgets.splice(3, 0, { id: 'w-health', type: 'health-check', size: 'md', visible: true });
+          }
+          if (!existingTypes.has('updates-available')) {
+            state.widgets.splice(4, 0, { id: 'w-updates', type: 'updates-available', size: 'md', visible: true });
+          }
+          if (!existingTypes.has('welcome')) {
+            state.widgets.unshift({ id: 'w-welcome', type: 'welcome', size: 'full', visible: true });
+          }
+        }
+        return persistedState as DashboardState;
+      },
       partialize: (state) => ({
         widgets: state.widgets,
       }),

@@ -7,6 +7,15 @@ import {
   listenEnvInstallProgress,
   listenBatchProgress,
   listenCommandOutput,
+  listenDownloadTaskAdded,
+  listenDownloadTaskStarted,
+  listenDownloadTaskCompleted,
+  listenDownloadTaskFailed,
+  listenDownloadTaskPaused,
+  listenDownloadTaskResumed,
+  listenDownloadTaskCancelled,
+  listenSelfUpdateProgress,
+  listenUpdateCheckProgress,
 } from "@/lib/tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -258,6 +267,137 @@ export function LogProvider({ children }: LogProviderProps) {
           });
         });
         unlistenFns.push(unlistenBatch);
+
+        // Download task event listeners
+        const unlistenDlAdded = await listenDownloadTaskAdded((taskId) => {
+          addLog({
+            timestamp: Date.now(),
+            level: "info",
+            message: t("logs.messages.downloadAdded", { taskId }),
+            target: "download",
+          });
+        });
+        unlistenFns.push(unlistenDlAdded);
+
+        const unlistenDlStarted = await listenDownloadTaskStarted((taskId) => {
+          addLog({
+            timestamp: Date.now(),
+            level: "info",
+            message: t("logs.messages.downloadStarted", { taskId }),
+            target: "download",
+          });
+        });
+        unlistenFns.push(unlistenDlStarted);
+
+        const unlistenDlCompleted = await listenDownloadTaskCompleted(
+          (taskId) => {
+            addLog({
+              timestamp: Date.now(),
+              level: "info",
+              message: t("logs.messages.downloadCompleted", { taskId }),
+              target: "download",
+            });
+          },
+        );
+        unlistenFns.push(unlistenDlCompleted);
+
+        const unlistenDlFailed = await listenDownloadTaskFailed(
+          (taskId, error) => {
+            addLog({
+              timestamp: Date.now(),
+              level: "error",
+              message: t("logs.messages.downloadFailed", { taskId, error }),
+              target: "download",
+            });
+          },
+        );
+        unlistenFns.push(unlistenDlFailed);
+
+        const unlistenDlPaused = await listenDownloadTaskPaused((taskId) => {
+          addLog({
+            timestamp: Date.now(),
+            level: "debug",
+            message: t("logs.messages.downloadPaused", { taskId }),
+            target: "download",
+          });
+        });
+        unlistenFns.push(unlistenDlPaused);
+
+        const unlistenDlResumed = await listenDownloadTaskResumed((taskId) => {
+          addLog({
+            timestamp: Date.now(),
+            level: "debug",
+            message: t("logs.messages.downloadResumed", { taskId }),
+            target: "download",
+          });
+        });
+        unlistenFns.push(unlistenDlResumed);
+
+        const unlistenDlCancelled = await listenDownloadTaskCancelled(
+          (taskId) => {
+            addLog({
+              timestamp: Date.now(),
+              level: "warn",
+              message: t("logs.messages.downloadCancelled", { taskId }),
+              target: "download",
+            });
+          },
+        );
+        unlistenFns.push(unlistenDlCancelled);
+
+        // Self-update progress listener
+        const unlistenSelfUpdate = await listenSelfUpdateProgress(
+          (progress) => {
+            let message = "";
+            let level: LogLevel = "info";
+
+            switch (progress.status) {
+              case "downloading":
+                message = t("logs.messages.selfUpdateDownloading", {
+                  progress: progress.progress ?? 0,
+                });
+                level = "debug";
+                break;
+              case "installing":
+                message = t("logs.messages.selfUpdateInstalling");
+                break;
+              case "done":
+                message = t("logs.messages.selfUpdateDone");
+                break;
+              case "error":
+                message = t("logs.messages.selfUpdateError");
+                level = "error";
+                break;
+            }
+
+            addLog({
+              timestamp: Date.now(),
+              level,
+              message,
+              target: "self-update",
+            });
+          },
+        );
+        unlistenFns.push(unlistenSelfUpdate);
+
+        // Update check progress listener
+        const unlistenUpdateCheck = await listenUpdateCheckProgress(
+          (progress) => {
+            const message = t("logs.messages.updateCheckProgress", {
+              phase: progress.phase,
+              current: progress.current,
+              total: progress.total,
+            });
+
+            addLog({
+              timestamp: Date.now(),
+              level: progress.phase === "done" ? "info" : "debug",
+              message,
+              target: "update-check",
+            });
+          },
+        );
+        unlistenFns.push(unlistenUpdateCheck);
       } catch (error) {
         console.error("Failed to setup log listeners:", error);
       }
