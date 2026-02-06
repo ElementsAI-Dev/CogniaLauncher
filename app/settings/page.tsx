@@ -231,23 +231,39 @@ export default function SettingsPage() {
     }
   }, [resetConfig, t]);
 
-  const handleExport = useCallback(() => {
-    const exportData = {
-      version: '1.0',
-      exportedAt: new Date().toISOString(),
-      settings: localConfig,
-      appSettings,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cognia-settings-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success(t('settings.exportSuccess'));
+  const handleExport = useCallback(async () => {
+    try {
+      let exportData: Record<string, unknown>;
+      if (isTauri()) {
+        const { configExport } = await import('@/lib/tauri');
+        const tomlContent = await configExport();
+        exportData = {
+          version: '2.0',
+          exportedAt: new Date().toISOString(),
+          backendConfig: tomlContent,
+          appSettings,
+        };
+      } else {
+        exportData = {
+          version: '1.0',
+          exportedAt: new Date().toISOString(),
+          settings: localConfig,
+          appSettings,
+        };
+      }
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cognia-settings-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(t('settings.exportSuccess'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
+    }
   }, [localConfig, appSettings, t]);
 
   const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,11 +271,27 @@ export default function SettingsPage() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
         const data = JSON.parse(content);
 
+        // v2.0 format: full backend TOML config
+        if (data.version === '2.0' && data.backendConfig && isTauri()) {
+          const { configImport } = await import('@/lib/tauri');
+          await configImport(data.backendConfig);
+          if (data.appSettings && typeof data.appSettings === 'object') {
+            setAppSettings(data.appSettings);
+          }
+          // Refresh config from backend
+          await fetchConfig();
+          setHasChanges(false);
+          setValidationErrors({});
+          toast.success(t('settings.importSuccess'));
+          return;
+        }
+
+        // v1.0 format: frontend JSON settings map (legacy / web fallback)
         if (!data.settings || typeof data.settings !== 'object') {
           toast.error(t('settings.importInvalidFormat'));
           return;
@@ -290,7 +322,7 @@ export default function SettingsPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [setAppSettings, t]);
+  }, [setAppSettings, fetchConfig, t]);
 
   const handleDiscardChanges = useCallback(() => {
     setLocalConfig(config);

@@ -68,14 +68,14 @@ export function WslStatusCard({
               <Activity className="h-3.5 w-3.5" />
               {t('wsl.runningDistros')}
             </span>
-            <Badge variant={status?.running_distros.length ? 'default' : 'secondary'}>
-              {status?.running_distros.length ?? 0}
+            <Badge variant={status?.runningDistros.length ? 'default' : 'secondary'}>
+              {status?.runningDistros.length ?? 0}
             </Badge>
           </div>
 
-          {status?.running_distros.length ? (
+          {status?.runningDistros.length ? (
             <div className="flex flex-wrap gap-1.5">
-              {status.running_distros.map((name) => (
+              {status.runningDistros.map((name) => (
                 <Badge key={name} variant="outline" className="text-xs">
                   {name}
                 </Badge>
@@ -86,7 +86,7 @@ export function WslStatusCard({
           )}
         </div>
 
-        {status?.running_distros.length ? (
+        {status?.runningDistros.length ? (
           <Button
             variant="destructive"
             size="sm"

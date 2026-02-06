@@ -206,6 +206,8 @@ pub fn run() {
             commands::config::config_set,
             commands::config::config_list,
             commands::config::config_reset,
+            commands::config::config_export,
+            commands::config::config_import,
             commands::config::get_cognia_dir,
             commands::config::get_platform_info,
             commands::config::app_check_init,
@@ -414,6 +416,11 @@ pub fn run() {
             commands::wsl::wsl_launch,
             commands::wsl::wsl_list_running,
             commands::wsl::wsl_is_available,
+            commands::wsl::wsl_exec,
+            commands::wsl::wsl_convert_path,
+            commands::wsl::wsl_get_config,
+            commands::wsl::wsl_set_config,
+            commands::wsl::wsl_disk_usage,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
         ])

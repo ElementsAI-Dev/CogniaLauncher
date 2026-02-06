@@ -5,3 +5,5 @@ export { WslImportDialog } from './wsl-import-dialog';
 export { WslExportDialog } from './wsl-export-dialog';
 export { WslEmptyState } from './wsl-empty-state';
 export { WslNotAvailable } from './wsl-not-available';
+export { WslConfigCard } from './wsl-config-card';
+export { WslExecTerminal } from './wsl-exec-terminal';

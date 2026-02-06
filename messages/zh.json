@@ -55,7 +55,9 @@
     "details": "详情",
     "noResults": "未找到结果",
     "path": "路径",
-    "more": "更多"
+    "more": "更多",
+    "browse": "浏览",
+    "copied": "已复制"
   },
   "breadcrumbs": {
     "label": "面包屑"
@@ -1064,6 +1066,8 @@
     "cacheMonitorIntervalDesc": "检查缓存大小的频率（秒，0 = 禁用）",
     "cacheMonitorExternal": "监控外部缓存",
     "cacheMonitorExternalDesc": "在大小监控中包含外部工具缓存（npm、pip、cargo 等）",
+    "downloadSpeedLimit": "下载速度限制",
+    "downloadSpeedLimitDesc": "最大下载速度（字节/秒，0 = 不限制）",
     "network": "网络",
     "networkDesc": "网络和代理设置",
     "timeout": "超时",
@@ -1716,7 +1720,33 @@
     "runningDistros": "运行中的发行版",
     "noRunning": "当前没有运行中的发行版",
     "requiresAdmin": "此操作可能需要管理员权限",
-    "dataLossWarning": "警告：此操作将永久删除发行版中的所有数据。"
+    "dataLossWarning": "警告：此操作将永久删除发行版中的所有数据。",
+    "config": {
+      "title": ".wslconfig 设置",
+      "empty": "未配置 .wslconfig 设置",
+      "saved": "设置已保存",
+      "removed": "设置已移除",
+      "quickSettings": "快速设置",
+      "addCustom": "添加自定义设置",
+      "keyPlaceholder": "键（如 memory）",
+      "valuePlaceholder": "值（如 4GB）",
+      "restartNote": "更改需要重启 WSL（wsl --shutdown）才能生效。",
+      "memoryDesc": "WSL2 虚拟机最大内存",
+      "processorsDesc": "WSL2 虚拟机处理器数量",
+      "swapDesc": "WSL2 虚拟机交换空间",
+      "localhostForwardingDesc": "启用 localhost 转发",
+      "nestedVirtualizationDesc": "启用嵌套虚拟化",
+      "guiApplicationsDesc": "启用 GUI 应用支持",
+      "networkingModeDesc": "网络模式（NAT 或 mirrored）"
+    },
+    "exec": {
+      "title": "执行命令",
+      "selectDistro": "选择发行版",
+      "user": "用户（可选）",
+      "commandPlaceholder": "输入命令...",
+      "run": "执行",
+      "noRunningHint": "没有运行中的发行版。命令可能会自动启动发行版。"
+    }
   },
   "launch": {
     "title": "启动",

@@ -1,4 +1,5 @@
 use super::api::get_api_client;
+use super::node_base::split_name_version;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -98,16 +99,15 @@ impl BunProvider {
         // Parse bun pm ls output: package@version format
         for line in output.lines() {
             let line = line.trim();
-            if line.contains('@') {
-                // Format: package@version or package@version (extra info)
-                if let Some(at_pos) = line.find('@') {
-                    let pkg_name = &line[..at_pos];
-                    // Use exact match to avoid prefix false positives (e.g., "react" vs "react-dom")
-                    if pkg_name == name {
-                        let after_at = &line[at_pos + 1..];
-                        let version = after_at.split_whitespace().next().unwrap_or(after_at);
-                        return Ok(version.to_string());
-                    }
+            // Strip any leading tree characters (├──, └──, etc.)
+            let clean = line.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '@');
+            let (pkg_name, pkg_version) = split_name_version(clean);
+            // Use exact match to avoid prefix false positives (e.g., "react" vs "react-dom")
+            if pkg_name == name {
+                if let Some(v) = pkg_version {
+                    // Version might have trailing info like "(extra info)"
+                    let version = v.split_whitespace().next().unwrap_or(v);
+                    return Ok(version.to_string());
                 }
             }
         }
@@ -325,35 +325,44 @@ impl Provider for BunProvider {
                 continue;
             }
 
-            // Parse package@version format
-            if let Some((name, version)) = line.rsplit_once('@') {
-                let name = name.trim().to_string();
-                let version = version.trim().to_string();
-
-                if let Some(ref name_filter) = filter.name_filter {
-                    if !name.contains(name_filter) {
-                        continue;
-                    }
-                }
-
-                // Determine install path based on global or local
-                let install_path = if filter.global_only {
-                    Self::get_global_dir()
-                        .map(|p| p.join("install").join("global").join("node_modules").join(&name))
-                        .unwrap_or_default()
-                } else {
-                    PathBuf::from("node_modules").join(&name)
-                };
-
-                packages.push(InstalledPackage {
-                    name,
-                    version,
-                    provider: self.id().into(),
-                    install_path,
-                    installed_at: String::new(),
-                    is_global: filter.global_only,
-                });
+            // Strip any leading tree characters (├──, └──, │, etc.)
+            let clean = line.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '@');
+            if clean.is_empty() {
+                continue;
             }
+
+            // Parse package@version format using shared utility
+            let (pkg_name, pkg_version) = split_name_version(clean);
+            if pkg_name.is_empty() {
+                continue;
+            }
+            let version = pkg_version
+                .map(|v| v.split_whitespace().next().unwrap_or(v))
+                .unwrap_or("unknown");
+
+            if let Some(ref name_filter) = filter.name_filter {
+                if !pkg_name.contains(name_filter) {
+                    continue;
+                }
+            }
+
+            // Determine install path based on global or local
+            let install_path = if filter.global_only {
+                Self::get_global_dir()
+                    .map(|p| p.join("install").join("global").join("node_modules").join(pkg_name))
+                    .unwrap_or_default()
+            } else {
+                PathBuf::from("node_modules").join(pkg_name)
+            };
+
+            packages.push(InstalledPackage {
+                name: pkg_name.to_string(),
+                version: version.to_string(),
+                provider: self.id().into(),
+                install_path,
+                installed_at: String::new(),
+                is_global: filter.global_only,
+            });
         }
 
         Ok(packages)

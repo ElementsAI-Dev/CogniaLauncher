@@ -11,12 +11,30 @@ import { applyAccentColor } from "@/lib/theme/colors";
  */
 function AccentColorManager({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
-  const { accentColor, reducedMotion } = useAppearanceStore();
+  const { accentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
   const [mounted, setMounted] = React.useState(false);
+  const osMotionSynced = React.useRef(false);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Sync OS-level prefers-reduced-motion on first mount (only if user hasn't explicitly set it)
+  React.useEffect(() => {
+    if (!mounted || osMotionSynced.current) return;
+    osMotionSynced.current = true;
+
+    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mql.matches && !reducedMotion) {
+      setReducedMotion(true);
+    }
+
+    const handler = (e: MediaQueryListEvent) => {
+      setReducedMotion(e.matches);
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, [mounted, reducedMotion, setReducedMotion]);
 
   React.useEffect(() => {
     if (!mounted) return;

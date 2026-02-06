@@ -118,6 +118,8 @@ const mockMessages = {
       resolvePreferLocked: 'Prefer Locked',
       autoUpdateMetadata: 'Auto Update Metadata',
       autoUpdateMetadataDesc: 'Automatically refresh metadata',
+      downloadSpeedLimit: 'Download Speed Limit',
+      downloadSpeedLimitDesc: 'Maximum download speed in bytes/sec',
       network: 'Network',
       networkDesc: 'Network and proxy settings',
       timeout: 'Timeout',

@@ -32,8 +32,8 @@ pub use cache::{
     set_cache_settings, set_enhanced_cache_settings,
 };
 pub use config::{
-    app_check_init, config_get, config_list, config_reset, config_set, get_cognia_dir,
-    get_platform_info,
+    app_check_init, config_export, config_get, config_import, config_list, config_reset,
+    config_set, get_cognia_dir, get_platform_info,
 };
 pub use download::{
     disk_space_check, disk_space_get, download_add, download_cancel, download_cancel_all,
@@ -88,7 +88,8 @@ pub use profiles::{
     profile_get, profile_import, profile_list, profile_update,
 };
 pub use wsl::{
-    wsl_export, wsl_import, wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online,
-    wsl_list_running, wsl_set_default, wsl_set_default_version, wsl_set_version, wsl_shutdown,
+    wsl_convert_path, wsl_disk_usage, wsl_exec, wsl_export, wsl_get_config, wsl_import,
+    wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online, wsl_list_running,
+    wsl_set_config, wsl_set_default, wsl_set_default_version, wsl_set_version, wsl_shutdown,
     wsl_status, wsl_terminate, wsl_update,
 };

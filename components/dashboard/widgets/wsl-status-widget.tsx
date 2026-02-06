@@ -48,7 +48,7 @@ export function WslStatusWidget() {
     );
   }
 
-  const running = distros.filter((d) => d.state.toLowerCase() === 'running').length;
+  const runningCount = distros.filter((d) => d.state.toLowerCase() === 'running').length;
 
   return (
     <div className="space-y-3">
@@ -61,7 +61,7 @@ export function WslStatusWidget() {
         </Card>
         <Card>
           <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-green-600">{running}</p>
+            <p className="text-2xl font-bold text-green-600">{runningCount}</p>
             <p className="text-xs text-muted-foreground">{t('wsl.running')}</p>
           </CardContent>
         </Card>
@@ -88,7 +88,7 @@ export function WslStatusWidget() {
           ))}
           {distros.length > 4 && (
             <p className="text-xs text-muted-foreground text-center">
-              +{distros.length - 4} more
+              +{distros.length - 4} {t('common.more')}
             </p>
           )}
         </div>

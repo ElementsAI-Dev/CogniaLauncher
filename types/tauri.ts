@@ -941,25 +941,42 @@ export interface ProfileEnvironmentSkipped {
 export interface WslDistroStatus {
   name: string;
   state: string;
-  wsl_version: string;
-  is_default: boolean;
+  wslVersion: string;
+  isDefault: boolean;
 }
 
 /** WSL system-level status */
 export interface WslStatus {
   version: string;
-  status_info: string;
-  running_distros: string[];
+  statusInfo: string;
+  runningDistros: string[];
 }
 
 /** Options for importing a WSL distribution */
 export interface WslImportOptions {
   name: string;
-  install_location: string;
-  file_path: string;
-  wsl_version?: number;
-  as_vhd: boolean;
+  installLocation: string;
+  filePath: string;
+  wslVersion?: number;
+  asVhd: boolean;
 }
+
+/** Result of executing a command inside a WSL distribution */
+export interface WslExecResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/** Disk usage information for a WSL distribution */
+export interface WslDiskUsage {
+  totalBytes: number;
+  usedBytes: number;
+  filesystemPath: string;
+}
+
+/** WSL config sections (from .wslconfig) */
+export type WslConfig = Record<string, Record<string, string>>;
 
 // ============================================================================
 // Launch Types

@@ -343,6 +343,252 @@ impl WslProvider {
         let distros = Self::parse_list_verbose(&out);
         Ok(distros.into_iter().find(|d| d.name.eq_ignore_ascii_case(name)))
     }
+
+    /// Execute a command inside a specific WSL distribution.
+    /// Returns (stdout, stderr, exit_code).
+    pub async fn exec_command(
+        &self,
+        distro: &str,
+        command: &str,
+        user: Option<&str>,
+    ) -> CogniaResult<(String, String, i32)> {
+        let mut args: Vec<&str> = vec!["-d", distro];
+        if let Some(u) = user {
+            args.push("--user");
+            args.push(u);
+        }
+        args.extend(&["--exec", "sh", "-c", command]);
+
+        let out = process::execute("wsl.exe", &args, None).await?;
+        let stdout = Self::clean_wsl_output(&out.stdout);
+        let stderr = Self::clean_wsl_output(&out.stderr);
+        let exit_code = out.exit_code;
+        Ok((stdout, stderr, exit_code))
+    }
+
+    /// Convert a path between Windows and WSL formats using wslpath.
+    /// `to_windows`: true = convert Linux→Windows, false = convert Windows→Linux.
+    pub async fn convert_path(
+        &self,
+        path: &str,
+        distro: Option<&str>,
+        to_windows: bool,
+    ) -> CogniaResult<String> {
+        let flag = if to_windows { "-w" } else { "-u" };
+        let mut args: Vec<&str> = Vec::new();
+        if let Some(d) = distro {
+            args.extend(&["-d", d]);
+        }
+        args.extend(&["--exec", "wslpath", flag, path]);
+
+        let out = process::execute("wsl.exe", &args, None).await?;
+        let result = Self::clean_wsl_output(&out.stdout);
+        if result.trim().is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "WSL: Path conversion failed for '{}'",
+                path
+            )));
+        }
+        Ok(result.trim().to_string())
+    }
+
+    /// Read the global .wslconfig file.
+    /// Returns the parsed key-value pairs grouped by section.
+    pub fn read_wslconfig() -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>> {
+        let user_profile = std::env::var("USERPROFILE")
+            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+        let config_path = PathBuf::from(&user_profile).join(".wslconfig");
+
+        if !config_path.exists() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let content = std::fs::read_to_string(&config_path).map_err(|e| {
+            CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
+        })?;
+
+        Ok(Self::parse_ini_content(&content))
+    }
+
+    /// Write a setting to the global .wslconfig file.
+    /// Creates the file if it doesn't exist.
+    pub fn write_wslconfig(section: &str, key: &str, value: &str) -> CogniaResult<()> {
+        let user_profile = std::env::var("USERPROFILE")
+            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+        let config_path = PathBuf::from(&user_profile).join(".wslconfig");
+
+        let mut sections = if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path).map_err(|e| {
+                CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
+            })?;
+            Self::parse_ini_content(&content)
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        sections
+            .entry(section.to_string())
+            .or_default()
+            .insert(key.to_string(), value.to_string());
+
+        let output = Self::serialize_ini_content(&sections);
+        std::fs::write(&config_path, output).map_err(|e| {
+            CogniaError::Provider(format!("Failed to write .wslconfig: {}", e))
+        })?;
+
+        Ok(())
+    }
+
+    /// Remove a setting from the global .wslconfig file.
+    pub fn remove_wslconfig_key(section: &str, key: &str) -> CogniaResult<bool> {
+        let user_profile = std::env::var("USERPROFILE")
+            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+        let config_path = PathBuf::from(&user_profile).join(".wslconfig");
+
+        if !config_path.exists() {
+            return Ok(false);
+        }
+
+        let content = std::fs::read_to_string(&config_path).map_err(|e| {
+            CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
+        })?;
+
+        let mut sections = Self::parse_ini_content(&content);
+        let removed = if let Some(sec) = sections.get_mut(section) {
+            let existed = sec.remove(key).is_some();
+            if sec.is_empty() {
+                sections.remove(section);
+            }
+            existed
+        } else {
+            false
+        };
+
+        if removed {
+            let output = Self::serialize_ini_content(&sections);
+            std::fs::write(&config_path, output).map_err(|e| {
+                CogniaError::Provider(format!("Failed to write .wslconfig: {}", e))
+            })?;
+        }
+
+        Ok(removed)
+    }
+
+    /// Parse INI-style content into section → key → value map.
+    fn parse_ini_content(content: &str) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+        let mut sections: std::collections::HashMap<String, std::collections::HashMap<String, String>> = std::collections::HashMap::new();
+        let mut current_section = String::new();
+
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+                continue;
+            }
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                current_section = trimmed[1..trimmed.len() - 1].trim().to_string();
+                continue;
+            }
+            if let Some(eq_pos) = trimmed.find('=') {
+                let key = trimmed[..eq_pos].trim().to_string();
+                let value = trimmed[eq_pos + 1..].trim().to_string();
+                if !current_section.is_empty() {
+                    sections
+                        .entry(current_section.clone())
+                        .or_default()
+                        .insert(key, value);
+                }
+            }
+        }
+        sections
+    }
+
+    /// Serialize section → key → value map back to INI format.
+    fn serialize_ini_content(sections: &std::collections::HashMap<String, std::collections::HashMap<String, String>>) -> String {
+        let mut output = String::new();
+        // Sort sections for consistent output
+        let mut section_names: Vec<&String> = sections.keys().collect();
+        section_names.sort();
+
+        for (i, section) in section_names.iter().enumerate() {
+            if i > 0 {
+                output.push('\n');
+            }
+            output.push_str(&format!("[{}]\n", section));
+            if let Some(kvs) = sections.get(*section) {
+                let mut keys: Vec<&String> = kvs.keys().collect();
+                keys.sort();
+                for key in keys {
+                    if let Some(value) = kvs.get(key) {
+                        output.push_str(&format!("{}={}\n", key, value));
+                    }
+                }
+            }
+        }
+        output
+    }
+
+    /// Get disk usage information for a WSL distribution.
+    /// Returns (total_bytes, used_bytes) by querying the VHD or filesystem.
+    pub async fn get_disk_usage(&self, distro: &str) -> CogniaResult<(u64, u64)> {
+        // Try to get disk usage from inside the distro via df
+        let result = self
+            .exec_command(distro, "df -B1 / 2>/dev/null | tail -1", None)
+            .await;
+
+        if let Ok((stdout, _, code)) = result {
+            if code == 0 {
+                let parts: Vec<&str> = stdout.split_whitespace().collect();
+                // df -B1 output: Filesystem 1B-blocks Used Available Use% Mounted
+                if parts.len() >= 4 {
+                    let total = parts[1].parse::<u64>().unwrap_or(0);
+                    let used = parts[2].parse::<u64>().unwrap_or(0);
+                    if total > 0 {
+                        return Ok((total, used));
+                    }
+                }
+            }
+        }
+
+        // Fallback: try to find the VHD file size
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let vhd_patterns = [
+            PathBuf::from(&local_app_data)
+                .join("Packages")
+                .join(format!("*{}*", distro)),
+            PathBuf::from(&local_app_data).join("Docker"),
+        ];
+
+        for pattern in &vhd_patterns {
+            if let Some(parent) = pattern.parent() {
+                if parent.exists() {
+                    if let Ok(entries) = std::fs::read_dir(parent) {
+                        for entry in entries.flatten() {
+                            let name = entry.file_name().to_string_lossy().to_lowercase();
+                            if name.contains(&distro.to_lowercase()) {
+                                // Look for ext4.vhdx inside
+                                let vhdx = entry.path().join("LocalState").join("ext4.vhdx");
+                                if vhdx.exists() {
+                                    if let Ok(meta) = std::fs::metadata(&vhdx) {
+                                        return Ok((meta.len(), meta.len()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(CogniaError::Provider(format!(
+            "Could not determine disk usage for '{}'",
+            distro
+        )))
+    }
+
+    /// Get the Windows filesystem path (\\wsl$\<distro>) for a distribution.
+    pub fn get_distro_filesystem_path(distro: &str) -> String {
+        format!("\\\\wsl.localhost\\{}", distro)
+    }
 }
 
 impl Default for WslProvider {
@@ -794,5 +1040,69 @@ mod tests {
         assert!(provider.capabilities().contains(&Capability::Update));
         assert_eq!(provider.supported_platforms(), vec![Platform::Windows]);
         assert_eq!(provider.priority(), 85);
+    }
+
+    #[test]
+    fn test_parse_ini_content() {
+        let content = "[wsl2]\nmemory=4GB\nprocessors=2\nswap=8GB\n\n[experimental]\nautoMemoryReclaim=gradual\n";
+        let sections = WslProvider::parse_ini_content(content);
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections["wsl2"]["memory"], "4GB");
+        assert_eq!(sections["wsl2"]["processors"], "2");
+        assert_eq!(sections["wsl2"]["swap"], "8GB");
+        assert_eq!(sections["experimental"]["autoMemoryReclaim"], "gradual");
+    }
+
+    #[test]
+    fn test_parse_ini_content_with_comments() {
+        let content = "# This is a comment\n[wsl2]\n; Another comment\nmemory=4GB\n";
+        let sections = WslProvider::parse_ini_content(content);
+
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections["wsl2"]["memory"], "4GB");
+        assert_eq!(sections["wsl2"].len(), 1);
+    }
+
+    #[test]
+    fn test_parse_ini_content_empty() {
+        let content = "";
+        let sections = WslProvider::parse_ini_content(content);
+        assert!(sections.is_empty());
+    }
+
+    #[test]
+    fn test_serialize_ini_content() {
+        let mut sections = std::collections::HashMap::new();
+        let mut wsl2 = std::collections::HashMap::new();
+        wsl2.insert("memory".to_string(), "4GB".to_string());
+        wsl2.insert("processors".to_string(), "2".to_string());
+        sections.insert("wsl2".to_string(), wsl2);
+
+        let output = WslProvider::serialize_ini_content(&sections);
+        assert!(output.contains("[wsl2]"));
+        assert!(output.contains("memory=4GB"));
+        assert!(output.contains("processors=2"));
+    }
+
+    #[test]
+    fn test_serialize_roundtrip() {
+        let content = "[experimental]\nautoMemoryReclaim=gradual\n\n[wsl2]\nmemory=4GB\nprocessors=2\n";
+        let sections = WslProvider::parse_ini_content(content);
+        let output = WslProvider::serialize_ini_content(&sections);
+        let reparsed = WslProvider::parse_ini_content(&output);
+        assert_eq!(sections, reparsed);
+    }
+
+    #[test]
+    fn test_get_distro_filesystem_path() {
+        assert_eq!(
+            WslProvider::get_distro_filesystem_path("Ubuntu"),
+            "\\\\wsl.localhost\\Ubuntu"
+        );
+        assert_eq!(
+            WslProvider::get_distro_filesystem_path("Debian"),
+            "\\\\wsl.localhost\\Debian"
+        );
     }
 }

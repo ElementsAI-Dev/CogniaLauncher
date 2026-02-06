@@ -220,6 +220,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     keywords: ['cache', 'monitor', 'external', 'tool', '缓存', '监控', '外部', '工具'],
     advanced: true,
   },
+  {
+    key: 'general.download_speed_limit',
+    section: 'general',
+    labelKey: 'settings.downloadSpeedLimit',
+    descKey: 'settings.downloadSpeedLimitDesc',
+    type: 'input',
+    keywords: ['download', 'speed', 'limit', 'bandwidth', 'throttle', '下载', '速度', '限制', '带宽'],
+    advanced: true,
+  },
 
   // Network Settings
   {

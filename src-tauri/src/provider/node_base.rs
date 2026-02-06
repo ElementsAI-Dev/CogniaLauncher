@@ -6,6 +6,46 @@ use std::path::PathBuf;
 /// Common utilities for Node.js-based package managers (npm, pnpm, yarn)
 pub struct NodeProviderUtils;
 
+/// Split a "name@version" string into (name, version), correctly handling
+/// npm scoped packages like `@scope/name@version`.
+///
+/// Uses `rfind('@')` to locate the version separator (the LAST `@`).
+/// For scoped packages, the first `@` is part of the scope, not a version separator.
+///
+/// # Examples
+/// - `"lodash@4.17.21"` → `("lodash", Some("4.17.21"))`
+/// - `"@types/node@18.0.0"` → `("@types/node", Some("18.0.0"))`
+/// - `"@types/node"` → `("@types/node", None)`
+/// - `"lodash"` → `("lodash", None)`
+/// - `""` → `("", None)`
+pub fn split_name_version(input: &str) -> (&str, Option<&str>) {
+    let input = input.trim();
+    if input.is_empty() {
+        return ("", None);
+    }
+
+    // rfind('@') finds the LAST '@' — the version separator.
+    // For "@scope/name@version", rfind returns the index of the second '@'.
+    // For "@scope/name" (no version), rfind returns index 0 (the scope '@').
+    // For "name@version", rfind returns the only '@'.
+    if let Some(at_pos) = input.rfind('@') {
+        // If at_pos == 0, the only '@' is the scope prefix → no version
+        if at_pos == 0 {
+            return (input, None);
+        }
+        let name = &input[..at_pos];
+        let version = &input[at_pos + 1..];
+        // If version is empty (trailing '@'), treat as no version
+        if version.is_empty() {
+            (input, None)
+        } else {
+            (name, Some(version))
+        }
+    } else {
+        (input, None)
+    }
+}
+
 impl NodeProviderUtils {
     /// Execute a command and return stdout on success
     pub async fn run_command(cmd: &str, args: &[&str]) -> CogniaResult<String> {
@@ -123,5 +163,56 @@ mod tests {
     fn test_local_install_path() {
         let path = NodeProviderUtils::local_install_path("express");
         assert_eq!(path, PathBuf::from("node_modules/express"));
+    }
+
+    #[test]
+    fn test_split_name_version_simple() {
+        assert_eq!(split_name_version("lodash"), ("lodash", None));
+        assert_eq!(split_name_version("express"), ("express", None));
+        assert_eq!(split_name_version("cli-service"), ("cli-service", None));
+    }
+
+    #[test]
+    fn test_split_name_version_with_version() {
+        assert_eq!(split_name_version("lodash@4.17.21"), ("lodash", Some("4.17.21")));
+        assert_eq!(split_name_version("express@4.18.2"), ("express", Some("4.18.2")));
+        assert_eq!(split_name_version("react@18.0.0"), ("react", Some("18.0.0")));
+    }
+
+    #[test]
+    fn test_split_name_version_scoped_no_version() {
+        assert_eq!(split_name_version("@types/node"), ("@types/node", None));
+        assert_eq!(split_name_version("@vue/cli-service"), ("@vue/cli-service", None));
+        assert_eq!(split_name_version("@angular/core"), ("@angular/core", None));
+    }
+
+    #[test]
+    fn test_split_name_version_scoped_with_version() {
+        assert_eq!(split_name_version("@types/node@18.0.0"), ("@types/node", Some("18.0.0")));
+        assert_eq!(split_name_version("@vue/cli-service@5.0.8"), ("@vue/cli-service", Some("5.0.8")));
+        assert_eq!(split_name_version("@types/react@^18.0.0"), ("@types/react", Some("^18.0.0")));
+    }
+
+    #[test]
+    fn test_split_name_version_edge_cases() {
+        assert_eq!(split_name_version(""), ("", None));
+        assert_eq!(split_name_version("  "), ("", None));
+        assert_eq!(split_name_version("lodash@"), ("lodash@", None));
+        assert_eq!(split_name_version("  lodash@4.0.0  "), ("lodash", Some("4.0.0")));
+    }
+
+    #[test]
+    fn test_split_name_version_dist_tags() {
+        assert_eq!(split_name_version("lodash@latest"), ("lodash", Some("latest")));
+        assert_eq!(split_name_version("@types/node@latest"), ("@types/node", Some("latest")));
+        assert_eq!(split_name_version("react@next"), ("react", Some("next")));
+    }
+
+    #[test]
+    fn test_split_name_version_version_ranges() {
+        assert_eq!(split_name_version("lodash@^4.0.0"), ("lodash", Some("^4.0.0")));
+        assert_eq!(split_name_version("lodash@~4.0.0"), ("lodash", Some("~4.0.0")));
+        assert_eq!(split_name_version("lodash@>=4.0.0"), ("lodash", Some(">=4.0.0")));
+        assert_eq!(split_name_version("@types/node@>=18.0.0"), ("@types/node", Some(">=18.0.0")));
     }
 }

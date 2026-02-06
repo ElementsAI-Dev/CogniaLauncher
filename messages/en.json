@@ -55,7 +55,9 @@
     "details": "Details",
     "noResults": "No results found",
     "path": "Path",
-    "more": "more"
+    "more": "more",
+    "browse": "Browse",
+    "copied": "Copied"
   },
   "breadcrumbs": {
     "label": "Breadcrumbs"
@@ -1064,6 +1066,8 @@
     "cacheMonitorIntervalDesc": "How often to check cache size in seconds (0 = disabled)",
     "cacheMonitorExternal": "Monitor External Caches",
     "cacheMonitorExternalDesc": "Include external tool caches (npm, pip, cargo, etc.) in size monitoring",
+    "downloadSpeedLimit": "Download Speed Limit",
+    "downloadSpeedLimitDesc": "Maximum download speed in bytes/sec (0 = unlimited)",
     "network": "Network",
     "networkDesc": "Network and proxy settings",
     "timeout": "Timeout",
@@ -1716,7 +1720,33 @@
     "runningDistros": "Running Distributions",
     "noRunning": "No distributions currently running",
     "requiresAdmin": "This operation may require administrator privileges",
-    "dataLossWarning": "Warning: This action will permanently delete all data in the distribution."
+    "dataLossWarning": "Warning: This action will permanently delete all data in the distribution.",
+    "config": {
+      "title": ".wslconfig Settings",
+      "empty": "No .wslconfig settings configured",
+      "saved": "Setting saved successfully",
+      "removed": "Setting removed",
+      "quickSettings": "Quick Settings",
+      "addCustom": "Add Custom Setting",
+      "keyPlaceholder": "Key (e.g. memory)",
+      "valuePlaceholder": "Value (e.g. 4GB)",
+      "restartNote": "Changes require WSL restart (wsl --shutdown) to take effect.",
+      "memoryDesc": "Maximum memory for WSL2 VM",
+      "processorsDesc": "Number of processors for WSL2 VM",
+      "swapDesc": "Swap space for WSL2 VM",
+      "localhostForwardingDesc": "Enable localhost forwarding",
+      "nestedVirtualizationDesc": "Enable nested virtualization",
+      "guiApplicationsDesc": "Enable GUI application support",
+      "networkingModeDesc": "Network mode (NAT or mirrored)"
+    },
+    "exec": {
+      "title": "Execute Command",
+      "selectDistro": "Select distribution",
+      "user": "User (optional)",
+      "commandPlaceholder": "Enter command...",
+      "run": "Run",
+      "noRunningHint": "No distributions are running. Commands may start the distribution automatically."
+    }
   },
   "launch": {
     "title": "Launch",

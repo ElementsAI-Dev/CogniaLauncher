@@ -1,4 +1,5 @@
 use super::api::get_api_client;
+use super::node_base::split_name_version;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -102,11 +103,10 @@ impl YarnProvider {
                         // Look for package@version pattern
                         for part in trees.split(',') {
                             let part = part.trim();
-                            if part.contains('@') {
-                                // Extract package name before @ for exact matching
-                                let parts: Vec<&str> = part.splitn(2, '@').collect();
-                                if parts.len() == 2 && parts[0] == name {
-                                    return Ok(parts[1].trim().to_string());
+                            let (pkg_name, pkg_version) = split_name_version(part);
+                            if pkg_name == name {
+                                if let Some(v) = pkg_version {
+                                    return Ok(v.trim().to_string());
                                 }
                             }
                         }
@@ -115,10 +115,10 @@ impl YarnProvider {
                     if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
                         for tree in trees {
                             if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
-                                if tree_name.contains('@') {
-                                    let parts: Vec<&str> = tree_name.splitn(2, '@').collect();
-                                    if parts.len() == 2 && parts[0] == name {
-                                        return Ok(parts[1].trim().to_string());
+                                let (pkg_name, pkg_version) = split_name_version(tree_name);
+                                if pkg_name == name {
+                                    if let Some(v) = pkg_version {
+                                        return Ok(v.trim().to_string());
                                     }
                                 }
                             }
@@ -335,26 +335,30 @@ impl Provider for YarnProvider {
                         // Parse package names from tree output
                         for part in trees.split(',') {
                             let part = part.trim();
-                            if part.contains('@') {
-                                let name = part.split('@').next().unwrap_or(part).trim();
-
-                                if let Some(ref name_filter) = filter.name_filter {
-                                    if !name.contains(name_filter) {
-                                        continue;
-                                    }
-                                }
-
-                                packages.push(InstalledPackage {
-                                    name: name.to_string(),
-                                    version: "unknown".to_string(),
-                                    provider: self.id().into(),
-                                    install_path: Self::get_global_dir()
-                                        .unwrap_or_default()
-                                        .join(name),
-                                    installed_at: String::new(),
-                                    is_global: true,
-                                });
+                            if part.is_empty() {
+                                continue;
                             }
+                            let (pkg_name, pkg_version) = split_name_version(part);
+                            if pkg_name.is_empty() {
+                                continue;
+                            }
+
+                            if let Some(ref name_filter) = filter.name_filter {
+                                if !pkg_name.contains(name_filter) {
+                                    continue;
+                                }
+                            }
+
+                            packages.push(InstalledPackage {
+                                name: pkg_name.to_string(),
+                                version: pkg_version.unwrap_or("unknown").to_string(),
+                                provider: self.id().into(),
+                                install_path: Self::get_global_dir()
+                                    .unwrap_or_default()
+                                    .join(pkg_name),
+                                installed_at: String::new(),
+                                is_global: true,
+                            });
                         }
                     }
                 }

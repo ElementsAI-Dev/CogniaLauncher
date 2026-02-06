@@ -1,6 +1,13 @@
 import { useState, useCallback } from 'react';
 import * as tauri from '@/lib/tauri';
-import type { WslDistroStatus, WslStatus, WslImportOptions } from '@/types/tauri';
+import type {
+  WslDistroStatus,
+  WslStatus,
+  WslImportOptions,
+  WslExecResult,
+  WslDiskUsage,
+  WslConfig,
+} from '@/types/tauri';
 
 export interface UseWslReturn {
   // State
@@ -9,6 +16,7 @@ export interface UseWslReturn {
   onlineDistros: [string, string][];
   status: WslStatus | null;
   runningDistros: string[];
+  config: WslConfig | null;
   loading: boolean;
   error: string | null;
 
@@ -28,6 +36,11 @@ export interface UseWslReturn {
   importDistro: (options: WslImportOptions) => Promise<void>;
   updateWsl: () => Promise<string>;
   launch: (name: string, user?: string) => Promise<void>;
+  execCommand: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
+  convertPath: (path: string, distro?: string, toWindows?: boolean) => Promise<string>;
+  refreshConfig: () => Promise<void>;
+  setConfigValue: (section: string, key: string, value?: string) => Promise<void>;
+  getDiskUsage: (name: string) => Promise<WslDiskUsage | null>;
 }
 
 /**
@@ -48,6 +61,7 @@ export function useWsl(): UseWslReturn {
   const [onlineDistros, setOnlineDistros] = useState<[string, string][]>([]);
   const [status, setStatus] = useState<WslStatus | null>(null);
   const [runningDistros, setRunningDistros] = useState<string[]>([]);
+  const [config, setConfig] = useState<WslConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,23 +128,35 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const refreshConfig = useCallback(async () => {
+    if (!tauri.isTauri()) return;
+    try {
+      const result = await tauri.wslGetConfig();
+      setConfig(result);
+    } catch (err) {
+      console.error('Failed to get WSL config:', err);
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     if (!tauri.isTauri()) return;
     setLoading(true);
     setError(null);
     try {
-      const [distroResult, onlineResult, statusResult, runningResult] =
+      const [distroResult, onlineResult, statusResult, runningResult, configResult] =
         await Promise.allSettled([
           tauri.wslListDistros(),
           tauri.wslListOnline(),
           tauri.wslGetStatus(),
           tauri.wslListRunning(),
+          tauri.wslGetConfig(),
         ]);
 
       if (distroResult.status === 'fulfilled') setDistros(distroResult.value);
       if (onlineResult.status === 'fulfilled') setOnlineDistros(onlineResult.value);
       if (statusResult.status === 'fulfilled') setStatus(statusResult.value);
       if (runningResult.status === 'fulfilled') setRunningDistros(runningResult.value);
+      if (configResult.status === 'fulfilled') setConfig(configResult.value);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -256,12 +282,55 @@ export function useWsl(): UseWslReturn {
     }
   }, [refreshRunning]);
 
+  const execCommand = useCallback(async (distro: string, command: string, user?: string): Promise<WslExecResult> => {
+    if (!tauri.isTauri()) return { stdout: '', stderr: 'Not in Tauri environment', exitCode: 1 };
+    try {
+      setError(null);
+      return await tauri.wslExec(distro, command, user);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const convertPath = useCallback(async (path: string, distro?: string, toWindows?: boolean): Promise<string> => {
+    if (!tauri.isTauri()) return path;
+    try {
+      return await tauri.wslConvertPath(path, distro, toWindows);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const setConfigValue = useCallback(async (section: string, key: string, value?: string) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslSetConfig(section, key, value);
+      await refreshConfig();
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshConfig]);
+
+  const getDiskUsage = useCallback(async (name: string): Promise<WslDiskUsage | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslDiskUsage(name);
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     available,
     distros,
     onlineDistros,
     status,
     runningDistros,
+    config,
     loading,
     error,
     checkAvailability,
@@ -279,5 +348,10 @@ export function useWsl(): UseWslReturn {
     importDistro,
     updateWsl,
     launch,
+    execCommand,
+    convertPath,
+    refreshConfig,
+    setConfigValue,
+    getDiskUsage,
   };
 }

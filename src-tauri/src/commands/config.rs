@@ -52,6 +52,7 @@ pub async fn config_list(
         "general.cache_auto_clean_threshold",
         "general.cache_monitor_interval",
         "general.cache_monitor_external",
+        "general.download_speed_limit",
         "network.timeout",
         "network.retries",
         "network.proxy",
@@ -185,4 +186,26 @@ pub fn app_check_init() -> AppInitStatus {
         initialized: crate::is_initialized(),
         version: env!("CARGO_PKG_VERSION").to_string(),
     }
+}
+
+/// Export the full backend config as a TOML string
+#[tauri::command]
+pub async fn config_export(
+    settings: State<'_, SharedSettings>,
+) -> Result<String, String> {
+    let s = settings.read().await;
+    toml::to_string_pretty(&*s).map_err(|e| format!("Failed to serialize config: {}", e))
+}
+
+/// Import a full backend config from a TOML string, replacing all settings
+#[tauri::command]
+pub async fn config_import(
+    toml_content: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<(), String> {
+    let parsed: crate::config::Settings =
+        toml::from_str(&toml_content).map_err(|e| format!("Failed to parse config: {}", e))?;
+    let mut s = settings.write().await;
+    *s = parsed;
+    s.save().await.map_err(|e| e.to_string())
 }

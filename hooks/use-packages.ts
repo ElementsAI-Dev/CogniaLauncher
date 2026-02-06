@@ -28,7 +28,7 @@ export const normalizePackageId = (pkg: string) => {
     // - Wildcards: *, x, X
     // - Version prefix: v1.0.0
     // - Dist tags: latest, next, beta, alpha, canary, rc, stable, dev, nightly
-    const looksLikeVersion = /^([0-9~^*xX]|[<>=]+[0-9]|v[0-9]|latest|next|beta|alpha|canary|rc|stable|dev|nightly)/i.test(potentialVersion);
+    const looksLikeVersion = /^([0-9~^*xX]|[<>=]+[0-9]|v[0-9]|(?:latest|next|beta|alpha|canary|rc|stable|dev|nightly)(?:$|-))/i.test(potentialVersion);
     if (looksLikeVersion) {
       rest = rest.slice(0, versionIndex);
     }

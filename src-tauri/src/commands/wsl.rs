@@ -1,8 +1,10 @@
 use crate::provider::wsl::WslProvider;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// WSL distribution info returned to the frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WslDistroStatus {
     pub name: String,
     pub state: String,
@@ -12,6 +14,7 @@ pub struct WslDistroStatus {
 
 /// WSL system-level status info
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WslStatus {
     pub version: String,
     pub status_info: String,
@@ -20,12 +23,31 @@ pub struct WslStatus {
 
 /// Options for WSL import operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WslImportOptions {
     pub name: String,
     pub install_location: String,
     pub file_path: String,
     pub wsl_version: Option<u8>,
     pub as_vhd: bool,
+}
+
+/// Result of executing a command inside a WSL distribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslExecResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+/// Disk usage information for a WSL distribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDiskUsage {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub filesystem_path: String,
 }
 
 fn get_provider() -> WslProvider {
@@ -190,4 +212,74 @@ pub async fn wsl_is_available() -> Result<bool, String> {
     use crate::provider::traits::Provider;
     let provider = get_provider();
     Ok(provider.is_available().await)
+}
+
+/// Execute a command inside a WSL distribution
+#[tauri::command]
+pub async fn wsl_exec(
+    distro: String,
+    command: String,
+    user: Option<String>,
+) -> Result<WslExecResult, String> {
+    let provider = get_provider();
+    let (stdout, stderr, exit_code) = provider
+        .exec_command(&distro, &command, user.as_deref())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(WslExecResult {
+        stdout,
+        stderr,
+        exit_code,
+    })
+}
+
+/// Convert a path between Windows and WSL formats
+#[tauri::command]
+pub async fn wsl_convert_path(
+    path: String,
+    distro: Option<String>,
+    to_windows: bool,
+) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .convert_path(&path, distro.as_deref(), to_windows)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Read the global .wslconfig file
+#[tauri::command]
+pub async fn wsl_get_config() -> Result<HashMap<String, HashMap<String, String>>, String> {
+    WslProvider::read_wslconfig().map_err(|e| e.to_string())
+}
+
+/// Write a setting to the global .wslconfig file
+#[tauri::command]
+pub async fn wsl_set_config(
+    section: String,
+    key: String,
+    value: Option<String>,
+) -> Result<(), String> {
+    if let Some(val) = value {
+        WslProvider::write_wslconfig(&section, &key, &val).map_err(|e| e.to_string())
+    } else {
+        WslProvider::remove_wslconfig_key(&section, &key)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// Get disk usage for a WSL distribution
+#[tauri::command]
+pub async fn wsl_disk_usage(name: String) -> Result<WslDiskUsage, String> {
+    let provider = get_provider();
+    let (total_bytes, used_bytes) = provider
+        .get_disk_usage(&name)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(WslDiskUsage {
+        total_bytes,
+        used_bytes,
+        filesystem_path: WslProvider::get_distro_filesystem_path(&name),
+    })
 }

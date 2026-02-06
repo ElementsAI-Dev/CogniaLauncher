@@ -230,6 +230,17 @@ export function GeneralSettings({
             }
           />
         </div>
+        <Separator />
+        <SettingItem
+          id="download-speed-limit"
+          label={t("settings.downloadSpeedLimit")}
+          description={t("settings.downloadSpeedLimitDesc")}
+          value={localConfig["general.download_speed_limit"] || "0"}
+          onChange={(v) => onValueChange("general.download_speed_limit", v)}
+          type="number"
+          min={0}
+          error={errors["general.download_speed_limit"]}
+        />
       </CardContent>
     </Card>
   );

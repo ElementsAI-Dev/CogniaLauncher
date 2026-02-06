@@ -114,7 +114,7 @@ pub async fn init_download_manager(
 ) -> SharedDownloadManager {
     let config = DownloadManagerConfig {
         max_concurrent: settings.general.parallel_downloads as usize,
-        speed_limit: 0, // Unlimited by default
+        speed_limit: settings.general.download_speed_limit,
         default_task_config: DownloadConfig::default(),
         partials_dir: settings.get_cache_dir().join("partials"),
         auto_start: true,
@@ -524,9 +524,14 @@ pub async fn download_retry_failed(
 pub async fn download_set_speed_limit(
     bytes_per_second: u64,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<(), String> {
     let mgr = manager.read().await;
     mgr.set_speed_limit(bytes_per_second).await;
+    // Persist to config.toml
+    let mut s = settings.write().await;
+    s.general.download_speed_limit = bytes_per_second;
+    let _ = s.save().await;
     Ok(())
 }
 
@@ -544,9 +549,14 @@ pub async fn download_get_speed_limit(
 pub async fn download_set_max_concurrent(
     max: usize,
     manager: State<'_, SharedDownloadManager>,
+    settings: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<(), String> {
     let mgr = manager.read().await;
     mgr.set_max_concurrent(max).await;
+    // Persist to config.toml
+    let mut s = settings.write().await;
+    s.general.parallel_downloads = max as u32;
+    let _ = s.save().await;
     Ok(())
 }
 

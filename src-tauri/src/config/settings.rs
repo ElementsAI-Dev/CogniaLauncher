@@ -63,6 +63,8 @@ pub struct GeneralSettings {
     pub cache_monitor_interval: u64,
     /// Whether to include external caches in size monitoring
     pub cache_monitor_external: bool,
+    /// Download speed limit in bytes/sec (0 = unlimited)
+    pub download_speed_limit: u64,
 }
 
 impl Default for GeneralSettings {
@@ -79,6 +81,7 @@ impl Default for GeneralSettings {
             cache_auto_clean_threshold: 80,
             cache_monitor_interval: 300, // 5 minutes
             cache_monitor_external: false,
+            download_speed_limit: 0,
         }
     }
 }
@@ -294,6 +297,9 @@ impl Settings {
             ["general", "cache_monitor_external"] => {
                 Some(self.general.cache_monitor_external.to_string())
             }
+            ["general", "download_speed_limit"] => {
+                Some(self.general.download_speed_limit.to_string())
+            }
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
             ["network", "proxy"] => self.network.proxy.clone(),
@@ -416,6 +422,11 @@ impl Settings {
                 self.general.cache_monitor_external = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["general", "download_speed_limit"] => {
+                self.general.download_speed_limit = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for download_speed_limit".into()))?;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value
@@ -660,6 +671,30 @@ mod tests {
         // Disable mirror and check get_mirror_url returns None
         settings.set_value("mirrors.npm.enabled", "false").unwrap();
         assert_eq!(settings.get_mirror_url("npm"), None);
+    }
+
+    #[test]
+    fn test_download_speed_limit_get_set() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.general.download_speed_limit, 0);
+        assert_eq!(
+            settings.get_value("general.download_speed_limit"),
+            Some("0".to_string())
+        );
+
+        settings
+            .set_value("general.download_speed_limit", "1048576")
+            .unwrap();
+        assert_eq!(settings.general.download_speed_limit, 1048576);
+        assert_eq!(
+            settings.get_value("general.download_speed_limit"),
+            Some("1048576".to_string())
+        );
+
+        // Invalid value should fail
+        assert!(settings
+            .set_value("general.download_speed_limit", "not_a_number")
+            .is_err());
     }
 
     #[test]

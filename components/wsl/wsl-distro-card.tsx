@@ -44,7 +44,7 @@ export function WslDistroCard({
   t,
 }: WslDistroCardProps) {
   const isRunning = distro.state.toLowerCase() === 'running';
-  const wslVer = parseInt(distro.wsl_version, 10);
+  const wslVer = parseInt(distro.wslVersion, 10);
   const targetVersion = wslVer === 1 ? 2 : 1;
 
   return (
@@ -58,7 +58,7 @@ export function WslDistroCard({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold truncate">{distro.name}</h3>
-                {distro.is_default && (
+                {distro.isDefault && (
                   <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500 shrink-0" />
                 )}
               </div>
@@ -70,9 +70,9 @@ export function WslDistroCard({
                   {isRunning ? t('wsl.running') : t('wsl.stopped')}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  WSL {distro.wsl_version}
+                  WSL {distro.wslVersion}
                 </Badge>
-                {distro.is_default && (
+                {distro.isDefault && (
                   <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">
                     Default
                   </Badge>
@@ -111,7 +111,7 @@ export function WslDistroCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {!distro.is_default && (
+                {!distro.isDefault && (
                   <DropdownMenuItem onClick={() => onSetDefault(distro.name)}>
                     <Star className="h-4 w-4 mr-2" />
                     {t('wsl.setDefault')}

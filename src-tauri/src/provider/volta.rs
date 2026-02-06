@@ -1,3 +1,4 @@
+use super::node_base::split_name_version;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -65,17 +66,18 @@ impl VoltaProvider {
             }
 
             // Format varies: "tool@version (default|current|...)" or "tool@version"
-            if let Some(at_pos) = line.find('@') {
-                let tool = line[..at_pos].trim().to_string();
-                let rest = &line[at_pos + 1..];
-                let version = rest
+            // Also handles scoped npm packages: "@scope/pkg@version"
+            let (tool, version_part) = split_name_version(line);
+            if let Some(ver_str) = version_part {
+                // Version might have trailing info like "(default)"
+                let version = ver_str
                     .split_whitespace()
                     .next()
                     .unwrap_or("")
                     .to_string();
 
                 if !tool.is_empty() && !version.is_empty() {
-                    results.push((tool, version, PathBuf::new()));
+                    results.push((tool.to_string(), version, PathBuf::new()));
                 }
             }
         }

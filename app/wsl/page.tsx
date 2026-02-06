@@ -13,6 +13,8 @@ import {
   WslExportDialog,
   WslEmptyState,
   WslNotAvailable,
+  WslConfigCard,
+  WslExecTerminal,
 } from '@/components/wsl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -61,6 +63,10 @@ export default function WslPage() {
     importDistro,
     updateWsl,
     launch,
+    config,
+    execCommand,
+    refreshConfig,
+    setConfigValue,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -335,6 +341,14 @@ export default function WslPage() {
                 />
               </TabsContent>
             </Tabs>
+
+            {distros.length > 0 && (
+              <WslExecTerminal
+                distros={distros}
+                onExec={execCommand}
+                t={t}
+              />
+            )}
           </div>
 
           {/* Sidebar */}
@@ -344,6 +358,13 @@ export default function WslPage() {
               loading={loading}
               onRefresh={() => refreshStatus()}
               onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
+              t={t}
+            />
+            <WslConfigCard
+              config={config}
+              loading={loading}
+              onRefresh={refreshConfig}
+              onSetConfig={setConfigValue}
               t={t}
             />
           </div>

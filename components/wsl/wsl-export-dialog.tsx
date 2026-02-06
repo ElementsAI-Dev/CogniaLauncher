@@ -101,7 +101,7 @@ export function WslExportDialog({
                 className="flex-1"
               />
               <Button variant="outline" size="sm" onClick={handleBrowse}>
-                Browse
+                {t('common.browse')}
               </Button>
             </div>
           </div>

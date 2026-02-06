@@ -109,6 +109,9 @@ export type {
   WslDistroStatus,
   WslStatus,
   WslImportOptions,
+  WslExecResult,
+  WslDiskUsage,
+  WslConfig,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -193,6 +196,9 @@ import type {
   WslDistroStatus,
   WslStatus,
   WslImportOptions,
+  WslExecResult,
+  WslDiskUsage,
+  WslConfig,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -317,6 +323,8 @@ export const configGet = (key: string) => invoke<string | null>('config_get', { 
 export const configSet = (key: string, value: string) => invoke<void>('config_set', { key, value });
 export const configList = () => invoke<[string, string][]>('config_list');
 export const configReset = () => invoke<void>('config_reset');
+export const configExport = () => invoke<string>('config_export');
+export const configImport = (tomlContent: string) => invoke<void>('config_import', { tomlContent });
 export const getCogniaDir = () => invoke<string>('get_cognia_dir');
 export const getPlatformInfo = () => invoke<PlatformInfo>('get_platform_info');
 
@@ -1180,6 +1188,26 @@ export const wslLaunch = (name: string, user?: string) =>
 /** List currently running WSL distributions */
 export const wslListRunning = () =>
   invoke<string[]>('wsl_list_running');
+
+/** Execute a command inside a WSL distribution */
+export const wslExec = (distro: string, command: string, user?: string) =>
+  invoke<WslExecResult>('wsl_exec', { distro, command, user });
+
+/** Convert a path between Windows and WSL formats */
+export const wslConvertPath = (path: string, distro?: string, toWindows?: boolean) =>
+  invoke<string>('wsl_convert_path', { path, distro, toWindows: toWindows ?? false });
+
+/** Read the global .wslconfig file */
+export const wslGetConfig = () =>
+  invoke<WslConfig>('wsl_get_config');
+
+/** Write or remove a setting in the global .wslconfig file */
+export const wslSetConfig = (section: string, key: string, value?: string) =>
+  invoke<void>('wsl_set_config', { section, key, value });
+
+/** Get disk usage for a WSL distribution */
+export const wslDiskUsage = (name: string) =>
+  invoke<WslDiskUsage>('wsl_disk_usage', { name });
 
 // ============================================================================
 // Launch Commands

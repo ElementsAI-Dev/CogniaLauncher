@@ -81,10 +81,10 @@ export function WslImportDialog({
     try {
       await onImport({
         name: name.trim(),
-        install_location: installLocation.trim(),
-        file_path: filePath.trim(),
-        wsl_version: parseInt(wslVersion, 10),
-        as_vhd: asVhd,
+        installLocation: installLocation.trim(),
+        filePath: filePath.trim(),
+        wslVersion: parseInt(wslVersion, 10),
+        asVhd: asVhd,
       });
       onOpenChange(false);
       resetForm();
@@ -138,7 +138,7 @@ export function WslImportDialog({
                 className="flex-1"
               />
               <Button variant="outline" size="sm" onClick={handleBrowseFile}>
-                Browse
+                {t('common.browse')}
               </Button>
             </div>
           </div>
@@ -154,7 +154,7 @@ export function WslImportDialog({
                 className="flex-1"
               />
               <Button variant="outline" size="sm" onClick={handleBrowseLocation}>
-                Browse
+                {t('common.browse')}
               </Button>
             </div>
           </div>
