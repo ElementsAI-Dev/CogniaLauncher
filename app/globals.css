@@ -242,3 +242,163 @@ html:not(.no-transitions) [data-state="closed"] {
               padding var(--sidebar-transition-duration, 300ms) var(--sidebar-transition-easing, ease),
               background-color 150ms ease;
 }
+
+/* ===== Splash Screen Animations ===== */
+
+/* Background orbs */
+.splash-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  animation: splash-float 8s ease-in-out infinite;
+}
+
+.splash-orb-1 {
+  width: 300px;
+  height: 300px;
+  top: -80px;
+  right: -80px;
+  background: oklch(0.6 0.2 260);
+  animation-delay: 0s;
+}
+
+.splash-orb-2 {
+  width: 250px;
+  height: 250px;
+  bottom: -60px;
+  left: -60px;
+  background: oklch(0.6 0.2 150);
+  animation-delay: -3s;
+}
+
+.splash-orb-3 {
+  width: 200px;
+  height: 200px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: oklch(0.6 0.15 30);
+  animation-delay: -5s;
+}
+
+@keyframes splash-float {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  33% {
+    transform: translate(15px, -20px) scale(1.05);
+  }
+  66% {
+    transform: translate(-10px, 10px) scale(0.95);
+  }
+}
+
+/* Logo container */
+.splash-logo-container {
+  width: 80px;
+  height: 80px;
+}
+
+/* Spinning ring around logo */
+.splash-ring {
+  border: 2px solid transparent;
+  border-top-color: oklch(0.6 0.2 260);
+  border-right-color: oklch(0.6 0.15 260 / 40%);
+  animation: splash-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+.splash-ring-done {
+  border-color: oklch(0.6 0.2 150);
+  animation: splash-ring-complete 0.4s ease-out forwards;
+}
+
+@keyframes splash-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes splash-ring-complete {
+  0% { transform: rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: rotate(180deg) scale(1.15); opacity: 0; }
+}
+
+/* Logo entrance */
+.splash-logo {
+  animation: splash-logo-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes splash-logo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Title entrance */
+.splash-title {
+  animation: splash-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.splash-version {
+  animation: splash-fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both;
+}
+
+.splash-message {
+  animation: splash-fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+@keyframes splash-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Progress bar shimmer */
+.splash-progress {
+  position: relative;
+  overflow: hidden;
+}
+
+.splash-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 25%),
+    transparent
+  );
+  animation: splash-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes splash-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .splash-orb,
+  .splash-ring,
+  .splash-logo,
+  .splash-title,
+  .splash-version,
+  .splash-message,
+  .splash-progress::after {
+    animation: none !important;
+  }
+  .splash-ring {
+    border-color: oklch(0.6 0.2 260);
+  }
+}

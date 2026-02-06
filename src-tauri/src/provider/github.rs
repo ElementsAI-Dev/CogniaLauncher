@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 const GITHUB_API: &str = "https://api.github.com";
+const GITHUB_API_VERSION: &str = "2022-11-28";
 
 pub struct GitHubProvider {
     client: HttpClient,
@@ -26,17 +27,36 @@ impl GitHubProvider {
         }
     }
 
-    async fn api_get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> CogniaResult<T> {
-        let url = format!("{}{}", GITHUB_API, path);
+    /// Create a provider with an explicit token (from settings)
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        if token.is_some() {
+            self.token = token;
+        }
+        self
+    }
+
+    fn build_request_options(&self) -> crate::platform::network::RequestOptions {
         let mut opts = crate::platform::network::RequestOptions::new()
-            .with_header("Accept", "application/vnd.github+json");
+            .with_header("Accept", "application/vnd.github+json")
+            .with_header("X-GitHub-Api-Version", GITHUB_API_VERSION);
         if let Some(token) = &self.token {
             opts = opts.with_header("Authorization", format!("Bearer {}", token));
         }
+        opts
+    }
+
+    async fn api_get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> CogniaResult<T> {
+        let url = format!("{}{}", GITHUB_API, path);
+        let opts = self.build_request_options();
         let resp = self.client.get_with_options(&url, Some(opts)).await?;
         resp.json()
             .await
             .map_err(|e| CogniaError::Network(e.to_string()))
+    }
+
+    /// Fetch repository metadata (description, stars, license, etc.)
+    pub async fn get_repo_info(&self, repo: &str) -> CogniaResult<GitHubRepoInfo> {
+        self.api_get(&format!("/repos/{}", repo)).await
     }
 
     pub async fn list_branches(&self, repo: &str) -> CogniaResult<Vec<GitHubBranch>> {
@@ -193,6 +213,28 @@ pub struct GitHubTag {
     pub tarball_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubRepoInfo {
+    pub full_name: String,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub license: Option<GitHubLicenseInfo>,
+    pub stargazers_count: Option<u64>,
+    pub forks_count: Option<u64>,
+    pub open_issues_count: Option<u64>,
+    pub default_branch: Option<String>,
+    pub archived: Option<bool>,
+    pub disabled: Option<bool>,
+    pub topics: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitHubLicenseInfo {
+    pub key: String,
+    pub name: String,
+    pub spdx_id: String,
+}
+
 #[async_trait]
 impl Provider for GitHubProvider {
     fn id(&self) -> &str {
@@ -226,10 +268,11 @@ impl Provider for GitHubProvider {
         }
 
         let limit = opts.limit.unwrap_or(10);
+        let encoded_query = urlencoding::encode(query);
         let resp: SearchResp = self
             .api_get(&format!(
                 "/search/repositories?q={}&per_page={}",
-                query, limit
+                encoded_query, limit
             ))
             .await?;
         Ok(resp
@@ -246,12 +289,21 @@ impl Provider for GitHubProvider {
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
         let versions = self.get_versions(name).await?;
+        // Fetch repo metadata for richer info
+        let (description, homepage, license) = match self.get_repo_info(name).await {
+            Ok(info) => (
+                info.description,
+                info.homepage.or(Some(format!("https://github.com/{}", name))),
+                info.license.map(|l| l.spdx_id),
+            ),
+            Err(_) => (None, Some(format!("https://github.com/{}", name)), None),
+        };
         Ok(PackageInfo {
             name: name.into(),
             display_name: Some(name.into()),
-            description: None,
-            homepage: Some(format!("https://github.com/{}", name)),
-            license: None,
+            description,
+            homepage,
+            license,
             repository: Some(format!("https://github.com/{}", name)),
             versions,
             provider: self.id().into(),
@@ -275,13 +327,21 @@ impl Provider for GitHubProvider {
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let release: GitHubRelease = if let Some(v) = &req.version {
-            let tag = if v.starts_with('v') {
-                v.clone()
+            // Try the version as-is first, then with/without v prefix
+            let candidates = if v.starts_with('v') {
+                vec![v.clone(), v[1..].to_string()]
             } else {
-                format!("v{}", v)
+                vec![format!("v{}", v), v.clone()]
             };
-            self.api_get(&format!("/repos/{}/releases/tags/{}", req.name, tag))
-                .await?
+            let mut last_err = CogniaError::Provider("No matching release found".into());
+            let mut found = None;
+            for tag in &candidates {
+                match self.api_get::<GitHubRelease>(&format!("/repos/{}/releases/tags/{}", req.name, tag)).await {
+                    Ok(r) => { found = Some(r); break; }
+                    Err(e) => { last_err = e; }
+                }
+            }
+            found.ok_or(last_err)?
         } else {
             self.api_get(&format!("/repos/{}/releases/latest", req.name))
                 .await?

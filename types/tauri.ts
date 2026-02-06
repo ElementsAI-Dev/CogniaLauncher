@@ -891,3 +891,23 @@ export interface ProfileEnvironmentSkipped {
   version: string;
   reason: string;
 }
+
+/** Result of path validation from backend */
+export interface PathValidationResult {
+  normalizedPath: string;
+  isValid: boolean;
+  exists: boolean;
+  isDirectory: boolean;
+  isFile: boolean;
+  writable: boolean;
+  readable: boolean;
+  isAbsolute: boolean;
+  parentExists: boolean;
+  parentWritable: boolean;
+  hasTraversal: boolean;
+  hasSuspiciousChars: boolean;
+  diskAvailable: number;
+  diskAvailableHuman: string;
+  warnings: string[];
+  errors: string[];
+}

@@ -127,3 +127,17 @@ pub struct PlatformInfo {
     pub os: String,
     pub arch: String,
 }
+
+#[derive(serde::Serialize)]
+pub struct AppInitStatus {
+    pub initialized: bool,
+    pub version: String,
+}
+
+#[tauri::command]
+pub fn app_check_init() -> AppInitStatus {
+    AppInitStatus {
+        initialized: crate::is_initialized(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}

@@ -101,6 +101,7 @@ export type {
   ProfileEnvironmentResult,
   ProfileEnvironmentError,
   ProfileEnvironmentSkipped,
+  PathValidationResult,
 } from '@/types/tauri';
 
 import type {
@@ -172,6 +173,7 @@ import type {
   EnvironmentProfile,
   ProfileEnvironment,
   ProfileApplyResult,
+  PathValidationResult,
 } from '@/types/tauri';
 
 // Check if running in Tauri environment
@@ -264,6 +266,14 @@ export const packageInstall = (packages: string[]) => invoke<string[]>('package_
 export const packageUninstall = (packages: string[]) => invoke<void>('package_uninstall', { packages });
 export const packageList = (provider?: string) => invoke<InstalledPackage[]>('package_list', { provider });
 export const providerList = () => invoke<ProviderInfo[]>('provider_list');
+
+// App initialization status
+export interface AppInitStatus {
+  initialized: boolean;
+  version: string;
+}
+
+export const appCheckInit = () => invoke<AppInitStatus>('app_check_init');
 
 // Config commands
 export const configGet = (key: string) => invoke<string | null>('config_get', { key });
@@ -986,3 +996,79 @@ export const githubDownloadSource = (
   destination: string
 ) =>
   invoke<string>('github_download_source', { repo, refName, format, destination });
+
+// ============================================================================
+// GitLab Commands
+// ============================================================================
+
+import type {
+  GitLabBranchInfo,
+  GitLabTagInfo,
+  GitLabReleaseInfo,
+  GitLabAssetInfo,
+  GitLabParsedProject,
+  GitLabProjectInfo,
+} from '@/types/gitlab';
+
+export type {
+  GitLabBranchInfo,
+  GitLabTagInfo,
+  GitLabReleaseInfo,
+  GitLabAssetInfo,
+  GitLabParsedProject,
+  GitLabProjectInfo,
+};
+
+/** Parse a GitLab URL or owner/repo string */
+export const gitlabParseUrl = (url: string) =>
+  invoke<GitLabParsedProject | null>('gitlab_parse_url', { url });
+
+/** Validate if a GitLab project exists */
+export const gitlabValidateProject = (project: string) =>
+  invoke<boolean>('gitlab_validate_project', { project });
+
+/** Get GitLab project info */
+export const gitlabGetProjectInfo = (project: string) =>
+  invoke<GitLabProjectInfo>('gitlab_get_project_info', { project });
+
+/** List branches from a GitLab project */
+export const gitlabListBranches = (project: string) =>
+  invoke<GitLabBranchInfo[]>('gitlab_list_branches', { project });
+
+/** List tags from a GitLab project */
+export const gitlabListTags = (project: string) =>
+  invoke<GitLabTagInfo[]>('gitlab_list_tags', { project });
+
+/** List releases from a GitLab project */
+export const gitlabListReleases = (project: string) =>
+  invoke<GitLabReleaseInfo[]>('gitlab_list_releases', { project });
+
+/** Get assets for a specific GitLab release by tag */
+export const gitlabGetReleaseAssets = (project: string, tag: string) =>
+  invoke<GitLabAssetInfo[]>('gitlab_get_release_assets', { project, tag });
+
+/** Download a GitLab release asset to the download queue */
+export const gitlabDownloadAsset = (
+  project: string,
+  assetUrl: string,
+  assetName: string,
+  destination: string
+) =>
+  invoke<string>('gitlab_download_asset', { project, assetUrl, assetName, destination });
+
+/** Download source archive from GitLab to the download queue */
+export const gitlabDownloadSource = (
+  project: string,
+  refName: string,
+  format: 'zip' | 'tar.gz' | 'tar.bz2' | 'tar',
+  destination: string
+) =>
+  invoke<string>('gitlab_download_source', { project, refName, format, destination });
+
+// ============================================================================
+// Filesystem Utility Commands
+// ============================================================================
+
+/** Validate a filesystem path (existence, permissions, traversal, cross-platform) */
+export const validatePath = (path: string, expectDirectory: boolean = true) =>
+  invoke<PathValidationResult>('validate_path', { path, expectDirectory });

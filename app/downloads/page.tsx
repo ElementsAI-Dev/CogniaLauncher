@@ -18,6 +18,7 @@ import { isTauri } from '@/lib/tauri';
 import {
   AddDownloadDialog,
   GitHubDownloadDialog,
+  GitLabDownloadDialog,
   DownloadToolbar,
   DownloadEmptyState,
   type StatusFilter,
@@ -36,6 +37,7 @@ import {
   Gauge,
   History,
   Github,
+  Archive,
   FolderOpen,
   ExternalLink,
 } from 'lucide-react';
@@ -77,6 +79,7 @@ export default function DownloadsPage() {
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [githubDialogOpen, setGithubDialogOpen] = useState(false);
+  const [gitlabDialogOpen, setGitlabDialogOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
@@ -287,6 +290,10 @@ export default function DownloadsPage() {
             <Button size="sm" variant="outline" onClick={() => setGithubDialogOpen(true)}>
               <Github className="h-4 w-4 mr-2" />
               {t('downloads.fromGitHub')}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setGitlabDialogOpen(true)}>
+              <Archive className="h-4 w-4 mr-2" />
+              {t('downloads.fromGitLab')}
             </Button>
             <Button
               variant="outline"
@@ -668,6 +675,15 @@ export default function DownloadsPage() {
       <GitHubDownloadDialog
         open={githubDialogOpen}
         onOpenChange={setGithubDialogOpen}
+        onDownloadStarted={() => {
+          refreshTasks();
+          refreshStats();
+        }}
+      />
+
+      <GitLabDownloadDialog
+        open={gitlabDialogOpen}
+        onOpenChange={setGitlabDialogOpen}
         onDownloadStarted={() => {
           refreshTasks();
           refreshStats();

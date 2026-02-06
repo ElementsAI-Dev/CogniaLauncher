@@ -3,9 +3,9 @@ use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
     apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conda, deno, dnf, docker,
-    dotnet, flatpak, fnm, gem, github, goenv, macports, mise, nix, npm, nvm, pacman, phpbrew, pip,
-    pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta,
-    winget, yarn, zypper,
+    dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm, pacman,
+    phpbrew, pip, pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop, sdkman, snap, uv,
+    vcpkg, volta, winget, yarn, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -223,8 +223,33 @@ impl ProviderRegistry {
             registry.register_environment_provider(system_bun);
         }
 
-        let github_provider = Arc::new(github::GitHubProvider::new());
+        // GitHub provider with optional token from settings
+        let github_token = settings.providers.get("github")
+            .and_then(|ps| ps.extra.get("token"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GITHUB_TOKEN").ok());
+        let github_provider = Arc::new(
+            github::GitHubProvider::new().with_token(github_token)
+        );
         registry.register_provider(github_provider);
+
+        // GitLab provider with optional token and custom instance URL from settings
+        let gitlab_token = settings.providers.get("gitlab")
+            .and_then(|ps| ps.extra.get("token"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GITLAB_TOKEN").ok());
+        let gitlab_url = settings.providers.get("gitlab")
+            .and_then(|ps| ps.extra.get("url"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let gitlab_provider = Arc::new(
+            gitlab::GitLabProvider::new()
+                .with_token(gitlab_token)
+                .with_instance_url(gitlab_url)
+        );
+        registry.register_provider(gitlab_provider);
 
         // Register npm provider with mirror configuration
         let npm_provider = Arc::new(

@@ -49,11 +49,11 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
   const chartConfig: ChartConfig = {
     environments: {
       label: t("dashboard.widgets.environments"),
-      color: "hsl(var(--chart-1))",
+      color: "#3B82F6",
     },
     packages: {
       label: t("dashboard.widgets.packages"),
-      color: "hsl(var(--chart-2))",
+      color: "#10B981",
     },
   };
 
@@ -87,39 +87,41 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[200px] w-full aspect-auto">
           <AreaChart data={chartData} margin={{ left: 0, right: 12 }}>
-            <CartesianGrid vertical={false} />
+            <defs>
+              <linearGradient id="fillEnv" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.6} />
+                <stop offset="60%" stopColor="#60A5FA" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#93C5FD" stopOpacity={0.05} />
+              </linearGradient>
+              <linearGradient id="fillPkg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#10B981" stopOpacity={0.6} />
+                <stop offset="60%" stopColor="#34D399" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#6EE7B7" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
             <XAxis
               dataKey="name"
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }}
             />
-            <YAxis tickLine={false} axisLine={false} width={30} />
+            <YAxis tickLine={false} axisLine={false} width={30} tick={{ fill: "hsl(var(--foreground))" }} />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <defs>
-              <linearGradient id="fillEnv" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--chart-1))" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="hsl(var(--chart-1))" stopOpacity={0.1} />
-              </linearGradient>
-              <linearGradient id="fillPkg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(var(--chart-2))" stopOpacity={0.8} />
-                <stop offset="95%" stopColor="hsl(var(--chart-2))" stopOpacity={0.1} />
-              </linearGradient>
-            </defs>
             <Area
               type="monotone"
               dataKey="environments"
-              stroke="hsl(var(--chart-1))"
+              stroke="#3B82F6"
+              strokeWidth={2.5}
               fill="url(#fillEnv)"
-              strokeWidth={2}
             />
             <Area
               type="monotone"
               dataKey="packages"
-              stroke="hsl(var(--chart-2))"
+              stroke="#10B981"
+              strokeWidth={2.5}
               fill="url(#fillPkg)"
-              strokeWidth={2}
             />
           </AreaChart>
         </ChartContainer>

@@ -32,12 +32,12 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
       {
         name: t("dashboard.widgets.downloadCache"),
         value: downloadSize,
-        fill: "hsl(var(--chart-1))",
+        fill: "url(#cacheGradient0)",
       },
       {
         name: t("dashboard.widgets.metadataCache"),
         value: metadataSize,
-        fill: "hsl(var(--chart-3))",
+        fill: "url(#cacheGradient1)",
       },
     ].filter((d) => d.value > 0);
 
@@ -45,12 +45,12 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
       cacheInfo.download_cache.entry_count + cacheInfo.metadata_cache.entry_count;
     const hitRate = cacheInfo.download_cache.entry_count > 0 ? 75 : 0;
 
-    const radial = [{ name: "usage", value: hitRate, fill: "hsl(var(--chart-1))" }];
+    const radial = [{ name: "usage", value: hitRate, fill: "url(#cacheGradient0)" }];
 
     const cfg: ChartConfig = {
-      downloadCache: { label: t("dashboard.widgets.downloadCache"), color: "hsl(var(--chart-1))" },
-      metadataCache: { label: t("dashboard.widgets.metadataCache"), color: "hsl(var(--chart-3))" },
-      usage: { label: t("dashboard.widgets.cacheUsage"), color: "hsl(var(--chart-1))" },
+      downloadCache: { label: t("dashboard.widgets.downloadCache"), color: "#3B82F6" },
+      metadataCache: { label: t("dashboard.widgets.metadataCache"), color: "#8B5CF6" },
+      usage: { label: t("dashboard.widgets.cacheUsage"), color: "#3B82F6" },
     };
 
     return { pieData: pie, radialData: radial, chartConfig: cfg, totalEntries };
@@ -102,14 +102,26 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
         {pieData.length > 0 ? (
           <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
             <PieChart>
+              <defs>
+                <linearGradient id="cacheGradient0" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3B82F6" />
+                  <stop offset="100%" stopColor="#60A5FA" />
+                </linearGradient>
+                <linearGradient id="cacheGradient1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#8B5CF6" />
+                  <stop offset="100%" stopColor="#A78BFA" />
+                </linearGradient>
+              </defs>
               <ChartTooltip content={<ChartTooltipContent />} />
               <Pie
                 data={pieData}
                 cx="50%"
                 cy="50%"
-                innerRadius={40}
-                outerRadius={65}
-                paddingAngle={2}
+                innerRadius={45}
+                outerRadius={70}
+                paddingAngle={3}
+                strokeWidth={2}
+                stroke="hsl(var(--background))"
                 dataKey="value"
                 nameKey="name"
               >
@@ -130,8 +142,14 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
               cx="50%"
               cy="50%"
             >
+              <defs>
+                <linearGradient id="cacheGradient0" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3B82F6" />
+                  <stop offset="100%" stopColor="#60A5FA" />
+                </linearGradient>
+              </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-              <RadialBar dataKey="value" cornerRadius={8} background />
+              <RadialBar dataKey="value" cornerRadius={10} background={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
               <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="text-2xl font-bold fill-foreground">
                 {t("dashboard.widgets.empty")}
               </text>

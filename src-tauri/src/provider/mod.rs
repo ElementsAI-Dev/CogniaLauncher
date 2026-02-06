@@ -17,6 +17,7 @@ pub mod flatpak;
 pub mod fnm;
 pub mod gem;
 pub mod github;
+pub mod gitlab;
 pub mod goenv;
 pub mod macports;
 pub mod mise;

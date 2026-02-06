@@ -2,6 +2,8 @@ export { AddDownloadDialog } from "./add-download-dialog";
 
 export { GitHubDownloadDialog } from "./github-download-dialog";
 
+export { GitLabDownloadDialog } from "./gitlab-download-dialog";
+
 export { DownloadToolbar } from "./download-toolbar";
 export type { DownloadToolbarProps, StatusFilter } from "./download-toolbar";
 

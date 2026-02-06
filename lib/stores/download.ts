@@ -1,97 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type {
+  DownloadProgress,
+  DownloadTask,
+  DownloadQueueStats,
+  DownloadHistoryRecord,
+  DownloadHistoryStats,
+  DiskSpaceInfo,
+  DownloadRequest,
+} from '@/types/tauri';
 
-// Types matching Rust backend
-export interface DownloadProgress {
-  downloadedBytes: number;
-  totalBytes: number | null;
-  speed: number;
-  speedHuman: string;
-  percent: number;
-  etaSecs: number | null;
-  etaHuman: string | null;
-  downloadedHuman: string;
-  totalHuman: string | null;
-}
-
-export interface DownloadTask {
-  id: string;
-  url: string;
-  name: string;
-  destination: string;
-  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed';
-  progress: DownloadProgress;
-  error: string | null;
-  provider: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-}
-
-export interface QueueStats {
-  totalTasks: number;
-  queued: number;
-  downloading: number;
-  paused: number;
-  completed: number;
-  failed: number;
-  cancelled: number;
-  totalBytes: number;
-  downloadedBytes: number;
-  totalHuman: string;
-  downloadedHuman: string;
-  overallProgress: number;
-}
-
-export interface HistoryRecord {
-  id: string;
-  url: string;
-  filename: string;
-  destination: string;
-  size: number;
-  sizeHuman: string;
-  checksum: string | null;
-  startedAt: string;
-  completedAt: string;
-  durationSecs: number;
-  durationHuman: string;
-  averageSpeed: number;
-  speedHuman: string;
-  status: 'completed' | 'failed' | 'cancelled';
-  error: string | null;
-  provider: string | null;
-}
-
-export interface HistoryStats {
-  totalCount: number;
-  completedCount: number;
-  failedCount: number;
-  cancelledCount: number;
-  totalBytes: number;
-  totalBytesHuman: string;
-  averageSpeed: number;
-  averageSpeedHuman: string;
-  successRate: number;
-}
-
-export interface DiskSpace {
-  total: number;
-  available: number;
-  used: number;
-  usagePercent: number;
-  totalHuman: string;
-  availableHuman: string;
-  usedHuman: string;
-}
-
-export interface DownloadRequest {
-  url: string;
-  destination: string;
-  name: string;
-  checksum?: string;
-  priority?: number;
-  provider?: string;
-}
+// Re-export types for backward compatibility
+export type { DownloadProgress, DownloadTask, DownloadRequest };
+export type QueueStats = DownloadQueueStats;
+export type HistoryRecord = DownloadHistoryRecord;
+export type HistoryStats = DownloadHistoryStats;
+export type DiskSpace = DiskSpaceInfo;
 
 interface DownloadState {
   // Queue state

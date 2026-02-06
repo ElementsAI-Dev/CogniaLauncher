@@ -73,13 +73,15 @@ export function LogProvider({ children }: LogProviderProps) {
           )
           .join(" ");
 
-        // Add to log store
-        addLog({
-          timestamp: Date.now(),
-          level,
-          message,
-          target: "webview",
-        });
+        // Add to log store (deferred to avoid setState during render)
+        setTimeout(() => {
+          addLog({
+            timestamp: Date.now(),
+            level,
+            message,
+            target: "webview",
+          });
+        }, 0);
       };
     };
 

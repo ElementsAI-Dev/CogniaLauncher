@@ -4,7 +4,9 @@ pub mod config;
 pub mod custom_detection;
 pub mod download;
 pub mod environment;
+pub mod fs_utils;
 pub mod github;
+pub mod gitlab;
 pub mod health_check;
 pub mod launch;
 pub mod log;
@@ -29,7 +31,8 @@ pub use cache::{
     set_cache_settings, set_enhanced_cache_settings,
 };
 pub use config::{
-    config_get, config_list, config_reset, config_set, get_cognia_dir, get_platform_info,
+    app_check_init, config_get, config_list, config_reset, config_set, get_cognia_dir,
+    get_platform_info,
 };
 pub use download::{
     disk_space_check, disk_space_get, download_add, download_cancel, download_cancel_all,
@@ -71,6 +74,11 @@ pub use custom_detection::{
 pub use github::{
     github_download_asset, github_download_source, github_get_release_assets, github_list_branches,
     github_list_releases, github_list_tags, github_parse_url, github_validate_repo,
+};
+pub use gitlab::{
+    gitlab_download_asset, gitlab_download_source, gitlab_get_project_info,
+    gitlab_get_release_assets, gitlab_list_branches, gitlab_list_releases, gitlab_list_tags,
+    gitlab_parse_url, gitlab_validate_project,
 };
 pub use health_check::{health_check_all, health_check_environment, health_check_package_managers};
 pub use profiles::{

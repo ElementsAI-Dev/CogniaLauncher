@@ -78,22 +78,17 @@ export function AddDownloadDialog({
     }
 
     try {
-      const dialogModule = await import(
-        "@tauri-apps/plugin-dialog"
-      ).catch(() => null);
-      if (dialogModule?.save) {
-        const selected = await dialogModule.save({
-          defaultPath: form.name || "download",
-          title: t("downloads.selectDestination"),
-        });
-        if (selected && typeof selected === "string") {
-          setForm((prev) => ({ ...prev, destination: selected }));
-        }
-      } else {
-        toast.info(t("downloads.manualPathRequired"));
+      const dialogModule = await import("@tauri-apps/plugin-dialog");
+      const selected = await dialogModule.save({
+        defaultPath: form.name || "download",
+        title: t("downloads.selectDestination"),
+      });
+      if (selected && typeof selected === "string") {
+        setForm((prev) => ({ ...prev, destination: selected }));
       }
-    } catch {
-      toast.info(t("downloads.manualPathRequired"));
+    } catch (err) {
+      console.error("Failed to open save dialog:", err);
+      toast.error(t("downloads.dialogError"));
     }
   };
 

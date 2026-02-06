@@ -13,3 +13,6 @@ export * from './i18n';
 
 // GitHub types
 export * from './github';
+
+// GitLab types
+export * from './gitlab';

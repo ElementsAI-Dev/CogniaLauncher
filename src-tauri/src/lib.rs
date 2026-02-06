@@ -196,6 +196,7 @@ pub fn run() {
             commands::config::config_reset,
             commands::config::get_cognia_dir,
             commands::config::get_platform_info,
+            commands::config::app_check_init,
             // Cache commands
             commands::cache::cache_info,
             commands::cache::cache_clean,
@@ -345,6 +346,16 @@ pub fn run() {
             commands::github::github_get_release_assets,
             commands::github::github_download_asset,
             commands::github::github_download_source,
+            // GitLab commands
+            commands::gitlab::gitlab_parse_url,
+            commands::gitlab::gitlab_validate_project,
+            commands::gitlab::gitlab_get_project_info,
+            commands::gitlab::gitlab_list_branches,
+            commands::gitlab::gitlab_list_tags,
+            commands::gitlab::gitlab_list_releases,
+            commands::gitlab::gitlab_get_release_assets,
+            commands::gitlab::gitlab_download_asset,
+            commands::gitlab::gitlab_download_source,
             // Tray commands
             tray::tray_set_icon_state,
             tray::tray_update_tooltip,
@@ -375,6 +386,8 @@ pub fn run() {
             commands::custom_detection::custom_rule_import,
             commands::custom_detection::custom_rule_list_by_env,
             commands::custom_detection::custom_rule_extraction_types,
+            // Filesystem utility commands
+            commands::fs_utils::validate_path,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

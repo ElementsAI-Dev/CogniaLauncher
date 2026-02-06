@@ -12,13 +12,15 @@ import { LogDrawer } from "@/components/log/log-drawer";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { CommandPalette } from "@/components/command-palette";
+import { SplashScreen } from "@/components/splash-screen";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
+import { useAppInit } from "@/hooks/use-app-init";
 import { isTauri } from "@/lib/tauri";
 import { ScrollText, Search } from "lucide-react";
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 
 interface AppShellProps {
   children: ReactNode;
@@ -34,6 +36,14 @@ export function AppShell({ children }: AppShellProps) {
   const [commandOpen, setCommandOpen] = useState(false);
   const stats = getLogStats();
   const hasErrors = stats.byLevel.error > 0;
+
+  // App initialization state
+  const { phase, progress, message, version, isReady } = useAppInit();
+  const [splashDismissed, setSplashDismissed] = useState(false);
+
+  const handleSplashTransitionEnd = useCallback(() => {
+    setSplashDismissed(true);
+  }, []);
 
   // Check desktop mode - safe to call during render as it's synchronous
   const isDesktopMode = isTauri();
@@ -58,57 +68,74 @@ export function AppShell({ children }: AppShellProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleDrawer]);
 
+  // Show splash screen during Tauri initialization
+  const showSplash = isDesktopMode && !splashDismissed;
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <Titlebar />
-      <div className="flex flex-1 overflow-hidden">
-        <SidebarProvider
-          style={
-            isDesktopMode
-              ? ({
-                  "--titlebar-height": TITLEBAR_HEIGHT,
-                } as React.CSSProperties)
-              : undefined
-          }
-        >
-          <AppSidebar />
-          <SidebarInset>
-            <header
-              data-tauri-drag-region
-              className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6"
-            >
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mr-2 h-4" />
-              <Breadcrumb />
-              <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setCommandOpen(true)}
-                title={t("commandPalette.buttonLabel")}
+    <>
+      {showSplash && (
+        <SplashScreen
+          phase={phase}
+          progress={progress}
+          message={message}
+          version={version}
+          onTransitionEnd={handleSplashTransitionEnd}
+        />
+      )}
+      <div
+        className="flex h-screen flex-col overflow-hidden"
+        style={{ visibility: showSplash && !isReady ? "hidden" : "visible" }}
+      >
+        <Titlebar />
+        <div className="flex flex-1 overflow-hidden">
+          <SidebarProvider
+            style={
+              isDesktopMode
+                ? ({
+                    "--titlebar-height": TITLEBAR_HEIGHT,
+                  } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <AppSidebar />
+            <SidebarInset>
+              <header
+                data-tauri-drag-region
+                className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6"
               >
-                <Search className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative h-8 w-8"
-                onClick={toggleDrawer}
-                title="Toggle logs (Ctrl+Shift+L)"
-              >
-                <ScrollText className="h-4 w-4" />
-                {hasErrors && (
-                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
-                )}
-              </Button>
-            </header>
-            <main className="flex-1 overflow-auto">{children}</main>
-          </SidebarInset>
-        </SidebarProvider>
+                <SidebarTrigger className="-ml-1" />
+                <Separator orientation="vertical" className="mr-2 h-4" />
+                <Breadcrumb />
+                <div className="flex-1" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setCommandOpen(true)}
+                  title={t("commandPalette.buttonLabel")}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-8 w-8"
+                  onClick={toggleDrawer}
+                  title="Toggle logs (Ctrl+Shift+L)"
+                >
+                  <ScrollText className="h-4 w-4" />
+                  {hasErrors && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
+                  )}
+                </Button>
+              </header>
+              <main className="flex-1 overflow-auto">{children}</main>
+            </SidebarInset>
+          </SidebarProvider>
+        </div>
+        <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+        <LogDrawer />
       </div>
-      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
-      <LogDrawer />
-    </div>
+    </>
   );
 }

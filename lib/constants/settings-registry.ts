@@ -318,6 +318,14 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     keywords: ['theme', 'dark', 'light', 'system', '主题', '深色', '浅色', '外观'],
   },
   {
+    key: 'appearance.chart_color_theme',
+    section: 'appearance',
+    labelKey: 'settings.chartColorTheme',
+    descKey: 'settings.chartColorThemeDesc',
+    type: 'select',
+    keywords: ['chart', 'color', 'theme', 'dashboard', 'graph', '图表', '颜色', '主题', '仪表盘'],
+  },
+  {
     key: 'appearance.language',
     section: 'appearance',
     labelKey: 'settings.language',

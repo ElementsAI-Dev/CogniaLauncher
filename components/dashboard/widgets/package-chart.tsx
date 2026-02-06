@@ -14,14 +14,19 @@ import type { InstalledPackage } from "@/lib/tauri";
 import type { ProviderInfo } from "@/lib/tauri";
 
 const COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(210, 70%, 55%)",
-  "hsl(150, 60%, 45%)",
-  "hsl(30, 80%, 55%)",
+  // 现代渐变配色方案
+  { from: "#6366F1", to: "#818CF8" },  // 靛蓝
+  { from: "#3B82F6", to: "#60A5FA" },  // 蓝色
+  { from: "#06B6D4", to: "#22D3EE" },  // 青色
+  { from: "#10B981", to: "#34D399" },  // 绿色
+  { from: "#84CC16", to: "#A3E635" },  // 黄绿
+  { from: "#F59E0B", to: "#FBBF24" },  // 黄色
+  { from: "#F97316", to: "#FB923C" },  // 橙色
+  { from: "#EF4444", to: "#F87171" },  // 红色
+  { from: "#EC4899", to: "#F472B6" },  // 粉色
+  { from: "#8B5CF6", to: "#A78BFA" },  // 紫色
+  { from: "#D946EF", to: "#E879F9" },  // 紫红
+  { from: "#14B8A6", to: "#2DD4BF" },  // 青绿
 ];
 
 interface PackageChartProps {
@@ -44,7 +49,8 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
       .map(([provider, count], i) => ({
         provider,
         count,
-        fill: COLORS[i % COLORS.length],
+        fill: `url(#pkgGradient${i})`,
+        color: COLORS[i % COLORS.length],
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
@@ -54,7 +60,7 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
     };
 
     data.forEach((d) => {
-      cfg[d.provider] = { label: d.provider, color: d.fill };
+      cfg[d.provider] = { label: d.provider, color: d.color.from };
     });
 
     return { chartData: data, chartConfig: cfg };
@@ -102,20 +108,41 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
         {chartData.length > 0 && (
           <ChartContainer config={chartConfig} className="h-[180px] w-full aspect-auto">
             <BarChart data={chartData} margin={{ left: 0, right: 0 }}>
-              <CartesianGrid vertical={false} />
+              <defs>
+                {chartData.map((_, index) => {
+                  const color = COLORS[index % COLORS.length];
+                  return (
+                    <linearGradient
+                      key={`pkgGradient-${index}`}
+                      id={`pkgGradient${index}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop offset="0%" stopColor={color.from} stopOpacity={0.95} />
+                      <stop offset="100%" stopColor={color.to} stopOpacity={0.75} />
+                    </linearGradient>
+                  );
+                })}
+              </defs>
+              <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
               <XAxis
                 dataKey="provider"
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }}
                 interval={0}
                 angle={-30}
                 textAnchor="end"
                 height={50}
               />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={40}>
+              <ChartTooltip
+                content={<ChartTooltipContent />}
+                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+              />
+              <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={45}>
                 {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.fill} />
                 ))}
