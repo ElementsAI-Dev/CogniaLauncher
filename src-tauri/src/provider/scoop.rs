@@ -4,6 +4,7 @@ use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct ScoopProvider;
 
@@ -12,32 +13,39 @@ impl ScoopProvider {
         Self
     }
 
+    /// Execute a scoop command with a generous timeout.
     async fn run_scoop(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("scoop", args, None).await?;
+        let opts = process::ProcessOptions::new()
+            .with_timeout(Duration::from_secs(120));
+
+        let out = process::execute("scoop", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            Err(CogniaError::Provider(out.stderr))
+            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            Err(CogniaError::Provider(msg))
         }
     }
 
-    /// Get the installed version of a package using scoop info
+    /// Get the installed version of a package using `scoop info`.
     async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_scoop(&["info", name]).await?;
+        // "Installed:" field shows actual local version; "Version:" shows latest available
+        let mut latest_version = None;
         for line in out.lines() {
             let line = line.trim();
-            if let Some(version) = line.strip_prefix("Version:") {
-                return Ok(version.trim().to_string());
-            }
-            // Also check "Installed:" line which shows current version
             if let Some(installed) = line.strip_prefix("Installed:") {
                 let installed = installed.trim();
                 if !installed.is_empty() && installed != "No" {
                     return Ok(installed.to_string());
                 }
             }
+            if let Some(version) = line.strip_prefix("Version:") {
+                latest_version = Some(version.trim().to_string());
+            }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        // Fallback to Version: if Installed: field missing
+        latest_version.ok_or_else(|| CogniaError::Provider(format!("Version not found for {}", name)))
     }
 
     fn get_scoop_dir() -> Option<PathBuf> {
@@ -46,6 +54,139 @@ impl ScoopProvider {
                 .ok()
                 .map(|h| PathBuf::from(h).join("scoop"))
         })
+    }
+
+    /// Parse scoop search output, handling both old format ('name' (version) [bucket])
+    /// and newer tabular format (Name  Version  Source  Binaries).
+    fn parse_search_output(output: &str) -> Vec<(String, Option<String>)> {
+        let mut results = Vec::new();
+        let mut in_table = false;
+        let mut separator_seen = false;
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with("Results") {
+                continue;
+            }
+
+            // Detect table separator (---- ---- ----)
+            if !separator_seen && trimmed.chars().all(|c| c == '-' || c == ' ') && trimmed.contains('-') {
+                separator_seen = true;
+                in_table = true;
+                continue;
+            }
+
+            // Skip table header ("Name  Version  Source  Binaries")
+            if !separator_seen && (trimmed.starts_with("Name") && trimmed.contains("Source")) {
+                continue;
+            }
+
+            if in_table {
+                // Tabular format: first column is name, second is version
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if !parts.is_empty() {
+                    let name = parts[0].to_string();
+                    let version = parts.get(1).map(|v| v.to_string());
+                    results.push((name, version));
+                }
+            } else if trimmed.contains('\'') {
+                // Old format: 'name' (version) [bucket]
+                if let Some(name_start) = trimmed.find('\'') {
+                    if let Some(name_end) = trimmed[name_start + 1..].find('\'') {
+                        let name = &trimmed[name_start + 1..name_start + 1 + name_end];
+                        let version = trimmed
+                            .find('(')
+                            .and_then(|start| trimmed.find(')').map(|end| trimmed[start + 1..end].to_string()));
+                        results.push((name.to_string(), version));
+                    }
+                }
+            } else {
+                // Fallback: treat as whitespace-separated
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if !parts.is_empty() && !parts[0].starts_with('-') {
+                    let name = parts[0].to_string();
+                    let version = parts.get(1).map(|v| v.to_string());
+                    results.push((name, version));
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Parse scoop list output (tabular: Name Version Source Updated Info).
+    fn parse_list_output(output: &str) -> Vec<(String, String, Option<String>)> {
+        let mut results = Vec::new();
+        let mut separator_seen = false;
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            // Detect separator line
+            if !separator_seen {
+                if trimmed.chars().all(|c| c == '-' || c == ' ') && trimmed.contains('-') {
+                    separator_seen = true;
+                    continue;
+                }
+                // Skip headers and preamble
+                if trimmed.starts_with("Installed") || trimmed.starts_with("Name") {
+                    continue;
+                }
+            }
+
+            if separator_seen || !trimmed.starts_with('-') {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.is_empty() {
+                    continue;
+                }
+                let name = parts[0].to_string();
+                let version = parts.get(1).unwrap_or(&"").to_string();
+                let source = parts.get(2).map(|s| s.to_string());
+                results.push((name, version, source));
+            }
+        }
+
+        results
+    }
+
+    /// Parse scoop status output (tabular: Name Installed Version Latest Version Missing Dependencies Info).
+    fn parse_status_output(output: &str) -> Vec<(String, String, String)> {
+        let mut results = Vec::new();
+        let mut separator_seen = false;
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            if !separator_seen {
+                if trimmed.chars().all(|c| c == '-' || c == ' ') && trimmed.contains('-') {
+                    separator_seen = true;
+                    continue;
+                }
+                // Skip header
+                if trimmed.starts_with("Name") {
+                    continue;
+                }
+            }
+
+            if separator_seen {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    results.push((
+                        parts[0].to_string(),
+                        parts[1].to_string(),
+                        parts[2].to_string(),
+                    ));
+                }
+            }
+        }
+
+        results
     }
 }
 
@@ -70,6 +211,8 @@ impl Provider for ScoopProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
+            Capability::UpdateIndex,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -83,7 +226,6 @@ impl Provider for ScoopProvider {
         if process::which("scoop").await.is_none() {
             return false;
         }
-        // Verify scoop actually works
         match process::execute("scoop", &["--version"], None).await {
             Ok(output) => output.success,
             Err(_) => false,
@@ -96,36 +238,20 @@ impl Provider for ScoopProvider {
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
         let out = self.run_scoop(&["search", query]).await?;
-        let limit = options.limit.unwrap_or(20);
+        let limit = options.limit.unwrap_or(25);
 
-        // Parse scoop search output
-        // Format: 'name' (version) bucket
-        let packages: Vec<PackageSummary> = out
-            .lines()
-            .filter(|l| !l.is_empty() && !l.starts_with("Results") && l.contains('\''))
+        let parsed = Self::parse_search_output(&out);
+
+        Ok(parsed
+            .into_iter()
             .take(limit)
-            .filter_map(|line| {
-                // Extract name between quotes
-                let name_start = line.find('\'')?;
-                let name_end = line[name_start + 1..].find('\'')? + name_start + 1;
-                let name = &line[name_start + 1..name_end];
-
-                // Extract version in parentheses
-                let version = line
-                    .find('(')
-                    .and_then(|start| line.find(')').map(|end| &line[start + 1..end]))
-                    .map(|v| v.to_string());
-
-                Some(PackageSummary {
-                    name: name.into(),
-                    description: None,
-                    latest_version: version,
-                    provider: self.id().into(),
-                })
+            .map(|(name, version)| PackageSummary {
+                name,
+                description: None,
+                latest_version: version,
+                provider: self.id().into(),
             })
-            .collect();
-
-        Ok(packages)
+            .collect())
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
@@ -135,6 +261,8 @@ impl Provider for ScoopProvider {
         let mut version = None;
         let mut homepage = None;
         let mut license = None;
+        let mut bucket = None;
+        let mut manifest = None;
 
         for line in out.lines() {
             let line = line.trim();
@@ -148,8 +276,17 @@ impl Provider for ScoopProvider {
                 homepage = Some(stripped.trim().into());
             } else if let Some(stripped) = line.strip_prefix("License:") {
                 license = Some(stripped.trim().into());
+            } else if let Some(stripped) = line.strip_prefix("Bucket:") {
+                bucket = Some(stripped.trim().to_string());
+            } else if let Some(stripped) = line.strip_prefix("Manifest:") {
+                manifest = Some(stripped.trim().to_string());
             }
         }
+
+        // Use manifest path as repository hint
+        let repository = manifest.or_else(|| {
+            bucket.map(|b| format!("https://github.com/ScoopInstaller/{}", b))
+        });
 
         Ok(PackageInfo {
             name: name.into(),
@@ -157,7 +294,7 @@ impl Provider for ScoopProvider {
             description,
             homepage,
             license,
-            repository: None,
+            repository,
             versions: version
                 .map(|v| {
                     vec![VersionInfo {
@@ -173,18 +310,20 @@ impl Provider for ScoopProvider {
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
-        // Scoop doesn't have a direct versions command, use info
+        // Scoop doesn't have a direct versions command; info only shows latest
         let out = self.run_scoop(&["info", name]).await?;
 
         for line in out.lines() {
-            if line.trim().starts_with("Version:") {
-                let version = line.trim()[8..].trim().to_string();
-                return Ok(vec![VersionInfo {
-                    version,
-                    release_date: None,
-                    deprecated: false,
-                    yanked: false,
-                }]);
+            if let Some(stripped) = line.trim().strip_prefix("Version:") {
+                let version = stripped.trim().to_string();
+                if !version.is_empty() {
+                    return Ok(vec![VersionInfo {
+                        version,
+                        release_date: None,
+                        deprecated: false,
+                        yanked: false,
+                    }]);
+                }
             }
         }
 
@@ -198,9 +337,13 @@ impl Provider for ScoopProvider {
             req.name.clone()
         };
 
-        self.run_scoop(&["install", &pkg]).await?;
+        let mut args = vec!["install", &*pkg];
+        if req.force {
+            args.push("--force");
+        }
 
-        // Get the actual installed version
+        self.run_scoop(&args).await?;
+
         let actual_version = self
             .query_installed_version(&req.name)
             .await
@@ -228,7 +371,16 @@ impl Provider for ScoopProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        self.run_scoop(&["uninstall", &req.name]).await?;
+        let mut args = vec!["uninstall", &*req.name];
+        if req.force {
+            args.push("--force");
+        }
+        // --purge removes persisted data
+        if req.force {
+            args.push("--purge");
+        }
+
+        self.run_scoop(&args).await?;
         Ok(())
     }
 
@@ -236,79 +388,55 @@ impl Provider for ScoopProvider {
         let out = self.run_scoop(&["list"]).await?;
         let scoop_dir = Self::get_scoop_dir().unwrap_or_default();
 
-        let packages: Vec<InstalledPackage> = out
-            .lines()
-            .filter(|l| !l.is_empty() && !l.starts_with("Installed") && !l.starts_with("Name"))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.is_empty() {
-                    return None;
+        let parsed = Self::parse_list_output(&out);
+
+        Ok(parsed
+            .into_iter()
+            .filter(|(name, _, _)| {
+                if let Some(ref name_filter) = filter.name_filter {
+                    name.contains(name_filter)
+                } else {
+                    true
                 }
-
-                let name = parts[0].to_string();
-
-                if let Some(name_filter) = &filter.name_filter {
-                    if !name.contains(name_filter) {
-                        return None;
-                    }
-                }
-
-                let version = parts.get(1).unwrap_or(&"").to_string();
-                let install_path = scoop_dir.join("apps").join(&name);
-
-                Some(InstalledPackage {
+            })
+            .map(|(name, version, _source)| {
+                let install_path = scoop_dir.join("apps").join(&name).join("current");
+                InstalledPackage {
                     name,
                     version,
                     provider: self.id().into(),
                     install_path,
                     installed_at: String::new(),
-                    is_global: true,
-                })
+                    is_global: false,
+                }
             })
-            .collect();
-
-        Ok(packages)
+            .collect())
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_scoop(&["status"]).await;
+        let out = match self.run_scoop(&["status"]).await {
+            Ok(o) => o,
+            Err(_) => return Ok(vec![]),
+        };
 
-        if let Ok(output) = out {
-            let updates: Vec<UpdateInfo> = output
-                .lines()
-                .filter(|l| !l.is_empty() && !l.starts_with("Name") && !l.starts_with("---"))
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        let name = parts[0].to_string();
+        let parsed = Self::parse_status_output(&out);
 
-                        if !packages.is_empty() && !packages.contains(&name) {
-                            return None;
-                        }
-
-                        let current = parts[1].to_string();
-                        let latest = parts[2].to_string();
-
-                        if current != latest {
-                            Some(UpdateInfo {
-                                name,
-                                current_version: current,
-                                latest_version: latest,
-                                provider: self.id().into(),
-                            })
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            return Ok(updates);
-        }
-
-        Ok(vec![])
+        Ok(parsed
+            .into_iter()
+            .filter(|(name, current, latest)| {
+                if packages.is_empty() || packages.contains(name) {
+                    current != latest
+                } else {
+                    false
+                }
+            })
+            .map(|(name, current, latest)| UpdateInfo {
+                name,
+                current_version: current,
+                latest_version: latest,
+                provider: self.id().into(),
+            })
+            .collect())
     }
 }
 
@@ -319,17 +447,29 @@ impl SystemPackageProvider for ScoopProvider {
     }
 
     fn requires_elevation(&self, _operation: &str) -> bool {
-        false // Scoop is user-space
+        false // Scoop is user-space, no admin required
     }
 
     async fn get_version(&self) -> CogniaResult<String> {
         let out = self.run_scoop(&["--version"]).await?;
+        // Output may contain multiple lines; look for version string
         for line in out.lines() {
-            if line.starts_with("Scoop") {
-                return Ok(line.split_whitespace().last().unwrap_or("").into());
+            let trimmed = line.trim();
+            // "Scoop (v0.5.3)" or just version number
+            if let Some(v_pos) = trimmed.find('v') {
+                let rest = &trimmed[v_pos + 1..];
+                let version: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+                if !version.is_empty() {
+                    return Ok(version);
+                }
+            }
+            // Plain version line like "0.5.3"
+            if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                return Ok(trimmed.to_string());
             }
         }
-        Ok(String::new())
+        // Fallback: return first non-empty line
+        Ok(out.lines().next().unwrap_or("").trim().to_string())
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
@@ -354,14 +494,132 @@ impl SystemPackageProvider for ScoopProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        self.run_scoop(&["update", "*"]).await?;
-        Ok(vec!["All packages upgraded".into()])
+        let out = self.run_scoop(&["update", "*"]).await?;
+
+        let mut upgraded = Vec::new();
+        for line in out.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("was updated") || trimmed.contains("was installed") {
+                upgraded.push(trimmed.to_string());
+            }
+        }
+        if upgraded.is_empty() {
+            upgraded.push("All packages upgraded".into());
+        }
+        Ok(upgraded)
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_scoop(&["list"]).await;
-        Ok(out
-            .map(|s| s.lines().any(|l| l.split_whitespace().next() == Some(name)))
-            .unwrap_or(false))
+        // Use scoop info for O(1) check instead of listing all packages
+        match self.run_scoop(&["info", name]).await {
+            Ok(output) => {
+                for line in output.lines() {
+                    let trimmed = line.trim();
+                    if let Some(installed) = trimmed.strip_prefix("Installed:") {
+                        let installed = installed.trim();
+                        return Ok(!installed.is_empty() && installed != "No");
+                    }
+                }
+                Ok(false)
+            }
+            Err(_) => Ok(false),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_search_output_old_format() {
+        let output = "Results from local buckets...\n\n'git' (2.42.0) [main bucket]\n'git-lfs' (3.4.0) [main bucket]\n";
+        let results = ScoopProvider::parse_search_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "git");
+        assert_eq!(results[0].1, Some("2.42.0".to_string()));
+        assert_eq!(results[1].0, "git-lfs");
+    }
+
+    #[test]
+    fn test_parse_search_output_table_format() {
+        let output = "Results from local buckets...\n\nName      Version Source Binaries\n----      ------- ------ --------\n7zip      23.01   main\ngit       2.42.0  main   git.exe\n";
+        let results = ScoopProvider::parse_search_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "7zip");
+        assert_eq!(results[0].1, Some("23.01".to_string()));
+        assert_eq!(results[1].0, "git");
+        assert_eq!(results[1].1, Some("2.42.0".to_string()));
+    }
+
+    #[test]
+    fn test_parse_list_output() {
+        let output = "Installed apps:\n\nName      Version Source Updated             Info\n----      ------- ------ -------             ----\n7zip      23.01   main   2024-01-15 10:30:00\ngit       2.42.0  main   2024-01-10 08:20:00\n";
+        let results = ScoopProvider::parse_list_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "7zip");
+        assert_eq!(results[0].1, "23.01");
+        assert_eq!(results[0].2, Some("main".to_string()));
+    }
+
+    #[test]
+    fn test_parse_status_output() {
+        let output = "Name      Installed Version Latest Version Missing Dependencies Info\n----      --------- -------------- -------------------- ----\ngit       2.42.0          2.43.0\ncurl      8.4.0           8.5.0\n";
+        let results = ScoopProvider::parse_status_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "git");
+        assert_eq!(results[0].1, "2.42.0");
+        assert_eq!(results[0].2, "2.43.0");
+    }
+
+    #[test]
+    fn test_parse_search_output_empty() {
+        let output = "";
+        let results = ScoopProvider::parse_search_output(output);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = ScoopProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = ScoopProvider::new();
+        assert_eq!(provider.id(), "scoop");
+        assert_eq!(provider.display_name(), "Scoop (Windows Package Manager)");
+        assert_eq!(provider.priority(), 85);
+        assert_eq!(provider.supported_platforms(), vec![Platform::Windows]);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = ScoopProvider::new();
+        assert!(!SystemPackageProvider::requires_elevation(&provider, "install"));
+        assert!(!SystemPackageProvider::requires_elevation(&provider, "uninstall"));
+        assert!(!SystemPackageProvider::requires_elevation(&provider, "upgrade"));
+    }
+
+    #[test]
+    fn test_get_scoop_dir() {
+        // Should return Some even without SCOOP env var if USERPROFILE is set
+        let dir = ScoopProvider::get_scoop_dir();
+        // On Windows CI, USERPROFILE should be set
+        // We just verify it doesn't panic
+        let _ = dir;
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = ScoopProvider::default();
     }
 }

@@ -197,6 +197,13 @@ impl Provider for MacPortsProvider {
         })
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_port_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
         let out = process::execute("sudo", &["port", "uninstall", &req.name], None).await?;
         if out.success {
@@ -336,5 +343,223 @@ impl SystemPackageProvider for MacPortsProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_port(&["installed", name]).await;
         Ok(out.map(|s| s.lines().count() > 1).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = MacPortsProvider::new();
+        assert_eq!(p.id(), "macports");
+        assert_eq!(p.display_name(), "MacPorts");
+        assert_eq!(p.priority(), 85);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = MacPortsProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = MacPortsProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert_eq!(platforms.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = MacPortsProvider::new();
+        assert!(p.requires_elevation("install"));
+        assert!(p.requires_elevation("uninstall"));
+        assert!(p.requires_elevation("update"));
+        assert!(p.requires_elevation("upgrade"));
+        assert!(!p.requires_elevation("search"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = MacPortsProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("macports.org"));
+    }
+
+    #[test]
+    fn test_parse_port_search_output() {
+        // port search --name --line output: tab-delimited
+        let output = "curl\t8.4.0\tTransfer data with URL syntax\nnginx\t1.25.3\tHTTP and reverse proxy server\n";
+
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name = parts[0].trim().to_string();
+                let version = parts.get(1).map(|s| s.trim().to_string());
+                let description = parts.get(2).map(|s| s.trim().to_string());
+
+                Some(PackageSummary {
+                    name,
+                    description,
+                    latest_version: version,
+                    provider: "macports".into(),
+                })
+            })
+            .collect();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "curl");
+        assert_eq!(results[0].latest_version, Some("8.4.0".into()));
+        assert_eq!(results[0].description, Some("Transfer data with URL syntax".into()));
+        assert_eq!(results[1].name, "nginx");
+    }
+
+    #[test]
+    fn test_parse_port_installed_output() {
+        // port installed output: header + indented lines
+        let output = "The following ports are currently installed:\n  curl @8.4.0_0 (active)\n  git @2.42.0_0 (active)\n  nginx @1.25.3_0\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let line = line.trim();
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name = parts[0].to_string();
+                let version = parts
+                    .get(1)
+                    .map(|s| s.trim_start_matches('@').to_string())
+                    .unwrap_or_default();
+
+                Some(InstalledPackage {
+                    name,
+                    version,
+                    provider: "macports".into(),
+                    install_path: PathBuf::from("/opt/local"),
+                    installed_at: String::new(),
+                    is_global: true,
+                })
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "curl");
+        assert_eq!(packages[0].version, "8.4.0_0");
+        assert_eq!(packages[1].name, "git");
+        assert_eq!(packages[1].version, "2.42.0_0");
+        assert_eq!(packages[2].name, "nginx");
+        assert!(packages[0].install_path.to_str().unwrap().contains("/opt/local"));
+    }
+
+    #[test]
+    fn test_parse_port_installed_with_name_filter() {
+        let output = "The following ports are currently installed:\n  curl @8.4.0_0 (active)\n  git @2.42.0_0 (active)\n  curl-ca-bundle @7.88.1_0 (active)\n";
+        let name_filter = Some("curl".to_string());
+
+        let filtered: Vec<String> = output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let line = line.trim();
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name = parts[0].to_string();
+                if let Some(ref f) = name_filter {
+                    if !name.to_lowercase().contains(&f.to_lowercase()) {
+                        return None;
+                    }
+                }
+                Some(name)
+            })
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0], "curl");
+        assert_eq!(filtered[1], "curl-ca-bundle");
+    }
+
+    #[test]
+    fn test_parse_port_outdated_output() {
+        // port outdated output: header + data lines
+        let output = "The following installed ports are outdated:\ncurl                           @8.3.0_0  < @8.4.0_0\ngit                            @2.41.0_0 < @2.42.0_0\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    Some(UpdateInfo {
+                        name: parts[0].to_string(),
+                        current_version: parts[1].trim_start_matches('@').into(),
+                        latest_version: parts[3].trim_start_matches('@').into(),
+                        provider: "macports".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "curl");
+        assert_eq!(updates[0].current_version, "8.3.0_0");
+        assert_eq!(updates[0].latest_version, "8.4.0_0");
+        assert_eq!(updates[1].name, "git");
+    }
+
+    #[test]
+    fn test_parse_port_info_output() {
+        let output = "curl @8.4.0 (net, www)\nVariants:             gss, sftp_scp\n\nDescription:          curl is a command line tool for transferring data\nHomepage:             https://curl.se/\nLicense:              MIT\n";
+
+        let mut description = None;
+        let mut homepage = None;
+        let mut license = None;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if let Some(stripped) = line.strip_prefix("Description:") {
+                description = Some(stripped.trim().to_string());
+            } else if let Some(stripped) = line.strip_prefix("Homepage:") {
+                homepage = Some(stripped.trim().to_string());
+            } else if let Some(stripped) = line.strip_prefix("License:") {
+                license = Some(stripped.trim().to_string());
+            }
+        }
+
+        assert_eq!(description, Some("curl is a command line tool for transferring data".into()));
+        assert_eq!(homepage, Some("https://curl.se/".into()));
+        assert_eq!(license, Some("MIT".into()));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = MacPortsProvider::default();
+        assert_eq!(p.id(), "macports");
     }
 }

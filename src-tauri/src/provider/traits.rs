@@ -489,6 +489,9 @@ pub trait EnvironmentProvider: Provider {
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications>;
 
     fn version_file_name(&self) -> &str;
+
+    /// Downcast support for accessing provider-specific methods
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 #[async_trait]

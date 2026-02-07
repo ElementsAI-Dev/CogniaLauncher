@@ -61,6 +61,29 @@ export interface EnvironmentProviderInfo {
   description: string;
 }
 
+/** Rustup component info from `rustup component list` */
+export interface RustComponent {
+  name: string;
+  installed: boolean;
+  default: boolean;
+}
+
+/** Rustup target info from `rustup target list` */
+export interface RustTarget {
+  name: string;
+  installed: boolean;
+  default: boolean;
+}
+
+/** Parsed output from `rustup show` */
+export interface RustupShowInfo {
+  defaultToolchain: string | null;
+  activeToolchain: string | null;
+  installedToolchains: string[];
+  installedTargets: string[];
+  rustcVersion: string | null;
+}
+
 /** Result of verifying an environment installation */
 export interface EnvVerifyResult {
   installed: boolean;
@@ -977,6 +1000,19 @@ export interface WslDiskUsage {
 
 /** WSL config sections (from .wslconfig) */
 export type WslConfig = Record<string, Record<string, string>>;
+
+/** Per-distro /etc/wsl.conf config (same structure as WslConfig) */
+export type WslDistroConfig = Record<string, Record<string, string>>;
+
+/** Options for mounting a disk in WSL2 */
+export interface WslMountOptions {
+  diskPath: string;
+  isVhd: boolean;
+  fsType?: string;
+  partition?: number;
+  mountName?: string;
+  bare: boolean;
+}
 
 // ============================================================================
 // Launch Types

@@ -442,6 +442,10 @@ impl EnvironmentProvider for FnmProvider {
     fn version_file_name(&self) -> &str {
         ".node-version"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]

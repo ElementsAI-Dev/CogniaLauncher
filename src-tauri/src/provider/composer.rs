@@ -180,8 +180,8 @@ impl ComposerProvider {
                 continue;
             }
 
-            // Format: vendor/package version description
-            let parts: Vec<&str> = line.splitn(3, ' ').collect();
+            // Format: vendor/package version description (whitespace-separated)
+            let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
                 packages.push(InstalledPackage {
                     name: parts[0].to_string(),

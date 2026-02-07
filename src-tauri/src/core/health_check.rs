@@ -428,6 +428,7 @@ impl HealthCheckManager {
             "rust" => "rustup".to_string(),
             "ruby" => "rbenv".to_string(),
             "java" => "sdkman".to_string(),
+            "kotlin" => "sdkman-kotlin".to_string(),
             "php" => "phpbrew".to_string(),
             "dotnet" => "dotnet".to_string(),
             _ => env_type.to_string(),
@@ -679,6 +680,7 @@ impl HealthCheckManager {
             "rustup" => "rust".to_string(),
             "rbenv" => "ruby".to_string(),
             "sdkman" => "java".to_string(),
+            "sdkman-kotlin" => "kotlin".to_string(),
             "phpbrew" => "php".to_string(),
             "dotnet" => "dotnet".to_string(),
             _ => provider_id.to_string(),
@@ -725,7 +727,7 @@ impl HealthCheckManager {
                 }
             }
             "rbenv" => "git clone https://github.com/rbenv/rbenv.git ~/.rbenv".to_string(),
-            "sdkman" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
+            "sdkman" | "sdkman-kotlin" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
             "phpbrew" => "curl -L -O https://github.com/phpbrew/phpbrew/releases/latest/download/phpbrew.phar && chmod +x phpbrew.phar && sudo mv phpbrew.phar /usr/local/bin/phpbrew".to_string(),
             "dotnet" => {
                 if cfg!(windows) {
@@ -748,7 +750,7 @@ impl HealthCheckManager {
             "goenv" => vec!["goenv".to_string(), ".goenv".to_string()],
             "rustup" => vec![".cargo".to_string(), ".rustup".to_string()],
             "rbenv" => vec!["rbenv".to_string(), ".rbenv".to_string()],
-            "sdkman" => vec!["sdkman".to_string(), ".sdkman".to_string()],
+            "sdkman" | "sdkman-kotlin" => vec!["sdkman".to_string(), ".sdkman".to_string()],
             "phpbrew" => vec!["phpbrew".to_string(), ".phpbrew".to_string()],
             "dotnet" => vec!["dotnet".to_string()],
             _ => vec![],
@@ -765,7 +767,7 @@ impl HealthCheckManager {
             "goenv" => "eval \"$(goenv init -)\"".to_string(),
             "rustup" => "source $HOME/.cargo/env".to_string(),
             "rbenv" => "eval \"$(rbenv init -)\"".to_string(),
-            "sdkman" => "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string(),
+            "sdkman" | "sdkman-kotlin" => "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string(),
             "phpbrew" => "source ~/.phpbrew/bashrc".to_string(),
             _ => format!("# Configure {} in your shell", provider_id),
         }

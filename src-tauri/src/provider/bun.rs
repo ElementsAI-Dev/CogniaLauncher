@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+use reqwest::Client;
 
 /// Bun - Fast JavaScript runtime and package manager
 ///
@@ -221,39 +222,42 @@ impl Provider for BunProvider {
 
     async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
         // Use npm registry API since bun uses the same registry
-        let api = get_api_client();
-        if let Ok(_pkg) = api.get_npm_package(name).await {
-            // npm API returns dependencies as a map
-            // We need to get the specific version's dependencies
-            let url = if version.is_empty() {
-                format!("https://registry.npmjs.org/{}/latest", name)
-            } else {
-                format!("https://registry.npmjs.org/{}/{}", name, version)
-            };
+        // Fetch the specific version's dependencies via the registry
+        let pkg = if version.is_empty() {
+            format!("{}/latest", name)
+        } else {
+            format!("{}/{}", name, version)
+        };
 
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        // Use provider's configured registry or default
+        let registry_url = self.registry_url
+            .as_deref()
+            .unwrap_or(super::api::DEFAULT_NPM_REGISTRY);
+        let url = format!("{}/{}", registry_url, pkg);
 
-            if let Ok(resp) = client.get(&url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(json) = resp.json::<serde_json::Value>().await {
-                        if let Some(deps) = json["dependencies"].as_object() {
-                            return Ok(deps
-                                .iter()
-                                .filter_map(|(dep_name, constraint_val)| {
-                                    let constraint_str = constraint_val.as_str()?;
-                                    let parsed = constraint_str
-                                        .parse::<VersionConstraint>()
-                                        .unwrap_or(VersionConstraint::Any);
-                                    Some(Dependency {
-                                        name: dep_name.to_string(),
-                                        constraint: parsed,
-                                    })
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("CogniaLauncher/0.1.0")
+            .build()
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+        if let Ok(resp) = client.get(&url).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(deps) = json["dependencies"].as_object() {
+                        return Ok(deps
+                            .iter()
+                            .filter_map(|(dep_name, constraint_val)| {
+                                let constraint_str = constraint_val.as_str()?;
+                                let parsed = constraint_str
+                                    .parse::<VersionConstraint>()
+                                    .unwrap_or(VersionConstraint::Any);
+                                Some(Dependency {
+                                    name: dep_name.to_string(),
+                                    constraint: parsed,
                                 })
-                                .collect());
-                        }
+                            })
+                            .collect());
                     }
                 }
             }
@@ -298,13 +302,16 @@ impl Provider for BunProvider {
         })
     }
 
-    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let args = if req.force {
-            vec!["remove", &req.name]
-        } else {
-            vec!["remove", &req.name]
-        };
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_package_version(name, true).await {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
 
+    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        // Use -g flag for global uninstall (matching install behavior)
+        let args = vec!["remove", "-g", &req.name];
         self.run_bun_raw(&args).await?;
         Ok(())
     }
@@ -349,7 +356,7 @@ impl Provider for BunProvider {
             // Determine install path based on global or local
             let install_path = if filter.global_only {
                 Self::get_global_dir()
-                    .map(|p| p.join("install").join("global").join("node_modules").join(pkg_name))
+                    .map(|p| p.join("node_modules").join(pkg_name))
                     .unwrap_or_default()
             } else {
                 PathBuf::from("node_modules").join(pkg_name)
@@ -371,27 +378,34 @@ impl Provider for BunProvider {
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let mut updates = Vec::new();
 
-        for name in packages {
-            if let Ok(info) = self.get_package_info(name).await {
-                if let Some(latest) = info.versions.first() {
-                    // Get current version
-                    let installed = self
-                        .list_installed(InstalledFilter {
-                            global_only: false,
-                            name_filter: Some(name.clone()),
-                        })
-                        .await
-                        .unwrap_or_default();
+        // Get all globally installed packages to compare
+        let installed = self
+            .list_installed(InstalledFilter {
+                global_only: true,
+                name_filter: None,
+            })
+            .await
+            .unwrap_or_default();
 
-                    if let Some(pkg) = installed.first() {
-                        if pkg.version != latest.version {
-                            updates.push(UpdateInfo {
-                                name: name.clone(),
-                                current_version: pkg.version.clone(),
-                                latest_version: latest.version.clone(),
-                                provider: self.id().into(),
-                            });
-                        }
+        // Filter to requested packages or all if empty
+        let targets: Vec<&InstalledPackage> = if packages.is_empty() {
+            installed.iter().collect()
+        } else {
+            installed.iter().filter(|p| packages.contains(&p.name)).collect()
+        };
+
+        for pkg in targets {
+            // Use npm registry API to get latest version (more efficient than per-package CLI calls)
+            let api = get_api_client();
+            if let Ok(info) = api.get_npm_package(&pkg.name).await {
+                if let Some(latest) = info.dist_tags.get("latest") {
+                    if *latest != pkg.version {
+                        updates.push(UpdateInfo {
+                            name: pkg.name.clone(),
+                            current_version: pkg.version.clone(),
+                            latest_version: latest.clone(),
+                            provider: self.id().into(),
+                        });
                     }
                 }
             }

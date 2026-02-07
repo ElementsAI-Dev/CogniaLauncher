@@ -178,6 +178,9 @@ impl Provider for GoenvProvider {
 
         self.run_goenv(&["install", &version]).await?;
 
+        // Rehash shims after installing a new version
+        let _ = self.run_goenv(&["rehash"]).await;
+
         let goenv_root = self.goenv_root()?;
         let install_path = goenv_root.join("versions").join(&version);
 
@@ -236,17 +239,15 @@ impl Provider for GoenvProvider {
         let installed = self.run_goenv(&["versions", "--bare"]).await.unwrap_or_default();
         let available = self.run_goenv(&["install", "--list"]).await.unwrap_or_default();
 
-        // Find latest stable version from available list
-        let latest = available
+        // Collect all stable available versions
+        let available_versions: Vec<&str> = available
             .lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty() && !l.contains("beta") && !l.contains("rc"))
             .filter(|l| l.chars().next().map_or(false, |c| c.is_ascii_digit()))
-            .last()
-            .unwrap_or("")
-            .to_string();
+            .collect();
 
-        if latest.is_empty() {
+        if available_versions.is_empty() {
             return Ok(vec![]);
         }
 
@@ -256,11 +257,33 @@ impl Provider for GoenvProvider {
             if version.is_empty() {
                 continue;
             }
-            if version != latest && !version.starts_with(&latest) {
+
+            // Find the latest available version in the same major.minor series
+            let parts: Vec<&str> = version.splitn(3, '.').collect();
+            let major_minor = if parts.len() >= 2 {
+                format!("{}.{}", parts[0], parts[1])
+            } else {
+                version.to_string()
+            };
+
+            // Find latest patch in the same major.minor series
+            let latest_in_series = available_versions
+                .iter()
+                .filter(|v| v.starts_with(&format!("{}.", major_minor)) || **v == major_minor)
+                .last()
+                .copied();
+
+            // Also check if there's a newer major.minor series
+            let latest_overall = available_versions.last().copied().unwrap_or("");
+
+            // Use the latest in the same series first, then overall
+            let latest = latest_in_series.unwrap_or(latest_overall);
+
+            if !latest.is_empty() && latest != version {
                 updates.push(UpdateInfo {
                     name: format!("go@{}", version),
                     current_version: version.to_string(),
-                    latest_version: latest.clone(),
+                    latest_version: latest.to_string(),
                     provider: self.id().into(),
                 });
             }
@@ -398,13 +421,29 @@ impl EnvironmentProvider for GoenvProvider {
 
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
         let goenv_root = self.goenv_root()?;
-        let go_path = goenv_root.join("versions").join(version).join("bin");
+        let version_root = goenv_root.join("versions").join(version);
+        let go_bin = version_root.join("bin");
 
-        Ok(EnvModifications::new().prepend_path(go_path))
+        let mut mods = EnvModifications::new()
+            .prepend_path(go_bin)
+            .set_var("GOROOT", version_root.to_string_lossy().to_string());
+
+        // Also add GOPATH/bin to PATH if GOPATH is set
+        if let Ok(gopath) = std::env::var("GOPATH") {
+            mods = mods.prepend_path(PathBuf::from(&gopath).join("bin"));
+        } else if let Ok(home) = std::env::var("HOME") {
+            mods = mods.prepend_path(PathBuf::from(&home).join("go").join("bin"));
+        }
+
+        Ok(mods)
     }
 
     fn version_file_name(&self) -> &str {
         ".go-version"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -440,6 +479,26 @@ impl GoModProvider {
         } else {
             Err(CogniaError::Provider(output.stderr))
         }
+    }
+
+    /// Get GOPATH, with proper Windows fallback
+    fn get_gopath() -> Option<PathBuf> {
+        std::env::var("GOPATH").ok().map(PathBuf::from).or_else(|| {
+            // On Windows, HOME might not be set; use USERPROFILE
+            std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .ok()
+                .map(|h| PathBuf::from(h).join("go"))
+        })
+    }
+
+    /// Get GOBIN path (where `go install` puts binaries)
+    fn get_gobin() -> Option<PathBuf> {
+        // GOBIN takes precedence, then GOPATH/bin
+        std::env::var("GOBIN")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| Self::get_gopath().map(|p| p.join("bin")))
     }
 }
 
@@ -491,21 +550,63 @@ impl Provider for GoModProvider {
         query: &str,
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
-        // Use pkg.go.dev search API
         let limit = options.limit.unwrap_or(20);
-        let _api = get_api_client();
 
-        // Search pkg.go.dev
-        let _url = format!(
-            "https://pkg.go.dev/search?q={}&m=package&limit={}",
+        // Try using `go list -m` to resolve exact module paths
+        // This works for exact or partial module paths (e.g., "github.com/gin-gonic/gin")
+        let query_at = format!("{}@latest", query);
+        if let Ok(output) = self.run_go(&["list", "-m", "-json", &query_at]).await {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&output) {
+                let path = json["Path"].as_str().unwrap_or(query);
+                let version = json["Version"].as_str().map(|s| s.to_string());
+                return Ok(vec![PackageSummary {
+                    name: path.to_string(),
+                    description: Some(format!("Go module: {}", path)),
+                    latest_version: version,
+                    provider: self.id().into(),
+                }]);
+            }
+        }
+
+        // Fallback: use Go module proxy API to search for packages
+        // The proxy.golang.org doesn't have a search API, but we can try
+        // the pkg.go.dev search API endpoint
+        let api = get_api_client();
+        let url = format!(
+            "https://api.pkg.go.dev/search?q={}&limit={}",
             urlencoding::encode(query),
             limit
         );
 
-        // For now, return basic info - proper API would need HTML parsing or official API
+        if let Ok(resp) = api.raw_get(&url).await {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp) {
+                if let Some(results) = json["results"].as_array() {
+                    let packages: Vec<PackageSummary> = results
+                        .iter()
+                        .take(limit)
+                        .filter_map(|r| {
+                            let name = r["packagePath"].as_str()
+                                .or_else(|| r["modulePath"].as_str())?;
+                            Some(PackageSummary {
+                                name: name.to_string(),
+                                description: r["synopsis"].as_str().map(|s| s.to_string()),
+                                latest_version: r["version"].as_str().map(|s| s.to_string()),
+                                provider: self.id().into(),
+                            })
+                        })
+                        .collect();
+
+                    if !packages.is_empty() {
+                        return Ok(packages);
+                    }
+                }
+            }
+        }
+
+        // Last fallback: return the query as a potential module path
         Ok(vec![PackageSummary {
             name: query.to_string(),
-            description: Some("Go package - search on pkg.go.dev".into()),
+            description: Some("Go module - try installing with go install".into()),
             latest_version: None,
             provider: self.id().into(),
         }])
@@ -586,6 +687,58 @@ impl Provider for GoModProvider {
         Ok(versions)
     }
 
+    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<crate::resolver::Dependency>> {
+        // Use go list -m -json to get module dependencies
+        let query = if version.is_empty() {
+            format!("{}@latest", name)
+        } else {
+            format!("{}@{}", name, version)
+        };
+
+        // Try go list -m -json all in a temp module context
+        // For now, query the Go module proxy for dependencies
+        let proxy_url = format!(
+            "https://proxy.golang.org/{}/@v/{}.mod",
+            name,
+            if version.is_empty() { "latest" } else { version }
+        );
+
+        let api = get_api_client();
+        if let Ok(mod_content) = api.raw_get(&proxy_url).await {
+            let deps: Vec<crate::resolver::Dependency> = mod_content
+                .lines()
+                .filter(|line| line.starts_with("\t") || line.starts_with("    "))
+                .filter_map(|line| {
+                    let line = line.trim();
+                    // Format: module/path v1.2.3
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 && !parts[0].starts_with("//") {
+                        let dep_name = parts[0].to_string();
+                        let constraint = parts[1]
+                            .parse::<crate::resolver::VersionConstraint>()
+                            .unwrap_or(crate::resolver::VersionConstraint::Any);
+                        Some(crate::resolver::Dependency {
+                            name: dep_name,
+                            constraint,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            return Ok(deps);
+        }
+
+        // Fallback: use go list -m -json
+        if let Ok(output) = self.run_go(&["list", "-m", "-json", &query]).await {
+            // go list -m -json doesn't directly list deps, return empty
+            let _ = output;
+        }
+
+        Ok(vec![])
+    }
+
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let pkg = if let Some(v) = &req.version {
             format!("{}@{}", req.name, v)
@@ -595,19 +748,10 @@ impl Provider for GoModProvider {
 
         self.run_go(&["install", &pkg]).await?;
 
-        let gopath = std::env::var("GOPATH")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join("go"))
-            })
-            .unwrap_or_default();
+        let install_path = Self::get_gobin().unwrap_or_default();
 
         // Resolve actual version: query `go list -m -json <module>@latest`
         let actual_version = if req.version.is_none() || req.version.as_deref() == Some("latest") {
-            // Try to get the resolved version from go list
             let list_pkg = format!("{}@latest", req.name);
             if let Ok(out) = self.run_go(&["list", "-m", "-json", &list_pkg]).await {
                 serde_json::from_str::<serde_json::Value>(&out)
@@ -625,35 +769,56 @@ impl Provider for GoModProvider {
             name: req.name,
             version: actual_version,
             provider: self.id().into(),
-            install_path: gopath.join("bin"),
+            install_path,
             files: vec![],
             installed_at: chrono::Utc::now().to_rfc3339(),
         })
     }
 
-    async fn uninstall(&self, _req: UninstallRequest) -> CogniaResult<()> {
-        // Go doesn't have a built-in uninstall - need to manually remove from GOPATH/bin
-        Err(CogniaError::Provider(
-            "Go doesn't support uninstall. Remove binary from GOPATH/bin manually.".into(),
-        ))
+    async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        // Go doesn't have a built-in uninstall command, but we can remove
+        // the binary from GOBIN/GOPATH/bin
+        let bin_dir = Self::get_gobin()
+            .ok_or_else(|| CogniaError::Provider("Cannot determine GOBIN/GOPATH".into()))?;
+
+        // The binary name is the last segment of the module path
+        let binary_name = req.name.rsplit('/').next().unwrap_or(&req.name);
+
+        let mut binary_path = bin_dir.join(binary_name);
+
+        // On Windows, add .exe extension
+        if cfg!(windows) && !binary_name.ends_with(".exe") {
+            binary_path = bin_dir.join(format!("{}.exe", binary_name));
+        }
+
+        if binary_path.exists() {
+            std::fs::remove_file(&binary_path).map_err(|e| {
+                CogniaError::Provider(format!(
+                    "Failed to remove {}: {}",
+                    binary_path.display(),
+                    e
+                ))
+            })?;
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(format!(
+                "Binary '{}' not found in {}",
+                binary_name,
+                bin_dir.display()
+            )))
+        }
     }
 
     async fn list_installed(
         &self,
-        _filter: InstalledFilter,
+        filter: InstalledFilter,
     ) -> CogniaResult<Vec<InstalledPackage>> {
-        // List binaries in GOPATH/bin
-        let gopath = std::env::var("GOPATH").ok().map(PathBuf::from).or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| PathBuf::from(h).join("go"))
-        });
-
-        let Some(gopath) = gopath else {
-            return Ok(vec![]);
+        // List binaries in GOBIN or GOPATH/bin
+        let bin_dir = match Self::get_gobin() {
+            Some(dir) => dir,
+            None => return Ok(vec![]),
         };
 
-        let bin_dir = gopath.join("bin");
         if !bin_dir.exists() {
             return Ok(vec![]);
         }
@@ -664,12 +829,37 @@ impl Provider for GoModProvider {
                 let path = entry.path();
                 if path.is_file() {
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        // Skip non-executable files on Windows (must end with .exe)
+                        #[cfg(windows)]
+                        if !name.ends_with(".exe") {
+                            continue;
+                        }
+
+                        // Clean up name (remove .exe on Windows for display)
+                        let display_name = name.strip_suffix(".exe").unwrap_or(name);
+
+                        if let Some(ref name_filter) = filter.name_filter {
+                            if !display_name.contains(name_filter) {
+                                continue;
+                            }
+                        }
+
+                        // Try to get modification time as installed_at
+                        let installed_at = entry
+                            .metadata()
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339()
+                            })
+                            .unwrap_or_default();
+
                         packages.push(InstalledPackage {
-                            name: name.to_string(),
-                            version: "unknown".to_string(),
+                            name: display_name.to_string(),
+                            version: "installed".to_string(),
                             provider: self.id().into(),
                             install_path: path,
-                            installed_at: String::new(),
+                            installed_at,
                             is_global: true,
                         });
                     }
@@ -680,7 +870,22 @@ impl Provider for GoModProvider {
         Ok(packages)
     }
 
-    async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        Ok(vec![])
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // For go modules, we can check if installed binaries have newer versions
+        // by querying the module proxy
+        let installed = self.list_installed(InstalledFilter::default()).await?;
+        let mut updates = Vec::new();
+
+        for pkg in &installed {
+            if !packages.is_empty() && !packages.contains(&pkg.name) {
+                continue;
+            }
+
+            // We can't easily determine the module path from just a binary name,
+            // so this is best-effort. Users who installed via `go install module@version`
+            // would need to re-check manually.
+        }
+
+        Ok(updates)
     }
 }

@@ -10,6 +10,7 @@ export const LANGUAGES = [
   { id: 'rust', name: 'Rust', icon: '🦀', color: 'bg-orange-500/10 border-orange-500 dark:bg-orange-500/20' },
   { id: 'ruby', name: 'Ruby', icon: '💎', color: 'bg-red-500/10 border-red-500 dark:bg-red-500/20' },
   { id: 'java', name: 'Java', icon: '☕', color: 'bg-amber-500/10 border-amber-500 dark:bg-amber-500/20' },
+  { id: 'kotlin', name: 'Kotlin', icon: '🟣', color: 'bg-indigo-500/10 border-indigo-500 dark:bg-indigo-500/20' },
   { id: 'php', name: 'PHP', icon: '🐘', color: 'bg-purple-500/10 border-purple-500 dark:bg-purple-500/20' },
   { id: 'dotnet', name: '.NET', icon: '🔷', color: 'bg-violet-500/10 border-violet-500 dark:bg-violet-500/20' },
   { id: 'deno', name: 'Deno', icon: '🦕', color: 'bg-teal-500/10 border-teal-500 dark:bg-teal-500/20' },
@@ -44,6 +45,9 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
   java: [
     { id: 'sdkman', name: 'SDKMAN!', description: 'Software Development Kit Manager' },
   ],
+  kotlin: [
+    { id: 'sdkman-kotlin', name: 'SDKMAN!', description: 'Kotlin compiler via SDKMAN!' },
+  ],
   php: [
     { id: 'phpbrew', name: 'phpbrew', description: 'PHP version manager' },
   ],
@@ -66,7 +70,8 @@ export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   go: ['.go-version', 'go.mod', '.tool-versions'],
   rust: ['rust-toolchain.toml', 'rust-toolchain', '.tool-versions'],
   ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
-  java: ['.java-version', 'pom.xml', '.tool-versions', '.sdkmanrc'],
+  java: ['.java-version', 'pom.xml', 'build.gradle', 'build.gradle.kts', '.tool-versions', '.sdkmanrc'],
+  kotlin: ['.kotlin-version', 'build.gradle.kts', 'build.gradle', '.tool-versions', '.sdkmanrc'],
   php: ['.php-version', 'composer.json (require.php)', '.tool-versions'],
   dotnet: ['global.json', '.tool-versions'],
   bun: ['bunfig.toml', 'package.json (engines.bun)', '.tool-versions'],

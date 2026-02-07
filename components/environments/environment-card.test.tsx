@@ -59,7 +59,6 @@ const mockUseEnvironmentStore = useEnvironmentStore as unknown as jest.Mock;
 
 describe("EnvironmentCard", () => {
   const mockOpenVersionBrowser = jest.fn();
-  const mockOpenDetailsPanel = jest.fn();
   const mockOnInstall = jest.fn();
   const mockOnUninstall = jest.fn();
   const mockOnSetGlobal = jest.fn();
@@ -93,7 +92,6 @@ describe("EnvironmentCard", () => {
     jest.clearAllMocks();
     mockUseEnvironmentStore.mockReturnValue({
       openVersionBrowser: mockOpenVersionBrowser,
-      openDetailsPanel: mockOpenDetailsPanel,
     });
     mockOnInstall.mockResolvedValue(undefined);
     mockOnUninstall.mockResolvedValue(undefined);
@@ -200,12 +198,10 @@ describe("EnvironmentCard", () => {
     expect(screen.getByText("View Details")).toBeInTheDocument();
   });
 
-  it("calls openDetailsPanel when view details is clicked", async () => {
+  it("renders view details as a link to the environment detail page", () => {
     render(<EnvironmentCard env={defaultEnv} />);
-    const user = userEvent.setup();
-
-    await user.click(screen.getByText("View Details"));
-    expect(mockOpenDetailsPanel).toHaveBeenCalledWith("Node");
+    const link = screen.getByText("View Details").closest("a");
+    expect(link).toHaveAttribute("href", "/environments/Node");
   });
 
   it("shows loading state when loading prop is true", () => {

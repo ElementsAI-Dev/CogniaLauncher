@@ -7,6 +7,8 @@ import type {
   WslExecResult,
   WslDiskUsage,
   WslConfig,
+  WslDistroConfig,
+  WslMountOptions,
 } from '@/types/tauri';
 
 export interface UseWslReturn {
@@ -41,6 +43,13 @@ export interface UseWslReturn {
   refreshConfig: () => Promise<void>;
   setConfigValue: (section: string, key: string, value?: string) => Promise<void>;
   getDiskUsage: (name: string) => Promise<WslDiskUsage | null>;
+  importInPlace: (name: string, vhdxPath: string) => Promise<void>;
+  mountDisk: (options: WslMountOptions) => Promise<string>;
+  unmountDisk: (diskPath?: string) => Promise<void>;
+  getIpAddress: (distro?: string) => Promise<string>;
+  changeDefaultUser: (distro: string, username: string) => Promise<void>;
+  getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
+  setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
 }
 
 /**
@@ -324,6 +333,83 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const importInPlace = useCallback(async (name: string, vhdxPath: string) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslImportInPlace(name, vhdxPath);
+      await refreshDistros();
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
+
+  const mountDisk = useCallback(async (options: WslMountOptions): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      setError(null);
+      return await tauri.wslMount(options);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const unmountDisk = useCallback(async (diskPath?: string) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslUnmount(diskPath);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const getIpAddress = useCallback(async (distro?: string): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      return await tauri.wslGetIp(distro);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const changeDefaultUser = useCallback(async (distro: string, username: string) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslChangeDefaultUser(distro, username);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const getDistroConfig = useCallback(async (distro: string): Promise<WslDistroConfig | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslGetDistroConfig(distro);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const setDistroConfigValue = useCallback(async (
+    distro: string, section: string, key: string, value?: string
+  ) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslSetDistroConfig(distro, section, key, value);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
   return {
     available,
     distros,
@@ -353,5 +439,12 @@ export function useWsl(): UseWslReturn {
     refreshConfig,
     setConfigValue,
     getDiskUsage,
+    importInPlace,
+    mountDisk,
+    unmountDisk,
+    getIpAddress,
+    changeDefaultUser,
+    getDistroConfig,
+    setDistroConfigValue,
   };
 }

@@ -1,9 +1,16 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
+use crate::platform::process::ProcessOptions;
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
+
+/// Default timeout for WSL commands (120 seconds)
+const WSL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Longer timeout for operations like install/export/import
+const WSL_LONG_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// WSL (Windows Subsystem for Linux) distribution management provider.
 ///
@@ -34,10 +41,15 @@ impl WslProvider {
         Self
     }
 
+    /// Build ProcessOptions with the given timeout.
+    fn make_opts(timeout: Duration) -> ProcessOptions {
+        ProcessOptions::new().with_timeout(timeout)
+    }
+
     /// Execute a wsl.exe command and return stdout on success.
     /// Uses UTF-16 decoding workaround for wsl.exe output encoding issues.
     pub async fn run_wsl(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("wsl.exe", args, None).await?;
+        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
         if out.success {
             Ok(Self::clean_wsl_output(&out.stdout))
         } else {
@@ -51,10 +63,25 @@ impl WslProvider {
         }
     }
 
+    /// Execute a wsl.exe command with a long timeout (for install/export/import).
+    pub async fn run_wsl_long(&self, args: &[&str]) -> CogniaResult<String> {
+        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_LONG_TIMEOUT))).await?;
+        if out.success {
+            Ok(Self::clean_wsl_output(&out.stdout))
+        } else {
+            let err_msg = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("WSL: {}", err_msg)))
+        }
+    }
+
     /// Execute a wsl.exe command, returning stdout even on non-zero exit codes.
     /// Some WSL commands (like --list --online) may return non-zero but still have output.
     pub async fn run_wsl_lenient(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("wsl.exe", args, None).await?;
+        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
         let stdout = Self::clean_wsl_output(&out.stdout);
         if !stdout.trim().is_empty() {
             Ok(stdout)
@@ -240,6 +267,19 @@ impl WslProvider {
         self.run_wsl_lenient(&["--status"]).await
     }
 
+    /// List currently running WSL distributions.
+    /// Parses `wsl --list --running` output to get distribution names.
+    pub async fn list_running(&self) -> CogniaResult<Vec<String>> {
+        let out = self.run_wsl_lenient(&["--list", "--running"]).await?;
+        let distros: Vec<String> = out
+            .lines()
+            .skip(1) // Skip header "Windows Subsystem for Linux Distributions:"
+            .map(|l| l.trim().trim_end_matches(" (Default)").trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        Ok(distros)
+    }
+
     /// Terminate a specific running distribution
     pub async fn terminate_distro(&self, name: &str) -> CogniaResult<()> {
         self.run_wsl(&["--terminate", name]).await?;
@@ -301,40 +341,53 @@ impl WslProvider {
         if as_vhd {
             args.push("--vhd");
         }
-        self.run_wsl(&args).await?;
+        self.run_wsl_long(&args).await?;
         Ok(())
     }
 
-    /// Launch a distribution (non-blocking, opens in new console)
+    /// Import a distribution in-place from an existing .vhdx file.
+    /// The virtual hard disk must be formatted in the ext4 filesystem type.
+    pub async fn import_distro_in_place(
+        &self,
+        name: &str,
+        vhdx_path: &str,
+    ) -> CogniaResult<()> {
+        self.run_wsl_long(&["--import-in-place", name, vhdx_path]).await?;
+        Ok(())
+    }
+
+    /// Launch a distribution by starting it in the background.
+    /// Uses `wsl -d <name>` with a detached process to open an interactive session.
     pub async fn launch_distro(&self, name: &str, user: Option<&str>) -> CogniaResult<()> {
-        let mut args = vec!["--distribution", name];
+        let mut args: Vec<String> = vec!["--distribution".into(), name.into()];
         if let Some(u) = user {
-            args.push("--user");
-            args.push(u);
+            args.push("--user".into());
+            args.push(u.into());
         }
-        // Run a simple echo to verify launch works, actual launch happens via shell
-        args.extend(&["--exec", "echo", "started"]);
-        self.run_wsl(&args).await?;
+        // Start the distro by running a lightweight command that ensures it's in Running state
+        args.extend(["--exec".into(), "sh".into(), "-c".into(), "true".into()]);
+        let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        self.run_wsl(&args_ref).await?;
         Ok(())
     }
 
     /// Update WSL kernel to the latest version
     pub async fn update_wsl(&self) -> CogniaResult<String> {
-        let out = self.run_wsl_lenient(&["--update"]).await?;
-        Ok(out)
-    }
-
-    /// Get the list of currently running distributions
-    pub async fn list_running(&self) -> CogniaResult<Vec<String>> {
-        let out = self.run_wsl_lenient(&["--list", "--running", "--quiet"]).await;
-        match out {
-            Ok(output) => Ok(output
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect()),
-            Err(_) => Ok(vec![]),
-        }
+        let out = process::execute(
+            "wsl.exe",
+            &["--update", "--web-download"],
+            Some(Self::make_opts(WSL_LONG_TIMEOUT)),
+        )
+        .await?;
+        let stdout = Self::clean_wsl_output(&out.stdout);
+        let stderr = Self::clean_wsl_output(&out.stderr);
+        // wsl --update returns non-zero sometimes even on success; combine output
+        let combined = if !stdout.trim().is_empty() {
+            stdout
+        } else {
+            stderr
+        };
+        Ok(combined)
     }
 
     /// Get detailed info for a specific installed distribution
@@ -359,7 +412,7 @@ impl WslProvider {
         }
         args.extend(&["--exec", "sh", "-c", command]);
 
-        let out = process::execute("wsl.exe", &args, None).await?;
+        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
         let stdout = Self::clean_wsl_output(&out.stdout);
         let stderr = Self::clean_wsl_output(&out.stderr);
         let exit_code = out.exit_code;
@@ -381,7 +434,7 @@ impl WslProvider {
         }
         args.extend(&["--exec", "wslpath", flag, path]);
 
-        let out = process::execute("wsl.exe", &args, None).await?;
+        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
         let result = Self::clean_wsl_output(&out.stdout);
         if result.trim().is_empty() {
             return Err(CogniaError::Provider(format!(
@@ -589,6 +642,185 @@ impl WslProvider {
     pub fn get_distro_filesystem_path(distro: &str) -> String {
         format!("\\\\wsl.localhost\\{}", distro)
     }
+
+    /// Mount a physical or virtual disk in WSL2.
+    /// `disk_path` is the Windows path to the disk (e.g., `\\.\PhysicalDrive1` or a .vhdx).
+    /// `options`: filesystem type, partition, bare mount, mount name, etc.
+    pub async fn mount_disk(
+        &self,
+        disk_path: &str,
+        is_vhd: bool,
+        fs_type: Option<&str>,
+        partition: Option<u32>,
+        mount_name: Option<&str>,
+        bare: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["--mount", disk_path];
+        if is_vhd {
+            args.push("--vhd");
+        }
+        let fs_str;
+        if let Some(fs) = fs_type {
+            fs_str = fs.to_string();
+            args.push("--type");
+            args.push(&fs_str);
+        }
+        let part_str;
+        if let Some(p) = partition {
+            part_str = p.to_string();
+            args.push("--partition");
+            args.push(&part_str);
+        }
+        if let Some(name) = mount_name {
+            args.push("--name");
+            args.push(name);
+        }
+        if bare {
+            args.push("--bare");
+        }
+        self.run_wsl_long(&args).await
+    }
+
+    /// Unmount a previously mounted disk. If no path given, unmounts all.
+    pub async fn unmount_disk(&self, disk_path: Option<&str>) -> CogniaResult<()> {
+        let mut args = vec!["--unmount"];
+        if let Some(path) = disk_path {
+            args.push(path);
+        }
+        self.run_wsl(&args).await?;
+        Ok(())
+    }
+
+    /// Get the IP address of a WSL distribution (the WSL2 VM address).
+    pub async fn get_ip_address(&self, distro: Option<&str>) -> CogniaResult<String> {
+        let mut args: Vec<&str> = Vec::new();
+        if let Some(d) = distro {
+            args.extend(&["-d", d]);
+        }
+        args.extend(&["--exec", "hostname", "-I"]);
+        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
+        let ip = Self::clean_wsl_output(&out.stdout).trim().to_string();
+        if ip.is_empty() {
+            return Err(CogniaError::Provider("WSL: Could not determine IP address".into()));
+        }
+        // hostname -I may return multiple IPs, take the first one
+        Ok(ip.split_whitespace().next().unwrap_or(&ip).to_string())
+    }
+
+    /// Change the default user for a distribution.
+    /// Uses `<distro>.exe config --default-user <user>` (only works for Store-installed distros).
+    /// Falls back to editing /etc/wsl.conf for imported distros.
+    pub async fn change_default_user(&self, distro: &str, username: &str) -> CogniaResult<()> {
+        // Try the launcher executable approach first (e.g., ubuntu.exe config --default-user user)
+        let exe_name = format!("{}.exe", distro.to_lowercase());
+        let result = process::execute(
+            &exe_name,
+            &["config", "--default-user", username],
+            Some(Self::make_opts(WSL_TIMEOUT)),
+        )
+        .await;
+
+        match result {
+            Ok(out) if out.success => Ok(()),
+            _ => {
+                // Fallback: edit /etc/wsl.conf inside the distro
+                let cmd = format!(
+                    "if grep -q '\\[user\\]' /etc/wsl.conf 2>/dev/null; then \
+                     sed -i 's/^default=.*/default={}/' /etc/wsl.conf; \
+                     else echo -e '\\n[user]\\ndefault={}' >> /etc/wsl.conf; fi",
+                    username, username
+                );
+                let (_, stderr, code) = self.exec_command(distro, &cmd, Some("root")).await?;
+                if code != 0 {
+                    return Err(CogniaError::Provider(format!(
+                        "Failed to change default user: {}",
+                        stderr.trim()
+                    )));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Read the per-distro /etc/wsl.conf file.
+    /// Returns the parsed key-value pairs grouped by section.
+    pub async fn read_distro_config(
+        &self,
+        distro: &str,
+    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>> {
+        let (stdout, _, code) = self
+            .exec_command(distro, "cat /etc/wsl.conf 2>/dev/null || echo ''", None)
+            .await?;
+        if code != 0 {
+            return Ok(std::collections::HashMap::new());
+        }
+        Ok(Self::parse_ini_content(&stdout))
+    }
+
+    /// Write a setting to the per-distro /etc/wsl.conf file.
+    /// Requires root access inside the distro.
+    pub async fn write_distro_config(
+        &self,
+        distro: &str,
+        section: &str,
+        key: &str,
+        value: &str,
+    ) -> CogniaResult<()> {
+        // Read current config
+        let current = self.read_distro_config(distro).await?;
+        let mut sections = current;
+        sections
+            .entry(section.to_string())
+            .or_default()
+            .insert(key.to_string(), value.to_string());
+
+        let content = Self::serialize_ini_content(&sections);
+        // Escape for shell
+        let escaped = content.replace('\'', "'\\''");
+        let cmd = format!("echo '{}' > /etc/wsl.conf", escaped);
+        let (_, stderr, code) = self.exec_command(distro, &cmd, Some("root")).await?;
+        if code != 0 {
+            return Err(CogniaError::Provider(format!(
+                "Failed to write wsl.conf: {}",
+                stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Remove a setting from the per-distro /etc/wsl.conf file.
+    pub async fn remove_distro_config_key(
+        &self,
+        distro: &str,
+        section: &str,
+        key: &str,
+    ) -> CogniaResult<bool> {
+        let current = self.read_distro_config(distro).await?;
+        let mut sections = current;
+        let removed = if let Some(sec) = sections.get_mut(section) {
+            let existed = sec.remove(key).is_some();
+            if sec.is_empty() {
+                sections.remove(section);
+            }
+            existed
+        } else {
+            false
+        };
+
+        if removed {
+            let content = Self::serialize_ini_content(&sections);
+            let escaped = content.replace('\'', "'\\''");
+            let cmd = format!("echo '{}' > /etc/wsl.conf", escaped);
+            let (_, stderr, code) = self.exec_command(distro, &cmd, Some("root")).await?;
+            if code != 0 {
+                return Err(CogniaError::Provider(format!(
+                    "Failed to write wsl.conf: {}",
+                    stderr.trim()
+                )));
+            }
+        }
+        Ok(removed)
+    }
 }
 
 impl Default for WslProvider {
@@ -627,7 +859,7 @@ impl Provider for WslProvider {
 
     async fn is_available(&self) -> bool {
         // Check if wsl.exe exists and can respond
-        match process::execute("wsl.exe", &["--status"], None).await {
+        match process::execute("wsl.exe", &["--status"], Some(Self::make_opts(WSL_TIMEOUT))).await {
             Ok(out) => {
                 // wsl --status may return non-zero on some versions but still means WSL is installed
                 // Check if we got any meaningful output (not just an error about missing feature)
@@ -763,7 +995,8 @@ impl Provider for WslProvider {
         // Use --web-download for reliability (bypasses Microsoft Store issues)
         args.push("--web-download");
 
-        self.run_wsl_lenient(&args).await.map_err(|e| {
+        // Use long timeout - installs can take several minutes to download
+        self.run_wsl_long(&args).await.map_err(|e| {
             CogniaError::Installation(format!(
                 "Failed to install WSL distribution '{}': {}",
                 req.name, e
@@ -854,30 +1087,40 @@ impl Provider for WslProvider {
     }
 
     /// Check for WSL kernel updates.
-    /// WSL distributions themselves don't have a traditional update mechanism via wsl.exe,
-    /// but the WSL kernel can be updated via `wsl --update`.
+    /// Uses `wsl --update --check` which is a non-destructive check (available in newer WSL).
+    /// Falls back to `wsl --version` to report current version without triggering an actual update.
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        // Try `wsl --update --check` (available in newer WSL versions) or
-        // use `wsl --update` dry-run behavior
         let mut updates = Vec::new();
 
-        // Check WSL kernel update availability
-        // Running `wsl --update` will report if an update is available
-        let out = self.run_wsl_lenient(&["--update", "--web-download"]).await;
-        if let Ok(output) = out {
-            let lower = output.to_lowercase();
-            // If the output indicates an update was performed or is available
-            if lower.contains("update") && !lower.contains("no update") && !lower.contains("already") {
+        // Try `wsl --update --check` first (non-destructive, available in WSL 2.x on Win11)
+        let check_result = process::execute(
+            "wsl.exe",
+            &["--update", "--check"],
+            Some(Self::make_opts(WSL_TIMEOUT)),
+        )
+        .await;
+
+        if let Ok(out) = check_result {
+            let combined = Self::clean_wsl_output(&format!("{}{}", out.stdout, out.stderr));
+            let lower = combined.to_lowercase();
+            // If the output indicates an update is available (not "no update" or "already up to date")
+            if (lower.contains("update") || lower.contains("version"))
+                && !lower.contains("no update")
+                && !lower.contains("already")
+                && !lower.contains("up to date")
+                && !lower.contains("not recognized")
+            {
                 if let Ok(version) = self.get_wsl_version_string().await {
                     updates.push(UpdateInfo {
                         name: "wsl-kernel".into(),
-                        current_version: version.clone(),
-                        latest_version: format!("{} (updated)", version),
+                        current_version: version,
+                        latest_version: "newer version available".into(),
                         provider: self.id().into(),
                     });
                 }
             }
         }
+        // If --check flag is not supported, we simply return empty (no false positive update)
 
         Ok(updates)
     }

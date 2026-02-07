@@ -470,4 +470,8 @@ impl EnvironmentProvider for PyenvProvider {
     fn version_file_name(&self) -> &str {
         ".python-version"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

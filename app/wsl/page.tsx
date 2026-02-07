@@ -14,6 +14,7 @@ import {
   WslEmptyState,
   WslNotAvailable,
   WslConfigCard,
+  WslDistroConfigCard,
   WslExecTerminal,
 } from '@/components/wsl';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,11 @@ export default function WslPage() {
     execCommand,
     refreshConfig,
     setConfigValue,
+    getDiskUsage,
+    getIpAddress,
+    changeDefaultUser,
+    getDistroConfig,
+    setDistroConfigValue,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -78,6 +84,16 @@ export default function WslPage() {
     type: 'unregister' | 'shutdown';
     name?: string;
   } | null>(null);
+  const [selectedDistroForConfig, setSelectedDistroForConfig] = useState<string | null>(null);
+
+  // Auto-select first distro for per-distro config when distros change
+  useEffect(() => {
+    if (distros.length > 0 && !selectedDistroForConfig) {
+      setSelectedDistroForConfig(distros[0].name);
+    } else if (distros.length === 0) {
+      setSelectedDistroForConfig(null);
+    }
+  }, [distros, selectedDistroForConfig]);
 
   // Initialize on mount
   useEffect(() => {
@@ -195,6 +211,21 @@ export default function WslPage() {
       toast.error(String(err));
     }
   }, [t, refreshDistros]);
+
+  const handleChangeDefaultUser = useCallback(async (name: string) => {
+    const username = window.prompt(t('wsl.username'));
+    if (!username) return;
+    try {
+      await changeDefaultUser(name, username);
+      toast.success(
+        t('wsl.changeDefaultUserSuccess')
+          .replace('{name}', name)
+          .replace('{user}', username)
+      );
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [changeDefaultUser, t]);
 
   const handleUpdate = useCallback(async () => {
     try {
@@ -325,6 +356,8 @@ export default function WslPage() {
                       onUnregister={(name) =>
                         setConfirmAction({ type: 'unregister', name })
                       }
+                      onChangeDefaultUser={handleChangeDefaultUser}
+                      getDiskUsage={getDiskUsage}
                       t={t}
                     />
                   ))
@@ -358,6 +391,7 @@ export default function WslPage() {
               loading={loading}
               onRefresh={() => refreshStatus()}
               onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
+              getIpAddress={() => getIpAddress()}
               t={t}
             />
             <WslConfigCard
@@ -367,6 +401,14 @@ export default function WslPage() {
               onSetConfig={setConfigValue}
               t={t}
             />
+            {selectedDistroForConfig && (
+              <WslDistroConfigCard
+                distroName={selectedDistroForConfig}
+                getDistroConfig={getDistroConfig}
+                setDistroConfigValue={setDistroConfigValue}
+                t={t}
+              />
+            )}
           </div>
         </div>
       )}

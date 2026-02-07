@@ -51,6 +51,7 @@ pub enum ExternalCacheProvider {
     LinuxCache,
     // Developer tool caches
     Docker,
+    Podman,
     Flutter,
     #[cfg(target_os = "macos")]
     CocoaPods,
@@ -102,6 +103,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache,
             // Developer tool caches
             Self::Docker,
+            Self::Podman,
             Self::Flutter,
             #[cfg(target_os = "macos")]
             Self::CocoaPods,
@@ -152,6 +154,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache => "linux_cache",
             // Developer tool caches
             Self::Docker => "docker",
+            Self::Podman => "podman",
             Self::Flutter => "flutter",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "cocoapods",
@@ -202,6 +205,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache => "Linux User Cache",
             // Developer tool caches
             Self::Docker => "Docker Build Cache",
+            Self::Podman => "Podman Build Cache",
             Self::Flutter => "Flutter/Dart Pub",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "CocoaPods",
@@ -252,6 +256,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache => "uname",
             // Developer tool caches
             Self::Docker => "docker",
+            Self::Podman => "podman",
             Self::Flutter => "flutter",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "pod",
@@ -302,6 +307,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache => get_linux_cache_path(),
             // Developer tool caches
             Self::Docker => get_docker_cache_path(),
+            Self::Podman => get_podman_cache_path(),
             Self::Flutter => get_flutter_cache_path(),
             #[cfg(target_os = "macos")]
             Self::CocoaPods => get_cocoapods_cache_path(),
@@ -352,6 +358,7 @@ impl ExternalCacheProvider {
             Self::LinuxCache => None,
             // Developer tool caches
             Self::Docker => Some(("docker", &["builder", "prune", "-f"])),
+            Self::Podman => Some(("podman", &["system", "prune", "-f"])),
             Self::Flutter => None, // Direct delete of pub-cache
             #[cfg(target_os = "macos")]
             Self::CocoaPods => Some(("pod", &["cache", "clean", "--all"])),
@@ -402,6 +409,7 @@ impl ExternalCacheProvider {
             "linux_cache" | "linux_user_cache" => Some(Self::LinuxCache),
             // Developer tool caches
             "docker" => Some(Self::Docker),
+            "podman" => Some(Self::Podman),
             "flutter" | "dart" | "pub" => Some(Self::Flutter),
             #[cfg(target_os = "macos")]
             "cocoapods" | "pod" | "pods" => Some(Self::CocoaPods),
@@ -424,7 +432,7 @@ impl ExternalCacheProvider {
             #[cfg(target_os = "linux")]
             Self::LinuxCache => "system",
             // Developer tool caches
-            Self::Docker | Self::Flutter | Self::Cypress
+            Self::Docker | Self::Podman | Self::Flutter | Self::Cypress
             | Self::Electron | Self::Vcpkg | Self::Sbt => "devtools",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "devtools",
@@ -927,6 +935,13 @@ fn get_linux_cache_path() -> Option<PathBuf> {
 fn get_docker_cache_path() -> Option<PathBuf> {
     // Docker manages its own storage via the daemon; no single user-accessible cache directory.
     // The clean_command (docker builder prune) handles cleanup.
+    // Return None so discovery relies on is_available instead of has_cache_dir.
+    None
+}
+
+fn get_podman_cache_path() -> Option<PathBuf> {
+    // Podman is daemonless; storage is managed per-user.
+    // The clean_command (podman system prune) handles cleanup.
     // Return None so discovery relies on is_available instead of has_cache_dir.
     None
 }

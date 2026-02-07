@@ -332,6 +332,13 @@ impl Provider for PnpmProvider {
         })
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_package_version(name, true).await {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
         let args = vec!["remove", "-g", &req.name];
         self.run_pnpm(&args).await?;
@@ -379,10 +386,17 @@ impl Provider for PnpmProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_pnpm_raw(&["outdated", "-g", "--json"]).await;
+        // pnpm outdated returns non-zero exit code when packages are outdated (not an error)
+        // So we must read stdout directly instead of using run_pnpm_raw
+        let result = process::execute("pnpm", &["outdated", "-g", "--json"], None).await;
 
-        let out_str = match out {
-            Ok(s) => s,
+        let out_str = match result {
+            Ok(output) => {
+                if output.stdout.trim().is_empty() {
+                    return Ok(vec![]);
+                }
+                output.stdout
+            }
             Err(_) => return Ok(vec![]),
         };
 
@@ -427,6 +441,22 @@ impl SystemPackageProvider for PnpmProvider {
 
     fn requires_elevation(&self, _operation: &str) -> bool {
         false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_pnpm_raw(&["--version"]).await?;
+        Ok(output.trim().to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("pnpm")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("pnpm not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("Install pnpm: npm install -g pnpm or corepack enable pnpm".into())
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {

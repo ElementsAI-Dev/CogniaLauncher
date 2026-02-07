@@ -14,6 +14,9 @@ export type {
   EnvironmentSettingsConfig,
   SystemEnvironmentInfo,
   EnvironmentTypeMapping,
+  RustComponent,
+  RustTarget,
+  RustupShowInfo,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -112,6 +115,8 @@ export type {
   WslExecResult,
   WslDiskUsage,
   WslConfig,
+  WslDistroConfig,
+  WslMountOptions,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -130,6 +135,9 @@ import type {
   EnvironmentSettingsConfig,
   SystemEnvironmentInfo,
   EnvironmentTypeMapping,
+  RustComponent,
+  RustTarget,
+  RustupShowInfo,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -199,6 +207,8 @@ import type {
   WslExecResult,
   WslDiskUsage,
   WslConfig,
+  WslDistroConfig,
+  WslMountOptions,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -299,6 +309,34 @@ export const envInstalledVersions = (envType: string) =>
 
 export const envCurrentVersion = (envType: string) =>
   invoke<string | null>('env_current_version', { envType });
+
+// Rustup-specific commands
+export const rustupListComponents = (toolchain?: string) =>
+  invoke<RustComponent[]>('rustup_list_components', { toolchain });
+
+export const rustupAddComponent = (component: string, toolchain?: string) =>
+  invoke<void>('rustup_add_component', { component, toolchain });
+
+export const rustupRemoveComponent = (component: string, toolchain?: string) =>
+  invoke<void>('rustup_remove_component', { component, toolchain });
+
+export const rustupListTargets = (toolchain?: string) =>
+  invoke<RustTarget[]>('rustup_list_targets', { toolchain });
+
+export const rustupAddTarget = (target: string, toolchain?: string) =>
+  invoke<void>('rustup_add_target', { target, toolchain });
+
+export const rustupRemoveTarget = (target: string, toolchain?: string) =>
+  invoke<void>('rustup_remove_target', { target, toolchain });
+
+export const rustupShow = () =>
+  invoke<RustupShowInfo>('rustup_show');
+
+export const rustupSelfUpdate = () =>
+  invoke<void>('rustup_self_update');
+
+export const rustupUpdateAll = () =>
+  invoke<string>('rustup_update_all');
 
 // Package commands
 export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
@@ -1208,6 +1246,34 @@ export const wslSetConfig = (section: string, key: string, value?: string) =>
 /** Get disk usage for a WSL distribution */
 export const wslDiskUsage = (name: string) =>
   invoke<WslDiskUsage>('wsl_disk_usage', { name });
+
+/** Import a distribution in-place from an existing .vhdx file */
+export const wslImportInPlace = (name: string, vhdxPath: string) =>
+  invoke<void>('wsl_import_in_place', { name, vhdxPath });
+
+/** Mount a physical or virtual disk in WSL2 */
+export const wslMount = (options: WslMountOptions) =>
+  invoke<string>('wsl_mount', { options });
+
+/** Unmount a previously mounted disk (or all if no path given) */
+export const wslUnmount = (diskPath?: string) =>
+  invoke<void>('wsl_unmount', { diskPath });
+
+/** Get the IP address of a WSL distribution */
+export const wslGetIp = (distro?: string) =>
+  invoke<string>('wsl_get_ip', { distro });
+
+/** Change the default user for a distribution */
+export const wslChangeDefaultUser = (distro: string, username: string) =>
+  invoke<void>('wsl_change_default_user', { distro, username });
+
+/** Read the per-distro /etc/wsl.conf file */
+export const wslGetDistroConfig = (distro: string) =>
+  invoke<WslDistroConfig>('wsl_get_distro_config', { distro });
+
+/** Write or remove a setting in the per-distro /etc/wsl.conf file */
+export const wslSetDistroConfig = (distro: string, section: string, key: string, value?: string) =>
+  invoke<void>('wsl_set_distro_config', { distro, section, key, value });
 
 // ============================================================================
 // Launch Commands

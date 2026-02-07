@@ -354,3 +354,219 @@ impl SystemPackageProvider for PacmanProvider {
         Ok(out.is_ok())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = PacmanProvider::new();
+        assert_eq!(p.id(), "pacman");
+        assert_eq!(p.display_name(), "Pacman (Arch Linux)");
+        assert_eq!(p.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = PacmanProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = PacmanProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = PacmanProvider::new();
+        assert!(p.requires_elevation("install"));
+        assert!(p.requires_elevation("uninstall"));
+        assert!(p.requires_elevation("update"));
+        assert!(p.requires_elevation("upgrade"));
+        assert!(!p.requires_elevation("search"));
+        assert!(!p.requires_elevation("list"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = PacmanProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("Arch Linux"));
+    }
+
+    #[test]
+    fn test_parse_pacman_search_output() {
+        // pacman -Ss output: repo/name version\n    description
+        let output = "extra/nginx 1.25.3-1\n    Lightweight HTTP server and IMAP/POP3 proxy server\nextra/nginx-src 1.25.3-1\n    Lightweight HTTP server (source only)\n";
+
+        let mut packages = Vec::new();
+        let mut lines = output.lines().peekable();
+
+        while let Some(line) = lines.next() {
+            if line.starts_with(' ') || line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let full_name = parts[0];
+                let name = full_name.split('/').next_back().unwrap_or(full_name);
+                let version = parts[1].to_string();
+                let description = lines
+                    .peek()
+                    .filter(|l| l.starts_with(' '))
+                    .map(|l| l.trim().to_string());
+                if description.is_some() {
+                    lines.next();
+                }
+                packages.push((name.to_string(), version, description));
+            }
+        }
+
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages[0].0, "nginx");
+        assert_eq!(packages[0].1, "1.25.3-1");
+        assert_eq!(packages[0].2, Some("Lightweight HTTP server and IMAP/POP3 proxy server".into()));
+        assert_eq!(packages[1].0, "nginx-src");
+    }
+
+    #[test]
+    fn test_parse_pacman_query_output() {
+        // pacman -Q output: name version
+        let output = "curl 8.4.0-1\ngit 2.42.0-1\nvim 9.0.2081-1\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    Some(InstalledPackage {
+                        name: parts[0].to_string(),
+                        version: parts[1].to_string(),
+                        provider: "pacman".into(),
+                        install_path: PathBuf::from("/usr"),
+                        installed_at: String::new(),
+                        is_global: true,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "curl");
+        assert_eq!(packages[0].version, "8.4.0-1");
+        assert_eq!(packages[1].name, "git");
+        assert_eq!(packages[2].name, "vim");
+    }
+
+    #[test]
+    fn test_parse_pacman_query_with_name_filter() {
+        let output = "curl 8.4.0-1\ngit 2.42.0-1\ncurl-dev 8.4.0-1\n";
+        let name_filter = Some("curl".to_string());
+
+        let filtered: Vec<&str> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let name = parts[0];
+                    if let Some(ref f) = name_filter {
+                        if !name.to_lowercase().contains(&f.to_lowercase()) {
+                            return None;
+                        }
+                    }
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0], "curl");
+        assert_eq!(filtered[1], "curl-dev");
+    }
+
+    #[test]
+    fn test_parse_pacman_updates_output() {
+        // pacman -Qu output: name old_version -> new_version
+        let output = "curl 8.3.0-1 -> 8.4.0-1\ngit 2.41.0-1 -> 2.42.0-1\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    Some(UpdateInfo {
+                        name: parts[0].to_string(),
+                        current_version: parts[1].into(),
+                        latest_version: parts[3].into(),
+                        provider: "pacman".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "curl");
+        assert_eq!(updates[0].current_version, "8.3.0-1");
+        assert_eq!(updates[0].latest_version, "8.4.0-1");
+        assert_eq!(updates[1].name, "git");
+    }
+
+    #[test]
+    fn test_parse_pacman_info_output() {
+        let output = "Name            : curl\nVersion         : 8.4.0-1\nDescription     : command line tool for transferring data\nURL             : https://curl.se/\nLicenses        : MIT\nArchitecture    : x86_64\n";
+
+        let mut description = None;
+        let mut version = None;
+        let mut license = None;
+        let mut homepage = None;
+
+        for line in output.lines() {
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                let value = parts[1].trim();
+                match key {
+                    "Version" => version = Some(value.to_string()),
+                    "Description" => description = Some(value.to_string()),
+                    "Licenses" => license = Some(value.to_string()),
+                    "URL" => homepage = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        assert_eq!(version, Some("8.4.0-1".into()));
+        assert_eq!(description, Some("command line tool for transferring data".into()));
+        assert_eq!(license, Some("MIT".into()));
+        assert_eq!(homepage, Some("https://curl.se/".into()));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = PacmanProvider::default();
+        assert_eq!(p.id(), "pacman");
+    }
+}

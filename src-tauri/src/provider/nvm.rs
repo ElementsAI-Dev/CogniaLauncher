@@ -178,12 +178,21 @@ impl Provider for NvmProvider {
 
         self.run_nvm(&["install", version]).await?;
 
+        // Resolve actual version (especially when --lts was used)
+        let actual_version = if version == "--lts" || version == "lts" {
+            self.get_current_version()
+                .await?
+                .unwrap_or_else(|| version.to_string())
+        } else {
+            version.to_string()
+        };
+
         let nvm_dir = self.nvm_dir()?;
-        let install_path = nvm_dir.join("versions").join("node").join(version);
+        let install_path = nvm_dir.join("versions").join("node").join(&actual_version);
 
         Ok(InstallReceipt {
             name: "node".to_string(),
-            version: version.to_string(),
+            version: actual_version,
             provider: self.id().to_string(),
             install_path,
             files: vec![],
@@ -202,7 +211,7 @@ impl Provider for NvmProvider {
 
     async fn list_installed(
         &self,
-        _filter: InstalledFilter,
+        filter: InstalledFilter,
     ) -> CogniaResult<Vec<InstalledPackage>> {
         let output = self.run_nvm(&["ls"]).await?;
         let nvm_dir = self.nvm_dir()?;
@@ -213,8 +222,17 @@ impl Provider for NvmProvider {
                 let line = line.trim();
                 let version = line.split_whitespace().find(|s| s.starts_with('v'))?;
 
+                let name = "node".to_string();
+
+                // Apply name filter
+                if let Some(ref name_filter) = filter.name_filter {
+                    if !name.contains(name_filter) && !version.contains(name_filter) {
+                        return None;
+                    }
+                }
+
                 Some(InstalledPackage {
-                    name: "node".to_string(),
+                    name,
                     version: version.to_string(),
                     provider: self.id().to_string(),
                     install_path: nvm_dir.join("versions").join("node").join(version),
@@ -374,16 +392,31 @@ impl EnvironmentProvider for NvmProvider {
 
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
         let nvm_dir = self.nvm_dir()?;
-        let node_path = nvm_dir
-            .join("versions")
-            .join("node")
-            .join(version)
-            .join("bin");
 
-        Ok(EnvModifications::new().prepend_path(node_path))
+        #[cfg(windows)]
+        {
+            // nvm-windows stores Node.js directly in the version directory (no /bin subdir)
+            let node_path = nvm_dir.join(version);
+            Ok(EnvModifications::new().prepend_path(node_path))
+        }
+
+        #[cfg(not(windows))]
+        {
+            // POSIX nvm uses versions/node/<version>/bin/
+            let node_path = nvm_dir
+                .join("versions")
+                .join("node")
+                .join(version)
+                .join("bin");
+            Ok(EnvModifications::new().prepend_path(node_path))
+        }
     }
 
     fn version_file_name(&self) -> &str {
         ".node-version"
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }

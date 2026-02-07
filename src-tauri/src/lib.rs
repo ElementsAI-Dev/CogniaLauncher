@@ -187,6 +187,16 @@ pub fn run() {
             commands::environment::env_verify_install,
             commands::environment::env_installed_versions,
             commands::environment::env_current_version,
+            // Rustup-specific commands
+            commands::environment::rustup_list_components,
+            commands::environment::rustup_add_component,
+            commands::environment::rustup_remove_component,
+            commands::environment::rustup_list_targets,
+            commands::environment::rustup_add_target,
+            commands::environment::rustup_remove_target,
+            commands::environment::rustup_show,
+            commands::environment::rustup_self_update,
+            commands::environment::rustup_update_all,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -421,6 +431,13 @@ pub fn run() {
             commands::wsl::wsl_get_config,
             commands::wsl::wsl_set_config,
             commands::wsl::wsl_disk_usage,
+            commands::wsl::wsl_import_in_place,
+            commands::wsl::wsl_mount,
+            commands::wsl::wsl_unmount,
+            commands::wsl::wsl_get_ip,
+            commands::wsl::wsl_change_default_user,
+            commands::wsl::wsl_get_distro_config,
+            commands::wsl::wsl_set_distro_config,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
         ])

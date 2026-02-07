@@ -48,6 +48,9 @@ pub use environment::{
     env_install, env_install_cancel, env_installed_versions, env_list, env_list_providers,
     env_load_settings, env_resolve_alias, env_save_settings, env_uninstall, env_use_global,
     env_use_local, env_verify_install,
+    rustup_list_components, rustup_add_component, rustup_remove_component,
+    rustup_list_targets, rustup_add_target, rustup_remove_target,
+    rustup_show, rustup_self_update, rustup_update_all,
 };
 pub use launch::{
     env_activate, env_get_info, exec_shell_with_env, launch_with_env, launch_with_streaming,
@@ -88,8 +91,9 @@ pub use profiles::{
     profile_get, profile_import, profile_list, profile_update,
 };
 pub use wsl::{
-    wsl_convert_path, wsl_disk_usage, wsl_exec, wsl_export, wsl_get_config, wsl_import,
-    wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online, wsl_list_running,
-    wsl_set_config, wsl_set_default, wsl_set_default_version, wsl_set_version, wsl_shutdown,
-    wsl_status, wsl_terminate, wsl_update,
+    wsl_change_default_user, wsl_convert_path, wsl_disk_usage, wsl_exec, wsl_export,
+    wsl_get_config, wsl_get_distro_config, wsl_get_ip, wsl_import, wsl_import_in_place,
+    wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online, wsl_list_running, wsl_mount,
+    wsl_set_config, wsl_set_default, wsl_set_default_version, wsl_set_distro_config,
+    wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_unmount, wsl_update,
 };

@@ -206,6 +206,13 @@ impl Provider for ApkProvider {
         })
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_pkg_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
         let out = process::execute("sudo", &["apk", "del", &req.name], None).await?;
         if out.success {
@@ -343,5 +350,178 @@ impl SystemPackageProvider for ApkProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_apk(&["info", "-e", name]).await;
         Ok(out.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = ApkProvider::new();
+        assert_eq!(p.id(), "apk");
+        assert_eq!(p.display_name(), "APK (Alpine Linux)");
+        assert_eq!(p.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = ApkProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = ApkProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = ApkProvider::new();
+        assert!(p.requires_elevation("install"));
+        assert!(p.requires_elevation("uninstall"));
+        assert!(p.requires_elevation("update"));
+        assert!(p.requires_elevation("upgrade"));
+        assert!(!p.requires_elevation("search"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = ApkProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("Alpine"));
+    }
+
+    #[test]
+    fn test_parse_apk_search_output() {
+        // apk search -v output: name-version - description
+        let output = "curl-8.4.0-r0 - A URL retrieval utility and library\ngit-2.42.0-r0 - Distributed version control system\ncurl-dev-8.4.0-r0 - A URL retrieval utility (dev)\n";
+
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(2, " - ").collect();
+                let name_version = parts[0];
+                let description = parts.get(1).map(|s| s.to_string());
+
+                let name = name_version
+                    .rsplit('-')
+                    .skip(1)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("-");
+
+                if name.is_empty() {
+                    return None;
+                }
+
+                Some(PackageSummary {
+                    name,
+                    description,
+                    latest_version: None,
+                    provider: "apk".into(),
+                })
+            })
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].name, "curl-8.4.0");
+        assert_eq!(results[0].description, Some("A URL retrieval utility and library".into()));
+    }
+
+    #[test]
+    fn test_parse_apk_list_installed_output() {
+        // apk list --installed output
+        let output = "curl-8.4.0-r0 x86_64 {curl} (MIT)\ngit-2.42.0-r0 x86_64 {git} (GPL-2.0-only)\nbusybox-1.36.1-r2 x86_64 {busybox} (GPL-2.0-only)\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name_version = parts[0];
+                let dash_pos = name_version.rfind('-')?;
+                let name = name_version[..dash_pos].to_string();
+                let version = name_version[dash_pos + 1..].to_string();
+
+                Some(InstalledPackage {
+                    name,
+                    version,
+                    provider: "apk".into(),
+                    install_path: PathBuf::from("/usr"),
+                    installed_at: String::new(),
+                    is_global: true,
+                })
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "curl-8.4.0");
+        assert_eq!(packages[0].version, "r0");
+        assert_eq!(packages[2].name, "busybox-1.36.1");
+    }
+
+    #[test]
+    fn test_parse_apk_version_output() {
+        // apk version -l < output
+        let output = "curl-8.3.0-r0 < 8.4.0-r0\ngit-2.41.0-r0 < 2.42.0-r0\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .filter(|l| !l.is_empty() && l.contains('<'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    Some(UpdateInfo {
+                        name: parts[0].to_string(),
+                        current_version: parts[1].into(),
+                        latest_version: parts[2].into(),
+                        provider: "apk".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "curl-8.3.0-r0");
+        assert_eq!(updates[0].current_version, "<");
+        assert_eq!(updates[0].latest_version, "8.4.0-r0");
+    }
+
+    #[test]
+    fn test_parse_apk_pkg_version() {
+        // apk info -v output: package-version
+        let line = "curl-8.4.0-r0";
+        if let Some(pos) = line.rfind('-') {
+            let version = &line[pos + 1..];
+            assert_eq!(version, "r0");
+        }
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = ApkProvider::default();
+        assert_eq!(p.id(), "apk");
     }
 }

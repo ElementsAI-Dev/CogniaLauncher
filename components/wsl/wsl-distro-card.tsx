@@ -1,8 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,8 +21,10 @@ import {
   Trash2,
   ArrowUpDown,
   Terminal,
+  UserCog,
+  HardDrive,
 } from 'lucide-react';
-import type { WslDistroStatus } from '@/types/tauri';
+import type { WslDistroStatus, WslDiskUsage } from '@/types/tauri';
 
 interface WslDistroCardProps {
   distro: WslDistroStatus;
@@ -30,7 +34,17 @@ interface WslDistroCardProps {
   onSetVersion: (name: string, version: number) => void;
   onExport: (name: string) => void;
   onUnregister: (name: string) => void;
+  onChangeDefaultUser?: (name: string) => void;
+  getDiskUsage?: (name: string) => Promise<WslDiskUsage | null>;
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 export function WslDistroCard({
@@ -41,11 +55,20 @@ export function WslDistroCard({
   onSetVersion,
   onExport,
   onUnregister,
+  onChangeDefaultUser,
+  getDiskUsage,
   t,
 }: WslDistroCardProps) {
   const isRunning = distro.state.toLowerCase() === 'running';
   const wslVer = parseInt(distro.wslVersion, 10);
   const targetVersion = wslVer === 1 ? 2 : 1;
+  const [diskUsage, setDiskUsage] = useState<WslDiskUsage | null>(null);
+
+  useEffect(() => {
+    if (getDiskUsage) {
+      getDiskUsage(distro.name).then(setDiskUsage).catch(() => {});
+    }
+  }, [distro.name, getDiskUsage]);
 
   return (
     <Card className="group relative">
@@ -78,6 +101,16 @@ export function WslDistroCard({
                   </Badge>
                 )}
               </div>
+              {diskUsage && diskUsage.totalBytes > 0 && (
+                <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                  <HardDrive className="h-3 w-3 shrink-0" />
+                  <Progress
+                    value={(diskUsage.usedBytes / diskUsage.totalBytes) * 100}
+                    className="h-1.5 flex-1 max-w-[120px]"
+                  />
+                  <span>{formatBytes(diskUsage.usedBytes)} / {formatBytes(diskUsage.totalBytes)}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -125,6 +158,12 @@ export function WslDistroCard({
                   <Download className="h-4 w-4 mr-2" />
                   {t('wsl.export')}
                 </DropdownMenuItem>
+                {onChangeDefaultUser && (
+                  <DropdownMenuItem onClick={() => onChangeDefaultUser(distro.name)}>
+                    <UserCog className="h-4 w-4 mr-2" />
+                    {t('wsl.changeDefaultUser')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => onUnregister(distro.name)}

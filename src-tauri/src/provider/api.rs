@@ -331,6 +331,34 @@ impl PackageApiClient {
             .collect())
     }
 
+    /// Perform a raw GET request and return the response body as a string
+    /// Useful for APIs that don't fit the standard package registry pattern
+    pub async fn raw_get(&self, url: &str) -> CogniaResult<String> {
+        let response = self
+            .client
+            .get(url)
+            .header(
+                "User-Agent",
+                "CogniaLauncher/0.1.0 (https://github.com/AstroAir/CogniaLauncher)",
+            )
+            .send()
+            .await
+            .map_err(|e| CogniaError::Provider(format!("HTTP request failed: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(CogniaError::Provider(format!(
+                "HTTP {} from {}",
+                response.status(),
+                url
+            )));
+        }
+
+        response
+            .text()
+            .await
+            .map_err(|e| CogniaError::Provider(format!("Failed to read response body: {}", e)))
+    }
+
     /// Get detailed crate info
     pub async fn get_crate(&self, name: &str) -> CogniaResult<CrateInfo> {
         let registry_url = self.get_crates_registry();

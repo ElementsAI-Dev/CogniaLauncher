@@ -295,6 +295,7 @@ pub async fn env_list_providers(
                 "goenv" => ("go", "Go version management, like pyenv for Go"),
                 "rbenv" => ("ruby", "Seamless Ruby version management"),
                 "sdkman" => ("java", "SDKMAN! - Software Development Kit Manager for JVM"),
+                "sdkman-kotlin" => ("kotlin", "SDKMAN! - Kotlin compiler manager"),
                 "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
                 "dotnet" => ("dotnet", ".NET SDK version management"),
                 "deno" => ("deno", "Deno runtime version management"),
@@ -349,6 +350,7 @@ pub async fn env_resolve_alias(
         "rustup" => "rust",
         "rbenv" => "ruby",
         "sdkman" => "java",
+        "sdkman-kotlin" => "kotlin",
         "phpbrew" => "php",
         "dotnet" => "dotnet",
         "deno" => "deno",
@@ -548,6 +550,7 @@ pub async fn env_detect_system(
         "rust" | "rustc" => Some(SystemEnvironmentType::Rust),
         "ruby" => Some(SystemEnvironmentType::Ruby),
         "java" => Some(SystemEnvironmentType::Java),
+        "kotlin" | "kotlinc" => Some(SystemEnvironmentType::Kotlin),
         "php" => Some(SystemEnvironmentType::Php),
         "dotnet" | ".net" => Some(SystemEnvironmentType::Dotnet),
         "deno" => Some(SystemEnvironmentType::Deno),
@@ -595,6 +598,7 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("rbenv".to_string(), "ruby".to_string());
     mapping.insert("rustup".to_string(), "rust".to_string());
     mapping.insert("sdkman".to_string(), "java".to_string());
+    mapping.insert("sdkman-kotlin".to_string(), "kotlin".to_string());
     mapping.insert("phpbrew".to_string(), "php".to_string());
     mapping.insert("dotnet".to_string(), "dotnet".to_string());
     mapping.insert("deno".to_string(), "deno".to_string());
@@ -610,6 +614,7 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("system-rust".to_string(), "rust".to_string());
     mapping.insert("system-ruby".to_string(), "ruby".to_string());
     mapping.insert("system-java".to_string(), "java".to_string());
+    mapping.insert("system-kotlin".to_string(), "kotlin".to_string());
     mapping.insert("system-php".to_string(), "php".to_string());
     mapping.insert("system-dotnet".to_string(), "dotnet".to_string());
     mapping.insert("system-deno".to_string(), "deno".to_string());
@@ -689,4 +694,199 @@ pub async fn env_current_version(
         .get_current_version()
         .await
         .map_err(|e| e.to_string())
+}
+
+// ──────────────────────────────────────────────────────
+// Rustup-specific commands: components, targets, show
+// ──────────────────────────────────────────────────────
+
+/// List components for a Rust toolchain
+#[tauri::command]
+pub async fn rustup_list_components(
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<Vec<crate::provider::rustup::RustComponent>, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    // Downcast to RustupProvider to access component methods
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .list_components(toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Add a component to a Rust toolchain
+#[tauri::command]
+pub async fn rustup_add_component(
+    component: String,
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .add_component(&component, toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a component from a Rust toolchain
+#[tauri::command]
+pub async fn rustup_remove_component(
+    component: String,
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .remove_component(&component, toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List targets for a Rust toolchain
+#[tauri::command]
+pub async fn rustup_list_targets(
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<Vec<crate::provider::rustup::RustTarget>, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .list_targets(toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Add a cross-compilation target
+#[tauri::command]
+pub async fn rustup_add_target(
+    target: String,
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .add_target(&target, toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a cross-compilation target
+#[tauri::command]
+pub async fn rustup_remove_target(
+    target: String,
+    toolchain: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup
+        .remove_target(&target, toolchain.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get detailed rustup show info
+#[tauri::command]
+pub async fn rustup_show(
+    registry: State<'_, SharedRegistry>,
+) -> Result<crate::provider::rustup::RustupShowInfo, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup.show_info().await.map_err(|e| e.to_string())
+}
+
+/// Update rustup itself
+#[tauri::command]
+pub async fn rustup_self_update(
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup.self_update().await.map_err(|e| e.to_string())
+}
+
+/// Update all installed Rust toolchains
+#[tauri::command]
+pub async fn rustup_update_all(
+    registry: State<'_, SharedRegistry>,
+) -> Result<String, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+    
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+    
+    rustup.update_all().await.map_err(|e| e.to_string())
 }

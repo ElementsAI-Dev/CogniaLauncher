@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,7 +73,7 @@ export function EnvironmentCard({
   selectedProviderId,
 }: EnvironmentCardProps) {
   const { t } = useLocale();
-  const { openVersionBrowser, openDetailsPanel } = useEnvironmentStore();
+  const { openVersionBrowser } = useEnvironmentStore();
   const [customVersion, setCustomVersion] = useState("");
   const [localProjectPath, setLocalProjectPath] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
@@ -410,10 +411,12 @@ export function EnvironmentCard({
               variant="outline"
               size="sm"
               className="flex-1 gap-2"
-              onClick={() => openDetailsPanel(env.env_type)}
+              asChild
             >
-              <Settings2 className="h-4 w-4" />
-              {t("environments.viewDetails")}
+              <Link href={`/environments/${env.env_type}`}>
+                <Settings2 className="h-4 w-4" />
+                {t("environments.viewDetails")}
+              </Link>
             </Button>
           </div>
         </CardContent>

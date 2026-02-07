@@ -4,6 +4,7 @@ use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct ChocolateyProvider;
 
@@ -12,23 +13,35 @@ impl ChocolateyProvider {
         Self
     }
 
+    /// Execute a choco command with common flags and timeout.
+    /// Always passes `--no-progress` to suppress progress bars in automated output.
     async fn run_choco(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("choco", args, None).await?;
+        let mut full_args: Vec<&str> = args.to_vec();
+        if !full_args.contains(&"--no-progress") {
+            full_args.push("--no-progress");
+        }
+
+        let opts = process::ProcessOptions::new()
+            .with_timeout(Duration::from_secs(300)); // choco operations can be slow
+
+        let out = process::execute("choco", &full_args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            Err(CogniaError::Provider(out.stderr))
+            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            Err(CogniaError::Provider(msg))
         }
     }
 
-    /// Get the installed version of a package using choco list
+    /// Get the installed version of a package using `choco list --exact -r`.
+    /// O(1) lookup using --exact instead of listing all packages.
     async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
-        // In Chocolatey v2+, `choco list` only lists local packages (--local-only was removed)
-        let out = self.run_choco(&["list", "-r"]).await?;
+        // In Chocolatey v2+, `choco list` only lists local packages
+        let out = self.run_choco(&["list", "--exact", name, "-r"]).await?;
         for line in out.lines() {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 2 && parts[0].eq_ignore_ascii_case(name) {
-                return Ok(parts[1].to_string());
+                return Ok(parts[1].trim().to_string());
             }
         }
         Err(CogniaError::Provider(format!("Package {} not installed", name)))
@@ -39,6 +52,52 @@ impl ChocolateyProvider {
             .ok()
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("C:\\ProgramData\\chocolatey"))
+    }
+
+    /// Parse choco `-r` (limit-output) format: `name|version` per line.
+    fn parse_pipe_output(output: &str) -> Vec<(&str, &str)> {
+        output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || !line.contains('|') {
+                    return None;
+                }
+                let mut parts = line.splitn(2, '|');
+                let name = parts.next()?.trim();
+                let version = parts.next()?.trim();
+                if name.is_empty() {
+                    return None;
+                }
+                Some((name, version))
+            })
+            .collect()
+    }
+
+    /// Parse choco outdated `-r` format: `name|current|available|pinned` per line.
+    fn parse_outdated_output(output: &str) -> Vec<(&str, &str, &str, bool)> {
+        output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || !line.contains('|') {
+                    return None;
+                }
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 3 {
+                    let name = parts[0].trim();
+                    let current = parts[1].trim();
+                    let available = parts[2].trim();
+                    let pinned = parts.get(3).map(|p| p.trim() == "true").unwrap_or(false);
+                    if name.is_empty() || available.is_empty() {
+                        return None;
+                    }
+                    Some((name, current, available, pinned))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -63,6 +122,7 @@ impl Provider for ChocolateyProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -76,7 +136,6 @@ impl Provider for ChocolateyProvider {
         if process::which("choco").await.is_none() {
             return false;
         }
-        // Verify choco actually works
         match process::execute("choco", &["--version"], None).await {
             Ok(output) => output.success,
             Err(_) => false,
@@ -88,70 +147,104 @@ impl Provider for ChocolateyProvider {
         query: &str,
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
-        let limit = options.limit.unwrap_or(20).to_string();
+        let limit = options.limit.unwrap_or(25).to_string();
         let out = self
             .run_choco(&["search", query, "--limit", &limit, "-r"])
             .await?;
 
-        // -r flag gives parseable output: name|version
-        let packages: Vec<PackageSummary> = out
-            .lines()
-            .filter(|l| !l.is_empty() && l.contains('|'))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 2 {
-                    Some(PackageSummary {
-                        name: parts[0].into(),
-                        description: None,
-                        latest_version: Some(parts[1].into()),
-                        provider: self.id().into(),
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let parsed = Self::parse_pipe_output(&out);
 
-        Ok(packages)
+        Ok(parsed
+            .into_iter()
+            .map(|(name, version)| PackageSummary {
+                name: name.into(),
+                description: None,
+                latest_version: if version.is_empty() { None } else { Some(version.into()) },
+                provider: self.id().into(),
+            })
+            .collect())
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
-        let out = self.run_choco(&["info", name, "-r"]).await?;
+        // Use verbose info (non -r) to get all fields in one call
+        let out = self.run_choco(&["info", name]).await?;
 
         let mut version = None;
         let mut description = None;
+        let mut summary = None;
+        let mut author = None;
+        let mut license_url = None;
+        let mut tags = None;
+        let mut title = None;
+        let mut in_description = false;
+        let mut desc_lines: Vec<String> = Vec::new();
 
-        // Parse chocolatey info output
         for line in out.lines() {
-            if line.contains('|') {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 2 && parts[0] == name {
-                    version = Some(parts[1].to_string());
+            let trimmed = line.trim();
+
+            // Handle multi-line description
+            if in_description {
+                if trimmed.is_empty() || trimmed.contains('|') || trimmed.starts_with("Tags:") {
+                    in_description = false;
+                } else {
+                    desc_lines.push(trimmed.to_string());
+                    continue;
                 }
+            }
+
+            // Parse pipe-delimited version line: name|version
+            if version.is_none() && trimmed.contains('|') && !trimmed.starts_with(' ') {
+                let parts: Vec<&str> = trimmed.split('|').collect();
+                if parts.len() >= 2 && parts[0].eq_ignore_ascii_case(name) {
+                    version = Some(parts[1].trim().to_string());
+                    continue;
+                }
+            }
+
+            if let Some(v) = trimmed.strip_prefix("Title:") {
+                title = Some(v.trim().to_string());
+            } else if let Some(v) = trimmed.strip_prefix("Summary:") {
+                summary = Some(v.trim().to_string());
+            } else if let Some(v) = trimmed.strip_prefix("Description:") {
+                let v = v.trim();
+                if !v.is_empty() {
+                    desc_lines.push(v.to_string());
+                }
+                in_description = true;
+            } else if let Some(v) = trimmed.strip_prefix("Author:") {
+                author = Some(v.trim().to_string());
+            } else if let Some(v) = trimmed.strip_prefix("Software Author:") {
+                if author.is_none() {
+                    author = Some(v.trim().to_string());
+                }
+            } else if let Some(v) = trimmed.strip_prefix("License Url:") {
+                license_url = Some(v.trim().to_string());
+            } else if let Some(v) = trimmed.strip_prefix("Tags:") {
+                tags = Some(v.trim().to_string());
             }
         }
 
-        // Try to get more detailed info
-        if let Ok(detailed) = self.run_choco(&["info", name]).await {
-            for line in detailed.lines() {
-                let line = line.trim();
-                if line.starts_with("Description:") || line.starts_with("Summary:") {
-                    let start = line.find(':').unwrap_or(0) + 1;
-                    description = Some(line[start..].trim().into());
-                    break;
-                }
-            }
+        if !desc_lines.is_empty() {
+            description = Some(desc_lines.join(" "));
+        } else if summary.is_some() {
+            description = summary;
         }
+
+        let display_name = title
+            .or_else(|| author.clone().map(|a| format!("{} ({})", name, a)))
+            .unwrap_or_else(|| name.to_string());
+
+        let _ = tags; // Tags available but PackageInfo doesn't have a tags field
 
         Ok(PackageInfo {
             name: name.into(),
-            display_name: Some(name.into()),
+            display_name: Some(display_name),
             description,
             homepage: Some(format!(
                 "https://community.chocolatey.org/packages/{}",
                 name
             )),
-            license: None,
+            license: license_url,
             repository: None,
             versions: version
                 .map(|v| {
@@ -169,28 +262,21 @@ impl Provider for ChocolateyProvider {
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let out = self
-            .run_choco(&["search", name, "--all-versions", "-r", "--limit", "20"])
+            .run_choco(&["search", name, "--exact", "--all-versions", "-r", "--limit", "30"])
             .await?;
 
-        let versions: Vec<VersionInfo> = out
-            .lines()
-            .filter(|l| l.contains('|'))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 2 && parts[0] == name {
-                    Some(VersionInfo {
-                        version: parts[1].into(),
-                        release_date: None,
-                        deprecated: false,
-                        yanked: false,
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
+        let parsed = Self::parse_pipe_output(&out);
 
-        Ok(versions)
+        Ok(parsed
+            .into_iter()
+            .filter(|(pkg_name, _)| pkg_name.eq_ignore_ascii_case(name))
+            .map(|(_, version)| VersionInfo {
+                version: version.into(),
+                release_date: None,
+                deprecated: false,
+                yanked: false,
+            })
+            .collect())
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
@@ -200,10 +286,12 @@ impl Provider for ChocolateyProvider {
             ver = v.clone();
             args.extend(&["--version", &ver]);
         }
+        if req.force {
+            args.push("--force");
+        }
 
         self.run_choco(&args).await?;
 
-        // Get the actual installed version
         let actual_version = self
             .query_installed_version(&req.name)
             .await
@@ -229,7 +317,17 @@ impl Provider for ChocolateyProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        self.run_choco(&["uninstall", &req.name, "-y"]).await?;
+        let mut args = vec!["uninstall", &req.name, "-y"];
+        let ver;
+        if let Some(v) = &req.version {
+            ver = v.clone();
+            args.extend(&["--version", &ver]);
+        }
+        if req.force {
+            args.push("--force");
+        }
+
+        self.run_choco(&args).await?;
         Ok(())
     }
 
@@ -237,75 +335,59 @@ impl Provider for ChocolateyProvider {
         let out = self.run_choco(&["list", "-r"]).await?;
         let choco_dir = Self::get_choco_dir();
 
-        let packages: Vec<InstalledPackage> = out
-            .lines()
-            .filter(|l| l.contains('|'))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split('|').collect();
-                if parts.len() >= 2 {
-                    let name = parts[0].to_string();
+        let parsed = Self::parse_pipe_output(&out);
 
-                    if let Some(name_filter) = &filter.name_filter {
-                        if !name.contains(name_filter) {
-                            return None;
-                        }
-                    }
-
-                    let version = parts[1].to_string();
-                    let install_path = choco_dir.join("lib").join(&name);
-
-                    Some(InstalledPackage {
-                        name,
-                        version,
-                        provider: self.id().into(),
-                        install_path,
-                        installed_at: String::new(),
-                        is_global: true,
-                    })
+        Ok(parsed
+            .into_iter()
+            .filter(|(name, _)| {
+                if let Some(ref name_filter) = filter.name_filter {
+                    name.to_lowercase().contains(&name_filter.to_lowercase())
                 } else {
-                    None
+                    true
                 }
             })
-            .collect();
-
-        Ok(packages)
+            .map(|(name, version)| {
+                let install_path = choco_dir.join("lib").join(name);
+                InstalledPackage {
+                    name: name.into(),
+                    version: version.into(),
+                    provider: self.id().into(),
+                    install_path,
+                    installed_at: String::new(),
+                    is_global: true,
+                }
+            })
+            .collect())
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_choco(&["outdated", "-r"]).await;
+        let out = match self.run_choco(&["outdated", "-r"]).await {
+            Ok(o) => o,
+            Err(_) => return Ok(vec![]),
+        };
 
-        if let Ok(output) = out {
-            let updates: Vec<UpdateInfo> = output
-                .lines()
-                .filter(|l| l.contains('|'))
-                .filter_map(|line| {
-                    let parts: Vec<&str> = line.split('|').collect();
-                    if parts.len() >= 4 {
-                        let name = parts[0].to_string();
+        let parsed = Self::parse_outdated_output(&out);
 
-                        if !packages.is_empty() && !packages.contains(&name) {
-                            return None;
-                        }
-
-                        let current = parts[1].to_string();
-                        let latest = parts[2].to_string();
-
-                        Some(UpdateInfo {
-                            name,
-                            current_version: current,
-                            latest_version: latest,
-                            provider: self.id().into(),
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            return Ok(updates);
-        }
-
-        Ok(vec![])
+        Ok(parsed
+            .into_iter()
+            .filter(|(name, _current, _available, pinned)| {
+                // Skip pinned packages
+                if *pinned {
+                    return false;
+                }
+                if packages.is_empty() {
+                    true
+                } else {
+                    packages.iter().any(|p| p.eq_ignore_ascii_case(name))
+                }
+            })
+            .map(|(name, current, available, _)| UpdateInfo {
+                name: name.into(),
+                current_version: current.into(),
+                latest_version: available.into(),
+                provider: self.id().into(),
+            })
+            .collect())
     }
 }
 
@@ -316,7 +398,6 @@ impl SystemPackageProvider for ChocolateyProvider {
     }
 
     fn requires_elevation(&self, operation: &str) -> bool {
-        // Chocolatey typically requires admin for install/uninstall
         matches!(operation, "install" | "uninstall" | "update" | "upgrade")
     }
 
@@ -339,6 +420,7 @@ impl SystemPackageProvider for ChocolateyProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
+        // Chocolatey doesn't have a separate index update command
         Ok(())
     }
 
@@ -348,14 +430,132 @@ impl SystemPackageProvider for ChocolateyProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        self.run_choco(&["upgrade", "all", "-y"]).await?;
-        Ok(vec!["All packages upgraded".into()])
+        let out = self.run_choco(&["upgrade", "all", "-y"]).await?;
+
+        let mut upgraded = Vec::new();
+        for line in out.lines() {
+            let trimmed = line.trim();
+            // Choco outputs "package vX.Y.Z upgraded" or "has been upgraded"
+            if trimmed.contains("upgraded") && !trimmed.starts_with("Chocolatey") {
+                upgraded.push(trimmed.to_string());
+            }
+        }
+        if upgraded.is_empty() {
+            upgraded.push("All packages upgraded".into());
+        }
+        Ok(upgraded)
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self.run_choco(&["list", "-r"]).await;
+        // O(1) lookup using --exact instead of listing all packages
+        let out = self.run_choco(&["list", "--exact", name, "-r"]).await;
         Ok(out
-            .map(|s| s.lines().any(|l| l.split('|').next() == Some(name)))
+            .map(|s| {
+                s.lines().any(|l| {
+                    l.split('|')
+                        .next()
+                        .map(|n| n.eq_ignore_ascii_case(name))
+                        .unwrap_or(false)
+                })
+            })
             .unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_pipe_output() {
+        let output = "git|2.42.0\nnotepadplusplus|8.5.8\n";
+        let results = ChocolateyProvider::parse_pipe_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, "git");
+        assert_eq!(results[0].1, "2.42.0");
+        assert_eq!(results[1].0, "notepadplusplus");
+        assert_eq!(results[1].1, "8.5.8");
+    }
+
+    #[test]
+    fn test_parse_pipe_output_empty_lines() {
+        let output = "\ngit|2.42.0\n\n  \n";
+        let results = ChocolateyProvider::parse_pipe_output(output);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "git");
+    }
+
+    #[test]
+    fn test_parse_outdated_output() {
+        let output = "git|2.42.0|2.43.0|false\ncurl|8.4.0|8.5.0|true\n7zip|23.01|23.01|false\n";
+        let results = ChocolateyProvider::parse_outdated_output(output);
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].0, "git");
+        assert_eq!(results[0].1, "2.42.0");
+        assert_eq!(results[0].2, "2.43.0");
+        assert!(!results[0].3); // not pinned
+        assert_eq!(results[1].0, "curl");
+        assert!(results[1].3); // pinned
+    }
+
+    #[test]
+    fn test_parse_outdated_output_pinned_filtered() {
+        let output = "git|2.42.0|2.43.0|false\ncurl|8.4.0|8.5.0|true\n";
+        let results = ChocolateyProvider::parse_outdated_output(output);
+
+        // Simulate check_updates filter: skip pinned
+        let non_pinned: Vec<_> = results.into_iter().filter(|(_, _, _, pinned)| !pinned).collect();
+        assert_eq!(non_pinned.len(), 1);
+        assert_eq!(non_pinned[0].0, "git");
+    }
+
+    #[test]
+    fn test_parse_pipe_output_no_pipe() {
+        let output = "Chocolatey v2.3.0\nsome random text\n";
+        let results = ChocolateyProvider::parse_pipe_output(output);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = ChocolateyProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = ChocolateyProvider::new();
+        assert_eq!(provider.id(), "chocolatey");
+        assert_eq!(provider.display_name(), "Chocolatey (Windows Package Manager)");
+        assert_eq!(provider.priority(), 88);
+        assert_eq!(provider.supported_platforms(), vec![Platform::Windows]);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = ChocolateyProvider::new();
+        assert!(SystemPackageProvider::requires_elevation(&provider, "install"));
+        assert!(SystemPackageProvider::requires_elevation(&provider, "uninstall"));
+        assert!(SystemPackageProvider::requires_elevation(&provider, "upgrade"));
+        assert!(!SystemPackageProvider::requires_elevation(&provider, "search"));
+        assert!(!SystemPackageProvider::requires_elevation(&provider, "list"));
+    }
+
+    #[test]
+    fn test_get_choco_dir() {
+        let dir = ChocolateyProvider::get_choco_dir();
+        // Should return a valid path
+        assert!(!dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = ChocolateyProvider::default();
     }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -18,9 +19,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink } from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  getProviderIcon,
+  getPlatformIcon,
+  getCapabilityColor,
+} from "./provider-icons";
 
 export interface ProviderCardProps {
   provider: ProviderInfo;
@@ -30,61 +36,6 @@ export interface ProviderCardProps {
   onCheckStatus: (providerId: string) => Promise<boolean>;
   t: (key: string) => string;
 }
-
-const PROVIDER_ICONS: Record<string, string> = {
-  npm: "📦",
-  pnpm: "⚡",
-  uv: "🐍",
-  cargo: "🦀",
-  chocolatey: "🍫",
-  scoop: "🥄",
-  winget: "🪟",
-  brew: "🍺",
-  apt: "🐧",
-  dnf: "🎩",
-  pacman: "👻",
-  zypper: "🦎",
-  apk: "🏔️",
-  vcpkg: "📚",
-  docker: "🐳",
-  psgallery: "💠",
-  github: "🐙",
-  nvm: "💚",
-  fnm: "⚡",
-  pyenv: "🐍",
-  rustup: "🦀",
-  goenv: "🔵",
-  flatpak: "📦",
-  snap: "🔶",
-  macports: "🚢",
-  pip: "🐍",
-  yarn: "🧶",
-};
-
-const PLATFORM_ICONS: Record<string, string> = {
-  windows: "🪟",
-  linux: "🐧",
-  macos: "🍎",
-  darwin: "🍎",
-};
-
-const CAPABILITY_COLORS: Record<string, string> = {
-  install: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-  uninstall: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-  search: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  update:
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  list: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
-  version_switch:
-    "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300",
-  multi_version:
-    "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-  lock_version: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-300",
-  rollback:
-    "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
-  project_local:
-    "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300",
-};
 
 export function ProviderCard({
   provider,
@@ -108,21 +59,6 @@ export function ProviderCard({
       setIsChecking(false);
     }
   }, [onCheckStatus, provider.id]);
-
-  const getProviderIcon = (providerId: string) => {
-    return PROVIDER_ICONS[providerId] || "📦";
-  };
-
-  const getPlatformIcon = (platform: string) => {
-    return PLATFORM_ICONS[platform.toLowerCase()] || "💻";
-  };
-
-  const getCapabilityColor = (capability: string) => {
-    return (
-      CAPABILITY_COLORS[capability] ||
-      "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
-    );
-  };
 
   const availabilityStatus = localAvailable ?? isAvailable;
 
@@ -264,6 +200,13 @@ export function ProviderCard({
           <span>
             {t("providers.priority")}: {provider.priority}
           </span>
+          <Link
+            href={`/providers/${provider.id}`}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            {t("providerDetail.viewDetails")}
+            <ExternalLink className="h-3 w-3" />
+          </Link>
         </div>
       </CardContent>
     </Card>

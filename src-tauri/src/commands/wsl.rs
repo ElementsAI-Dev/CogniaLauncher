@@ -283,3 +283,110 @@ pub async fn wsl_disk_usage(name: String) -> Result<WslDiskUsage, String> {
         filesystem_path: WslProvider::get_distro_filesystem_path(&name),
     })
 }
+
+/// Options for WSL mount operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslMountOptions {
+    pub disk_path: String,
+    pub is_vhd: bool,
+    pub fs_type: Option<String>,
+    pub partition: Option<u32>,
+    pub mount_name: Option<String>,
+    pub bare: bool,
+}
+
+/// Import a distribution in-place from an existing .vhdx file
+#[tauri::command]
+pub async fn wsl_import_in_place(name: String, vhdx_path: String) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .import_distro_in_place(&name, &vhdx_path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Mount a physical or virtual disk in WSL2
+#[tauri::command]
+pub async fn wsl_mount(options: WslMountOptions) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .mount_disk(
+            &options.disk_path,
+            options.is_vhd,
+            options.fs_type.as_deref(),
+            options.partition,
+            options.mount_name.as_deref(),
+            options.bare,
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Unmount a previously mounted disk (or all if no path given)
+#[tauri::command]
+pub async fn wsl_unmount(disk_path: Option<String>) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .unmount_disk(disk_path.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the IP address of a WSL distribution
+#[tauri::command]
+pub async fn wsl_get_ip(distro: Option<String>) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .get_ip_address(distro.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Change the default user for a distribution
+#[tauri::command]
+pub async fn wsl_change_default_user(
+    distro: String,
+    username: String,
+) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .change_default_user(&distro, &username)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Read the per-distro /etc/wsl.conf file
+#[tauri::command]
+pub async fn wsl_get_distro_config(
+    distro: String,
+) -> Result<HashMap<String, HashMap<String, String>>, String> {
+    let provider = get_provider();
+    provider
+        .read_distro_config(&distro)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Write a setting to the per-distro /etc/wsl.conf file
+#[tauri::command]
+pub async fn wsl_set_distro_config(
+    distro: String,
+    section: String,
+    key: String,
+    value: Option<String>,
+) -> Result<(), String> {
+    let provider = get_provider();
+    if let Some(val) = value {
+        provider
+            .write_distro_config(&distro, &section, &key, &val)
+            .await
+            .map_err(|e| e.to_string())
+    } else {
+        provider
+            .remove_distro_config_key(&distro, &section, &key)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}

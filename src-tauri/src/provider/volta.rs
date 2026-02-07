@@ -426,4 +426,8 @@ impl EnvironmentProvider for VoltaProvider {
     fn version_file_name(&self) -> &str {
         "package.json"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

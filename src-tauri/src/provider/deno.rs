@@ -588,6 +588,10 @@ impl EnvironmentProvider for DenoProvider {
     fn version_file_name(&self) -> &str {
         ".deno-version"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]

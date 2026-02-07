@@ -13,6 +13,7 @@ import {
   ScrollText,
   ArrowDownToLine,
   Terminal,
+  ChevronRight,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,11 +26,20 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
+import { LANGUAGES } from "@/lib/constants/environments";
 
 const navItems = [
   { href: "/", labelKey: "nav.dashboard", icon: Home, tourId: undefined },
@@ -95,7 +105,55 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.environments")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(1, 7).map((item) => {
+              {/* Environments - with collapsible language sub-items */}
+              <Collapsible
+                defaultOpen={pathname.startsWith("/environments")}
+                className="group/collapsible"
+              >
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={pathname === "/environments"}
+                      tooltip={t("nav.environments")}
+                      data-tour="nav-environments"
+                    >
+                      <Layers className="h-4 w-4" />
+                      <span>{t("nav.environments")}</span>
+                      <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/environments"}
+                        >
+                          <Link href="/environments">
+                            {t("environments.detail.allEnvironments")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      {LANGUAGES.map((lang) => (
+                        <SidebarMenuSubItem key={lang.id}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={pathname === `/environments/${lang.id}`}
+                          >
+                            <Link href={`/environments/${lang.id}`}>
+                              <span className="mr-1">{lang.icon}</span>
+                              {t(`environments.languages.${lang.id}`)}
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+
+              {/* Remaining nav items: packages, providers, cache, downloads, wsl */}
+              {navItems.slice(2, 7).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (

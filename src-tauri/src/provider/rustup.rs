@@ -2,11 +2,13 @@ use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     env::{dirs_home, EnvModifications, Platform},
-    process,
+    process::{self, ProcessOptions},
 };
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub struct RustupProvider {
     rustup_home: Option<PathBuf>,
@@ -37,13 +39,212 @@ impl RustupProvider {
             .ok_or_else(|| CogniaError::Provider("RUSTUP_HOME not found".into()))
     }
 
+    fn cargo_home(&self) -> CogniaResult<&PathBuf> {
+        self.cargo_home
+            .as_ref()
+            .ok_or_else(|| CogniaError::Provider("CARGO_HOME not found".into()))
+    }
+
     async fn run_rustup(&self, args: &[&str]) -> CogniaResult<String> {
-        let output = process::execute("rustup", args, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let output = process::execute("rustup", args, Some(opts)).await?;
         if output.success {
             Ok(output.stdout)
         } else {
             Err(CogniaError::Provider(output.stderr))
         }
+    }
+
+    /// List installed components for a toolchain
+    pub async fn list_components(&self, toolchain: Option<&str>) -> CogniaResult<Vec<RustComponent>> {
+        let mut args = vec!["component", "list"];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+
+        let output = self.run_rustup(&args).await?;
+        let components = output
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|line| {
+                let line = line.trim();
+                let installed = line.contains("(installed)");
+                let default = line.contains("(default)");
+                let name = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(line)
+                    .to_string();
+
+                RustComponent {
+                    name,
+                    installed,
+                    default,
+                }
+            })
+            .collect();
+
+        Ok(components)
+    }
+
+    /// Add a component to the current or specified toolchain
+    pub async fn add_component(&self, component: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+        let mut args = vec!["component", "add", component];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// Remove a component from the current or specified toolchain
+    pub async fn remove_component(&self, component: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+        let mut args = vec!["component", "remove", component];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// List installed and available targets for a toolchain
+    pub async fn list_targets(&self, toolchain: Option<&str>) -> CogniaResult<Vec<RustTarget>> {
+        let mut args = vec!["target", "list"];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+
+        let output = self.run_rustup(&args).await?;
+        let targets = output
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|line| {
+                let line = line.trim();
+                let installed = line.contains("(installed)");
+                let default = line.contains("(default)");
+                let name = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or(line)
+                    .to_string();
+
+                RustTarget {
+                    name,
+                    installed,
+                    default,
+                }
+            })
+            .collect();
+
+        Ok(targets)
+    }
+
+    /// Add a target for cross-compilation
+    pub async fn add_target(&self, target: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+        let mut args = vec!["target", "add", target];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// Remove a target
+    pub async fn remove_target(&self, target: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+        let mut args = vec!["target", "remove", target];
+        if let Some(tc) = toolchain {
+            args.push("--toolchain");
+            args.push(tc);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// Get detailed info from `rustup show`
+    pub async fn show_info(&self) -> CogniaResult<RustupShowInfo> {
+        let output = self.run_rustup(&["show"]).await?;
+
+        let mut default_toolchain = None;
+        let mut active_toolchain = None;
+        let mut installed_toolchains = Vec::new();
+        let mut installed_targets = Vec::new();
+        let mut rustc_version = None;
+
+        let mut section = "";
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            if line.starts_with("Default host:") {
+                // skip
+            } else if line.starts_with("installed toolchains") || line.starts_with("Installed toolchains") {
+                section = "toolchains";
+            } else if line.starts_with("installed targets") || line.starts_with("Installed targets") {
+                section = "targets";
+            } else if line.starts_with("active toolchain") || line.starts_with("Active toolchain") {
+                section = "active";
+            } else if line.starts_with("---") {
+                continue;
+            } else {
+                match section {
+                    "toolchains" => {
+                        let is_default = line.contains("(default)") || line.contains("(active)");
+                        let tc = line.replace("(default)", "").replace("(active)", "").trim().to_string();
+                        if !tc.is_empty() {
+                            installed_toolchains.push(tc.clone());
+                            if is_default {
+                                default_toolchain = Some(tc);
+                            }
+                        }
+                    }
+                    "targets" => {
+                        if !line.is_empty() {
+                            installed_targets.push(line.to_string());
+                        }
+                    }
+                    "active" => {
+                        if active_toolchain.is_none() && !line.starts_with("rustc") {
+                            active_toolchain = Some(line.split_whitespace().next().unwrap_or(line).to_string());
+                        }
+                        if line.starts_with("rustc") {
+                            // Extract version: "rustc 1.75.0 (82e1608df 2023-12-21)"
+                            let version = line
+                                .strip_prefix("rustc ")
+                                .and_then(|s| s.split_whitespace().next())
+                                .map(|s| s.to_string());
+                            rustc_version = version;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(RustupShowInfo {
+            default_toolchain,
+            active_toolchain,
+            installed_toolchains,
+            installed_targets,
+            rustc_version,
+        })
+    }
+
+    /// Update rustup itself
+    pub async fn self_update(&self) -> CogniaResult<()> {
+        self.run_rustup(&["self", "update"]).await?;
+        Ok(())
+    }
+
+    /// Update all installed toolchains
+    pub async fn update_all(&self) -> CogniaResult<String> {
+        self.run_rustup(&["update"]).await
     }
 }
 
@@ -67,7 +268,9 @@ impl Provider for RustupProvider {
         HashSet::from([
             Capability::Install,
             Capability::Uninstall,
+            Capability::Search,
             Capability::List,
+            Capability::Update,
             Capability::VersionSwitch,
             Capability::MultiVersion,
             Capability::ProjectLocal,
@@ -98,18 +301,39 @@ impl Provider for RustupProvider {
         query: &str,
         _options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
-        let toolchains = vec!["stable", "beta", "nightly"];
+        // Include release channels and installed toolchains
+        let mut results = Vec::new();
 
-        let results: Vec<PackageSummary> = toolchains
-            .into_iter()
-            .filter(|t| t.contains(query) || query.is_empty())
-            .map(|toolchain| PackageSummary {
-                name: format!("rust@{}", toolchain),
-                description: Some("Rust programming language toolchain".into()),
-                latest_version: Some(toolchain.to_string()),
-                provider: self.id().to_string(),
-            })
-            .collect();
+        // Standard channels
+        let channels = vec!["stable", "beta", "nightly"];
+        for channel in &channels {
+            if channel.contains(query) || query.is_empty() {
+                results.push(PackageSummary {
+                    name: format!("rust@{}", channel),
+                    description: Some(format!("Rust {} release channel", channel)),
+                    latest_version: Some(channel.to_string()),
+                    provider: self.id().to_string(),
+                });
+            }
+        }
+
+        // Also search installed toolchains for version-specific results
+        if let Ok(output) = self.run_rustup(&["toolchain", "list"]).await {
+            for line in output.lines() {
+                let tc = line.trim().replace(" (default)", "");
+                if !tc.is_empty()
+                    && (tc.contains(query) || query.is_empty())
+                    && !channels.iter().any(|c| tc == *c)
+                {
+                    results.push(PackageSummary {
+                        name: format!("rust@{}", tc),
+                        description: Some("Installed Rust toolchain".into()),
+                        latest_version: Some(tc),
+                        provider: self.id().to_string(),
+                    });
+                }
+            }
+        }
 
         Ok(results)
     }
@@ -220,23 +444,51 @@ impl Provider for RustupProvider {
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let output = self.run_rustup(&["check"]).await?;
 
-        let updates: Vec<UpdateInfo> = output
-            .lines()
-            .filter(|line| line.contains("Update available"))
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 4 {
-                    Some(UpdateInfo {
-                        name: "rust".to_string(),
-                        current_version: parts.first()?.to_string(),
-                        latest_version: parts.last()?.to_string(),
-                        provider: self.id().to_string(),
-                    })
-                } else {
-                    None
+        // `rustup check` output format:
+        // stable-x86_64-unknown-linux-gnu - Up to date : 1.75.0 (82e1608df 2023-12-21)
+        // stable-x86_64-unknown-linux-gnu - Update available : 1.74.0 (79e9716c9 2023-11-13) -> 1.75.0 (82e1608df 2023-12-21)
+        let mut updates = Vec::new();
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.contains("Update available") || line.contains("update available") {
+                // Parse: toolchain - Update available : current -> latest
+                let parts: Vec<&str> = line.splitn(2, '-').collect();
+                let toolchain = parts.first().map(|s| s.trim()).unwrap_or("");
+
+                if let Some(versions_part) = line.split(':').last() {
+                    let versions: Vec<&str> = versions_part.split("->").collect();
+                    if versions.len() == 2 {
+                        // Extract version numbers (e.g., "1.74.0 (hash date)" -> "1.74.0")
+                        let current = versions[0]
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+                        let latest = versions[1]
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
+
+                        if !current.is_empty() && !latest.is_empty() {
+                            updates.push(UpdateInfo {
+                                name: if toolchain.is_empty() {
+                                    "rust".to_string()
+                                } else {
+                                    format!("rust@{}", toolchain)
+                                },
+                                current_version: current,
+                                latest_version: latest,
+                                provider: self.id().to_string(),
+                            });
+                        }
+                    }
                 }
-            })
-            .collect();
+            }
+        }
 
         Ok(updates)
     }
@@ -293,15 +545,30 @@ impl EnvironmentProvider for RustupProvider {
             let toolchain_toml = current.join("rust-toolchain.toml");
             if toolchain_toml.exists() {
                 if let Ok(content) = crate::platform::fs::read_file_string(&toolchain_toml).await {
-                    // Parse [toolchain] channel = "..."
+                    // Parse [toolchain] section, looking for channel = "..."
+                    // Handle both inline and multi-line TOML
+                    let mut in_toolchain_section = false;
                     for line in content.lines() {
                         let line = line.trim();
-                        if line.starts_with("channel") {
+                        // Skip comments
+                        if line.starts_with('#') {
+                            continue;
+                        }
+                        // Detect section headers
+                        if line.starts_with('[') {
+                            in_toolchain_section = line.contains("[toolchain]");
+                            continue;
+                        }
+                        // Look for channel in [toolchain] section or at top level
+                        if (in_toolchain_section || !content.contains('[')) && line.starts_with("channel") {
                             if let Some(value) = line.split('=').nth(1) {
                                 let version = value
                                     .trim()
                                     .trim_matches('"')
                                     .trim_matches('\'')
+                                    .split('#')  // Remove inline comments
+                                    .next()
+                                    .unwrap_or("")
                                     .trim();
                                 if !version.is_empty() {
                                     return Ok(Some(VersionDetection {
@@ -378,11 +645,17 @@ impl EnvironmentProvider for RustupProvider {
         let rustup_home = self.rustup_home()?;
         let toolchain_path = rustup_home.join("toolchains").join(version).join("bin");
 
-        let mut mods = EnvModifications::new().prepend_path(toolchain_path);
+        let mut mods = EnvModifications::new()
+            .prepend_path(toolchain_path)
+            .set_var("RUSTUP_TOOLCHAIN", version.to_string());
 
         if let Some(cargo_home) = &self.cargo_home {
-            mods = mods.prepend_path(cargo_home.join("bin"));
+            mods = mods
+                .prepend_path(cargo_home.join("bin"))
+                .set_var("CARGO_HOME", cargo_home.to_string_lossy().to_string());
         }
+
+        mods = mods.set_var("RUSTUP_HOME", rustup_home.to_string_lossy().to_string());
 
         Ok(mods)
     }
@@ -390,4 +663,74 @@ impl EnvironmentProvider for RustupProvider {
     fn version_file_name(&self) -> &str {
         "rust-toolchain.toml"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for RustupProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_rustup(&["--version"]).await?;
+        // Output: "rustup 1.27.0 (bbb9276d2 2024-03-08)"
+        Ok(output
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("unknown")
+            .to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("rustup")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("rustup not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".to_string())
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let versions = self.list_installed_versions().await?;
+        Ok(versions.iter().any(|v| v.version.contains(name)))
+    }
+}
+
+/// Component info from `rustup component list`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustComponent {
+    pub name: String,
+    pub installed: bool,
+    pub default: bool,
+}
+
+/// Target info from `rustup target list`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustTarget {
+    pub name: String,
+    pub installed: bool,
+    pub default: bool,
+}
+
+/// Parsed output from `rustup show`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupShowInfo {
+    pub default_toolchain: Option<String>,
+    pub active_toolchain: Option<String>,
+    pub installed_toolchains: Vec<String>,
+    pub installed_targets: Vec<String>,
+    pub rustc_version: Option<String>,
 }

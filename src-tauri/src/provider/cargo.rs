@@ -50,10 +50,20 @@ impl CargoProvider {
     }
 
     async fn run_cargo(&self, args: &[&str]) -> CogniaResult<String> {
-        // For now, cargo doesn't support --registry flag for install commands
-        // Registry configuration is typically done via .cargo/config.toml or env vars
-        // We execute cargo normally and rely on system configuration
-        let out = process::execute("cargo", args, None).await?;
+        let mut opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+
+        // Pass custom environment variables if configured
+        for (key, value) in &self.env_vars {
+            opts = opts.with_env(key, value);
+        }
+
+        // Set sparse registry protocol if registry_url is configured
+        if let Some(ref url) = self.registry_url {
+            opts = opts.with_env("CARGO_REGISTRIES_CRATES_IO_PROTOCOL", "sparse");
+            opts = opts.with_env("CARGO_REGISTRIES_CRATES_IO_INDEX", url);
+        }
+
+        let out = process::execute("cargo", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -298,8 +308,26 @@ impl Provider for CargoProvider {
     }
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
-        // cargo doesn't have a direct versions command
-        // We can use cargo info (if available) or search
+        // Use crates.io API for comprehensive version listing
+        let api = get_api_client();
+        if let Ok(crate_info) = api.get_crate(name).await {
+            let versions: Vec<VersionInfo> = crate_info
+                .versions
+                .into_iter()
+                .map(|v| VersionInfo {
+                    version: v,
+                    release_date: None,
+                    deprecated: false,
+                    yanked: false,
+                })
+                .collect();
+
+            if !versions.is_empty() {
+                return Ok(versions);
+            }
+        }
+
+        // Fallback to cargo search for latest version only
         let out = self.run_cargo(&["search", name, "--limit", "1"]).await?;
 
         for line in out.lines() {
@@ -325,6 +353,14 @@ impl Provider for CargoProvider {
         }
 
         Ok(vec![])
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        // O(1) lookup using get_installed_crate_version instead of default O(n)
+        match self.get_installed_crate_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
@@ -484,11 +520,8 @@ impl Provider for CargoProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        // cargo doesn't have native outdated check for installed binaries
-        // We'd need cargo-update crate for this, so return empty for now
-        // or implement by comparing installed versions with crates.io
-
         let installed = self.list_installed(InstalledFilter::default()).await?;
+        let api = get_api_client();
         let mut updates = Vec::new();
 
         for pkg in installed {
@@ -496,17 +529,15 @@ impl Provider for CargoProvider {
                 continue;
             }
 
-            // Get latest version from search
-            if let Ok(versions) = self.get_versions(&pkg.name).await {
-                if let Some(latest) = versions.first() {
-                    if latest.version != pkg.version {
-                        updates.push(UpdateInfo {
-                            name: pkg.name,
-                            current_version: pkg.version,
-                            latest_version: latest.version.clone(),
-                            provider: self.id().into(),
-                        });
-                    }
+            // Use crates.io API for faster version check (batch-friendly)
+            if let Ok(crate_info) = api.get_crate(&pkg.name).await {
+                if crate_info.max_version != pkg.version {
+                    updates.push(UpdateInfo {
+                        name: pkg.name,
+                        current_version: pkg.version,
+                        latest_version: crate_info.max_version,
+                        provider: self.id().into(),
+                    });
                 }
             }
         }
@@ -528,7 +559,18 @@ impl SystemPackageProvider for CargoProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_cargo(&["install", "--list"]).await;
         Ok(out
-            .map(|s| s.lines().any(|l| l.starts_with(name)))
+            .map(|s| {
+                s.lines().any(|l| {
+                    // Match exact crate name: "crate_name v0.1.0:"
+                    // Must not match partial names (e.g., "serde" should not match "serde_json")
+                    if l.starts_with(' ') || l.is_empty() {
+                        return false;
+                    }
+                    l.split_whitespace()
+                        .next()
+                        .map_or(false, |crate_name| crate_name == name)
+                })
+            })
             .unwrap_or(false))
     }
 }

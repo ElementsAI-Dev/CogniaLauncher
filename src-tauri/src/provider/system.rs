@@ -18,6 +18,7 @@ pub enum SystemEnvironmentType {
     Rust,
     Ruby,
     Java,
+    Kotlin,
     Php,
     Dotnet,
     Deno,
@@ -33,6 +34,7 @@ impl SystemEnvironmentType {
             Self::Rust => "system-rust",
             Self::Ruby => "system-ruby",
             Self::Java => "system-java",
+            Self::Kotlin => "system-kotlin",
             Self::Php => "system-php",
             Self::Dotnet => "system-dotnet",
             Self::Deno => "system-deno",
@@ -48,6 +50,7 @@ impl SystemEnvironmentType {
             Self::Rust => "Rust (System)",
             Self::Ruby => "Ruby (System)",
             Self::Java => "Java (System)",
+            Self::Kotlin => "Kotlin (System)",
             Self::Php => "PHP (System)",
             Self::Dotnet => ".NET (System)",
             Self::Deno => "Deno (System)",
@@ -63,6 +66,7 @@ impl SystemEnvironmentType {
             Self::Rust => "rust",
             Self::Ruby => "ruby",
             Self::Java => "java",
+            Self::Kotlin => "kotlin",
             Self::Php => "php",
             Self::Dotnet => "dotnet",
             Self::Deno => "deno",
@@ -121,6 +125,13 @@ impl SystemEnvironmentType {
                 version_files: vec![".java-version", ".tool-versions", ".sdkmanrc"],
                 manifest_files: vec![],
             },
+            Self::Kotlin => SystemDetectionConfig {
+                commands: vec!["kotlinc"],
+                version_args: vec!["-version"],
+                version_pattern: r"kotlinc-jvm (\d+\.\d+\.\d+)",
+                version_files: vec![".kotlin-version", ".tool-versions", ".sdkmanrc"],
+                manifest_files: vec![],
+            },
             Self::Php => SystemDetectionConfig {
                 commands: vec!["php"],
                 version_args: vec!["--version"],
@@ -161,6 +172,7 @@ impl SystemEnvironmentType {
             Self::Rust,
             Self::Ruby,
             Self::Java,
+            Self::Kotlin,
             Self::Php,
             Self::Dotnet,
             Self::Deno,
@@ -475,6 +487,10 @@ impl EnvironmentProvider for SystemEnvironmentProvider {
     fn version_file_name(&self) -> &str {
         let config = self.env_type.detection_config();
         config.version_files.first().unwrap_or(&".version")
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

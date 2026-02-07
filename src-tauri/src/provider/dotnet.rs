@@ -696,6 +696,10 @@ impl EnvironmentProvider for DotnetProvider {
     fn version_file_name(&self) -> &str {
         "global.json"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]

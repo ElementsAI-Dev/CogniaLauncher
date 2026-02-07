@@ -316,6 +316,13 @@ impl Provider for YarnProvider {
         })
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_package_version(name, true).await {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
         let args = vec!["global", "remove", &req.name];
         self.run_yarn(&args).await?;
@@ -368,11 +375,21 @@ impl Provider for YarnProvider {
         Ok(packages)
     }
 
-    async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let output = self.run_yarn_raw(&["outdated", "--json"]).await;
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        // yarn outdated may return non-zero exit code when packages are outdated
+        let result = process::execute("yarn", &["outdated", "--json"], None).await;
+
+        let output = result.map(|o| {
+            if o.stdout.trim().is_empty() { Err(()) } else { Ok(o.stdout) }
+        }).unwrap_or(Err(()));
 
         let Ok(out_str) = output else {
             return Ok(vec![]);
+        };
+
+        // Filter helper closure
+        let should_include = |name: &str| -> bool {
+            packages.is_empty() || packages.iter().any(|p| p == name)
         };
 
         let mut updates = Vec::new();
@@ -388,7 +405,7 @@ impl Provider for YarnProvider {
                                         let current = pkg_arr[1].as_str().unwrap_or("").to_string();
                                         let latest = pkg_arr[3].as_str().unwrap_or("").to_string();
 
-                                        if !name.is_empty() && current != latest {
+                                        if !name.is_empty() && current != latest && should_include(&name) {
                                             updates.push(UpdateInfo {
                                                 name,
                                                 current_version: current,
@@ -417,6 +434,22 @@ impl SystemPackageProvider for YarnProvider {
 
     fn requires_elevation(&self, _operation: &str) -> bool {
         false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_yarn_raw(&["--version"]).await?;
+        Ok(output.trim().to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("yarn")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("yarn not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("Install Yarn: npm install -g yarn or corepack enable yarn".into())
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {

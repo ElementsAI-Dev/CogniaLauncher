@@ -422,6 +422,10 @@ impl EnvironmentProvider for RbenvProvider {
     fn version_file_name(&self) -> &str {
         ".ruby-version"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]

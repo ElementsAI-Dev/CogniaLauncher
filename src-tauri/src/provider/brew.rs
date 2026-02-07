@@ -4,6 +4,7 @@ use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct BrewProvider;
 
@@ -13,11 +14,14 @@ impl BrewProvider {
     }
 
     async fn run_brew(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("brew", args, None).await?;
+        let opts = process::ProcessOptions::new()
+            .with_timeout(Duration::from_secs(300)); // brew operations can be slow
+        let out = process::execute("brew", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            Err(CogniaError::Provider(out.stderr))
+            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            Err(CogniaError::Provider(msg))
         }
     }
 
@@ -59,6 +63,8 @@ impl Provider for BrewProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
+            Capability::UpdateIndex,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -168,7 +174,11 @@ impl Provider for BrewProvider {
         } else {
             req.name.clone()
         };
-        let _out = self.run_brew(&["install", &pkg]).await?;
+        let mut args = vec!["install", &*pkg];
+        if req.force {
+            args.push("--force");
+        }
+        let _out = self.run_brew(&args).await?;
         let prefix = self
             .run_brew(&["--prefix", &req.name])
             .await
@@ -198,11 +208,15 @@ impl Provider for BrewProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        self.run_brew(&["uninstall", &req.name]).await?;
+        let mut args = vec!["uninstall", &*req.name];
+        if req.force {
+            args.push("--force");
+        }
+        self.run_brew(&args).await?;
         Ok(())
     }
 
-    async fn list_installed(&self, _: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let out = self.run_brew(&["list", "--versions"]).await?;
         let brew_prefix = self.run_brew(&["--prefix"]).await
             .map(|s| PathBuf::from(s.trim()))
@@ -213,12 +227,19 @@ impl Provider for BrewProvider {
             .filter_map(|l| {
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 if parts.len() >= 2 {
-                    let name = parts[0];
+                    let name = parts[0].to_string();
+
+                    if let Some(ref name_filter) = filter.name_filter {
+                        if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                            return None;
+                        }
+                    }
+
                     Some(InstalledPackage {
-                        name: name.into(),
+                        name: name.clone(),
                         version: parts[1].into(),
                         provider: self.id().into(),
-                        install_path: brew_prefix.join("Cellar").join(name),
+                        install_path: brew_prefix.join("Cellar").join(&name),
                         installed_at: String::new(),
                         is_global: true,
                     })
@@ -301,5 +322,190 @@ impl SystemPackageProvider for BrewProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_brew(&["list", name]).await;
         Ok(out.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = BrewProvider::new();
+        assert_eq!(p.id(), "brew");
+        assert_eq!(p.display_name(), "Homebrew");
+        assert_eq!(p.priority(), 90);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = BrewProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = BrewProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 2);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = BrewProvider::new();
+        // Homebrew does NOT require elevation for any operation
+        assert!(!p.requires_elevation("install"));
+        assert!(!p.requires_elevation("uninstall"));
+        assert!(!p.requires_elevation("update"));
+        assert!(!p.requires_elevation("upgrade"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = BrewProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("Homebrew"));
+    }
+
+    #[test]
+    fn test_parse_search_output() {
+        // brew search returns simple list of names
+        let output = "==> Formulae\nnginx\nnginx-full\nnginx-unit\n\n==> Casks\nnginx\n";
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('='))
+            .map(|name| PackageSummary {
+                name: name.trim().into(),
+                description: None,
+                latest_version: None,
+                provider: "brew".into(),
+            })
+            .take(20)
+            .collect();
+
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].name, "nginx");
+        assert_eq!(results[1].name, "nginx-full");
+        assert_eq!(results[3].name, "nginx");
+        assert_eq!(results[0].provider, "brew");
+    }
+
+    #[test]
+    fn test_parse_list_versions_output() {
+        let output = "git 2.42.0\nnode 20.10.0 20.9.0\ncurl 8.4.0\n";
+        let brew_prefix = PathBuf::from("/opt/homebrew");
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let name = parts[0].to_string();
+                    Some(InstalledPackage {
+                        name: name.clone(),
+                        version: parts[1].into(),
+                        provider: "brew".into(),
+                        install_path: brew_prefix.join("Cellar").join(&name),
+                        installed_at: String::new(),
+                        is_global: true,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "git");
+        assert_eq!(packages[0].version, "2.42.0");
+        assert_eq!(packages[1].name, "node");
+        assert_eq!(packages[1].version, "20.10.0"); // First version listed
+        assert_eq!(packages[2].name, "curl");
+        assert!(packages[0].install_path.ends_with("Cellar/git") || packages[0].install_path.ends_with("Cellar\\git"));
+    }
+
+    #[test]
+    fn test_parse_list_versions_with_name_filter() {
+        let output = "git 2.42.0\nnode 20.10.0\ncurl 8.4.0\ngit-lfs 3.4.0\n";
+        let name_filter = Some("git".to_string());
+
+        let packages: Vec<&str> = output
+            .lines()
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let name = parts[0];
+                    if let Some(ref f) = name_filter {
+                        if !name.to_lowercase().contains(&f.to_lowercase()) {
+                            return None;
+                        }
+                    }
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages[0], "git");
+        assert_eq!(packages[1], "git-lfs");
+    }
+
+    #[test]
+    fn test_parse_outdated_json() {
+        let json_str = r#"{"formulae":[{"name":"git","installed_versions":["2.41.0"],"current_version":"2.42.0"},{"name":"curl","installed_versions":["8.3.0"],"current_version":"8.4.0"}],"casks":[]}"#;
+        let json: serde_json::Value = serde_json::from_str(json_str).unwrap();
+
+        let updates: Vec<UpdateInfo> = json["formulae"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|f| {
+                Some(UpdateInfo {
+                    name: f["name"].as_str()?.into(),
+                    current_version: f["installed_versions"][0].as_str()?.into(),
+                    latest_version: f["current_version"].as_str()?.into(),
+                    provider: "brew".into(),
+                })
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "git");
+        assert_eq!(updates[0].current_version, "2.41.0");
+        assert_eq!(updates[0].latest_version, "2.42.0");
+        assert_eq!(updates[1].name, "curl");
+    }
+
+    #[test]
+    fn test_parse_brew_info_json_formula() {
+        let json_str = r#"{"formulae":[{"full_name":"git","desc":"Distributed revision control system","homepage":"https://git-scm.com","license":"GPL-2.0-only","versions":{"stable":"2.42.0"},"deprecated":false,"installed":[{"version":"2.42.0"}]}],"casks":[]}"#;
+        let json: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        let pkg = &json["formulae"][0];
+
+        assert_eq!(pkg["full_name"].as_str().unwrap(), "git");
+        assert_eq!(pkg["desc"].as_str().unwrap(), "Distributed revision control system");
+        assert_eq!(pkg["homepage"].as_str().unwrap(), "https://git-scm.com");
+        assert_eq!(pkg["license"].as_str().unwrap(), "GPL-2.0-only");
+        assert_eq!(pkg["versions"]["stable"].as_str().unwrap(), "2.42.0");
+        assert_eq!(pkg["installed"][0]["version"].as_str().unwrap(), "2.42.0");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = BrewProvider::default();
+        assert_eq!(p.id(), "brew");
     }
 }

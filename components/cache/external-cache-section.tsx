@@ -195,6 +195,8 @@ export function ExternalCacheSection({
         return "🐧";
       case "docker":
         return "🐳";
+      case "podman":
+        return "🦭";
       case "flutter":
         return "💙";
       case "cocoapods":

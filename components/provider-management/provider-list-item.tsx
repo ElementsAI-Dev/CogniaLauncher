@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink } from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { getProviderIcon } from "./provider-icons";
 
 export interface ProviderListItemProps {
   provider: ProviderInfo;
@@ -21,36 +23,6 @@ export interface ProviderListItemProps {
   onCheckStatus: (providerId: string) => Promise<boolean>;
   t: (key: string) => string;
 }
-
-const PROVIDER_ICONS: Record<string, string> = {
-  npm: "📦",
-  pnpm: "⚡",
-  uv: "🐍",
-  cargo: "🦀",
-  chocolatey: "🍫",
-  scoop: "🥄",
-  winget: "🪟",
-  brew: "🍺",
-  apt: "🐧",
-  dnf: "🎩",
-  pacman: "👻",
-  zypper: "🦎",
-  apk: "🏔️",
-  vcpkg: "📚",
-  docker: "🐳",
-  psgallery: "💠",
-  github: "🐙",
-  nvm: "💚",
-  fnm: "⚡",
-  pyenv: "🐍",
-  rustup: "🦀",
-  goenv: "🔵",
-  flatpak: "📦",
-  snap: "🔶",
-  macports: "🚢",
-  pip: "🐍",
-  yarn: "🧶",
-};
 
 export function ProviderListItem({
   provider,
@@ -74,10 +46,6 @@ export function ProviderListItem({
       setIsChecking(false);
     }
   }, [onCheckStatus, provider.id]);
-
-  const getProviderIcon = (providerId: string) => {
-    return PROVIDER_ICONS[providerId] || "📦";
-  };
 
   const availabilityStatus = localAvailable ?? isAvailable;
 
@@ -175,6 +143,13 @@ export function ProviderListItem({
             disabled={isToggling}
           />
         </div>
+
+        <Link
+          href={`/providers/${provider.id}`}
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline ml-2"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
       </div>
     </div>
   );

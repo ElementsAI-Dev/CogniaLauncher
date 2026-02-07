@@ -342,7 +342,10 @@ impl Provider for NpmProvider {
 
     /// Get the installed version of a specific package
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
-        self.get_package_version(name, true).await.map(Some)
+        match self.get_package_version(name, true).await {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
@@ -390,11 +393,19 @@ impl Provider for NpmProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        // outdated doesn't need registry args
-        let out = self.run_npm_raw(&["outdated", "-g", "--json"]).await;
+        // npm outdated returns exit code 1 when packages are outdated (not an error)
+        // So we must read stdout directly instead of using run_npm_raw which treats non-zero as error
+        let result = process::execute("npm", &["outdated", "-g", "--json"], None).await;
 
-        let out_str = match out {
-            Ok(s) => s,
+        let out_str = match result {
+            Ok(output) => {
+                // exit code 0 = no outdated packages, exit code 1 = has outdated packages
+                // Both cases have valid JSON in stdout
+                if output.stdout.trim().is_empty() {
+                    return Ok(vec![]);
+                }
+                output.stdout
+            }
             Err(_) => return Ok(vec![]),
         };
 
@@ -439,6 +450,22 @@ impl SystemPackageProvider for NpmProvider {
 
     fn requires_elevation(&self, _operation: &str) -> bool {
         false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_npm_raw(&["--version"]).await?;
+        Ok(output.trim().to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("npm")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("npm not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("Install Node.js from https://nodejs.org which includes npm".into())
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {

@@ -423,6 +423,10 @@ impl EnvironmentProvider for PhpbrewProvider {
     fn version_file_name(&self) -> &str {
         ".php-version"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]

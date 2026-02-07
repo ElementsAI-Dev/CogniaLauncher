@@ -418,4 +418,8 @@ impl EnvironmentProvider for AsdfProvider {
     fn version_file_name(&self) -> &str {
         ".tool-versions"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }

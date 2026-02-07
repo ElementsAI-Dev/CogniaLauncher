@@ -1,10 +1,11 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Activity, RefreshCw, Power, Info } from 'lucide-react';
+import { Activity, RefreshCw, Power, Info, Network } from 'lucide-react';
 import type { WslStatus } from '@/types/tauri';
 
 interface WslStatusCardProps {
@@ -12,6 +13,7 @@ interface WslStatusCardProps {
   loading: boolean;
   onRefresh: () => void;
   onShutdownAll: () => void;
+  getIpAddress?: () => Promise<string>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -20,8 +22,24 @@ export function WslStatusCard({
   loading,
   onRefresh,
   onShutdownAll,
+  getIpAddress,
   t,
 }: WslStatusCardProps) {
+  const [ipAddress, setIpAddress] = useState<string | null>(null);
+  const runningCount = status?.runningDistros.length ?? 0;
+
+  const shouldFetchIp = !!getIpAddress && runningCount > 0;
+  const ipToShow = shouldFetchIp ? ipAddress : null;
+
+  useEffect(() => {
+    if (!shouldFetchIp) return;
+    let cancelled = false;
+    getIpAddress!()
+      .then((ip) => { if (!cancelled) setIpAddress(ip); })
+      .catch(() => { if (!cancelled) setIpAddress(null); });
+    return () => { cancelled = true; };
+  }, [shouldFetchIp, getIpAddress]);
+
   if (loading && !status) {
     return (
       <Card>
@@ -61,6 +79,16 @@ export function WslStatusCard({
           <span className="text-sm text-muted-foreground">{t('wsl.kernelVersion')}</span>
           <span className="text-sm font-mono">{status?.version ?? '—'}</span>
         </div>
+
+        {ipToShow && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <Network className="h-3.5 w-3.5" />
+              {t('wsl.ipAddress')}
+            </span>
+            <span className="text-sm font-mono">{ipToShow}</span>
+          </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">

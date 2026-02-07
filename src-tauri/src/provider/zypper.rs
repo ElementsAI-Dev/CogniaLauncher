@@ -370,3 +370,193 @@ impl SystemPackageProvider for ZypperProvider {
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = ZypperProvider::new();
+        assert_eq!(p.id(), "zypper");
+        assert_eq!(p.display_name(), "Zypper (openSUSE)");
+        assert_eq!(p.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = ZypperProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = ZypperProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = ZypperProvider::new();
+        assert!(p.requires_elevation("install"));
+        assert!(p.requires_elevation("uninstall"));
+        assert!(p.requires_elevation("update"));
+        assert!(p.requires_elevation("upgrade"));
+        assert!(!p.requires_elevation("search"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = ZypperProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("openSUSE"));
+    }
+
+    #[test]
+    fn test_parse_zypper_search_output() {
+        // zypper search output: skip 4 header lines, pipe-delimited
+        let output = "Loading repository data...\nReading installed packages...\n\nS  | Name           | Summary                | Type\n---+----------------+------------------------+--------\ni  | curl           | transfer a URL         | package\n   | curl-devel     | dev files for curl     | package\n   | git            | distributed VCS        | package\n";
+
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .skip(4)
+            .filter(|l| !l.is_empty() && !l.starts_with('-'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 3 {
+                    let name = parts[1].trim();
+                    let summary = parts.get(2).map(|s| s.trim().to_string());
+                    Some(PackageSummary {
+                        name: name.into(),
+                        description: summary,
+                        latest_version: None,
+                        provider: "zypper".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].name, "curl");
+        assert_eq!(results[0].description, Some("transfer a URL".into()));
+        assert_eq!(results[1].name, "curl-devel");
+        assert_eq!(results[2].name, "git");
+    }
+
+    #[test]
+    fn test_parse_zypper_list_installed_output() {
+        let output = "Loading repository data...\nReading installed packages...\n\nS  | Name       | Type    | Version\n---+------------+---------+---------\ni  | curl       | package | 8.4.0-1.1\ni  | git        | package | 2.42.0-1.2\ni  | vim        | package | 9.0.2081-1\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .skip(4)
+            .filter(|l| !l.is_empty() && !l.starts_with('-'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 4 {
+                    let name = parts[1].trim().to_string();
+                    let version = parts
+                        .get(3)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default();
+                    Some(InstalledPackage {
+                        name,
+                        version,
+                        provider: "zypper".into(),
+                        install_path: PathBuf::from("/usr"),
+                        installed_at: String::new(),
+                        is_global: true,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "curl");
+        assert_eq!(packages[0].version, "8.4.0-1.1");
+        assert_eq!(packages[1].name, "git");
+        assert_eq!(packages[2].name, "vim");
+    }
+
+    #[test]
+    fn test_parse_zypper_list_updates_output() {
+        let output = "Loading repository data...\nReading installed packages...\n\nS  | Repository | Name   | Current Version | Available Version | Arch\n---+------------+--------+-----------------+-------------------+------\nv  | updates    | curl   | 8.3.0-1.1       | 8.4.0-1.1         | x86_64\nv  | updates    | git    | 2.41.0-1.2      | 2.42.0-1.2        | x86_64\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .skip(4)
+            .filter(|l| !l.is_empty() && !l.starts_with('-'))
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('|').collect();
+                if parts.len() >= 5 {
+                    let name = parts[2].trim().to_string();
+                    Some(UpdateInfo {
+                        name,
+                        current_version: parts[3].trim().into(),
+                        latest_version: parts[4].trim().into(),
+                        provider: "zypper".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "curl");
+        assert_eq!(updates[0].current_version, "8.3.0-1.1");
+        assert_eq!(updates[0].latest_version, "8.4.0-1.1");
+        assert_eq!(updates[1].name, "git");
+    }
+
+    #[test]
+    fn test_parse_zypper_info_output() {
+        let output = "Name        : curl\nVersion     : 8.4.0-1.1\nSummary     : A tool for transferring data\nLicense     : MIT\nURL         : https://curl.se/\n";
+
+        let mut description = None;
+        let mut version = None;
+        let mut license = None;
+        let mut homepage = None;
+
+        for line in output.lines() {
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                let value = parts[1].trim();
+                match key {
+                    "Version" => version = Some(value.to_string()),
+                    "Description" | "Summary" => description = Some(value.to_string()),
+                    "License" => license = Some(value.to_string()),
+                    "URL" => homepage = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        assert_eq!(version, Some("8.4.0-1.1".into()));
+        assert_eq!(description, Some("A tool for transferring data".into()));
+        assert_eq!(license, Some("MIT".into()));
+        assert_eq!(homepage, Some("https://curl.se/".into()));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = ZypperProvider::default();
+        assert_eq!(p.id(), "zypper");
+    }
+}

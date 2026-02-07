@@ -4,6 +4,7 @@ use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct AptProvider;
 
@@ -13,7 +14,9 @@ impl AptProvider {
     }
 
     async fn run_apt(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("apt-cache", args, None).await?;
+        let opts = process::ProcessOptions::new()
+            .with_timeout(Duration::from_secs(120));
+        let out = process::execute("apt-cache", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -56,6 +59,9 @@ impl Provider for AptProvider {
             Capability::Uninstall,
             Capability::Search,
             Capability::List,
+            Capability::Update,
+            Capability::Upgrade,
+            Capability::UpdateIndex,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -195,7 +201,7 @@ impl Provider for AptProvider {
         }
     }
 
-    async fn list_installed(&self, _: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let out = process::execute("dpkg", &["-l"], None).await?;
         Ok(out
             .stdout
@@ -204,8 +210,16 @@ impl Provider for AptProvider {
             .filter_map(|l| {
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 if parts.len() >= 3 && parts[0] == "ii" {
+                    let name = parts[1].to_string();
+
+                    if let Some(ref name_filter) = filter.name_filter {
+                        if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                            return None;
+                        }
+                    }
+
                     Some(InstalledPackage {
-                        name: parts[1].into(),
+                        name,
                         version: parts[2].into(),
                         provider: self.id().into(),
                         install_path: PathBuf::from("/usr"),
@@ -322,5 +336,196 @@ impl SystemPackageProvider for AptProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = process::execute("dpkg", &["-s", name], None).await;
         Ok(out.map(|o| o.success).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let p = AptProvider::new();
+        assert_eq!(p.id(), "apt");
+        assert_eq!(p.display_name(), "APT Package Manager");
+        assert_eq!(p.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let p = AptProvider::new();
+        let caps = p.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::UpdateIndex));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let p = AptProvider::new();
+        let platforms = p.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 1);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let p = AptProvider::new();
+        assert!(p.requires_elevation("install"));
+        assert!(p.requires_elevation("uninstall"));
+        assert!(p.requires_elevation("update"));
+        assert!(p.requires_elevation("upgrade"));
+        assert!(!p.requires_elevation("search"));
+        assert!(!p.requires_elevation("list"));
+    }
+
+    #[test]
+    fn test_install_instructions() {
+        let p = AptProvider::new();
+        let instructions = p.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("Debian"));
+    }
+
+    #[test]
+    fn test_parse_search_output() {
+        let output = "nginx/jammy 1.18.0-6ubuntu14 amd64 - small, powerful, scalable web/reverse proxy server\nnginx-common/jammy 1.18.0-6ubuntu14 all - small, powerful, scalable web/reverse proxy server - common files\n";
+
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split(" - ").collect();
+                if parts.len() >= 2 {
+                    let name = parts[0].split('/').next()?.trim();
+                    Some(PackageSummary {
+                        name: name.into(),
+                        description: Some(parts[1].into()),
+                        latest_version: None,
+                        provider: "apt".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .take(20)
+            .collect();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "nginx");
+        assert_eq!(results[1].name, "nginx-common");
+        assert!(results[0].description.as_ref().unwrap().contains("proxy server"));
+    }
+
+    #[test]
+    fn test_parse_dpkg_list_output() {
+        // dpkg -l output (after skipping 5 header lines)
+        let output = "ii  curl           7.88.1-10+deb12u5  amd64  command line tool for transferring data\nii  git            1:2.39.2-1.1       amd64  fast, scalable, distributed revision control system\nrc  old-package    1.0.0              amd64  removed package\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                if parts.len() >= 3 && parts[0] == "ii" {
+                    Some(InstalledPackage {
+                        name: parts[1].to_string(),
+                        version: parts[2].into(),
+                        provider: "apt".into(),
+                        install_path: PathBuf::from("/usr"),
+                        installed_at: String::new(),
+                        is_global: true,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 2); // rc (removed) should be filtered out
+        assert_eq!(packages[0].name, "curl");
+        assert_eq!(packages[0].version, "7.88.1-10+deb12u5");
+        assert_eq!(packages[1].name, "git");
+        assert_eq!(packages[1].version, "1:2.39.2-1.1");
+    }
+
+    #[test]
+    fn test_parse_dpkg_list_with_name_filter() {
+        let output = "ii  curl           7.88.1  amd64  transfer tool\nii  git            2.39.2  amd64  revision control\nii  curl-dev       7.88.1  amd64  curl dev headers\n";
+        let name_filter = Some("curl".to_string());
+
+        let packages: Vec<&str> = output
+            .lines()
+            .filter_map(|l| {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                if parts.len() >= 3 && parts[0] == "ii" {
+                    let name = parts[1];
+                    if let Some(ref f) = name_filter {
+                        if !name.to_lowercase().contains(&f.to_lowercase()) {
+                            return None;
+                        }
+                    }
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages[0], "curl");
+        assert_eq!(packages[1], "curl-dev");
+    }
+
+    #[test]
+    fn test_parse_apt_upgradable_output() {
+        let output = "Listing...\ncurl/jammy-updates 8.0.0-1 amd64 [upgradable from: 7.88.1-10]\ngit/jammy-updates 1:2.40.0-1 amd64 [upgradable from: 1:2.39.2-1.1]\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .filter(|l| !l.is_empty() && l.contains("upgradable"))
+            .filter_map(|line| {
+                let name = line.split('/').next()?.to_string();
+                let latest = line.split_whitespace().nth(1)?.to_string();
+                let current = line
+                    .rsplit("from: ")
+                    .next()
+                    .map(|s| s.trim_end_matches(']').to_string())
+                    .unwrap_or_default();
+
+                Some(UpdateInfo {
+                    name,
+                    current_version: current,
+                    latest_version: latest,
+                    provider: "apt".into(),
+                })
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "curl");
+        assert_eq!(updates[0].latest_version, "8.0.0-1");
+        assert_eq!(updates[0].current_version, "7.88.1-10");
+        assert_eq!(updates[1].name, "git");
+    }
+
+    #[test]
+    fn test_parse_dpkg_version_output() {
+        let output = "Package: curl\nStatus: install ok installed\nVersion: 7.88.1-10+deb12u5\nArchitecture: amd64\n";
+
+        let version = output
+            .lines()
+            .find_map(|line| line.strip_prefix("Version:").map(|v| v.trim().to_string()));
+
+        assert_eq!(version, Some("7.88.1-10+deb12u5".to_string()));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let p = AptProvider::default();
+        assert_eq!(p.id(), "apt");
     }
 }

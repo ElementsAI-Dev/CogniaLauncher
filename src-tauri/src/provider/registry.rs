@@ -2,10 +2,10 @@ use super::api::update_api_client_from_settings;
 use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider};
 use super::{
-    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conda, deno, dnf, docker,
-    dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm, pacman,
-    phpbrew, pip, pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop, sdkman, snap, uv,
-    vcpkg, volta, winget, wsl, yarn, zypper,
+    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, conan, composer, conda, deno, dnf,
+    docker, dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm,
+    pacman, phpbrew, pip, podman, pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop,
+    sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -123,10 +123,19 @@ impl ProviderRegistry {
         }
 
         // Java version manager (SDKMAN!)
-        let sdkman_provider = Arc::new(sdkman::SdkmanProvider::new());
-        if sdkman_provider.is_available().await {
+        let sdkman_provider = Arc::new(sdkman::SdkmanProvider::java());
+        let sdkman_available = sdkman_provider.is_available().await;
+        if sdkman_available {
             registry.register_environment_provider(sdkman_provider);
             has_java_manager = true;
+        }
+
+        // Kotlin version manager (SDKMAN!) - reuse availability check
+        let mut has_kotlin_manager = false;
+        if sdkman_available {
+            let sdkman_kotlin = Arc::new(sdkman::SdkmanProvider::kotlin());
+            registry.register_environment_provider(sdkman_kotlin);
+            has_kotlin_manager = true;
         }
 
         // PHP version manager (PHPBrew) - macOS/Linux only
@@ -193,6 +202,13 @@ impl ProviderRegistry {
             let system_java = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Java));
             if system_java.is_available().await {
                 registry.register_environment_provider(system_java);
+            }
+        }
+
+        if !has_kotlin_manager {
+            let system_kotlin = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Kotlin));
+            if system_kotlin.is_available().await {
+                registry.register_environment_provider(system_kotlin);
             }
         }
 
@@ -297,16 +313,34 @@ impl ProviderRegistry {
             registry.register_provider(go_provider);
         }
 
-        // Register vcpkg provider (cross-platform)
+        // Register vcpkg provider (cross-platform C++ package manager)
         let vcpkg_provider = Arc::new(vcpkg::VcpkgProvider::new());
         if vcpkg_provider.is_available().await {
             registry.register_provider(vcpkg_provider);
+        }
+
+        // Register Conan provider (cross-platform C/C++ package manager)
+        let conan_provider = Arc::new(conan::ConanProvider::new());
+        if conan_provider.is_available().await {
+            registry.register_provider(conan_provider);
+        }
+
+        // Register Xmake/Xrepo provider (cross-platform C/C++ build & package manager)
+        let xmake_provider = Arc::new(xmake::XmakeProvider::new());
+        if xmake_provider.is_available().await {
+            registry.register_provider(xmake_provider);
         }
 
         // Register Docker provider (cross-platform)
         let docker_provider = Arc::new(docker::DockerProvider::new());
         if docker_provider.is_available().await {
             registry.register_provider(docker_provider);
+        }
+
+        // Register Podman provider (cross-platform, daemonless alternative to Docker)
+        let podman_provider = Arc::new(podman::PodmanProvider::new());
+        if podman_provider.is_available().await {
+            registry.register_provider(podman_provider);
         }
 
         // Register uv provider with mirror configuration

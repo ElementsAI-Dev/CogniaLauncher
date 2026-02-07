@@ -484,4 +484,8 @@ impl EnvironmentProvider for MiseProvider {
     fn version_file_name(&self) -> &str {
         "mise.toml"
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
