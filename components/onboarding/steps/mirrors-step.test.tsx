@@ -43,14 +43,14 @@ describe("MirrorsStep", () => {
 
   it("selects default preset initially", () => {
     const { container } = render(<MirrorsStep t={mockT} />);
-    const buttons = container.querySelectorAll("button");
-    expect(buttons[0].className).toContain("border-primary");
+    const labels = container.querySelectorAll("label");
+    expect(labels[0].className).toContain("border-primary");
   });
 
   it("changes selection when clicked", async () => {
     const { container } = render(<MirrorsStep t={mockT} />);
     await userEvent.click(screen.getByText("China Preset"));
-    const buttons = container.querySelectorAll("button");
-    expect(buttons[1].className).toContain("border-primary");
+    const labels = container.querySelectorAll("label");
+    expect(labels[1].className).toContain("border-primary");
   });
 });

@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -108,15 +110,20 @@ export function WslConfigCard({
           <Settings2 className="h-4 w-4 text-muted-foreground" />
           {t('wsl.config.title')}
         </CardTitle>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onRefresh}
-          disabled={loading}
-          className="h-8 w-8"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRefresh}
+              disabled={loading}
+              className="h-8 w-8"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.refresh')}</TooltipContent>
+        </Tooltip>
       </CardHeader>
       <CardContent className="space-y-4">
         {allEntries.length === 0 ? (
@@ -139,21 +146,27 @@ export function WslConfigCard({
                     {value}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => handleRemove(section, key)}
-                  disabled={saving}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleRemove(section, key)}
+                      disabled={saving}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('common.delete')}</TooltipContent>
+                </Tooltip>
               </div>
             ))}
           </div>
         )}
 
-        <div className="border-t pt-3 space-y-3">
+        <Separator />
+        <div className="space-y-3">
           <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.quickSettings')}</p>
           <div className="grid grid-cols-2 gap-2">
             {COMMON_WSL2_SETTINGS.slice(0, 4).map((setting) => {
@@ -185,7 +198,8 @@ export function WslConfigCard({
           </div>
         </div>
 
-        <div className="border-t pt-3 space-y-2">
+        <Separator />
+        <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.addCustom')}</p>
           <div className="flex gap-2">
             <Select value={editSection} onValueChange={setEditSection}>

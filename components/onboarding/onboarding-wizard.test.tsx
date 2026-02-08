@@ -2,6 +2,13 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OnboardingWizard } from "./onboarding-wizard";
 
+// ResizeObserver is required by Radix Tooltip's useSize hook
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     locale: "en",

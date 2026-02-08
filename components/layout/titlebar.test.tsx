@@ -82,11 +82,11 @@ describe("Titlebar", () => {
   });
 
   it("renders titlebar when in Tauri environment", async () => {
-    const { container, getByTitle } = render(<Titlebar />);
+    const { container, getByLabelText } = render(<Titlebar />);
 
-    // Wait for Tauri initialization
+    // Wait for Tauri initialization - buttons now use Tooltip instead of title, use aria-label
     await waitFor(() => {
-      expect(getByTitle("Minimize")).toBeInTheDocument();
+      expect(getByLabelText("Minimize")).toBeInTheDocument();
     });
 
     // Component renders in Tauri mode with window controls
@@ -94,15 +94,15 @@ describe("Titlebar", () => {
   });
 
   it("has working window control buttons", async () => {
-    const { getByTitle, getByLabelText } = render(<Titlebar />);
+    const { getByLabelText } = render(<Titlebar />);
 
     await waitFor(() => {
-      expect(getByTitle("Minimize")).toBeInTheDocument();
+      expect(getByLabelText("Minimize")).toBeInTheDocument();
     });
 
-    // Verify all control buttons are present (use aria-label for Close since title varies)
-    expect(getByTitle("Minimize")).toBeInTheDocument();
-    expect(getByTitle("Maximize")).toBeInTheDocument();
+    // Verify all control buttons are present via aria-label
+    expect(getByLabelText("Minimize")).toBeInTheDocument();
+    expect(getByLabelText("Maximize")).toBeInTheDocument();
     expect(getByLabelText("Close")).toBeInTheDocument();
   });
 });

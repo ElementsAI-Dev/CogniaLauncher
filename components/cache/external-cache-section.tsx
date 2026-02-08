@@ -31,6 +31,11 @@ import {
 } from "@/components/ui/collapsible";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
   Package,
   Trash2,
   RefreshCw,
@@ -43,6 +48,7 @@ import { toast } from "sonner";
 import { isTauri } from "@/lib/tauri";
 import type { ExternalCacheInfo } from "@/lib/tauri";
 import * as tauri from "@/lib/tauri";
+import { formatBytes } from "@/lib/utils";
 
 interface ExternalCacheSectionProps {
   useTrash: boolean;
@@ -280,17 +286,22 @@ export function ExternalCacheSection({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchExternalCaches}
-                  disabled={loading}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-                  />
-                  {t("common.refresh")}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchExternalCaches}
+                      disabled={loading}
+                    >
+                      <RefreshCw
+                        className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
+                      />
+                      {t("common.refresh")}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("common.refresh")}</TooltipContent>
+                </Tooltip>
                 {canCleanCount > 0 && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -387,22 +398,27 @@ export function ExternalCacheSection({
                             >
                               {cache.sizeHuman}
                             </Badge>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                !cache.canClean ||
-                                cleaning === cache.provider
-                              }
-                              onClick={() =>
-                                handleCleanCache(cache.provider)
-                              }
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              {cleaning === cache.provider
-                                ? t("cache.clearing")
-                                : t("cache.clean")}
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={
+                                    !cache.canClean ||
+                                    cleaning === cache.provider
+                                  }
+                                  onClick={() =>
+                                    handleCleanCache(cache.provider)
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  {cleaning === cache.provider
+                                    ? t("cache.clearing")
+                                    : t("cache.clean")}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t("cache.clean")}</TooltipContent>
+                            </Tooltip>
                           </div>
                         </div>
                       ))}
@@ -415,12 +431,4 @@ export function ExternalCacheSection({
       </Collapsible>
     </Card>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }

@@ -4,11 +4,18 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronRight,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
   RefreshCw,
   Download,
-  ArrowLeft,
 } from "lucide-react";
+import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { LANGUAGES } from "@/lib/constants/environments";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 
@@ -38,17 +45,21 @@ export function EnvDetailHeader({
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link
-          href="/environments"
-          className="hover:text-foreground transition-colors flex items-center gap-1"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          {t("environments.title")}
-        </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="text-foreground font-medium">{displayName}</span>
-      </nav>
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/environments">
+                {t("environments.title")}
+              </Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{displayName}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
 
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -69,12 +80,12 @@ export function EnvDetailHeader({
                 </Badge>
               )}
               {detectedVersion && (
-                <Badge
-                  variant="outline"
-                  className="gap-1.5 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300"
-                >
-                  {t("environments.detected")}: {detectedVersion.version}
-                </Badge>
+                <DetectedVersionBadge
+                  version={detectedVersion.version}
+                  source={detectedVersion.source}
+                  t={t}
+                  compact
+                />
               )}
             </div>
             <p className="text-sm text-muted-foreground">

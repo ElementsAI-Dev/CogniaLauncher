@@ -22,6 +22,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import { Toggle } from "@/components/ui/toggle";
 import { useLogStore, ALL_LEVELS, type LogLevel } from "@/lib/stores/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
@@ -309,33 +319,51 @@ export function LogToolbar({
         {/* Realtime controls */}
         {showRealtimeControls && (
           <div className="flex items-center gap-0.5">
-            <Button
-              variant={paused ? "secondary" : "ghost"}
-              size="icon"
-              className="h-9 w-9"
-              onClick={togglePaused}
-              title={paused ? t("logs.resume") : t("logs.pause")}
-            >
-              {paused ? (
-                <Play className="h-4 w-4 text-green-500" />
-              ) : (
-                <Pause className="h-4 w-4" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Toggle
+                  pressed={paused}
+                  onPressedChange={togglePaused}
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  aria-label={paused ? t("logs.resume") : t("logs.pause")}
+                >
+                  {paused ? (
+                    <Play className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Pause className="h-4 w-4" />
+                  )}
+                </Toggle>
+              </TooltipTrigger>
+              <TooltipContent>
+                {paused ? t("logs.resume") : t("logs.pause")}
+              </TooltipContent>
+            </Tooltip>
 
-            <Button
-              variant={autoScroll ? "secondary" : "ghost"}
-              size="icon"
-              className="h-9 w-9"
-              onClick={toggleAutoScroll}
-              title={
-                autoScroll ? t("logs.autoScrollOn") : t("logs.autoScrollOff")
-              }
-            >
-              <ArrowDownToLine
-                className={`h-4 w-4 ${autoScroll ? "text-primary" : "text-muted-foreground"}`}
-              />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Toggle
+                  pressed={autoScroll}
+                  onPressedChange={toggleAutoScroll}
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  aria-label={
+                    autoScroll
+                      ? t("logs.autoScrollOn")
+                      : t("logs.autoScrollOff")
+                  }
+                >
+                  <ArrowDownToLine
+                    className={`h-4 w-4 ${autoScroll ? "text-primary" : "text-muted-foreground"}`}
+                  />
+                </Toggle>
+              </TooltipTrigger>
+              <TooltipContent>
+                {autoScroll
+                  ? t("logs.autoScrollOn")
+                  : t("logs.autoScrollOff")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         )}
 
@@ -346,7 +374,7 @@ export function LogToolbar({
               variant="ghost"
               size="icon"
               className="h-9 w-9 shrink-0"
-              title={t("logs.export")}
+              aria-label={t("logs.export")}
             >
               <Download className="h-4 w-4" />
             </Button>
@@ -363,15 +391,20 @@ export function LogToolbar({
 
         {/* Clear button */}
         {showRealtimeControls && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-9 w-9 shrink-0"
-            onClick={clearLogs}
-            title={t("logs.clear")}
-          >
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={clearLogs}
+                aria-label={t("logs.clear")}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("logs.clear")}</TooltipContent>
+          </Tooltip>
         )}
 
         {/* Stats badge */}
@@ -392,95 +425,97 @@ export function LogToolbar({
       </div>
 
       {/* Advanced filters row - collapsible */}
-      {showAdvanced && (
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-dashed">
-          {/* Time range */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground shrink-0">
-              {t("logs.timeRange")}:
-            </span>
-            <Select value={timeRangePreset} onValueChange={handlePresetChange}>
-              <SelectTrigger className="h-8 w-[120px]" size="sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{timeRangeOptions.all}</SelectItem>
-                <SelectItem value="1h">{timeRangeOptions["1h"]}</SelectItem>
-                <SelectItem value="24h">{timeRangeOptions["24h"]}</SelectItem>
-                <SelectItem value="7d">{timeRangeOptions["7d"]}</SelectItem>
-                <SelectItem value="custom">
-                  {timeRangeOptions.custom}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {timeRangePreset === "custom" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="datetime-local"
-                className="h-8 w-[160px] text-xs"
-                value={customStart}
-                onChange={(event) =>
-                  handleCustomStartChange(event.target.value)
-                }
-                aria-label={t("logs.timeRangeStart")}
-              />
-              <span className="text-xs text-muted-foreground">→</span>
-              <Input
-                type="datetime-local"
-                className="h-8 w-[160px] text-xs"
-                value={customEnd}
-                onChange={(event) => handleCustomEndChange(event.target.value)}
-                aria-label={t("logs.timeRangeEnd")}
-              />
+      <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
+        <CollapsibleContent>
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-dashed">
+            {/* Time range */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground shrink-0">
+                {t("logs.timeRange")}:
+              </span>
+              <Select value={timeRangePreset} onValueChange={handlePresetChange}>
+                <SelectTrigger className="h-8 w-[120px]" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{timeRangeOptions.all}</SelectItem>
+                  <SelectItem value="1h">{timeRangeOptions["1h"]}</SelectItem>
+                  <SelectItem value="24h">{timeRangeOptions["24h"]}</SelectItem>
+                  <SelectItem value="7d">{timeRangeOptions["7d"]}</SelectItem>
+                  <SelectItem value="custom">
+                    {timeRangeOptions.custom}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          )}
 
-          <Separator orientation="vertical" className="h-5 hidden sm:block" />
-
-          {/* Regex toggle */}
-          <div className="flex items-center gap-2">
-            <Switch
-              id="regex-toggle"
-              checked={Boolean(filter.useRegex)}
-              onCheckedChange={handleRegexToggle}
-            />
-            <Label
-              htmlFor="regex-toggle"
-              className="text-xs text-muted-foreground cursor-pointer"
-            >
-              {t("logs.regex")}
-            </Label>
-          </div>
-
-          {showMaxLogs && (
-            <>
-              <Separator
-                orientation="vertical"
-                className="h-5 hidden sm:block"
-              />
-              <div className="flex items-center gap-2">
-                <Label
-                  htmlFor="max-logs"
-                  className="text-xs text-muted-foreground shrink-0"
-                >
-                  {t("logs.maxLogs")}:
-                </Label>
+            {timeRangePreset === "custom" && (
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
-                  id="max-logs"
-                  type="number"
-                  min={100}
-                  step={100}
-                  value={maxLogs}
-                  onChange={(event) => handleMaxLogsChange(event.target.value)}
-                  className="h-8 w-24"
+                  type="datetime-local"
+                  className="h-8 w-[160px] text-xs"
+                  value={customStart}
+                  onChange={(event) =>
+                    handleCustomStartChange(event.target.value)
+                  }
+                  aria-label={t("logs.timeRangeStart")}
+                />
+                <span className="text-xs text-muted-foreground">→</span>
+                <Input
+                  type="datetime-local"
+                  className="h-8 w-[160px] text-xs"
+                  value={customEnd}
+                  onChange={(event) => handleCustomEndChange(event.target.value)}
+                  aria-label={t("logs.timeRangeEnd")}
                 />
               </div>
-            </>
-          )}
-        </div>
-      )}
+            )}
+
+            <Separator orientation="vertical" className="h-5 hidden sm:block" />
+
+            {/* Regex toggle */}
+            <div className="flex items-center gap-2">
+              <Switch
+                id="regex-toggle"
+                checked={Boolean(filter.useRegex)}
+                onCheckedChange={handleRegexToggle}
+              />
+              <Label
+                htmlFor="regex-toggle"
+                className="text-xs text-muted-foreground cursor-pointer"
+              >
+                {t("logs.regex")}
+              </Label>
+            </div>
+
+            {showMaxLogs && (
+              <>
+                <Separator
+                  orientation="vertical"
+                  className="h-5 hidden sm:block"
+                />
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="max-logs"
+                    className="text-xs text-muted-foreground shrink-0"
+                  >
+                    {t("logs.maxLogs")}:
+                  </Label>
+                  <Input
+                    id="max-logs"
+                    type="number"
+                    min={100}
+                    step={100}
+                    value={maxLogs}
+                    onChange={(event) => handleMaxLogsChange(event.target.value)}
+                    className="h-8 w-24"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { FileText, Calendar, Tag } from "lucide-react";
 import type { ChangelogEntry } from "@/lib/constants/about";
 
@@ -70,9 +71,10 @@ export function ChangelogDialog({
 
         <ScrollArea className="h-[50vh] pr-4">
           <div className="space-y-6">
-            {entries.map((entry) => (
+            {entries.map((entry, entryIndex) => (
               <article key={entry.version} className="space-y-3">
-                <header className="flex items-center gap-3 pb-2 border-b">
+                {entryIndex > 0 && <Separator className="mb-3" />}
+                <header className="flex items-center gap-3 pb-2">
                   <div className="flex items-center gap-1.5">
                     <Tag
                       className="h-4 w-4 text-muted-foreground"

@@ -1,6 +1,8 @@
 'use client';
 
 import { Palette, Sun, Moon, Monitor, Check } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 
 interface ThemeStepProps {
   theme: string | undefined;
@@ -26,20 +28,25 @@ export function ThemeStep({ theme, setTheme, t }: ThemeStepProps) {
           {t('onboarding.themeDesc')}
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-4 w-full max-w-md">
+      <RadioGroup
+        value={theme}
+        onValueChange={(v) => setTheme(v)}
+        className="grid grid-cols-3 gap-4 w-full max-w-md"
+      >
         {THEMES.map((item) => {
           const Icon = item.icon;
           const isActive = theme === item.value;
           return (
-            <button
+            <Label
               key={item.value}
-              onClick={() => setTheme(item.value)}
-              className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all ${
+              htmlFor={`theme-${item.value}`}
+              className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all cursor-pointer font-normal ${
                 isActive
                   ? 'border-primary bg-primary/5 shadow-sm'
                   : 'border-transparent bg-muted/30 hover:bg-muted/50'
               }`}
             >
+              <RadioGroupItem value={item.value} id={`theme-${item.value}`} className="sr-only" />
               {isActive && (
                 <div className="absolute top-2 right-2">
                   <Check className="h-4 w-4 text-primary" />
@@ -51,10 +58,10 @@ export function ThemeStep({ theme, setTheme, t }: ThemeStepProps) {
               <span className="text-sm font-medium">
                 {t(`onboarding.theme${item.value.charAt(0).toUpperCase() + item.value.slice(1)}`)}
               </span>
-            </button>
+            </Label>
           );
         })}
-      </div>
+      </RadioGroup>
     </div>
   );
 }

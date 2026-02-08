@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LogEntry } from "./log-entry";
 import { LogToolbar } from "./log-toolbar";
@@ -62,7 +63,7 @@ export function LogPanel({
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-lg border bg-card ${className}`}
+      className={cn("flex flex-col overflow-hidden rounded-lg border bg-card", className)}
       style={{ maxHeight }}
     >
       {showToolbar && <LogToolbar />}

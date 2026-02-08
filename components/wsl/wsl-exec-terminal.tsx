@@ -12,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroStatus, WslExecResult } from '@/types/tauri';
@@ -163,43 +165,50 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
         )}
 
         {history.length > 0 && (
-          <div
-            ref={outputRef}
-            className="max-h-64 overflow-y-auto rounded-md border bg-muted/30 p-2 space-y-2"
-          >
-            {history.map((entry, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span className="font-medium">{entry.distro}</span>
-                  <span>$</span>
-                  <span className="font-mono flex-1 truncate">{entry.command}</span>
-                  {entry.result.exitCode === 0 ? (
-                    <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                  ) : (
-                    <XCircle className="h-3 w-3 text-destructive shrink-0" />
+          <ScrollArea className="max-h-64">
+            <div
+              ref={outputRef}
+              className="rounded-md border bg-muted/30 p-2 space-y-2"
+            >
+              {history.map((entry, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                    <span className="font-medium">{entry.distro}</span>
+                    <span>$</span>
+                    <span className="font-mono flex-1 truncate">{entry.command}</span>
+                    {entry.result.exitCode === 0 ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                    ) : (
+                      <XCircle className="h-3 w-3 text-destructive shrink-0" />
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 shrink-0"
+                          onClick={() => handleCopy(entry.result.stdout || entry.result.stderr)}
+                        >
+                          <Copy className="h-2.5 w-2.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.copy')}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  {entry.result.stdout && (
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">
+                      {entry.result.stdout}
+                    </pre>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 shrink-0"
-                    onClick={() => handleCopy(entry.result.stdout || entry.result.stderr)}
-                  >
-                    <Copy className="h-2.5 w-2.5" />
-                  </Button>
+                  {entry.result.stderr && (
+                    <pre className="text-xs font-mono whitespace-pre-wrap break-all text-destructive">
+                      {entry.result.stderr}
+                    </pre>
+                  )}
                 </div>
-                {entry.result.stdout && (
-                  <pre className="text-xs font-mono whitespace-pre-wrap break-all text-foreground">
-                    {entry.result.stdout}
-                  </pre>
-                )}
-                {entry.result.stderr && (
-                  <pre className="text-xs font-mono whitespace-pre-wrap break-all text-destructive">
-                    {entry.result.stderr}
-                  </pre>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>

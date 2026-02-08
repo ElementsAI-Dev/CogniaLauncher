@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   GitBranch,
   Loader2,
@@ -140,32 +141,34 @@ export function PackageDependencyView({
 
             {/* Dependency list */}
             {resolution.tree.length > 0 && (
-              <div className="space-y-1 border rounded-lg p-3">
-                {resolution.tree.map((node, i) => (
-                  <div
-                    key={`${node.name}-${i}`}
-                    className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50"
-                  >
-                    <Package className={`h-4 w-4 ${node.is_conflict ? 'text-destructive' : 'text-muted-foreground'}`} />
-                    <span className={`font-medium text-sm ${node.is_conflict ? 'text-destructive' : ''}`}>
-                      {node.name}
-                    </span>
-                    <Badge variant="secondary" className="text-xs">{node.version}</Badge>
-                    {node.provider && <Badge variant="outline" className="text-xs">{node.provider}</Badge>}
-                    {node.is_installed ? (
-                      <Check className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <Badge variant="default" className="text-xs">{t('packages.toInstall')}</Badge>
-                    )}
-                    {node.is_conflict && (
-                      <Badge variant="destructive" className="gap-1 text-xs">
-                        <AlertTriangle className="h-3 w-3" />
-                        {t('packages.conflict')}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <ScrollArea className="max-h-[400px]">
+                <div className="space-y-1 border rounded-lg p-3">
+                  {resolution.tree.map((node, i) => (
+                    <div
+                      key={`${node.name}-${i}`}
+                      className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50"
+                    >
+                      <Package className={`h-4 w-4 ${node.is_conflict ? 'text-destructive' : 'text-muted-foreground'}`} />
+                      <span className={`font-medium text-sm ${node.is_conflict ? 'text-destructive' : ''}`}>
+                        {node.name}
+                      </span>
+                      <Badge variant="secondary" className="text-xs">{node.version}</Badge>
+                      {node.provider && <Badge variant="outline" className="text-xs">{node.provider}</Badge>}
+                      {node.is_installed ? (
+                        <Check className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Badge variant="default" className="text-xs">{t('packages.toInstall')}</Badge>
+                      )}
+                      {node.is_conflict && (
+                        <Badge variant="destructive" className="gap-1 text-xs">
+                          <AlertTriangle className="h-3 w-3" />
+                          {t('packages.conflict')}
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
 
             {/* Install order */}

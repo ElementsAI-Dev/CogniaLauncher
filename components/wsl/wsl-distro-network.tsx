@@ -6,6 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Network,
   RefreshCw,
@@ -224,9 +233,14 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-mono">{info.hostname || '—'}</span>
                   {info.hostname && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.hostname)}>
-                      <Copy className="h-2.5 w-2.5" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.hostname)}>
+                          <Copy className="h-2.5 w-2.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.copy')}</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               </div>
@@ -240,9 +254,14 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-mono">{info.ipAddress || '—'}</span>
                   {info.ipAddress && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.ipAddress)}>
-                      <Copy className="h-2.5 w-2.5" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => handleCopy(info.ipAddress)}>
+                          <Copy className="h-2.5 w-2.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.copy')}</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
               </div>
@@ -319,24 +338,30 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
           </CardHeader>
           <CardContent>
             <ScrollArea className="max-h-[300px]">
-              <div className="space-y-1">
-                <div className="grid grid-cols-4 gap-2 text-xs font-medium text-muted-foreground px-2 pb-1 border-b">
-                  <span>{t('wsl.detail.portProtocol')}</span>
-                  <span>{t('wsl.detail.portAddress')}</span>
-                  <span>{t('wsl.detail.portNumber')}</span>
-                  <span>{t('wsl.detail.portProcess')}</span>
-                </div>
-                {info.listeningPorts.map((port, i) => (
-                  <div key={i} className="grid grid-cols-4 gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">
-                    <Badge variant="outline" className="text-[10px] w-fit">
-                      {port.protocol}
-                    </Badge>
-                    <span className="font-mono truncate">{port.address || '*'}</span>
-                    <span className="font-mono font-semibold">{port.port}</span>
-                    <span className="text-muted-foreground truncate">{port.process || '—'}</span>
-                  </div>
-                ))}
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('wsl.detail.portProtocol')}</TableHead>
+                    <TableHead>{t('wsl.detail.portAddress')}</TableHead>
+                    <TableHead>{t('wsl.detail.portNumber')}</TableHead>
+                    <TableHead>{t('wsl.detail.portProcess')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {info.listeningPorts.map((port, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px]">
+                          {port.protocol}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{port.address || '*'}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold">{port.port}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground truncate">{port.process || '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </ScrollArea>
           </CardContent>
         </Card>

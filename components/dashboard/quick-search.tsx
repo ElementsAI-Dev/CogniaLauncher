@@ -2,17 +2,24 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Search,
-  X,
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
   Layers,
   Package,
   Settings,
   Clock,
   ArrowRight,
+  X,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
@@ -53,14 +60,13 @@ export function QuickSearch({
 }: QuickSearchProps) {
   const router = useRouter();
   const { t } = useLocale();
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [query, setQuery] = useState("");
-  const [isFocused, setIsFocused] = useState(false);
+  const [open, setOpen] = useState(false);
   const [searchHistory, setSearchHistory] =
     useState<string[]>(getInitialHistory);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
 
   const quickActions: SearchResult[] = useMemo(
     () => [
@@ -89,59 +95,56 @@ export function QuickSearch({
     [t],
   );
 
-  const searchResults = useMemo((): SearchResult[] => {
+  const envResults = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
-
     const lowerQuery = query.toLowerCase();
-    const results: SearchResult[] = [];
-
-    // Search environments
-    environments
+    return environments
       .filter(
         (env) =>
           env.env_type.toLowerCase().includes(lowerQuery) ||
           env.provider.toLowerCase().includes(lowerQuery),
       )
       .slice(0, 3)
-      .forEach((env) => {
-        results.push({
-          type: "environment",
-          id: `env-${env.env_type}`,
-          title: env.env_type,
-          subtitle: `${env.provider} • ${env.current_version || t("common.none")}`,
-          icon: <Layers className="h-4 w-4" />,
-          href: "/environments",
-        });
-      });
+      .map((env) => ({
+        type: "environment" as const,
+        id: `env-${env.env_type}`,
+        title: env.env_type,
+        subtitle: `${env.provider} • ${env.current_version || t("common.none")}`,
+        icon: <Layers className="h-4 w-4" />,
+        href: "/environments",
+      }));
+  }, [query, environments, t]);
 
-    // Search packages
-    packages
+  const pkgResults = useMemo((): SearchResult[] => {
+    if (!query.trim()) return [];
+    const lowerQuery = query.toLowerCase();
+    return packages
       .filter(
         (pkg) =>
           pkg.name.toLowerCase().includes(lowerQuery) ||
           pkg.provider.toLowerCase().includes(lowerQuery),
       )
       .slice(0, 3)
-      .forEach((pkg) => {
-        results.push({
-          type: "package",
-          id: `pkg-${pkg.provider}-${pkg.name}`,
-          title: pkg.name,
-          subtitle: `${pkg.provider} • ${pkg.version}`,
-          icon: <Package className="h-4 w-4" />,
-          href: "/packages",
-        });
-      });
+      .map((pkg) => ({
+        type: "package" as const,
+        id: `pkg-${pkg.provider}-${pkg.name}`,
+        title: pkg.name,
+        subtitle: `${pkg.provider} • ${pkg.version}`,
+        icon: <Package className="h-4 w-4" />,
+        href: "/packages",
+      }));
+  }, [query, packages]);
 
-    // Search quick actions
-    quickActions
-      .filter((action) => action.title.toLowerCase().includes(lowerQuery))
-      .forEach((action) => results.push(action));
+  const actionResults = useMemo((): SearchResult[] => {
+    if (!query.trim()) return [];
+    const lowerQuery = query.toLowerCase();
+    return quickActions.filter((action) =>
+      action.title.toLowerCase().includes(lowerQuery),
+    );
+  }, [query, quickActions]);
 
-    return results;
-  }, [query, environments, packages, quickActions, t]);
-
-  const showDropdown = isFocused && (query.trim() || searchHistory.length > 0);
+  const hasResults = envResults.length > 0 || pkgResults.length > 0 || actionResults.length > 0;
+  const showDropdown = open && (query.trim() || searchHistory.length > 0);
 
   const saveToHistory = useCallback((searchQuery: string) => {
     if (!searchQuery.trim()) return;
@@ -172,42 +175,9 @@ export function QuickSearch({
       }
 
       setQuery("");
-      setIsFocused(false);
-      inputRef.current?.blur();
+      setOpen(false);
     },
     [query, router, saveToHistory],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      const results = searchResults.length > 0 ? searchResults : quickActions;
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < results.length - 1 ? prev + 1 : 0,
-          );
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev > 0 ? prev - 1 : results.length - 1,
-          );
-          break;
-        case "Enter":
-          e.preventDefault();
-          if (selectedIndex >= 0 && selectedIndex < results.length) {
-            handleSelect(results[selectedIndex]);
-          }
-          break;
-        case "Escape":
-          setIsFocused(false);
-          inputRef.current?.blur();
-          break;
-      }
-    },
-    [searchResults, quickActions, selectedIndex, handleSelect],
   );
 
   // Global keyboard shortcut
@@ -218,6 +188,7 @@ export function QuickSearch({
         if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
           e.preventDefault();
           inputRef.current?.focus();
+          setOpen(true);
         }
       }
     };
@@ -230,10 +201,10 @@ export function QuickSearch({
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
       ) {
-        setIsFocused(false);
+        setOpen(false);
       }
     };
 
@@ -242,117 +213,127 @@ export function QuickSearch({
   }, []);
 
   return (
-    <div className={cn("relative", className)} ref={dropdownRef}>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          ref={inputRef}
-          type="search"
-          placeholder={t("dashboard.quickSearch.placeholder")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setIsFocused(true)}
-          onKeyDown={handleKeyDown}
-          className="h-10 pl-9 pr-20 bg-background"
-        />
-        {query ? (
-          <button
-            onClick={() => setQuery("")}
-            className="absolute right-12 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            aria-label={t("common.clear")}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        ) : null}
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-muted-foreground">
-          <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">
-            /
-          </kbd>
+    <div className={cn("relative", className)} ref={containerRef}>
+      <Command
+        className="rounded-lg border bg-background shadow-none"
+      >
+        <div className="relative">
+          <CommandInput
+            ref={inputRef}
+            placeholder={t("dashboard.quickSearch.placeholder")}
+            value={query}
+            onValueChange={setQuery}
+            onFocus={() => setOpen(true)}
+            className="h-10"
+          />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {query && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5"
+                onClick={() => setQuery("")}
+                aria-label={t("common.clear")}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              /
+            </kbd>
+          </div>
         </div>
-      </div>
 
-      {showDropdown && (
-        <div className="absolute top-full left-0 right-0 mt-2 z-50 rounded-lg border bg-popover shadow-lg">
-          <ScrollArea className="max-h-[320px]">
-            {searchResults.length > 0 ? (
-              <div className="p-2">
-                {/* Environment Results */}
-                {searchResults.filter((r) => r.type === "environment").length >
-                  0 && (
-                  <div className="mb-2">
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                      {t("dashboard.quickSearch.environments")}
-                    </div>
-                    {searchResults
-                      .filter((r) => r.type === "environment")
-                      .map((result) => (
-                        <SearchResultItem
-                          key={result.id}
-                          result={result}
-                          isSelected={
-                            selectedIndex === searchResults.indexOf(result)
-                          }
-                          onClick={() => handleSelect(result)}
-                        />
-                      ))}
-                  </div>
+        {showDropdown && (
+          <CommandList className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border bg-popover shadow-lg max-h-[320px]">
+            {query.trim() ? (
+              <>
+                {!hasResults && (
+                  <CommandEmpty>
+                    {t("dashboard.quickSearch.noResults")}
+                  </CommandEmpty>
                 )}
 
-                {/* Package Results */}
-                {searchResults.filter((r) => r.type === "package").length >
-                  0 && (
-                  <div className="mb-2">
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                      {t("dashboard.quickSearch.packages")}
-                    </div>
-                    {searchResults
-                      .filter((r) => r.type === "package")
-                      .map((result) => (
-                        <SearchResultItem
-                          key={result.id}
-                          result={result}
-                          isSelected={
-                            selectedIndex === searchResults.indexOf(result)
-                          }
-                          onClick={() => handleSelect(result)}
-                        />
-                      ))}
-                  </div>
+                {envResults.length > 0 && (
+                  <CommandGroup heading={t("dashboard.quickSearch.environments")}>
+                    {envResults.map((result) => (
+                      <CommandItem
+                        key={result.id}
+                        value={result.id}
+                        onSelect={() => handleSelect(result)}
+                        className="gap-3"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          {result.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{result.title}</div>
+                          {result.subtitle && (
+                            <div className="text-xs text-muted-foreground">
+                              {result.subtitle}
+                            </div>
+                          )}
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
                 )}
 
-                {/* Action Results */}
-                {searchResults.filter((r) => r.type === "action").length >
-                  0 && (
-                  <div>
-                    <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                      {t("dashboard.quickSearch.actions")}
-                    </div>
-                    {searchResults
-                      .filter((r) => r.type === "action")
-                      .map((result) => (
-                        <SearchResultItem
-                          key={result.id}
-                          result={result}
-                          isSelected={
-                            selectedIndex === searchResults.indexOf(result)
-                          }
-                          onClick={() => handleSelect(result)}
-                        />
-                      ))}
-                  </div>
+                {pkgResults.length > 0 && (
+                  <CommandGroup heading={t("dashboard.quickSearch.packages")}>
+                    {pkgResults.map((result) => (
+                      <CommandItem
+                        key={result.id}
+                        value={result.id}
+                        onSelect={() => handleSelect(result)}
+                        className="gap-3"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          {result.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{result.title}</div>
+                          {result.subtitle && (
+                            <div className="text-xs text-muted-foreground">
+                              {result.subtitle}
+                            </div>
+                          )}
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
                 )}
-              </div>
-            ) : query.trim() ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                {t("dashboard.quickSearch.noResults")}
-              </div>
+
+                {actionResults.length > 0 && (
+                  <CommandGroup heading={t("dashboard.quickSearch.actions")}>
+                    {actionResults.map((result) => (
+                      <CommandItem
+                        key={result.id}
+                        value={result.id}
+                        onSelect={() => handleSelect(result)}
+                        className="gap-3"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          {result.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{result.title}</div>
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </>
             ) : (
-              <div className="p-2">
+              <>
                 {/* Recent Searches */}
                 {searchHistory.length > 0 && (
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between px-2 py-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
+                  <>
+                    <div className="flex items-center justify-between px-2 pt-3 pb-1.5">
+                      <span className="text-xs font-medium text-muted-foreground tracking-wide">
                         {t("dashboard.quickSearch.recentSearches")}
                       </span>
                       <button
@@ -362,71 +343,47 @@ export function QuickSearch({
                         {t("dashboard.quickSearch.clearRecent")}
                       </button>
                     </div>
-                    {searchHistory.map((term) => (
-                      <button
-                        key={term}
-                        onClick={() => setQuery(term)}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                      >
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        {term}
-                      </button>
-                    ))}
-                  </div>
+                    <CommandGroup>
+                      {searchHistory.map((term) => (
+                        <CommandItem
+                          key={term}
+                          value={`history-${term}`}
+                          onSelect={() => setQuery(term)}
+                          className="gap-2"
+                        >
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          {term}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </>
                 )}
 
                 {/* Quick Actions */}
-                <div>
-                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                    {t("dashboard.quickSearch.actions")}
-                  </div>
-                  {quickActions.map((action, index) => (
-                    <SearchResultItem
+                <CommandGroup heading={t("dashboard.quickSearch.actions")}>
+                  {quickActions.map((action) => (
+                    <CommandItem
                       key={action.id}
-                      result={action}
-                      isSelected={selectedIndex === index}
-                      onClick={() => handleSelect(action)}
-                    />
+                      value={action.id}
+                      onSelect={() => handleSelect(action)}
+                      className="gap-3"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                        {action.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium">{action.title}</div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </CommandItem>
                   ))}
-                </div>
-              </div>
+                </CommandGroup>
+              </>
             )}
-          </ScrollArea>
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface SearchResultItemProps {
-  result: SearchResult;
-  isSelected: boolean;
-  onClick: () => void;
-}
-
-function SearchResultItem({
-  result,
-  isSelected,
-  onClick,
-}: SearchResultItemProps) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
-        isSelected ? "bg-accent" : "hover:bg-accent",
-      )}
-    >
-      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-        {result.icon}
-      </div>
-      <div className="flex-1 text-left">
-        <div className="font-medium">{result.title}</div>
-        {result.subtitle && (
-          <div className="text-xs text-muted-foreground">{result.subtitle}</div>
+          </CommandList>
         )}
-      </div>
-      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-    </button>
+      </Command>
+    </div>
   );
 }

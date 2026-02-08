@@ -1,7 +1,10 @@
 'use client';
 
-import { Server, Check } from 'lucide-react';
+import { Server, Check, Info } from 'lucide-react';
 import { useState } from 'react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface MirrorsStepProps {
   t: (key: string) => string;
@@ -41,17 +44,22 @@ export function MirrorsStep({ t }: MirrorsStepProps) {
           {t('onboarding.mirrorsDesc')}
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
+      <RadioGroup
+        value={preset}
+        onValueChange={(v) => setPreset(v as MirrorPreset)}
+        className="grid grid-cols-1 gap-3 w-full max-w-sm"
+      >
         {MIRROR_PRESETS.map((item) => (
-          <button
+          <Label
             key={item.value}
-            onClick={() => setPreset(item.value)}
-            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left ${
+            htmlFor={`mirror-${item.value}`}
+            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal ${
               preset === item.value
                 ? 'border-primary bg-primary/5 shadow-sm'
                 : 'border-transparent bg-muted/30 hover:bg-muted/50'
             }`}
           >
+            <RadioGroupItem value={item.value} id={`mirror-${item.value}`} className="sr-only" />
             <div className="flex-1 min-w-0">
               <div className="font-medium text-sm">{t(item.labelKey)}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{t(item.descKey)}</div>
@@ -59,12 +67,15 @@ export function MirrorsStep({ t }: MirrorsStepProps) {
             {preset === item.value && (
               <Check className="h-5 w-5 text-primary shrink-0" />
             )}
-          </button>
+          </Label>
         ))}
-      </div>
-      <p className="text-xs text-muted-foreground max-w-sm">
-        {t('onboarding.mirrorsHint')}
-      </p>
+      </RadioGroup>
+      <Alert className="max-w-sm">
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-xs">
+          {t('onboarding.mirrorsHint')}
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }

@@ -2,8 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
+import {
+  Breadcrumb as BreadcrumbRoot,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 
 const NAV_LABELS: Record<string, string> = {
   "": "nav.dashboard",
@@ -31,29 +38,24 @@ export function Breadcrumb() {
   });
 
   return (
-    <nav aria-label={t("breadcrumbs.label")}>
-      <ol className="flex items-center gap-1 text-sm text-muted-foreground">
+    <BreadcrumbRoot>
+      <BreadcrumbList>
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           return (
-            <li key={item.href} className="flex items-center gap-1">
-              {index > 0 ? <ChevronRight className="h-3.5 w-3.5" /> : null}
+            <BreadcrumbItem key={item.href}>
+              {index > 0 && <BreadcrumbSeparator />}
               {isLast ? (
-                <span className="font-medium text-foreground">
-                  {item.label}
-                </span>
+                <BreadcrumbPage>{item.label}</BreadcrumbPage>
               ) : (
-                <Link
-                  href={item.href}
-                  className="transition-colors hover:text-foreground"
-                >
-                  {item.label}
-                </Link>
+                <BreadcrumbLink asChild>
+                  <Link href={item.href}>{item.label}</Link>
+                </BreadcrumbLink>
               )}
-            </li>
+            </BreadcrumbItem>
           );
         })}
-      </ol>
-    </nav>
+      </BreadcrumbList>
+    </BreadcrumbRoot>
   );
 }

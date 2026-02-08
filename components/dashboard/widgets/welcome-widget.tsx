@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   Layers,
@@ -9,7 +10,9 @@ import {
   Settings,
   ArrowRight,
   Sparkles,
+  CheckCircle2,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface WelcomeWidgetProps {
   hasEnvironments: boolean;
@@ -52,29 +55,27 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
   ];
 
   const completedCount = steps.filter((s) => s.done).length;
+  const progressPercent = Math.round((completedCount / steps.length) * 100);
 
   return (
     <Card className={className}>
-      <CardContent className="p-5">
-        <div className="flex items-center gap-3 mb-4">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-base">{t('dashboard.widgets.welcomeTitle')}</h3>
-            <p className="text-xs text-muted-foreground">
+            <CardTitle className="text-base font-semibold">
+              {t('dashboard.widgets.welcomeTitle')}
+            </CardTitle>
+            <CardDescription>
               {t('dashboard.widgets.welcomeProgress', { done: completedCount, total: steps.length })}
-            </p>
+            </CardDescription>
           </div>
         </div>
-
-        {/* Progress bar */}
-        <div className="h-1.5 rounded-full bg-muted mb-4 overflow-hidden">
-          <div
-            className="h-full rounded-full bg-primary transition-all duration-500"
-            style={{ width: `${(completedCount / steps.length) * 100}%` }}
-          />
-        </div>
+      </CardHeader>
+      <CardContent>
+        <Progress value={progressPercent} className="h-1.5 mb-4" />
 
         <div className="space-y-2">
           {steps.map((step) => {
@@ -85,16 +86,24 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
                 onClick={() => router.push(step.href)}
                 className="flex w-full items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 text-left"
               >
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${step.done ? 'bg-green-100 text-green-600 dark:bg-green-950/50' : 'bg-muted text-muted-foreground'}`}>
+                <div className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+                  step.done
+                    ? 'bg-green-100 text-green-600 dark:bg-green-950/50'
+                    : 'bg-muted text-muted-foreground',
+                )}>
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium ${step.done ? 'line-through text-muted-foreground' : ''}`}>
+                    <span className={cn(
+                      'text-sm font-medium',
+                      step.done && 'line-through text-muted-foreground',
+                    )}>
                       {step.title}
                     </span>
                     {step.done && (
-                      <span className="text-green-600 text-xs">✓</span>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-1">{step.description}</p>

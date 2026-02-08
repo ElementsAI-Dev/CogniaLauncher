@@ -2,6 +2,19 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem as SelectOptionItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface ValidationRule {
@@ -120,11 +133,17 @@ export function SettingItem({
         <Label htmlFor={id} className="font-medium flex items-center gap-2">
           {label}
           {isModified && (
-            <span
-              className="h-2 w-2 rounded-full bg-amber-500"
-              title={modifiedLabel}
-              aria-label={modifiedLabel}
-            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="h-2 w-2 rounded-full bg-amber-500"
+                  aria-label={modifiedLabel}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {modifiedLabel}
+              </TooltipContent>
+            </Tooltip>
           )}
         </Label>
         <p id={descId} className="text-sm text-muted-foreground">
@@ -157,6 +176,124 @@ export function SettingItem({
           isModified && "border-amber-500",
         )}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SwitchSettingItem — reusable Switch + Label + description row
+// ---------------------------------------------------------------------------
+
+export interface SwitchSettingItemProps {
+  id: string;
+  label: string;
+  description: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  highlightMatch?: boolean;
+}
+
+export function SwitchSettingItem({
+  id,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled = false,
+  highlightMatch = false,
+}: SwitchSettingItemProps) {
+  const descId = `${id}-desc`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between py-2 rounded-md transition-colors",
+        highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
+      )}
+    >
+      <div className="space-y-0.5 flex-1 mr-4">
+        <Label htmlFor={id}>{label}</Label>
+        <p id={descId} className="text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <Switch
+        id={id}
+        aria-describedby={descId}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SelectSettingItem — reusable Select + Label + description row
+// ---------------------------------------------------------------------------
+
+export interface SelectSettingItemOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectSettingItemProps {
+  id: string;
+  label: string;
+  description: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: SelectSettingItemOption[];
+  placeholder?: string;
+  disabled?: boolean;
+  triggerClassName?: string;
+  highlightMatch?: boolean;
+}
+
+export function SelectSettingItem({
+  id,
+  label,
+  description,
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+  triggerClassName,
+  highlightMatch = false,
+}: SelectSettingItemProps) {
+  const descId = `${id}-desc`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between py-2 rounded-md transition-colors",
+        highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
+      )}
+    >
+      <div className="space-y-0.5 flex-1 mr-4">
+        <Label htmlFor={id}>{label}</Label>
+        <p id={descId} className="text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+        <SelectTrigger
+          id={id}
+          className={cn("w-48", triggerClassName)}
+          aria-describedby={descId}
+        >
+          <SelectValue placeholder={placeholder || label} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectOptionItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectOptionItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

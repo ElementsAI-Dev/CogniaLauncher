@@ -9,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Info } from "lucide-react";
 import { SettingItem } from "./setting-item";
 
 interface ProviderSettingsProps {
@@ -56,7 +58,7 @@ export function ProviderSettings({
         <CardTitle>{t("settings.providerSettings")}</CardTitle>
         <CardDescription>{t("settings.providerSettingsDesc")}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-1">
+      <CardContent className="space-y-3">
         <SettingItem
           id="disabled-providers"
           label={t("settings.disabledProviders")}
@@ -69,9 +71,12 @@ export function ProviderSettings({
           error={errors["provider_settings.disabled_providers"]}
         />
         <Separator />
-        <p className="text-sm text-muted-foreground">
-          {t("settings.disabledProvidersHint")}
-        </p>
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            {t("settings.disabledProvidersHint")}
+          </AlertDescription>
+        </Alert>
       </CardContent>
     </Card>
   );

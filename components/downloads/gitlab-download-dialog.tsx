@@ -5,33 +5,36 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useGitLabDownloads } from "@/hooks/use-gitlab-downloads";
 import { isTauri } from "@/lib/tauri";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { RepoValidationInput } from "./repo-validation-input";
+import { DestinationPicker } from "./destination-picker";
+import { RefListSelector, type RefItem } from "./ref-list-selector";
 import {
-  Search,
-  CheckCircle2,
-  XCircle,
+  ArchiveFormatSelector,
+  type ArchiveFormat,
+} from "./archive-format-selector";
+import {
   Loader2,
   Download,
   Tag,
   GitBranch,
   Package,
-  FolderOpen,
   AlertCircle,
   FileArchive,
   Calendar,
@@ -87,6 +90,15 @@ export function GitLabDownloadDialog({
     useState<GitLabArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
 
+  const GITLAB_ARCHIVE_FORMATS: ArchiveFormat[] = useMemo(
+    () => [
+      { value: "zip", label: "ZIP" },
+      { value: "tar.gz", label: "TAR.GZ" },
+      { value: "tar.bz2", label: "TAR.BZ2" },
+    ],
+    [],
+  );
+
   const currentRelease = useMemo(() => {
     return releases.find((r) => r.tagName === selectedRelease);
   }, [releases, selectedRelease]);
@@ -104,23 +116,6 @@ export function GitLabDownloadDialog({
   const handleValidate = useCallback(async () => {
     await validateAndFetch();
   }, [validateAndFetch]);
-
-  const handlePickFolder = useCallback(async () => {
-    if (!isDesktop) return;
-    try {
-      const dialogModule = await import("@tauri-apps/plugin-dialog");
-      const selected = await dialogModule.open({
-        directory: true,
-        multiple: false,
-      });
-      if (selected && typeof selected === "string") {
-        setDestination(selected);
-      }
-    } catch (err) {
-      console.error("Failed to open folder picker:", err);
-      toast.error(t("downloads.gitlab.folderPickerError"));
-    }
-  }, [isDesktop, t]);
 
   const handleAssetToggle = useCallback((asset: GitLabAssetInfo) => {
     setSelectedAssets((prev) => {
@@ -211,50 +206,32 @@ export function GitLabDownloadDialog({
 
         <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
           {/* Project Input */}
-          <div className="space-y-2">
-            <Label>{t("downloads.gitlab.project")}</Label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  placeholder={t("downloads.gitlab.projectPlaceholder")}
-                  value={projectInput}
-                  onChange={(e) => setProjectInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleValidate()}
-                  className="pr-10"
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  {isValidating ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : isValid === true ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : isValid === false ? (
-                    <XCircle className="h-4 w-4 text-destructive" />
-                  ) : null}
-                </div>
-              </div>
-              <Button
-                onClick={handleValidate}
-                disabled={isValidating || !projectInput.trim()}
-              >
-                <Search className="h-4 w-4 mr-2" />
-                {t("downloads.gitlab.fetch")}
-              </Button>
-            </div>
-            {parsedProject && isValid && (
-              <div className="text-sm text-muted-foreground">
-                <span>
-                  {t("downloads.gitlab.projectValid")}:{" "}
-                  <code>{parsedProject.fullName}</code>
-                </span>
-                {projectInfo && (
-                  <span className="ml-2 inline-flex items-center gap-1">
-                    <Star className="h-3 w-3" />
-                    {projectInfo.starCount}
+          <RepoValidationInput
+            value={projectInput}
+            onChange={setProjectInput}
+            onValidate={handleValidate}
+            isValidating={isValidating}
+            isValid={isValid}
+            placeholder={t("downloads.gitlab.projectPlaceholder")}
+            label={t("downloads.gitlab.project")}
+            fetchLabel={t("downloads.gitlab.fetch")}
+            validMessage={
+              parsedProject && isValid ? (
+                <div className="text-sm text-muted-foreground">
+                  <span>
+                    {t("downloads.gitlab.projectValid")}:{" "}
+                    <code>{parsedProject.fullName}</code>
                   </span>
-                )}
-              </div>
-            )}
-          </div>
+                  {projectInfo && (
+                    <span className="ml-2 inline-flex items-center gap-1">
+                      <Star className="h-3 w-3" />
+                      {projectInfo.starCount}
+                    </span>
+                  )}
+                </div>
+              ) : undefined
+            }
+          />
 
           {error && (
             <Alert variant="destructive">
@@ -377,35 +354,43 @@ export function GitLabDownloadDialog({
                         <Label>{t("downloads.gitlab.selectAssets")}</Label>
                         <ScrollArea className="h-[140px] border rounded-md mt-2">
                           <div className="p-2 space-y-1">
-                            {currentRelease.assets.map((asset) => (
-                              <div
-                                key={asset.id}
-                                className={cn(
-                                  "flex items-center justify-between p-2 rounded cursor-pointer transition-colors",
-                                  selectedAssets.find(
-                                    (a) => a.id === asset.id,
-                                  )
-                                    ? "bg-primary/10 border border-primary"
-                                    : "hover:bg-muted",
-                                )}
-                                onClick={() => handleAssetToggle(asset)}
-                              >
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                                  <span className="text-sm font-mono truncate">
-                                    {asset.name}
-                                  </span>
-                                </div>
-                                {asset.linkType && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs ml-2"
-                                  >
-                                    {asset.linkType}
-                                  </Badge>
-                                )}
-                              </div>
-                            ))}
+                            {currentRelease.assets.map((asset) => {
+                              const isSelected = !!selectedAssets.find(
+                                (a) => a.id === asset.id,
+                              );
+                              return (
+                                <label
+                                  key={asset.id}
+                                  className={cn(
+                                    "flex items-center gap-2 p-2 rounded cursor-pointer transition-colors",
+                                    isSelected
+                                      ? "bg-primary/10 border border-primary"
+                                      : "hover:bg-muted",
+                                  )}
+                                >
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() =>
+                                      handleAssetToggle(asset)
+                                    }
+                                  />
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <FileArchive className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                    <span className="text-sm font-mono truncate">
+                                      {asset.name}
+                                    </span>
+                                  </div>
+                                  {asset.linkType && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs ml-2"
+                                    >
+                                      {asset.linkType}
+                                    </Badge>
+                                  )}
+                                </label>
+                              );
+                            })}
                           </div>
                         </ScrollArea>
                       </div>
@@ -417,77 +402,46 @@ export function GitLabDownloadDialog({
                     value="branch"
                     className="flex-1 overflow-hidden mt-2"
                   >
-                    <ScrollArea className="h-[200px] border rounded-md">
-                      {branches.length === 0 ? (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("downloads.gitlab.noBranches")}
-                        </div>
-                      ) : (
-                        <RadioGroup
-                          value={selectedBranch || ""}
-                          onValueChange={setSelectedBranch}
-                          className="p-2"
-                        >
-                          {branches.map((branch) => (
-                            <div
-                              key={branch.name}
-                              className="flex items-center space-x-2 p-2 rounded hover:bg-muted"
-                            >
-                              <RadioGroupItem
-                                value={branch.name}
-                                id={`gl-branch-${branch.name}`}
-                              />
-                              <Label
-                                htmlFor={`gl-branch-${branch.name}`}
-                                className="flex-1 cursor-pointer flex items-center justify-between"
-                              >
-                                <span className="font-mono">{branch.name}</span>
-                                <div className="flex gap-1">
-                                  {branch.default && (
-                                    <Badge variant="secondary">
-                                      {t("downloads.gitlab.default")}
-                                    </Badge>
-                                  )}
-                                  {branch.protected && (
-                                    <Badge variant="outline">
-                                      {t("downloads.gitlab.protected")}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </Label>
-                            </div>
-                          ))}
-                        </RadioGroup>
+                    <RefListSelector
+                      items={branches.map(
+                        (branch): RefItem => ({
+                          name: branch.name,
+                          badges: [
+                            ...(branch.default
+                              ? [
+                                  {
+                                    label: t("downloads.gitlab.default"),
+                                    variant: "secondary" as const,
+                                  },
+                                ]
+                              : []),
+                            ...(branch.protected
+                              ? [
+                                  {
+                                    label: t("downloads.gitlab.protected"),
+                                    variant: "outline" as const,
+                                  },
+                                ]
+                              : []),
+                          ],
+                        }),
                       )}
-                    </ScrollArea>
+                      selectedValue={selectedBranch}
+                      onSelect={setSelectedBranch}
+                      emptyMessage={t("downloads.gitlab.noBranches")}
+                      idPrefix="gl-branch"
+                    />
 
                     {selectedBranch && (
-                      <div className="mt-3 flex items-center gap-4">
-                        <Label>{t("downloads.gitlab.format")}:</Label>
-                        <RadioGroup
-                          value={archiveFormat}
-                          onValueChange={(v) =>
-                            setArchiveFormat(v as GitLabArchiveFormat)
-                          }
-                          className="flex gap-4"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="zip" id="gl-format-zip" />
-                            <Label htmlFor="gl-format-zip">ZIP</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="tar.gz" id="gl-format-tar" />
-                            <Label htmlFor="gl-format-tar">TAR.GZ</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem
-                              value="tar.bz2"
-                              id="gl-format-bz2"
-                            />
-                            <Label htmlFor="gl-format-bz2">TAR.BZ2</Label>
-                          </div>
-                        </RadioGroup>
-                      </div>
+                      <ArchiveFormatSelector
+                        format={archiveFormat}
+                        onFormatChange={(v) =>
+                          setArchiveFormat(v as GitLabArchiveFormat)
+                        }
+                        formats={GITLAB_ARCHIVE_FORMATS}
+                        idPrefix="gl-format"
+                        label={t("downloads.gitlab.format")}
+                      />
                     )}
                   </TabsContent>
 
@@ -496,76 +450,36 @@ export function GitLabDownloadDialog({
                     value="tag"
                     className="flex-1 overflow-hidden mt-2"
                   >
-                    <ScrollArea className="h-[200px] border rounded-md">
-                      {tags.length === 0 ? (
-                        <div className="p-4 text-center text-muted-foreground">
-                          {t("downloads.gitlab.noTags")}
-                        </div>
-                      ) : (
-                        <RadioGroup
-                          value={selectedTag || ""}
-                          onValueChange={setSelectedTag}
-                          className="p-2"
-                        >
-                          {tags.map((tag) => (
-                            <div
-                              key={tag.name}
-                              className="flex items-center space-x-2 p-2 rounded hover:bg-muted"
-                            >
-                              <RadioGroupItem
-                                value={tag.name}
-                                id={`gl-tag-${tag.name}`}
-                              />
-                              <Label
-                                htmlFor={`gl-tag-${tag.name}`}
-                                className="flex-1 cursor-pointer flex items-center justify-between"
-                              >
-                                <span className="font-mono">{tag.name}</span>
-                                {tag.protected && (
-                                  <Badge variant="outline">
-                                    {t("downloads.gitlab.protected")}
-                                  </Badge>
-                                )}
-                              </Label>
-                            </div>
-                          ))}
-                        </RadioGroup>
+                    <RefListSelector
+                      items={tags.map(
+                        (tag): RefItem => ({
+                          name: tag.name,
+                          badges: tag.protected
+                            ? [
+                                {
+                                  label: t("downloads.gitlab.protected"),
+                                  variant: "outline",
+                                },
+                              ]
+                            : undefined,
+                        }),
                       )}
-                    </ScrollArea>
+                      selectedValue={selectedTag}
+                      onSelect={setSelectedTag}
+                      emptyMessage={t("downloads.gitlab.noTags")}
+                      idPrefix="gl-tag"
+                    />
 
                     {selectedTag && (
-                      <div className="mt-3 flex items-center gap-4">
-                        <Label>{t("downloads.gitlab.format")}:</Label>
-                        <RadioGroup
-                          value={archiveFormat}
-                          onValueChange={(v) =>
-                            setArchiveFormat(v as GitLabArchiveFormat)
-                          }
-                          className="flex gap-4"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem
-                              value="zip"
-                              id="gl-tag-format-zip"
-                            />
-                            <Label htmlFor="gl-tag-format-zip">ZIP</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem
-                              value="tar.gz"
-                              id="gl-tag-format-tar"
-                            />
-                            <Label htmlFor="gl-tag-format-tar">TAR.GZ</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem
-                              value="tar.bz2"
-                              id="gl-tag-format-bz2"
-                            />
-                            <Label htmlFor="gl-tag-format-bz2">TAR.BZ2</Label>
-                          </div>
-                        </RadioGroup>
-                      </div>
+                      <ArchiveFormatSelector
+                        format={archiveFormat}
+                        onFormatChange={(v) =>
+                          setArchiveFormat(v as GitLabArchiveFormat)
+                        }
+                        formats={GITLAB_ARCHIVE_FORMATS}
+                        idPrefix="gl-tag-format"
+                        label={t("downloads.gitlab.format")}
+                      />
                     )}
                   </TabsContent>
                 </>
@@ -575,27 +489,20 @@ export function GitLabDownloadDialog({
 
           {/* Destination */}
           {isValid && (
-            <div className="space-y-2">
-              <Label>{t("downloads.gitlab.destination")}</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder={t("downloads.gitlab.destinationPlaceholder")}
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  className="flex-1"
-                />
-                {isDesktop && (
-                  <Button variant="outline" onClick={handlePickFolder}>
-                    <FolderOpen className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
+            <DestinationPicker
+              value={destination}
+              onChange={setDestination}
+              placeholder={t("downloads.gitlab.destinationPlaceholder")}
+              label={t("downloads.gitlab.destination")}
+              isDesktop={isDesktop}
+              browseTooltip={t("downloads.browseFolder")}
+              errorMessage={t("downloads.gitlab.folderPickerError")}
+              mode="directory"
+            />
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-4 border-t">
+        <DialogFooter>
           <Button variant="outline" onClick={handleClose}>
             {t("common.cancel")}
           </Button>
@@ -610,7 +517,7 @@ export function GitLabDownloadDialog({
             )}
             {t("downloads.gitlab.addToQueue")}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

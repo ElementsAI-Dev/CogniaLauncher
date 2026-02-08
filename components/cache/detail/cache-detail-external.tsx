@@ -7,8 +7,11 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +42,7 @@ import {
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { ExternalCacheInfo, ExternalCachePathInfo } from '@/lib/tauri';
+import { formatBytes } from '@/lib/utils';
 
 export function CacheDetailExternalView() {
   const { t } = useLocale();
@@ -82,12 +86,6 @@ export function CacheDetailExternalView() {
   const availableCount = caches.filter((c) => c.isAvailable).length;
   const cleanableCount = caches.filter((c) => c.canClean).length;
 
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-  };
 
   // Group caches by category
   const grouped = caches.reduce<Record<string, ExternalCacheInfo[]>>((acc, cache) => {
@@ -149,7 +147,7 @@ export function CacheDetailExternalView() {
       if (successCount === results.length) {
         toast.success(t('cache.externalCleanAllSuccess', {
           count: successCount,
-          size: formatSize(totalFreed),
+          size: formatBytes(totalFreed),
         }));
       } else if (successCount > 0) {
         toast.warning(t('cache.externalCleanAllPartial', {
@@ -218,7 +216,7 @@ export function CacheDetailExternalView() {
               <HardDrive className="h-4 w-4" />
               {t('cache.detail.externalTotalSize')}
             </div>
-            <p className="text-2xl font-bold">{formatSize(totalSize)}</p>
+            <p className="text-2xl font-bold">{formatBytes(totalSize)}</p>
           </CardContent>
         </Card>
 
@@ -245,29 +243,42 @@ export function CacheDetailExternalView() {
 
       {/* Action Bar */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={() => setCleanAllOpen(true)}
-          disabled={cleanableCount === 0 || cleaning !== null}
-        >
-          <Trash2 className="h-4 w-4 mr-2" />
-          {t('cache.cleanAll')}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              onClick={() => setCleanAllOpen(true)}
+              disabled={cleanableCount === 0 || cleaning !== null}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {t('cache.cleanAll')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('cache.cleanAll')}</TooltipContent>
+        </Tooltip>
         <div className="flex-1" />
         <div className="flex items-center gap-2 text-sm">
-          <Switch checked={useTrash} onCheckedChange={setUseTrash} />
-          <span className="text-muted-foreground">{t('cache.useTrash')}</span>
+          <Switch id="detail-external-trash" checked={useTrash} onCheckedChange={setUseTrash} />
+          <Label htmlFor="detail-external-trash" className="text-muted-foreground">{t('cache.useTrash')}</Label>
         </div>
       </div>
 
       {/* Cache List by Category */}
       {loading ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin inline-block mr-2" />
-            Loading...
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          {[1, 2].map((i) => (
+            <Card key={i}>
+              <CardHeader>
+                <Skeleton className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : caches.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
@@ -314,19 +325,24 @@ export function CacheDetailExternalView() {
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
                             <span className="font-mono text-sm">{cache.sizeHuman}</span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!cache.canClean || cleaning === cache.provider}
-                              onClick={() => setCleanTarget(cache.provider)}
-                            >
-                              {cleaning === cache.provider ? (
-                                <RefreshCw className="h-3 w-3 animate-spin mr-1" />
-                              ) : (
-                                <Trash2 className="h-3 w-3 mr-1" />
-                              )}
-                              {t('cache.clean')}
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!cache.canClean || cleaning === cache.provider}
+                                  onClick={() => setCleanTarget(cache.provider)}
+                                >
+                                  {cleaning === cache.provider ? (
+                                    <RefreshCw className="h-3 w-3 animate-spin mr-1" />
+                                  ) : (
+                                    <Trash2 className="h-3 w-3 mr-1" />
+                                  )}
+                                  {t('cache.clean')}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('cache.clean')}</TooltipContent>
+                            </Tooltip>
                           </div>
                         </div>
                         <CollapsibleContent>

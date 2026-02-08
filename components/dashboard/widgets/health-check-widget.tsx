@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -23,11 +24,11 @@ interface HealthCheckWidgetProps {
   className?: string;
 }
 
-const STATUS_CONFIG: Record<HealthStatus, { icon: typeof ShieldCheck; color: string; bg: string }> = {
-  healthy: { icon: ShieldCheck, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/30' },
-  warning: { icon: ShieldAlert, color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-950/30' },
-  error: { icon: ShieldX, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30' },
-  unknown: { icon: ShieldQuestion, color: 'text-muted-foreground', bg: 'bg-muted/50' },
+const STATUS_CONFIG: Record<HealthStatus, { icon: typeof ShieldCheck; color: string }> = {
+  healthy: { icon: ShieldCheck, color: 'text-green-600' },
+  warning: { icon: ShieldAlert, color: 'text-yellow-600' },
+  error: { icon: ShieldX, color: 'text-red-600' },
+  unknown: { icon: ShieldQuestion, color: 'text-muted-foreground' },
 };
 
 export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
@@ -53,15 +54,13 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-medium">
-              {t('dashboard.widgets.healthCheck')}
-            </CardTitle>
-            <CardDescription>
-              {t('dashboard.widgets.healthCheckDesc')}
-            </CardDescription>
-          </div>
+        <CardTitle className="text-base font-medium">
+          {t('dashboard.widgets.healthCheck')}
+        </CardTitle>
+        <CardDescription>
+          {t('dashboard.widgets.healthCheckDesc')}
+        </CardDescription>
+        <CardAction>
           <Button
             variant="ghost"
             size="icon"
@@ -75,23 +74,24 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
               <RefreshCw className="h-4 w-4" />
             )}
           </Button>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {/* Overall Status */}
-        <div className={`flex items-center gap-3 rounded-lg p-3 mb-3 ${config.bg}`}>
-          <StatusIcon className={`h-8 w-8 ${config.color}`} />
-          <div>
-            <div className={`font-semibold ${config.color}`}>
-              {t(`dashboard.widgets.healthStatus_${overallStatus}`)}
-            </div>
-            {issueCount > 0 && (
-              <div className="text-xs text-muted-foreground">
-                {t('dashboard.widgets.healthIssues', { count: issueCount })}
-              </div>
-            )}
-          </div>
-        </div>
+        <Alert
+          variant={overallStatus === 'error' ? 'destructive' : 'default'}
+          className="mb-3"
+        >
+          <StatusIcon className={`h-5 w-5 ${config.color}`} />
+          <AlertTitle className={config.color}>
+            {t(`dashboard.widgets.healthStatus_${overallStatus}`)}
+          </AlertTitle>
+          {issueCount > 0 && (
+            <AlertDescription>
+              {t('dashboard.widgets.healthIssues', { count: issueCount })}
+            </AlertDescription>
+          )}
+        </Alert>
 
         {/* Environment Breakdown */}
         {envCount > 0 && (
@@ -127,14 +127,15 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
             ))}
           </div>
         )}
-
+      </CardContent>
+      <CardFooter className="border-t pt-4">
         <Button variant="outline" size="sm" className="w-full gap-2" asChild>
           <Link href="/environments">
             <ExternalLink className="h-3.5 w-3.5" />
             {t('dashboard.widgets.healthViewDetails')}
           </Link>
         </Button>
-      </CardContent>
+      </CardFooter>
     </Card>
   );
 }

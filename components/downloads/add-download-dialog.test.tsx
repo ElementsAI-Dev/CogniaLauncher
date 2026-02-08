@@ -29,12 +29,18 @@ const mockMessages = {
       destination: "Destination",
       name: "Name",
       priority: "Priority",
+      priorityPlaceholder: "Select priority",
+      priorityCritical: "Critical",
+      priorityHigh: "High",
+      priorityNormal: "Normal",
+      priorityLow: "Low",
       checksum: "Checksum",
       provider: "Provider",
       providerPlaceholder: "Optional: e.g., npm, github",
       selectDestination: "Select download destination",
       manualPathRequired: "Please enter the path manually",
       browseFolder: "Browse",
+      dialogError: "Failed to open dialog",
     },
   },
   zh: {
@@ -69,10 +75,10 @@ describe("AddDownloadDialog", () => {
 
     expect(screen.getByText("Add Download")).toBeInTheDocument();
     expect(screen.getByLabelText("URL")).toBeInTheDocument();
-    expect(screen.getByLabelText("Destination")).toBeInTheDocument();
+    expect(screen.getByText("Destination")).toBeInTheDocument();
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
     expect(screen.getByLabelText("Provider")).toBeInTheDocument();
-    expect(screen.getByLabelText("Priority")).toBeInTheDocument();
+    expect(screen.getByText("Priority")).toBeInTheDocument();
     expect(screen.getByLabelText("Checksum")).toBeInTheDocument();
   });
 
@@ -83,7 +89,8 @@ describe("AddDownloadDialog", () => {
       </TestWrapper>,
     );
 
-    expect(screen.getByTitle("Browse")).toBeInTheDocument();
+    // DestinationPicker renders a FolderOpen icon button
+    expect(screen.getByRole("button", { name: "" })).toBeDefined();
   });
 
   it("renders provider field with placeholder", () => {
@@ -119,8 +126,9 @@ describe("AddDownloadDialog", () => {
       screen.getByLabelText("URL"),
       "https://example.com/file.zip",
     );
+    // Destination is inside DestinationPicker, find by placeholder
     await userEvent.type(
-      screen.getByLabelText("Destination"),
+      screen.getByPlaceholderText("/path/to/file.zip"),
       "/downloads/file.zip",
     );
     await userEvent.type(screen.getByLabelText("Name"), "file.zip");
@@ -154,8 +162,9 @@ describe("AddDownloadDialog", () => {
       screen.getByLabelText("URL"),
       "https://example.com/file.zip",
     );
+    // Destination is inside DestinationPicker, find by placeholder
     await userEvent.type(
-      screen.getByLabelText("Destination"),
+      screen.getByPlaceholderText("/path/to/file.zip"),
       "/downloads/file.zip",
     );
     await userEvent.type(screen.getByLabelText("Name"), "custom-name.zip");

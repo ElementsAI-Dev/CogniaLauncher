@@ -3,6 +3,11 @@
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { useState, useCallback, useMemo, type ReactNode } from "react";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -217,35 +222,46 @@ export function LogEntry({
       {/* Action buttons */}
       <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         {isExpandable && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setExpanded((prev) => !prev)}
-            aria-label={expanded ? t("logs.collapse") : t("logs.expand")}
-          >
-            {expanded ? (
-              <ChevronUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-label={expanded ? t("logs.collapse") : t("logs.expand")}
+              >
+                {expanded ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {expanded ? t("logs.collapse") : t("logs.expand")}
+            </TooltipContent>
+          </Tooltip>
         )}
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={handleCopy}
-          title={t("logs.copyEntry")}
-          aria-label={t("logs.copyEntry")}
-        >
-          {copied ? (
-            <Check className="h-3.5 w-3.5 text-green-500" />
-          ) : (
-            <Copy className="h-3.5 w-3.5" />
-          )}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleCopy}
+              aria-label={t("logs.copyEntry")}
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("logs.copyEntry")}</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );

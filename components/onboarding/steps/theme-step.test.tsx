@@ -44,7 +44,7 @@ describe("ThemeStep", () => {
 
   it("highlights active theme", () => {
     const { container } = render(<ThemeStep {...defaultProps} theme="light" />);
-    const buttons = container.querySelectorAll("button");
-    expect(buttons[0].className).toContain("border-primary");
+    const labels = container.querySelectorAll("label");
+    expect(labels[0].className).toContain("border-primary");
   });
 });

@@ -8,6 +8,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { AlertTriangle, ChevronDown, HardDrive, Activity, RefreshCw } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 import type { CacheSizeMonitor } from '@/lib/tauri';
@@ -80,15 +83,20 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={(e) => { e.stopPropagation(); fetchMonitor(); }}
-                  disabled={loading}
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={(e) => { e.stopPropagation(); fetchMonitor(); }}
+                      disabled={loading}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('common.refresh')}</TooltipContent>
+                </Tooltip>
                 <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
               </div>
             </div>
@@ -122,13 +130,15 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
 
                 {/* Threshold Warning */}
                 {monitor.exceedsThreshold && (
-                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
-                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <p>{t('cache.thresholdExceeded', {
-                      percent: Math.round(monitor.usagePercent),
-                      threshold: monitor.threshold,
-                    })}</p>
-                  </div>
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      {t('cache.thresholdExceeded', {
+                        percent: Math.round(monitor.usagePercent),
+                        threshold: monitor.threshold,
+                      })}
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 {/* Size Grid */}
@@ -171,9 +181,23 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                   </div>
                 )}
               </>
+            ) : loading ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-2 w-full" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-4">
-                {loading ? '...' : t('cache.noCacheData')}
+                {t('cache.noCacheData')}
               </p>
             )}
           </CardContent>

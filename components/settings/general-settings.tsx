@@ -8,16 +8,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SettingItem } from "./setting-item";
+import { SwitchSettingItem } from "./setting-item";
+import { SelectSettingItem } from "./setting-item";
 
 interface GeneralSettingsProps {
   localConfig: Record<string, string>;
@@ -75,69 +68,32 @@ export function GeneralSettings({
           error={errors["general.metadata_cache_ttl"]}
         />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="resolve-strategy">
-              {t("settings.resolveStrategy")}
-            </Label>
-            <p
-              id="resolve-strategy-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.resolveStrategyDesc")}
-            </p>
-          </div>
-          <Select
-            value={localConfig["general.resolve_strategy"] || "latest"}
-            onValueChange={(value) =>
-              onValueChange("general.resolve_strategy", value)
-            }
-          >
-            <SelectTrigger
-              id="resolve-strategy"
-              className="w-48"
-              aria-describedby="resolve-strategy-desc"
-            >
-              <SelectValue placeholder={t("settings.resolveStrategy")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="latest">
-                {t("settings.resolveLatest")}
-              </SelectItem>
-              <SelectItem value="minimal">
-                {t("settings.resolveMinimal")}
-              </SelectItem>
-              <SelectItem value="locked">
-                {t("settings.resolveLocked")}
-              </SelectItem>
-              <SelectItem value="prefer-locked">
-                {t("settings.resolvePreferLocked")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectSettingItem
+          id="resolve-strategy"
+          label={t("settings.resolveStrategy")}
+          description={t("settings.resolveStrategyDesc")}
+          value={localConfig["general.resolve_strategy"] || "latest"}
+          onValueChange={(value) =>
+            onValueChange("general.resolve_strategy", value)
+          }
+          options={[
+            { value: "latest", label: t("settings.resolveLatest") },
+            { value: "minimal", label: t("settings.resolveMinimal") },
+            { value: "locked", label: t("settings.resolveLocked") },
+            { value: "prefer-locked", label: t("settings.resolvePreferLocked") },
+          ]}
+          placeholder={t("settings.resolveStrategy")}
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="auto-update-metadata">
-              {t("settings.autoUpdateMetadata")}
-            </Label>
-            <p
-              id="auto-update-metadata-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.autoUpdateMetadataDesc")}
-            </p>
-          </div>
-          <Switch
-            id="auto-update-metadata"
-            aria-describedby="auto-update-metadata-desc"
-            checked={localConfig["general.auto_update_metadata"] !== "false"}
-            onCheckedChange={(checked) =>
-              onValueChange("general.auto_update_metadata", checked.toString())
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="auto-update-metadata"
+          label={t("settings.autoUpdateMetadata")}
+          description={t("settings.autoUpdateMetadataDesc")}
+          checked={localConfig["general.auto_update_metadata"] !== "false"}
+          onCheckedChange={(checked) =>
+            onValueChange("general.auto_update_metadata", checked.toString())
+          }
+        />
         <Separator />
         <SettingItem
           id="cache-max-size"
@@ -163,27 +119,15 @@ export function GeneralSettings({
           error={errors["general.cache_max_age_days"]}
         />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="auto-clean-cache">
-              {t("settings.autoCleanCache")}
-            </Label>
-            <p
-              id="auto-clean-cache-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.autoCleanCacheDesc")}
-            </p>
-          </div>
-          <Switch
-            id="auto-clean-cache"
-            aria-describedby="auto-clean-cache-desc"
-            checked={localConfig["general.auto_clean_cache"] !== "false"}
-            onCheckedChange={(checked) =>
-              onValueChange("general.auto_clean_cache", checked.toString())
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="auto-clean-cache"
+          label={t("settings.autoCleanCache")}
+          description={t("settings.autoCleanCacheDesc")}
+          checked={localConfig["general.auto_clean_cache"] !== "false"}
+          onCheckedChange={(checked) =>
+            onValueChange("general.auto_clean_cache", checked.toString())
+          }
+        />
         <Separator />
         <SettingItem
           id="cache-auto-clean-threshold"
@@ -209,27 +153,15 @@ export function GeneralSettings({
           error={errors["general.cache_monitor_interval"]}
         />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="cache-monitor-external">
-              {t("settings.cacheMonitorExternal")}
-            </Label>
-            <p
-              id="cache-monitor-external-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.cacheMonitorExternalDesc")}
-            </p>
-          </div>
-          <Switch
-            id="cache-monitor-external"
-            aria-describedby="cache-monitor-external-desc"
-            checked={localConfig["general.cache_monitor_external"] === "true"}
-            onCheckedChange={(checked) =>
-              onValueChange("general.cache_monitor_external", checked.toString())
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="cache-monitor-external"
+          label={t("settings.cacheMonitorExternal")}
+          description={t("settings.cacheMonitorExternalDesc")}
+          checked={localConfig["general.cache_monitor_external"] === "true"}
+          onCheckedChange={(checked) =>
+            onValueChange("general.cache_monitor_external", checked.toString())
+          }
+        />
         <Separator />
         <SettingItem
           id="download-speed-limit"

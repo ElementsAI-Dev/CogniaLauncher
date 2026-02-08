@@ -1,6 +1,7 @@
 'use client';
 
 import { Layers, Sparkles } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 
 interface WelcomeStepProps {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -38,16 +39,18 @@ export function WelcomeStep({ t }: WelcomeStepProps) {
             descKey: 'onboarding.welcomeFeature3Desc',
           },
         ].map((feature) => (
-          <div
+          <Card
             key={feature.titleKey}
-            className="flex flex-col items-center gap-2 rounded-lg border p-4 bg-muted/30"
+            className="flex flex-col items-center gap-2 py-4 bg-muted/30"
           >
-            <span className="text-2xl">{feature.icon}</span>
-            <span className="text-sm font-medium">{t(feature.titleKey)}</span>
-            <span className="text-xs text-muted-foreground text-center">
-              {t(feature.descKey)}
-            </span>
-          </div>
+            <CardContent className="flex flex-col items-center gap-2 px-4 py-0">
+              <span className="text-2xl">{feature.icon}</span>
+              <span className="text-sm font-medium">{t(feature.titleKey)}</span>
+              <span className="text-xs text-muted-foreground text-center">
+                {t(feature.descKey)}
+              </span>
+            </CardContent>
+          </Card>
         ))}
       </div>
       <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2">

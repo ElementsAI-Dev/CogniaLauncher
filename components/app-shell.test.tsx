@@ -78,6 +78,14 @@ jest.mock("@/components/log/log-drawer", () => ({
   LogDrawer: () => <div data-testid="log-drawer">LogDrawer</div>,
 }));
 
+jest.mock("@/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="tooltip-content">{children}</div>
+  ),
+}));
+
 jest.mock("@/components/layout/breadcrumb", () => ({
   Breadcrumb: () => <div data-testid="breadcrumb">Breadcrumb</div>,
 }));
@@ -146,13 +154,13 @@ describe("AppShell", () => {
   });
 
   it("has search button that opens command palette", () => {
-    render(
+    const { container } = render(
       <AppShell>
         <div>Content</div>
       </AppShell>,
     );
 
-    const searchButton = screen.getByTitle("Search");
+    const searchButton = container.querySelector('[data-tour="command-palette-btn"]');
     expect(searchButton).toBeInTheDocument();
   });
 });

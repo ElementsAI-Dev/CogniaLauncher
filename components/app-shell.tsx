@@ -7,6 +7,11 @@ import {
 } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import { Titlebar } from "@/components/layout/titlebar";
 import { useWindowStateStore } from "@/lib/stores/window-state";
 import { LogDrawer } from "@/components/log/log-drawer";
@@ -132,28 +137,38 @@ export function AppShell({ children }: AppShellProps) {
                 <Separator orientation="vertical" className="mr-2 h-4" />
                 <Breadcrumb />
                 <div className="flex-1" />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setCommandOpen(true)}
-                  title={t("commandPalette.buttonLabel")}
-                  data-tour="command-palette-btn"
-                >
-                  <Search className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="relative h-8 w-8"
-                  onClick={toggleDrawer}
-                  title="Toggle logs (Ctrl+Shift+L)"
-                >
-                  <ScrollText className="h-4 w-4" />
-                  {hasErrors && (
-                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setCommandOpen(true)}
+                      data-tour="command-palette-btn"
+                    >
+                      <Search className="h-4 w-4" />
+                      <span className="sr-only">{t("commandPalette.buttonLabel")}</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("commandPalette.buttonLabel")}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative h-8 w-8"
+                      onClick={toggleDrawer}
+                    >
+                      <ScrollText className="h-4 w-4" />
+                      {hasErrors && (
+                        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-destructive" />
+                      )}
+                      <span className="sr-only">{t("commandPalette.toggleLogs")}</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle logs (Ctrl+Shift+L)</TooltipContent>
+                </Tooltip>
               </header>
               <main className="flex-1 overflow-auto">{children}</main>
             </SidebarInset>

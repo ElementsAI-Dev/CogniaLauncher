@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslExecResult } from '@/types/tauri';
@@ -165,47 +167,54 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
 
         {/* Output history */}
         {history.length > 0 && (
-          <div
-            ref={outputRef}
-            className="max-h-[500px] overflow-y-auto rounded-md border bg-zinc-950 text-zinc-100 p-3 space-y-3 font-mono text-xs"
-          >
-            {history.map((entry, i) => (
-              <div key={i} className="space-y-1">
-                <div className="flex items-center gap-1.5 text-zinc-400">
-                  {entry.user && <span className="text-yellow-400">{entry.user}@</span>}
-                  <span className="text-green-400 font-semibold">{distroName}</span>
-                  <span className="text-zinc-500">$</span>
-                  <span className="text-zinc-200 flex-1 truncate">{entry.command}</span>
-                  {entry.result.exitCode === 0 ? (
-                    <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
-                  ) : (
-                    <span className="flex items-center gap-1 text-red-400 shrink-0">
-                      <XCircle className="h-3 w-3" />
-                      <span>{entry.result.exitCode}</span>
-                    </span>
+          <ScrollArea className="max-h-[500px]">
+            <div
+              ref={outputRef}
+              className="rounded-md border bg-zinc-950 text-zinc-100 p-3 space-y-3 font-mono text-xs"
+            >
+              {history.map((entry, i) => (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-zinc-400">
+                    {entry.user && <span className="text-yellow-400">{entry.user}@</span>}
+                    <span className="text-green-400 font-semibold">{distroName}</span>
+                    <span className="text-zinc-500">$</span>
+                    <span className="text-zinc-200 flex-1 truncate">{entry.command}</span>
+                    {entry.result.exitCode === 0 ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                    ) : (
+                      <span className="flex items-center gap-1 text-red-400 shrink-0">
+                        <XCircle className="h-3 w-3" />
+                        <span>{entry.result.exitCode}</span>
+                      </span>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 shrink-0 text-zinc-500 hover:text-zinc-200"
+                          onClick={() => handleCopy(entry.result.stdout || entry.result.stderr)}
+                        >
+                          <Copy className="h-2.5 w-2.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('common.copy')}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  {entry.result.stdout && (
+                    <pre className="whitespace-pre-wrap break-all text-zinc-300 pl-2 border-l border-zinc-700">
+                      {entry.result.stdout}
+                    </pre>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 shrink-0 text-zinc-500 hover:text-zinc-200"
-                    onClick={() => handleCopy(entry.result.stdout || entry.result.stderr)}
-                  >
-                    <Copy className="h-2.5 w-2.5" />
-                  </Button>
+                  {entry.result.stderr && (
+                    <pre className="whitespace-pre-wrap break-all text-red-400 pl-2 border-l border-red-900">
+                      {entry.result.stderr}
+                    </pre>
+                  )}
                 </div>
-                {entry.result.stdout && (
-                  <pre className="whitespace-pre-wrap break-all text-zinc-300 pl-2 border-l border-zinc-700">
-                    {entry.result.stdout}
-                  </pre>
-                )}
-                {entry.result.stderr && (
-                  <pre className="whitespace-pre-wrap break-all text-red-400 pl-2 border-l border-red-900">
-                    {entry.result.stderr}
-                  </pre>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </ScrollArea>
         )}
 
         {history.length === 0 && (

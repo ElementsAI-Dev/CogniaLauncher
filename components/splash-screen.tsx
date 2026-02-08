@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Progress } from "@/components/ui/progress";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { InitPhase } from "@/hooks/use-app-init";
 
@@ -96,12 +97,7 @@ export function SplashScreen({
         {/* Progress section */}
         <div className="flex flex-col items-center gap-3 w-64">
           {/* Progress bar */}
-          <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
-            <div
-              className="splash-progress h-full rounded-full bg-primary transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
+          <Progress value={progress} className="h-1" />
 
           {/* Status message */}
           <p className="splash-message text-xs text-muted-foreground text-center transition-opacity duration-200">

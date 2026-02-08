@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { Terminal, ExternalLink } from 'lucide-react';
@@ -41,65 +42,73 @@ export function WslStatusWidget() {
 
   if (available === false) {
     return (
-      <div className="p-4 text-center text-sm text-muted-foreground">
-        <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
-        <p>{t('wsl.notAvailable')}</p>
-      </div>
+      <Card>
+        <CardContent className="py-6">
+          <div className="text-center text-sm text-muted-foreground">
+            <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>{t('wsl.notAvailable')}</p>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   const runningCount = distros.filter((d) => d.state.toLowerCase() === 'running').length;
 
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 grid-cols-3">
-        <Card>
-          <CardContent className="p-3 text-center">
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-medium">
+          {t('wsl.title')}
+        </CardTitle>
+        <CardDescription>
+          {t('wsl.kernelVersion')}: {status?.version ?? '—'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 grid-cols-2 mb-3">
+          <div className="text-center rounded-md border p-2.5">
             <p className="text-2xl font-bold">{distros.length}</p>
             <p className="text-xs text-muted-foreground">{t('wsl.distros')}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
+          </div>
+          <div className="text-center rounded-md border p-2.5">
             <p className="text-2xl font-bold text-green-600">{runningCount}</p>
             <p className="text-xs text-muted-foreground">{t('wsl.running')}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <p className="text-sm font-mono truncate">{status?.version ?? '—'}</p>
-            <p className="text-xs text-muted-foreground">{t('wsl.kernelVersion')}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {distros.length > 0 && (
-        <div className="space-y-1.5">
-          {distros.slice(0, 4).map((d) => (
-            <div key={d.name} className="flex items-center justify-between text-sm px-1">
-              <span className="truncate font-medium">{d.name}</span>
-              <Badge
-                variant={d.state.toLowerCase() === 'running' ? 'default' : 'secondary'}
-                className="text-xs"
-              >
-                {d.state.toLowerCase() === 'running' ? t('wsl.running') : t('wsl.stopped')}
-              </Badge>
-            </div>
-          ))}
-          {distros.length > 4 && (
-            <p className="text-xs text-muted-foreground text-center">
-              +{distros.length - 4} {t('common.more')}
-            </p>
-          )}
+          </div>
         </div>
-      )}
 
-      <Button variant="outline" size="sm" className="w-full gap-2" asChild>
-        <Link href="/wsl">
-          <ExternalLink className="h-3.5 w-3.5" />
-          {t('wsl.title')}
-        </Link>
-      </Button>
-    </div>
+        {distros.length > 0 && (
+          <>
+            <Separator className="mb-3" />
+            <div className="space-y-1.5">
+              {distros.slice(0, 4).map((d) => (
+                <div key={d.name} className="flex items-center justify-between text-sm px-1">
+                  <span className="truncate font-medium">{d.name}</span>
+                  <Badge
+                    variant={d.state.toLowerCase() === 'running' ? 'default' : 'secondary'}
+                    className="text-xs"
+                  >
+                    {d.state.toLowerCase() === 'running' ? t('wsl.running') : t('wsl.stopped')}
+                  </Badge>
+                </div>
+              ))}
+              {distros.length > 4 && (
+                <p className="text-xs text-muted-foreground text-center">
+                  +{distros.length - 4} {t('common.more')}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+      <CardFooter className="border-t pt-4">
+        <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+          <Link href="/wsl">
+            <ExternalLink className="h-3.5 w-3.5" />
+            {t('wsl.title')}
+          </Link>
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

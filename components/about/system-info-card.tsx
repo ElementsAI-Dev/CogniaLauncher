@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -159,21 +161,15 @@ export function SystemInfoCard({
 
   return (
     <Card
-      className="rounded-xl border bg-card"
       role="region"
       aria-labelledby="system-info-heading"
     >
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Monitor className="h-5 w-5 text-foreground" aria-hidden="true" />
-            <span
-              id="system-info-heading"
-              className="text-base font-semibold text-foreground"
-            >
-              {t("about.systemInfo")}
-            </span>
-          </div>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Monitor className="h-5 w-5 text-foreground" aria-hidden="true" />
+          <span id="system-info-heading">{t("about.systemInfo")}</span>
+        </CardTitle>
+        <CardAction>
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -211,30 +207,26 @@ export function SystemInfoCard({
               <TooltipContent>{t("about.copySystemInfo")}</TooltipContent>
             </Tooltip>
           </div>
-        </div>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
 
         {systemError && (
-          <Alert
-            variant="destructive"
-            role="alert"
-            className="flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <AlertCircle
-                className="h-4 w-4 flex-shrink-0"
-                aria-hidden="true"
-              />
-              <AlertDescription>{t("about.systemInfoFailed")}</AlertDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onRetry}
-              className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
-            >
-              <RefreshCw className="h-3 w-3 mr-1" aria-hidden="true" />
-              {t("common.retry")}
-            </Button>
+          <Alert variant="destructive" aria-live="assertive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle className="flex items-center justify-between">
+              <span>{t("about.systemInfoFailed")}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onRetry}
+                className="h-7 px-2 text-destructive-foreground hover:bg-destructive/80"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" aria-hidden="true" />
+                {t("common.retry")}
+              </Button>
+            </AlertTitle>
           </Alert>
         )}
 
@@ -242,9 +234,9 @@ export function SystemInfoCard({
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 mb-2">
             <Server className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
               {t("about.deviceInfo")}
-            </span>
+            </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow
@@ -280,9 +272,9 @@ export function SystemInfoCard({
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 mb-2">
             <Cpu className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
               {t("about.hardwareInfo")}
-            </span>
+            </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow
@@ -314,18 +306,17 @@ export function SystemInfoCard({
               />
               {!systemLoading && systemInfo && systemInfo.totalMemory > 0 && (
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        memoryPercent > 90
-                          ? "bg-red-500"
-                          : memoryPercent > 70
-                            ? "bg-yellow-500"
-                            : "bg-green-500"
-                      }`}
-                      style={{ width: `${memoryPercent}%` }}
-                    />
-                  </div>
+                  <Progress
+                    value={memoryPercent}
+                    className={`h-1.5 flex-1 ${
+                      memoryPercent > 90
+                        ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                        : memoryPercent > 70
+                          ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                          : "[&>[data-slot=progress-indicator]]:bg-green-500"
+                    }`}
+                    aria-label={`${t("about.memory")} ${memoryPercent}%`}
+                  />
                   <span className="text-[11px] text-muted-foreground w-8 text-right">
                     {memoryPercent}%
                   </span>
@@ -351,9 +342,9 @@ export function SystemInfoCard({
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 mb-2">
             <HardDrive className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
               {t("about.runtimeInfo")}
-            </span>
+            </Badge>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
             <InfoRow

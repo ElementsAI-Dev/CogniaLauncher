@@ -1,8 +1,10 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download } from "lucide-react";
 import type { SelfUpdateInfo } from "@/lib/tauri";
 
@@ -31,28 +33,32 @@ export function UpdateBanner({
 
   return (
     <Card
-      className="rounded-xl border-blue-200 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-800"
+      className="border-blue-200 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-800"
       role="alert"
       aria-live="polite"
     >
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-center gap-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
           <Download
             className="h-5 w-5 text-blue-600 dark:text-blue-400"
             aria-hidden="true"
           />
-          <span className="font-semibold text-blue-900 dark:text-blue-100">
-            {t("about.updateAvailable")} - v{updateInfo.latest_version}
+          <span className="text-blue-900 dark:text-blue-100">
+            {t("about.updateAvailable")}
           </span>
-        </div>
+          <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-transparent">
+            v{updateInfo.latest_version}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
 
+      <CardContent className="space-y-4">
         {updateInfo.release_notes && (
-          <div
-            className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700 max-h-48 overflow-y-auto"
-            aria-label={t("about.releaseNotes")}
-          >
-            {updateInfo.release_notes}
-          </div>
+          <ScrollArea className="max-h-48" aria-label={t("about.releaseNotes")}>
+            <div className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+              {updateInfo.release_notes}
+            </div>
+          </ScrollArea>
         )}
 
         {updating && (

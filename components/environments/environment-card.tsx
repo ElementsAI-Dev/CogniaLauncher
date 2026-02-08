@@ -38,7 +38,6 @@ import {
   Trash2,
   Check,
   FolderOpen,
-  Scan,
   ChevronDown,
   List,
   Settings2,
@@ -46,6 +45,7 @@ import {
 import { toast } from "sonner";
 import { useLocale } from "@/components/providers/locale-provider";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
+import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { formatSize } from "@/lib/utils";
 
 interface EnvironmentCardProps {
@@ -149,13 +149,11 @@ export function EnvironmentCard({
         <div className="p-5 space-y-3">
           {/* Detected Version Badge */}
           {detectedVersion && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
-              <Scan className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-              <span className="text-xs font-medium text-green-700 dark:text-green-300">
-                {t("environments.detected")}: {detectedVersion.version} (
-                {detectedVersion.source.replace("_", " ")})
-              </span>
-            </div>
+            <DetectedVersionBadge
+              version={detectedVersion.version}
+              source={detectedVersion.source}
+              t={t}
+            />
           )}
 
           {/* Title Row */}

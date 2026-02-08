@@ -11,7 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -358,80 +361,105 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
 
       {/* Stats Cards */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <Database className="h-4 w-4" />
-              {t('cache.detail.entryCount', { count: cacheStats?.entry_count ?? 0 })}
-            </div>
-            <p className="text-2xl font-bold">{cacheStats?.entry_count ?? 0}</p>
-          </CardContent>
-        </Card>
+        {cacheInfo ? (
+          <>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  <Database className="h-4 w-4" />
+                  {t('cache.detail.entryCount', { count: cacheStats?.entry_count ?? 0 })}
+                </div>
+                <p className="text-2xl font-bold">{cacheStats?.entry_count ?? 0}</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <HardDrive className="h-4 w-4" />
-              {t('cache.detail.totalSize')}
-            </div>
-            <p className="text-2xl font-bold">{cacheStats?.size_human ?? '0 B'}</p>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  <HardDrive className="h-4 w-4" />
+                  {t('cache.detail.totalSize')}
+                </div>
+                <p className="text-2xl font-bold">{cacheStats?.size_human ?? '0 B'}</p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <Zap className="h-4 w-4" />
-              {t('cache.hitRate')}
-            </div>
-            <p className="text-2xl font-bold">
-              {accessStats ? `${(accessStats.hit_rate * 100).toFixed(1)}%` : '—'}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {accessStats ? `${accessStats.hits} ${t('cache.hits')} / ${accessStats.misses} ${t('cache.misses')}` : ''}
-            </p>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  <Zap className="h-4 w-4" />
+                  {t('cache.hitRate')}
+                </div>
+                <p className="text-2xl font-bold">
+                  {accessStats ? `${(accessStats.hit_rate * 100).toFixed(1)}%` : '—'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {accessStats ? `${accessStats.hits} ${t('cache.hits')} / ${accessStats.misses} ${t('cache.misses')}` : ''}
+                </p>
+              </CardContent>
+            </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <FolderOpen className="h-4 w-4" />
-              {t('cache.detail.storageLocation')}
-            </div>
-            <p className="text-sm font-mono truncate" title={cacheStats?.location ?? ''}>
-              {cacheStats?.location ?? '—'}
-            </p>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                  <FolderOpen className="h-4 w-4" />
+                  {t('cache.detail.storageLocation')}
+                </div>
+                <p className="text-sm font-mono truncate" title={cacheStats?.location ?? ''}>
+                  {cacheStats?.location ?? '—'}
+                </p>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            {[1, 2, 3, 4].map((i) => (
+              <Card key={i}>
+                <CardContent className="pt-6 space-y-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-20" />
+                </CardContent>
+              </Card>
+            ))}
+          </>
+        )}
       </div>
 
       {/* Action Bar */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          onClick={() => setCleanConfirmOpen(true)}
-          disabled={cleaning}
-        >
-          <Trash2 className="h-4 w-4 mr-2" />
-          {cleaning ? t('cache.clearing') : t('cache.detail.cleanThisCache')}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleVerify}
-          disabled={verifying}
-        >
-          {verifying ? (
-            <Shield className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <ShieldCheck className="h-4 w-4 mr-2" />
-          )}
-          {verifying ? t('cache.detail.verifyingCache') : t('cache.detail.verifyThisCache')}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              onClick={() => setCleanConfirmOpen(true)}
+              disabled={cleaning}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {cleaning ? t('cache.clearing') : t('cache.detail.cleanThisCache')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('cache.detail.cleanThisCache')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              onClick={handleVerify}
+              disabled={verifying}
+            >
+              {verifying ? (
+                <Shield className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ShieldCheck className="h-4 w-4 mr-2" />
+              )}
+              {verifying ? t('cache.detail.verifyingCache') : t('cache.detail.verifyThisCache')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('cache.detail.verifyThisCache')}</TooltipContent>
+        </Tooltip>
         <div className="flex-1" />
         <div className="flex items-center gap-2 text-sm">
-          <Switch checked={useTrash} onCheckedChange={setUseTrash} />
-          <span className="text-muted-foreground">{t('cache.useTrash')}</span>
+          <Switch id="detail-use-trash" checked={useTrash} onCheckedChange={setUseTrash} />
+          <Label htmlFor="detail-use-trash" className="text-muted-foreground">{t('cache.useTrash')}</Label>
         </div>
       </div>
 
@@ -510,12 +538,18 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      <RefreshCw className="h-5 w-5 animate-spin inline-block mr-2" />
-                      Loading...
-                    </TableCell>
-                  </TableRow>
+                  <>
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <TableRow key={i}>
+                        <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-48" /></TableCell>
+                        <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-14 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-8 ml-auto" /></TableCell>
+                        <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                      </TableRow>
+                    ))}
+                  </>
                 ) : entries.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">

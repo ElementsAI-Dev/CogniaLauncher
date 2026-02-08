@@ -39,6 +39,7 @@ impl RustupProvider {
             .ok_or_else(|| CogniaError::Provider("RUSTUP_HOME not found".into()))
     }
 
+    #[allow(dead_code)]
     fn cargo_home(&self) -> CogniaResult<&PathBuf> {
         self.cargo_home
             .as_ref()

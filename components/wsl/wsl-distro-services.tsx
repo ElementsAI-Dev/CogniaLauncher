@@ -8,6 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Cog,
   RefreshCw,
@@ -256,77 +265,100 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
                 </p>
               ) : (
                 <ScrollArea className="max-h-[500px]">
-                  <div className="space-y-1">
-                    {filteredServices.map((service) => {
-                      const isActive = service.status === 'running';
-                      return (
-                        <div
-                          key={service.name}
-                          className="flex items-center gap-2 px-2 py-2 rounded hover:bg-muted transition-colors group"
-                        >
-                          {getStatusIcon(service.status)}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-mono font-medium truncate">{service.name}</span>
-                              <Badge variant={getStatusVariant(service.status)} className="text-[10px]">
-                                {service.subState}
-                              </Badge>
-                            </div>
-                            {service.description && (
-                              <p className="text-xs text-muted-foreground truncate">{service.description}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {!isActive ? (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                disabled={!!actionLoading}
-                                onClick={() => handleServiceAction(service.name, 'start')}
-                                title="Start"
-                              >
-                                {actionLoading === `${service.name}-start` ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10" />
+                        <TableHead>{t('wsl.detail.serviceName')}</TableHead>
+                        <TableHead>{t('wsl.detail.serviceDesc')}</TableHead>
+                        <TableHead className="w-28 text-right">{t('wsl.detail.serviceActions')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredServices.map((service) => {
+                        const isActive = service.status === 'running';
+                        return (
+                          <TableRow key={service.name} className="group">
+                            <TableCell className="w-10">
+                              {getStatusIcon(service.status)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-mono font-medium truncate">{service.name}</span>
+                                <Badge variant={getStatusVariant(service.status)} className="text-[10px]">
+                                  {service.subState}
+                                </Badge>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground truncate">
+                              {service.description || '—'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                {!isActive ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        disabled={!!actionLoading}
+                                        onClick={() => handleServiceAction(service.name, 'start')}
+                                      >
+                                        {actionLoading === `${service.name}-start` ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Play className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{t('wsl.detail.serviceStart')}</TooltipContent>
+                                  </Tooltip>
                                 ) : (
-                                  <Play className="h-3 w-3" />
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        disabled={!!actionLoading}
+                                        onClick={() => handleServiceAction(service.name, 'stop')}
+                                      >
+                                        {actionLoading === `${service.name}-stop` ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Square className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{t('wsl.detail.serviceStop')}</TooltipContent>
+                                  </Tooltip>
                                 )}
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                disabled={!!actionLoading}
-                                onClick={() => handleServiceAction(service.name, 'stop')}
-                                title="Stop"
-                              >
-                                {actionLoading === `${service.name}-stop` ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Square className="h-3 w-3" />
-                                )}
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              disabled={!!actionLoading}
-                              onClick={() => handleServiceAction(service.name, 'restart')}
-                              title="Restart"
-                            >
-                              {actionLoading === `${service.name}-restart` ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <RotateCw className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7"
+                                      disabled={!!actionLoading}
+                                      onClick={() => handleServiceAction(service.name, 'restart')}
+                                    >
+                                      {actionLoading === `${service.name}-restart` ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <RotateCw className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>{t('wsl.detail.serviceRestart')}</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </ScrollArea>
               )}
             </>

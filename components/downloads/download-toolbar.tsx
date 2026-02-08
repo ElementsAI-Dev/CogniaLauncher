@@ -2,8 +2,29 @@
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, Pause, Play, X, RefreshCw, Trash2 } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Search,
+  Pause,
+  Play,
+  X,
+  RefreshCw,
+  Trash2,
+  MoreHorizontal,
+} from "lucide-react";
 import type { QueueStats } from "@/lib/stores/download";
 
 export type StatusFilter =
@@ -60,81 +81,119 @@ export function DownloadToolbar({
           />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onPauseAll}
-            disabled={stats.downloading === 0 || isLoading}
-            className="gap-2"
-          >
-            <Pause className="h-4 w-4" />
-            {t("downloads.actions.pauseAll")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onResumeAll}
-            disabled={stats.paused === 0 || isLoading}
-            className="gap-2"
-          >
-            <Play className="h-4 w-4" />
-            {t("downloads.actions.resumeAll")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRetryFailed}
-            disabled={stats.failed === 0 || isLoading}
-            className="gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t("downloads.actions.retryFailed")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClearFinished}
-            disabled={finishedCount === 0 || isLoading}
-            className="gap-2"
-          >
-            <Trash2 className="h-4 w-4" />
-            {t("downloads.actions.clearFinished")}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={onCancelAll}
-            disabled={activeCount === 0 || isLoading}
-            className="gap-2"
-          >
-            <X className="h-4 w-4" />
-            {t("downloads.actions.cancelAll")}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onPauseAll}
+                disabled={stats.downloading === 0 || isLoading}
+                className="gap-2"
+              >
+                <Pause className="h-4 w-4" />
+                {t("downloads.actions.pauseAll")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("downloads.actions.pauseAll")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onResumeAll}
+                disabled={stats.paused === 0 || isLoading}
+                className="gap-2"
+              >
+                <Play className="h-4 w-4" />
+                {t("downloads.actions.resumeAll")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("downloads.actions.resumeAll")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={onCancelAll}
+                disabled={activeCount === 0 || isLoading}
+                className="gap-2"
+              >
+                <X className="h-4 w-4" />
+                {t("downloads.actions.cancelAll")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("downloads.actions.cancelAll")}</TooltipContent>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={onRetryFailed}
+                disabled={stats.failed === 0 || isLoading}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t("downloads.actions.retryFailed")}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onClearFinished}
+                disabled={finishedCount === 0 || isLoading}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {t("downloads.actions.clearFinished")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
+
+      <Separator />
 
       <Tabs
         value={statusFilter}
         onValueChange={(value) => onStatusChange(value as StatusFilter)}
       >
         <TabsList>
-          <TabsTrigger value="all">
-            {t("downloads.toolbar.filterAll")} ({stats.totalTasks})
+          <TabsTrigger value="all" className="gap-1.5">
+            {t("downloads.toolbar.filterAll")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.totalTasks}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="downloading">
-            {t("downloads.toolbar.filterDownloading")} ({stats.downloading})
+          <TabsTrigger value="downloading" className="gap-1.5">
+            {t("downloads.toolbar.filterDownloading")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.downloading}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="queued">
-            {t("downloads.toolbar.filterQueued")} ({stats.queued})
+          <TabsTrigger value="queued" className="gap-1.5">
+            {t("downloads.toolbar.filterQueued")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.queued}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="paused">
-            {t("downloads.toolbar.filterPaused")} ({stats.paused})
+          <TabsTrigger value="paused" className="gap-1.5">
+            {t("downloads.toolbar.filterPaused")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.paused}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="completed">
-            {t("downloads.toolbar.filterCompleted")} ({stats.completed})
+          <TabsTrigger value="completed" className="gap-1.5">
+            {t("downloads.toolbar.filterCompleted")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.completed}
+            </Badge>
           </TabsTrigger>
-          <TabsTrigger value="failed">
-            {t("downloads.toolbar.filterFailed")} ({stats.failed})
+          <TabsTrigger value="failed" className="gap-1.5">
+            {t("downloads.toolbar.filterFailed")}
+            <Badge variant="secondary" className="px-1.5 py-0 text-xs">
+              {stats.failed}
+            </Badge>
           </TabsTrigger>
         </TabsList>
       </Tabs>

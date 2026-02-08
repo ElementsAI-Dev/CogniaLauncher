@@ -11,6 +11,8 @@ const mockT = (key: string) => {
     "onboarding.envDetectionDesc": "Detecting installed tools",
     "onboarding.envDetecting": "Detecting...",
     "onboarding.envDetectedCount": "Detected environments",
+    "onboarding.envAvailable": "Available",
+    "onboarding.envNotFound": "Not Found",
     "onboarding.envRescan": "Rescan",
     "onboarding.envWebModeNote": "Running in web mode",
   };

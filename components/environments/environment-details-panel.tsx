@@ -13,13 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 import {
@@ -28,9 +21,7 @@ import {
 } from "@/lib/stores/environment";
 import { useEnvironments } from "@/hooks/use-environments";
 import {
-  Check,
   Globe,
-  FolderOpen,
   Plus,
   X,
   FileCode,
@@ -53,9 +44,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { isTauri } from "@/lib/tauri";
 import { toast } from "sonner";
 import { formatSize } from "@/lib/utils";
+import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
+import { VersionPinningSection } from "@/components/environments/version-pinning-section";
 
 interface EnvironmentDetailsPanelProps {
   env: EnvironmentInfo | null;
@@ -79,8 +71,6 @@ export function EnvironmentDetailsPanel({
   onRefresh,
 }: EnvironmentDetailsPanelProps) {
   const { t } = useLocale();
-  const [localProjectPath, setLocalProjectPath] = useState("");
-  const [selectedLocalVersion, setSelectedLocalVersion] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(
     null,
@@ -94,13 +84,6 @@ export function EnvironmentDetailsPanel({
   const [newVarKey, setNewVarKey] = useState("");
   const [newVarValue, setNewVarValue] = useState("");
 
-  // Reset state when panel closes
-  useEffect(() => {
-    if (!open) {
-      setLocalProjectPath("");
-      setSelectedLocalVersion("");
-    }
-  }, [open]);
 
   useEffect(() => {
     if (open && env) {
@@ -121,30 +104,6 @@ export function EnvironmentDetailsPanel({
     }
   };
 
-  const handleSetGlobal = async (version: string) => {
-    try {
-      await onSetGlobal(version);
-      toast.success(
-        t("environments.details.globalVersionSet").replace(
-          "{version}",
-          version,
-        ),
-      );
-    } catch (err) {
-      toast.error(String(err));
-    }
-  };
-
-  const handleSetLocal = async () => {
-    if (!localProjectPath || !selectedLocalVersion) return;
-    try {
-      await onSetLocal(selectedLocalVersion, localProjectPath);
-      toast.success(t("environments.details.localVersionSet"));
-      setLocalProjectPath("");
-    } catch (err) {
-      toast.error(String(err));
-    }
-  };
 
   const handleAddEnvVariable = async () => {
     if (!newVarKey.trim() || !envSettings || !env) return;
@@ -224,34 +183,6 @@ export function EnvironmentDetailsPanel({
     }
   };
 
-  const handleBrowseFolder = async () => {
-    if (!isTauri()) {
-      toast.info(t("environments.details.manualPathRequired"));
-      return;
-    }
-
-    try {
-      // Try to import the dialog plugin dynamically
-      const dialogModule = await import(
-        "@tauri-apps/plugin-dialog"
-      ).catch(() => null);
-      if (dialogModule?.open) {
-        const selected = await dialogModule.open({
-          directory: true,
-          multiple: false,
-          title: t("environments.details.selectProjectFolder"),
-        });
-        if (selected && typeof selected === "string") {
-          setLocalProjectPath(selected);
-        }
-      } else {
-        toast.info(t("environments.details.manualPathRequired"));
-      }
-    } catch {
-      // Dialog plugin not available, prompt for manual input
-      toast.info(t("environments.details.manualPathRequired"));
-    }
-  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -332,17 +263,11 @@ export function EnvironmentDetailsPanel({
               </div>
 
               {detectedVersion && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800">
-                  <Check className="h-4 w-4 text-green-600" />
-                  <div className="text-sm">
-                    <span className="text-green-700 dark:text-green-300 font-medium">
-                      {t("environments.detected")}: {detectedVersion.version}
-                    </span>
-                    <span className="text-green-600 dark:text-green-400 ml-2">
-                      ({detectedVersion.source.replace("_", " ")})
-                    </span>
-                  </div>
-                </div>
+                <DetectedVersionBadge
+                  version={detectedVersion.version}
+                  source={detectedVersion.source}
+                  t={t}
+                />
               )}
             </section>
 
@@ -393,7 +318,7 @@ export function EnvironmentDetailsPanel({
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleSetGlobal(v.version)}
+                            onClick={() => onSetGlobal(v.version)}
                             className="h-7 text-xs"
                           >
                             {t("environments.setGlobal")}
@@ -457,94 +382,13 @@ export function EnvironmentDetailsPanel({
                 </p>
               </div>
 
-              {/* Global Version */}
-              <div className="p-4 rounded-lg bg-muted/30 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">
-                      {t("environments.details.globalVersion")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t("environments.details.globalVersionDesc")}
-                    </p>
-                  </div>
-                  <Select
-                    value={env.current_version || ""}
-                    onValueChange={handleSetGlobal}
-                  >
-                    <SelectTrigger className="w-[140px] h-9">
-                      <SelectValue
-                        placeholder={t("environments.selectVersion")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {env.installed_versions.map((v) => (
-                        <SelectItem key={v.version} value={v.version}>
-                          <div className="flex items-center gap-2">
-                            {v.is_current && <Check className="h-3 w-3" />}
-                            <span className="font-mono">{v.version}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Local Version */}
-              <div className="p-4 rounded-lg bg-muted/30 space-y-3">
-                <div>
-                  <p className="text-sm font-medium">
-                    {t("environments.details.localVersion")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {t("environments.details.localVersionDesc")}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Select
-                    value={selectedLocalVersion}
-                    onValueChange={setSelectedLocalVersion}
-                  >
-                    <SelectTrigger className="w-[140px] h-9">
-                      <SelectValue
-                        placeholder={t("environments.selectVersion")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {env.installed_versions.map((v) => (
-                        <SelectItem key={v.version} value={v.version}>
-                          <span className="font-mono">{v.version}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex-1 flex gap-1">
-                    <Input
-                      placeholder={t("environments.projectPath")}
-                      value={localProjectPath}
-                      onChange={(e) => setLocalProjectPath(e.target.value)}
-                      className="flex-1 h-9"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="h-9 w-9 shrink-0"
-                      onClick={handleBrowseFolder}
-                      title={t("environments.details.browseFolder")}
-                    >
-                      <FolderOpen className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleSetLocal}
-                    disabled={!localProjectPath || !selectedLocalVersion}
-                  >
-                    {t("environments.setLocal")}
-                  </Button>
-                </div>
-              </div>
+              <VersionPinningSection
+                installedVersions={env.installed_versions}
+                currentVersion={env.current_version}
+                onSetGlobal={onSetGlobal}
+                onSetLocal={onSetLocal}
+                t={t}
+              />
             </section>
 
             <Separator />

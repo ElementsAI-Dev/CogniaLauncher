@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
 import { ONBOARDING_STEPS, type OnboardingStepId } from '@/lib/stores/onboarding';
@@ -132,21 +134,25 @@ export function OnboardingWizard({
               const Icon = STEP_ICONS[stepId];
               const isActive = idx === currentStep;
               const isDone = idx < currentStep;
+              const stepLabel = t(`onboarding.step${stepId.charAt(0).toUpperCase() + stepId.slice(1).replace(/-./g, (m) => m[1].toUpperCase())}`);
               return (
-                <button
-                  key={stepId}
-                  onClick={() => onGoTo(idx)}
-                  className={`flex items-center justify-center rounded-full transition-all ${
-                    isActive
-                      ? 'h-9 w-9 bg-primary text-primary-foreground shadow-sm'
-                      : isDone
-                        ? 'h-7 w-7 bg-primary/20 text-primary hover:bg-primary/30'
-                        : 'h-7 w-7 bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                  title={t(`onboarding.step${stepId.charAt(0).toUpperCase() + stepId.slice(1).replace(/-./g, (m) => m[1].toUpperCase())}`)}
-                >
-                  <Icon className={isActive ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
-                </button>
+                <Tooltip key={stepId}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => onGoTo(idx)}
+                      className={`flex items-center justify-center rounded-full transition-all ${
+                        isActive
+                          ? 'h-9 w-9 bg-primary text-primary-foreground shadow-sm'
+                          : isDone
+                            ? 'h-7 w-7 bg-primary/20 text-primary hover:bg-primary/30'
+                            : 'h-7 w-7 bg-muted text-muted-foreground hover:bg-muted/80'
+                      }`}
+                    >
+                      <Icon className={isActive ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{stepLabel}</TooltipContent>
+                </Tooltip>
               );
             })}
           </div>
@@ -161,6 +167,8 @@ export function OnboardingWizard({
             </div>
           </div>
         </DialogHeader>
+
+        <Separator />
 
         {/* Step content */}
         <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">

@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -69,9 +71,7 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   } = usePackages();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeView, setActiveView] = useState<"installed" | "search">(
-    "installed",
-  );
+  const [activeView, setActiveView] = useState("installed");
 
   const relevantProviders = ENV_TYPE_TO_PROVIDERS[envType] || [];
   const [selectedProvider, setSelectedProvider] = useState(
@@ -225,43 +225,38 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
           </div>
 
           {/* View Toggle */}
-          <div className="flex gap-2 mt-3">
-            <Button
-              variant={activeView === "installed" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveView("installed")}
-            >
-              {t("environments.detail.installedTab")}
-              {installedPackages.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5">
-                  {installedPackages.length}
-                </Badge>
-              )}
-            </Button>
-            <Button
-              variant={activeView === "search" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveView("search")}
-              disabled={searchResults.length === 0}
-            >
-              {t("environments.detail.searchResults")}
-              {searchResults.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5">
-                  {searchResults.length}
-                </Badge>
-              )}
-            </Button>
-          </div>
+          <Tabs value={activeView} onValueChange={setActiveView} className="mt-3">
+            <TabsList>
+              <TabsTrigger value="installed" className="gap-1.5">
+                {t("environments.detail.installedTab")}
+                {installedPackages.length > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {installedPackages.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger
+                value="search"
+                className="gap-1.5"
+                disabled={searchResults.length === 0}
+              >
+                {t("environments.detail.searchResults")}
+                {searchResults.length > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {searchResults.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </CardContent>
       </Card>
 
       {/* Error Display */}
       {error && (
-        <Card className="border-destructive">
-          <CardContent className="py-3 text-sm text-destructive">
-            {error}
-          </CardContent>
-        </Card>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Available Updates */}

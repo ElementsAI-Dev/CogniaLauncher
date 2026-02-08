@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -294,8 +296,8 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
           {showImport && (
             <Card>
               <CardContent className="pt-4 space-y-2">
-                <textarea
-                  className="w-full h-24 p-2 rounded-md border bg-muted/50 font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                <Textarea
+                  className="h-24 font-mono text-xs resize-none bg-muted/50"
                   placeholder={t("environments.profiles.pasteJson")}
                   value={importJson}
                   onChange={(e) => setImportJson(e.target.value)}
@@ -326,7 +328,9 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
           )}
 
           {error && (
-            <div className="text-sm text-destructive px-1">{error}</div>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {/* Apply Result */}

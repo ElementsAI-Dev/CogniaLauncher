@@ -414,12 +414,15 @@ export function ProviderPackagesTab({
         </CardHeader>
         <CardContent>
           {installedPackages.length > 5 && (
-            <Input
-              placeholder={t("providerDetail.filterInstalled")}
-              value={installedFilter}
-              onChange={(e) => setInstalledFilter(e.target.value)}
-              className="mb-4"
-            />
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={t("providerDetail.filterInstalled")}
+                value={installedFilter}
+                onChange={(e) => setInstalledFilter(e.target.value)}
+                className="pl-9"
+              />
+            </div>
           )}
 
           {loadingPackages && installedPackages.length === 0 ? (

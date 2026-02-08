@@ -5,6 +5,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Kbd } from "@/components/ui/kbd";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Settings2,
   Network,
@@ -125,11 +131,17 @@ export function SettingsNav({
                 <span className="truncate flex-1">{t(section.labelKey)}</span>
                 <div className="flex items-center gap-1">
                   {hasChanges && (
-                    <span
-                      className="h-2 w-2 rounded-full bg-amber-500"
-                      title={t("settings.nav.hasChanges")}
-                      aria-label={t("settings.nav.hasChanges")}
-                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="h-2 w-2 rounded-full bg-amber-500"
+                          aria-label={t("settings.nav.hasChanges")}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side="right">
+                        {t("settings.nav.hasChanges")}
+                      </TooltipContent>
+                    </Tooltip>
                   )}
                   {isCollapsed && (
                     <Badge variant="outline" className="h-4 px-1 text-[10px]">
@@ -148,18 +160,14 @@ export function SettingsNav({
         <p className="text-xs text-muted-foreground">
           {t("settings.nav.hint")}
         </p>
-        <div className="mt-2 flex flex-wrap gap-1">
-          <kbd className="inline-flex h-5 items-center rounded border bg-muted px-1.5 text-[10px] font-medium">
-            /
-          </kbd>
+        <div className="mt-2 flex flex-wrap gap-1 items-center">
+          <Kbd>/</Kbd>
           <span className="text-xs text-muted-foreground">
             {t("settings.nav.hintSearch")}
           </span>
         </div>
-        <div className="mt-1 flex flex-wrap gap-1">
-          <kbd className="inline-flex h-5 items-center rounded border bg-muted px-1.5 text-[10px] font-medium">
-            ↑↓
-          </kbd>
+        <div className="mt-1 flex flex-wrap gap-1 items-center">
+          <Kbd>↑↓</Kbd>
           <span className="text-xs text-muted-foreground">
             {t("settings.nav.hintNavigate")}
           </span>

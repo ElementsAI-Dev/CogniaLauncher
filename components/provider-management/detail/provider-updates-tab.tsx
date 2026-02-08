@@ -21,6 +21,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   ArrowUpCircle,
   Loader2,
   RefreshCw,
@@ -121,19 +126,26 @@ export function ProviderUpdatesTab({
                 {t("providerDetail.updateAll")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onCheckUpdates()}
-              disabled={loadingUpdates}
-            >
-              {loadingUpdates ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              {t("providerDetail.checkUpdates")}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onCheckUpdates()}
+                  disabled={loadingUpdates}
+                >
+                  {loadingUpdates ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  {t("providerDetail.checkUpdates")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t("providerDetail.checkUpdatesDesc")}</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </CardHeader>
@@ -180,18 +192,25 @@ export function ProviderUpdatesTab({
                       {update.latest_version}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleUpdatePackage(update.name)}
-                        disabled={updatingPackages.has(update.name) || isUpdatingAll}
-                      >
-                        {updatingPackages.has(update.name) ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ArrowUpCircle className="h-4 w-4" />
-                        )}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUpdatePackage(update.name)}
+                            disabled={updatingPackages.has(update.name) || isUpdatingAll}
+                          >
+                            {updatingPackages.has(update.name) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ArrowUpCircle className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{t("providerDetail.updatePackage")}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}

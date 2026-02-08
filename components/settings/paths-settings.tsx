@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 import {
   FolderOpen,
   Loader2,
@@ -490,12 +491,12 @@ function PathInputItem({
         {validation && validation.isValid && value.trim() && status !== "validating" && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {/* Existence */}
-            <span
+            <Badge
+              variant="outline"
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
                 validation.exists
-                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                  ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
               )}
             >
               {validation.exists ? (
@@ -506,16 +507,15 @@ function PathInputItem({
               {validation.exists
                 ? t("settings.pathValidation.exists")
                 : t("settings.pathValidation.willCreate")}
-            </span>
+            </Badge>
 
             {/* Writable */}
             {validation.exists && (
-              <span
+              <Badge
+                variant={validation.writable ? "outline" : "destructive"}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
-                  validation.writable
-                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                    : "bg-destructive/10 text-destructive",
+                  validation.writable &&
+                    "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
                 )}
               >
                 {validation.writable ? (
@@ -526,17 +526,16 @@ function PathInputItem({
                 {validation.writable
                   ? t("settings.pathValidation.writable")
                   : t("settings.pathValidation.notWritable")}
-              </span>
+              </Badge>
             )}
 
             {/* Parent writable (when path doesn't exist) */}
             {!validation.exists && validation.parentExists && (
-              <span
+              <Badge
+                variant={validation.parentWritable ? "outline" : "destructive"}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5",
-                  validation.parentWritable
-                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                    : "bg-destructive/10 text-destructive",
+                  validation.parentWritable &&
+                    "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
                 )}
               >
                 {validation.parentWritable ? (
@@ -547,15 +546,15 @@ function PathInputItem({
                 {validation.parentWritable
                   ? t("settings.pathValidation.parentWritable")
                   : t("settings.pathValidation.parentNotWritable")}
-              </span>
+              </Badge>
             )}
 
             {/* Disk space */}
             {validation.diskAvailable > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+              <Badge variant="secondary">
                 <HardDrive className="h-3 w-3" />
                 {t("settings.pathValidation.diskSpace")}: {validation.diskAvailableHuman}
-              </span>
+              </Badge>
             )}
           </div>
         )}

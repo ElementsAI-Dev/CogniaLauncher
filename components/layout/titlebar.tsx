@@ -17,13 +17,19 @@ import { useSettingsStore } from "@/lib/stores/settings";
 import { useWindowStateStore } from "@/lib/stores/window-state";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuCheckboxItem,
-} from "@/components/ui/dropdown-menu";
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuCheckboxItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 
 type TauriWindow = Awaited<
   ReturnType<typeof import("@tauri-apps/api/window").getCurrentWindow>
@@ -49,11 +55,6 @@ export function Titlebar() {
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
   const windowStateStore = useWindowStateStore();
-  const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState({
-    x: 0,
-    y: 0,
-  });
 
   const unlistenResizeRef = useRef<(() => void) | null>(null);
   const unlistenFocusRef = useRef<(() => void) | null>(null);
@@ -220,12 +221,6 @@ export function Titlebar() {
     [handleMaximize],
   );
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenuPosition({ x: e.clientX, y: e.clientY });
-    setContextMenuOpen(true);
-  }, []);
-
   // Maximize padding: on Windows frameless, maximized windows need padding
   // to prevent content clipping by the invisible thick-frame border
   const maximizePadding =
@@ -247,185 +242,192 @@ export function Titlebar() {
   }
 
   return (
-    <>
-      <div
-        data-tauri-drag-region
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
-        className={cn(
-          "flex w-full select-none items-center justify-between border-b transition-opacity",
-          isFocused
-            ? "bg-background/80 backdrop-blur-sm"
-            : "bg-background/60 backdrop-blur-sm opacity-80",
-        )}
-        style={{
-          height: `calc(2rem + ${maximizePadding}px)`,
-          paddingTop: maximizePadding,
-          paddingLeft: maximizePadding,
-          paddingRight: maximizePadding,
-        }}
-      >
-        <div className="flex h-full flex-1 items-center gap-2 px-3">
-          <div className="flex items-center gap-2">
-            <svg
-              className={cn(
-                "h-4 w-4 transition-colors",
-                isFocused ? "text-primary" : "text-muted-foreground",
-              )}
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg>
-            <span
-              className={cn(
-                "text-xs font-medium transition-colors",
-                isFocused
-                  ? "text-muted-foreground"
-                  : "text-muted-foreground/60",
-              )}
-            >
-              CogniaLauncher
-            </span>
-            {isAlwaysOnTop && <Pin className="h-3 w-3 text-primary" />}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-tauri-drag-region
+          onDoubleClick={handleDoubleClick}
+          className={cn(
+            "flex w-full select-none items-center justify-between border-b transition-opacity",
+            isFocused
+              ? "bg-background/80 backdrop-blur-sm"
+              : "bg-background/60 backdrop-blur-sm opacity-80",
+          )}
+          style={{
+            height: `calc(2rem + ${maximizePadding}px)`,
+            paddingTop: maximizePadding,
+            paddingLeft: maximizePadding,
+            paddingRight: maximizePadding,
+          }}
+        >
+          <div className="flex h-full flex-1 items-center gap-2 px-3">
+            <div className="flex items-center gap-2">
+              <svg
+                className={cn(
+                  "h-4 w-4 transition-colors",
+                  isFocused ? "text-primary" : "text-muted-foreground",
+                )}
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg>
+              <span
+                className={cn(
+                  "text-xs font-medium transition-colors",
+                  isFocused
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/60",
+                )}
+              >
+                CogniaLauncher
+              </span>
+              {isAlwaysOnTop && <Pin className="h-3 w-3 text-primary" />}
+            </div>
+          </div>
+
+          <div className="flex h-full items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleToggleAlwaysOnTop}
+                  className={cn(
+                    "inline-flex h-full w-11 items-center justify-center",
+                    "text-muted-foreground transition-colors",
+                    "hover:bg-muted hover:text-foreground",
+                    isAlwaysOnTop && "text-primary",
+                  )}
+                  aria-label={
+                    isAlwaysOnTop
+                      ? t("titlebar.unpinFromTop")
+                      : t("titlebar.pinOnTop")
+                  }
+                >
+                  {isAlwaysOnTop ? (
+                    <PinOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Pin className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {isAlwaysOnTop ? t("titlebar.unpinFromTop") : t("titlebar.pinOnTop")} (Ctrl+Shift+T)
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleMinimize}
+                  className={cn(
+                    "inline-flex h-full w-11 items-center justify-center",
+                    "text-muted-foreground transition-colors",
+                    "hover:bg-muted hover:text-foreground",
+                  )}
+                  aria-label={t("titlebar.minimize")}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t("titlebar.minimize")}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleMaximize}
+                  className={cn(
+                    "inline-flex h-full w-11 items-center justify-center",
+                    "text-muted-foreground transition-colors",
+                    "hover:bg-muted hover:text-foreground",
+                  )}
+                  aria-label={
+                    isMaximized ? t("titlebar.restore") : t("titlebar.maximize")
+                  }
+                >
+                  {isMaximized ? (
+                    <RestoreIcon className="h-3.5 w-3.5" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {isMaximized ? t("titlebar.restore") : t("titlebar.maximize")}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleClose}
+                  className={cn(
+                    "inline-flex h-full w-11 items-center justify-center",
+                    "text-muted-foreground transition-colors",
+                    "hover:bg-destructive hover:text-destructive-foreground",
+                  )}
+                  aria-label={t("titlebar.close")}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {appSettings.minimizeToTray
+                  ? t("titlebar.minimizeToTray")
+                  : t("titlebar.close")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
+      </ContextMenuTrigger>
 
-        <div className="flex h-full items-center">
-          <button
-            onClick={handleToggleAlwaysOnTop}
-            className={cn(
-              "inline-flex h-full w-11 items-center justify-center",
-              "text-muted-foreground transition-colors",
-              "hover:bg-muted hover:text-foreground",
-              isAlwaysOnTop && "text-primary",
-            )}
-            aria-label={
-              isAlwaysOnTop
-                ? t("titlebar.unpinFromTop")
-                : t("titlebar.pinOnTop")
-            }
-            title={`${isAlwaysOnTop ? t("titlebar.unpinFromTop") : t("titlebar.pinOnTop")} (Ctrl+Shift+T)`}
-          >
-            {isAlwaysOnTop ? (
-              <PinOff className="h-3.5 w-3.5" />
-            ) : (
-              <Pin className="h-3.5 w-3.5" />
-            )}
-          </button>
-
-          <button
-            onClick={handleMinimize}
-            className={cn(
-              "inline-flex h-full w-11 items-center justify-center",
-              "text-muted-foreground transition-colors",
-              "hover:bg-muted hover:text-foreground",
-            )}
-            aria-label={t("titlebar.minimize")}
-            title={t("titlebar.minimize")}
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-
-          <button
-            onClick={handleMaximize}
-            className={cn(
-              "inline-flex h-full w-11 items-center justify-center",
-              "text-muted-foreground transition-colors",
-              "hover:bg-muted hover:text-foreground",
-            )}
-            aria-label={
-              isMaximized ? t("titlebar.restore") : t("titlebar.maximize")
-            }
-            title={isMaximized ? t("titlebar.restore") : t("titlebar.maximize")}
-          >
-            {isMaximized ? (
-              <RestoreIcon className="h-3.5 w-3.5" />
-            ) : (
-              <Square className="h-3.5 w-3.5" />
-            )}
-          </button>
-
-          <button
-            onClick={handleClose}
-            className={cn(
-              "inline-flex h-full w-11 items-center justify-center",
-              "text-muted-foreground transition-colors",
-              "hover:bg-destructive hover:text-destructive-foreground",
-            )}
-            aria-label={t("titlebar.close")}
-            title={
-              appSettings.minimizeToTray
-                ? t("titlebar.minimizeToTray")
-                : t("titlebar.close")
-            }
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <DropdownMenu open={contextMenuOpen} onOpenChange={setContextMenuOpen}>
-        <div
-          style={{
-            position: "fixed",
-            left: contextMenuPosition.x,
-            top: contextMenuPosition.y,
-          }}
-        />
-        <DropdownMenuContent
-          style={{
-            position: "fixed",
-            left: contextMenuPosition.x,
-            top: contextMenuPosition.y,
-          }}
-          className="w-56"
+      <ContextMenuContent className="w-56">
+        <ContextMenuItem onClick={handleMinimize}>
+          <Minus className="h-4 w-4" />
+          {t("titlebar.minimize")}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleMaximize}>
+          {isMaximized ? (
+            <>
+              <RestoreIcon className="h-4 w-4" />
+              {t("titlebar.restore")}
+            </>
+          ) : (
+            <>
+              <Square className="h-4 w-4" />
+              {t("titlebar.maximize")}
+            </>
+          )}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={handleToggleFullscreen}>
+          <Maximize2 className="h-4 w-4" />
+          {t("titlebar.fullscreen")}
+          <ContextMenuShortcut>F11</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleCenter}>
+          <Move className="h-4 w-4" />
+          {t("titlebar.centerWindow")}
+        </ContextMenuItem>
+        <ContextMenuCheckboxItem
+          checked={isAlwaysOnTop}
+          onCheckedChange={handleToggleAlwaysOnTop}
         >
-          <DropdownMenuItem onClick={handleMinimize}>
-            <Minus className="h-4 w-4" />
-            {t("titlebar.minimize")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleMaximize}>
-            {isMaximized ? (
-              <>
-                <RestoreIcon className="h-4 w-4" />
-                {t("titlebar.restore")}
-              </>
-            ) : (
-              <>
-                <Square className="h-4 w-4" />
-                {t("titlebar.maximize")}
-              </>
-            )}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleToggleFullscreen}>
-            <Maximize2 className="h-4 w-4" />
-            {t("titlebar.fullscreen")}
-            <DropdownMenuShortcut>F11</DropdownMenuShortcut>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleCenter}>
-            <Move className="h-4 w-4" />
-            {t("titlebar.centerWindow")}
-          </DropdownMenuItem>
-          <DropdownMenuCheckboxItem
-            checked={isAlwaysOnTop}
-            onCheckedChange={handleToggleAlwaysOnTop}
-          >
-            <MonitorUp className="h-4 w-4" />
-            {t("titlebar.alwaysOnTop")}
-            <DropdownMenuShortcut>Ctrl+Shift+T</DropdownMenuShortcut>
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleClose} variant="destructive">
-            <X className="h-4 w-4" />
-            {appSettings.minimizeToTray
-              ? t("titlebar.minimizeToTray")
-              : t("titlebar.close")}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+          <MonitorUp className="h-4 w-4" />
+          {t("titlebar.alwaysOnTop")}
+          <ContextMenuShortcut>Ctrl+Shift+T</ContextMenuShortcut>
+        </ContextMenuCheckboxItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={handleClose} variant="destructive">
+          <X className="h-4 w-4" />
+          {appSettings.minimizeToTray
+            ? t("titlebar.minimizeToTray")
+            : t("titlebar.close")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

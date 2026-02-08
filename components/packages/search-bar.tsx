@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   X,
@@ -266,7 +267,8 @@ export function SearchBar({
 
           {/* Suggestions & History Dropdown */}
           {showDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg z-50 max-h-[400px] overflow-y-auto">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg z-50">
+            <ScrollArea className="max-h-[400px]">
               {/* Suggestions */}
               {isPending && (
                 <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
@@ -336,6 +338,7 @@ export function SearchBar({
                     </div>
                   </div>
                 )}
+            </ScrollArea>
             </div>
           )}
         </div>

@@ -25,6 +25,7 @@ import {
   UserCog,
   HardDrive,
 } from 'lucide-react';
+import { formatBytes } from '@/lib/utils';
 import type { WslDistroStatus, WslDiskUsage } from '@/types/tauri';
 
 interface WslDistroCardProps {
@@ -38,14 +39,6 @@ interface WslDistroCardProps {
   onChangeDefaultUser?: (name: string) => void;
   getDiskUsage?: (name: string) => Promise<WslDiskUsage | null>;
   t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 export function WslDistroCard({
@@ -145,7 +138,7 @@ export function WslDistroCard({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.more')}>
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

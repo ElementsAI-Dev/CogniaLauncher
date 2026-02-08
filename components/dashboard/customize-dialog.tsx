@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Plus,
   RotateCcw,
@@ -111,18 +112,22 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <ToggleGroup
+          type="single"
+          value={selectedCategory}
+          onValueChange={(value) => {
+            if (value) setSelectedCategory(value);
+          }}
+          className="flex-wrap justify-start"
+          variant="outline"
+          size="sm"
+        >
           {categories.map((cat) => (
-            <Button
-              key={cat.id}
-              variant={selectedCategory === cat.id ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedCategory(cat.id)}
-            >
+            <ToggleGroupItem key={cat.id} value={cat.id}>
               {cat.label}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         <Separator />
 

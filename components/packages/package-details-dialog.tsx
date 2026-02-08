@@ -254,36 +254,38 @@ export function PackageDetailsDialog({
                 <h4 className="text-sm font-medium">
                   {t("packages.versionHistory")}
                 </h4>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {packageInfo.versions.slice(0, 10).map((v) => (
-                    <div
-                      key={v.version}
-                      className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono">{v.version}</span>
-                        {v.deprecated && (
-                          <Badge variant="outline" className="text-xs">
-                            {t("packages.deprecated")}
-                          </Badge>
+                <ScrollArea className="max-h-40">
+                  <div className="space-y-1">
+                    {packageInfo.versions.slice(0, 10).map((v) => (
+                      <div
+                        key={v.version}
+                        className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted text-sm"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">{v.version}</span>
+                          {v.deprecated && (
+                            <Badge variant="outline" className="text-xs">
+                              {t("packages.deprecated")}
+                            </Badge>
+                          )}
+                        </div>
+                        {v.release_date && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(v.release_date).toLocaleDateString()}
+                          </span>
                         )}
                       </div>
-                      {v.release_date && (
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(v.release_date).toLocaleDateString()}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  {packageInfo.versions.length > 10 && (
-                    <p className="text-xs text-muted-foreground text-center py-2">
-                      {t("packages.moreVersions", {
-                        count: packageInfo.versions.length - 10,
-                      })}
-                    </p>
-                  )}
-                </div>
+                    ))}
+                    {packageInfo.versions.length > 10 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">
+                        {t("packages.moreVersions", {
+                          count: packageInfo.versions.length - 10,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </ScrollArea>
               </div>
             </div>
           ) : (

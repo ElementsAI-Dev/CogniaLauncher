@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -221,6 +222,14 @@ export function EnvironmentBatchOperations({
                     </div>
                   </div>
                 </div>
+                <Progress
+                  value={
+                    selectedVersions.length > 0
+                      ? ((currentIndex + 1) / selectedVersions.length) * 100
+                      : 0
+                  }
+                  className="h-2"
+                />
               </div>
             )}
 

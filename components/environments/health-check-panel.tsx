@@ -261,7 +261,7 @@ interface IssueCardProps {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-function IssueCard({ issue, onCopy, t }: IssueCardProps) {
+export function IssueCard({ issue, onCopy, t }: IssueCardProps) {
   const getAlertVariant = (severity: Severity): "default" | "destructive" => {
     switch (severity) {
       case "critical":

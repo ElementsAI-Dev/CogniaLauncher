@@ -38,10 +38,12 @@ export function DownloadEmptyState({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-      <ArrowDownToLine className="h-12 w-12 mb-4 opacity-50" />
-      <p className="text-sm font-medium">{t("downloads.noTasks")}</p>
-      <p className="text-xs">{t("downloads.noTasksDesc")}</p>
-    </div>
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+        <ArrowDownToLine className="h-12 w-12 mb-4 opacity-50" />
+        <p className="text-sm font-medium">{t("downloads.noTasks")}</p>
+        <p className="text-xs">{t("downloads.noTasksDesc")}</p>
+      </CardContent>
+    </Card>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
 import { TOUR_STEPS, type TourStepDef } from './tour-steps';
 import { ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
@@ -212,20 +213,22 @@ export function TourOverlay({
       >
         <div className="flex items-start justify-between gap-2 mb-2">
           <h4 className="font-semibold text-sm">{t(step.titleKey)}</h4>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 -mt-0.5"
             onClick={onStop}
-            className="text-muted-foreground hover:text-foreground transition-colors -mt-0.5"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground mb-4">
           {t(step.descKey)}
         </p>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
+          <Badge variant="outline" className="text-xs">
             {currentStep + 1} / {TOUR_STEPS.length}
-          </span>
+          </Badge>
           <div className="flex gap-1.5">
             {!isFirst && (
               <Button variant="outline" size="sm" className="h-7 px-2" onClick={onPrev}>

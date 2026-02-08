@@ -8,10 +8,16 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
+  CardAction,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Package,
   Search,
@@ -19,6 +25,7 @@ import {
   ChevronRight,
   ExternalLink,
   ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
@@ -53,11 +60,6 @@ export function PackageList({
     );
   }, [packages, searchQuery]);
 
-  const displayedPackages = useMemo(() => {
-    if (expanded) return filteredPackages;
-    return filteredPackages.slice(0, initialLimit);
-  }, [filteredPackages, expanded, initialLimit]);
-
   const remainingCount = filteredPackages.length - initialLimit;
   const hasMore = remainingCount > 0;
 
@@ -74,18 +76,19 @@ export function PackageList({
     router.push("/packages");
   }, [router]);
 
+  const initialItems = filteredPackages.slice(0, initialLimit);
+  const extraItems = filteredPackages.slice(initialLimit);
+
   return (
     <Card className={cn("", className)}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-medium">
-              {t("dashboard.packageList.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("dashboard.recentPackagesDesc")}
-            </CardDescription>
-          </div>
+        <CardTitle className="text-base font-medium">
+          {t("dashboard.packageList.title")}
+        </CardTitle>
+        <CardDescription>
+          {t("dashboard.recentPackagesDesc")}
+        </CardDescription>
+        <CardAction>
           <Button
             variant="ghost"
             size="sm"
@@ -95,7 +98,7 @@ export function PackageList({
             {t("dashboard.packageList.viewAll")}
             <ExternalLink className="h-3 w-3" />
           </Button>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {/* Search Input */}
@@ -132,9 +135,9 @@ export function PackageList({
             </p>
           </div>
         ) : (
-          <>
+          <Collapsible open={expanded} onOpenChange={setExpanded}>
             <div className="space-y-2">
-              {displayedPackages.map((pkg, index) => (
+              {initialItems.map((pkg, index) => (
                 <PackageItem
                   key={`${pkg.provider}-${pkg.name}-${pkg.version}-${index}`}
                   package={pkg}
@@ -143,29 +146,42 @@ export function PackageList({
               ))}
             </div>
 
-            {hasMore && !expanded && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpanded(true)}
-                className="mt-3 w-full gap-1"
-              >
-                <ChevronDown className="h-4 w-4" />
-                {t("dashboard.packageList.showMore", { count: remainingCount })}
-              </Button>
-            )}
+            {hasMore && (
+              <>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    {extraItems.map((pkg, index) => (
+                      <PackageItem
+                        key={`${pkg.provider}-${pkg.name}-${pkg.version}-extra-${index}`}
+                        package={pkg}
+                        onClick={() => handlePackageClick(pkg)}
+                      />
+                    ))}
+                  </div>
+                </CollapsibleContent>
 
-            {expanded && hasMore && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpanded(false)}
-                className="mt-3 w-full gap-1"
-              >
-                {t("dashboard.environmentList.showLess")}
-              </Button>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 w-full gap-1"
+                  >
+                    {expanded ? (
+                      <>
+                        <ChevronUp className="h-4 w-4" />
+                        {t("dashboard.environmentList.showLess")}
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4" />
+                        {t("dashboard.packageList.showMore", { count: remainingCount })}
+                      </>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </>
             )}
-          </>
+          </Collapsible>
         )}
       </CardContent>
     </Card>

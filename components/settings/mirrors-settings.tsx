@@ -9,9 +9,6 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Globe, ChevronDown } from "lucide-react";
 import { SettingItem } from "./setting-item";
+import { SwitchSettingItem } from "./setting-item";
 
 interface MirrorsSettingsProps {
   localConfig: Record<string, string>;
@@ -85,54 +83,32 @@ export function MirrorsSettings({
 
     return (
       <div className="grid gap-4 md:grid-cols-3 py-2">
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <Label htmlFor={`${key}-enabled`}>
-              {t("settings.mirrorEnabled")}
-            </Label>
-            <Switch
-              id={`${key}-enabled`}
-              checked={localConfig[enabledKey] !== "false"}
-              onCheckedChange={(checked) =>
-                onValueChange(enabledKey, checked.toString())
-              }
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.mirrorEnabledDesc")}
-          </p>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor={`${key}-priority`}>
-            {t("settings.mirrorPriority")}
-          </Label>
-          <Input
-            id={`${key}-priority`}
-            type="number"
-            value={localConfig[priorityKey] || "0"}
-            onChange={(event) => onValueChange(priorityKey, event.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t("settings.mirrorPriorityDesc")}
-          </p>
-        </div>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between">
-            <Label htmlFor={`${key}-verify`}>
-              {t("settings.mirrorVerifySsl")}
-            </Label>
-            <Switch
-              id={`${key}-verify`}
-              checked={localConfig[verifyKey] !== "false"}
-              onCheckedChange={(checked) =>
-                onValueChange(verifyKey, checked.toString())
-              }
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.mirrorVerifySslDesc")}
-          </p>
-        </div>
+        <SwitchSettingItem
+          id={`${key}-enabled`}
+          label={t("settings.mirrorEnabled")}
+          description={t("settings.mirrorEnabledDesc")}
+          checked={localConfig[enabledKey] !== "false"}
+          onCheckedChange={(checked) =>
+            onValueChange(enabledKey, checked.toString())
+          }
+        />
+        <SettingItem
+          id={`${key}-priority`}
+          label={t("settings.mirrorPriority")}
+          description={t("settings.mirrorPriorityDesc")}
+          value={localConfig[priorityKey] || "0"}
+          onChange={(v) => onValueChange(priorityKey, v)}
+          type="number"
+        />
+        <SwitchSettingItem
+          id={`${key}-verify`}
+          label={t("settings.mirrorVerifySsl")}
+          description={t("settings.mirrorVerifySslDesc")}
+          checked={localConfig[verifyKey] !== "false"}
+          onCheckedChange={(checked) =>
+            onValueChange(verifyKey, checked.toString())
+          }
+        />
       </div>
     );
   };

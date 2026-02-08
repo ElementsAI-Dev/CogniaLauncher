@@ -45,10 +45,10 @@ describe("SplashScreen", () => {
     expect(screen.queryByText(/^v/)).not.toBeInTheDocument();
   });
 
-  it("renders progress bar with correct width", () => {
+  it("renders progress bar with correct value", () => {
     const { container } = render(<SplashScreen {...defaultProps} progress={75} />);
-    const bar = container.querySelector(".splash-progress");
-    expect(bar).toHaveStyle({ width: "75%" });
+    const bar = container.querySelector('[data-slot="progress-indicator"]');
+    expect(bar).toHaveStyle({ transform: "translateX(-25%)" });
   });
 
   it("renders status message", () => {

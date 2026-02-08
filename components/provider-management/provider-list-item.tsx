@@ -13,6 +13,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Loader2,
   CheckCircle2,
   XCircle,
@@ -104,7 +109,14 @@ export function ProviderListItem({
             <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
               {provider.platforms.map((p) => (
-                <span key={p} title={p}>{getPlatformIcon(p)}</span>
+                <Tooltip key={p}>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-default">{getPlatformIcon(p)}</span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{p}</p>
+                  </TooltipContent>
+                </Tooltip>
               ))}
             </span>
             <span className="text-xs text-muted-foreground">•</span>

@@ -110,7 +110,7 @@ describe("SettingsNav", () => {
       <SettingsNav {...defaultProps} sectionHasChanges={sectionHasChanges} />,
     );
 
-    const changeIndicator = screen.getByTitle("Has unsaved changes");
+    const changeIndicator = screen.getByLabelText("Has unsaved changes");
     expect(changeIndicator).toBeInTheDocument();
   });
 

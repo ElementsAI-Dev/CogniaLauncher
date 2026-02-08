@@ -67,13 +67,16 @@ describe("DownloadToolbar", () => {
   it("renders status filter tabs with counts", () => {
     render(<DownloadToolbar {...defaultProps} />);
 
-    expect(screen.getByRole("tab", { name: /all \(5\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /all/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("tab", { name: /downloading \(2\)/i }),
+      screen.getByRole("tab", { name: /downloading/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("tab", { name: /paused \(1\)/i }),
+      screen.getByRole("tab", { name: /paused/i }),
     ).toBeInTheDocument();
+    // Counts are now in Badge components
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
   });
 
   it("calls onSearchChange when typing in search input", async () => {
@@ -132,7 +135,7 @@ describe("DownloadToolbar", () => {
     expect(onResumeAll).toHaveBeenCalled();
   });
 
-  it("disables all buttons when isLoading is true", () => {
+  it("disables primary action buttons when isLoading is true", () => {
     render(<DownloadToolbar {...defaultProps} isLoading={true} />);
 
     expect(screen.getByRole("button", { name: /pause all/i })).toBeDisabled();

@@ -35,6 +35,13 @@ jest.mock('next/navigation', () => ({
   },
 }));
 
+// Mock ResizeObserver for components using cmdk (Command) or Radix UI
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // Suppress console errors in tests (optional)
 // global.console = {
 //   ...console,

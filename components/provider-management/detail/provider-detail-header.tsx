@@ -10,6 +10,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import {
   ArrowLeft,
   Activity,
@@ -127,7 +128,8 @@ export function ProviderDetailHeader({
           {t("providers.refresh")}
         </Button>
 
-        <div className="flex items-center gap-2 border-l pl-3">
+        <Separator orientation="vertical" className="h-6" />
+        <div className="flex items-center gap-2">
           <Label htmlFor="provider-enabled" className="text-sm">
             {t("providers.enabled")}
           </Label>

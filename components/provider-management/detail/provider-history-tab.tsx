@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -10,7 +10,17 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationEllipsis,
+} from "@/components/ui/pagination";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -44,8 +54,6 @@ import {
   ArrowUpCircle,
   RotateCcw,
   Search,
-  ChevronLeft,
-  ChevronRight,
   AlertCircle,
 } from "lucide-react";
 import type { InstallHistoryEntry } from "@/types/tauri";
@@ -263,21 +271,25 @@ export function ProviderHistoryTab({
                             </span>
                           </div>
                         ) : (
-                          <div className="space-y-1">
+                          <Collapsible
+                            open={expandedError === entry.id}
+                            onOpenChange={(open) => setExpandedError(open ? entry.id : null)}
+                          >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <button
-                                  className="flex items-center gap-1 text-red-600 hover:underline"
-                                  onClick={() => setExpandedError(expandedError === entry.id ? null : entry.id)}
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                  <span className="text-xs">
-                                    {t("providerDetail.failed")}
-                                  </span>
-                                  {entry.error_message && (
-                                    <AlertCircle className="h-3 w-3 ml-1" />
-                                  )}
-                                </button>
+                                <CollapsibleTrigger asChild>
+                                  <button
+                                    className="flex items-center gap-1 text-red-600 hover:underline"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                    <span className="text-xs">
+                                      {t("providerDetail.failed")}
+                                    </span>
+                                    {entry.error_message && (
+                                      <AlertCircle className="h-3 w-3 ml-1" />
+                                    )}
+                                  </button>
+                                </CollapsibleTrigger>
                               </TooltipTrigger>
                               <TooltipContent>
                                 {entry.error_message
@@ -285,12 +297,14 @@ export function ProviderHistoryTab({
                                   : t("providerDetail.failed")}
                               </TooltipContent>
                             </Tooltip>
-                            {expandedError === entry.id && entry.error_message && (
-                              <p className="text-xs text-red-500 font-mono bg-red-50 dark:bg-red-950 rounded p-2 max-w-[300px] break-all">
-                                {entry.error_message}
-                              </p>
+                            {entry.error_message && (
+                              <CollapsibleContent>
+                                <p className="text-xs text-red-500 font-mono bg-red-50 dark:bg-red-950 rounded p-2 max-w-[300px] break-all mt-1">
+                                  {entry.error_message}
+                                </p>
+                              </CollapsibleContent>
                             )}
-                          </div>
+                          </Collapsible>
                         )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -307,24 +321,51 @@ export function ProviderHistoryTab({
                 <span className="text-xs text-muted-foreground">
                   {t("providerDetail.page", { current: safePage, total: totalPages })}
                 </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={safePage <= 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={safePage >= totalPages}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Pagination className="mx-0 w-auto justify-end">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        aria-disabled={safePage <= 1}
+                        className={cn(safePage <= 1 && "pointer-events-none opacity-50")}
+                      />
+                    </PaginationItem>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter((page) => {
+                        if (totalPages <= 5) return true;
+                        if (page === 1 || page === totalPages) return true;
+                        if (Math.abs(page - safePage) <= 1) return true;
+                        return false;
+                      })
+                      .map((page, idx, arr) => {
+                        const showEllipsis = idx > 0 && page - arr[idx - 1] > 1;
+                        return (
+                          <React.Fragment key={page}>
+                            {showEllipsis && (
+                              <PaginationItem>
+                                <PaginationEllipsis />
+                              </PaginationItem>
+                            )}
+                            <PaginationItem>
+                              <PaginationLink
+                                isActive={page === safePage}
+                                onClick={() => setCurrentPage(page)}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          </React.Fragment>
+                        );
+                      })}
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        aria-disabled={safePage >= totalPages}
+                        className={cn(safePage >= totalPages && "pointer-events-none opacity-50")}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
               </div>
             )}
           </>

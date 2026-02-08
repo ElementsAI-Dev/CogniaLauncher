@@ -1,6 +1,7 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Package, CloudDownload, Check } from "lucide-react";
 import { APP_VERSION } from "@/lib/app-version";
@@ -24,17 +25,14 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
       aria-label={t("about.versionInfo")}
     >
       {/* Current Version Card */}
-      <Card className="rounded-xl border bg-card">
-        <CardContent className="p-5 space-y-3">
-          <div className="flex items-center gap-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
             <Package className="h-5 w-5 text-blue-500" aria-hidden="true" />
-            <span
-              className="text-sm font-medium text-foreground"
-              id="current-version-label"
-            >
-              {t("about.currentVersion")}
-            </span>
-          </div>
+            <span id="current-version-label">{t("about.currentVersion")}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
           {loading ? (
             <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
@@ -46,19 +44,15 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
                 v{currentVersion}
               </span>
               {updateInfo?.update_available === false && (
-                <div
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-100 dark:bg-green-900/30"
+                <Badge
+                  variant="secondary"
+                  className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-transparent"
                   role="status"
                   aria-live="polite"
                 >
-                  <Check
-                    className="h-3 w-3 text-green-600 dark:text-green-400"
-                    aria-hidden="true"
-                  />
-                  <span className="text-xs font-medium text-green-600 dark:text-green-400">
-                    {t("about.upToDate")}
-                  </span>
-                </div>
+                  <Check className="h-3 w-3" aria-hidden="true" />
+                  {t("about.upToDate")}
+                </Badge>
               )}
             </>
           )}
@@ -66,20 +60,17 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
       </Card>
 
       {/* Latest Version Card */}
-      <Card className="rounded-xl border bg-card">
-        <CardContent className="p-5 space-y-3">
-          <div className="flex items-center gap-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm">
             <CloudDownload
               className="h-5 w-5 text-purple-500"
               aria-hidden="true"
             />
-            <span
-              className="text-sm font-medium text-foreground"
-              id="latest-version-label"
-            >
-              {t("about.latestVersion")}
-            </span>
-          </div>
+            <span id="latest-version-label">{t("about.latestVersion")}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
           {loading ? (
             <Skeleton className="h-10 w-32" aria-label={t("common.loading")} />
           ) : (
@@ -91,9 +82,12 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
                 v{latestVersion}
               </span>
               {updateInfo?.update_available && (
-                <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                <Badge
+                  variant="secondary"
+                  className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-transparent"
+                >
                   {t("about.updateAvailable")}
-                </span>
+                </Badge>
               )}
             </>
           )}

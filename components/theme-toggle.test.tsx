@@ -65,11 +65,11 @@ describe("ThemeToggle", () => {
     await user.click(button);
 
     expect(
-      await screen.findByRole("menuitem", { name: /light/i }),
+      await screen.findByRole("menuitemradio", { name: /light/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /dark/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: /dark/i })).toBeInTheDocument();
     expect(
-      screen.getByRole("menuitem", { name: /system/i }),
+      screen.getByRole("menuitemradio", { name: /system/i }),
     ).toBeInTheDocument();
   });
 
@@ -78,7 +78,7 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    const lightOption = await screen.findByRole("menuitem", { name: /light/i });
+    const lightOption = await screen.findByRole("menuitemradio", { name: /light/i });
     await user.click(lightOption);
 
     expect(mockSetTheme).toHaveBeenCalledWith("light");
@@ -89,7 +89,7 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    const darkOption = await screen.findByRole("menuitem", { name: /dark/i });
+    const darkOption = await screen.findByRole("menuitemradio", { name: /dark/i });
     await user.click(darkOption);
 
     expect(mockSetTheme).toHaveBeenCalledWith("dark");
@@ -101,7 +101,7 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    const darkOption = await screen.findByRole("menuitem", { name: /dark/i });
+    const darkOption = await screen.findByRole("menuitemradio", { name: /dark/i });
     await user.click(darkOption);
 
     expect(tauriMocks.configSet).toHaveBeenCalledWith(
@@ -115,7 +115,7 @@ describe("ThemeToggle", () => {
     render(<ThemeToggle />);
 
     await user.click(screen.getByRole("button"));
-    const systemOption = await screen.findByRole("menuitem", {
+    const systemOption = await screen.findByRole("menuitemradio", {
       name: /system/i,
     });
     await user.click(systemOption);

@@ -7,6 +7,23 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Breadcrumb as BreadcrumbRoot,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   FolderOpen,
   File,
@@ -185,28 +202,35 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
         </div>
 
         {/* Breadcrumb */}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-          <button
-            className="hover:text-foreground transition-colors"
-            onClick={() => loadDirectory('/')}
-          >
-            /
-          </button>
-          {currentPath.split('/').filter(Boolean).map((part, i, arr) => {
-            const path = '/' + arr.slice(0, i + 1).join('/');
-            return (
-              <span key={path} className="flex items-center gap-1">
-                <span>/</span>
-                <button
-                  className="hover:text-foreground transition-colors"
-                  onClick={() => loadDirectory(path)}
-                >
-                  {part}
-                </button>
-              </span>
-            );
-          })}
-        </div>
+        <BreadcrumbRoot>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              {currentPath === '/' ? (
+                <BreadcrumbPage>/</BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <button onClick={() => loadDirectory('/')}>/</button>
+                </BreadcrumbLink>
+              )}
+            </BreadcrumbItem>
+            {currentPath.split('/').filter(Boolean).map((part, i, arr) => {
+              const path = '/' + arr.slice(0, i + 1).join('/');
+              const isLast = i === arr.length - 1;
+              return (
+                <BreadcrumbItem key={path}>
+                  <BreadcrumbSeparator />
+                  {isLast ? (
+                    <BreadcrumbPage>{part}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <button onClick={() => loadDirectory(path)}>{part}</button>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              );
+            })}
+          </BreadcrumbList>
+        </BreadcrumbRoot>
 
         {/* Error */}
         {error && (
@@ -233,71 +257,95 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
 
         {!loading && entries.length > 0 && (
           <ScrollArea className="max-h-[500px]">
-            <div className="space-y-0.5">
-              {/* Parent directory */}
-              {currentPath !== '/' && (
-                <button
-                  className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded hover:bg-muted transition-colors text-sm"
-                  onClick={() => navigateTo('..')}
-                >
-                  <Folder className="h-4 w-4 text-blue-500" />
-                  <span className="font-mono">..</span>
-                </button>
-              )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40%]">{t('wsl.detail.fileName')}</TableHead>
+                  <TableHead>{t('wsl.detail.filePermissions')}</TableHead>
+                  <TableHead className="text-right">{t('wsl.detail.fileSize')}</TableHead>
+                  <TableHead className="text-right hidden lg:table-cell">{t('wsl.detail.fileModified')}</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {/* Parent directory */}
+                {currentPath !== '/' && (
+                  <TableRow className="cursor-pointer" onClick={() => navigateTo('..')}>
+                    <TableCell className="font-mono">
+                      <span className="flex items-center gap-2">
+                        <Folder className="h-4 w-4 text-blue-500 shrink-0" />
+                        ..
+                      </span>
+                    </TableCell>
+                    <TableCell />
+                    <TableCell />
+                    <TableCell className="hidden lg:table-cell" />
+                    <TableCell />
+                  </TableRow>
+                )}
 
-              {/* Sort: directories first, then files */}
-              {[...entries]
-                .sort((a, b) => {
-                  if (a.type === 'dir' && b.type !== 'dir') return -1;
-                  if (a.type !== 'dir' && b.type === 'dir') return 1;
-                  return a.name.localeCompare(b.name);
-                })
-                .map((entry) => (
-                  <div
-                    key={entry.name}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted transition-colors group"
-                  >
-                    {entry.type === 'dir' ? (
-                      <button
-                        className="flex items-center gap-2 min-w-0 flex-1 text-left"
-                        onClick={() => navigateTo(entry.name)}
-                      >
-                        {getIcon(entry)}
-                        <span className="text-sm font-mono truncate text-blue-600 dark:text-blue-400 hover:underline">
-                          {entry.name}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        {getIcon(entry)}
-                        <span className="text-sm font-mono truncate">
-                          {entry.name}
-                        </span>
-                        {entry.linkTarget && (
-                          <span className="text-xs text-muted-foreground truncate">
-                            → {entry.linkTarget}
+                {/* Sort: directories first, then files */}
+                {[...entries]
+                  .sort((a, b) => {
+                    if (a.type === 'dir' && b.type !== 'dir') return -1;
+                    if (a.type !== 'dir' && b.type === 'dir') return 1;
+                    return a.name.localeCompare(b.name);
+                  })
+                  .map((entry) => (
+                    <TableRow key={entry.name} className="group">
+                      <TableCell className="font-mono text-sm">
+                        {entry.type === 'dir' ? (
+                          <button
+                            className="flex items-center gap-2 min-w-0 text-left"
+                            onClick={() => navigateTo(entry.name)}
+                          >
+                            {getIcon(entry)}
+                            <span className="truncate text-blue-600 dark:text-blue-400 hover:underline">
+                              {entry.name}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="flex items-center gap-2 min-w-0">
+                            {getIcon(entry)}
+                            <span className="truncate">{entry.name}</span>
+                            {entry.linkTarget && (
+                              <span className="text-xs text-muted-foreground truncate">
+                                → {entry.linkTarget}
+                              </span>
+                            )}
                           </span>
                         )}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
-                      <Badge variant="outline" className="text-[10px] font-mono">
-                        {entry.permissions}
-                      </Badge>
-                      <span className="w-16 text-right">{entry.size}</span>
-                      <span className="w-28 text-right hidden lg:block">{entry.modified}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleCopyPath(entry.name)}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-            </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px] font-mono">
+                          {entry.permissions}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">
+                        {entry.size}
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground hidden lg:table-cell">
+                        {entry.modified}
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => handleCopyPath(entry.name)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('common.copy')}</TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
           </ScrollArea>
         )}
 

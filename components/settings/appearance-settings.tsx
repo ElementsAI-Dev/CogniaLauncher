@@ -8,17 +8,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Palette } from "lucide-react";
 import { AccentColorPicker } from "./accent-color-picker";
+import { SwitchSettingItem } from "./setting-item";
+import { SelectSettingItem } from "./setting-item";
 import type { AccentColor, ChartColorTheme } from "@/lib/theme/types";
 
 interface AppearanceSettingsProps {
@@ -58,53 +52,34 @@ export function AppearanceSettings({
         <CardDescription>{t("settings.appearanceDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="theme-select">{t("settings.theme")}</Label>
-            <p id="theme-desc" className="text-sm text-muted-foreground">
-              {t("settings.themeDesc")}
-            </p>
-          </div>
-          <Select value={theme} onValueChange={setTheme}>
-            <SelectTrigger
-              id="theme-select"
-              className="w-32"
-              aria-describedby="theme-desc"
-            >
-              <SelectValue placeholder={t("settings.theme")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="light">{t("settings.light")}</SelectItem>
-              <SelectItem value="dark">{t("settings.dark")}</SelectItem>
-              <SelectItem value="system">{t("settings.system")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectSettingItem
+          id="theme-select"
+          label={t("settings.theme")}
+          description={t("settings.themeDesc")}
+          value={theme || "system"}
+          onValueChange={setTheme}
+          options={[
+            { value: "light", label: t("settings.light") },
+            { value: "dark", label: t("settings.dark") },
+            { value: "system", label: t("settings.system") },
+          ]}
+          placeholder={t("settings.theme")}
+          triggerClassName="w-32"
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="language-select">{t("settings.language")}</Label>
-            <p id="language-desc" className="text-sm text-muted-foreground">
-              {t("settings.languageDesc")}
-            </p>
-          </div>
-          <Select
-            value={locale}
-            onValueChange={(v) => setLocale(v as "en" | "zh")}
-          >
-            <SelectTrigger
-              id="language-select"
-              className="w-32"
-              aria-describedby="language-desc"
-            >
-              <SelectValue placeholder={t("settings.language")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">{t("settings.english")}</SelectItem>
-              <SelectItem value="zh">{t("settings.chinese")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectSettingItem
+          id="language-select"
+          label={t("settings.language")}
+          description={t("settings.languageDesc")}
+          value={locale}
+          onValueChange={(v) => setLocale(v as "en" | "zh")}
+          options={[
+            { value: "en", label: t("settings.english") },
+            { value: "zh", label: t("settings.chinese") },
+          ]}
+          placeholder={t("settings.language")}
+          triggerClassName="w-32"
+        />
         <Separator />
         <div className="space-y-3 py-2">
           <div className="space-y-0.5">
@@ -122,71 +97,31 @@ export function AppearanceSettings({
           />
         </div>
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="chart-color-theme">
-              {t("settings.chartColorTheme")}
-            </Label>
-            <p
-              id="chart-color-theme-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.chartColorThemeDesc")}
-            </p>
-          </div>
-          <Select
-            value={chartColorTheme}
-            onValueChange={setChartColorTheme}
-          >
-            <SelectTrigger
-              id="chart-color-theme"
-              className="w-40"
-              aria-describedby="chart-color-theme-desc"
-            >
-              <SelectValue placeholder={t("settings.chartColorTheme")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">
-                {t("settings.chartThemeDefault")}
-              </SelectItem>
-              <SelectItem value="vibrant">
-                {t("settings.chartThemeVibrant")}
-              </SelectItem>
-              <SelectItem value="pastel">
-                {t("settings.chartThemePastel")}
-              </SelectItem>
-              <SelectItem value="ocean">
-                {t("settings.chartThemeOcean")}
-              </SelectItem>
-              <SelectItem value="sunset">
-                {t("settings.chartThemeSunset")}
-              </SelectItem>
-              <SelectItem value="monochrome">
-                {t("settings.chartThemeMonochrome")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectSettingItem
+          id="chart-color-theme"
+          label={t("settings.chartColorTheme")}
+          description={t("settings.chartColorThemeDesc")}
+          value={chartColorTheme}
+          onValueChange={setChartColorTheme}
+          options={[
+            { value: "default", label: t("settings.chartThemeDefault") },
+            { value: "vibrant", label: t("settings.chartThemeVibrant") },
+            { value: "pastel", label: t("settings.chartThemePastel") },
+            { value: "ocean", label: t("settings.chartThemeOcean") },
+            { value: "sunset", label: t("settings.chartThemeSunset") },
+            { value: "monochrome", label: t("settings.chartThemeMonochrome") },
+          ]}
+          placeholder={t("settings.chartColorTheme")}
+          triggerClassName="w-40"
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="reduced-motion">
-              {t("settings.reducedMotion")}
-            </Label>
-            <p
-              id="reduced-motion-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.reducedMotionDesc")}
-            </p>
-          </div>
-          <Switch
-            id="reduced-motion"
-            aria-describedby="reduced-motion-desc"
-            checked={reducedMotion}
-            onCheckedChange={setReducedMotion}
-          />
-        </div>
+        <SwitchSettingItem
+          id="reduced-motion"
+          label={t("settings.reducedMotion")}
+          description={t("settings.reducedMotionDesc")}
+          checked={reducedMotion}
+          onCheckedChange={setReducedMotion}
+        />
       </CardContent>
     </Card>
   );

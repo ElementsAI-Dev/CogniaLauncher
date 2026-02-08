@@ -21,7 +21,6 @@ jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
-        "breadcrumbs.label": "Breadcrumbs",
         "nav.dashboard": "Dashboard",
         "nav.packages": "Packages",
       };
@@ -34,8 +33,23 @@ describe("Breadcrumb", () => {
   it("renders breadcrumb items for the current path", () => {
     render(<Breadcrumb />);
 
-    expect(screen.getByLabelText("Breadcrumbs")).toBeInTheDocument();
+    // shadcn Breadcrumb uses aria-label="breadcrumb" by default
+    expect(screen.getByLabelText("breadcrumb")).toBeInTheDocument();
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Packages")).toBeInTheDocument();
+  });
+
+  it("renders current page with aria-current", () => {
+    render(<Breadcrumb />);
+
+    const currentPage = screen.getByText("Packages");
+    expect(currentPage).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders dashboard as a link", () => {
+    render(<Breadcrumb />);
+
+    const dashboardLink = screen.getByText("Dashboard").closest("a");
+    expect(dashboardLink).toHaveAttribute("href", "/");
   });
 });

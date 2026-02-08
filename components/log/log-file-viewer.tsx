@@ -19,6 +19,7 @@ import {
   type LogLevel,
 } from "@/lib/stores/log";
 import { useLocale } from "@/components/providers/locale-provider";
+import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -210,9 +211,18 @@ export function LogFileViewer({
 
           <ScrollArea className="flex-1 rounded-lg border">
             {loading && entries.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t("common.loading")}
+              <div className="divide-y divide-border/50 p-1">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 px-4 py-2.5"
+                  >
+                    <Skeleton className="h-4 w-20 shrink-0" />
+                    <Skeleton className="h-5 w-10 shrink-0 rounded-full" />
+                    <Skeleton className="h-4 w-16 shrink-0" />
+                    <Skeleton className="h-4 flex-1" />
+                  </div>
+                ))}
               </div>
             ) : entries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-muted-foreground">

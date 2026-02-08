@@ -9,15 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SwitchSettingItem } from "./setting-item";
+import { SelectSettingItem } from "./setting-item";
 import type { AppSettings } from "@/lib/stores/settings";
 import type { TrayClickBehavior } from "@/lib/tauri";
 import {
@@ -75,12 +68,12 @@ export function TraySettings({
   );
 
   const handleClickBehaviorChange = useCallback(
-    async (value: TrayClickBehavior) => {
+    async (value: string) => {
       if (!isTauri()) return;
 
       try {
-        await traySetClickBehavior(value);
-        onValueChange("trayClickBehavior", value);
+        await traySetClickBehavior(value as TrayClickBehavior);
+        onValueChange("trayClickBehavior", value as TrayClickBehavior);
       } catch (error) {
         console.error("Failed to set click behavior:", error);
       }
@@ -95,123 +88,59 @@ export function TraySettings({
         <CardDescription>{t("settings.trayDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-1">
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="minimize-to-tray">
-              {t("settings.minimizeToTray")}
-            </Label>
-            <p
-              id="minimize-to-tray-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.minimizeToTrayDesc")}
-            </p>
-          </div>
-          <Switch
-            id="minimize-to-tray"
-            aria-describedby="minimize-to-tray-desc"
-            checked={appSettings.minimizeToTray}
-            onCheckedChange={(checked) =>
-              onValueChange("minimizeToTray", checked)
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="minimize-to-tray"
+          label={t("settings.minimizeToTray")}
+          description={t("settings.minimizeToTrayDesc")}
+          checked={appSettings.minimizeToTray}
+          onCheckedChange={(checked) =>
+            onValueChange("minimizeToTray", checked)
+          }
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="start-minimized">
-              {t("settings.startMinimized")}
-            </Label>
-            <p
-              id="start-minimized-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.startMinimizedDesc")}
-            </p>
-          </div>
-          <Switch
-            id="start-minimized"
-            aria-describedby="start-minimized-desc"
-            checked={appSettings.startMinimized}
-            onCheckedChange={(checked) =>
-              onValueChange("startMinimized", checked)
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="start-minimized"
+          label={t("settings.startMinimized")}
+          description={t("settings.startMinimizedDesc")}
+          checked={appSettings.startMinimized}
+          onCheckedChange={(checked) =>
+            onValueChange("startMinimized", checked)
+          }
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="autostart">{t("settings.autostart")}</Label>
-            <p id="autostart-desc" className="text-sm text-muted-foreground">
-              {t("settings.autostartDesc")}
-            </p>
-          </div>
-          <Switch
-            id="autostart"
-            aria-describedby="autostart-desc"
-            checked={autostartEnabled}
-            disabled={autostartLoading || !isTauri()}
-            onCheckedChange={handleAutostartChange}
-          />
-        </div>
+        <SwitchSettingItem
+          id="autostart"
+          label={t("settings.autostart")}
+          description={t("settings.autostartDesc")}
+          checked={autostartEnabled}
+          disabled={autostartLoading || !isTauri()}
+          onCheckedChange={handleAutostartChange}
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="show-notifications">
-              {t("settings.showNotifications")}
-            </Label>
-            <p
-              id="show-notifications-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.showNotificationsDesc")}
-            </p>
-          </div>
-          <Switch
-            id="show-notifications"
-            aria-describedby="show-notifications-desc"
-            checked={appSettings.showNotifications}
-            onCheckedChange={(checked) =>
-              onValueChange("showNotifications", checked)
-            }
-          />
-        </div>
+        <SwitchSettingItem
+          id="show-notifications"
+          label={t("settings.showNotifications")}
+          description={t("settings.showNotificationsDesc")}
+          checked={appSettings.showNotifications}
+          onCheckedChange={(checked) =>
+            onValueChange("showNotifications", checked)
+          }
+        />
         <Separator />
-        <div className="flex items-center justify-between py-2">
-          <div className="space-y-0.5">
-            <Label htmlFor="tray-click-behavior">
-              {t("settings.trayClickBehavior")}
-            </Label>
-            <p
-              id="tray-click-behavior-desc"
-              className="text-sm text-muted-foreground"
-            >
-              {t("settings.trayClickBehaviorDesc")}
-            </p>
-          </div>
-          <Select
-            value={appSettings.trayClickBehavior}
-            onValueChange={(value) =>
-              handleClickBehaviorChange(value as TrayClickBehavior)
-            }
-            disabled={!isTauri()}
-          >
-            <SelectTrigger id="tray-click-behavior" className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="toggle_window">
-                {t("settings.trayClickToggle")}
-              </SelectItem>
-              <SelectItem value="show_menu">
-                {t("settings.trayClickMenu")}
-              </SelectItem>
-              <SelectItem value="do_nothing">
-                {t("settings.trayClickNothing")}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectSettingItem
+          id="tray-click-behavior"
+          label={t("settings.trayClickBehavior")}
+          description={t("settings.trayClickBehaviorDesc")}
+          value={appSettings.trayClickBehavior}
+          onValueChange={handleClickBehaviorChange}
+          options={[
+            { value: "toggle_window", label: t("settings.trayClickToggle") },
+            { value: "show_menu", label: t("settings.trayClickMenu") },
+            { value: "do_nothing", label: t("settings.trayClickNothing") },
+          ]}
+          disabled={!isTauri()}
+          triggerClassName="w-[180px]"
+        />
       </CardContent>
     </Card>
   );

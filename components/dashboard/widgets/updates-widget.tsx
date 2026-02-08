@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useCallback, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -82,15 +83,13 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
   return (
     <Card className={className}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-medium">
-              {t('dashboard.widgets.updatesAvailable')}
-            </CardTitle>
-            <CardDescription>
-              {t('dashboard.widgets.updatesAvailableDesc')}
-            </CardDescription>
-          </div>
+        <CardTitle className="text-base font-medium">
+          {t('dashboard.widgets.updatesAvailable')}
+        </CardTitle>
+        <CardDescription>
+          {t('dashboard.widgets.updatesAvailableDesc')}
+        </CardDescription>
+        <CardAction>
           <Button
             variant="ghost"
             size="icon"
@@ -104,7 +103,7 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
               <RefreshCw className="h-4 w-4" />
             )}
           </Button>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {/* Checking progress */}
@@ -121,14 +120,12 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
         {/* Results */}
         {!isCheckingUpdates && availableUpdates.length > 0 && (
           <>
-            <div className="flex items-center gap-2 rounded-lg bg-orange-50 dark:bg-orange-950/30 p-3 mb-3">
-              <ArrowUpCircle className="h-5 w-5 text-orange-600 shrink-0" />
-              <div>
-                <div className="font-semibold text-sm text-orange-700 dark:text-orange-400">
-                  {t('dashboard.widgets.updatesCount', { count: availableUpdates.length })}
-                </div>
-              </div>
-            </div>
+            <Alert className="mb-3">
+              <ArrowUpCircle className="h-5 w-5 text-orange-600" />
+              <AlertTitle className="text-orange-700 dark:text-orange-400">
+                {t('dashboard.widgets.updatesCount', { count: availableUpdates.length })}
+              </AlertTitle>
+            </Alert>
 
             <div className="space-y-1.5 mb-3">
               {availableUpdates.slice(0, 5).map((update) => (
@@ -172,9 +169,9 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
         {error && (
           <p className="text-xs text-destructive mb-3">{error}</p>
         )}
-
-        {/* Footer */}
-        <div className="flex items-center justify-between">
+      </CardContent>
+      <CardFooter className="border-t pt-4">
+        <div className="flex items-center justify-between w-full">
           {lastCheckFormatted && (
             <span className="text-[10px] text-muted-foreground">
               {t('dashboard.lastUpdated', { time: lastCheckFormatted })}
@@ -187,7 +184,7 @@ export function UpdatesWidget({ className }: UpdatesWidgetProps) {
             </Link>
           </Button>
         </div>
-      </CardContent>
+      </CardFooter>
     </Card>
   );
 }

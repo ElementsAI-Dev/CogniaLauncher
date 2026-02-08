@@ -40,7 +40,7 @@ describe("LanguageStep", () => {
 
   it("shows check mark for selected locale", () => {
     const { container } = render(<LanguageStep {...defaultProps} locale="en" />);
-    const buttons = container.querySelectorAll("button");
-    expect(buttons[0].className).toContain("border-primary");
+    const labels = container.querySelectorAll("label");
+    expect(labels[0].className).toContain("border-primary");
   });
 });

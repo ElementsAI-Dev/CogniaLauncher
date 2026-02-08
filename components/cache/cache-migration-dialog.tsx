@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { AlertTriangle, ArrowRight, Check, FolderInput, Link2, Loader2, X } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, FolderInput, Link2, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { MigrationValidation, MigrationResult } from '@/lib/tauri';
@@ -102,17 +104,22 @@ export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }
                 placeholder={t('cache.enterNewPath')}
                 disabled={migrating}
               />
-              <Button
-                variant="outline"
-                onClick={handleValidate}
-                disabled={!destination.trim() || validating || migrating}
-              >
-                {validating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  t('cache.migrationValidate')
-                )}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    onClick={handleValidate}
+                    disabled={!destination.trim() || validating || migrating}
+                  >
+                    {validating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      t('cache.migrationValidate')
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('cache.migrationValidate')}</TooltipContent>
+              </Tooltip>
             </div>
           </div>
 
@@ -170,30 +177,32 @@ export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }
               </div>
 
               {validation.errors.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-destructive flex items-center gap-1">
-                    <X className="h-4 w-4" /> {t('cache.migrationErrors')}
-                  </p>
-                  {validation.errors.map((err, i) => (
-                    <p key={i} className="text-xs text-destructive pl-5">{err}</p>
-                  ))}
-                </div>
+                <Alert variant="destructive">
+                  <X className="h-4 w-4" />
+                  <AlertTitle>{t('cache.migrationErrors')}</AlertTitle>
+                  <AlertDescription>
+                    {validation.errors.map((err, i) => (
+                      <p key={i}>{err}</p>
+                    ))}
+                  </AlertDescription>
+                </Alert>
               )}
 
               {validation.warnings.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-yellow-600 dark:text-yellow-500 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4" /> {t('cache.migrationWarnings')}
-                  </p>
-                  {validation.warnings.map((warn, i) => (
-                    <p key={i} className="text-xs text-yellow-600 dark:text-yellow-500 pl-5">{warn}</p>
-                  ))}
-                </div>
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>{t('cache.migrationWarnings')}</AlertTitle>
+                  <AlertDescription>
+                    {validation.warnings.map((warn, i) => (
+                      <p key={i}>{warn}</p>
+                    ))}
+                  </AlertDescription>
+                </Alert>
               )}
 
               {validation.isValid && (
                 <Badge variant="default" className="gap-1">
-                  <Check className="h-3 w-3" /> Ready to migrate
+                  <Check className="h-3 w-3" /> {t('cache.readyToMigrate')}
                 </Badge>
               )}
             </div>
@@ -201,29 +210,31 @@ export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }
 
           {/* Migration Result */}
           {result && (
-            <div className={`p-4 rounded-lg ${result.success ? 'bg-green-50 dark:bg-green-950/30' : 'bg-red-50 dark:bg-red-950/30'}`}>
-              {result.success ? (
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-1">
-                    <Check className="h-4 w-4" />
-                    {t('cache.migrationSuccess', { size: result.bytesMigratedHuman, count: result.filesCount })}
-                  </p>
-                  {result.symlinkCreated && (
-                    <p className="text-xs text-green-600 dark:text-green-500 pl-5">
-                      {t('cache.migrationSymlinkCreated')}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-destructive">{result.error}</p>
-              )}
-            </div>
+            result.success ? (
+              <Alert>
+                <CheckCircle2 className="h-4 w-4" />
+                <AlertTitle>
+                  {t('cache.migrationSuccess', { size: result.bytesMigratedHuman, count: result.filesCount })}
+                </AlertTitle>
+                {result.symlinkCreated && (
+                  <AlertDescription>
+                    {t('cache.migrationSymlinkCreated')}
+                  </AlertDescription>
+                )}
+              </Alert>
+            ) : (
+              <Alert variant="destructive">
+                <X className="h-4 w-4" />
+                <AlertTitle>{t('cache.migrationFailed', { error: '' })}</AlertTitle>
+                <AlertDescription>{result.error}</AlertDescription>
+              </Alert>
+            )
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={migrating}>
-            {result?.success ? 'Done' : 'Cancel'}
+            {result?.success ? t('common.done') : t('common.cancel')}
           </Button>
           {!result?.success && (
             <Button

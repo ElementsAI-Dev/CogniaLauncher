@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ChevronDown, FolderOpen, FolderInput, Link2, RotateCcw, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
@@ -89,7 +91,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                   <CardTitle className="text-base">{t('cache.pathManagement')}</CardTitle>
                   {pathInfo?.isSymlink && (
                     <Badge variant="secondary" className="gap-1">
-                      <Link2 className="h-3 w-3" /> Symlink
+                      <Link2 className="h-3 w-3" /> {t('cache.symlink')}
                     </Badge>
                   )}
                   {pathInfo?.isCustom && (
@@ -105,7 +107,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
             <CardContent className="space-y-4">
               <Separator />
 
-              {pathInfo && (
+              {pathInfo ? (
                 <div className="space-y-3">
                   {/* Current Path */}
                   <div className="space-y-1">
@@ -132,10 +134,10 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                   {/* Status badges */}
                   <div className="flex flex-wrap gap-2">
                     <Badge variant={pathInfo.exists ? 'default' : 'destructive'}>
-                      {pathInfo.exists ? 'Exists' : 'Missing'}
+                      {pathInfo.exists ? t('cache.exists') : t('cache.missing')}
                     </Badge>
                     <Badge variant={pathInfo.writable ? 'default' : 'destructive'}>
-                      {pathInfo.writable ? 'Writable' : 'Read-only'}
+                      {pathInfo.writable ? t('cache.writable') : t('cache.readOnly')}
                     </Badge>
                     {pathInfo.diskAvailable > 0 && (
                       <Badge variant="outline">{t('cache.diskAvailable')}: {pathInfo.diskAvailableHuman}</Badge>
@@ -157,28 +159,56 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                           {saving ? '...' : t('cache.changePath')}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => { setEditing(false); setNewPath(''); }}>
-                          Cancel
+                          {t('common.cancel')}
                         </Button>
                       </div>
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                        <FolderInput className="h-4 w-4 mr-1" />
-                        {t('cache.changePath')}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                            <FolderInput className="h-4 w-4 mr-1" />
+                            {t('cache.changePath')}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('cache.changePath')}</TooltipContent>
+                      </Tooltip>
                       {pathInfo.isCustom && (
-                        <Button size="sm" variant="outline" onClick={handleResetPath} disabled={saving}>
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          {t('cache.resetPath')}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button size="sm" variant="outline" onClick={handleResetPath} disabled={saving}>
+                              <RotateCcw className="h-4 w-4 mr-1" />
+                              {t('cache.resetPath')}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('cache.resetPath')}</TooltipContent>
+                        </Tooltip>
                       )}
-                      <Button size="sm" variant="outline" onClick={() => setMigrationOpen(true)}>
-                        <FolderInput className="h-4 w-4 mr-1" />
-                        {t('cache.migration')}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" variant="outline" onClick={() => setMigrationOpen(true)}>
+                            <FolderInput className="h-4 w-4 mr-1" />
+                            {t('cache.migration')}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t('cache.migration')}</TooltipContent>
+                      </Tooltip>
                     </div>
                   )}
+                </div>
+              ) : open && (
+                <div className="space-y-3">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-full" />
+                  <div className="flex flex-wrap gap-2">
+                    <Skeleton className="h-5 w-16" />
+                    <Skeleton className="h-5 w-20" />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Skeleton className="h-8 w-28" />
+                    <Skeleton className="h-8 w-24" />
+                  </div>
                 </div>
               )}
             </CardContent>

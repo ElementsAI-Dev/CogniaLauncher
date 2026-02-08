@@ -17,8 +17,9 @@ describe("AccentColorPicker", () => {
   it("renders all color options", () => {
     render(<AccentColorPicker {...defaultProps} />);
 
-    const buttons = screen.getAllByRole("button");
-    expect(buttons).toHaveLength(6); // zinc, blue, green, purple, orange, rose
+    // ToggleGroup renders a radiogroup with radio items
+    const items = screen.getAllByRole("radio");
+    expect(items).toHaveLength(6); // zinc, blue, green, purple, orange, rose
   });
 
   it("renders with correct aria labels", () => {
@@ -44,11 +45,11 @@ describe("AccentColorPicker", () => {
     ).toBeInTheDocument();
   });
 
-  it("marks current accent color as pressed", () => {
+  it("marks current accent color as checked", () => {
     render(<AccentColorPicker {...defaultProps} accentColor="green" />);
 
-    const greenButton = screen.getByLabelText("Select Green accent color");
-    expect(greenButton).toHaveAttribute("aria-pressed", "true");
+    const greenItem = screen.getByLabelText("Select Green accent color");
+    expect(greenItem).toHaveAttribute("aria-checked", "true");
   });
 
   it("calls onAccentColorChange when a color is clicked", () => {
@@ -69,9 +70,13 @@ describe("AccentColorPicker", () => {
   });
 
   it("applies custom className", () => {
-    render(<AccentColorPicker {...defaultProps} className="custom-class" />);
+    render(
+      <AccentColorPicker {...defaultProps} className="custom-class" />,
+    );
 
-    const container = screen.getAllByRole("button")[0].parentElement;
-    expect(container).toHaveClass("custom-class");
+    // ToggleGroup root wraps all radio items
+    const firstRadio = screen.getAllByRole("radio")[0];
+    const group = firstRadio.parentElement!;
+    expect(group).toHaveClass("custom-class");
   });
 });

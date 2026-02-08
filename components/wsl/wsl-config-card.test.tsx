@@ -122,7 +122,8 @@ describe('WslConfigCard', () => {
   });
 
   it('renders loading skeleton when loading with no config', () => {
-    const { loading: _, ...propsWithoutLoading } = defaultProps;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { loading: _loading, ...propsWithoutLoading } = defaultProps;
     render(<WslConfigCard config={null} loading={true} {...propsWithoutLoading} />);
 
     expect(screen.queryByText('.wslconfig Settings')).not.toBeInTheDocument();

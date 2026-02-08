@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Kbd } from "@/components/ui/kbd";
 import { Search, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -93,9 +94,7 @@ export function SettingsSearch({
               <X className="h-4 w-4" />
             </Button>
           )}
-          <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-            /
-          </kbd>
+          <Kbd className="hidden sm:inline-flex">/</Kbd>
         </div>
       </div>
 

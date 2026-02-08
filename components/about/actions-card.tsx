@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/tauri";
 import {
@@ -32,21 +32,17 @@ export function ActionsCard({
 
   return (
     <Card
-      className="rounded-xl border bg-card"
       role="region"
       aria-labelledby="actions-heading"
     >
-      <CardContent className="p-5 space-y-4">
-        <div className="flex items-center gap-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
           <Settings className="h-5 w-5 text-foreground" aria-hidden="true" />
-          <span
-            id="actions-heading"
-            className="text-base font-semibold text-foreground"
-          >
-            {t("about.actions")}
-          </span>
-        </div>
+          <span id="actions-heading">{t("about.actions")}</span>
+        </CardTitle>
+      </CardHeader>
 
+      <CardContent>
         <div className="flex flex-wrap gap-3">
           {/* Check for Updates */}
           <Button

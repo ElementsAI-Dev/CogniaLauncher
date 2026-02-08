@@ -3,6 +3,9 @@
 import { useState, useCallback } from 'react';
 import { Terminal, Copy, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 
 interface ShellInitStepProps {
@@ -76,53 +79,58 @@ export function ShellInitStep({ t }: ShellInitStepProps) {
       </div>
 
       {/* Shell selector */}
-      <div className="flex gap-2 flex-wrap justify-center">
+      <ToggleGroup
+        type="single"
+        value={selectedShell}
+        onValueChange={(v) => {
+          if (v) {
+            setSelectedShell(v as ShellType);
+            setCopied(false);
+          }
+        }}
+        variant="outline"
+        className="flex-wrap justify-center"
+      >
         {SHELL_OPTIONS.map((shell) => (
-          <Button
-            key={shell.value}
-            variant={selectedShell === shell.value ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              setSelectedShell(shell.value);
-              setCopied(false);
-            }}
-          >
+          <ToggleGroupItem key={shell.value} value={shell.value} size="sm">
             {shell.label}
-          </Button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {/* Command display */}
-      <div className="w-full max-w-md">
-        <div className="rounded-lg border bg-muted/50 overflow-hidden">
-          <div className="flex items-center justify-between border-b px-3 py-2 bg-muted/30">
-            <span className="text-xs text-muted-foreground font-mono">
-              {currentShell.configFile}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={handleCopy}
-            >
-              {copied ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              {copied ? t('onboarding.shellCopied') : t('onboarding.shellCopy')}
-            </Button>
-          </div>
+      <Card className="w-full max-w-md py-0 overflow-hidden">
+        <CardHeader className="flex-row items-center justify-between border-b px-3 py-2 bg-muted/30">
+          <span className="text-xs text-muted-foreground font-mono">
+            {currentShell.configFile}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={handleCopy}
+          >
+            {copied ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            {copied ? t('onboarding.shellCopied') : t('onboarding.shellCopy')}
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
           <pre className="p-3 text-sm text-left font-mono overflow-x-auto whitespace-pre-wrap break-all">
             {currentShell.command}
           </pre>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-sm text-left">
-        <Info className="h-4 w-4 shrink-0 mt-0.5" />
-        <span>{t('onboarding.shellHint')}</span>
-      </div>
+      <Alert className="max-w-sm">
+        <Info className="h-4 w-4" />
+        <AlertDescription className="text-xs">
+          {t('onboarding.shellHint')}
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }

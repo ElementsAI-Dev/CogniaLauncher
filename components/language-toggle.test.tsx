@@ -58,7 +58,7 @@ describe("LanguageToggle", () => {
     render(<LanguageToggle />);
 
     await user.click(screen.getByRole("button"));
-    await user.click(screen.getByText("中文"));
+    await user.click(screen.getByRole("menuitemradio", { name: "中文" }));
 
     expect(mockSetLocale).toHaveBeenCalledWith("zh");
   });
@@ -69,9 +69,7 @@ describe("LanguageToggle", () => {
 
     await user.click(screen.getByRole("button"));
 
-    const englishOption = screen
-      .getByText("English")
-      .closest('[role="menuitem"]');
-    expect(englishOption).toHaveClass("bg-accent");
+    const englishOption = screen.getByRole("menuitemradio", { name: "English" });
+    expect(englishOption).toHaveAttribute("aria-checked", "true");
   });
 });

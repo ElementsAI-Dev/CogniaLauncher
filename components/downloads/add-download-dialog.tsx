@@ -12,11 +12,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { useLocale } from "@/components/providers/locale-provider";
+import { DestinationPicker } from "./destination-picker";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { isTauri } from "@/lib/tauri";
-import { X, FolderOpen } from "lucide-react";
-import { toast } from "sonner";
 
 interface AddDownloadDialogProps {
   open: boolean;
@@ -71,27 +78,6 @@ export function AddDownloadDialog({
   const isValid =
     form.url.trim() && form.destination.trim() && form.name.trim();
 
-  const handleBrowseDestination = async () => {
-    if (!isTauri()) {
-      toast.info(t("downloads.manualPathRequired"));
-      return;
-    }
-
-    try {
-      const dialogModule = await import("@tauri-apps/plugin-dialog");
-      const selected = await dialogModule.save({
-        defaultPath: form.name || "download",
-        title: t("downloads.selectDestination"),
-      });
-      if (selected && typeof selected === "string") {
-        setForm((prev) => ({ ...prev, destination: selected }));
-      }
-    } catch (err) {
-      console.error("Failed to open save dialog:", err);
-      toast.error(t("downloads.dialogError"));
-    }
-  };
-
   const handleSubmit = async () => {
     if (!isValid) return;
 
@@ -115,24 +101,12 @@ export function AddDownloadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-xl">
-                {t("downloads.addDownload")}
-              </DialogTitle>
-              <DialogDescription>
-                {t("downloads.description")}
-              </DialogDescription>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onOpenChange(false)}
-              className="h-8 w-8"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
+          <DialogTitle className="text-xl">
+            {t("downloads.addDownload")}
+          </DialogTitle>
+          <DialogDescription>
+            {t("downloads.description")}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -148,34 +122,21 @@ export function AddDownloadDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="download-destination">
-              {t("downloads.destination")}
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="download-destination"
-                value={form.destination}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    destination: event.target.value,
-                  }))
-                }
-                placeholder="/path/to/file.zip"
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleBrowseDestination}
-                title={t("downloads.browseFolder")}
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <DestinationPicker
+            value={form.destination}
+            onChange={(val) =>
+              setForm((prev) => ({ ...prev, destination: val }))
+            }
+            placeholder="/path/to/file.zip"
+            label={t("downloads.destination")}
+            isDesktop={isTauri()}
+            browseTooltip={t("downloads.browseFolder")}
+            manualPathMessage={t("downloads.manualPathRequired")}
+            errorMessage={t("downloads.dialogError")}
+            mode="save"
+            defaultFileName={form.name || "download"}
+            dialogTitle={t("downloads.selectDestination")}
+          />
 
           <div className="space-y-2">
             <Label htmlFor="download-name">{t("downloads.name")}</Label>
@@ -200,20 +161,29 @@ export function AddDownloadDialog({
             />
           </div>
 
+          <Separator />
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="download-priority">
                 {t("downloads.priority")}
               </Label>
-              <Input
-                id="download-priority"
-                type="number"
-                min={0}
+              <Select
                 value={form.priority}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, priority: event.target.value }))
+                onValueChange={(val) =>
+                  setForm((prev) => ({ ...prev, priority: val }))
                 }
-              />
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t("downloads.priorityPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">{t("downloads.priorityCritical")}</SelectItem>
+                  <SelectItem value="8">{t("downloads.priorityHigh")}</SelectItem>
+                  <SelectItem value="5">{t("downloads.priorityNormal")}</SelectItem>
+                  <SelectItem value="1">{t("downloads.priorityLow")}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="download-checksum">

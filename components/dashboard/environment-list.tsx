@@ -8,9 +8,15 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
+  CardAction,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -61,11 +67,6 @@ export function EnvironmentList({
     }
   }, [environments, filter]);
 
-  const displayedEnvironments = useMemo(() => {
-    if (expanded) return filteredEnvironments;
-    return filteredEnvironments.slice(0, initialLimit);
-  }, [filteredEnvironments, expanded, initialLimit]);
-
   const hasMore = filteredEnvironments.length > initialLimit;
 
   const handleEnvironmentClick = useCallback(
@@ -79,18 +80,19 @@ export function EnvironmentList({
     router.push("/environments");
   }, [router]);
 
+  const initialItems = filteredEnvironments.slice(0, initialLimit);
+  const extraItems = filteredEnvironments.slice(initialLimit);
+
   return (
     <Card className={cn("", className)}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-medium">
-              {t("dashboard.environmentList.title")}
-            </CardTitle>
-            <CardDescription>
-              {t("dashboard.activeEnvironmentsDesc")}
-            </CardDescription>
-          </div>
+        <CardTitle className="text-base font-medium">
+          {t("dashboard.environmentList.title")}
+        </CardTitle>
+        <CardDescription>
+          {t("dashboard.activeEnvironmentsDesc")}
+        </CardDescription>
+        <CardAction>
           <div className="flex items-center gap-2">
             <Select
               value={filter}
@@ -121,7 +123,7 @@ export function EnvironmentList({
               <ExternalLink className="h-3 w-3" />
             </Button>
           </div>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {filteredEnvironments.length === 0 ? (
@@ -134,9 +136,9 @@ export function EnvironmentList({
             </p>
           </div>
         ) : (
-          <>
+          <Collapsible open={expanded} onOpenChange={setExpanded}>
             <div className="space-y-2">
-              {displayedEnvironments.map((env) => (
+              {initialItems.map((env) => (
                 <EnvironmentItem
                   key={env.env_type}
                   environment={env}
@@ -147,26 +149,42 @@ export function EnvironmentList({
             </div>
 
             {hasMore && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setExpanded(!expanded)}
-                className="mt-3 w-full gap-1"
-              >
-                {expanded ? (
-                  <>
-                    <ChevronUp className="h-4 w-4" />
-                    {t("dashboard.environmentList.showLess")}
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="h-4 w-4" />
-                    {t("dashboard.environmentList.showMore")}
-                  </>
-                )}
-              </Button>
+              <>
+                <CollapsibleContent>
+                  <div className="space-y-2 mt-2">
+                    {extraItems.map((env) => (
+                      <EnvironmentItem
+                        key={env.env_type}
+                        environment={env}
+                        onClick={() => handleEnvironmentClick(env.env_type)}
+                        t={t}
+                      />
+                    ))}
+                  </div>
+                </CollapsibleContent>
+
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 w-full gap-1"
+                  >
+                    {expanded ? (
+                      <>
+                        <ChevronUp className="h-4 w-4" />
+                        {t("dashboard.environmentList.showLess")}
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="h-4 w-4" />
+                        {t("dashboard.environmentList.showMore")}
+                      </>
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </>
             )}
-          </>
+          </Collapsible>
         )}
       </CardContent>
     </Card>

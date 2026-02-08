@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { ProviderInfo, PackageManagerHealthResult, EnvironmentProviderInfo } from "@/types/tauri";
 import { cn } from "@/lib/utils";
-import { getPlatformIcon, getCapabilityColor } from "../provider-icons";
+import { getPlatformIcon, getCapabilityColor, getCapabilityLabel } from "../provider-icons";
 
 interface ProviderOverviewTabProps {
   provider: ProviderInfo;
@@ -153,7 +153,7 @@ export function ProviderOverviewTab({
                 variant="secondary"
                 className={cn("text-sm", getCapabilityColor(cap))}
               >
-                {cap.replace(/_/g, " ")}
+                {getCapabilityLabel(cap, t)}
               </Badge>
             ))}
           </div>

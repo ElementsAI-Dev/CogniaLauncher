@@ -10,6 +10,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Breadcrumb as BreadcrumbRoot,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +38,6 @@ import { WslDistroFilesystem } from '@/components/wsl/wsl-distro-filesystem';
 import { WslDistroNetwork } from '@/components/wsl/wsl-distro-network';
 import { WslDistroServices } from '@/components/wsl/wsl-distro-services';
 import {
-  ArrowLeft,
   RefreshCw,
   Play,
   Square,
@@ -252,13 +260,19 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   if (available && distros.length > 0 && !distro) {
     return (
       <div className="p-4 md:p-6 space-y-4">
-        <Link
-          href="/wsl"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t('wsl.title')}
-        </Link>
+        <BreadcrumbRoot>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href="/wsl">{t('wsl.title')}</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>{distroName}</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </BreadcrumbRoot>
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -272,13 +286,19 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* Breadcrumb */}
-      <Link
-        href="/wsl"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t('wsl.title')}
-      </Link>
+      <BreadcrumbRoot>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/wsl">{t('wsl.title')}</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{distroName}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </BreadcrumbRoot>
 
       {/* Header */}
       <PageHeader
@@ -360,15 +380,20 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               <Trash2 className="h-3.5 w-3.5" />
               {t('wsl.unregister')}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              disabled={loading}
-              className="h-8 w-8"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.refresh')}</TooltipContent>
+            </Tooltip>
           </div>
         }
       />

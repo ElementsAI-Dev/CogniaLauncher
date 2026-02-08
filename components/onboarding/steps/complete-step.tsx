@@ -2,6 +2,8 @@
 
 import { PartyPopper, Map, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface CompleteStepProps {
   t: (key: string) => string;
@@ -26,19 +28,25 @@ export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProp
 
       <div className="flex flex-col gap-3 w-full max-w-sm pt-2">
         {!tourCompleted && (
-          <Button
-            variant="outline"
-            className="gap-2 w-full"
-            onClick={onStartTour}
-          >
-            <Map className="h-4 w-4" />
-            {t('onboarding.completeTakeTour')}
-          </Button>
+          <Card className="py-0">
+            <CardContent className="p-4">
+              <Button
+                variant="outline"
+                className="gap-2 w-full"
+                onClick={onStartTour}
+              >
+                <Map className="h-4 w-4" />
+                {t('onboarding.completeTakeTour')}
+              </Button>
+            </CardContent>
+          </Card>
         )}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground justify-center">
+        <Alert>
           <ArrowRight className="h-4 w-4" />
-          <span>{t('onboarding.completeHint')}</span>
-        </div>
+          <AlertDescription className="text-sm">
+            {t('onboarding.completeHint')}
+          </AlertDescription>
+        </Alert>
       </div>
     </div>
   );

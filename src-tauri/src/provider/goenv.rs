@@ -874,7 +874,7 @@ impl Provider for GoModProvider {
         // For go modules, we can check if installed binaries have newer versions
         // by querying the module proxy
         let installed = self.list_installed(InstalledFilter::default()).await?;
-        let mut updates = Vec::new();
+        let updates = Vec::new();
 
         for pkg in &installed {
             if !packages.is_empty() && !packages.contains(&pkg.name) {

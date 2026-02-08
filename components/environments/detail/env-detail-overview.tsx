@@ -30,8 +30,10 @@ import type {
 } from "@/lib/tauri";
 import { useHealthCheck } from "@/hooks/use-health-check";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
+import { IssueCard } from "@/components/environments/health-check-panel";
 import { formatSize } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface EnvDetailOverviewProps {
   envType: string;
@@ -302,29 +304,17 @@ export function EnvDetailOverview({
               )}
 
               {envHealth.issues.map((issue, idx) => (
-                <div
+                <IssueCard
                   key={idx}
-                  className={cn(
-                    "p-3 rounded-lg border text-sm",
-                    issue.severity === "critical" || issue.severity === "error"
-                      ? "border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/30"
-                      : issue.severity === "warning"
-                        ? "border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-950/30"
-                        : "border-border bg-muted/30",
-                  )}
-                >
-                  <p className="font-medium">{issue.message}</p>
-                  {issue.details && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {issue.details}
-                    </p>
-                  )}
-                  {issue.fix_command && (
-                    <code className="text-xs bg-black/10 dark:bg-white/10 px-2 py-1 rounded mt-2 block font-mono">
-                      {issue.fix_command}
-                    </code>
-                  )}
-                </div>
+                  issue={issue}
+                  onCopy={(text) => {
+                    navigator.clipboard.writeText(text).then(
+                      () => toast.success(t("common.copied")),
+                      () => toast.error(t("common.copyFailed")),
+                    );
+                  }}
+                  t={(key, params) => t(`environments.healthCheck.${key}`, params)}
+                />
               ))}
             </div>
           )}

@@ -6,6 +6,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
 import { LogPanel } from "./log-panel";
 import { useLogStore } from "@/lib/stores/log";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -34,9 +35,9 @@ export function LogDrawer({ side = "right" }: LogDrawerProps) {
           <SheetTitle className="flex items-center gap-2">
             <ScrollText className="h-5 w-5" />
             <span>{t("logs.title")}</span>
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({stats.total} {t("logs.entries")})
-            </span>
+            <Badge variant="secondary" className="ml-2 text-xs">
+              {stats.total} {t("logs.entries")}
+            </Badge>
           </SheetTitle>
         </SheetHeader>
 

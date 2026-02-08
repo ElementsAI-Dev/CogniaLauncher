@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import {
   Download,
   Trash2,
@@ -171,7 +172,7 @@ export function BatchOperations({
             </span>
           </div>
 
-          <div className="h-6 w-px bg-border" />
+          <Separator orientation="vertical" className="h-6" />
 
           <div className="flex items-center gap-2">
             <Button
@@ -200,7 +201,7 @@ export function BatchOperations({
             </Button>
           </div>
 
-          <div className="h-6 w-px bg-border" />
+          <Separator orientation="vertical" className="h-6" />
 
           <Button size="sm" variant="ghost" onClick={onClearSelection}>
             {t("common.clear")}
