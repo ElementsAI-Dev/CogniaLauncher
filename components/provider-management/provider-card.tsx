@@ -15,31 +15,37 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink } from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink, MoreHorizontal, Copy } from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   getProviderIcon,
   getPlatformIcon,
   getCapabilityColor,
+  getCapabilityLabel,
 } from "./provider-icons";
 
 export interface ProviderCardProps {
   provider: ProviderInfo;
   isAvailable?: boolean;
+  version?: string | null;
   isToggling: boolean;
   onToggle: (providerId: string, enabled: boolean) => void;
   onCheckStatus: (providerId: string) => Promise<boolean>;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderCard({
   provider,
   isAvailable,
+  version,
   isToggling,
   onToggle,
   onCheckStatus,
@@ -114,6 +120,36 @@ export function ProviderCard({
                 )}
               </Badge>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                  <span className="sr-only">{t("providers.moreActions")}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleCheckStatus} disabled={isChecking}>
+                  <Activity className="h-4 w-4 mr-2" />
+                  {t("providers.checkStatus")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    navigator.clipboard.writeText(provider.id);
+                    toast.success(t("providers.idCopied"));
+                  }}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  {t("providers.copyId")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={`/providers/${provider.id}`}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    {t("providerDetail.viewDetails")}
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </CardHeader>
@@ -147,7 +183,7 @@ export function ProviderCard({
                 variant="secondary"
                 className={cn("text-xs", getCapabilityColor(cap))}
               >
-                {cap.replace(/_/g, " ")}
+                {getCapabilityLabel(cap, t)}
               </Badge>
             ))}
           </div>
@@ -166,40 +202,26 @@ export function ProviderCard({
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleCheckStatus}
-                  disabled={isChecking}
-                  className="h-8 px-2"
-                >
-                  {isChecking ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Activity className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("providers.checkStatus")}</p>
-              </TooltipContent>
-            </Tooltip>
-            <Switch
-              id={`enabled-${provider.id}`}
-              checked={provider.enabled}
-              onCheckedChange={(checked) => onToggle(provider.id, checked)}
-              disabled={isToggling}
-            />
-          </div>
+          <Switch
+            id={`enabled-${provider.id}`}
+            checked={provider.enabled}
+            onCheckedChange={(checked) => onToggle(provider.id, checked)}
+            disabled={isToggling}
+          />
         </div>
 
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            {t("providers.priority")}: {provider.priority}
-          </span>
+          <div className="flex items-center gap-2">
+            <span>
+              {t("providers.priority")}: {provider.priority}
+            </span>
+            {version && (
+              <>
+                <span>·</span>
+                <span className="font-mono">{version}</span>
+              </>
+            )}
+          </div>
           <Link
             href={`/providers/${provider.id}`}
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"

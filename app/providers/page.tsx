@@ -186,8 +186,39 @@ export default function ProvidersPage() {
     const enabled = providers.filter((p) => p.enabled).length;
     const available = Object.values(providerStatus).filter((v) => v === true).length;
     const unavailable = Object.values(providerStatus).filter((v) => v === false).length;
-    return { total, enabled, available, unavailable };
+    const environmentCount = providers.filter((p) => p.is_environment_provider).length;
+    const packageCount = providers.filter((p) => !p.is_environment_provider && !SYSTEM_PROVIDER_IDS.has(p.id)).length;
+    const systemCount = providers.filter((p) => SYSTEM_PROVIDER_IDS.has(p.id)).length;
+    return { total, enabled, available, unavailable, environmentCount, packageCount, systemCount };
   }, [providers, providerStatus]);
+
+  const handleEnableAll = useCallback(async () => {
+    try {
+      for (const provider of providers) {
+        if (!provider.enabled) {
+          await tauri.providerEnable(provider.id);
+        }
+      }
+      await fetchProviders();
+      toast.success(t('providers.enableAllSuccess'));
+    } catch {
+      toast.error(t('providers.enableAllError'));
+    }
+  }, [providers, fetchProviders, t]);
+
+  const handleDisableAll = useCallback(async () => {
+    try {
+      for (const provider of providers) {
+        if (provider.enabled) {
+          await tauri.providerDisable(provider.id);
+        }
+      }
+      await fetchProviders();
+      toast.success(t('providers.disableAllSuccess'));
+    } catch {
+      toast.error(t('providers.disableAllError'));
+    }
+  }, [providers, fetchProviders, t]);
 
   const hasFilters = searchQuery !== '' || categoryFilter !== 'all' || statusFilter !== 'all';
 
@@ -208,8 +239,11 @@ export default function ProvidersPage() {
         onViewModeChange={setViewMode}
         onRefresh={handleRefresh}
         onCheckAllStatus={handleCheckAllStatus}
+        onEnableAll={handleEnableAll}
+        onDisableAll={handleDisableAll}
         isLoading={loading}
         isCheckingStatus={isCheckingStatus}
+        providerCount={sortedProviders.length}
         t={t}
       />
 
@@ -218,6 +252,9 @@ export default function ProvidersPage() {
         enabled={stats.enabled}
         available={stats.available}
         unavailable={stats.unavailable}
+        environmentCount={stats.environmentCount}
+        packageCount={stats.packageCount}
+        systemCount={stats.systemCount}
         t={t}
       />
 

@@ -85,3 +85,16 @@ export function getCapabilityColor(capability: string): string {
     "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
   );
 }
+
+export function getCapabilityLabel(
+  capability: string,
+  t: (key: string) => string,
+): string {
+  const key = `providers.capability.${capability}`;
+  const translated = t(key);
+  // If translation returns the key itself, fall back to formatted capability name
+  if (translated === key) {
+    return capability.replace(/_/g, " ");
+  }
+  return translated;
+}

@@ -87,13 +87,18 @@ describe("ProviderToolbar", () => {
   });
 
   it("calls onSearchChange when search input changes", async () => {
-    const user = userEvent.setup();
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
     render(<ProviderToolbar {...defaultProps} />);
 
     const searchInput = screen.getByPlaceholderText("Search providers...");
     await user.type(searchInput, "npm");
 
+    // Advance past the 300ms debounce
+    jest.advanceTimersByTime(350);
+
     expect(defaultProps.onSearchChange).toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it("calls onRefresh when refresh button is clicked", async () => {

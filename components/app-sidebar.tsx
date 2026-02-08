@@ -40,6 +40,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 import { LANGUAGES } from "@/lib/constants/environments";
+import { isTauri } from "@/lib/tauri";
+import { useWsl } from "@/hooks/use-wsl";
 
 const navItems = [
   { href: "/", labelKey: "nav.dashboard", icon: Home, tourId: undefined },
@@ -57,6 +59,8 @@ const navItems = [
 export function AppSidebar() {
   const pathname = usePathname();
   const { t } = useLocale();
+  const isDesktop = isTauri();
+  const { distros } = useWsl();
 
   return (
     <Sidebar collapsible="icon" data-tour="sidebar">
@@ -152,8 +156,91 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
-              {/* Remaining nav items: packages, providers, cache, downloads, wsl */}
-              {navItems.slice(2, 7).map((item) => {
+              {/* Packages & Providers */}
+              {navItems.slice(2, 4).map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                return (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      tooltip={t(item.labelKey)}
+                    >
+                      <Link href={item.href} {...(item.tourId ? { 'data-tour': item.tourId } : {})}>
+                        <Icon className="h-4 w-4" />
+                        <span>{t(item.labelKey)}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+
+              {/* Cache - with collapsible sub-items */}
+              <Collapsible
+                defaultOpen={pathname.startsWith("/cache")}
+                className="group/cache"
+              >
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={pathname === "/cache"}
+                      tooltip={t("nav.cache")}
+                    >
+                      <HardDrive className="h-4 w-4" />
+                      <span>{t("nav.cache")}</span>
+                      <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/cache:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/cache"}
+                        >
+                          <Link href="/cache">
+                            {t("cache.detail.allCaches")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/cache/download"}
+                        >
+                          <Link href="/cache/download">
+                            {t("cache.detail.downloadTitle")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/cache/metadata"}
+                        >
+                          <Link href="/cache/metadata">
+                            {t("cache.detail.metadataTitle")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/cache/external"}
+                        >
+                          <Link href="/cache/external">
+                            {t("cache.detail.externalTitle")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+
+              {/* Downloads */}
+              {navItems.slice(5, 6).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -171,6 +258,70 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+
+              {/* WSL - with collapsible distro sub-items */}
+              {isDesktop && (
+                <Collapsible
+                  defaultOpen={pathname.startsWith("/wsl")}
+                  className="group/wsl"
+                >
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton
+                        isActive={pathname === "/wsl"}
+                        tooltip={t("nav.wsl")}
+                      >
+                        <Terminal className="h-4 w-4" />
+                        <span>{t("nav.wsl")}</span>
+                        <ChevronRight className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/wsl:rotate-90" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={pathname === "/wsl"}
+                          >
+                            <Link href="/wsl">
+                              {t("wsl.title")}
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        {distros.map((distro) => (
+                          <SidebarMenuSubItem key={distro.name}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={pathname === "/wsl/distro" && new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('name') === distro.name}
+                            >
+                              <Link href={`/wsl/distro?name=${encodeURIComponent(distro.name)}`}>
+                                <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${distro.state.toLowerCase() === 'running' ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                                {distro.name}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              )}
+
+              {/* WSL fallback for non-desktop */}
+              {!isDesktop && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === "/wsl"}
+                    tooltip={t("nav.wsl")}
+                  >
+                    <Link href="/wsl">
+                      <Terminal className="h-4 w-4" />
+                      <span>{t("nav.wsl")}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

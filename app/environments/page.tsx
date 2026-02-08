@@ -10,6 +10,7 @@ import { EnvironmentErrorBoundary, EnvironmentCardErrorBoundary } from '@/compon
 import { EmptyState } from '@/components/environments/empty-state';
 import { EnvironmentBatchOperations } from '@/components/environments/batch-operations';
 import { EnvironmentToolbar } from '@/components/environments/environment-toolbar';
+import { ProfileManager } from '@/components/environments/profile-manager';
 import { PageHeader } from '@/components/layout/page-header';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/hooks/use-environments';
@@ -19,7 +20,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Plus } from 'lucide-react';
+import { AlertCircle, Plus, Bookmark } from 'lucide-react';
 
 export default function EnvironmentsPage() {
   const {
@@ -50,13 +51,16 @@ export default function EnvironmentsPage() {
     searchQuery,
     statusFilter,
     sortBy,
+    viewMode,
     setSearchQuery,
     setStatusFilter,
     setSortBy,
+    setViewMode,
     clearFilters,
   } = useEnvironmentStore();
   const { t } = useLocale();
   const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({});
+  const [profileManagerOpen, setProfileManagerOpen] = useState(false);
 
   // Project path and auto version switch
   const { projectPath } = useProjectPath();
@@ -218,10 +222,16 @@ export default function EnvironmentsPage() {
           title={t('environments.title')}
           description={t('environments.description')}
           actions={(
-            <Button size="sm" onClick={openAddDialog} className="gap-2">
-              <Plus className="h-4 w-4" />
-              {t('environments.addEnvironment')}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setProfileManagerOpen(true)} className="gap-2">
+                <Bookmark className="h-4 w-4" />
+                {t('environments.profiles.title')}
+              </Button>
+              <Button size="sm" onClick={openAddDialog} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {t('environments.addEnvironment')}
+              </Button>
+            </div>
           )}
         />
 
@@ -237,6 +247,8 @@ export default function EnvironmentsPage() {
           isLoading={loading}
           totalCount={environments.length}
           filteredCount={filteredEnvironments.length}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           t={t}
         />
 
@@ -274,7 +286,7 @@ export default function EnvironmentsPage() {
           </div>
         )
       ) : (
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        <div className={viewMode === 'grid' ? 'grid gap-4 grid-cols-1 lg:grid-cols-2' : 'space-y-3'}>
           {filteredEnvironments.map((env) => (
             <EnvironmentCardErrorBoundary key={env.env_type} envType={env.env_type} t={t}>
               <EnvironmentCard
@@ -304,6 +316,12 @@ export default function EnvironmentsPage() {
         onBatchInstall={handleBatchInstall}
         onBatchUninstall={handleBatchUninstall}
         onClearSelection={clearVersionSelection}
+      />
+
+      {/* Profile Manager */}
+      <ProfileManager
+        open={profileManagerOpen}
+        onOpenChange={setProfileManagerOpen}
       />
 
       {/* Panels */}

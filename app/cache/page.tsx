@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -657,8 +658,18 @@ export default function CachePage() {
         {/* Download Cache Card */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t('cache.downloadCache')}</CardTitle>
-            <CardDescription>{t('cache.downloadCacheDesc')}</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">{t('cache.downloadCache')}</CardTitle>
+                <CardDescription>{t('cache.downloadCacheDesc')}</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/cache/download">
+                  <Eye className="h-4 w-4 mr-1" />
+                  {t('cache.detail.entryBrowser')}
+                </Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="flex justify-between items-center">
@@ -724,8 +735,18 @@ export default function CachePage() {
         {/* Metadata Cache Card */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t('cache.metadataCache')}</CardTitle>
-            <CardDescription>{t('cache.metadataCacheDesc')}</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">{t('cache.metadataCache')}</CardTitle>
+                <CardDescription>{t('cache.metadataCacheDesc')}</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/cache/metadata">
+                  <Eye className="h-4 w-4 mr-1" />
+                  {t('cache.detail.entryBrowser')}
+                </Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="flex justify-between items-center">

@@ -8,6 +8,8 @@ import {
   EnvDetailVersions,
   EnvDetailPackages,
   EnvDetailSettings,
+  EnvDetailShell,
+  EnvDetailShims,
 } from '@/components/environments/detail';
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
@@ -15,7 +17,7 @@ import { useEnvironments } from '@/hooks/use-environments';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
-import { LayoutDashboard, Layers, Package, Settings2 } from 'lucide-react';
+import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2 } from 'lucide-react';
 
 interface EnvDetailPageClientProps {
   envType: string;
@@ -160,6 +162,14 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
             <Settings2 className="h-3.5 w-3.5" />
             {t('environments.detail.tabSettings')}
           </TabsTrigger>
+          <TabsTrigger value="shell" className="gap-1.5">
+            <Terminal className="h-3.5 w-3.5" />
+            {t('environments.detail.tabShell')}
+          </TabsTrigger>
+          <TabsTrigger value="shims" className="gap-1.5">
+            <Link2 className="h-3.5 w-3.5" />
+            {t('environments.detail.tabShims')}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -194,6 +204,18 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
 
         <TabsContent value="settings">
           <EnvDetailSettings envType={envType} t={t} />
+        </TabsContent>
+
+        <TabsContent value="shell">
+          <EnvDetailShell
+            envType={envType}
+            currentVersion={env?.current_version}
+            t={t}
+          />
+        </TabsContent>
+
+        <TabsContent value="shims">
+          <EnvDetailShims envType={envType} t={t} />
         </TabsContent>
       </Tabs>
 

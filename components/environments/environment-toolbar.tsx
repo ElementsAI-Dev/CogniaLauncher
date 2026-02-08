@@ -10,10 +10,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, X, RefreshCw, ArrowUpDown, Filter } from "lucide-react";
+import { Search, X, RefreshCw, ArrowUpDown, Filter, LayoutGrid, List } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
   EnvironmentStatusFilter,
   EnvironmentSortBy,
+  EnvironmentViewMode,
 } from "@/lib/stores/environment";
 
 interface EnvironmentToolbarProps {
@@ -28,6 +30,8 @@ interface EnvironmentToolbarProps {
   isLoading: boolean;
   totalCount: number;
   filteredCount: number;
+  viewMode: EnvironmentViewMode;
+  onViewModeChange: (mode: EnvironmentViewMode) => void;
   t: (key: string) => string;
 }
 
@@ -43,6 +47,8 @@ export function EnvironmentToolbar({
   isLoading,
   totalCount,
   filteredCount,
+  viewMode,
+  onViewModeChange,
   t,
 }: EnvironmentToolbarProps) {
   const hasActiveFilters = searchQuery !== "" || statusFilter !== "all";
@@ -117,6 +123,21 @@ export function EnvironmentToolbar({
             </SelectItem>
           </SelectContent>
         </Select>
+
+        {/* View Mode Toggle */}
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(v) => v && onViewModeChange(v as EnvironmentViewMode)}
+          className="h-9"
+        >
+          <ToggleGroupItem value="grid" className="h-9 w-9 px-0" aria-label={t("environments.toolbar.viewGrid")}>
+            <LayoutGrid className="h-4 w-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="list" className="h-9 w-9 px-0" aria-label={t("environments.toolbar.viewList")}>
+            <List className="h-4 w-4" />
+          </ToggleGroupItem>
+        </ToggleGroup>
 
         {/* Refresh Button */}
         <Button

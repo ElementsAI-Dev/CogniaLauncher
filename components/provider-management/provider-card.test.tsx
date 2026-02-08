@@ -153,14 +153,13 @@ describe("ProviderCard", () => {
       />,
     );
 
-    // The check status button uses Tooltip (not title attr), find by button role
-    const buttons = screen.getAllByRole("button");
-    // The check button is the small ghost button (not the switch)
-    const checkButton = buttons.find(
-      (btn) => btn.className.includes("px-2"),
-    );
-    expect(checkButton).toBeDefined();
-    await user.click(checkButton!);
+    // Open the dropdown menu first (sr-only text uses the translation key)
+    const menuTrigger = screen.getByText("providers.moreActions").closest("button")!;
+    await user.click(menuTrigger);
+
+    // Click the check status menu item
+    const checkItem = await screen.findByText("Check Status");
+    await user.click(checkItem);
 
     await waitFor(() => {
       expect(mockOnCheckStatus).toHaveBeenCalledWith("npm");

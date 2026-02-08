@@ -1,0 +1,314 @@
+'use client';
+
+import { useState, useCallback } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  FolderOpen,
+  File,
+  Folder,
+  ArrowUp,
+  RefreshCw,
+  Home,
+  Copy,
+  FileSymlink,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import type { WslExecResult } from '@/types/tauri';
+
+interface FileEntry {
+  name: string;
+  type: 'dir' | 'file' | 'link' | 'other';
+  permissions: string;
+  size: string;
+  modified: string;
+  linkTarget?: string;
+}
+
+interface WslDistroFilesystemProps {
+  distroName: string;
+  isRunning?: boolean;
+  onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+function parseFileEntries(output: string): FileEntry[] {
+  const lines = output.split('\n').filter((l) => l.trim() && !l.startsWith('total'));
+  return lines.map((line) => {
+    // Parse ls -la output: permissions links owner group size month day time name [-> target]
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 9) {
+      return { name: parts[parts.length - 1] || line, type: 'other' as const, permissions: '', size: '', modified: '' };
+    }
+
+    const permissions = parts[0];
+    const size = parts[4];
+    const month = parts[5];
+    const day = parts[6];
+    const timeOrYear = parts[7];
+    const modified = `${month} ${day} ${timeOrYear}`;
+
+    // Handle filenames with spaces and symlinks
+    const nameStartIdx = line.indexOf(timeOrYear) + timeOrYear.length;
+    const nameStr = line.substring(nameStartIdx).trim();
+
+    let name = nameStr;
+    let linkTarget: string | undefined;
+    const arrowIdx = nameStr.indexOf(' -> ');
+    if (arrowIdx !== -1) {
+      name = nameStr.substring(0, arrowIdx);
+      linkTarget = nameStr.substring(arrowIdx + 4);
+    }
+
+    let type: FileEntry['type'] = 'file';
+    if (permissions.startsWith('d')) type = 'dir';
+    else if (permissions.startsWith('l')) type = 'link';
+    else if (!permissions.startsWith('-')) type = 'other';
+
+    return { name, type, permissions, size, modified, linkTarget };
+  }).filter((f) => f.name !== '.' && f.name !== '..');
+}
+
+export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesystemProps) {
+  const [currentPath, setCurrentPath] = useState('/');
+  const [pathInput, setPathInput] = useState('/');
+  const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDirectory = useCallback(async (path: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await onExec(distroName, `ls -la --time-style=long-iso ${JSON.stringify(path)}`);
+      if (result.exitCode !== 0) {
+        setError(result.stderr || `Exit code ${result.exitCode}`);
+        setEntries([]);
+      } else {
+        const parsed = parseFileEntries(result.stdout);
+        setEntries(parsed);
+        setCurrentPath(path);
+        setPathInput(path);
+      }
+      setLoaded(true);
+    } catch (err) {
+      setError(String(err));
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [distroName, onExec]);
+
+  const navigateTo = useCallback((name: string) => {
+    let newPath: string;
+    if (name === '..') {
+      const parts = currentPath.split('/').filter(Boolean);
+      parts.pop();
+      newPath = '/' + parts.join('/');
+    } else {
+      newPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
+    }
+    loadDirectory(newPath);
+  }, [currentPath, loadDirectory]);
+
+  const handleNavigate = () => {
+    if (pathInput.trim()) {
+      loadDirectory(pathInput.trim());
+    }
+  };
+
+  const handleCopyPath = (name: string) => {
+    const fullPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
+    navigator.clipboard.writeText(fullPath);
+    toast.success(t('common.copied'));
+  };
+
+  const getIcon = (entry: FileEntry) => {
+    if (entry.type === 'dir') return <Folder className="h-4 w-4 text-blue-500" />;
+    if (entry.type === 'link') return <FileSymlink className="h-4 w-4 text-cyan-500" />;
+    return <File className="h-4 w-4 text-muted-foreground" />;
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <FolderOpen className="h-4 w-4 text-muted-foreground" />
+          {t('wsl.detail.filesystem')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Path navigation */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => loadDirectory('/')}
+            disabled={loading}
+            title="Home"
+          >
+            <Home className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={() => navigateTo('..')}
+            disabled={loading || currentPath === '/'}
+            title="Up"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </Button>
+          <Input
+            className="h-8 text-xs font-mono flex-1"
+            value={pathInput}
+            onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleNavigate()}
+            placeholder="/"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1"
+            onClick={handleNavigate}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+            {loaded ? t('wsl.detail.refresh') : t('wsl.detail.browse')}
+          </Button>
+        </div>
+
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+          <button
+            className="hover:text-foreground transition-colors"
+            onClick={() => loadDirectory('/')}
+          >
+            /
+          </button>
+          {currentPath.split('/').filter(Boolean).map((part, i, arr) => {
+            const path = '/' + arr.slice(0, i + 1).join('/');
+            return (
+              <span key={path} className="flex items-center gap-1">
+                <span>/</span>
+                <button
+                  className="hover:text-foreground transition-colors"
+                  onClick={() => loadDirectory(path)}
+                >
+                  {part}
+                </button>
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="text-xs text-destructive bg-destructive/10 rounded-md p-2">
+            {error}
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading && (
+          <div className="space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        )}
+
+        {/* File list */}
+        {!loading && loaded && entries.length === 0 && !error && (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            {t('wsl.detail.emptyDir')}
+          </p>
+        )}
+
+        {!loading && entries.length > 0 && (
+          <ScrollArea className="max-h-[500px]">
+            <div className="space-y-0.5">
+              {/* Parent directory */}
+              {currentPath !== '/' && (
+                <button
+                  className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded hover:bg-muted transition-colors text-sm"
+                  onClick={() => navigateTo('..')}
+                >
+                  <Folder className="h-4 w-4 text-blue-500" />
+                  <span className="font-mono">..</span>
+                </button>
+              )}
+
+              {/* Sort: directories first, then files */}
+              {[...entries]
+                .sort((a, b) => {
+                  if (a.type === 'dir' && b.type !== 'dir') return -1;
+                  if (a.type !== 'dir' && b.type === 'dir') return 1;
+                  return a.name.localeCompare(b.name);
+                })
+                .map((entry) => (
+                  <div
+                    key={entry.name}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted transition-colors group"
+                  >
+                    {entry.type === 'dir' ? (
+                      <button
+                        className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                        onClick={() => navigateTo(entry.name)}
+                      >
+                        {getIcon(entry)}
+                        <span className="text-sm font-mono truncate text-blue-600 dark:text-blue-400 hover:underline">
+                          {entry.name}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {getIcon(entry)}
+                        <span className="text-sm font-mono truncate">
+                          {entry.name}
+                        </span>
+                        {entry.linkTarget && (
+                          <span className="text-xs text-muted-foreground truncate">
+                            → {entry.linkTarget}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {entry.permissions}
+                      </Badge>
+                      <span className="w-16 text-right">{entry.size}</span>
+                      <span className="w-28 text-right hidden lg:block">{entry.modified}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleCopyPath(entry.name)}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </ScrollArea>
+        )}
+
+        {/* Not loaded yet */}
+        {!loaded && !loading && (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p>{t('wsl.detail.filesystemHint')}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

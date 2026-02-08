@@ -8,7 +8,10 @@ export type {
   StatusFilter,
   SortOption,
   ViewMode,
+  PlatformFilter,
 } from "./provider-toolbar";
+
+export { getCapabilityLabel } from "./provider-icons";
 
 export { ProviderEmptyState } from "./provider-empty-state";
 export type { ProviderEmptyStateProps } from "./provider-empty-state";

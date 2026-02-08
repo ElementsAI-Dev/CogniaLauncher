@@ -159,7 +159,7 @@ describe("PackageList", () => {
     }
 
     expect(mockPush).toHaveBeenCalledWith(
-      "/packages?provider=npm&package=typescript",
+      "/packages/detail?name=typescript&provider=npm",
     );
   });
 

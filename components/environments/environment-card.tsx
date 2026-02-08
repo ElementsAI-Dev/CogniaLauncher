@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/components/providers/locale-provider";
+import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { formatSize } from "@/lib/utils";
 
 interface EnvironmentCardProps {
@@ -210,6 +211,9 @@ export function EnvironmentCard({
                 <p className="text-xs text-muted-foreground mt-1">
                   {t("environments.currentVersion")}
                 </p>
+                <div className="mt-1">
+                  <UpdateCheckerCard env={env} compact t={t} />
+                </div>
               </div>
             )}
           </div>

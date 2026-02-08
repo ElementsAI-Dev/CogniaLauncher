@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,7 +81,12 @@ export function WslDistroCard({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold truncate">{distro.name}</h3>
+                <Link
+                  href={`/wsl/distro?name=${encodeURIComponent(distro.name)}`}
+                  className="font-semibold truncate hover:underline hover:text-primary transition-colors"
+                >
+                  {distro.name}
+                </Link>
                 {distro.isDefault && (
                   <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500 shrink-0" />
                 )}

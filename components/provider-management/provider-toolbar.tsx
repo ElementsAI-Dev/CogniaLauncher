@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,6 +24,8 @@ import {
   LayoutGrid,
   List,
   ArrowUpDown,
+  Power,
+  PowerOff,
 } from "lucide-react";
 
 export type CategoryFilter = "all" | "environment" | "package" | "system";
@@ -39,6 +42,7 @@ export type SortOption =
   | "priority-desc"
   | "status";
 export type ViewMode = "grid" | "list";
+export type PlatformFilter = "all" | "windows" | "linux" | "macos";
 
 export interface ProviderToolbarProps {
   searchQuery: string;
@@ -51,10 +55,15 @@ export interface ProviderToolbarProps {
   onSortChange: (sort: SortOption) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
+  platformFilter?: PlatformFilter;
+  onPlatformChange?: (platform: PlatformFilter) => void;
   onRefresh: () => void;
   onCheckAllStatus: () => void;
+  onEnableAll?: () => void;
+  onDisableAll?: () => void;
   isLoading: boolean;
   isCheckingStatus: boolean;
+  providerCount?: number;
   t: (key: string) => string;
 }
 
@@ -69,12 +78,44 @@ export function ProviderToolbar({
   onSortChange,
   viewMode,
   onViewModeChange,
+  platformFilter,
+  onPlatformChange,
   onRefresh,
   onCheckAllStatus,
+  onEnableAll,
+  onDisableAll,
   isLoading,
   isCheckingStatus,
+  providerCount,
   t,
 }: ProviderToolbarProps) {
+  // Debounced search
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearchInput = useCallback(
+    (value: string) => {
+      setLocalSearch(value);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        onSearchChange(value);
+      }, 300);
+    },
+    [onSearchChange],
+  );
+
+  // Sync external searchQuery changes
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -83,12 +124,55 @@ export function ProviderToolbar({
           <Input
             type="search"
             placeholder={t("providers.search")}
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={localSearch}
+            onChange={(e) => handleSearchInput(e.target.value)}
             className="pl-9"
           />
+          {providerCount !== undefined && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              {providerCount}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          {onEnableAll && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onEnableAll}
+                  disabled={isLoading}
+                  className="gap-1"
+                >
+                  <Power className="h-4 w-4" />
+                  {t("providers.enableAll")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t("providers.enableAll")}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {onDisableAll && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onDisableAll}
+                  disabled={isLoading}
+                  className="gap-1"
+                >
+                  <PowerOff className="h-4 w-4" />
+                  {t("providers.disableAll")}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t("providers.disableAll")}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -175,6 +259,23 @@ export function ProviderToolbar({
               </SelectItem>
             </SelectContent>
           </Select>
+
+          {onPlatformChange && (
+            <Select
+              value={platformFilter ?? "all"}
+              onValueChange={(value) => onPlatformChange(value as PlatformFilter)}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder={t("providers.platformAll")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("providers.platformAll")}</SelectItem>
+                <SelectItem value="windows">Windows</SelectItem>
+                <SelectItem value="linux">Linux</SelectItem>
+                <SelectItem value="macos">macOS</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
           <Select
             value={sortOption}

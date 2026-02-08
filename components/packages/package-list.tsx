@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -64,6 +65,7 @@ export function PackageList({
   selectable = true,
   showSelectAll = true,
 }: PackageListProps) {
+  const router = useRouter();
   const {
     selectedPackages,
     togglePackageSelection,
@@ -159,7 +161,11 @@ export function PackageList({
                 hover:bg-accent/50 transition-colors
                 ${isSelected ? "border-primary bg-accent/30" : "border-border"}
               `}
-                onClick={() => onSelect?.(pkg)}
+                onClick={() => {
+                  const params = new URLSearchParams({ name: pkg.name });
+                  if (pkg.provider) params.set('provider', pkg.provider);
+                  router.push(`/packages/detail?${params.toString()}`);
+                }}
               >
                 {/* Left side - checkbox and info */}
                 <div className="flex items-center gap-3 flex-1 min-w-0">

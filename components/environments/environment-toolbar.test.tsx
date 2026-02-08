@@ -32,6 +32,8 @@ describe("EnvironmentToolbar", () => {
     isLoading: false,
     totalCount: 5,
     filteredCount: 5,
+    viewMode: "grid" as const,
+    onViewModeChange: jest.fn(),
     t: mockT,
   };
 

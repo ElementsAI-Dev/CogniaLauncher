@@ -6,18 +6,34 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink } from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  Activity,
+  ExternalLink,
+  MoreHorizontal,
+  Copy,
+} from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { getProviderIcon } from "./provider-icons";
+import { toast } from "sonner";
+import {
+  getProviderIcon,
+  getPlatformIcon,
+  getCapabilityLabel,
+} from "./provider-icons";
 
 export interface ProviderListItemProps {
   provider: ProviderInfo;
   isAvailable?: boolean;
+  version?: string | null;
   isToggling: boolean;
   onToggle: (providerId: string, enabled: boolean) => void;
   onCheckStatus: (providerId: string) => Promise<boolean>;
@@ -27,6 +43,7 @@ export interface ProviderListItemProps {
 export function ProviderListItem({
   provider,
   isAvailable,
+  version,
   isToggling,
   onToggle,
   onCheckStatus,
@@ -69,8 +86,13 @@ export function ProviderListItem({
             <span className="text-xs text-muted-foreground font-mono">
               ({provider.id})
             </span>
+            {version && (
+              <Badge variant="secondary" className="text-xs font-mono">
+                {version}
+              </Badge>
+            )}
           </div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             {provider.is_environment_provider && (
               <Badge variant="outline" className="text-xs">
                 {t("providers.filterEnvironment")}
@@ -80,15 +102,20 @@ export function ProviderListItem({
               {t("providers.priority")}: {provider.priority}
             </span>
             <span className="text-xs text-muted-foreground">•</span>
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              {provider.platforms.map((p) => (
+                <span key={p} title={p}>{getPlatformIcon(p)}</span>
+              ))}
+            </span>
+            <span className="text-xs text-muted-foreground">•</span>
             <span className="text-xs text-muted-foreground">
-              {provider.capabilities.length}{" "}
-              {t("providers.capabilities").toLowerCase()}
+              {provider.capabilities.map((cap) => getCapabilityLabel(cap, t)).join(", ")}
             </span>
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-4 flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0">
         {availabilityStatus !== undefined && (
           <Badge
             variant={availabilityStatus ? "default" : "destructive"}
@@ -111,27 +138,6 @@ export function ProviderListItem({
           </Badge>
         )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCheckStatus}
-              disabled={isChecking}
-              className="h-8 px-2"
-            >
-              {isChecking ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Activity className="h-4 w-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t("providers.checkStatus")}</p>
-          </TooltipContent>
-        </Tooltip>
-
         <div className="flex items-center gap-2">
           {isToggling && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -144,12 +150,36 @@ export function ProviderListItem({
           />
         </div>
 
-        <Link
-          href={`/providers/${provider.id}`}
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline ml-2"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">{t("providers.moreActions")}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleCheckStatus} disabled={isChecking}>
+              <Activity className="h-4 w-4 mr-2" />
+              {t("providers.checkStatus")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                navigator.clipboard.writeText(provider.id);
+                toast.success(t("providers.idCopied"));
+              }}
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              {t("providers.copyId")}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href={`/providers/${provider.id}`}>
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {t("providerDetail.viewDetails")}
+              </Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

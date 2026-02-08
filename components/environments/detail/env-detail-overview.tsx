@@ -29,6 +29,7 @@ import type {
   HealthStatus,
 } from "@/lib/tauri";
 import { useHealthCheck } from "@/hooks/use-health-check";
+import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { formatSize } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -170,6 +171,9 @@ export function EnvDetailOverview({
         </Card>
       )}
 
+      {/* Update Checker */}
+      <UpdateCheckerCard env={env} t={t} />
+
       {/* Installed Versions Quick View */}
       <Card>
         <CardHeader>
@@ -198,14 +202,21 @@ export function EnvDetailOverview({
                       : "bg-muted/30",
                   )}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono font-medium text-sm truncate">
-                      {v.version}
-                    </span>
-                    {v.is_current && (
-                      <Badge variant="default" className="text-xs shrink-0">
-                        {t("environments.currentVersion")}
-                      </Badge>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-medium text-sm truncate">
+                        {v.version}
+                      </span>
+                      {v.is_current && (
+                        <Badge variant="default" className="text-xs shrink-0">
+                          {t("environments.currentVersion")}
+                        </Badge>
+                      )}
+                    </div>
+                    {v.install_path && (
+                      <p className="text-xs text-muted-foreground font-mono truncate mt-0.5" title={v.install_path}>
+                        {v.install_path}
+                      </p>
                     )}
                   </div>
                   {v.size != null && v.size > 0 && (

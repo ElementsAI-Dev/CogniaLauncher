@@ -63,9 +63,9 @@ export function PackageList({
 
   const handlePackageClick = useCallback(
     (pkg: InstalledPackage) => {
-      router.push(
-        `/packages?provider=${encodeURIComponent(pkg.provider)}&package=${encodeURIComponent(pkg.name)}`,
-      );
+      const params = new URLSearchParams({ name: pkg.name });
+      if (pkg.provider) params.set('provider', pkg.provider);
+      router.push(`/packages/detail?${params.toString()}`);
     },
     [router],
   );

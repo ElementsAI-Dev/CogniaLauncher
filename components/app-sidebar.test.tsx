@@ -65,7 +65,78 @@ jest.mock("@/components/ui/sidebar", () => ({
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => (
     <li>{children}</li>
   ),
+  SidebarMenuSub: ({ children }: { children: React.ReactNode }) => (
+    <ul>{children}</ul>
+  ),
+  SidebarMenuSubButton: ({
+    children,
+    isActive,
+  }: {
+    children: React.ReactNode;
+    isActive?: boolean;
+  }) => <div data-active={isActive}>{children}</div>,
+  SidebarMenuSubItem: ({ children }: { children: React.ReactNode }) => (
+    <li>{children}</li>
+  ),
   SidebarRail: () => null,
+}));
+
+jest.mock("@/components/ui/collapsible", () => ({
+  Collapsible: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  CollapsibleContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  CollapsibleTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
+jest.mock("@/lib/tauri", () => ({
+  isTauri: () => true,
+}));
+
+jest.mock("@/hooks/use-wsl", () => ({
+  useWsl: () => ({
+    distros: [
+      { name: "Ubuntu", state: "Running", wslVersion: "2", isDefault: true },
+      { name: "Debian", state: "Stopped", wslVersion: "2", isDefault: false },
+    ],
+    available: true,
+    loading: false,
+    error: null,
+    onlineDistros: [],
+    status: null,
+    config: null,
+    checkAvailability: jest.fn(),
+    refreshDistros: jest.fn(),
+    refreshOnlineDistros: jest.fn(),
+    refreshStatus: jest.fn(),
+    refreshRunning: jest.fn(),
+    refreshAll: jest.fn(),
+    terminate: jest.fn(),
+    shutdown: jest.fn(),
+    setDefault: jest.fn(),
+    setVersion: jest.fn(),
+    setDefaultVersion: jest.fn(),
+    exportDistro: jest.fn(),
+    importDistro: jest.fn(),
+    updateWsl: jest.fn(),
+    launch: jest.fn(),
+    execCommand: jest.fn(),
+    convertPath: jest.fn(),
+    refreshConfig: jest.fn(),
+    setConfigValue: jest.fn(),
+    getDiskUsage: jest.fn(),
+    importInPlace: jest.fn(),
+    mountDisk: jest.fn(),
+    unmountDisk: jest.fn(),
+    getIpAddress: jest.fn(),
+    changeDefaultUser: jest.fn(),
+    getDistroConfig: jest.fn(),
+    setDistroConfigValue: jest.fn(),
+  }),
 }));
 
 jest.mock("@/components/theme-toggle", () => ({

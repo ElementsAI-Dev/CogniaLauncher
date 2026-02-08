@@ -7,12 +7,15 @@ import type {
   ProviderInfo,
   InstalledPackage,
   PackageSummary,
+  PackageInfo,
   UpdateInfo,
   PackageManagerHealthResult,
   InstallHistoryEntry,
   EnvironmentInfo,
   EnvironmentProviderInfo,
   VersionInfo,
+  ResolutionResult,
+  BatchResult,
 } from '@/types/tauri';
 
 export interface ProviderDetailState {
@@ -42,6 +45,9 @@ export interface ProviderDetailState {
   installHistory: InstallHistoryEntry[];
   loadingHistory: boolean;
 
+  // Pinned packages
+  pinnedPackages: [string, string | null][];
+
   // Environment (for environment providers)
   environmentInfo: EnvironmentInfo | null;
   environmentProviderInfo: EnvironmentProviderInfo | null;
@@ -70,6 +76,8 @@ export function useProviderDetail(providerId: string) {
 
   const [installHistory, setInstallHistory] = useState<InstallHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const [pinnedPackages, setPinnedPackages] = useState<[string, string | null][]>([]);
 
   const [environmentInfo, setEnvironmentInfo] = useState<EnvironmentInfo | null>(null);
   const [environmentProviderInfo, setEnvironmentProviderInfo] = useState<EnvironmentProviderInfo | null>(null);
@@ -163,10 +171,11 @@ export function useProviderDetail(providerId: string) {
     }
   }, [providerId]);
 
-  // Install a package via this provider
-  const installPackage = useCallback(async (packageName: string) => {
+  // Install a package via this provider (optionally with version)
+  const installPackage = useCallback(async (packageName: string, version?: string) => {
     try {
-      const spec = `${providerId}:${packageName}`;
+      const name = version ? `${packageName}@${version}` : packageName;
+      const spec = `${providerId}:${name}`;
       await tauri.packageInstall([spec]);
       await fetchInstalledPackages();
     } catch (err) {
@@ -187,6 +196,107 @@ export function useProviderDetail(providerId: string) {
     }
   }, [providerId, fetchInstalledPackages]);
 
+  // Batch uninstall multiple packages
+  const batchUninstallPackages = useCallback(async (packageNames: string[]) => {
+    try {
+      const specs = packageNames.map((name) => `${providerId}:${name}`);
+      const result = await tauri.batchUninstall(specs);
+      await fetchInstalledPackages();
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, [providerId, fetchInstalledPackages]);
+
+  // Fetch detailed info for a specific package
+  const fetchPackageInfo = useCallback(async (packageName: string): Promise<PackageInfo | null> => {
+    try {
+      return await tauri.packageInfo(packageName, providerId);
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [providerId]);
+
+  // Fetch available versions for a package
+  const fetchPackageVersions = useCallback(async (packageName: string): Promise<VersionInfo[]> => {
+    try {
+      return await tauri.packageVersions(packageName, providerId);
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, [providerId]);
+
+  // Resolve dependencies for packages
+  const fetchDependencies = useCallback(async (packageNames: string[]): Promise<ResolutionResult | null> => {
+    try {
+      const specs = packageNames.map((name) => `${providerId}:${name}`);
+      return await tauri.resolveDependencies(specs);
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [providerId]);
+
+  // Pin a package to its current version
+  const pinPackage = useCallback(async (packageName: string, version?: string) => {
+    try {
+      await tauri.packagePin(packageName, version);
+      const pinned = await tauri.getPinnedPackages();
+      setPinnedPackages(pinned);
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, []);
+
+  // Unpin a package
+  const unpinPackage = useCallback(async (packageName: string) => {
+    try {
+      await tauri.packageUnpin(packageName);
+      const pinned = await tauri.getPinnedPackages();
+      setPinnedPackages(pinned);
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, []);
+
+  // Fetch all pinned packages
+  const fetchPinnedPackages = useCallback(async () => {
+    try {
+      const pinned = await tauri.getPinnedPackages();
+      setPinnedPackages(pinned);
+      return pinned;
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, []);
+
+  // Rollback a package to a specific version
+  const rollbackPackage = useCallback(async (packageName: string, toVersion: string) => {
+    try {
+      await tauri.packageRollback(packageName, toVersion);
+      await fetchInstalledPackages();
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, [fetchInstalledPackages]);
+
+  // Get history for a specific package
+  const fetchPackageHistory = useCallback(async (packageName: string): Promise<InstallHistoryEntry[]> => {
+    try {
+      return await tauri.getPackageHistory(packageName);
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, []);
+
   // Check for updates for packages from this provider
   const checkUpdates = useCallback(async () => {
     setLoadingUpdates(true);
@@ -202,6 +312,33 @@ export function useProviderDetail(providerId: string) {
       setLoadingUpdates(false);
     }
   }, [providerId]);
+
+  // Update a single package
+  const updatePackage = useCallback(async (packageName: string): Promise<BatchResult | null> => {
+    try {
+      const spec = `${providerId}:${packageName}`;
+      const result = await tauri.batchUpdate([spec]);
+      await fetchInstalledPackages();
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, [providerId, fetchInstalledPackages]);
+
+  // Update all packages for this provider
+  const updateAllPackages = useCallback(async (packageNames: string[]): Promise<BatchResult | null> => {
+    try {
+      const specs = packageNames.map((name) => `${providerId}:${name}`);
+      const result = await tauri.batchUpdate(specs);
+      await fetchInstalledPackages();
+      await checkUpdates();
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      throw err;
+    }
+  }, [providerId, fetchInstalledPackages, checkUpdates]);
 
   // Run health check for this provider
   const runHealthCheck = useCallback(async () => {
@@ -283,6 +420,8 @@ export function useProviderDetail(providerId: string) {
       fetchInstalledPackages(),
       runHealthCheck(),
       fetchHistory(),
+      checkUpdates(),
+      fetchPinnedPackages(),
     ];
 
     // If it's an environment provider, also load environment data
@@ -291,7 +430,7 @@ export function useProviderDetail(providerId: string) {
     }
 
     await Promise.allSettled(promises);
-  }, [fetchProvider, checkAvailability, fetchInstalledPackages, runHealthCheck, fetchHistory, fetchEnvironmentInfo]);
+  }, [fetchProvider, checkAvailability, fetchInstalledPackages, runHealthCheck, fetchHistory, checkUpdates, fetchPinnedPackages, fetchEnvironmentInfo]);
 
   // Refresh all data — bypasses the init guard by directly re-fetching
   const refreshAll = useCallback(async () => {
@@ -303,6 +442,8 @@ export function useProviderDetail(providerId: string) {
       fetchInstalledPackages(),
       runHealthCheck(),
       fetchHistory(),
+      checkUpdates(),
+      fetchPinnedPackages(),
     ];
 
     if (providerInfo.is_environment_provider) {
@@ -310,7 +451,7 @@ export function useProviderDetail(providerId: string) {
     }
 
     await Promise.allSettled(promises);
-  }, [fetchProvider, checkAvailability, fetchInstalledPackages, runHealthCheck, fetchHistory, fetchEnvironmentInfo]);
+  }, [fetchProvider, checkAvailability, fetchInstalledPackages, runHealthCheck, fetchHistory, checkUpdates, fetchPinnedPackages, fetchEnvironmentInfo]);
 
   return {
     // State
@@ -329,6 +470,7 @@ export function useProviderDetail(providerId: string) {
     loadingHealth,
     installHistory,
     loadingHistory,
+    pinnedPackages,
     environmentInfo,
     environmentProviderInfo,
     availableVersions,
@@ -344,6 +486,17 @@ export function useProviderDetail(providerId: string) {
     searchPackages,
     installPackage,
     uninstallPackage,
+    batchUninstallPackages,
+    fetchPackageInfo,
+    fetchPackageVersions,
+    fetchDependencies,
+    pinPackage,
+    unpinPackage,
+    fetchPinnedPackages,
+    rollbackPackage,
+    fetchPackageHistory,
+    updatePackage,
+    updateAllPackages,
     checkUpdates,
     runHealthCheck,
     fetchHistory,

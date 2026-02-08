@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -12,6 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Package,
   Search,
@@ -67,61 +74,55 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   );
 
   const relevantProviders = ENV_TYPE_TO_PROVIDERS[envType] || [];
-  const primaryProvider = relevantProviders[0];
+  const [selectedProvider, setSelectedProvider] = useState(
+    relevantProviders[0] || "",
+  );
+  const activeProvider = selectedProvider || relevantProviders[0];
 
-  // Fetch installed packages for the primary provider on mount
+  // Fetch installed packages for the active provider on mount or provider change
   useEffect(() => {
-    if (primaryProvider) {
-      fetchInstalledPackages(primaryProvider);
+    if (activeProvider) {
+      fetchInstalledPackages(activeProvider);
     }
-  }, [primaryProvider, fetchInstalledPackages]);
+  }, [activeProvider, fetchInstalledPackages]);
 
-  const handleSearch = useCallback(
-    async (query: string) => {
-      if (!query.trim()) return;
-      setActiveView("search");
-      await searchPackages(query, primaryProvider);
-    },
-    [primaryProvider, searchPackages],
-  );
+  const handleSearch = async (query: string) => {
+    if (!query.trim()) return;
+    setActiveView("search");
+    await searchPackages(query, activeProvider);
+  };
 
-  const handleInstall = useCallback(
-    async (packageName: string) => {
-      try {
-        const pkgSpec = primaryProvider
-          ? `${primaryProvider}:${packageName}`
-          : packageName;
-        await installPackages([pkgSpec]);
-        toast.success(
-          t("environments.detail.packageInstalled", { name: packageName }),
-        );
-      } catch (err) {
-        toast.error(String(err));
-      }
-    },
-    [primaryProvider, installPackages, t],
-  );
+  const handleInstall = async (packageName: string) => {
+    try {
+      const pkgSpec = activeProvider
+        ? `${activeProvider}:${packageName}`
+        : packageName;
+      await installPackages([pkgSpec]);
+      toast.success(
+        t("environments.detail.packageInstalled", { name: packageName }),
+      );
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
 
-  const handleUninstall = useCallback(
-    async (packageName: string) => {
-      try {
-        const pkgSpec = primaryProvider
-          ? `${primaryProvider}:${packageName}`
-          : packageName;
-        await uninstallPackages([pkgSpec]);
-        toast.success(
-          t("environments.detail.packageUninstalled", { name: packageName }),
-        );
-      } catch (err) {
-        toast.error(String(err));
-      }
-    },
-    [primaryProvider, uninstallPackages, t],
-  );
+  const handleUninstall = async (packageName: string) => {
+    try {
+      const pkgSpec = activeProvider
+        ? `${activeProvider}:${packageName}`
+        : packageName;
+      await uninstallPackages([pkgSpec]);
+      toast.success(
+        t("environments.detail.packageUninstalled", { name: packageName }),
+      );
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
 
-  const handleCheckUpdates = useCallback(async () => {
+  const handleCheckUpdates = async () => {
     await checkForUpdates();
-  }, [checkForUpdates]);
+  };
 
   if (relevantProviders.length === 0) {
     return (
@@ -150,15 +151,32 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
               </CardTitle>
               <CardDescription>
                 {t("environments.detail.packagesDesc", {
-                  provider: primaryProvider || envType,
+                  provider: activeProvider || envType,
                 })}
               </CardDescription>
             </div>
             <div className="flex gap-2">
+              {relevantProviders.length > 1 && (
+                <Select
+                  value={activeProvider}
+                  onValueChange={setSelectedProvider}
+                >
+                  <SelectTrigger className="h-9 w-[130px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {relevantProviders.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchInstalledPackages(primaryProvider)}
+                onClick={() => fetchInstalledPackages(activeProvider)}
                 disabled={loading}
                 className="gap-1.5"
               >
@@ -262,12 +280,26 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                   key={update.name}
                   className="flex items-center justify-between p-2 rounded bg-background/60"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="font-mono text-sm">{update.name}</span>
                     <span className="text-xs text-muted-foreground">
                       {update.current_version} → {update.latest_version}
                     </span>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 shrink-0 text-xs h-7"
+                    onClick={() => handleInstall(`${update.name}@${update.latest_version}`)}
+                    disabled={installing.includes(update.name)}
+                  >
+                    {installing.includes(update.name) ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <ArrowUpCircle className="h-3 w-3" />
+                    )}
+                    {t("environments.detail.updateBtn")}
+                  </Button>
                 </div>
               ))}
               {availableUpdates.length > 10 && (

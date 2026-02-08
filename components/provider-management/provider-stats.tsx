@@ -2,13 +2,16 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, XCircle, Power, PowerOff } from "lucide-react";
+import { CheckCircle2, XCircle, Power, PowerOff, Layers, Package, Monitor } from "lucide-react";
 
 export interface ProviderStatsProps {
   total: number;
   enabled: number;
   available: number;
   unavailable: number;
+  environmentCount?: number;
+  packageCount?: number;
+  systemCount?: number;
   t: (key: string) => string;
 }
 
@@ -17,9 +20,13 @@ export function ProviderStats({
   enabled,
   available,
   unavailable,
+  environmentCount,
+  packageCount,
+  systemCount,
   t,
 }: ProviderStatsProps) {
   const disabled = total - enabled;
+  const showCategories = environmentCount !== undefined || packageCount !== undefined || systemCount !== undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-3 bg-muted/50 rounded-lg">
@@ -84,6 +91,48 @@ export function ProviderStats({
           {unavailable}
         </Badge>
       </div>
+
+      {showCategories && (
+        <>
+          <Separator orientation="vertical" className="h-4" />
+
+          {environmentCount !== undefined && (
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">
+                {t("providers.statsEnvironment")}:
+              </span>
+              <Badge variant="secondary" className="font-mono">
+                {environmentCount}
+              </Badge>
+            </div>
+          )}
+
+          {packageCount !== undefined && (
+            <div className="flex items-center gap-2">
+              <Package className="h-4 w-4 text-purple-500" />
+              <span className="text-sm text-muted-foreground">
+                {t("providers.statsPackage")}:
+              </span>
+              <Badge variant="secondary" className="font-mono">
+                {packageCount}
+              </Badge>
+            </div>
+          )}
+
+          {systemCount !== undefined && (
+            <div className="flex items-center gap-2">
+              <Monitor className="h-4 w-4 text-orange-500" />
+              <span className="text-sm text-muted-foreground">
+                {t("providers.statsSystem")}:
+              </span>
+              <Badge variant="secondary" className="font-mono">
+                {systemCount}
+              </Badge>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

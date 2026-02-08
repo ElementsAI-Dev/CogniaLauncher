@@ -1,0 +1,117 @@
+site_name: CogniaLauncher 文档
+site_description: 跨平台环境与包管理器 — 完整技术文档
+site_url: https://cognialauncher.dev/
+repo_url: https://github.com/AstroAir/CogniaLauncher
+repo_name: AstroAir/CogniaLauncher
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - 首页: index.md
+  - 快速开始:
+      - getting-started/index.md
+      - 安装: getting-started/installation.md
+      - 快速上手: getting-started/quick-start.md
+      - 配置: getting-started/configuration.md
+  - 使用指南:
+      - guide/index.md
+      - 仪表板: guide/dashboard.md
+      - 环境管理: guide/environments.md
+      - 包管理: guide/packages.md
+      - Provider 系统: guide/providers.md
+      - 缓存管理: guide/cache.md
+      - 下载管理: guide/downloads.md
+      - WSL 管理: guide/wsl.md
+      - 设置与主题: guide/settings.md
+      - 命令面板: guide/command-palette.md
+      - 日志系统: guide/logs.md
+  - 架构设计:
+      - architecture/index.md
+      - 架构总览: architecture/overview.md
+      - 前端架构: architecture/frontend.md
+      - 后端架构: architecture/backend.md
+      - Provider 系统: architecture/provider-system.md
+      - 数据模型: architecture/data-model.md
+      - 安全设计: architecture/security.md
+  - 开发者:
+      - development/index.md
+      - 开发环境搭建: development/setup.md
+      - 贡献指南: development/contributing.md
+      - 添加 Provider: development/adding-providers.md
+      - 添加命令: development/adding-commands.md
+      - 测试指南: development/testing.md
+      - CI/CD: development/ci-cd.md
+  - 参考:
+      - reference/index.md
+      - Tauri 命令: reference/commands.md
+      - Provider 列表: reference/providers-list.md
+      - React Hooks: reference/hooks.md
+      - 状态管理: reference/stores.md
+      - 国际化: reference/i18n.md
+      - 快捷键: reference/keyboard-shortcuts.md
+  - 设计文档:
+      - design/index.md
+      - 软件设计: design/software-design.md
+      - 错误处理: design/error-handling.md
+  - 附录:
+      - appendix/index.md
+      - 软件推荐: appendix/software-recommendations.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.mark
+  - pymdownx.keys
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search:
+      lang: zh
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/AstroAir/CogniaLauncher

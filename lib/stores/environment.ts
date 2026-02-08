@@ -38,6 +38,7 @@ export interface EnvironmentSettings {
 // Filter types for environment list
 export type EnvironmentStatusFilter = 'all' | 'available' | 'unavailable';
 export type EnvironmentSortBy = 'name' | 'installed_count' | 'provider';
+export type EnvironmentViewMode = 'grid' | 'list';
 
 interface EnvironmentState {
   environments: EnvironmentInfo[];
@@ -52,6 +53,7 @@ interface EnvironmentState {
   searchQuery: string;
   statusFilter: EnvironmentStatusFilter;
   sortBy: EnvironmentSortBy;
+  viewMode: EnvironmentViewMode;
   
   // Persisted settings per environment type
   envSettings: Record<string, EnvironmentSettings>;
@@ -116,6 +118,7 @@ interface EnvironmentState {
   setSearchQuery: (query: string) => void;
   setStatusFilter: (filter: EnvironmentStatusFilter) => void;
   setSortBy: (sort: EnvironmentSortBy) => void;
+  setViewMode: (mode: EnvironmentViewMode) => void;
   clearFilters: () => void;
 }
 
@@ -199,6 +202,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       searchQuery: '',
       statusFilter: 'all' as EnvironmentStatusFilter,
       sortBy: 'name' as EnvironmentSortBy,
+      viewMode: 'grid' as EnvironmentViewMode,
 
       setEnvironments: (environments) => set({ environments }),
       setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
@@ -380,6 +384,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
       setSortBy: (sortBy) => set({ sortBy }),
+      setViewMode: (viewMode) => set({ viewMode }),
       clearFilters: () => set({ searchQuery: '', statusFilter: 'all', sortBy: 'name' }),
     }),
     {
@@ -387,6 +392,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         envSettings: state.envSettings,
+        viewMode: state.viewMode,
       }),
     }
   )

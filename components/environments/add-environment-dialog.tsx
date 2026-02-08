@@ -26,96 +26,7 @@ import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { X, Check, RefreshCw, Globe } from "lucide-react";
-
-const LANGUAGES = [
-  {
-    id: "node",
-    name: "Node.js",
-    icon: "🟢",
-    color: "bg-green-500/10 border-green-500 dark:bg-green-500/20",
-  },
-  {
-    id: "python",
-    name: "Python",
-    icon: "🐍",
-    color: "bg-blue-500/10 border-blue-500 dark:bg-blue-500/20",
-  },
-  {
-    id: "go",
-    name: "Go",
-    icon: "🔵",
-    color: "bg-cyan-500/10 border-cyan-500 dark:bg-cyan-500/20",
-  },
-  {
-    id: "rust",
-    name: "Rust",
-    icon: "🦀",
-    color: "bg-orange-500/10 border-orange-500 dark:bg-orange-500/20",
-  },
-  {
-    id: "ruby",
-    name: "Ruby",
-    icon: "💎",
-    color: "bg-red-500/10 border-red-500 dark:bg-red-500/20",
-  },
-  {
-    id: "java",
-    name: "Java",
-    icon: "☕",
-    color: "bg-amber-500/10 border-amber-500 dark:bg-amber-500/20",
-  },
-  {
-    id: "php",
-    name: "PHP",
-    icon: "🐘",
-    color: "bg-purple-500/10 border-purple-500 dark:bg-purple-500/20",
-  },
-  {
-    id: "dotnet",
-    name: ".NET",
-    icon: "🔷",
-    color: "bg-violet-500/10 border-violet-500 dark:bg-violet-500/20",
-  },
-  {
-    id: "deno",
-    name: "Deno",
-    icon: "🦕",
-    color: "bg-teal-500/10 border-teal-500 dark:bg-teal-500/20",
-  },
-  {
-    id: "bun",
-    name: "Bun",
-    icon: "🧅",
-    color: "bg-yellow-500/10 border-yellow-500 dark:bg-yellow-500/20",
-  },
-];
-
-const PROVIDER_IDS: Record<string, { id: string; name: string }[]> = {
-  node: [
-    { id: "volta", name: "Volta" },
-    { id: "fnm", name: "fnm" },
-    { id: "nvm", name: "nvm" },
-  ],
-  python: [
-    { id: "pyenv", name: "pyenv" },
-    { id: "conda", name: "Conda" },
-    { id: "mise", name: "mise" },
-  ],
-  go: [
-    { id: "goenv", name: "goenv" },
-    { id: "mise", name: "mise" },
-  ],
-  rust: [{ id: "rustup", name: "rustup" }],
-  ruby: [
-    { id: "rbenv", name: "rbenv" },
-    { id: "mise", name: "mise" },
-  ],
-  java: [{ id: "sdkman", name: "SDKMAN!" }],
-  php: [{ id: "phpbrew", name: "phpbrew" }],
-  dotnet: [{ id: "dotnet", name: "dotnet" }],
-  deno: [{ id: "deno", name: "Deno" }],
-  bun: [{ id: "system-bun", name: "System Bun" }],
-};
+import { LANGUAGES, DEFAULT_PROVIDERS } from "@/lib/constants/environments";
 
 export interface AddEnvironmentOptions {
   autoSwitch: boolean;
@@ -175,7 +86,10 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
       return dynamicProviders;
     }
 
-    const staticProviders = PROVIDER_IDS[selectedLanguage] || [];
+    const staticProviders = (DEFAULT_PROVIDERS[selectedLanguage] || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+    }));
     return staticProviders.map((p) => ({
       ...p,
       description: t(`environments.addDialog.providers.${p.id}`),

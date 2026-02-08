@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -27,6 +28,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Search,
   Package,
   Trash2,
@@ -35,6 +53,11 @@ import {
   FolderOpen,
   Clock,
   RefreshCw,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Undo2,
+  Info,
 } from "lucide-react";
 import type { InstalledPackage, PackageSummary } from "@/types/tauri";
 import { cn } from "@/lib/utils";
@@ -47,10 +70,16 @@ interface ProviderPackagesTabProps {
   searchQuery: string;
   loadingPackages: boolean;
   loadingSearch: boolean;
+  pinnedPackages?: string[];
   onSearchPackages: (query: string) => Promise<PackageSummary[]>;
-  onInstallPackage: (name: string) => Promise<void>;
+  onInstallPackage: (name: string, version?: string) => Promise<void>;
   onUninstallPackage: (name: string) => Promise<void>;
   onRefreshPackages: () => Promise<InstalledPackage[]>;
+  onPinPackage?: (name: string) => Promise<void>;
+  onUnpinPackage?: (name: string) => Promise<void>;
+  onRollbackPackage?: (name: string) => Promise<void>;
+  onBatchUninstall?: (names: string[]) => Promise<void>;
+  onViewPackageDetails?: (name: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -61,16 +90,27 @@ export function ProviderPackagesTab({
   searchQuery,
   loadingPackages,
   loadingSearch,
+  pinnedPackages = [],
   onSearchPackages,
   onInstallPackage,
   onUninstallPackage,
   onRefreshPackages,
+  onPinPackage,
+  onUnpinPackage,
+  onRollbackPackage,
+  onBatchUninstall,
+  onViewPackageDetails,
   t,
 }: ProviderPackagesTabProps) {
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const [installingPackages, setInstallingPackages] = useState<Set<string>>(new Set());
   const [uninstallingPackages, setUninstallingPackages] = useState<Set<string>>(new Set());
   const [installedFilter, setInstalledFilter] = useState("");
+  const [selectedPackages, setSelectedPackages] = useState<Set<string>>(new Set());
+  const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+  const [confirmBatchUninstall, setConfirmBatchUninstall] = useState(false);
+  const [batchUninstalling, setBatchUninstalling] = useState(false);
+  const pinnedSet = new Set(pinnedPackages);
 
   const handleSearch = useCallback(async () => {
     if (localSearchQuery.trim()) {
@@ -125,6 +165,28 @@ export function ProviderPackagesTab({
     [onUninstallPackage, t],
   );
 
+  const handleConfirmedUninstall = useCallback(async () => {
+    if (confirmUninstall) {
+      await handleUninstall(confirmUninstall);
+      setConfirmUninstall(null);
+    }
+  }, [confirmUninstall, handleUninstall]);
+
+  const handleBatchUninstall = useCallback(async () => {
+    if (!onBatchUninstall || selectedPackages.size === 0) return;
+    setBatchUninstalling(true);
+    try {
+      await onBatchUninstall(Array.from(selectedPackages));
+      toast.success(t("providerDetail.batchUninstallSuccess", { count: selectedPackages.size }));
+      setSelectedPackages(new Set());
+    } catch {
+      toast.error(t("providerDetail.batchUninstallError"));
+    } finally {
+      setBatchUninstalling(false);
+      setConfirmBatchUninstall(false);
+    }
+  }, [onBatchUninstall, selectedPackages, t]);
+
   const filteredInstalled = installedFilter
     ? installedPackages.filter((pkg) =>
         pkg.name.toLowerCase().includes(installedFilter.toLowerCase()),
@@ -132,6 +194,65 @@ export function ProviderPackagesTab({
     : installedPackages;
 
   const installedNames = new Set(installedPackages.map((p) => p.name));
+
+  const togglePackageSelection = useCallback((name: string) => {
+    setSelectedPackages((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedPackages.size === filteredInstalled.length) {
+      setSelectedPackages(new Set());
+    } else {
+      setSelectedPackages(new Set(filteredInstalled.map((p) => p.name)));
+    }
+  }, [selectedPackages.size, filteredInstalled]);
+
+  const handlePin = useCallback(
+    async (name: string) => {
+      if (!onPinPackage) return;
+      try {
+        await onPinPackage(name);
+        toast.success(t("providerDetail.packagePinned", { name }));
+      } catch {
+        toast.error(t("providerDetail.packagePinError", { name }));
+      }
+    },
+    [onPinPackage, t],
+  );
+
+  const handleUnpin = useCallback(
+    async (name: string) => {
+      if (!onUnpinPackage) return;
+      try {
+        await onUnpinPackage(name);
+        toast.success(t("providerDetail.packageUnpinned", { name }));
+      } catch {
+        toast.error(t("providerDetail.packageUnpinError", { name }));
+      }
+    },
+    [onUnpinPackage, t],
+  );
+
+  const handleRollback = useCallback(
+    async (name: string) => {
+      if (!onRollbackPackage) return;
+      try {
+        await onRollbackPackage(name);
+        toast.success(t("providerDetail.rollbackSuccess", { name, version: "" }));
+      } catch {
+        toast.error(t("providerDetail.rollbackError", { name }));
+      }
+    },
+    [onRollbackPackage, t],
+  );
 
   return (
     <div className="space-y-6">
@@ -259,19 +380,36 @@ export function ProviderPackagesTab({
                 {t("providerDetail.installedPackagesDesc")}
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onRefreshPackages()}
-              disabled={loadingPackages}
-            >
-              {loadingPackages ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
+            <div className="flex items-center gap-2">
+              {onBatchUninstall && selectedPackages.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setConfirmBatchUninstall(true)}
+                  disabled={batchUninstalling}
+                >
+                  {batchUninstalling ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  {t("providerDetail.batchUninstall")} ({selectedPackages.size})
+                </Button>
               )}
-              {t("providers.refresh")}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onRefreshPackages()}
+                disabled={loadingPackages}
+              >
+                {loadingPackages ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                {t("providers.refresh")}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -300,6 +438,15 @@ export function ProviderPackagesTab({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {onBatchUninstall && (
+                      <TableHead className="w-[40px]">
+                        <Checkbox
+                          checked={selectedPackages.size === filteredInstalled.length && filteredInstalled.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label={t("providerDetail.selectAll")}
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>{t("providerDetail.packageName")}</TableHead>
                     <TableHead>{t("providerDetail.version")}</TableHead>
                     <TableHead className="hidden lg:table-cell">
@@ -314,18 +461,33 @@ export function ProviderPackagesTab({
                         {t("providerDetail.installedAt")}
                       </div>
                     </TableHead>
-                    <TableHead className="w-[80px]">{t("providerDetail.actions")}</TableHead>
+                    <TableHead className="w-[100px]">{t("providerDetail.actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredInstalled.map((pkg) => (
                     <TableRow key={`${pkg.name}-${pkg.version}`}>
+                      {onBatchUninstall && (
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedPackages.has(pkg.name)}
+                            onCheckedChange={() => togglePackageSelection(pkg.name)}
+                            aria-label={pkg.name}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono text-sm font-medium">
                         <div className="flex items-center gap-2">
                           {pkg.name}
                           {pkg.is_global && (
                             <Badge variant="outline" className="text-xs">
                               {t("providerDetail.global")}
+                            </Badge>
+                          )}
+                          {pinnedSet.has(pkg.name) && (
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              <Pin className="h-3 w-3" />
+                              {t("providerDetail.pinned")}
                             </Badge>
                           )}
                         </div>
@@ -342,28 +504,69 @@ export function ProviderPackagesTab({
                           : "-"}
                       </TableCell>
                       <TableCell>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleUninstall(pkg.name)}
-                              disabled={uninstallingPackages.has(pkg.name)}
-                              className={cn(
-                                "text-destructive hover:text-destructive",
+                        <div className="flex items-center gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setConfirmUninstall(pkg.name)}
+                                disabled={uninstallingPackages.has(pkg.name)}
+                                className={cn(
+                                  "text-destructive hover:text-destructive h-8 w-8 p-0",
+                                )}
+                              >
+                                {uninstallingPackages.has(pkg.name) ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t("providerDetail.uninstallPackage")}
+                            </TooltipContent>
+                          </Tooltip>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {onViewPackageDetails && (
+                                <DropdownMenuItem onClick={() => onViewPackageDetails(pkg.name)}>
+                                  <Info className="h-4 w-4 mr-2" />
+                                  {t("providerDetail.packageDetails")}
+                                </DropdownMenuItem>
                               )}
-                            >
-                              {uninstallingPackages.has(pkg.name) ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
+                              {onPinPackage && onUnpinPackage && (
+                                <>
+                                  {pinnedSet.has(pkg.name) ? (
+                                    <DropdownMenuItem onClick={() => handleUnpin(pkg.name)}>
+                                      <PinOff className="h-4 w-4 mr-2" />
+                                      {t("providerDetail.unpinPackage")}
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onClick={() => handlePin(pkg.name)}>
+                                      <Pin className="h-4 w-4 mr-2" />
+                                      {t("providerDetail.pinPackage")}
+                                    </DropdownMenuItem>
+                                  )}
+                                </>
                               )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {t("providerDetail.uninstallPackage")}
-                          </TooltipContent>
-                        </Tooltip>
+                              {onRollbackPackage && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleRollback(pkg.name)}>
+                                    <Undo2 className="h-4 w-4 mr-2" />
+                                    {t("providerDetail.rollbackPackage")}
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -373,6 +576,54 @@ export function ProviderPackagesTab({
           )}
         </CardContent>
       </Card>
+
+      {/* Single Uninstall Confirmation Dialog */}
+      <AlertDialog open={!!confirmUninstall} onOpenChange={(open) => !open && setConfirmUninstall(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("providerDetail.confirmUninstall")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("providerDetail.confirmUninstallDesc", { name: confirmUninstall ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("providerDetail.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmedUninstall}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("providerDetail.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Batch Uninstall Confirmation Dialog */}
+      <AlertDialog open={confirmBatchUninstall} onOpenChange={setConfirmBatchUninstall}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("providerDetail.batchUninstallConfirm", { count: selectedPackages.size })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("providerDetail.batchUninstallConfirmDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("providerDetail.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBatchUninstall}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={batchUninstalling}
+            >
+              {batchUninstalling ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              {t("providerDetail.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

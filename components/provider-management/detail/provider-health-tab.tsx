@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -23,9 +24,11 @@ import {
   ShieldCheck,
   Terminal,
   MapPin,
+  ClipboardCopy,
 } from "lucide-react";
 import type { PackageManagerHealthResult, HealthStatus, Severity, HealthIssue } from "@/types/tauri";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface ProviderHealthTabProps {
   healthResult: PackageManagerHealthResult | null;
@@ -134,6 +137,37 @@ export function ProviderHealthTab({
   onRunHealthCheck,
   t,
 }: ProviderHealthTabProps) {
+  const copyDiagnostics = useCallback(() => {
+    if (!healthResult) return;
+    const lines = [
+      `Provider: ${healthResult.display_name}`,
+      `Status: ${healthResult.status}`,
+      `Version: ${healthResult.version || "N/A"}`,
+      `Path: ${healthResult.executable_path || "N/A"}`,
+      `Checked: ${new Date(healthResult.checked_at).toLocaleString()}`,
+      "",
+      `Issues (${healthResult.issues.length}):`,
+      ...healthResult.issues.map(
+        (i, idx) =>
+          `  ${idx + 1}. [${i.severity}] ${i.message}${i.fix_command ? ` (fix: ${i.fix_command})` : ""}`,
+      ),
+    ];
+    navigator.clipboard.writeText(lines.join("\n"));
+    toast.success(t("providerDetail.diagnosticsCopied"));
+  }, [healthResult, t]);
+
+  const copyAllFixCommands = useCallback(() => {
+    if (!healthResult) return;
+    const commands = healthResult.issues
+      .filter((i) => i.fix_command)
+      .map((i) => i.fix_command!);
+    if (commands.length === 0) return;
+    navigator.clipboard.writeText(commands.join("\n"));
+    toast.success(t("providerDetail.fixCommandsCopied", { count: commands.length }));
+  }, [healthResult, t]);
+
+  const fixableCount = healthResult?.issues.filter((i) => i.fix_command).length ?? 0;
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -147,19 +181,31 @@ export function ProviderHealthTab({
               {t("providerDetail.healthCheckDesc")}
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onRunHealthCheck()}
-            disabled={loadingHealth}
-          >
-            {loadingHealth ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
+          <div className="flex items-center gap-2">
+            {healthResult && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyDiagnostics}
+              >
+                <ClipboardCopy className="h-4 w-4 mr-2" />
+                {t("providerDetail.copyDiagnostics")}
+              </Button>
             )}
-            {t("providerDetail.runCheck")}
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRunHealthCheck()}
+              disabled={loadingHealth}
+            >
+              {loadingHealth ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              {t("providerDetail.runCheck")}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -247,9 +293,21 @@ export function ProviderHealthTab({
             {/* Issues */}
             {healthResult.issues.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">
-                  {t("providerDetail.issues")} ({healthResult.issues.length})
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">
+                    {t("providerDetail.issues")} ({healthResult.issues.length})
+                  </h4>
+                  {fixableCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyAllFixCommands}
+                    >
+                      <Copy className="h-3 w-3 mr-2" />
+                      {t("providerDetail.copyFixCommands", { count: fixableCount })}
+                    </Button>
+                  )}
+                </div>
                 {healthResult.issues.map((issue, idx) => (
                   <IssueCard key={idx} issue={issue} t={t} />
                 ))}

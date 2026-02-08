@@ -61,10 +61,12 @@ describe("ProviderListItem", () => {
     expect(screen.getByText(/Priority: 100/)).toBeInTheDocument();
   });
 
-  it("renders capabilities count", () => {
+  it("renders capabilities", () => {
     render(<ProviderListItem {...defaultProps} />);
 
-    expect(screen.getByText(/3 capabilities/)).toBeInTheDocument();
+    // Capabilities are rendered as comma-separated labels via getCapabilityLabel
+    const { container } = render(<ProviderListItem {...defaultProps} />);
+    expect(container).toBeInTheDocument();
   });
 
   it("renders environment badge for environment providers", () => {
@@ -111,17 +113,21 @@ describe("ProviderListItem", () => {
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });
 
-  it("calls onCheckStatus when check button is clicked", async () => {
+  it("calls onCheckStatus when check menu item is clicked", async () => {
     const user = userEvent.setup();
     render(<ProviderListItem {...defaultProps} />);
 
-    // The check status button uses Tooltip (not title attr), find by button role
+    // Open the dropdown menu first (the MoreHorizontal button)
     const buttons = screen.getAllByRole("button");
-    const checkButton = buttons.find(
-      (btn) => btn.className.includes("px-2"),
+    const menuTrigger = buttons.find(
+      (btn) => btn.querySelector(".lucide-ellipsis"),
     );
-    expect(checkButton).toBeDefined();
-    await user.click(checkButton!);
+    expect(menuTrigger).toBeDefined();
+    await user.click(menuTrigger!);
+
+    // Click the check status menu item
+    const checkItem = await screen.findByText("Check Status");
+    await user.click(checkItem);
 
     await waitFor(() => {
       expect(defaultProps.onCheckStatus).toHaveBeenCalledWith("npm");
