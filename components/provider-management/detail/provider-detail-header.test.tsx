@@ -5,8 +5,10 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
 }));
 
-jest.mock("../provider-icons", () => ({
-  PROVIDER_ICONS: {},
+jest.mock("../provider-icon", () => ({
+  ProviderIcon: ({ providerId }: { providerId: string }) => (
+    <span data-testid={`provider-icon-${providerId}`} />
+  ),
 }));
 
 const defaultProps = {

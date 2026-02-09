@@ -74,14 +74,14 @@ export function WidgetWrapper({
       style={style}
       className={cn(
         SIZE_CLASSES[widget.size],
-        "relative group/widget transition-all duration-200",
+        "relative group/widget transition-all duration-200 [&>*]:h-full",
         isDragging && "z-50 opacity-80 scale-[1.02] shadow-xl",
         !widget.visible && isEditMode && "opacity-50",
         isEditMode && "ring-1 ring-dashed ring-border rounded-xl",
       )}
     >
       {isEditMode && (
-        <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm opacity-0 group-hover/widget:opacity-100 transition-opacity">
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm opacity-0 group-hover/widget:opacity-100 transition-opacity !h-auto">
           <Tooltip>
             <TooltipTrigger asChild>
               <button

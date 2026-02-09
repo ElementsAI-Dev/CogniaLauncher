@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import {
   Home,
   Package,
@@ -144,8 +145,8 @@ export function AppSidebar() {
                             asChild
                             isActive={pathname === `/environments/${lang.id}`}
                           >
-                            <Link href={`/environments/${lang.id}`}>
-                              <span className="mr-1">{lang.icon}</span>
+                            <Link href={`/environments/${lang.id}`} className="flex items-center gap-1.5">
+                              <LanguageIcon languageId={lang.id} size={16} />
                               {t(`environments.languages.${lang.id}`)}
                             </Link>
                           </SidebarMenuSubButton>

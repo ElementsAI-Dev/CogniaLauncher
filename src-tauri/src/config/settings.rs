@@ -340,6 +340,18 @@ impl Settings {
             ["appearance", "chart_color_theme"] => Some(self.appearance.chart_color_theme.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
+            ["providers", provider, "token"] => {
+                self.providers.get(*provider)
+                    .and_then(|ps| ps.extra.get("token"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+            ["providers", provider, "url"] => {
+                self.providers.get(*provider)
+                    .and_then(|ps| ps.extra.get("url"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
             ["mirrors", provider] => {
                 self.mirrors.get(*provider).map(|m| m.url.clone())
             }
@@ -525,6 +537,22 @@ impl Settings {
                 self.appearance.reduced_motion = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["providers", provider, "token"] => {
+                let ps = self.providers.entry(provider.to_string()).or_default();
+                if value.is_empty() {
+                    ps.extra.remove("token");
+                } else {
+                    ps.extra.insert("token".to_string(), toml::Value::String(value.to_string()));
+                }
+            }
+            ["providers", provider, "url"] => {
+                let ps = self.providers.entry(provider.to_string()).or_default();
+                if value.is_empty() {
+                    ps.extra.remove("url");
+                } else {
+                    ps.extra.insert("url".to_string(), toml::Value::String(value.to_string()));
+                }
             }
             ["mirrors", provider] => {
                 let config = self.mirrors.entry(provider.to_string()).or_default();

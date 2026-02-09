@@ -85,6 +85,28 @@ pub async fn config_list(
         result.push((format!("{}.verify_ssl", key), config.verify_ssl.to_string()));
     }
 
+    // Add provider tokens/URLs (GitHub, GitLab)
+    for provider_name in &["github", "gitlab"] {
+        if let Some(ps) = s.providers.get(*provider_name) {
+            if let Some(token) = ps.extra.get("token").and_then(|v| v.as_str()) {
+                if !token.is_empty() {
+                    // Mask token for display (show first 4 chars + asterisks)
+                    let masked = if token.len() > 8 {
+                        format!("{}****{}", &token[..4], &token[token.len()-4..])
+                    } else {
+                        "****".to_string()
+                    };
+                    result.push((format!("providers.{}.token", provider_name), masked));
+                }
+            }
+            if let Some(url) = ps.extra.get("url").and_then(|v| v.as_str()) {
+                if !url.is_empty() {
+                    result.push((format!("providers.{}.url", provider_name), url.to_string()));
+                }
+            }
+        }
+    }
+
     // Add any additional configured mirrors that aren't in defaults
     for (provider, config) in &s.mirrors {
         let key = format!("mirrors.{}", provider);

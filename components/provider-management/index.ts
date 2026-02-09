@@ -13,6 +13,8 @@ export type {
 
 export { getCapabilityLabel } from "./provider-icons";
 
+export { ProviderIcon, PlatformIcon, LanguageIcon, CacheProviderIcon } from "./provider-icon";
+
 export { ProviderEmptyState } from "./provider-empty-state";
 export type { ProviderEmptyStateProps } from "./provider-empty-state";
 

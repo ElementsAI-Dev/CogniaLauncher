@@ -30,10 +30,9 @@ import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  getProviderIcon,
-  getPlatformIcon,
   getCapabilityLabel,
 } from "./provider-icons";
+import { ProviderIcon, PlatformIcon } from "./provider-icon";
 
 export interface ProviderListItemProps {
   provider: ProviderInfo;
@@ -79,9 +78,7 @@ export function ProviderListItem({
       )}
     >
       <div className="flex items-center gap-4 min-w-0 flex-1">
-        <span className="text-xl flex-shrink-0" aria-hidden="true">
-          {getProviderIcon(provider.id)}
-        </span>
+        <ProviderIcon providerId={provider.id} size={24} />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -111,7 +108,7 @@ export function ProviderListItem({
               {provider.platforms.map((p) => (
                 <Tooltip key={p}>
                   <TooltipTrigger asChild>
-                    <span className="cursor-default">{getPlatformIcon(p)}</span>
+                    <span className="cursor-default"><PlatformIcon platform={p} size={16} /></span>
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>{p}</p>

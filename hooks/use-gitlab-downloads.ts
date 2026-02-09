@@ -14,6 +14,10 @@ import type {
 interface UseGitLabDownloadsReturn {
   projectInput: string;
   setProjectInput: (value: string) => void;
+  token: string;
+  setToken: (value: string) => void;
+  instanceUrl: string;
+  setInstanceUrl: (value: string) => void;
   parsedProject: GitLabParsedProject | null;
   projectInfo: GitLabProjectInfo | null;
   isValidating: boolean;
@@ -33,6 +37,8 @@ interface UseGitLabDownloadsReturn {
 
 export function useGitLabDownloads(): UseGitLabDownloadsReturn {
   const [projectInput, setProjectInput] = useState('');
+  const [token, setToken] = useState('');
+  const [instanceUrl, setInstanceUrl] = useState('');
   const [parsedProject, setParsedProject] = useState<GitLabParsedProject | null>(null);
   const [projectInfo, setProjectInfo] = useState<GitLabProjectInfo | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -46,6 +52,8 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
 
   const reset = useCallback(() => {
     setProjectInput('');
+    setToken('');
+    setInstanceUrl('');
     setParsedProject(null);
     setProjectInfo(null);
     setIsValid(null);
@@ -78,7 +86,9 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
 
       setParsedProject(parsed);
 
-      const valid = await tauri.gitlabValidateProject(parsed.fullName);
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      const valid = await tauri.gitlabValidateProject(parsed.fullName, authToken, instUrl);
       setIsValid(valid);
 
       if (!valid) {
@@ -90,10 +100,10 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
       setLoading(true);
 
       const [releasesData, branchesData, tagsData, info] = await Promise.all([
-        tauri.gitlabListReleases(parsed.fullName).catch(() => []),
-        tauri.gitlabListBranches(parsed.fullName).catch(() => []),
-        tauri.gitlabListTags(parsed.fullName).catch(() => []),
-        tauri.gitlabGetProjectInfo(parsed.fullName).catch(() => null),
+        tauri.gitlabListReleases(parsed.fullName, authToken, instUrl).catch(() => []),
+        tauri.gitlabListBranches(parsed.fullName, authToken, instUrl).catch(() => []),
+        tauri.gitlabListTags(parsed.fullName, authToken, instUrl).catch(() => []),
+        tauri.gitlabGetProjectInfo(parsed.fullName, authToken, instUrl).catch(() => null),
       ]);
 
       setReleases(releasesData);
@@ -107,7 +117,7 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
       setIsValidating(false);
       setLoading(false);
     }
-  }, [projectInput]);
+  }, [projectInput, token, instanceUrl]);
 
   const downloadAsset = useCallback(
     async (asset: GitLabAssetInfo, destination: string): Promise<string> => {
@@ -117,14 +127,18 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
 
       const tauri = await import('@/lib/tauri');
       const url = asset.directAssetUrl || asset.url;
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
       return tauri.gitlabDownloadAsset(
         parsedProject.fullName,
         url,
         asset.name,
-        destination
+        destination,
+        authToken,
+        instUrl
       );
     },
-    [parsedProject]
+    [parsedProject, token, instanceUrl]
   );
 
   const downloadSource = useCallback(
@@ -134,9 +148,13 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
       }
 
       const tauri = await import('@/lib/tauri');
-      return tauri.gitlabDownloadSource(parsedProject.fullName, refName, format, destination);
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      return tauri.gitlabDownloadSource(
+        parsedProject.fullName, refName, format, destination, authToken, instUrl
+      );
     },
-    [parsedProject]
+    [parsedProject, token, instanceUrl]
   );
 
   useEffect(() => {
@@ -153,6 +171,10 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
   return {
     projectInput,
     setProjectInput,
+    token,
+    setToken,
+    instanceUrl,
+    setInstanceUrl,
     parsedProject,
     projectInfo,
     isValidating,

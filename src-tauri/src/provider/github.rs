@@ -96,8 +96,59 @@ impl GitHubProvider {
     }
 
     pub fn get_source_archive_url(&self, repo: &str, ref_name: &str, format: &str) -> String {
-        let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
-        format!("https://github.com/{}/{}/{}", repo, ext, ref_name)
+        if self.token.is_some() {
+            // For private repos, use the API endpoint which handles auth
+            let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
+            format!("{}/repos/{}/{}/{}", GITHUB_API, repo, ext, ref_name)
+        } else {
+            let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
+            format!("https://github.com/{}/{}/{}", repo, ext, ref_name)
+        }
+    }
+
+    /// Get the API URL for downloading a release asset (required for private repos)
+    pub fn get_asset_api_download_url(&self, repo: &str, asset_id: u64) -> String {
+        format!("{}/repos/{}/releases/assets/{}", GITHUB_API, repo, asset_id)
+    }
+
+    /// Get HTTP headers needed for authenticated downloads
+    pub fn get_download_headers(&self) -> std::collections::HashMap<String, String> {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("X-GitHub-Api-Version".to_string(), GITHUB_API_VERSION.to_string());
+        if let Some(token) = &self.token {
+            headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+            // For asset downloads, request binary content
+            headers.insert("Accept".to_string(), "application/octet-stream".to_string());
+        }
+        headers
+    }
+
+    /// Get HTTP headers for source archive downloads
+    pub fn get_source_download_headers(&self) -> std::collections::HashMap<String, String> {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("X-GitHub-Api-Version".to_string(), GITHUB_API_VERSION.to_string());
+        if let Some(token) = &self.token {
+            headers.insert("Authorization".to_string(), format!("Bearer {}", token));
+        }
+        headers
+    }
+
+    /// Check if a token is configured
+    pub fn has_token(&self) -> bool {
+        self.token.is_some()
+    }
+
+    /// Validate that the configured token works by making an authenticated API call
+    pub async fn validate_token(&self) -> bool {
+        if self.token.is_none() {
+            return false;
+        }
+        #[derive(Deserialize)]
+        struct User {
+            #[allow(dead_code)]
+            login: String,
+        }
+        self.api_get::<User>("/user").await.is_ok()
     }
 
     pub fn parse_repo_url(url: &str) -> Option<(String, String)> {

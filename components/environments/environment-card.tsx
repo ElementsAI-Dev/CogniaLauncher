@@ -32,7 +32,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
-import { useEnvironmentStore } from "@/lib/stores/environment";
+import { useEnvironmentStore, getLogicalEnvType } from "@/lib/stores/environment";
 import {
   Download,
   Trash2,
@@ -415,7 +415,7 @@ export function EnvironmentCard({
               className="flex-1 gap-2"
               asChild
             >
-              <Link href={`/environments/${env.env_type}`}>
+              <Link href={`/environments/${getLogicalEnvType(env.env_type)}`}>
                 <Settings2 className="h-4 w-4" />
                 {t("environments.viewDetails")}
               </Link>

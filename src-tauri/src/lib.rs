@@ -371,6 +371,10 @@ pub fn run() {
             commands::github::github_get_release_assets,
             commands::github::github_download_asset,
             commands::github::github_download_source,
+            commands::github::github_set_token,
+            commands::github::github_get_token,
+            commands::github::github_clear_token,
+            commands::github::github_validate_token,
             // GitLab commands
             commands::gitlab::gitlab_parse_url,
             commands::gitlab::gitlab_validate_project,
@@ -381,6 +385,12 @@ pub fn run() {
             commands::gitlab::gitlab_get_release_assets,
             commands::gitlab::gitlab_download_asset,
             commands::gitlab::gitlab_download_source,
+            commands::gitlab::gitlab_set_token,
+            commands::gitlab::gitlab_get_token,
+            commands::gitlab::gitlab_clear_token,
+            commands::gitlab::gitlab_validate_token,
+            commands::gitlab::gitlab_set_instance_url,
+            commands::gitlab::gitlab_get_instance_url,
             // Tray commands
             tray::tray_set_icon_state,
             tray::tray_update_tooltip,

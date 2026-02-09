@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import {
   Dialog,
   DialogContent,
@@ -191,9 +192,7 @@ export function AddEnvironmentDialog({ onAdd }: AddEnvironmentDialogProps) {
                     selectedLanguage === lang.id && lang.color,
                   )}
                 >
-                  <span className="text-2xl" aria-hidden="true">
-                    {lang.icon}
-                  </span>
+                  <LanguageIcon languageId={lang.id} size={28} />
                   <span className="text-sm font-medium">{lang.name}</span>
                   {selectedLanguage === lang.id && (
                     <Check

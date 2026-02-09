@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -217,16 +217,18 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
               const path = '/' + arr.slice(0, i + 1).join('/');
               const isLast = i === arr.length - 1;
               return (
-                <BreadcrumbItem key={path}>
+                <React.Fragment key={path}>
                   <BreadcrumbSeparator />
-                  {isLast ? (
-                    <BreadcrumbPage>{part}</BreadcrumbPage>
-                  ) : (
-                    <BreadcrumbLink asChild>
-                      <button onClick={() => loadDirectory(path)}>{part}</button>
-                    </BreadcrumbLink>
-                  )}
-                </BreadcrumbItem>
+                  <BreadcrumbItem>
+                    {isLast ? (
+                      <BreadcrumbPage>{part}</BreadcrumbPage>
+                    ) : (
+                      <BreadcrumbLink asChild>
+                        <button onClick={() => loadDirectory(path)}>{part}</button>
+                      </BreadcrumbLink>
+                    )}
+                  </BreadcrumbItem>
+                </React.Fragment>
               );
             })}
           </BreadcrumbList>

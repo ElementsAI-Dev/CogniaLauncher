@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +47,11 @@ import {
   FileArchive,
   Calendar,
   Star,
+  KeyRound,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import type {
   GitHubAssetInfo,
@@ -70,6 +76,8 @@ export function GitHubDownloadDialog({
   const {
     repoInput,
     setRepoInput,
+    token,
+    setToken,
     parsedRepo,
     isValidating,
     isValid,
@@ -96,6 +104,8 @@ export function GitHubDownloadDialog({
   const [archiveFormat, setArchiveFormat] =
     useState<GitHubArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const GITHUB_ARCHIVE_FORMATS: ArchiveFormat[] = useMemo(
     () => [
@@ -235,6 +245,57 @@ export function GitHubDownloadDialog({
               ) : undefined
             }
           />
+
+          {/* Authentication Section */}
+          <div className="border rounded-md">
+            <button
+              type="button"
+              onClick={() => setShowAuth(!showAuth)}
+              className="flex items-center gap-2 w-full p-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showAuth ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+              <KeyRound className="h-4 w-4" />
+              {t("downloads.auth.title")}
+              {token.trim() && (
+                <Badge variant="secondary" className="ml-auto text-xs">
+                  {t("downloads.auth.configured")}
+                </Badge>
+              )}
+            </button>
+            {showAuth && (
+              <div className="px-3 pb-3 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {t("downloads.auth.githubHint")}
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showToken ? "text" : "password"}
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      placeholder={t("downloads.auth.tokenPlaceholder")}
+                      className="pr-10 font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showToken ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {error && (
             <Alert variant="destructive">

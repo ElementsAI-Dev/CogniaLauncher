@@ -1053,43 +1053,66 @@ export type {
 export const githubParseUrl = (url: string) =>
   invoke<GitHubParsedRepo | null>('github_parse_url', { url });
 
-/** Validate if a repository exists */
-export const githubValidateRepo = (repo: string) =>
-  invoke<boolean>('github_validate_repo', { repo });
+/** Validate if a repository exists (with optional token for private repos) */
+export const githubValidateRepo = (repo: string, token?: string) =>
+  invoke<boolean>('github_validate_repo', { repo, token: token || null });
 
 /** List branches from a repository */
-export const githubListBranches = (repo: string) =>
-  invoke<GitHubBranchInfo[]>('github_list_branches', { repo });
+export const githubListBranches = (repo: string, token?: string) =>
+  invoke<GitHubBranchInfo[]>('github_list_branches', { repo, token: token || null });
 
 /** List tags from a repository */
-export const githubListTags = (repo: string) =>
-  invoke<GitHubTagInfo[]>('github_list_tags', { repo });
+export const githubListTags = (repo: string, token?: string) =>
+  invoke<GitHubTagInfo[]>('github_list_tags', { repo, token: token || null });
 
 /** List releases from a repository */
-export const githubListReleases = (repo: string) =>
-  invoke<GitHubReleaseInfo[]>('github_list_releases', { repo });
+export const githubListReleases = (repo: string, token?: string) =>
+  invoke<GitHubReleaseInfo[]>('github_list_releases', { repo, token: token || null });
 
 /** Get assets for a specific release by tag */
-export const githubGetReleaseAssets = (repo: string, tag: string) =>
-  invoke<GitHubAssetInfo[]>('github_get_release_assets', { repo, tag });
+export const githubGetReleaseAssets = (repo: string, tag: string, token?: string) =>
+  invoke<GitHubAssetInfo[]>('github_get_release_assets', { repo, tag, token: token || null });
 
 /** Download a release asset to the download queue */
 export const githubDownloadAsset = (
   repo: string,
+  assetId: number,
   assetUrl: string,
   assetName: string,
-  destination: string
+  destination: string,
+  token?: string
 ) =>
-  invoke<string>('github_download_asset', { repo, assetUrl, assetName, destination });
+  invoke<string>('github_download_asset', {
+    repo, assetId, assetUrl, assetName, destination, token: token || null,
+  });
 
 /** Download source archive (zip/tar.gz) to the download queue */
 export const githubDownloadSource = (
   repo: string,
   refName: string,
   format: 'zip' | 'tar.gz',
-  destination: string
+  destination: string,
+  token?: string
 ) =>
-  invoke<string>('github_download_source', { repo, refName, format, destination });
+  invoke<string>('github_download_source', {
+    repo, refName, format, destination, token: token || null,
+  });
+
+/** Save a GitHub token to settings */
+export const githubSetToken = (token: string) =>
+  invoke<void>('github_set_token', { token });
+
+/** Get the saved GitHub token (from settings or env) */
+export const githubGetToken = () =>
+  invoke<string | null>('github_get_token');
+
+/** Clear the saved GitHub token */
+export const githubClearToken = () =>
+  invoke<void>('github_clear_token');
+
+/** Validate a GitHub token by making an authenticated API call */
+export const githubValidateToken = (token: string) =>
+  invoke<boolean>('github_validate_token', { token });
 
 // ============================================================================
 // GitLab Commands
@@ -1117,47 +1140,93 @@ export type {
 export const gitlabParseUrl = (url: string) =>
   invoke<GitLabParsedProject | null>('gitlab_parse_url', { url });
 
-/** Validate if a GitLab project exists */
-export const gitlabValidateProject = (project: string) =>
-  invoke<boolean>('gitlab_validate_project', { project });
+/** Validate if a GitLab project exists (with optional token for private repos) */
+export const gitlabValidateProject = (project: string, token?: string, instanceUrl?: string) =>
+  invoke<boolean>('gitlab_validate_project', {
+    project, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** Get GitLab project info */
-export const gitlabGetProjectInfo = (project: string) =>
-  invoke<GitLabProjectInfo>('gitlab_get_project_info', { project });
+export const gitlabGetProjectInfo = (project: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabProjectInfo>('gitlab_get_project_info', {
+    project, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** List branches from a GitLab project */
-export const gitlabListBranches = (project: string) =>
-  invoke<GitLabBranchInfo[]>('gitlab_list_branches', { project });
+export const gitlabListBranches = (project: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabBranchInfo[]>('gitlab_list_branches', {
+    project, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** List tags from a GitLab project */
-export const gitlabListTags = (project: string) =>
-  invoke<GitLabTagInfo[]>('gitlab_list_tags', { project });
+export const gitlabListTags = (project: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabTagInfo[]>('gitlab_list_tags', {
+    project, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** List releases from a GitLab project */
-export const gitlabListReleases = (project: string) =>
-  invoke<GitLabReleaseInfo[]>('gitlab_list_releases', { project });
+export const gitlabListReleases = (project: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabReleaseInfo[]>('gitlab_list_releases', {
+    project, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** Get assets for a specific GitLab release by tag */
-export const gitlabGetReleaseAssets = (project: string, tag: string) =>
-  invoke<GitLabAssetInfo[]>('gitlab_get_release_assets', { project, tag });
+export const gitlabGetReleaseAssets = (project: string, tag: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabAssetInfo[]>('gitlab_get_release_assets', {
+    project, tag, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** Download a GitLab release asset to the download queue */
 export const gitlabDownloadAsset = (
   project: string,
   assetUrl: string,
   assetName: string,
-  destination: string
+  destination: string,
+  token?: string,
+  instanceUrl?: string
 ) =>
-  invoke<string>('gitlab_download_asset', { project, assetUrl, assetName, destination });
+  invoke<string>('gitlab_download_asset', {
+    project, assetUrl, assetName, destination,
+    token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** Download source archive from GitLab to the download queue */
 export const gitlabDownloadSource = (
   project: string,
   refName: string,
   format: 'zip' | 'tar.gz' | 'tar.bz2' | 'tar',
-  destination: string
+  destination: string,
+  token?: string,
+  instanceUrl?: string
 ) =>
-  invoke<string>('gitlab_download_source', { project, refName, format, destination });
+  invoke<string>('gitlab_download_source', {
+    project, refName, format, destination,
+    token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** Save a GitLab token to settings */
+export const gitlabSetToken = (token: string) =>
+  invoke<void>('gitlab_set_token', { token });
+
+/** Get the saved GitLab token (from settings or env) */
+export const gitlabGetToken = () =>
+  invoke<string | null>('gitlab_get_token');
+
+/** Clear the saved GitLab token */
+export const gitlabClearToken = () =>
+  invoke<void>('gitlab_clear_token');
+
+/** Validate a GitLab token by making an authenticated API call */
+export const gitlabValidateToken = (token: string, instanceUrl?: string) =>
+  invoke<boolean>('gitlab_validate_token', { token, instanceUrl: instanceUrl || null });
+
+/** Save a custom GitLab instance URL to settings */
+export const gitlabSetInstanceUrl = (url: string) =>
+  invoke<void>('gitlab_set_instance_url', { url });
+
+/** Get the saved GitLab instance URL */
+export const gitlabGetInstanceUrl = () =>
+  invoke<string | null>('gitlab_get_instance_url');
 
 // ============================================================================
 // Filesystem Utility Commands

@@ -113,6 +113,38 @@ impl GitLabProvider {
         self.get_project_info(project).await.is_ok()
     }
 
+    /// Get HTTP headers needed for authenticated downloads
+    pub fn get_download_headers(&self) -> std::collections::HashMap<String, String> {
+        let mut headers = std::collections::HashMap::new();
+        if let Some(token) = &self.token {
+            headers.insert("PRIVATE-TOKEN".to_string(), token.clone());
+        }
+        headers
+    }
+
+    /// Check if a token is configured
+    pub fn has_token(&self) -> bool {
+        self.token.is_some()
+    }
+
+    /// Validate that the configured token works by making an authenticated API call
+    pub async fn validate_token(&self) -> bool {
+        if self.token.is_none() {
+            return false;
+        }
+        #[derive(Deserialize)]
+        struct User {
+            #[allow(dead_code)]
+            id: u64,
+        }
+        self.api_get::<User>("/user").await.is_ok()
+    }
+
+    /// Get the instance URL (for display/config purposes)
+    pub fn get_instance_url(&self) -> &str {
+        &self.instance_url
+    }
+
     pub fn get_source_archive_url(
         &self,
         project: &str,

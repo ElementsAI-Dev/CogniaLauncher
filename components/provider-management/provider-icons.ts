@@ -1,61 +1,3 @@
-export const PROVIDER_ICONS: Record<string, string> = {
-  npm: "📦",
-  pnpm: "⚡",
-  uv: "🐍",
-  cargo: "🦀",
-  chocolatey: "🍫",
-  scoop: "🥄",
-  winget: "🪟",
-  brew: "🍺",
-  apt: "🐧",
-  dnf: "🎩",
-  pacman: "👻",
-  zypper: "🦎",
-  apk: "🏔️",
-  vcpkg: "📚",
-  docker: "🐳",
-  podman: "🦭",
-  psgallery: "💠",
-  github: "🐙",
-  nvm: "💚",
-  fnm: "⚡",
-  pyenv: "🐍",
-  rustup: "🦀",
-  goenv: "🔵",
-  flatpak: "📦",
-  snap: "🔶",
-  macports: "🚢",
-  pip: "🐍",
-  yarn: "🧶",
-  bun: "🍞",
-  poetry: "📜",
-  composer: "🎵",
-  bundler: "💎",
-  gem: "💎",
-  dotnet: "🟣",
-  conda: "🐍",
-  pipx: "🐍",
-  volta: "⚡",
-  asdf: "🔧",
-  mise: "🔧",
-  nix: "❄️",
-  conan: "📚",
-  xmake: "📚",
-  sdkman: "☕",
-  "sdkman-kotlin": "🟣",
-  rbenv: "💎",
-  phpbrew: "🐘",
-  deno: "🦕",
-  wsl: "🐧",
-};
-
-export const PLATFORM_ICONS: Record<string, string> = {
-  windows: "🪟",
-  linux: "🐧",
-  macos: "🍎",
-  darwin: "🍎",
-};
-
 export const CAPABILITY_COLORS: Record<string, string> = {
   install: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
   uninstall: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
@@ -70,14 +12,6 @@ export const CAPABILITY_COLORS: Record<string, string> = {
   rollback: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
   project_local: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300",
 };
-
-export function getProviderIcon(providerId: string): string {
-  return PROVIDER_ICONS[providerId] || "📦";
-}
-
-export function getPlatformIcon(platform: string): string {
-  return PLATFORM_ICONS[platform.toLowerCase()] || "💻";
-}
 
 export function getCapabilityColor(capability: string): string {
   return (

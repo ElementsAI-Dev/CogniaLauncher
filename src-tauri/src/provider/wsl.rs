@@ -1,16 +1,140 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
-use crate::platform::process::ProcessOptions;
+use crate::platform::process::{ProcessOptions, ProcessOutput};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::process::Command as TokioCommand;
 
 /// Default timeout for WSL commands (120 seconds)
 const WSL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Longer timeout for operations like install/export/import
 const WSL_LONG_TIMEOUT: Duration = Duration::from_secs(600);
+/// Short timeout for availability checks
+const WSL_AVAIL_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Decode bytes that may be UTF-16LE (common for wsl.exe on Windows) or UTF-8.
+///
+/// Detection strategy:
+/// 1. Check for UTF-16LE BOM (FF FE) → decode as UTF-16LE (skip BOM)
+/// 2. Check for UTF-16BE BOM (FE FF) → decode as UTF-16BE (skip BOM)
+/// 3. Heuristic: if length >= 2 and every other byte (index 1, 3, 5...) is 0x00
+///    for at least the first few chars → UTF-16LE (no BOM)
+/// 4. Otherwise → UTF-8
+fn decode_wsl_bytes(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+
+    // Check for UTF-16LE BOM (FF FE)
+    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
+        return decode_utf16le(&bytes[2..]);
+    }
+
+    // Check for UTF-16BE BOM (FE FF)
+    if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
+        return decode_utf16be(&bytes[2..]);
+    }
+
+    // Heuristic: check if this looks like UTF-16LE without BOM.
+    // For ASCII text in UTF-16LE, every odd-indexed byte is 0x00.
+    // Check the first few pairs to detect this pattern.
+    if bytes.len() >= 4 {
+        let sample_len = std::cmp::min(bytes.len(), 20);
+        let null_count = bytes[1..sample_len]
+            .iter()
+            .step_by(2)
+            .filter(|&&b| b == 0x00)
+            .count();
+        let total_pairs = (sample_len - 1 + 1) / 2; // number of odd-index bytes sampled
+        // If more than half of sampled odd-index bytes are null → likely UTF-16LE
+        if total_pairs > 0 && null_count > total_pairs / 2 {
+            return decode_utf16le(bytes);
+        }
+    }
+
+    // Fall back to UTF-8 (with lossy replacement for invalid sequences)
+    let s = String::from_utf8_lossy(bytes).to_string();
+    // Still strip stray null bytes that might appear in mixed encoding scenarios
+    s.replace('\0', "")
+}
+
+fn decode_utf16le(bytes: &[u8]) -> String {
+    let u16_values: Vec<u16> = bytes
+        .chunks(2)
+        .filter(|chunk| chunk.len() == 2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+    String::from_utf16_lossy(&u16_values)
+}
+
+fn decode_utf16be(bytes: &[u8]) -> String {
+    let u16_values: Vec<u16> = bytes
+        .chunks(2)
+        .filter(|chunk| chunk.len() == 2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect();
+    String::from_utf16_lossy(&u16_values)
+}
+
+/// Execute wsl.exe with proper UTF-16LE output decoding.
+///
+/// On Windows, wsl.exe outputs UTF-16LE encoded text even when stdout is piped.
+/// This function reads raw bytes and decodes them properly instead of using
+/// the standard UTF-8 assumption in `process::execute`.
+async fn execute_wsl(args: &[&str], timeout: Duration) -> CogniaResult<ProcessOutput> {
+    let mut cmd = TokioCommand::new("wsl.exe");
+    cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    // Prevent console window flash on Windows
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let child = cmd.spawn().map_err(|e| {
+        CogniaError::Provider(format!("Failed to start wsl.exe: {}", e))
+    })?;
+
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| {
+            CogniaError::Provider(format!(
+                "WSL command timed out after {:?}",
+                timeout
+            ))
+        })?
+        .map_err(|e| CogniaError::Provider(format!("WSL process error: {}", e)))?;
+
+    let stdout = decode_wsl_bytes(&output.stdout);
+    let stderr = decode_wsl_bytes(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+    let success = output.status.success();
+
+    Ok(ProcessOutput {
+        exit_code,
+        stdout,
+        stderr,
+        success,
+    })
+}
+
+/// Execute a non-wsl program (e.g., distro launchers like ubuntu.exe) with standard encoding.
+async fn execute_program(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> CogniaResult<ProcessOutput> {
+    process::execute(program, args, Some(ProcessOptions::new().with_timeout(timeout)))
+        .await
+        .map_err(|e| CogniaError::Provider(format!("{}", e)))
+}
 
 /// WSL (Windows Subsystem for Linux) distribution management provider.
 ///
@@ -41,17 +165,12 @@ impl WslProvider {
         Self
     }
 
-    /// Build ProcessOptions with the given timeout.
-    fn make_opts(timeout: Duration) -> ProcessOptions {
-        ProcessOptions::new().with_timeout(timeout)
-    }
-
     /// Execute a wsl.exe command and return stdout on success.
-    /// Uses UTF-16 decoding workaround for wsl.exe output encoding issues.
+    /// Uses proper UTF-16LE decoding for wsl.exe output on Windows.
     pub async fn run_wsl(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
+        let out = execute_wsl(args, WSL_TIMEOUT).await?;
         if out.success {
-            Ok(Self::clean_wsl_output(&out.stdout))
+            Ok(Self::trim_output(&out.stdout))
         } else {
             // wsl.exe sometimes outputs errors to stdout instead of stderr
             let err_msg = if out.stderr.trim().is_empty() {
@@ -65,9 +184,9 @@ impl WslProvider {
 
     /// Execute a wsl.exe command with a long timeout (for install/export/import).
     pub async fn run_wsl_long(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_LONG_TIMEOUT))).await?;
+        let out = execute_wsl(args, WSL_LONG_TIMEOUT).await?;
         if out.success {
-            Ok(Self::clean_wsl_output(&out.stdout))
+            Ok(Self::trim_output(&out.stdout))
         } else {
             let err_msg = if out.stderr.trim().is_empty() {
                 out.stdout.trim().to_string()
@@ -81,8 +200,8 @@ impl WslProvider {
     /// Execute a wsl.exe command, returning stdout even on non-zero exit codes.
     /// Some WSL commands (like --list --online) may return non-zero but still have output.
     pub async fn run_wsl_lenient(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("wsl.exe", args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
-        let stdout = Self::clean_wsl_output(&out.stdout);
+        let out = execute_wsl(args, WSL_TIMEOUT).await?;
+        let stdout = Self::trim_output(&out.stdout);
         if !stdout.trim().is_empty() {
             Ok(stdout)
         } else if !out.stderr.trim().is_empty() {
@@ -92,7 +211,17 @@ impl WslProvider {
         }
     }
 
-    /// Clean up WSL output which may contain null bytes from UTF-16 encoding
+    /// Trim trailing whitespace from each line of already-decoded output.
+    /// UTF-16LE decoding is handled by `execute_wsl`/`decode_wsl_bytes`.
+    pub fn trim_output(raw: &str) -> String {
+        raw.lines()
+            .map(|l| l.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Legacy helper: clean WSL output by stripping null bytes + trimming.
+    /// Kept for use in unit tests with pre-constructed strings.
     pub fn clean_wsl_output(raw: &str) -> String {
         raw.replace('\0', "")
             .lines()
@@ -103,9 +232,16 @@ impl WslProvider {
 
     /// Parse `wsl --list --verbose` output into structured distro info.
     ///
-    /// Example output:
+    /// Example output (English):
     /// ```text
     ///   NAME      STATE           VERSION
+    /// * Ubuntu    Running         2
+    ///   Debian    Stopped         2
+    /// ```
+    ///
+    /// Example output (Chinese):
+    /// ```text
+    ///   名称      状态            版本
     /// * Ubuntu    Running         2
     ///   Debian    Stopped         2
     /// ```
@@ -115,17 +251,33 @@ impl WslProvider {
             return vec![];
         }
 
-        // Find the header line containing "NAME" and "STATE"
+        // Find the header line containing "NAME" and "STATE" (or localized equivalents)
         let header_idx = lines.iter().position(|l| {
             let upper = l.to_uppercase();
-            upper.contains("NAME") && upper.contains("STATE")
+            // English headers
+            let en_match = upper.contains("NAME") && upper.contains("STATE");
+            // Chinese headers: 名称 (name) + 状态 (state)
+            let zh_match = l.contains("名称") && l.contains("状态");
+            // Japanese headers
+            let ja_match = l.contains("名前") && l.contains("状態");
+            en_match || zh_match || ja_match
         });
 
         let start_idx = match header_idx {
             Some(idx) => idx + 1,
             None => {
-                // Fallback: skip first line (might be header)
-                if lines.len() > 1 { 1 } else { return vec![]; }
+                // Heuristic fallback: find first line that starts with '*' or has distro-like data
+                // (skip lines that look like headers or descriptions)
+                let data_start = lines.iter().position(|l| {
+                    let trimmed = l.trim();
+                    trimmed.starts_with('*')
+                        || (!trimmed.is_empty()
+                            && trimmed.split_whitespace().count() >= 2
+                            && trimmed.split_whitespace().last().map_or(false, |v| {
+                                v == "1" || v == "2"
+                            }))
+                });
+                data_start.unwrap_or(if lines.len() > 1 { 1 } else { return vec![]; })
             }
         };
 
@@ -241,17 +393,36 @@ impl WslProvider {
     /// Get WSL version string from `wsl --version`
     pub async fn get_wsl_version_string(&self) -> CogniaResult<String> {
         let out = self.run_wsl_lenient(&["--version"]).await?;
-        // First line typically: "WSL version: X.Y.Z.P"
+        // First line typically: "WSL version: X.Y.Z.P" (English)
+        // Or: "WSL 版本: X.Y.Z.P" (Chinese)
         for line in out.lines() {
             let lower = line.to_lowercase();
-            if lower.contains("wsl") && lower.contains("version") {
+            // Match English "version" or Chinese "版本"
+            let is_wsl_version_line = lower.contains("wsl")
+                && (lower.contains("version") || lower.contains("版本"));
+            if is_wsl_version_line {
+                // Extract version number after ':'
                 if let Some(v) = line.split(':').nth(1) {
-                    return Ok(v.trim().to_string());
+                    let trimmed = v.trim();
+                    if !trimmed.is_empty() {
+                        return Ok(trimmed.to_string());
+                    }
                 }
-                // Sometimes format is "WSL version X.Y.Z"
+                // Sometimes format is "WSL version X.Y.Z" (no colon)
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if let Some(v) = parts.last() {
                     return Ok(v.to_string());
+                }
+            }
+        }
+        // Second pass: look for any line with a version-like pattern (X.Y.Z)
+        for line in out.lines() {
+            if let Some(v) = line.split(':').nth(1) {
+                let trimmed = v.trim();
+                if !trimmed.is_empty()
+                    && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
+                {
+                    return Ok(trimmed.to_string());
                 }
             }
         }
@@ -373,14 +544,9 @@ impl WslProvider {
 
     /// Update WSL kernel to the latest version
     pub async fn update_wsl(&self) -> CogniaResult<String> {
-        let out = process::execute(
-            "wsl.exe",
-            &["--update", "--web-download"],
-            Some(Self::make_opts(WSL_LONG_TIMEOUT)),
-        )
-        .await?;
-        let stdout = Self::clean_wsl_output(&out.stdout);
-        let stderr = Self::clean_wsl_output(&out.stderr);
+        let out = execute_wsl(&["--update", "--web-download"], WSL_LONG_TIMEOUT).await?;
+        let stdout = Self::trim_output(&out.stdout);
+        let stderr = Self::trim_output(&out.stderr);
         // wsl --update returns non-zero sometimes even on success; combine output
         let combined = if !stdout.trim().is_empty() {
             stdout
@@ -399,6 +565,9 @@ impl WslProvider {
 
     /// Execute a command inside a specific WSL distribution.
     /// Returns (stdout, stderr, exit_code).
+    ///
+    /// Note: Commands run inside Linux distros output UTF-8, not UTF-16LE.
+    /// But we still use `execute_wsl` since the wsl.exe wrapper may re-encode.
     pub async fn exec_command(
         &self,
         distro: &str,
@@ -412,9 +581,9 @@ impl WslProvider {
         }
         args.extend(&["--exec", "sh", "-c", command]);
 
-        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
-        let stdout = Self::clean_wsl_output(&out.stdout);
-        let stderr = Self::clean_wsl_output(&out.stderr);
+        let out = execute_wsl(&args, WSL_TIMEOUT).await?;
+        let stdout = Self::trim_output(&out.stdout);
+        let stderr = Self::trim_output(&out.stderr);
         let exit_code = out.exit_code;
         Ok((stdout, stderr, exit_code))
     }
@@ -434,8 +603,8 @@ impl WslProvider {
         }
         args.extend(&["--exec", "wslpath", flag, path]);
 
-        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
-        let result = Self::clean_wsl_output(&out.stdout);
+        let out = execute_wsl(&args, WSL_TIMEOUT).await?;
+        let result = Self::trim_output(&out.stdout);
         if result.trim().is_empty() {
             return Err(CogniaError::Provider(format!(
                 "WSL: Path conversion failed for '{}'",
@@ -698,8 +867,8 @@ impl WslProvider {
             args.extend(&["-d", d]);
         }
         args.extend(&["--exec", "hostname", "-I"]);
-        let out = process::execute("wsl.exe", &args, Some(Self::make_opts(WSL_TIMEOUT))).await?;
-        let ip = Self::clean_wsl_output(&out.stdout).trim().to_string();
+        let out = execute_wsl(&args, WSL_TIMEOUT).await?;
+        let ip = Self::trim_output(&out.stdout).trim().to_string();
         if ip.is_empty() {
             return Err(CogniaError::Provider("WSL: Could not determine IP address".into()));
         }
@@ -713,10 +882,10 @@ impl WslProvider {
     pub async fn change_default_user(&self, distro: &str, username: &str) -> CogniaResult<()> {
         // Try the launcher executable approach first (e.g., ubuntu.exe config --default-user user)
         let exe_name = format!("{}.exe", distro.to_lowercase());
-        let result = process::execute(
+        let result = execute_program(
             &exe_name,
             &["config", "--default-user", username],
-            Some(Self::make_opts(WSL_TIMEOUT)),
+            WSL_TIMEOUT,
         )
         .await;
 
@@ -858,18 +1027,37 @@ impl Provider for WslProvider {
     }
 
     async fn is_available(&self) -> bool {
-        // Check if wsl.exe exists and can respond
-        match process::execute("wsl.exe", &["--status"], Some(Self::make_opts(WSL_TIMEOUT))).await {
+        // Check if wsl.exe exists and can respond.
+        // Uses execute_wsl for proper UTF-16LE decoding on Windows.
+        // Uses a short timeout — availability check should be fast.
+
+        // Try `wsl --status` first (supported on modern WSL)
+        match execute_wsl(&["--status"], WSL_AVAIL_TIMEOUT).await {
             Ok(out) => {
-                // wsl --status may return non-zero on some versions but still means WSL is installed
-                // Check if we got any meaningful output (not just an error about missing feature)
-                let combined = format!("{}{}", out.stdout, out.stderr);
-                let cleaned = Self::clean_wsl_output(&combined);
-                !cleaned.contains("not recognized")
-                    && !cleaned.contains("is not recognized")
-                    && !cleaned.contains("Enable the Virtual Machine")
+                let combined = format!("{} {}", out.stdout, out.stderr);
+                let lower = combined.to_lowercase();
+                // Check for explicit failure indicators (English + Chinese + other locales)
+                let not_available = lower.contains("not recognized")
+                    || lower.contains("is not recognized")
+                    || lower.contains("enable the virtual machine")
+                    || lower.contains("无法识别")    // Chinese: not recognized
+                    || lower.contains("未安装")      // Chinese: not installed
+                    || lower.contains("未找到")      // Chinese: not found
+                    || lower.contains("nicht erkannt") // German: not recognized
+                    || lower.contains("no se reconoce"); // Spanish: not recognized
+                !not_available
             }
-            Err(_) => false,
+            Err(_) => {
+                // Fallback: try `wsl --help` which is universally supported
+                match execute_wsl(&["--help"], WSL_AVAIL_TIMEOUT).await {
+                    Ok(out) => {
+                        // If we got any output from --help, WSL is installed
+                        let combined = format!("{}{}", out.stdout, out.stderr);
+                        !combined.trim().is_empty()
+                    }
+                    Err(_) => false,
+                }
+            }
         }
     }
 
@@ -1093,23 +1281,24 @@ impl Provider for WslProvider {
         let mut updates = Vec::new();
 
         // Try `wsl --update --check` first (non-destructive, available in WSL 2.x on Win11)
-        let check_result = process::execute(
-            "wsl.exe",
-            &["--update", "--check"],
-            Some(Self::make_opts(WSL_TIMEOUT)),
-        )
-        .await;
+        let check_result = execute_wsl(&["--update", "--check"], WSL_TIMEOUT).await;
 
         if let Ok(out) = check_result {
-            let combined = Self::clean_wsl_output(&format!("{}{}", out.stdout, out.stderr));
+            let combined = format!("{}{}", out.stdout, out.stderr);
             let lower = combined.to_lowercase();
             // If the output indicates an update is available (not "no update" or "already up to date")
-            if (lower.contains("update") || lower.contains("version"))
-                && !lower.contains("no update")
-                && !lower.contains("already")
-                && !lower.contains("up to date")
-                && !lower.contains("not recognized")
-            {
+            // Also check Chinese locale equivalents
+            let has_update_indicator = lower.contains("update")
+                || lower.contains("version")
+                || lower.contains("更新")     // Chinese: update
+                || lower.contains("版本");    // Chinese: version
+            let is_up_to_date = lower.contains("no update")
+                || lower.contains("already")
+                || lower.contains("up to date")
+                || lower.contains("not recognized")
+                || lower.contains("已是最新")  // Chinese: already up to date
+                || lower.contains("无需更新"); // Chinese: no update needed
+            if has_update_indicator && !is_up_to_date {
                 if let Ok(version) = self.get_wsl_version_string().await {
                     updates.push(UpdateInfo {
                         name: "wsl-kernel".into(),
@@ -1174,10 +1363,9 @@ impl SystemPackageProvider for WslProvider {
             // For individual distros, we can't directly upgrade them via wsl.exe
             // Users must update packages within the distro itself (e.g., apt upgrade)
             // But we can suggest running the update inside the distro
-            let out = process::execute(
-                "wsl.exe",
+            let out = execute_wsl(
                 &["-d", name, "--exec", "sh", "-c", "apt update && apt upgrade -y 2>/dev/null || dnf upgrade -y 2>/dev/null || pacman -Syu --noconfirm 2>/dev/null || zypper update -y 2>/dev/null || apk upgrade 2>/dev/null || echo 'Update completed'"],
-                None,
+                WSL_LONG_TIMEOUT,
             ).await?;
             if !out.success {
                 return Err(CogniaError::Provider(format!(
@@ -1347,5 +1535,119 @@ mod tests {
             WslProvider::get_distro_filesystem_path("Debian"),
             "\\\\wsl.localhost\\Debian"
         );
+    }
+
+    // ========================================================================
+    // UTF-16LE decoding tests
+    // ========================================================================
+
+    #[test]
+    fn test_decode_wsl_bytes_empty() {
+        assert_eq!(decode_wsl_bytes(&[]), "");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf8_ascii() {
+        let input = b"Hello World";
+        assert_eq!(decode_wsl_bytes(input), "Hello World");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_ascii() {
+        // "NAME" in UTF-16LE: 4E 00 41 00 4D 00 45 00
+        let input: &[u8] = &[0x4E, 0x00, 0x41, 0x00, 0x4D, 0x00, 0x45, 0x00];
+        assert_eq!(decode_wsl_bytes(input), "NAME");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_with_bom() {
+        // BOM (FF FE) + "Hi" in UTF-16LE
+        let input: &[u8] = &[0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00];
+        assert_eq!(decode_wsl_bytes(input), "Hi");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_chinese() {
+        // "WSL 版本: 2.6.1.0" in UTF-16LE
+        // WSL = 57 00 53 00 4C 00
+        // space = 20 00
+        // 版 = 48 72, 本 = 2C 67
+        // : = 3A 00, space = 20 00
+        // 2 = 32 00, . = 2E 00, 6 = 36 00, . = 2E 00, 1 = 31 00, . = 2E 00, 0 = 30 00
+        let input: &[u8] = &[
+            0x57, 0x00, 0x53, 0x00, 0x4C, 0x00, 0x20, 0x00, // WSL
+            0x48, 0x72, 0x2C, 0x67, // 版本
+            0x3A, 0x00, 0x20, 0x00, // :
+            0x32, 0x00, 0x2E, 0x00, 0x36, 0x00, 0x2E, 0x00, // 2.6.
+            0x31, 0x00, 0x2E, 0x00, 0x30, 0x00, // 1.0
+        ];
+        let decoded = decode_wsl_bytes(input);
+        assert!(decoded.contains("WSL"));
+        assert!(decoded.contains("版本"));
+        assert!(decoded.contains("2.6.1.0"));
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_list_verbose() {
+        // "  NAME      STATE" in UTF-16LE
+        let text = "  NAME      STATE";
+        let utf16le: Vec<u8> = text
+            .encode_utf16()
+            .flat_map(|u| u.to_le_bytes())
+            .collect();
+        let decoded = decode_wsl_bytes(&utf16le);
+        assert_eq!(decoded, "  NAME      STATE");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16be_with_bom() {
+        // BOM (FE FF) + "OK" in UTF-16BE
+        let input: &[u8] = &[0xFE, 0xFF, 0x00, 0x4F, 0x00, 0x4B];
+        assert_eq!(decode_wsl_bytes(input), "OK");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf8_chinese() {
+        // Pure UTF-8 Chinese text (not UTF-16LE)
+        let input = "你好世界".as_bytes();
+        assert_eq!(decode_wsl_bytes(input), "你好世界");
+    }
+
+    // ========================================================================
+    // Chinese locale header parsing tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_list_verbose_chinese_headers() {
+        let output = "  名称                      状态            版本\n* Ubuntu-24.04              Stopped         2\n  Debian                    Stopped         2\n";
+        let distros = WslProvider::parse_list_verbose(output);
+
+        assert_eq!(distros.len(), 2);
+        assert_eq!(distros[0].name, "Ubuntu-24.04");
+        assert_eq!(distros[0].state, "Stopped");
+        assert_eq!(distros[0].wsl_version, "2");
+        assert!(distros[0].is_default);
+        assert_eq!(distros[1].name, "Debian");
+        assert!(!distros[1].is_default);
+    }
+
+    #[test]
+    fn test_parse_list_verbose_no_header_fallback() {
+        // Output with no recognizable header but valid data lines
+        let output = "UNKNOWN_HEADER_LINE\n* Ubuntu    Running         2\n  Debian    Stopped         1\n";
+        let distros = WslProvider::parse_list_verbose(output);
+
+        assert_eq!(distros.len(), 2);
+        assert_eq!(distros[0].name, "Ubuntu");
+        assert!(distros[0].is_default);
+        assert_eq!(distros[1].name, "Debian");
+        assert_eq!(distros[1].wsl_version, "1");
+    }
+
+    #[test]
+    fn test_trim_output() {
+        let input = "line1  \nline2  \n  line3  ";
+        let result = WslProvider::trim_output(input);
+        assert_eq!(result, "line1\nline2\n  line3");
     }
 }

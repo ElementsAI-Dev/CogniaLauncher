@@ -26,11 +26,10 @@ import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  getProviderIcon,
-  getPlatformIcon,
   getCapabilityColor,
   getCapabilityLabel,
 } from "./provider-icons";
+import { ProviderIcon, PlatformIcon } from "./provider-icon";
 
 export interface ProviderCardProps {
   provider: ProviderInfo;
@@ -78,9 +77,7 @@ export function ProviderCard({
       <CardHeader className="pb-3 overflow-hidden max-w-full">
         <div className="flex items-start justify-between gap-2 w-full max-w-full overflow-hidden">
           <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
-            <span className="text-2xl flex-shrink-0" aria-hidden="true">
-              {getProviderIcon(provider.id)}
-            </span>
+            <ProviderIcon providerId={provider.id} size={32} />
             <div className="min-w-0 overflow-hidden">
               <CardTitle
                 className="text-lg truncate max-w-full"
@@ -165,7 +162,7 @@ export function ProviderCard({
                 className="text-sm inline-flex items-center gap-1"
                 title={platform}
               >
-                <span aria-hidden="true">{getPlatformIcon(platform)}</span>
+                <PlatformIcon platform={platform} size={16} />
                 <span>{platform}</span>
               </span>
             ))}

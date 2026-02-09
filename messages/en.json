@@ -2064,6 +2064,16 @@
     "selectDestination": "Select download destination",
     "manualPathRequired": "Please enter the path manually",
     "browseFolder": "Browse",
+    "auth": {
+      "title": "Authentication (Private Repos)",
+      "configured": "Configured",
+      "token": "Access Token",
+      "tokenPlaceholder": "ghp_xxxx or glpat-xxxx",
+      "githubHint": "Enter a GitHub Personal Access Token to access private repositories. Token needs 'repo' scope (classic) or 'Contents: read' permission (fine-grained).",
+      "gitlabHint": "Enter a GitLab Personal Access Token to access private projects. Token needs 'read_api' scope. Optionally set a custom instance URL for self-hosted GitLab.",
+      "instanceUrl": "Instance URL",
+      "instanceUrlPlaceholder": "https://gitlab.example.com"
+    },
     "fromGitHub": "From GitHub",
     "fromGitLab": "From GitLab",
     "github": {

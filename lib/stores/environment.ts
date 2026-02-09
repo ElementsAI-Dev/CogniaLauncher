@@ -123,7 +123,7 @@ interface EnvironmentState {
 }
 
 // Map provider IDs to their corresponding environment types
-const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
+export const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
   fnm: 'node',
   nvm: 'node',
   volta: 'node',
@@ -151,6 +151,23 @@ const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
   'system-deno': 'deno',
   'system-bun': 'bun',
 };
+
+/**
+ * Resolve a provider-based env_type (e.g., "fnm", "pyenv") to its logical language type (e.g., "node", "python").
+ * Falls back to the availableProviders list, then the static map, then the raw value.
+ */
+export function getLogicalEnvType(
+  providerEnvType: string,
+  availableProviders?: { id: string; env_type: string }[],
+): string {
+  // Check availableProviders first (most accurate, from backend)
+  if (availableProviders) {
+    const providerInfo = availableProviders.find((p) => p.id === providerEnvType);
+    if (providerInfo) return providerInfo.env_type;
+  }
+  // Fallback to static map
+  return PROVIDER_ENV_TYPE_MAP[providerEnvType] || providerEnvType;
+}
 
 // Helper to get default settings for an environment type
 function getDefaultEnvSettings(envType: string): EnvironmentSettings {

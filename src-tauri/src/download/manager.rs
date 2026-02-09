@@ -742,6 +742,11 @@ impl DownloadManager {
             request = request.header("Range", format!("bytes={}-", pos));
         }
 
+        // Apply custom headers (e.g. auth tokens for private repos)
+        for (key, value) in &task.headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+
         // Send request
         let response = request.send().await.map_err(|e| DownloadError::Network {
             message: e.to_string(),

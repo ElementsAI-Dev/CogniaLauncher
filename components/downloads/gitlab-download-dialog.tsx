@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,6 +41,12 @@ import {
   Calendar,
   Star,
   Archive,
+  KeyRound,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Globe,
 } from "lucide-react";
 import type {
   GitLabAssetInfo,
@@ -64,6 +71,10 @@ export function GitLabDownloadDialog({
   const {
     projectInput,
     setProjectInput,
+    token,
+    setToken,
+    instanceUrl,
+    setInstanceUrl,
     parsedProject,
     projectInfo,
     isValidating,
@@ -89,6 +100,8 @@ export function GitLabDownloadDialog({
   const [archiveFormat, setArchiveFormat] =
     useState<GitLabArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showToken, setShowToken] = useState(false);
 
   const GITLAB_ARCHIVE_FORMATS: ArchiveFormat[] = useMemo(
     () => [
@@ -232,6 +245,71 @@ export function GitLabDownloadDialog({
               ) : undefined
             }
           />
+
+          {/* Authentication Section */}
+          <div className="border rounded-md">
+            <button
+              type="button"
+              onClick={() => setShowAuth(!showAuth)}
+              className="flex items-center gap-2 w-full p-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showAuth ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+              <KeyRound className="h-4 w-4" />
+              {t("downloads.auth.title")}
+              {(token.trim() || instanceUrl.trim()) && (
+                <Badge variant="secondary" className="ml-auto text-xs">
+                  {t("downloads.auth.configured")}
+                </Badge>
+              )}
+            </button>
+            {showAuth && (
+              <div className="px-3 pb-3 space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("downloads.auth.gitlabHint")}
+                </p>
+                <div className="space-y-2">
+                  <Label className="text-xs">{t("downloads.auth.token")}</Label>
+                  <div className="relative">
+                    <Input
+                      type={showToken ? "text" : "password"}
+                      value={token}
+                      onChange={(e) => setToken(e.target.value)}
+                      placeholder={t("downloads.auth.tokenPlaceholder")}
+                      className="pr-10 font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showToken ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-1">
+                    <Globe className="h-3 w-3" />
+                    {t("downloads.auth.instanceUrl")}
+                  </Label>
+                  <Input
+                    type="text"
+                    value={instanceUrl}
+                    onChange={(e) => setInstanceUrl(e.target.value)}
+                    placeholder={t("downloads.auth.instanceUrlPlaceholder")}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
 
           {error && (
             <Alert variant="destructive">

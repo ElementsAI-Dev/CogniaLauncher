@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import type { ProviderInfo, PackageManagerHealthResult, EnvironmentProviderInfo } from "@/types/tauri";
 import { cn } from "@/lib/utils";
-import { getPlatformIcon, getCapabilityColor, getCapabilityLabel } from "../provider-icons";
+import { getCapabilityColor, getCapabilityLabel } from "../provider-icons";
+import { PlatformIcon } from "../provider-icon";
 
 interface ProviderOverviewTabProps {
   provider: ProviderInfo;
@@ -175,9 +176,7 @@ export function ProviderOverviewTab({
                 key={platform}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/50"
               >
-                <span className="text-lg" aria-hidden="true">
-                  {getPlatformIcon(platform)}
-                </span>
+                <PlatformIcon platform={platform} size={20} />
                 <span className="text-sm font-medium capitalize">{platform}</span>
               </div>
             ))}

@@ -2064,6 +2064,16 @@
     "selectDestination": "选择下载目标位置",
     "manualPathRequired": "请手动输入路径",
     "browseFolder": "浏览",
+    "auth": {
+      "title": "身份验证（私有仓库）",
+      "configured": "已配置",
+      "token": "访问令牌",
+      "tokenPlaceholder": "ghp_xxxx 或 glpat-xxxx",
+      "githubHint": "输入 GitHub 个人访问令牌以访问私有仓库。经典令牌需要 'repo' 权限，细粒度令牌需要 'Contents: read' 权限。",
+      "gitlabHint": "输入 GitLab 个人访问令牌以访问私有项目。令牌需要 'read_api' 权限。可选设置自托管 GitLab 的实例 URL。",
+      "instanceUrl": "实例 URL",
+      "instanceUrlPlaceholder": "https://gitlab.example.com"
+    },
     "fromGitHub": "从 GitHub",
     "fromGitLab": "从 GitLab",
     "github": {

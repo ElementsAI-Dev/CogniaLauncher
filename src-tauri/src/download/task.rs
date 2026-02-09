@@ -149,6 +149,9 @@ pub struct DownloadTask {
     pub provider: Option<String>,
     /// Additional metadata
     pub metadata: std::collections::HashMap<String, String>,
+    /// Custom HTTP headers to send with the download request (e.g. auth tokens)
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
 }
 
 impl DownloadTask {
@@ -172,6 +175,7 @@ impl DownloadTask {
             supports_resume: false,
             provider: None,
             metadata: std::collections::HashMap::new(),
+            headers: std::collections::HashMap::new(),
         }
     }
 
@@ -267,6 +271,16 @@ impl DownloadTaskBuilder {
 
     pub fn with_metadata(mut self, key: String, value: String) -> Self {
         self.task.metadata.insert(key, value);
+        self
+    }
+
+    pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.task.headers.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_headers(mut self, headers: std::collections::HashMap<String, String>) -> Self {
+        self.task.headers.extend(headers);
         self
     }
 

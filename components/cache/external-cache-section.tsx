@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { CacheProviderIcon } from "@/components/provider-management/provider-icon";
 import {
   Card,
   CardContent,
@@ -148,77 +149,6 @@ export function ExternalCacheSection({
   const totalExternalSize = externalCaches.reduce((acc, c) => acc + c.size, 0);
   const canCleanCount = externalCaches.filter((c) => c.canClean).length;
 
-  const getProviderIcon = (provider: string) => {
-    switch (provider) {
-      case "npm":
-      case "pnpm":
-      case "yarn":
-        return "📦";
-      case "pip":
-      case "uv":
-        return "🐍";
-      case "cargo":
-        return "🦀";
-      case "go":
-        return "🐹";
-      case "bundler":
-        return "💎";
-      case "brew":
-        return "🍺";
-      case "dotnet":
-        return "🔷";
-      case "composer":
-        return "🎼";
-      case "poetry":
-        return "📜";
-      case "conda":
-        return "🐍";
-      case "deno":
-        return "🦕";
-      case "bun":
-        return "🥟";
-      case "gradle":
-        return "🐘";
-      case "maven":
-        return "☕";
-      case "gem":
-        return "💎";
-      case "rustup":
-        return "🦀";
-      case "scoop":
-        return "🥄";
-      case "chocolatey":
-        return "🍫";
-      case "windows_temp":
-        return "🗑️";
-      case "windows_thumbnail":
-        return "🖼️";
-      case "macos_cache":
-        return "🍎";
-      case "macos_logs":
-        return "📋";
-      case "linux_cache":
-        return "🐧";
-      case "docker":
-        return "🐳";
-      case "podman":
-        return "🦭";
-      case "flutter":
-        return "💙";
-      case "cocoapods":
-        return "🫛";
-      case "cypress":
-        return "🌲";
-      case "electron":
-        return "⚡";
-      case "vcpkg":
-        return "📐";
-      case "sbt":
-        return "⚙️";
-      default:
-        return "📁";
-    }
-  };
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
@@ -370,9 +300,7 @@ export function ExternalCacheSection({
                           className="flex items-center justify-between p-3 rounded-lg border bg-card"
                         >
                           <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <span className="text-xl">
-                              {getProviderIcon(cache.provider)}
-                            </span>
+                            <CacheProviderIcon provider={cache.provider} size={24} />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">

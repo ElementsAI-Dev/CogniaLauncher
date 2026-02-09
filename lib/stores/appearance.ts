@@ -38,6 +38,22 @@ export const useAppearanceStore = create<AppearanceState>()(
       name: 'cognia-appearance',
       storage: createJSONStorage(() => localStorage),
       version: 3,
+      migrate: (persistedState, version) => {
+        const state = persistedState as Record<string, unknown>;
+        if (version < 2) {
+          // v1 → v2: added reducedMotion
+          if (!('reducedMotion' in state)) {
+            state.reducedMotion = defaultState.reducedMotion;
+          }
+        }
+        if (version < 3) {
+          // v2 → v3: added chartColorTheme
+          if (!('chartColorTheme' in state)) {
+            state.chartColorTheme = defaultState.chartColorTheme;
+          }
+        }
+        return state as unknown as AppearanceState;
+      },
       partialize: (state) => ({
         accentColor: state.accentColor,
         chartColorTheme: state.chartColorTheme,

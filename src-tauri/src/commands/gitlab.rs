@@ -156,15 +156,30 @@ pub async fn gitlab_parse_url(url: String) -> Result<Option<GitLabParsedProject>
     )
 }
 
+/// Helper to create a GitLabProvider with optional token and instance URL
+fn make_gitlab_provider(token: Option<String>, instance_url: Option<String>) -> GitLabProvider {
+    GitLabProvider::new()
+        .with_token(token)
+        .with_instance_url(instance_url)
+}
+
 #[tauri::command]
-pub async fn gitlab_validate_project(project: String) -> Result<bool, String> {
-    let provider = GitLabProvider::new();
+pub async fn gitlab_validate_project(
+    project: String,
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> Result<bool, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     Ok(provider.validate_project(&project).await)
 }
 
 #[tauri::command]
-pub async fn gitlab_get_project_info(project: String) -> Result<GitLabProjectInfo, String> {
-    let provider = GitLabProvider::new();
+pub async fn gitlab_get_project_info(
+    project: String,
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> Result<GitLabProjectInfo, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     let info = provider
         .get_project_info(&project)
         .await
@@ -184,8 +199,12 @@ pub async fn gitlab_get_project_info(project: String) -> Result<GitLabProjectInf
 }
 
 #[tauri::command]
-pub async fn gitlab_list_branches(project: String) -> Result<Vec<GitLabBranchInfo>, String> {
-    let provider = GitLabProvider::new();
+pub async fn gitlab_list_branches(
+    project: String,
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> Result<Vec<GitLabBranchInfo>, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     provider
         .list_branches(&project)
         .await
@@ -194,8 +213,12 @@ pub async fn gitlab_list_branches(project: String) -> Result<Vec<GitLabBranchInf
 }
 
 #[tauri::command]
-pub async fn gitlab_list_tags(project: String) -> Result<Vec<GitLabTagInfo>, String> {
-    let provider = GitLabProvider::new();
+pub async fn gitlab_list_tags(
+    project: String,
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> Result<Vec<GitLabTagInfo>, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     provider
         .list_tags(&project)
         .await
@@ -204,8 +227,12 @@ pub async fn gitlab_list_tags(project: String) -> Result<Vec<GitLabTagInfo>, Str
 }
 
 #[tauri::command]
-pub async fn gitlab_list_releases(project: String) -> Result<Vec<GitLabReleaseInfo>, String> {
-    let provider = GitLabProvider::new();
+pub async fn gitlab_list_releases(
+    project: String,
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> Result<Vec<GitLabReleaseInfo>, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     provider
         .list_releases(&project)
         .await
@@ -217,8 +244,10 @@ pub async fn gitlab_list_releases(project: String) -> Result<Vec<GitLabReleaseIn
 pub async fn gitlab_get_release_assets(
     project: String,
     tag: String,
+    token: Option<String>,
+    instance_url: Option<String>,
 ) -> Result<Vec<GitLabAssetInfo>, String> {
-    let provider = GitLabProvider::new();
+    let provider = make_gitlab_provider(token, instance_url);
     provider
         .get_release_by_tag(&project, &tag)
         .await
@@ -239,13 +268,18 @@ pub async fn gitlab_download_asset(
     asset_url: String,
     asset_name: String,
     destination: String,
+    token: Option<String>,
+    instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
+    let provider = make_gitlab_provider(token, instance_url);
     let dest_path = PathBuf::from(&destination);
     let full_path = dest_path.join(&asset_name);
 
+    let headers = provider.get_download_headers();
     let task = DownloadTask::builder(asset_url, full_path, asset_name)
         .with_provider(format!("gitlab:{}", project))
+        .with_headers(headers)
         .build();
 
     let mgr = manager.read().await;
@@ -258,9 +292,11 @@ pub async fn gitlab_download_source(
     ref_name: String,
     format: String,
     destination: String,
+    token: Option<String>,
+    instance_url: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
-    let provider = GitLabProvider::new();
+    let provider = make_gitlab_provider(token, instance_url);
     let url = provider.get_source_archive_url(&project, &ref_name, &format);
 
     let ext = match format.as_str() {
@@ -279,10 +315,63 @@ pub async fn gitlab_download_source(
     let dest_path = PathBuf::from(&destination);
     let full_path = dest_path.join(&file_name);
 
+    let headers = provider.get_download_headers();
     let task = DownloadTask::builder(url, full_path, file_name)
         .with_provider(format!("gitlab:{}", project))
+        .with_headers(headers)
         .build();
 
     let mgr = manager.read().await;
     Ok(mgr.add_task(task).await)
+}
+
+#[tauri::command]
+pub async fn gitlab_set_token(token: String) -> Result<(), String> {
+    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    settings
+        .set_value("providers.gitlab.token", &token)
+        .map_err(|e| e.to_string())?;
+    settings.save().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn gitlab_get_token() -> Result<Option<String>, String> {
+    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    Ok(settings.get_value("providers.gitlab.token")
+        .or_else(|| std::env::var("GITLAB_TOKEN").ok()))
+}
+
+#[tauri::command]
+pub async fn gitlab_clear_token() -> Result<(), String> {
+    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    settings
+        .set_value("providers.gitlab.token", "")
+        .map_err(|e| e.to_string())?;
+    settings.save().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn gitlab_validate_token(
+    token: String,
+    instance_url: Option<String>,
+) -> Result<bool, String> {
+    let provider = GitLabProvider::new()
+        .with_token(Some(token))
+        .with_instance_url(instance_url);
+    Ok(provider.validate_token().await)
+}
+
+#[tauri::command]
+pub async fn gitlab_set_instance_url(url: String) -> Result<(), String> {
+    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    settings
+        .set_value("providers.gitlab.url", &url)
+        .map_err(|e| e.to_string())?;
+    settings.save().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn gitlab_get_instance_url() -> Result<Option<String>, String> {
+    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    Ok(settings.get_value("providers.gitlab.url"))
 }

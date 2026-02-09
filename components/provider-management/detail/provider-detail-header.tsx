@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { PROVIDER_ICONS } from "../provider-icons";
+import { ProviderIcon } from "../provider-icon";
 
 interface ProviderDetailHeaderProps {
   provider: ProviderInfo;
@@ -45,8 +45,6 @@ export function ProviderDetailHeader({
   t,
 }: ProviderDetailHeaderProps) {
   const router = useRouter();
-  const icon = PROVIDER_ICONS[provider.id] || "📦";
-
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-4">
@@ -58,9 +56,7 @@ export function ProviderDetailHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <span className="text-4xl" aria-hidden="true">
-          {icon}
-        </span>
+        <ProviderIcon providerId={provider.id} size={40} />
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">{provider.display_name}</h1>

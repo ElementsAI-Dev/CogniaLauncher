@@ -159,6 +159,16 @@ export const useOnboardingStore = create<OnboardingState>()(
       name: 'cognia-onboarding',
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      migrate: (persistedState, version) => {
+        const state = persistedState as Record<string, unknown>;
+        if (version < 1) {
+          // v0 → v1: ensure all fields exist
+          if (!('tourCompleted' in state)) state.tourCompleted = false;
+          if (!('visitedSteps' in state)) state.visitedSteps = [];
+          if (!('version' in state)) state.version = 1;
+        }
+        return state as unknown as OnboardingState;
+      },
       partialize: (state) => ({
         completed: state.completed,
         skipped: state.skipped,

@@ -154,6 +154,6 @@ describe("ProviderListItem", () => {
   it("renders provider icon", () => {
     render(<ProviderListItem {...defaultProps} />);
 
-    expect(screen.getByText("📦")).toBeInTheDocument();
+    expect(screen.getByAltText("npm")).toBeInTheDocument();
   });
 });

@@ -120,15 +120,20 @@ pub async fn github_parse_url(url: String) -> Result<Option<ParsedRepo>, String>
     }))
 }
 
+/// Helper to create a GitHubProvider with an optional token
+fn make_github_provider(token: Option<String>) -> GitHubProvider {
+    GitHubProvider::new().with_token(token)
+}
+
 #[tauri::command]
-pub async fn github_validate_repo(repo: String) -> Result<bool, String> {
-    let provider = GitHubProvider::new();
+pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result<bool, String> {
+    let provider = make_github_provider(token);
     Ok(provider.validate_repo(&repo).await)
 }
 
 #[tauri::command]
-pub async fn github_list_branches(repo: String) -> Result<Vec<BranchInfo>, String> {
-    let provider = GitHubProvider::new();
+pub async fn github_list_branches(repo: String, token: Option<String>) -> Result<Vec<BranchInfo>, String> {
+    let provider = make_github_provider(token);
     provider
         .list_branches(&repo)
         .await
@@ -137,8 +142,8 @@ pub async fn github_list_branches(repo: String) -> Result<Vec<BranchInfo>, Strin
 }
 
 #[tauri::command]
-pub async fn github_list_tags(repo: String) -> Result<Vec<TagInfo>, String> {
-    let provider = GitHubProvider::new();
+pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec<TagInfo>, String> {
+    let provider = make_github_provider(token);
     provider
         .list_tags(&repo)
         .await
@@ -147,8 +152,8 @@ pub async fn github_list_tags(repo: String) -> Result<Vec<TagInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn github_list_releases(repo: String) -> Result<Vec<ReleaseInfo>, String> {
-    let provider = GitHubProvider::new();
+pub async fn github_list_releases(repo: String, token: Option<String>) -> Result<Vec<ReleaseInfo>, String> {
+    let provider = make_github_provider(token);
     provider
         .list_releases(&repo)
         .await
@@ -160,8 +165,9 @@ pub async fn github_list_releases(repo: String) -> Result<Vec<ReleaseInfo>, Stri
 pub async fn github_get_release_assets(
     repo: String,
     tag: String,
+    token: Option<String>,
 ) -> Result<Vec<AssetInfo>, String> {
-    let provider = GitHubProvider::new();
+    let provider = make_github_provider(token);
     provider
         .get_release_by_tag(&repo, &tag)
         .await
@@ -172,16 +178,28 @@ pub async fn github_get_release_assets(
 #[tauri::command]
 pub async fn github_download_asset(
     repo: String,
+    asset_id: u64,
     asset_url: String,
     asset_name: String,
     destination: String,
+    token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
+    let provider = make_github_provider(token);
     let dest_path = PathBuf::from(&destination);
     let full_path = dest_path.join(&asset_name);
 
-    let task = DownloadTask::builder(asset_url, full_path, asset_name)
+    // For authenticated requests, use the API URL for asset downloads
+    let download_url = if provider.has_token() {
+        provider.get_asset_api_download_url(&repo, asset_id)
+    } else {
+        asset_url
+    };
+
+    let headers = provider.get_download_headers();
+    let task = DownloadTask::builder(download_url, full_path, asset_name)
         .with_provider(format!("github:{}", repo))
+        .with_headers(headers)
         .build();
 
     let mgr = manager.read().await;
@@ -194,9 +212,10 @@ pub async fn github_download_source(
     ref_name: String,
     format: String,
     destination: String,
+    token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
-    let provider = GitHubProvider::new();
+    let provider = make_github_provider(token);
     let url = provider.get_source_archive_url(&repo, &ref_name, &format);
 
     let ext = if format == "tar.gz" { "tar.gz" } else { "zip" };
@@ -210,11 +229,44 @@ pub async fn github_download_source(
     let dest_path = PathBuf::from(&destination);
     let full_path = dest_path.join(&file_name);
 
+    let headers = provider.get_source_download_headers();
     let task = DownloadTask::builder(url, full_path, file_name)
         .with_provider(format!("github:{}", repo))
+        .with_headers(headers)
         .build();
 
     let mgr = manager.read().await;
     Ok(mgr.add_task(task).await)
+}
+
+#[tauri::command]
+pub async fn github_set_token(token: String) -> Result<(), String> {
+    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    settings
+        .set_value("providers.github.token", &token)
+        .map_err(|e| e.to_string())?;
+    settings.save().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn github_get_token() -> Result<Option<String>, String> {
+    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    Ok(settings.get_value("providers.github.token")
+        .or_else(|| std::env::var("GITHUB_TOKEN").ok()))
+}
+
+#[tauri::command]
+pub async fn github_clear_token() -> Result<(), String> {
+    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    settings
+        .set_value("providers.github.token", "")
+        .map_err(|e| e.to_string())?;
+    settings.save().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn github_validate_token(token: String) -> Result<bool, String> {
+    let provider = GitHubProvider::new().with_token(Some(token));
+    Ok(provider.validate_token().await)
 }
 

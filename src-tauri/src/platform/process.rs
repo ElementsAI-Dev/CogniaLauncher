@@ -5,6 +5,7 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+
 #[derive(Error, Debug)]
 pub enum ProcessError {
     #[error("Process failed to start: {0}")]
@@ -95,6 +96,13 @@ pub async fn execute(
         cmd.stderr(Stdio::piped());
     }
 
+    // Prevent console window from flashing on Windows when spawning console apps from GUI
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
     let child = cmd.spawn()?;
 
     let output = if let Some(timeout) = options.timeout {
@@ -156,6 +164,12 @@ where
 
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
 
     let mut child = cmd.spawn()?;
 

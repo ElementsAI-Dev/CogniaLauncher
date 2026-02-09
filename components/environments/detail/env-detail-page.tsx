@@ -14,7 +14,7 @@ import {
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { useEnvironments } from '@/hooks/use-environments';
-import { useEnvironmentStore } from '@/lib/stores/environment';
+import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
 import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2 } from 'lucide-react';
@@ -66,9 +66,17 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
   }, [fetchEnvironments, fetchProviders, detectVersions]);
 
   // Find current environment data
-  const env = environments.find((e) => e.env_type === envType) || null;
+  // Backend returns env_type as provider ID (e.g., "fnm"), but URL uses language type (e.g., "node")
+  // So we need to match by resolving each env's provider ID to its logical language type
+  const env = environments.find((e) => {
+    if (e.env_type === envType) return true;
+    return getLogicalEnvType(e.env_type, availableProviders) === envType;
+  }) || null;
   const detectedVersion =
-    detectedVersions.find((d) => d.env_type === envType) || null;
+    detectedVersions.find((d) => {
+      if (d.env_type === envType) return true;
+      return getLogicalEnvType(d.env_type, availableProviders) === envType;
+    }) || null;
 
   // Get providers for this env type
   const getEnvKey = useCallback(

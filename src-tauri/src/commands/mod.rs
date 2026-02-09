@@ -77,13 +77,15 @@ pub use custom_detection::{
     custom_rule_update, custom_rule_validate_regex, SharedCustomDetectionManager,
 };
 pub use github::{
-    github_download_asset, github_download_source, github_get_release_assets, github_list_branches,
-    github_list_releases, github_list_tags, github_parse_url, github_validate_repo,
+    github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
+    github_get_token, github_list_branches, github_list_releases, github_list_tags, github_parse_url,
+    github_set_token, github_validate_repo, github_validate_token,
 };
 pub use gitlab::{
-    gitlab_download_asset, gitlab_download_source, gitlab_get_project_info,
-    gitlab_get_release_assets, gitlab_list_branches, gitlab_list_releases, gitlab_list_tags,
-    gitlab_parse_url, gitlab_validate_project,
+    gitlab_clear_token, gitlab_download_asset, gitlab_download_source, gitlab_get_instance_url,
+    gitlab_get_project_info, gitlab_get_release_assets, gitlab_get_token, gitlab_list_branches,
+    gitlab_list_releases, gitlab_list_tags, gitlab_parse_url, gitlab_set_instance_url,
+    gitlab_set_token, gitlab_validate_project, gitlab_validate_token,
 };
 pub use health_check::{health_check_all, health_check_environment, health_check_package_managers};
 pub use profiles::{
