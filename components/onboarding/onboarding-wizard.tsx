@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -140,13 +142,15 @@ export function OnboardingWizard({
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => onGoTo(idx)}
-                      className={`flex items-center justify-center rounded-full transition-all ${
+                      aria-label={stepLabel}
+                      className={cn(
+                        'flex items-center justify-center rounded-full transition-all',
                         isActive
                           ? 'h-9 w-9 bg-primary text-primary-foreground shadow-sm'
                           : isDone
                             ? 'h-7 w-7 bg-primary/20 text-primary hover:bg-primary/30'
-                            : 'h-7 w-7 bg-muted text-muted-foreground hover:bg-muted/80'
-                      }`}
+                            : 'h-7 w-7 bg-muted text-muted-foreground hover:bg-muted/80',
+                      )}
                     >
                       <Icon className={isActive ? 'h-4 w-4' : 'h-3.5 w-3.5'} />
                     </button>
@@ -171,9 +175,11 @@ export function OnboardingWizard({
         <Separator />
 
         {/* Step content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
-          {renderStep()}
-        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-6 py-4">
+            {renderStep()}
+          </div>
+        </ScrollArea>
 
         {/* Footer */}
         <DialogFooter className="px-6 pb-6 pt-2 flex-row justify-between border-t">

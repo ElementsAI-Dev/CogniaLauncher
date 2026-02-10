@@ -330,10 +330,9 @@ export function VersionBrowserPanel({
           <div className="flex items-center justify-between">
             <div>
               <SheetTitle className="text-lg">
-                {t("environments.versionBrowser.title").replace(
-                  "{type}",
-                  envType,
-                )}
+                {t("environments.versionBrowser.title", {
+                  type: envType,
+                })}
               </SheetTitle>
               <SheetDescription>
                 {t("environments.versionBrowser.description")}
@@ -450,10 +449,9 @@ export function VersionBrowserPanel({
 
         <div className="p-4 border-t bg-muted/30">
           <p className="text-xs text-muted-foreground text-center">
-            {t("environments.versionBrowser.totalVersions").replace(
-              "{count}",
-              String(displayVersions.length),
-            )}
+            {t("environments.versionBrowser.totalVersions", {
+              count: displayVersions.length,
+            })}
           </p>
         </div>
 
@@ -461,10 +459,9 @@ export function VersionBrowserPanel({
         {selectedForEnv.length > 0 && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-card border rounded-lg shadow-lg p-3 flex items-center gap-3 z-50">
             <span className="text-sm font-medium">
-              {t("environments.selectedVersions").replace(
-                "{count}",
-                String(selectedForEnv.length),
-              )}
+              {t("environments.selectedVersions", {
+                count: selectedForEnv.length,
+              })}
             </span>
             <div className="h-4 w-px bg-border" />
             {installableCount > 0 && (

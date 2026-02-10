@@ -32,7 +32,7 @@ interface EnvironmentToolbarProps {
   filteredCount: number;
   viewMode: EnvironmentViewMode;
   onViewModeChange: (mode: EnvironmentViewMode) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function EnvironmentToolbar({
@@ -157,9 +157,10 @@ export function EnvironmentToolbar({
         <div className="flex flex-wrap gap-2 items-center text-sm">
           {isFiltered && (
             <span className="text-muted-foreground">
-              {t("environments.toolbar.showingResults")
-                .replace("{filtered}", String(filteredCount))
-                .replace("{total}", String(totalCount))}
+              {t("environments.toolbar.showingResults", {
+                filtered: filteredCount,
+                total: totalCount,
+              })}
             </span>
           )}
 

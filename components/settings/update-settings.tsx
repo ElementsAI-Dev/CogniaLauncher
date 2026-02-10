@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SwitchSettingItem } from "./setting-item";
 import type { AppSettings } from "@/lib/stores/settings";
@@ -23,12 +16,7 @@ export function UpdateSettings({
   t,
 }: UpdateSettingsProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.updates")}</CardTitle>
-        <CardDescription>{t("settings.updatesDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-1">
+    <div className="space-y-1">
         <SwitchSettingItem
           id="check-updates-on-start"
           label={t("settings.checkUpdatesOnStart")}
@@ -58,7 +46,6 @@ export function UpdateSettings({
             onValueChange("notifyOnUpdates", checked)
           }
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }

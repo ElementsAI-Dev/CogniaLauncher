@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SettingItem } from "./setting-item";
 
@@ -24,12 +17,7 @@ export function NetworkSettings({
   t,
 }: NetworkSettingsProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.network")}</CardTitle>
-        <CardDescription>{t("settings.networkDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-1">
+    <div className="space-y-1">
         <SettingItem
           id="network-timeout"
           label={t("settings.timeout")}
@@ -63,7 +51,6 @@ export function NetworkSettings({
           placeholder="http://proxy.example.com:8080"
           error={errors["network.proxy"]}
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }

@@ -54,15 +54,11 @@ describe("MirrorsSettings", () => {
     jest.clearAllMocks();
   });
 
-  it("should render mirrors settings card", () => {
+  it("should render mirrors settings content", () => {
     render(<MirrorsSettings {...defaultProps} />);
 
-    expect(screen.getByText("Mirrors")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Configure package registry mirrors for faster downloads",
-      ),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("NPM Registry")).toBeInTheDocument();
   });
 
   it("should render NPM registry setting", () => {

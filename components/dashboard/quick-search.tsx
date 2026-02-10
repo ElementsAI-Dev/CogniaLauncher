@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
@@ -238,9 +239,7 @@ export function QuickSearch({
                 <X className="h-3.5 w-3.5" />
               </Button>
             )}
-            <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-              /
-            </kbd>
+            <Kbd>/</Kbd>
           </div>
         </div>
 
@@ -336,12 +335,14 @@ export function QuickSearch({
                       <span className="text-xs font-medium text-muted-foreground tracking-wide">
                         {t("dashboard.quickSearch.recentSearches")}
                       </span>
-                      <button
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
                         onClick={clearHistory}
-                        className="text-xs text-muted-foreground hover:text-foreground"
                       >
                         {t("dashboard.quickSearch.clearRecent")}
-                      </button>
+                      </Button>
                     </div>
                     <CommandGroup>
                       {searchHistory.map((term) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { type ReactNode, type ComponentProps, useEffect, useRef } from "react";
 import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 import { useAppearanceStore } from "@/lib/stores/appearance";
 import { applyAccentColor } from "@/lib/theme/colors";
@@ -9,19 +9,14 @@ import { applyAccentColor } from "@/lib/theme/colors";
  * Manages accent color application based on theme and user preferences.
  * This component subscribes to both theme changes and accent color changes.
  */
-function AccentColorManager({ children }: { children: React.ReactNode }) {
+function AccentColorManager({ children }: { children: ReactNode }) {
   const { resolvedTheme } = useTheme();
   const { accentColor, reducedMotion, setReducedMotion } = useAppearanceStore();
-  const [mounted, setMounted] = React.useState(false);
-  const osMotionSynced = React.useRef(false);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+  const osMotionSynced = useRef(false);
 
   // Sync OS-level prefers-reduced-motion on first mount (only if user hasn't explicitly set it)
-  React.useEffect(() => {
-    if (!mounted || osMotionSynced.current) return;
+  useEffect(() => {
+    if (osMotionSynced.current) return;
     osMotionSynced.current = true;
 
     const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -34,25 +29,21 @@ function AccentColorManager({ children }: { children: React.ReactNode }) {
     };
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
-  }, [mounted, reducedMotion, setReducedMotion]);
+  }, [reducedMotion, setReducedMotion]);
 
-  React.useEffect(() => {
-    if (!mounted) return;
-
+  useEffect(() => {
     const isDark = resolvedTheme === "dark";
     applyAccentColor(accentColor, isDark);
-  }, [resolvedTheme, accentColor, mounted]);
+  }, [resolvedTheme, accentColor]);
 
-  React.useEffect(() => {
-    if (!mounted) return;
-
+  useEffect(() => {
     const root = document.documentElement;
     if (reducedMotion) {
       root.classList.add("no-transitions");
     } else {
       root.classList.remove("no-transitions");
     }
-  }, [reducedMotion, mounted]);
+  }, [reducedMotion]);
 
   return <>{children}</>;
 }
@@ -60,7 +51,7 @@ function AccentColorManager({ children }: { children: React.ReactNode }) {
 export function ThemeProvider({
   children,
   ...props
-}: React.ComponentProps<typeof NextThemesProvider>) {
+}: ComponentProps<typeof NextThemesProvider>) {
   return (
     <NextThemesProvider {...props}>
       <AccentColorManager>{children}</AccentColorManager>

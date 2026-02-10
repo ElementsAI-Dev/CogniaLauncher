@@ -11,41 +11,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Settings2,
-  Network,
-  Shield,
-  Server,
-  Palette,
-  RefreshCw,
-  Monitor,
-  FolderOpen,
-  Package,
-  Info,
-  type LucideIcon,
-} from "lucide-react";
+import { Settings2 } from "lucide-react";
 import {
   SETTINGS_SECTIONS,
   type SettingsSection,
 } from "@/lib/constants/settings-registry";
-
-type TranslateFunction = (
-  key: string,
-  params?: Record<string, string | number>,
-) => string;
-
-const SECTION_ICONS: Record<string, LucideIcon> = {
-  Settings2,
-  Network,
-  Shield,
-  Server,
-  Palette,
-  RefreshCw,
-  Monitor,
-  FolderOpen,
-  Package,
-  Info,
-};
+import { SECTION_ICONS, type TranslateFunction } from "./shared";
 
 interface SettingsNavProps {
   activeSection: SettingsSection | null;

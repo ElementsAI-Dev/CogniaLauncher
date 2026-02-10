@@ -92,17 +92,14 @@ export function EnvironmentCardErrorBoundary({
 }: {
   children: ReactNode;
   envType: string;
-  t?: (key: string) => string;
+  t?: (key: string, params?: Record<string, string | number>) => string;
 }) {
   // Use translations if available, otherwise fallback to English
   const fallbackTitle = t
-    ? t("environments.errorBoundary.cardTitle").replace("{envType}", envType)
+    ? t("environments.errorBoundary.cardTitle", { envType })
     : `Error loading ${envType}`;
   const fallbackDescription = t
-    ? t("environments.errorBoundary.cardDescription").replace(
-        "{envType}",
-        envType,
-      )
+    ? t("environments.errorBoundary.cardDescription", { envType })
     : `Failed to render the ${envType} environment card.`;
   const retryLabel = t ? t("environments.errorBoundary.tryAgain") : "Try Again";
 

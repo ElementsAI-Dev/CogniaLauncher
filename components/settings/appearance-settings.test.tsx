@@ -50,9 +50,10 @@ const defaultProps = {
 };
 
 describe("AppearanceSettings", () => {
-  it("renders appearance settings section", () => {
+  it("renders appearance settings content", () => {
     render(<AppearanceSettings {...defaultProps} />);
-    expect(screen.getByText("Appearance")).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Theme")).toBeInTheDocument();
   });
 
   it("renders theme selection", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Package, CloudDownload, Check } from "lucide-react";
@@ -31,6 +31,7 @@ export function VersionCards({ loading, updateInfo, t }: VersionCardsProps) {
             <Package className="h-5 w-5 text-blue-500" aria-hidden="true" />
             <span id="current-version-label">{t("about.currentVersion")}</span>
           </CardTitle>
+          <CardDescription>{t("about.versionInfoDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {loading ? (

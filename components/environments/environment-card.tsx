@@ -17,7 +17,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
@@ -143,7 +142,6 @@ export function EnvironmentCard({
   };
 
   return (
-    <TooltipProvider>
       <Card className={loading ? "opacity-70" : ""}>
         {/* Card Header with detected version badge */}
         <div className="p-5 space-y-3">
@@ -390,10 +388,9 @@ export function EnvironmentCard({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                {t("environments.createVersionFile").replace(
-                  "{type}",
-                  env.env_type.toLowerCase(),
-                )}
+                {t("environments.createVersionFile", {
+                  type: env.env_type.toLowerCase(),
+                })}
               </p>
             </div>
           )}
@@ -423,6 +420,5 @@ export function EnvironmentCard({
           </div>
         </CardContent>
       </Card>
-    </TooltipProvider>
   );
 }

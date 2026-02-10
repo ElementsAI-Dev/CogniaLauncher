@@ -32,11 +32,11 @@ describe("NetworkSettings", () => {
     jest.clearAllMocks();
   });
 
-  it("should render network settings card", () => {
+  it("should render network settings content", () => {
     render(<NetworkSettings {...defaultProps} />);
 
-    expect(screen.getByText("Network")).toBeInTheDocument();
-    expect(screen.getByText("Network and proxy settings")).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Timeout")).toBeInTheDocument();
   });
 
   it("should render timeout setting", () => {

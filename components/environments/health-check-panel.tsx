@@ -295,7 +295,7 @@ export function IssueCard({ issue, onCopy, t }: IssueCardProps) {
         )}
         {issue.fix_command && (
           <div className="mt-2 flex items-center gap-2">
-            <code className="text-xs bg-black/10 px-2 py-1 rounded">
+            <code className="text-xs bg-black/10 dark:bg-white/10 px-2 py-1 rounded">
               {issue.fix_command}
             </code>
             <Button

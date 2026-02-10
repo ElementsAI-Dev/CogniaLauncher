@@ -84,13 +84,15 @@ export function WidgetWrapper({
         <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full border bg-background px-1.5 py-0.5 shadow-sm opacity-0 group-hover/widget:opacity-100 transition-opacity !h-auto">
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                className="cursor-grab active:cursor-grabbing p-0.5 text-muted-foreground hover:text-foreground"
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 cursor-grab active:cursor-grabbing"
                 {...attributes}
                 {...listeners}
               >
                 <GripVertical className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
               {t("dashboard.widgets.dragToReorder")}

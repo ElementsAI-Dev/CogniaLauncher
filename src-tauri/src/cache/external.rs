@@ -499,6 +499,11 @@ pub struct CombinedCacheStats {
 // ============================================================================
 
 fn get_npm_cache_path() -> Option<PathBuf> {
+    // Check npm_config_cache first (npm uses lowercase env var convention)
+    if let Ok(cache_dir) = std::env::var("npm_config_cache") {
+        return Some(PathBuf::from(cache_dir));
+    }
+
     #[cfg(windows)]
     {
         std::env::var("LOCALAPPDATA")
@@ -512,20 +517,37 @@ fn get_npm_cache_path() -> Option<PathBuf> {
 }
 
 fn get_pnpm_cache_path() -> Option<PathBuf> {
-    // pnpm store path can be configured, but defaults to:
+    // Check PNPM_STORE_DIR first (official env var for store location)
+    if let Ok(store_dir) = std::env::var("PNPM_STORE_DIR") {
+        return Some(PathBuf::from(store_dir));
+    }
+
     #[cfg(windows)]
     {
         std::env::var("LOCALAPPDATA")
             .ok()
             .map(|p| PathBuf::from(p).join("pnpm").join("store"))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        dirs::home_dir().map(|h| h.join(".local").join("share").join("pnpm").join("store"))
+        dirs::home_dir().map(|h| h.join("Library").join("pnpm").join("store"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_DATA_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
+            .map(|p| p.join("pnpm").join("store"))
     }
 }
 
 fn get_yarn_cache_path() -> Option<PathBuf> {
+    // Check YARN_CACHE_FOLDER first (official env var)
+    if let Ok(cache_dir) = std::env::var("YARN_CACHE_FOLDER") {
+        return Some(PathBuf::from(cache_dir));
+    }
+
     #[cfg(windows)]
     {
         std::env::var("LOCALAPPDATA")
@@ -543,6 +565,11 @@ fn get_yarn_cache_path() -> Option<PathBuf> {
 }
 
 fn get_pip_cache_path() -> Option<PathBuf> {
+    // Check PIP_CACHE_DIR first (official env var, pip >= 22.3)
+    if let Ok(cache_dir) = std::env::var("PIP_CACHE_DIR") {
+        return Some(PathBuf::from(cache_dir));
+    }
+
     #[cfg(windows)]
     {
         std::env::var("LOCALAPPDATA")
@@ -555,7 +582,11 @@ fn get_pip_cache_path() -> Option<PathBuf> {
     }
     #[cfg(target_os = "linux")]
     {
-        dirs::home_dir().map(|h| h.join(".cache").join("pip"))
+        std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".cache")))
+            .map(|p| p.join("pip"))
     }
 }
 
@@ -596,11 +627,16 @@ fn get_cargo_cache_path() -> Option<PathBuf> {
 }
 
 fn get_bundler_cache_path() -> Option<PathBuf> {
+    // Check BUNDLE_PATH first (official env var for bundle install location)
+    if let Ok(bundle_path) = std::env::var("BUNDLE_PATH") {
+        return Some(PathBuf::from(bundle_path).join("cache"));
+    }
+
     #[cfg(windows)]
     {
-        std::env::var("LOCALAPPDATA")
+        std::env::var("USERPROFILE")
             .ok()
-            .map(|p| PathBuf::from(p).join("cache").join("bundle"))
+            .map(|p| PathBuf::from(p).join(".bundle").join("cache"))
     }
     #[cfg(not(windows))]
     {
@@ -649,6 +685,11 @@ fn get_brew_cache_path() -> Option<PathBuf> {
 }
 
 fn get_dotnet_cache_path() -> Option<PathBuf> {
+    // Check NUGET_PACKAGES first (official env var for global packages folder)
+    if let Ok(nuget_packages) = std::env::var("NUGET_PACKAGES") {
+        return Some(PathBuf::from(nuget_packages));
+    }
+
     #[cfg(windows)]
     {
         std::env::var("LOCALAPPDATA")
@@ -721,8 +762,15 @@ fn get_conda_cache_path() -> Option<PathBuf> {
     // Check CONDA_PKGS_DIRS first
     if let Ok(pkgs_dirs) = std::env::var("CONDA_PKGS_DIRS") {
         // Take the first directory if multiple are specified
-        if let Some(first) = pkgs_dirs.split(':').next() {
-            return Some(PathBuf::from(first));
+        // Conda uses ';' as separator on Windows, ':' on Unix
+        #[cfg(windows)]
+        let sep = ';';
+        #[cfg(not(windows))]
+        let sep = ':';
+        if let Some(first) = pkgs_dirs.split(sep).next() {
+            if !first.is_empty() {
+                return Some(PathBuf::from(first));
+            }
         }
     }
 
@@ -813,6 +861,16 @@ fn get_scoop_cache_path() -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn get_chocolatey_cache_path() -> Option<PathBuf> {
+    // Check ChocolateyInstall env var first (set by Chocolatey installer)
+    // Chocolatey uses TEMP by default, or cacheLocation config key
+    // The install dir itself contains lib/ with cached .nupkg files
+    if let Ok(choco_install) = std::env::var("ChocolateyInstall") {
+        let lib_cache = PathBuf::from(&choco_install).join("lib");
+        if lib_cache.exists() {
+            return Some(lib_cache);
+        }
+    }
+
     // User-level cache (non-elevated)
     if let Ok(profile) = std::env::var("USERPROFILE") {
         let user_cache = PathBuf::from(&profile).join(".chocolatey").join("http-cache");
@@ -827,10 +885,8 @@ fn get_chocolatey_cache_path() -> Option<PathBuf> {
         return Some(system_cache);
     }
 
-    // Return user cache path even if it doesn't exist yet
-    std::env::var("USERPROFILE")
-        .ok()
-        .map(|p| PathBuf::from(p).join(".chocolatey").join("http-cache"))
+    // Fallback: default Chocolatey lib dir
+    Some(PathBuf::from("C:\\ProgramData\\chocolatey\\lib"))
 }
 
 // ============================================================================
@@ -1032,6 +1088,11 @@ fn get_vcpkg_cache_path() -> Option<PathBuf> {
 }
 
 fn get_sbt_cache_path() -> Option<PathBuf> {
+    // Check SBT_IVY_HOME first (official system property, also works as env var)
+    if let Ok(ivy_home) = std::env::var("SBT_IVY_HOME") {
+        return Some(PathBuf::from(ivy_home).join("cache"));
+    }
+
     // sbt uses ivy2 for dependency cache
     #[cfg(windows)]
     {

@@ -8,6 +8,7 @@ jest.mock("@/lib/app-version", () => ({
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.versionInfo": "Version Info",
+    "about.versionInfoDesc": "Current and latest version status",
     "about.currentVersion": "Current Version",
     "about.latestVersion": "Latest Version",
     "about.upToDate": "Up to date",

@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardAction,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,16 +172,14 @@ export function ProviderHealthTab({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4" />
-              {t("providerDetail.healthCheck")}
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {t("providerDetail.healthCheckDesc")}
-            </CardDescription>
-          </div>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4" />
+          {t("providerDetail.healthCheck")}
+        </CardTitle>
+        <CardDescription>
+          {t("providerDetail.healthCheckDesc")}
+        </CardDescription>
+        <CardAction>
           <div className="flex items-center gap-2">
             {healthResult && (
               <Button
@@ -206,7 +205,7 @@ export function ProviderHealthTab({
               {t("providerDetail.runCheck")}
             </Button>
           </div>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {loadingHealth && !healthResult ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw } from "lucide-react";
 
@@ -36,7 +36,7 @@ export function ErrorAlert({ error, onRetry, onDismiss, t }: ErrorAlertProps) {
     >
       <AlertCircle className="h-4 w-4" />
       <AlertTitle className="flex items-center justify-between">
-        <span>{getErrorMessage(error)}</span>
+        <span>{t("about.errorTitle")}</span>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
@@ -58,6 +58,7 @@ export function ErrorAlert({ error, onRetry, onDismiss, t }: ErrorAlertProps) {
           </Button>
         </div>
       </AlertTitle>
+      <AlertDescription>{getErrorMessage(error)}</AlertDescription>
     </Alert>
   );
 }

@@ -5,6 +5,7 @@ import { UpdateBanner } from "./update-banner";
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.updateAvailable": "Update Available",
+    "about.updateBannerDesc": "A new version is available for download",
     "about.releaseNotes": "Release Notes",
     "about.downloadProgress": "Download progress",
     "about.installing": "Installing",

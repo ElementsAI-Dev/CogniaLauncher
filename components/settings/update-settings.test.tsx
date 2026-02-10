@@ -29,7 +29,7 @@ describe("UpdateSettings", () => {
     showNotifications: true,
   };
 
-  it("should render update settings card", () => {
+  it("should render update settings content", () => {
     render(
       <UpdateSettings
         appSettings={appSettings}
@@ -38,10 +38,8 @@ describe("UpdateSettings", () => {
       />,
     );
 
-    expect(screen.getByText("Updates")).toBeInTheDocument();
-    expect(
-      screen.getByText("Configure update checks and notifications"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Check on Start")).toBeInTheDocument();
   });
 
   it("should call onValueChange when toggles change", () => {

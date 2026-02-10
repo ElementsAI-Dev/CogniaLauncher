@@ -31,13 +31,11 @@ describe("PathsSettings", () => {
     t: mockT,
   };
 
-  it("should render paths settings card", () => {
+  it("should render paths settings content", () => {
     render(<PathsSettings {...defaultProps} />);
 
-    expect(screen.getByText("Paths")).toBeInTheDocument();
-    expect(
-      screen.getByText("Override default storage locations"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Root Directory")).toBeInTheDocument();
   });
 
   it("should display current path values", () => {

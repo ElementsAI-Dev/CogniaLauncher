@@ -13,7 +13,9 @@ jest.mock("sonner", () => ({
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.systemInfo": "System Information",
+    "about.systemInfoDesc": "Device, hardware, and runtime details",
     "about.systemInfoRetry": "Retry",
+    "about.errorTitle": "Error",
     "about.copySystemInfo": "Copy",
     "about.systemInfoFailed": "Failed to load system info",
     "about.deviceInfo": "Device",

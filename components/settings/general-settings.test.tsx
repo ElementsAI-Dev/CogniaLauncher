@@ -43,13 +43,11 @@ describe("GeneralSettings", () => {
     jest.clearAllMocks();
   });
 
-  it("should render general settings card", () => {
+  it("should render general settings content", () => {
     render(<GeneralSettings {...defaultProps} />);
 
-    expect(screen.getByText("General")).toBeInTheDocument();
-    expect(
-      screen.getByText("General application settings"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Parallel Downloads")).toBeInTheDocument();
   });
 
   it("should render parallel downloads setting", () => {

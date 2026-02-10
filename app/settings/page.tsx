@@ -4,6 +4,13 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -814,40 +821,42 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
   const hasBeenThrough = completed || skipped;
 
   return (
-    <div className="rounded-lg border bg-card p-6 space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-lg font-semibold">{t('settings.onboardingTitle')}</h3>
-        <p className="text-sm text-muted-foreground">{t('settings.onboardingDesc')}</p>
-      </div>
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button
-          variant="outline"
-          onClick={() => {
-            resetOnboarding();
-            toast.success(t('settings.onboardingResetSuccess'));
-          }}
-        >
-          <RotateCcw className="h-4 w-4 mr-2" />
-          {t('settings.onboardingRerun')}
-        </Button>
-        {!tourCompleted && hasBeenThrough && (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">{t('settings.onboardingTitle')}</CardTitle>
+        <CardDescription>{t('settings.onboardingDesc')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button
             variant="outline"
             onClick={() => {
-              startTour();
-              toast.info(t('settings.onboardingTourStarted'));
+              resetOnboarding();
+              toast.success(t('settings.onboardingResetSuccess'));
             }}
           >
-            {t('settings.onboardingStartTour')}
+            <RotateCcw className="h-4 w-4 mr-2" />
+            {t('settings.onboardingRerun')}
           </Button>
+          {!tourCompleted && hasBeenThrough && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                startTour();
+                toast.info(t('settings.onboardingTourStarted'));
+              }}
+            >
+              {t('settings.onboardingStartTour')}
+            </Button>
+          )}
+        </div>
+        {hasBeenThrough && (
+          <p className="text-xs text-muted-foreground">
+            {completed ? t('settings.onboardingStatusCompleted') : t('settings.onboardingStatusSkipped')}
+            {tourCompleted ? ` · ${t('settings.onboardingTourDone')}` : ''}
+          </p>
         )}
-      </div>
-      {hasBeenThrough && (
-        <p className="text-xs text-muted-foreground">
-          {completed ? t('settings.onboardingStatusCompleted') : t('settings.onboardingStatusSkipped')}
-          {tourCompleted ? ` · ${t('settings.onboardingTourDone')}` : ''}
-        </p>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

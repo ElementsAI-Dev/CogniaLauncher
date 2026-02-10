@@ -1,6 +1,7 @@
 'use client';
 
 import { Palette, Sun, Moon, Monitor, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 
@@ -40,11 +41,12 @@ export function ThemeStep({ theme, setTheme, t }: ThemeStepProps) {
             <Label
               key={item.value}
               htmlFor={`theme-${item.value}`}
-              className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all cursor-pointer font-normal ${
-                isActive
-                  ? 'border-primary bg-primary/5 shadow-sm'
-                  : 'border-transparent bg-muted/30 hover:bg-muted/50'
-              }`}
+              className={cn(
+              'relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 transition-all cursor-pointer font-normal',
+              isActive
+                ? 'border-primary bg-primary/5 shadow-sm'
+                : 'border-transparent bg-muted/30 hover:bg-muted/50',
+            )}
             >
               <RadioGroupItem value={item.value} id={`theme-${item.value}`} className="sr-only" />
               {isActive && (

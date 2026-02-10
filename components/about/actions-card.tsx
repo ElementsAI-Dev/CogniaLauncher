@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { openExternal } from "@/lib/tauri";
 import {
@@ -40,15 +40,16 @@ export function ActionsCard({
           <Settings className="h-5 w-5 text-foreground" aria-hidden="true" />
           <span id="actions-heading">{t("about.actions")}</span>
         </CardTitle>
+        <CardDescription>{t("about.actionsDesc")}</CardDescription>
       </CardHeader>
 
       <CardContent>
         <div className="flex flex-wrap gap-3">
           {/* Check for Updates */}
           <Button
+            variant="default"
             onClick={onCheckUpdate}
             disabled={loading}
-            className="bg-blue-500 hover:bg-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             <RefreshCw
               className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}

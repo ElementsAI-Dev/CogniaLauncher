@@ -53,6 +53,7 @@ jest.mock("@/lib/constants/about", () => ({
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.buildDependencies": "Build Dependencies",
+    "about.buildDependenciesDesc": "Core frameworks and libraries used to build this application",
     "about.openInNewTab": "opens in new tab",
   };
   return translations[key] || key;

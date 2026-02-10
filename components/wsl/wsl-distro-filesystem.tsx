@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   FolderOpen,
   File,
@@ -33,6 +34,7 @@ import {
   Home,
   Copy,
   FileSymlink,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslExecResult } from '@/types/tauri';
@@ -236,9 +238,10 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
 
         {/* Error */}
         {error && (
-          <div className="text-xs text-destructive bg-destructive/10 rounded-md p-2">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {/* Loading */}

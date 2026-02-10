@@ -1,15 +1,8 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { SwitchSettingItem } from "./setting-item";
 
 interface SecuritySettingsProps {
@@ -26,15 +19,7 @@ export function SecuritySettings({
   const allowHttp = localConfig["security.allow_http"] === "true";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Shield className="h-5 w-5" aria-hidden="true" />
-          {t("settings.security")}
-        </CardTitle>
-        <CardDescription>{t("settings.securityDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <SwitchSettingItem
           id="allow-http"
           label={t("settings.allowHttp")}
@@ -72,7 +57,6 @@ export function SecuritySettings({
             onValueChange("security.allow_self_signed", checked.toString())
           }
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }

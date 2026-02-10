@@ -266,7 +266,7 @@ export function DependencyTree({
         {loading && (
           <div className="space-y-3 py-4">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
               {t("packages.resolvingDependencies")}
             </div>
             {[1, 2, 3, 4].map((i) => (

@@ -24,13 +24,11 @@ describe("ProviderSettings", () => {
     t: mockT,
   };
 
-  it("should render provider settings card", () => {
+  it("should render provider settings content", () => {
     render(<ProviderSettings {...defaultProps} />);
 
-    expect(screen.getByText("Provider Settings")).toBeInTheDocument();
-    expect(
-      screen.getByText("Control provider availability globally"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Disabled Providers")).toBeInTheDocument();
   });
 
   it("should display current disabled providers", () => {

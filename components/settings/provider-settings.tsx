@@ -1,13 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
@@ -53,12 +46,7 @@ export function ProviderSettings({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.providerSettings")}</CardTitle>
-        <CardDescription>{t("settings.providerSettingsDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div className="space-y-3">
         <SettingItem
           id="disabled-providers"
           label={t("settings.disabledProviders")}
@@ -77,7 +65,6 @@ export function ProviderSettings({
             {t("settings.disabledProvidersHint")}
           </AlertDescription>
         </Alert>
-      </CardContent>
-    </Card>
+    </div>
   );
 }

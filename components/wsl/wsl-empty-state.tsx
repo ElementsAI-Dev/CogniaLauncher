@@ -1,5 +1,6 @@
 'use client';
 
+import { Card, CardContent } from '@/components/ui/card';
 import { Terminal } from 'lucide-react';
 
 interface WslEmptyStateProps {
@@ -8,14 +9,16 @@ interface WslEmptyStateProps {
 
 export function WslEmptyState({ t }: WslEmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mb-4">
-        <Terminal className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="text-lg font-semibold">{t('wsl.noDistros')}</h3>
-      <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-        {t('wsl.noDistrosDesc')}
-      </p>
-    </div>
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+        <div className="rounded-full bg-muted p-4 mb-4">
+          <Terminal className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">{t('wsl.noDistros')}</h3>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          {t('wsl.noDistrosDesc')}
+        </p>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -50,6 +50,9 @@ export function UpdateBanner({
             v{updateInfo.latest_version}
           </Badge>
         </CardTitle>
+        <CardDescription className="text-blue-700 dark:text-blue-300">
+          {t("about.updateBannerDesc")}
+        </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -78,9 +81,9 @@ export function UpdateBanner({
         )}
 
         <Button
+          variant="default"
           onClick={onUpdate}
           disabled={updating || !isDesktop}
-          className="bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           aria-describedby="update-description"
         >
           <Download className="h-4 w-4 mr-2" aria-hidden="true" />

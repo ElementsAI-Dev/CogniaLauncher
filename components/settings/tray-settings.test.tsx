@@ -28,7 +28,7 @@ describe("TraySettings", () => {
     showNotifications: true,
   };
 
-  it("should render tray settings card", () => {
+  it("should render tray settings content", () => {
     render(
       <TraySettings
         appSettings={appSettings}
@@ -37,10 +37,8 @@ describe("TraySettings", () => {
       />,
     );
 
-    expect(screen.getByText("System Tray")).toBeInTheDocument();
-    expect(
-      screen.getByText("Configure system tray behavior"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Minimize to Tray")).toBeInTheDocument();
   });
 
   it("should render minimize to tray setting", () => {

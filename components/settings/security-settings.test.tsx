@@ -33,13 +33,11 @@ describe("SecuritySettings", () => {
     jest.clearAllMocks();
   });
 
-  it("should render security settings card", () => {
+  it("should render security settings content", () => {
     render(<SecuritySettings {...defaultProps} />);
 
-    expect(screen.getByText("Security")).toBeInTheDocument();
-    expect(
-      screen.getByText("Security and verification settings"),
-    ).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Allow HTTP")).toBeInTheDocument();
   });
 
   it("should render allow HTTP toggle", () => {

@@ -44,6 +44,7 @@ import {
   ArrowDownToLine,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useCallback, useMemo, useState } from "react";
 
 const LEVEL_COLORS: Record<LogLevel, string> = {
@@ -265,9 +266,9 @@ export function LogToolbar({
               <Filter className="h-4 w-4" />
               <span className="hidden sm:inline">{t("logs.filter")}</span>
               {filter.levels.length < ALL_LEVELS.length && (
-                <span className="ml-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+                <Badge className="ml-0.5 h-5 w-5 p-0 text-[10px]">
                   {filter.levels.length}
-                </span>
+                </Badge>
               )}
             </Button>
           </DropdownMenuTrigger>
@@ -284,7 +285,7 @@ export function LogToolbar({
                 className="gap-2"
               >
                 <span
-                  className={`font-mono text-xs font-semibold ${LEVEL_COLORS[level]}`}
+                  className={cn("font-mono text-xs font-semibold", LEVEL_COLORS[level])}
                 >
                   {level.toUpperCase()}
                 </span>
@@ -307,9 +308,9 @@ export function LogToolbar({
         >
           <span className="hidden sm:inline">{t("logs.advanced")}</span>
           {activeFiltersCount > 0 && (
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
+            <Badge className="h-5 w-5 p-0 text-[10px]">
               {activeFiltersCount}
-            </span>
+            </Badge>
           )}
         </Button>
 
@@ -354,7 +355,7 @@ export function LogToolbar({
                   }
                 >
                   <ArrowDownToLine
-                    className={`h-4 w-4 ${autoScroll ? "text-primary" : "text-muted-foreground"}`}
+                    className={cn("h-4 w-4", autoScroll ? "text-primary" : "text-muted-foreground")}
                   />
                 </Toggle>
               </TooltipTrigger>

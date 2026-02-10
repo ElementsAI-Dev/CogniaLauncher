@@ -1,13 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
@@ -80,12 +72,7 @@ export function PathsSettings({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.paths")}</CardTitle>
-        <CardDescription>{t("settings.pathsDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <PathInputItem
           id="paths-root"
           label={t("settings.pathRoot")}
@@ -130,8 +117,7 @@ export function PathsSettings({
           externalError={errors["paths.environments"]}
           t={t}
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -389,7 +375,6 @@ function PathInputItem({
   };
 
   return (
-    <TooltipProvider>
       <div className="space-y-2 py-2">
         <div className="space-y-0.5">
           <Label htmlFor={id} className="flex items-center gap-1.5">
@@ -559,6 +544,5 @@ function PathInputItem({
           </div>
         )}
       </div>
-    </TooltipProvider>
   );
 }

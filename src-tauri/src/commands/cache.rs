@@ -1761,9 +1761,15 @@ pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, St
 /// Get environment variables checked for a provider's cache path
 fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<String> {
     match provider {
+        external::ExternalCacheProvider::Npm => vec!["npm_config_cache".into()],
+        external::ExternalCacheProvider::Pnpm => vec!["PNPM_STORE_DIR".into()],
+        external::ExternalCacheProvider::Yarn => vec!["YARN_CACHE_FOLDER".into()],
+        external::ExternalCacheProvider::Pip => vec!["PIP_CACHE_DIR".into()],
         external::ExternalCacheProvider::Uv => vec!["UV_CACHE_DIR".into()],
         external::ExternalCacheProvider::Cargo => vec!["CARGO_HOME".into()],
+        external::ExternalCacheProvider::Bundler => vec!["BUNDLE_PATH".into()],
         external::ExternalCacheProvider::Go => vec!["GOMODCACHE".into(), "GOPATH".into()],
+        external::ExternalCacheProvider::Dotnet => vec!["NUGET_PACKAGES".into()],
         external::ExternalCacheProvider::Composer => vec!["COMPOSER_CACHE_DIR".into()],
         external::ExternalCacheProvider::Poetry => vec!["POETRY_CACHE_DIR".into()],
         external::ExternalCacheProvider::Conda => vec!["CONDA_PKGS_DIRS".into()],
@@ -1779,6 +1785,11 @@ fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<Strin
         external::ExternalCacheProvider::Scoop => vec!["SCOOP".into()],
         #[cfg(windows)]
         external::ExternalCacheProvider::Chocolatey => vec!["ChocolateyInstall".into()],
+        external::ExternalCacheProvider::Flutter => vec!["PUB_CACHE".into()],
+        external::ExternalCacheProvider::Cypress => vec!["CYPRESS_CACHE_FOLDER".into()],
+        external::ExternalCacheProvider::Electron => vec!["ELECTRON_CACHE".into()],
+        external::ExternalCacheProvider::Vcpkg => vec!["VCPKG_DEFAULT_BINARY_CACHE".into()],
+        external::ExternalCacheProvider::Sbt => vec!["SBT_IVY_HOME".into()],
         _ => vec![],
     }
 }

@@ -4,6 +4,7 @@ import { LicenseCard } from "./license-card";
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.licenseCertificates": "License & Certificates",
+    "about.licenseCertificatesDesc": "Open source license and copyright information",
     "about.mitLicense": "MIT License",
     "about.mitLicenseDesc": "Open source license",
     "about.copyright": "Copyright",

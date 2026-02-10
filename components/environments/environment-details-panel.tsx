@@ -171,10 +171,9 @@ export function EnvironmentDetailsPanel({
     try {
       await onUninstall(version);
       toast.success(
-        t("environments.details.versionUninstalled").replace(
-          "{version}",
-          version,
-        ),
+        t("environments.details.versionUninstalled", {
+                  version,
+                })
       );
     } catch (err) {
       toast.error(String(err));
@@ -196,10 +195,9 @@ export function EnvironmentDetailsPanel({
               <div>
                 <SheetTitle className="text-xl">{env.env_type}</SheetTitle>
                 <SheetDescription>
-                  {t("environments.details.subtitle").replace(
-                    "{provider}",
-                    env.provider,
-                  )}
+                  {t("environments.details.subtitle", {
+                    provider: env.provider,
+                  })}
                 </SheetDescription>
               </div>
             </div>
@@ -342,9 +340,10 @@ export function EnvironmentDetailsPanel({
                                   {t("common.confirm")}
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  {t("environments.details.confirmUninstall")
-                                    .replace("{type}", env.env_type)
-                                    .replace("{version}", v.version)}
+                                  {t("environments.details.confirmUninstall", {
+                                    type: env.env_type,
+                                    version: v.version,
+                                  })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

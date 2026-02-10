@@ -37,11 +37,11 @@ describe("SystemInfo", () => {
     t: mockT,
   };
 
-  it("should render system info card", () => {
+  it("should render system info content", () => {
     render(<SystemInfo {...defaultProps} />);
 
-    expect(screen.getByText("System Information")).toBeInTheDocument();
-    expect(screen.getByText("Current system details")).toBeInTheDocument();
+    // Title/description are now provided by parent CollapsibleSection
+    expect(screen.getByText("Operating System")).toBeInTheDocument();
   });
 
   it("should display platform information", () => {

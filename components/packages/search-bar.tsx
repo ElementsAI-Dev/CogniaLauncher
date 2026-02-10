@@ -13,6 +13,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
   Search,
   X,
   Loader2,
@@ -90,7 +95,6 @@ export function SearchBar({
   const [sortBy, setSortBy] = useState<string>("relevance");
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const { t } = useLocale();
 
   const debouncedQuery = useDebounce(query, 300);
@@ -119,19 +123,6 @@ export function SearchBar({
     return undefined;
   }, [debouncedQuery, onGetSuggestions]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   const saveToHistory = useCallback(
     (searchQuery: string) => {
@@ -228,46 +219,54 @@ export function SearchBar({
     <div className="space-y-3">
       <div className="flex gap-2">
         {/* Main Search Input */}
-        <div className="flex-1 relative" ref={dropdownRef}>
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            ref={inputRef}
-            placeholder={t("packages.searchPlaceholder")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleSearch();
-              } else if (e.key === "Escape") {
-                setShowDropdown(false);
-              }
-            }}
-            onFocus={() => setShowDropdown(true)}
-            className="h-10 pl-9 pr-9 bg-background border-border"
-          />
-          {query && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setQuery("");
-                    inputRef.current?.focus();
-                  }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
-                  aria-label={t("common.clear")}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t("common.clear")}</TooltipContent>
-            </Tooltip>
-          )}
+        <Popover open={showDropdown} onOpenChange={setShowDropdown}>
+          <PopoverAnchor asChild>
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                ref={inputRef}
+                placeholder={t("packages.searchPlaceholder")}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSearch();
+                  } else if (e.key === "Escape") {
+                    setShowDropdown(false);
+                  }
+                }}
+                onFocus={() => setShowDropdown(true)}
+                className="h-10 pl-9 pr-9 bg-background border-border"
+              />
+              {query && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setQuery("");
+                        inputRef.current?.focus();
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground hover:text-foreground"
+                      aria-label={t("common.clear")}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t("common.clear")}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </PopoverAnchor>
 
           {/* Suggestions & History Dropdown */}
-          {showDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg z-50">
+          <PopoverContent
+            className="p-0 w-[var(--radix-popover-trigger-width)]"
+            align="start"
+            sideOffset={4}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
             <ScrollArea className="max-h-[400px]">
               {/* Suggestions */}
               {isPending && (
@@ -339,9 +338,8 @@ export function SearchBar({
                   </div>
                 )}
             </ScrollArea>
-            </div>
-          )}
-        </div>
+          </PopoverContent>
+        </Popover>
 
         {/* Provider Filter */}
         <DropdownMenu>

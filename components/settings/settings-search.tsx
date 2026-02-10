@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Kbd } from "@/components/ui/kbd";
 import { Search, X, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,8 @@ export function SettingsSearch({
 
       {/* Search Results */}
       {isSearching && (
-        <div className="rounded-lg border bg-card p-3 shadow-sm">
+        <Card className="shadow-sm">
+          <CardContent className="p-3">
           {totalResults > 0 ? (
             <>
               <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
@@ -167,7 +169,8 @@ export function SettingsSearch({
               {t("settings.search.noResults")}
             </div>
           )}
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

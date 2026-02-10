@@ -9,6 +9,7 @@ jest.mock("@/lib/tauri", () => ({
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.actions": "Actions",
+    "about.actionsDesc": "Quick links and common operations",
     "about.checkForUpdates": "Check for Updates",
     "about.changelog": "Changelog",
     "about.documentation": "Documentation",

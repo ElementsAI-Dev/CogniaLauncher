@@ -197,15 +197,20 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
             <Network className="h-4 w-4 text-muted-foreground" />
             {t('wsl.detail.networkInfo')}
           </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={refresh}
-            disabled={loading}
-            className="h-8 w-8"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={refresh}
+                disabled={loading}
+                className="h-8 w-8"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('common.refresh')}</TooltipContent>
+          </Tooltip>
         </CardHeader>
         <CardContent>
           {!isRunning && !loaded && (

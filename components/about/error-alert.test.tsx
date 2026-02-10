@@ -4,6 +4,7 @@ import { ErrorAlert } from "./error-alert";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
+    "about.errorTitle": "Error",
     "about.networkError": "Network error",
     "about.timeoutError": "Timeout error",
     "about.updateCheckFailed": "Update check failed",
@@ -35,6 +36,7 @@ describe("ErrorAlert", () => {
   it("renders alert when error is present", () => {
     render(<ErrorAlert {...defaultProps} />);
     expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("Error")).toBeInTheDocument();
   });
 
   it("maps network_error to translated message", () => {

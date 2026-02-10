@@ -1,6 +1,7 @@
 'use client';
 
 import { Server, Check, Info } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
@@ -53,11 +54,12 @@ export function MirrorsStep({ t }: MirrorsStepProps) {
           <Label
             key={item.value}
             htmlFor={`mirror-${item.value}`}
-            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal ${
+            className={cn(
+              'flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal',
               preset === item.value
                 ? 'border-primary bg-primary/5 shadow-sm'
-                : 'border-transparent bg-muted/30 hover:bg-muted/50'
-            }`}
+                : 'border-transparent bg-muted/30 hover:bg-muted/50',
+            )}
           >
             <RadioGroupItem value={item.value} id={`mirror-${item.value}`} className="sr-only" />
             <div className="flex-1 min-w-0">

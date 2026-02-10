@@ -1,6 +1,7 @@
 'use client';
 
 import { Globe, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import type { Locale } from '@/lib/i18n';
@@ -37,11 +38,12 @@ export function LanguageStep({ locale, setLocale, t }: LanguageStepProps) {
           <Label
             key={lang.value}
             htmlFor={`lang-${lang.value}`}
-            className={`flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal ${
+            className={cn(
+              'flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal',
               locale === lang.value
                 ? 'border-primary bg-primary/5 shadow-sm'
-                : 'border-transparent bg-muted/30 hover:bg-muted/50'
-            }`}
+                : 'border-transparent bg-muted/30 hover:bg-muted/50',
+            )}
           >
             <RadioGroupItem value={lang.value} id={`lang-${lang.value}`} className="sr-only" />
             <span className="text-3xl">{lang.flag}</span>

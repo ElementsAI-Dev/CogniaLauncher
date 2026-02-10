@@ -1,18 +1,9 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
-import { Palette } from "lucide-react";
 import { AccentColorPicker } from "./accent-color-picker";
-import { SwitchSettingItem } from "./setting-item";
-import { SelectSettingItem } from "./setting-item";
+import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
 import type { AccentColor, ChartColorTheme } from "@/lib/theme/types";
 
 interface AppearanceSettingsProps {
@@ -43,15 +34,7 @@ export function AppearanceSettings({
   t,
 }: AppearanceSettingsProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Palette className="h-5 w-5" aria-hidden="true" />
-          {t("settings.appearance")}
-        </CardTitle>
-        <CardDescription>{t("settings.appearanceDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
         <SelectSettingItem
           id="theme-select"
           label={t("settings.theme")}
@@ -122,7 +105,6 @@ export function AppearanceSettings({
           checked={reducedMotion}
           onCheckedChange={setReducedMotion}
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }

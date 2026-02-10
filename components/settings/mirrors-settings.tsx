@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,9 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { Globe, ChevronDown } from "lucide-react";
-import { SettingItem } from "./setting-item";
-import { SwitchSettingItem } from "./setting-item";
+import { ChevronDown } from "lucide-react";
+import { SettingItem, SwitchSettingItem } from "./setting-item";
 
 interface MirrorsSettingsProps {
   localConfig: Record<string, string>;
@@ -114,18 +106,8 @@ export function MirrorsSettings({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5" aria-hidden="true" />
-              {t("settings.mirrors")}
-            </CardTitle>
-            <CardDescription className="mt-1.5">
-              {t("settings.mirrorsDesc")}
-            </CardDescription>
-          </div>
+    <div className="space-y-1">
+      <div className="flex justify-end mb-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
@@ -148,9 +130,7 @@ export function MirrorsSettings({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-1">
+      </div>
         <SettingItem
           id="mirrors-npm"
           label={t("settings.npmRegistry")}
@@ -194,7 +174,6 @@ export function MirrorsSettings({
           error={errors["mirrors.go"]}
         />
         {renderAdvancedOptions("mirrors.go")}
-      </CardContent>
-    </Card>
+    </div>
   );
 }

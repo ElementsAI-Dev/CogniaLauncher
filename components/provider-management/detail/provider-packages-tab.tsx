@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardAction,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -367,19 +368,17 @@ export function ProviderPackagesTab({
       {/* Installed Packages Section */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Package className="h-4 w-4" />
-                {t("providerDetail.installedPackages")}
-                <Badge variant="secondary" className="ml-1">
-                  {installedPackages.length}
-                </Badge>
-              </CardTitle>
-              <CardDescription className="mt-1">
-                {t("providerDetail.installedPackagesDesc")}
-              </CardDescription>
-            </div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            {t("providerDetail.installedPackages")}
+            <Badge variant="secondary" className="ml-1">
+              {installedPackages.length}
+            </Badge>
+          </CardTitle>
+          <CardDescription>
+            {t("providerDetail.installedPackagesDesc")}
+          </CardDescription>
+          <CardAction>
             <div className="flex items-center gap-2">
               {onBatchUninstall && selectedPackages.size > 0 && (
                 <Button
@@ -410,7 +409,7 @@ export function ProviderPackagesTab({
                 {t("providers.refresh")}
               </Button>
             </div>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {installedPackages.length > 5 && (

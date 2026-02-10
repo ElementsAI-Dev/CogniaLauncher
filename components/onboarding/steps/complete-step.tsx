@@ -14,7 +14,7 @@ interface CompleteStepProps {
 export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProps) {
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
-      <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-green-100 text-green-600 dark:bg-green-950/50 dark:text-green-400">
+      <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-500">
         <PartyPopper className="h-10 w-10" />
       </div>
       <div className="space-y-2">

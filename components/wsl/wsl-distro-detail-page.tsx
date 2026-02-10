@@ -6,6 +6,7 @@ import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { PageHeader } from '@/components/layout/page-header';
+import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -54,8 +55,6 @@ import {
   UserCog,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent } from '@/components/ui/card';
 import type { WslDistroStatus } from '@/types/tauri';
 
 interface WslDistroDetailPageProps {
@@ -228,32 +227,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
 
   // Loading state
   if (available === null || (loading && distros.length === 0)) {
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-4 w-16" />
-          <Skeleton className="h-4 w-4" />
-          <Skeleton className="h-4 w-32" />
-        </div>
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-12 w-12 rounded-xl" />
-          <div className="space-y-2">
-            <Skeleton className="h-7 w-48" />
-            <Skeleton className="h-4 w-72" />
-          </div>
-        </div>
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-4 w-20 mb-2" />
-                <Skeleton className="h-6 w-32" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton variant="detail" />;
   }
 
   // Distro not found

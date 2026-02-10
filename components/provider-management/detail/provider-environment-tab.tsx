@@ -7,6 +7,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardAction,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,7 @@ import type {
   VersionInfo,
 } from "@/types/tauri";
 import * as tauri from "@/lib/tauri";
-import { cn } from "@/lib/utils";
+import { cn, formatSize } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface ProviderEnvironmentTabProps {
@@ -56,18 +57,6 @@ interface ProviderEnvironmentTabProps {
   loadingEnvironment: boolean;
   onRefreshEnvironment: () => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-function formatBytes(bytes: number | null): string {
-  if (bytes === null || bytes === 0) return "-";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let size = bytes;
-  while (size >= 1024 && i < units.length - 1) {
-    size /= 1024;
-    i++;
-  }
-  return `${size.toFixed(1)} ${units[i]}`;
 }
 
 export function ProviderEnvironmentTab({
@@ -161,18 +150,16 @@ export function ProviderEnvironmentTab({
       {/* Current State Overview */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Layers className="h-4 w-4" />
-                {t("providerDetail.environmentOverview")}
-              </CardTitle>
-              {environmentProviderInfo && (
-                <CardDescription className="mt-1">
-                  {environmentProviderInfo.description}
-                </CardDescription>
-              )}
-            </div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            {t("providerDetail.environmentOverview")}
+          </CardTitle>
+          {environmentProviderInfo && (
+            <CardDescription>
+              {environmentProviderInfo.description}
+            </CardDescription>
+          )}
+          <CardAction>
             <Button
               variant="outline"
               size="sm"
@@ -186,7 +173,7 @@ export function ProviderEnvironmentTab({
               )}
               {t("providers.refresh")}
             </Button>
-          </div>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {loadingEnvironment && !environmentInfo ? (
@@ -291,7 +278,7 @@ export function ProviderEnvironmentTab({
                                 {ver.install_path || "-"}
                               </TableCell>
                               <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                                {formatBytes(ver.size)}
+                                {formatSize(ver.size, "-")}
                               </TableCell>
                               <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
                                 {ver.installed_at

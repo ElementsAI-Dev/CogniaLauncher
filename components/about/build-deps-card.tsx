@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Blocks } from "lucide-react";
 import { BUILD_DEPENDENCIES } from "@/lib/constants/about";
@@ -62,6 +62,7 @@ export function BuildDepsCard({ t }: BuildDepsCardProps) {
           <Blocks className="h-5 w-5 text-foreground" aria-hidden="true" />
           <span id="build-deps-heading">{t("about.buildDependencies")}</span>
         </CardTitle>
+        <CardDescription>{t("about.buildDependenciesDesc")}</CardDescription>
       </CardHeader>
 
       <CardContent>

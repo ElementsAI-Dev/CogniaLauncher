@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -169,6 +169,7 @@ export function SystemInfoCard({
           <Monitor className="h-5 w-5 text-foreground" aria-hidden="true" />
           <span id="system-info-heading">{t("about.systemInfo")}</span>
         </CardTitle>
+        <CardDescription>{t("about.systemInfoDesc")}</CardDescription>
         <CardAction>
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -216,7 +217,7 @@ export function SystemInfoCard({
           <Alert variant="destructive" aria-live="assertive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle className="flex items-center justify-between">
-              <span>{t("about.systemInfoFailed")}</span>
+              <span>{t("about.errorTitle")}</span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -227,6 +228,7 @@ export function SystemInfoCard({
                 {t("common.retry")}
               </Button>
             </AlertTitle>
+            <AlertDescription>{t("about.systemInfoFailed")}</AlertDescription>
           </Alert>
         )}
 

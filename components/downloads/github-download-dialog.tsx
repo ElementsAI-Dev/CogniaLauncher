@@ -18,6 +18,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useGitHubDownloads } from "@/hooks/use-github-downloads";
 import {
@@ -49,7 +54,6 @@ import {
   Star,
   KeyRound,
   ChevronDown,
-  ChevronRight,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -247,17 +251,18 @@ export function GitHubDownloadDialog({
           />
 
           {/* Authentication Section */}
-          <div className="border rounded-md">
-            <button
-              type="button"
-              onClick={() => setShowAuth(!showAuth)}
-              className="flex items-center gap-2 w-full p-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {showAuth ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
+          <Collapsible
+            open={showAuth}
+            onOpenChange={setShowAuth}
+            className="border rounded-md"
+          >
+            <CollapsibleTrigger className="flex items-center gap-2 w-full p-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  !showAuth && "-rotate-90",
+                )}
+              />
               <KeyRound className="h-4 w-4" />
               {t("downloads.auth.title")}
               {token.trim() && (
@@ -265,8 +270,8 @@ export function GitHubDownloadDialog({
                   {t("downloads.auth.configured")}
                 </Badge>
               )}
-            </button>
-            {showAuth && (
+            </CollapsibleTrigger>
+            <CollapsibleContent>
               <div className="px-3 pb-3 space-y-2">
                 <p className="text-xs text-muted-foreground">
                   {t("downloads.auth.githubHint")}
@@ -280,22 +285,24 @@ export function GitHubDownloadDialog({
                       placeholder={t("downloads.auth.tokenPlaceholder")}
                       className="pr-10 font-mono text-sm"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
                       onClick={() => setShowToken(!showToken)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
                       {showToken ? (
                         <EyeOff className="h-4 w-4" />
                       ) : (
                         <Eye className="h-4 w-4" />
                       )}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            </CollapsibleContent>
+          </Collapsible>
 
           {error && (
             <Alert variant="destructive">

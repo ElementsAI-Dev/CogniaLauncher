@@ -113,13 +113,15 @@ export function PackageList({
               className="h-9 pl-9 pr-9"
             />
             {searchQuery && (
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 aria-label={t("common.clear")}
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             )}
           </div>
         )}

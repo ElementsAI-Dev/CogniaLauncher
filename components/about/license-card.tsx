@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Scale, ShieldCheck, Copyright } from "lucide-react";
@@ -20,6 +20,7 @@ export function LicenseCard({ t }: LicenseCardProps) {
           <Scale className="h-5 w-5 text-foreground" aria-hidden="true" />
           <span id="license-heading">{t("about.licenseCertificates")}</span>
         </CardTitle>
+        <CardDescription>{t("about.licenseCertificatesDesc")}</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-3">

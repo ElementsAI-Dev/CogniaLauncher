@@ -1,12 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -14,7 +7,6 @@ import {
   TableCell,
   TableRow,
 } from "@/components/ui/table";
-import { Server } from "lucide-react";
 import type { PlatformInfo } from "@/lib/tauri";
 
 interface SystemInfoProps {
@@ -84,15 +76,7 @@ export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoPr
   ];
 
   return (
-    <Card role="region" aria-labelledby="system-info-heading">
-      <CardHeader>
-        <CardTitle id="system-info-heading" className="flex items-center gap-2">
-          <Server className="h-5 w-5" aria-hidden="true" />
-          {t("settings.systemInfo")}
-        </CardTitle>
-        <CardDescription>{t("settings.systemInfoDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div>
         <Table>
           <TableBody>
             {rows.map((row) => (
@@ -111,7 +95,6 @@ export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoPr
             ))}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </div>
   );
 }

@@ -26,37 +26,10 @@ import {
   MoreHorizontal,
   RotateCcw,
   Settings2,
-  Network,
-  Shield,
-  Server,
-  Palette,
-  RefreshCw,
-  Monitor,
-  FolderOpen,
-  Package,
-  Info,
-  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/lib/constants/settings-registry";
-
-type TranslateFunction = (
-  key: string,
-  params?: Record<string, string | number>,
-) => string;
-
-const SECTION_ICONS: Record<string, LucideIcon> = {
-  Settings2,
-  Network,
-  Shield,
-  Server,
-  Palette,
-  RefreshCw,
-  Monitor,
-  FolderOpen,
-  Package,
-  Info,
-};
+import { SECTION_ICONS, type TranslateFunction } from "./shared";
 
 interface CollapsibleSectionProps {
   id: SettingsSection;

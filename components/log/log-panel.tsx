@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LogEntry } from "./log-entry";
 import { LogToolbar } from "./log-toolbar";
@@ -12,18 +13,19 @@ import { FileText } from "lucide-react";
 function EmptyState() {
   const { t } = useLocale();
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[280px] text-muted-foreground px-4">
-      <div className="relative">
-        <div className="absolute inset-0 bg-primary/5 rounded-full blur-2xl scale-150" />
-        <FileText className="relative h-16 w-16 mb-6 text-muted-foreground/40" />
-      </div>
-      <p className="text-base font-medium text-foreground/70">
-        {t("logs.noLogs")}
-      </p>
-      <p className="text-sm mt-2 text-center max-w-[280px]">
-        {t("logs.noLogsDescription")}
-      </p>
-    </div>
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+        <div className="rounded-full bg-muted p-4 mb-4">
+          <FileText className="h-8 w-8 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">
+          {t("logs.noLogs")}
+        </h3>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          {t("logs.noLogsDescription")}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

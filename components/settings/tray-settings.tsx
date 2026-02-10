@@ -1,16 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { SwitchSettingItem } from "./setting-item";
-import { SelectSettingItem } from "./setting-item";
+import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
 import type { AppSettings } from "@/lib/stores/settings";
 import type { TrayClickBehavior } from "@/lib/tauri";
 import {
@@ -82,12 +74,7 @@ export function TraySettings({
   );
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.tray")}</CardTitle>
-        <CardDescription>{t("settings.trayDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-1">
+    <div className="space-y-1">
         <SwitchSettingItem
           id="minimize-to-tray"
           label={t("settings.minimizeToTray")}
@@ -141,7 +128,6 @@ export function TraySettings({
           disabled={!isTauri()}
           triggerClassName="w-[180px]"
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }

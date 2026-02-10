@@ -1,6 +1,7 @@
 'use client';
 
-import { Layers, Sparkles } from 'lucide-react';
+import { Layers, Sparkles, Globe, Package, Zap } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface WelcomeStepProps {
@@ -22,29 +23,29 @@ export function WelcomeStep({ t }: WelcomeStepProps) {
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-lg pt-2">
-        {[
+        {([
           {
-            icon: '🌐',
+            Icon: Globe,
             titleKey: 'onboarding.welcomeFeature1Title',
             descKey: 'onboarding.welcomeFeature1Desc',
           },
           {
-            icon: '📦',
+            Icon: Package,
             titleKey: 'onboarding.welcomeFeature2Title',
             descKey: 'onboarding.welcomeFeature2Desc',
           },
           {
-            icon: '⚡',
+            Icon: Zap,
             titleKey: 'onboarding.welcomeFeature3Title',
             descKey: 'onboarding.welcomeFeature3Desc',
           },
-        ].map((feature) => (
+        ] as { Icon: LucideIcon; titleKey: string; descKey: string }[]).map((feature) => (
           <Card
             key={feature.titleKey}
             className="flex flex-col items-center gap-2 py-4 bg-muted/30"
           >
             <CardContent className="flex flex-col items-center gap-2 px-4 py-0">
-              <span className="text-2xl">{feature.icon}</span>
+              <feature.Icon className="h-6 w-6 text-primary" />
               <span className="text-sm font-medium">{t(feature.titleKey)}</span>
               <span className="text-xs text-muted-foreground text-center">
                 {t(feature.descKey)}

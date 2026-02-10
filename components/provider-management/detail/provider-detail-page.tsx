@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
 import {
   ProviderDetailHeader,
   ProviderOverviewTab,
@@ -117,24 +117,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
 
   // Loading state
   if (loading && !provider) {
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
-          <Skeleton className="h-12 w-12 rounded-lg" />
-          <div className="space-y-2">
-            <Skeleton className="h-7 w-48" />
-            <Skeleton className="h-4 w-24" />
-          </div>
-        </div>
-        <Skeleton className="h-10 w-full max-w-lg" />
-        <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-48" />
-          ))}
-        </div>
-      </div>
-    );
+    return <PageLoadingSkeleton variant="detail" />;
   }
 
   // Error state

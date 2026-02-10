@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { SettingItem } from "./setting-item";
-import { SwitchSettingItem } from "./setting-item";
-import { SelectSettingItem } from "./setting-item";
+import { SettingItem, SwitchSettingItem, SelectSettingItem } from "./setting-item";
 
 interface GeneralSettingsProps {
   localConfig: Record<string, string>;
@@ -26,12 +17,7 @@ export function GeneralSettings({
   t,
 }: GeneralSettingsProps) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("settings.general")}</CardTitle>
-        <CardDescription>{t("settings.generalDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-1">
+    <div className="space-y-1">
         <SettingItem
           id="parallel-downloads"
           label={t("settings.parallelDownloads")}
@@ -173,7 +159,6 @@ export function GeneralSettings({
           min={0}
           error={errors["general.download_speed_limit"]}
         />
-      </CardContent>
-    </Card>
+    </div>
   );
 }
