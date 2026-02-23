@@ -32,11 +32,7 @@ pub async fn package_search(
     }
 
     // Parallel search across all available providers
-    let providers: Vec<_> = reg
-        .list()
-        .iter()
-        .filter_map(|id| reg.get(id))
-        .collect();
+    let providers: Vec<_> = reg.list().iter().filter_map(|id| reg.get(id)).collect();
 
     let search_futures: Vec<_> = providers
         .iter()
@@ -63,11 +59,7 @@ pub async fn package_search(
         .collect();
 
     let all_results = join_all(search_futures).await;
-    let results: Vec<PackageSummary> = all_results
-        .into_iter()
-        .flatten()
-        .flatten()
-        .collect();
+    let results: Vec<PackageSummary> = all_results.into_iter().flatten().flatten().collect();
 
     Ok(results)
 }
@@ -172,7 +164,11 @@ pub async fn provider_check(
     registry: State<'_, SharedRegistry>,
 ) -> Result<bool, String> {
     let reg = registry.read().await;
-    Ok(reg.check_provider_available(&provider_id).await)
+    if let Some(provider) = reg.get(&provider_id) {
+        Ok(provider.is_available().await)
+    } else {
+        Ok(false)
+    }
 }
 
 #[tauri::command]
@@ -196,22 +192,31 @@ pub async fn provider_status_all(
     registry: State<'_, SharedRegistry>,
 ) -> Result<Vec<ProviderStatusInfo>, String> {
     let reg = registry.read().await;
-    let provider_ids = reg.get_system_provider_ids();
 
-    let mut statuses = Vec::new();
-    for id in provider_ids {
-        if let Some(info) = reg.get_provider_info(&id) {
-            let available = reg.check_provider_available(&id).await;
-            statuses.push(ProviderStatusInfo {
-                id: info.id,
-                display_name: info.display_name,
-                installed: available,
-                platforms: info.platforms,
-            });
+    let providers = reg.list_all_info();
+    let to_check: Vec<_> = providers
+        .into_iter()
+        .map(|info| {
+            let provider = reg.get(&info.id);
+            (info, provider)
+        })
+        .collect();
+    drop(reg);
+
+    let futures = to_check.into_iter().map(|(info, provider)| async move {
+        let installed = match provider {
+            Some(p) => p.is_available().await,
+            None => false,
+        };
+        ProviderStatusInfo {
+            id: info.id,
+            display_name: info.display_name,
+            installed,
+            platforms: info.platforms,
         }
-    }
+    });
 
-    Ok(statuses)
+    Ok(join_all(futures).await)
 }
 
 #[tauri::command]
@@ -305,7 +310,7 @@ pub async fn provider_enable(
             return Err(format!("Provider not found: {}", provider_id));
         }
     }
-    
+
     // Update settings to enable the provider (remove from disabled list)
     let mut settings_guard = settings.write().await;
     settings_guard
@@ -333,7 +338,7 @@ pub async fn provider_disable(
             return Err(format!("Provider not found: {}", provider_id));
         }
     }
-    
+
     // Update settings to disable the provider (add to disabled list)
     let mut settings_guard = settings.write().await;
     if !settings_guard

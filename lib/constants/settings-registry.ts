@@ -351,12 +351,36 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     keywords: ['accent', 'color', 'primary', '强调色', '主色', '颜色'],
   },
   {
+    key: 'appearance.interface_radius',
+    section: 'appearance',
+    labelKey: 'settings.interfaceRadius',
+    descKey: 'settings.interfaceRadiusDesc',
+    type: 'select',
+    keywords: ['radius', 'border', 'round', 'corner', 'shape', '圆角', '边框', '形状'],
+  },
+  {
+    key: 'appearance.interface_density',
+    section: 'appearance',
+    labelKey: 'settings.interfaceDensity',
+    descKey: 'settings.interfaceDensityDesc',
+    type: 'select',
+    keywords: ['density', 'compact', 'spacing', 'comfortable', 'spacious', '密度', '紧凑', '间距', '宽松'],
+  },
+  {
     key: 'appearance.reduced_motion',
     section: 'appearance',
     labelKey: 'settings.reducedMotion',
     descKey: 'settings.reducedMotionDesc',
     type: 'switch',
     keywords: ['motion', 'animation', 'transition', 'accessibility', '动画', '过渡', '无障碍'],
+  },
+  {
+    key: 'appearance.background_image',
+    section: 'appearance',
+    labelKey: 'settings.backgroundImage',
+    descKey: 'settings.backgroundImageDesc',
+    type: 'switch',
+    keywords: ['background', 'image', 'wallpaper', 'picture', '背景', '图片', '壁纸'],
   },
 
   // Update Settings

@@ -5,6 +5,7 @@ import { useEnvironmentStore } from "@/lib/stores/environment";
 
 jest.mock("@/lib/stores/environment", () => ({
   useEnvironmentStore: jest.fn(),
+  getLogicalEnvType: (value: string) => value,
 }));
 
 jest.mock("@/components/providers/locale-provider", () => ({

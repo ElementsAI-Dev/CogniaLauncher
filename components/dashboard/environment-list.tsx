@@ -33,6 +33,7 @@ import {
   ChevronUp,
   ExternalLink,
 } from "lucide-react";
+import { LanguageIcon, ProviderIcon } from "@/components/provider-management/provider-icon";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
@@ -219,7 +220,7 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
               : "bg-muted text-muted-foreground",
           )}
         >
-          <Layers className="h-5 w-5" />
+          <LanguageIcon languageId={env_type} size={24} />
         </div>
         <div className="text-left min-w-0">
           <div className="flex items-center gap-2">
@@ -231,6 +232,7 @@ function EnvironmentItem({ environment, onClick, t }: EnvironmentItemProps) {
             )}
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ProviderIcon providerId={provider} size={14} />
             <span>{provider}</span>
             {installed_versions.length > 0 && (
               <>

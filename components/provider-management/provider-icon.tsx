@@ -28,6 +28,7 @@ const PROVIDER_ICON_FILES: Record<string, string> = {
   docker: "docker",
   podman: "podman",
   github: "github",
+  gitlab: "gitlab",
   chocolatey: "chocolatey",
   brew: "brew",
   apt: "apt",
@@ -57,6 +58,18 @@ const PROVIDER_ICON_FILES: Record<string, string> = {
   scoop: "scoop",
   winget: "winget",
   vcpkg: "vcpkg",
+  go: "goenv",
+  "system-node": "nvm",
+  "system-python": "pyenv",
+  "system-go": "goenv",
+  "system-rust": "rustup",
+  "system-ruby": "rbenv",
+  "system-java": "sdkman",
+  "system-kotlin": "sdkman-kotlin",
+  "system-php": "phpbrew",
+  "system-dotnet": "dotnet",
+  "system-deno": "deno",
+  "system-bun": "bun",
 };
 
 const PLATFORM_ICON_FILES: Record<string, string> = {
@@ -78,6 +91,26 @@ const LANGUAGE_ICON_FILES: Record<string, string> = {
   dotnet: "dotnet",
   deno: "deno",
   bun: "bun",
+  c: "c",
+  cpp: "cpp",
+  swift: "swift",
+  scala: "scala",
+  groovy: "groovy",
+  perl: "perl",
+  r: "r",
+  elixir: "elixir",
+  erlang: "erlang",
+  lua: "lua",
+  zig: "zig",
+  julia: "julia",
+  dart: "dart",
+  typescript: "typescript",
+  haskell: "haskell",
+  clojure: "clojure",
+  crystal: "crystal",
+  nim: "nim",
+  ocaml: "ocaml",
+  fortran: "fortran",
 };
 
 interface IconProps {
@@ -236,6 +269,14 @@ export function CacheProviderIcon({
     docker: "docker",
     vcpkg: "vcpkg",
     conan: "conan",
+    xmake: "xmake",
+    podman: "podman",
+    flatpak: "flatpak",
+    snap: "snap",
+    chocolatey: "chocolatey",
+    scoop: "scoop",
+    winget: "winget",
+    nix: "nix",
   };
 
   const file = CACHE_PROVIDER_MAP[provider];

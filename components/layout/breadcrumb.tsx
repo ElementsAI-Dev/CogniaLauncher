@@ -23,6 +23,7 @@ const NAV_LABELS: Record<string, string> = {
   logs: "nav.logs",
   settings: "nav.settings",
   about: "nav.about",
+  docs: "nav.docs",
 };
 
 export function Breadcrumb() {

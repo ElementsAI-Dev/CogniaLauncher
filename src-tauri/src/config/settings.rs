@@ -23,6 +23,8 @@ pub struct AppearanceSettings {
     pub theme: String,
     pub accent_color: String,
     pub chart_color_theme: String,
+    pub interface_radius: f64,
+    pub interface_density: String,
     pub language: String,
     pub reduced_motion: bool,
 }
@@ -33,6 +35,8 @@ impl Default for AppearanceSettings {
             theme: "system".into(),
             accent_color: "blue".into(),
             chart_color_theme: "default".into(),
+            interface_radius: 0.625,
+            interface_density: "comfortable".into(),
             language: "en".into(),
             reduced_motion: false,
         }
@@ -338,6 +342,8 @@ impl Settings {
             ["appearance", "theme"] => Some(self.appearance.theme.clone()),
             ["appearance", "accent_color"] => Some(self.appearance.accent_color.clone()),
             ["appearance", "chart_color_theme"] => Some(self.appearance.chart_color_theme.clone()),
+            ["appearance", "interface_radius"] => Some(self.appearance.interface_radius.to_string()),
+            ["appearance", "interface_density"] => Some(self.appearance.interface_density.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
             ["providers", provider, "token"] => {
@@ -526,6 +532,21 @@ impl Settings {
                     return Err(CogniaError::Config("Invalid chart color theme value".into()));
                 }
                 self.appearance.chart_color_theme = value.to_string();
+            }
+            ["appearance", "interface_radius"] => {
+                let v: f64 = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for interface_radius".into())
+                })?;
+                if ![0.0, 0.3, 0.5, 0.625, 0.75, 1.0].contains(&v) {
+                    return Err(CogniaError::Config("Invalid interface radius value".into()));
+                }
+                self.appearance.interface_radius = v;
+            }
+            ["appearance", "interface_density"] => {
+                if !["compact", "comfortable", "spacious"].contains(&value) {
+                    return Err(CogniaError::Config("Invalid interface density value".into()));
+                }
+                self.appearance.interface_density = value.to_string();
             }
             ["appearance", "language"] => {
                 if !["en", "zh"].contains(&value) {

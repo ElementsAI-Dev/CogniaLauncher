@@ -15,6 +15,7 @@ import {
   ArrowDownToLine,
   Terminal,
   ChevronRight,
+  BookOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -53,6 +54,7 @@ const navItems = [
   { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine, tourId: undefined },
   { href: "/wsl", labelKey: "nav.wsl", icon: Terminal, tourId: undefined },
   { href: "/logs", labelKey: "nav.logs", icon: ScrollText, tourId: undefined },
+  { href: "/docs", labelKey: "nav.docs", icon: BookOpen, tourId: undefined },
   { href: "/settings", labelKey: "nav.settings", icon: Settings, tourId: "nav-settings" },
   { href: "/about", labelKey: "nav.about", icon: Info, tourId: undefined },
 ] as const;

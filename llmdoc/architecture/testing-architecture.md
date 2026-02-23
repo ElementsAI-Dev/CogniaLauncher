@@ -11,25 +11,30 @@
 - `jest.setup.ts` - Test environment setup
 - `package.json` - Testing dependencies: @testing-library/react 16.3.2, jsdom 30.2.0, ts-jest 29.4.6
 
-**Test Files (14 total):**
-- `hooks/use-mobile.test.ts` - Mobile breakpoint detection hook
-- `hooks/use-unsaved-changes.test.ts` - Unsaved changes tracking hook
-- `hooks/use-network.test.ts` - Network status monitoring hook
-- `hooks/use-version-cache.test.ts` - Version caching with expiry hook
-- `hooks/use-keyboard-shortcuts.test.ts` - Keyboard shortcut registration hook
-- `hooks/use-settings-shortcuts.test.ts` - Settings navigation shortcuts hook
-- `hooks/use-health-check.test.ts` - Health check operations hook
-- `hooks/use-downloads.test.ts` - Download management hook
-- `hooks/use-logs.test.ts` - Log viewing hook
-- `hooks/use-settings.test.ts` - Settings management hook
-- `hooks/use-environments.test.ts` - Environment operations hook
-- `hooks/use-package-export.test.ts` - Package export functionality hook
-- `hooks/use-profiles.test.ts` - Profile management hook
-- `hooks/use-appearance-config-sync.test.ts` - Appearance config synchronization hook
-- `hooks/use-auto-update.test.ts` - Auto-update mechanism hook
-- `hooks/use-tray-sync.test.ts` - System tray state synchronization hook
-- `hooks/use-packages.test.ts` - Package operations hook
-- `hooks/use-auto-version.test.ts` - Auto version detection hook
+**Test Files (100+ total across frontend, 270+ Rust unit tests):**
+
+**Hook Tests (18 files in `hooks/`):**
+- `use-mobile.test.ts`, `use-unsaved-changes.test.ts`, `use-network.test.ts`, `use-version-cache.test.ts`
+- `use-keyboard-shortcuts.test.ts`, `use-settings-shortcuts.test.ts`, `use-health-check.test.ts`
+- `use-downloads.test.ts`, `use-logs.test.ts`, `use-settings.test.ts`, `use-environments.test.ts`
+- `use-package-export.test.ts`, `use-profiles.test.ts`, `use-appearance-config-sync.test.ts`
+- `use-auto-update.test.ts`, `use-tray-sync.test.ts`, `use-packages.test.ts`, `use-auto-version.test.ts`
+- `use-about-data.test.ts`, `use-app-init.test.ts`, `use-asset-matcher.test.ts`, `normalize-package-id.test.ts`
+
+**Store Tests (7 files in `lib/stores/__tests__/`):**
+- `appearance.test.ts`, `download.test.ts`, `environment.test.ts`, `log.test.ts`
+- `onboarding.test.ts`, `packages.test.ts`, `settings.test.ts`
+
+**Component Tests (55+ files across `components/`):**
+- `about/` (8 tests), `cache/` (6 tests), `dashboard/` (8 + 10 widget tests)
+- `downloads/` (5 tests), `environments/` (10+ tests including detail pages)
+- `wsl/` (15+ tests), `onboarding/` (2 tests), `settings/` (tests)
+- `app-shell.test.tsx`, `app-sidebar.test.tsx`, `command-palette.test.tsx`
+
+**Page Tests:** `app/page.test.tsx`, `app/about/page.test.tsx`, `app/cache/page.test.tsx`, `app/downloads/page.test.tsx`
+
+**Rust Tests (270+ in `src-tauri/src/provider/`):**
+- Output parsing, version detection, provider metadata across all 48 providers
 
 ## 3. Execution Flow
 

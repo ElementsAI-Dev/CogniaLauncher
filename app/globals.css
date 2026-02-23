@@ -121,6 +121,21 @@
   }
 }
 
+/* Interface density — uses Tailwind v4 --spacing variable to scale all spacing utilities.
+   Default --spacing is 0.25rem (4px). Compact shrinks, spacious expands. */
+[data-density="compact"] {
+  --spacing: 0.225rem;
+}
+[data-density="spacious"] {
+  --spacing: 0.275rem;
+}
+[data-density="compact"] [data-slot="sidebar"] {
+  --sidebar-width: 14rem;
+}
+[data-density="spacious"] [data-slot="sidebar"] {
+  --sidebar-width: 17rem;
+}
+
 /* Theme transition animations */
 html:not(.no-transitions) *,
 html:not(.no-transitions) *::before,
@@ -250,6 +265,29 @@ html:not(.no-transitions) [data-state="closed"] {
               height var(--sidebar-transition-duration, 300ms) var(--sidebar-transition-easing, ease),
               padding var(--sidebar-transition-duration, 300ms) var(--sidebar-transition-easing, ease),
               background-color 150ms ease;
+}
+
+/* ===== Background Image Glassmorphism ===== */
+[data-bg-active] [data-slot="sidebar-inner"] {
+  background-color: color-mix(in oklch, var(--color-sidebar) 75%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+[data-bg-active] [data-slot="sidebar-inset"] {
+  background-color: color-mix(in oklch, var(--color-background) 70%, transparent) !important;
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+[data-bg-active] [data-slot="sidebar-inset"] > header {
+  background-color: color-mix(in oklch, var(--color-background) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-bg-active] [data-slot="sidebar"] [data-sidebar="input"] {
+  background-color: color-mix(in oklch, var(--color-background) 60%, transparent);
 }
 
 /* ===== Splash Screen Animations ===== */
@@ -543,4 +581,217 @@ html:not(.no-transitions) [data-state="closed"] {
   .splash-ring {
     border-color: oklch(0.6 0.2 260);
   }
+}
+
+/* ===== Documentation Prose Styles ===== */
+
+.docs-prose {
+  @apply text-foreground leading-relaxed;
+}
+
+.docs-prose h1 {
+  @apply text-3xl font-bold mt-0 mb-4 pb-2 border-b border-border;
+}
+.docs-prose h2 {
+  @apply text-2xl font-semibold mt-10 mb-4 pb-1.5 border-b border-border;
+}
+.docs-prose h3 {
+  @apply text-xl font-semibold mt-8 mb-3;
+}
+.docs-prose h4 {
+  @apply text-lg font-medium mt-6 mb-2;
+}
+
+.docs-prose p {
+  @apply my-4 leading-7;
+}
+
+.docs-prose ul {
+  @apply my-4 ml-6 list-disc space-y-1;
+}
+.docs-prose ol {
+  @apply my-4 ml-6 list-decimal space-y-1;
+}
+.docs-prose li {
+  @apply leading-7;
+}
+.docs-prose li > ul,
+.docs-prose li > ol {
+  @apply my-1;
+}
+
+.docs-prose a:not(.docs-heading-anchor) {
+  @apply text-primary underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors;
+}
+
+.docs-prose blockquote {
+  @apply my-4 border-l-4 border-primary/30 pl-4 italic text-muted-foreground;
+}
+
+.docs-prose hr {
+  @apply my-8 border-border;
+}
+
+.docs-prose strong {
+  @apply font-semibold;
+}
+
+/* Inline code */
+.docs-prose code:not(pre code) {
+  @apply rounded-md bg-muted px-1.5 py-0.5 text-sm font-mono;
+}
+
+/* Code blocks */
+.docs-prose pre {
+  @apply my-4 rounded-lg bg-muted/60 border border-border p-4 overflow-x-auto text-sm font-mono leading-relaxed;
+}
+.docs-prose pre code {
+  @apply bg-transparent p-0 text-sm;
+}
+
+/* Tables */
+.docs-table-wrapper {
+  @apply my-4 overflow-x-auto rounded-lg border border-border;
+}
+.docs-prose table {
+  @apply w-full text-sm;
+}
+.docs-prose thead {
+  @apply bg-muted/50;
+}
+.docs-prose th {
+  @apply px-4 py-2.5 text-left font-semibold text-foreground border-b border-border;
+}
+.docs-prose td {
+  @apply px-4 py-2 border-b border-border;
+}
+.docs-prose tbody tr:last-child td {
+  @apply border-b-0;
+}
+.docs-prose tbody tr:hover {
+  @apply bg-muted/30;
+}
+
+/* Images */
+.docs-prose .docs-img {
+  @apply my-4 max-w-full rounded-lg border border-border;
+}
+
+/* Task lists (GFM) */
+.docs-prose ul:has(input[type="checkbox"]) {
+  @apply list-none ml-0;
+}
+.docs-prose input[type="checkbox"] {
+  @apply mr-2 rounded border-border;
+}
+
+/* Heading anchors */
+.docs-heading-anchor {
+  @apply ml-2 text-muted-foreground/0 transition-colors no-underline;
+}
+.group\/heading:hover .docs-heading-anchor {
+  @apply text-muted-foreground/60;
+}
+.docs-heading-anchor:hover {
+  color: var(--primary);
+}
+
+/* ===== Syntax Highlighting (rehype-highlight) ===== */
+
+.hljs {
+  @apply text-foreground;
+}
+.hljs-comment,
+.hljs-quote {
+  @apply text-muted-foreground italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-addition {
+  color: oklch(0.6 0.2 260);
+}
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-addition {
+  color: oklch(0.75 0.15 260);
+}
+.hljs-number,
+.hljs-string,
+.hljs-meta .hljs-meta-string,
+.hljs-literal,
+.hljs-doctag,
+.hljs-regexp {
+  color: oklch(0.55 0.15 150);
+}
+.dark .hljs-number,
+.dark .hljs-string,
+.dark .hljs-meta .hljs-meta-string,
+.dark .hljs-literal,
+.dark .hljs-doctag,
+.dark .hljs-regexp {
+  color: oklch(0.75 0.12 150);
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: oklch(0.55 0.2 30);
+}
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-name,
+.dark .hljs-selector-id,
+.dark .hljs-selector-class {
+  color: oklch(0.75 0.15 30);
+}
+.hljs-attribute,
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-class .hljs-title,
+.hljs-type {
+  color: oklch(0.6 0.18 80);
+}
+.dark .hljs-attribute,
+.dark .hljs-attr,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-class .hljs-title,
+.dark .hljs-type {
+  color: oklch(0.8 0.12 80);
+}
+.hljs-symbol,
+.hljs-bullet,
+.hljs-subst,
+.hljs-meta,
+.hljs-meta .hljs-keyword,
+.hljs-selector-attr,
+.hljs-selector-pseudo,
+.hljs-link {
+  color: oklch(0.55 0.15 200);
+}
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-subst,
+.dark .hljs-meta,
+.dark .hljs-meta .hljs-keyword,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-pseudo,
+.dark .hljs-link {
+  color: oklch(0.75 0.1 200);
+}
+.hljs-built_in,
+.hljs-deletion {
+  color: oklch(0.55 0.2 15);
+}
+.dark .hljs-built_in,
+.dark .hljs-deletion {
+  color: oklch(0.75 0.15 15);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
 }

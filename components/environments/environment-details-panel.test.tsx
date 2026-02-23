@@ -25,7 +25,7 @@ jest.mock("sonner", () => ({
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
-    t: (key: string) => {
+    t: (key: string, params?: Record<string, string | number>) => {
       const translations: Record<string, string> = {
         "environments.details.subtitle": "Managed by {provider}",
         "environments.details.status": "Status",
@@ -72,7 +72,13 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "common.cancel": "Cancel",
         "common.uninstall": "Uninstall",
       };
-      return translations[key] || key;
+      let value = translations[key] || key;
+      if (params) {
+        for (const [paramKey, paramValue] of Object.entries(params)) {
+          value = value.replaceAll(`{${paramKey}}`, String(paramValue));
+        }
+      }
+      return value;
     },
   }),
 }));

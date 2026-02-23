@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { EnvironmentToolbar } from "./environment-toolbar";
 
-const mockT = (key: string) => {
+const mockT = (key: string, params?: Record<string, string | number>) => {
   const translations: Record<string, string> = {
     "environments.toolbar.searchPlaceholder": "Search environments...",
     "environments.toolbar.statusAll": "All Status",
@@ -16,7 +16,13 @@ const mockT = (key: string) => {
     "common.refresh": "Refresh",
     "common.clear": "Clear",
   };
-  return translations[key] || key;
+  let value = translations[key] || key;
+  if (params) {
+    for (const [paramKey, paramValue] of Object.entries(params)) {
+      value = value.replaceAll(`{${paramKey}}`, String(paramValue));
+    }
+  }
+  return value;
 };
 
 describe("EnvironmentToolbar", () => {

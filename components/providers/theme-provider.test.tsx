@@ -18,13 +18,20 @@ jest.mock("next-themes", () => ({
 
 // Mock appearance store
 let mockAccentColor = "blue";
+let mockChartColorTheme = "default";
+let mockInterfaceRadius = 0.625;
+let mockInterfaceDensity = "comfortable";
 let mockReducedMotion = false;
 
 jest.mock("@/lib/stores/appearance", () => ({
   useAppearanceStore: jest.fn((selector) => {
     const state = {
       accentColor: mockAccentColor,
+      chartColorTheme: mockChartColorTheme,
+      interfaceRadius: mockInterfaceRadius,
+      interfaceDensity: mockInterfaceDensity,
       reducedMotion: mockReducedMotion,
+      setReducedMotion: jest.fn(),
     };
     return typeof selector === "function" ? selector(state) : state;
   }),
@@ -33,17 +40,23 @@ jest.mock("@/lib/stores/appearance", () => ({
 // Mock the colors module
 jest.mock("@/lib/theme/colors", () => ({
   applyAccentColor: jest.fn(),
+  applyChartColorTheme: jest.fn(),
   removeAccentColor: jest.fn(),
 }));
 
-import { applyAccentColor } from "@/lib/theme/colors";
+import { applyAccentColor, applyChartColorTheme } from "@/lib/theme/colors";
 
 describe("ThemeProvider", () => {
   beforeEach(() => {
     mockTheme = "light";
     mockAccentColor = "blue";
+    mockChartColorTheme = "default";
+    mockInterfaceRadius = 0.625;
+    mockInterfaceDensity = "comfortable";
     mockReducedMotion = false;
     jest.clearAllMocks();
+    document.documentElement.style.cssText = "";
+    delete document.documentElement.dataset.density;
     document.documentElement.classList.remove("no-transitions");
     Object.defineProperty(window, "matchMedia", {
       writable: true,
@@ -147,6 +160,71 @@ describe("ThemeProvider", () => {
     expect(document.documentElement.classList.contains("no-transitions")).toBe(
       false,
     );
+  });
+
+  it("applies chart color theme on mount", async () => {
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(applyChartColorTheme).toHaveBeenCalledWith("default", false);
+  });
+
+  it("applies chart color theme with dark mode", async () => {
+    mockTheme = "dark";
+    mockChartColorTheme = "ocean";
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(applyChartColorTheme).toHaveBeenCalledWith("ocean", true);
+  });
+
+  it("sets --radius CSS variable on mount", async () => {
+    mockInterfaceRadius = 0.75;
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.documentElement.style.getPropertyValue("--radius")).toBe(
+      "0.75rem",
+    );
+  });
+
+  it("sets data-density attribute on mount", async () => {
+    mockInterfaceDensity = "compact";
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.documentElement.dataset.density).toBe("compact");
   });
 
   it("passes through ThemeProvider props", () => {

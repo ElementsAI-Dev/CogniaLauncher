@@ -33,5 +33,5 @@ export const ALL_PROVIDER_IDS = [
   // System environment fallbacks
   'system-node', 'system-python', 'system-rust', 'system-go',
   'system-ruby', 'system-java', 'system-kotlin', 'system-php',
-  'system-dotnet', 'system-deno',
+  'system-dotnet', 'system-deno', 'system-bun',
 ] as const;

@@ -103,9 +103,10 @@ impl DownloadQueue {
 
     /// Pause a download task
     pub fn pause(&mut self, id: &str) -> Result<(), DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         if !task.state.can_pause() {
             return Err(DownloadError::InvalidOperation {
@@ -124,9 +125,10 @@ impl DownloadQueue {
 
     /// Resume a paused download task
     pub fn resume(&mut self, id: &str) -> Result<(), DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         if !task.state.can_resume() {
             return Err(DownloadError::InvalidOperation {
@@ -146,9 +148,10 @@ impl DownloadQueue {
 
     /// Cancel a download task
     pub fn cancel(&mut self, id: &str) -> Result<(), DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         if task.state.is_terminal() && task.state != DownloadState::Cancelled {
             return Err(DownloadError::InvalidOperation {
@@ -168,9 +171,10 @@ impl DownloadQueue {
 
     /// Set priority for a task
     pub fn set_priority(&mut self, id: &str, priority: i32) -> Result<(), DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         task.priority = priority;
 
@@ -221,9 +225,10 @@ impl DownloadQueue {
 
     /// Mark a task as completed
     pub fn complete(&mut self, id: &str) -> Result<(), DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         task.mark_completed();
         self.active.retain(|aid| aid != id);
@@ -233,9 +238,10 @@ impl DownloadQueue {
 
     /// Mark a task as failed
     pub fn fail(&mut self, id: &str, error: DownloadError) -> Result<bool, DownloadError> {
-        let task = self.tasks.get_mut(id).ok_or(DownloadError::TaskNotFound {
-            id: id.to_string(),
-        })?;
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
 
         self.active.retain(|aid| aid != id);
 
@@ -370,7 +376,15 @@ impl DownloadQueue {
         let failed_ids: Vec<String> = self
             .tasks
             .iter()
-            .filter(|(_, t)| matches!(t.state, DownloadState::Failed { recoverable: true, .. }))
+            .filter(|(_, t)| {
+                matches!(
+                    t.state,
+                    DownloadState::Failed {
+                        recoverable: true,
+                        ..
+                    }
+                )
+            })
             .map(|(id, _)| id.clone())
             .collect();
 
@@ -467,7 +481,11 @@ mod tests {
         queue.add(create_test_task("high", 10));
         queue.add(create_test_task("medium", 5));
 
-        let pending: Vec<_> = queue.list_pending().iter().map(|t| t.name.as_str()).collect();
+        let pending: Vec<_> = queue
+            .list_pending()
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect();
         assert_eq!(pending, vec!["high", "medium", "low"]);
     }
 
@@ -575,7 +593,10 @@ mod tests {
 
         // next_pending picks the first queued task
         let started_id = queue.next_pending().unwrap();
-        assert_eq!(queue.get(&started_id).unwrap().state, DownloadState::Downloading);
+        assert_eq!(
+            queue.get(&started_id).unwrap().state,
+            DownloadState::Downloading
+        );
 
         let stats = queue.stats();
         assert_eq!(stats.total_tasks, 2);
@@ -647,7 +668,11 @@ mod tests {
         queue.set_priority(&id_low, 20).unwrap();
 
         // Now low should be first in pending
-        let pending: Vec<_> = queue.list_pending().iter().map(|t| t.name.as_str()).collect();
+        let pending: Vec<_> = queue
+            .list_pending()
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect();
         assert_eq!(pending[0], "low");
     }
 
@@ -883,7 +908,7 @@ mod tests {
         queue.add(task_f);
 
         // Start 4 tasks via next_pending (they become Downloading)
-        let id1 = queue.next_pending().unwrap();
+        let _id1 = queue.next_pending().unwrap();
         let id2 = queue.next_pending().unwrap();
         let id3 = queue.next_pending().unwrap();
         let id4 = queue.next_pending().unwrap();

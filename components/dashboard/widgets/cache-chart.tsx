@@ -10,6 +10,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
+import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import type { CacheInfo } from "@/lib/tauri";
 
 interface CacheChartProps {
@@ -32,12 +33,12 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
       {
         name: t("dashboard.widgets.downloadCache"),
         value: downloadSize,
-        fill: "url(#cacheGradient0)",
+        fill: `url(#${getGradientId("cache", 0)})`,
       },
       {
         name: t("dashboard.widgets.metadataCache"),
         value: metadataSize,
-        fill: "url(#cacheGradient1)",
+        fill: `url(#${getGradientId("cache", 1)})`,
       },
     ].filter((d) => d.value > 0);
 
@@ -48,12 +49,12 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
       ? Math.round((cacheInfo.download_cache.entry_count / Math.max(totalEntries, 1)) * 100)
       : 0;
 
-    const radial = [{ name: "usage", value: usagePercent, fill: "url(#cacheGradient0)" }];
+    const radial = [{ name: "usage", value: usagePercent, fill: `url(#${getGradientId("cache", 0)})` }];
 
     const cfg: ChartConfig = {
-      downloadCache: { label: t("dashboard.widgets.downloadCache"), color: "#3B82F6" },
-      metadataCache: { label: t("dashboard.widgets.metadataCache"), color: "#8B5CF6" },
-      usage: { label: t("dashboard.widgets.cacheUsage"), color: "#3B82F6" },
+      downloadCache: { label: t("dashboard.widgets.downloadCache"), color: getChartColor(0) },
+      metadataCache: { label: t("dashboard.widgets.metadataCache"), color: getChartColor(3) },
+      usage: { label: t("dashboard.widgets.cacheUsage"), color: getChartColor(0) },
     };
 
     return { pieData: pie, radialData: radial, chartConfig: cfg, totalEntries };
@@ -106,13 +107,13 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
           <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
             <PieChart>
               <defs>
-                <linearGradient id="cacheGradient0" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3B82F6" />
-                  <stop offset="100%" stopColor="#60A5FA" />
+                <linearGradient id={getGradientId("cache", 0)} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={getChartColor(0)} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={getChartColor(0)} stopOpacity={0.7} />
                 </linearGradient>
-                <linearGradient id="cacheGradient1" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#8B5CF6" />
-                  <stop offset="100%" stopColor="#A78BFA" />
+                <linearGradient id={getGradientId("cache", 1)} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={getChartColor(3)} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={getChartColor(3)} stopOpacity={0.7} />
                 </linearGradient>
               </defs>
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -146,9 +147,9 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
               cy="50%"
             >
               <defs>
-                <linearGradient id="cacheGradient0" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3B82F6" />
-                  <stop offset="100%" stopColor="#60A5FA" />
+                <linearGradient id={getGradientId("cache", 0)} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={getChartColor(0)} stopOpacity={0.95} />
+                  <stop offset="100%" stopColor={getChartColor(0)} stopOpacity={0.7} />
                 </linearGradient>
               </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />

@@ -1,10 +1,10 @@
 use super::api::update_api_client_from_settings;
 use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
-use super::traits::{Capability, EnvironmentProvider, Provider};
+use super::traits::{Capability, EnvironmentProvider, Provider, SystemPackageProvider};
 use super::{
-    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, conan, composer, conda, deno, dnf,
+    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno, dnf,
     docker, dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm,
-    pacman, phpbrew, pip, podman, pipx, pnpm, poetry, psgallery, pyenv, rbenv, rustup, scoop,
+    pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery, pyenv, rbenv, rustup, scoop,
     sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zypper,
 };
 use crate::config::Settings;
@@ -17,7 +17,15 @@ use tokio::sync::RwLock;
 pub struct ProviderRegistry {
     providers: HashMap<String, Arc<dyn Provider>>,
     environment_providers: HashMap<String, Arc<dyn EnvironmentProvider>>,
+    system_package_providers: HashMap<String, Arc<dyn SystemPackageProvider>>,
+    api_provider_config: HashMap<String, ApiProviderConfig>,
     disabled_providers: HashSet<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApiProviderConfig {
+    pub has_token: bool,
+    pub base_url: Option<String>,
 }
 
 impl ProviderRegistry {
@@ -25,6 +33,8 @@ impl ProviderRegistry {
         Self {
             providers: HashMap::new(),
             environment_providers: HashMap::new(),
+            system_package_providers: HashMap::new(),
+            api_provider_config: HashMap::new(),
             disabled_providers: HashSet::new(),
         }
     }
@@ -52,355 +62,303 @@ impl ProviderRegistry {
         let pypi_mirror = settings.get_mirror_url("pypi");
         let crates_mirror = settings.get_mirror_url("crates");
 
-        // Track which environment types have version managers available
-        let mut has_node_manager = false;
-        let mut has_python_manager = false;
-        let mut has_rust_manager = false;
-        let mut has_go_manager = false;
-        let mut has_ruby_manager = false;
-        let mut has_java_manager = false;
-        let mut has_php_manager = false;
-        let mut has_dotnet_manager = false;
-        let mut has_deno_manager = false;
+        let platform = current_platform();
 
-        // Node.js version managers - prefer volta > fnm > nvm
+        // Register environment/version managers. Availability is treated as "status",
+        // not a gating condition for whether a provider exists in the registry.
         let volta_provider = Arc::new(volta::VoltaProvider::new());
-        if volta_provider.is_available().await {
+        if volta_provider.supported_platforms().contains(&platform) {
             registry.register_environment_provider(volta_provider);
-            has_node_manager = true;
-        } else {
-            let fnm_provider = Arc::new(fnm::FnmProvider::new());
-            if fnm_provider.is_available().await {
-                registry.register_environment_provider(fnm_provider);
-                has_node_manager = true;
-            } else {
-                let nvm_provider = Arc::new(nvm::NvmProvider::new());
-                if nvm_provider.is_available().await {
-                    registry.register_environment_provider(nvm_provider);
-                    has_node_manager = true;
-                }
-            }
         }
 
-        // mise - modern polyglot version manager (preferred over asdf)
+        let fnm_provider = Arc::new(fnm::FnmProvider::new());
+        if fnm_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(fnm_provider.clone());
+            registry.register_system_provider(fnm_provider);
+        }
+
+        let nvm_provider = Arc::new(nvm::NvmProvider::new());
+        if nvm_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(nvm_provider);
+        }
+
         let mise_provider = Arc::new(mise::MiseProvider::new());
-        if mise_provider.is_available().await {
+        if mise_provider.supported_platforms().contains(&platform) {
             registry.register_environment_provider(mise_provider);
-        } else {
-            // asdf - polyglot version manager (macOS/Linux only)
-            let asdf_provider = Arc::new(asdf::AsdfProvider::new());
-            if asdf_provider.is_available().await {
-                registry.register_environment_provider(asdf_provider);
-            }
         }
 
-        // Python version manager
+        let asdf_provider = Arc::new(asdf::AsdfProvider::new());
+        if asdf_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(asdf_provider);
+        }
+
         let pyenv_provider = Arc::new(pyenv::PyenvProvider::new());
-        if pyenv_provider.is_available().await {
+        if pyenv_provider.supported_platforms().contains(&platform) {
             registry.register_environment_provider(pyenv_provider);
-            has_python_manager = true;
         }
 
-        // Rust version manager
         let rustup_provider = Arc::new(rustup::RustupProvider::new());
-        if rustup_provider.is_available().await {
-            registry.register_environment_provider(rustup_provider);
-            has_rust_manager = true;
+        if rustup_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(rustup_provider.clone());
+            registry.register_system_provider(rustup_provider);
         }
 
-        // Go version manager
         let goenv_provider = Arc::new(goenv::GoenvProvider::new());
-        if goenv_provider.is_available().await {
-            registry.register_environment_provider(goenv_provider);
-            has_go_manager = true;
+        if goenv_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(goenv_provider.clone());
+            registry.register_system_provider(goenv_provider);
         }
 
-        // Ruby version manager
         let rbenv_provider = Arc::new(rbenv::RbenvProvider::new());
-        if rbenv_provider.is_available().await {
-            registry.register_environment_provider(rbenv_provider);
-            has_ruby_manager = true;
+        if rbenv_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(rbenv_provider.clone());
+            registry.register_system_provider(rbenv_provider);
         }
 
-        // Java version manager (SDKMAN!)
-        let sdkman_provider = Arc::new(sdkman::SdkmanProvider::java());
-        let sdkman_available = sdkman_provider.is_available().await;
-        if sdkman_available {
-            registry.register_environment_provider(sdkman_provider);
-            has_java_manager = true;
+        let sdkman_java = Arc::new(sdkman::SdkmanProvider::java());
+        if sdkman_java.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_java.clone());
+            registry.register_system_provider(sdkman_java);
         }
 
-        // Kotlin version manager (SDKMAN!) - reuse availability check
-        let mut has_kotlin_manager = false;
-        if sdkman_available {
-            let sdkman_kotlin = Arc::new(sdkman::SdkmanProvider::kotlin());
-            registry.register_environment_provider(sdkman_kotlin);
-            has_kotlin_manager = true;
+        let sdkman_kotlin = Arc::new(sdkman::SdkmanProvider::kotlin());
+        if sdkman_kotlin.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_kotlin.clone());
+            registry.register_system_provider(sdkman_kotlin);
         }
 
-        // PHP version manager (PHPBrew) - macOS/Linux only
         let phpbrew_provider = Arc::new(phpbrew::PhpbrewProvider::new());
-        if phpbrew_provider.is_available().await {
-            registry.register_environment_provider(phpbrew_provider);
-            has_php_manager = true;
+        if phpbrew_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(phpbrew_provider.clone());
+            registry.register_system_provider(phpbrew_provider);
         }
 
-        // .NET SDK version manager
         let dotnet_provider = Arc::new(dotnet::DotnetProvider::new());
-        if dotnet_provider.is_available().await {
-            registry.register_environment_provider(dotnet_provider);
-            has_dotnet_manager = true;
+        if dotnet_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(dotnet_provider.clone());
+            registry.register_system_provider(dotnet_provider);
         }
 
-        // Deno runtime version manager
         let deno_provider = Arc::new(deno::DenoProvider::new());
-        if deno_provider.is_available().await {
-            registry.register_environment_provider(deno_provider);
-            has_deno_manager = true;
+        if deno_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(deno_provider.clone());
+            registry.register_system_provider(deno_provider);
         }
 
-        // Register system environment providers as fallback for environments
-        // that don't have a version manager installed
-        // These detect environments installed via official installers, package managers, etc.
-
-        if !has_node_manager {
-            let system_node = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Node));
-            if system_node.is_available().await {
-                registry.register_environment_provider(system_node);
-            }
+        let nix_provider = Arc::new(nix::NixProvider::new());
+        if nix_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(nix_provider);
         }
 
-        if !has_python_manager {
-            let system_python = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Python));
-            if system_python.is_available().await {
-                registry.register_environment_provider(system_python);
-            }
-        }
-
-        if !has_go_manager {
-            let system_go = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Go));
-            if system_go.is_available().await {
-                registry.register_environment_provider(system_go);
-            }
-        }
-
-        if !has_rust_manager {
-            let system_rust = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Rust));
-            if system_rust.is_available().await {
-                registry.register_environment_provider(system_rust);
-            }
-        }
-
-        if !has_ruby_manager {
-            let system_ruby = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Ruby));
-            if system_ruby.is_available().await {
-                registry.register_environment_provider(system_ruby);
-            }
-        }
-
-        if !has_java_manager {
-            let system_java = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Java));
-            if system_java.is_available().await {
-                registry.register_environment_provider(system_java);
-            }
-        }
-
-        if !has_kotlin_manager {
-            let system_kotlin = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Kotlin));
-            if system_kotlin.is_available().await {
-                registry.register_environment_provider(system_kotlin);
-            }
-        }
-
-        if !has_php_manager {
-            let system_php = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Php));
-            if system_php.is_available().await {
-                registry.register_environment_provider(system_php);
-            }
-        }
-
-        if !has_dotnet_manager {
-            let system_dotnet = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Dotnet));
-            if system_dotnet.is_available().await {
-                registry.register_environment_provider(system_dotnet);
-            }
-        }
-
-        if !has_deno_manager {
-            let system_deno = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Deno));
-            if system_deno.is_available().await {
-                registry.register_environment_provider(system_deno);
-            }
-        }
-
-        // Bun doesn't have a dedicated version manager, always use system detection
-        let system_bun = Arc::new(SystemEnvironmentProvider::new(SystemEnvironmentType::Bun));
-        if system_bun.is_available().await {
-            registry.register_environment_provider(system_bun);
-        }
+        // Always register system environment providers as fallbacks (availability is a status).
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Node,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Python,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Go,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Rust,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Ruby,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Java,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Kotlin,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Php,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Dotnet,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Deno,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Bun,
+        )));
 
         // GitHub provider with optional token from settings
-        let github_token = settings.providers.get("github")
+        let github_token = settings
+            .providers
+            .get("github")
             .and_then(|ps| ps.extra.get("token"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| std::env::var("GITHUB_TOKEN").ok());
-        let github_provider = Arc::new(
-            github::GitHubProvider::new().with_token(github_token)
-        );
+        let github_has_token = github_token.is_some();
+        let github_provider = Arc::new(github::GitHubProvider::new().with_token(github_token));
         registry.register_provider(github_provider);
+        registry.api_provider_config.insert(
+            "github".into(),
+            ApiProviderConfig {
+                has_token: github_has_token,
+                base_url: Some("https://api.github.com".into()),
+            },
+        );
 
         // GitLab provider with optional token and custom instance URL from settings
-        let gitlab_token = settings.providers.get("gitlab")
+        let gitlab_token = settings
+            .providers
+            .get("gitlab")
             .and_then(|ps| ps.extra.get("token"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .or_else(|| std::env::var("GITLAB_TOKEN").ok());
-        let gitlab_url = settings.providers.get("gitlab")
+        let gitlab_has_token = gitlab_token.is_some();
+        let gitlab_url = settings
+            .providers
+            .get("gitlab")
             .and_then(|ps| ps.extra.get("url"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let gitlab_base_url = gitlab_url
+            .clone()
+            .or_else(|| Some("https://gitlab.com".into()));
         let gitlab_provider = Arc::new(
             gitlab::GitLabProvider::new()
                 .with_token(gitlab_token)
-                .with_instance_url(gitlab_url)
+                .with_instance_url(gitlab_url),
         );
         registry.register_provider(gitlab_provider);
+        registry.api_provider_config.insert(
+            "gitlab".into(),
+            ApiProviderConfig {
+                has_token: gitlab_has_token,
+                base_url: gitlab_base_url,
+            },
+        );
 
         // Register npm provider with mirror configuration
-        let npm_provider = Arc::new(
-            npm::NpmProvider::new().with_registry_opt(npm_mirror.clone())
-        );
-        if npm_provider.is_available().await {
-            registry.register_provider(npm_provider);
+        let npm_provider = Arc::new(npm::NpmProvider::new().with_registry_opt(npm_mirror.clone()));
+        if npm_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(npm_provider);
         }
 
         // Register pnpm provider with mirror configuration
-        let pnpm_provider = Arc::new(
-            pnpm::PnpmProvider::new().with_registry_opt(npm_mirror.clone())
-        );
-        if pnpm_provider.is_available().await {
-            registry.register_provider(pnpm_provider);
+        let pnpm_provider =
+            Arc::new(pnpm::PnpmProvider::new().with_registry_opt(npm_mirror.clone()));
+        if pnpm_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(pnpm_provider);
         }
 
         // Register yarn provider with mirror configuration
-        let yarn_provider = Arc::new(
-            yarn::YarnProvider::new().with_registry_opt(npm_mirror.clone())
-        );
-        if yarn_provider.is_available().await {
-            registry.register_provider(yarn_provider);
+        let yarn_provider =
+            Arc::new(yarn::YarnProvider::new().with_registry_opt(npm_mirror.clone()));
+        if yarn_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(yarn_provider);
         }
 
         // Register Bun provider with mirror configuration (faster alternative to npm)
-        let bun_provider = Arc::new(
-            bun::BunProvider::new().with_registry_opt(npm_mirror)
-        );
-        if bun_provider.is_available().await {
-            registry.register_provider(bun_provider);
+        let bun_provider = Arc::new(bun::BunProvider::new().with_registry_opt(npm_mirror.clone()));
+        if bun_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(bun_provider);
         }
 
         // Register pip provider with mirror configuration
-        let pip_provider = Arc::new(
-            pip::PipProvider::new().with_index_url_opt(pypi_mirror.clone())
-        );
-        if pip_provider.is_available().await {
-            registry.register_provider(pip_provider);
+        let pip_provider =
+            Arc::new(pip::PipProvider::new().with_index_url_opt(pypi_mirror.clone()));
+        if pip_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(pip_provider);
         }
 
         // Register Go modules provider
         let go_provider = Arc::new(goenv::GoModProvider::new());
-        if go_provider.is_available().await {
+        if go_provider.supported_platforms().contains(&platform) {
             registry.register_provider(go_provider);
         }
 
         // Register vcpkg provider (cross-platform C++ package manager)
         let vcpkg_provider = Arc::new(vcpkg::VcpkgProvider::new());
-        if vcpkg_provider.is_available().await {
-            registry.register_provider(vcpkg_provider);
+        if vcpkg_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(vcpkg_provider);
         }
 
         // Register Conan provider (cross-platform C/C++ package manager)
         let conan_provider = Arc::new(conan::ConanProvider::new());
-        if conan_provider.is_available().await {
-            registry.register_provider(conan_provider);
+        if conan_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(conan_provider);
         }
 
         // Register Xmake/Xrepo provider (cross-platform C/C++ build & package manager)
         let xmake_provider = Arc::new(xmake::XmakeProvider::new());
-        if xmake_provider.is_available().await {
-            registry.register_provider(xmake_provider);
+        if xmake_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(xmake_provider);
         }
 
         // Register Docker provider (cross-platform)
         let docker_provider = Arc::new(docker::DockerProvider::new());
-        if docker_provider.is_available().await {
-            registry.register_provider(docker_provider);
+        if docker_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(docker_provider);
         }
 
         // Register Podman provider (cross-platform, daemonless alternative to Docker)
         let podman_provider = Arc::new(podman::PodmanProvider::new());
-        if podman_provider.is_available().await {
-            registry.register_provider(podman_provider);
+        if podman_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(podman_provider);
         }
 
         // Register uv provider with mirror configuration
-        let uv_provider = Arc::new(
-            uv::UvProvider::new().with_index_url_opt(pypi_mirror.clone())
-        );
-        if uv_provider.is_available().await {
-            registry.register_provider(uv_provider);
+        let uv_provider = Arc::new(uv::UvProvider::new().with_index_url_opt(pypi_mirror.clone()));
+        if uv_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(uv_provider);
         }
 
         // Register Poetry provider with mirror configuration (Python dependency management)
-        let poetry_provider = Arc::new(
-            poetry::PoetryProvider::new().with_index_url_opt(pypi_mirror)
-        );
-        if poetry_provider.is_available().await {
-            registry.register_provider(poetry_provider);
+        let poetry_provider =
+            Arc::new(poetry::PoetryProvider::new().with_index_url_opt(pypi_mirror.clone()));
+        if poetry_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(poetry_provider);
         }
 
         // Register cargo provider with mirror configuration
-        let cargo_provider = Arc::new(
-            cargo::CargoProvider::new().with_registry_opt(crates_mirror)
-        );
-        if cargo_provider.is_available().await {
-            registry.register_provider(cargo_provider);
+        let cargo_provider =
+            Arc::new(cargo::CargoProvider::new().with_registry_opt(crates_mirror.clone()));
+        if cargo_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(cargo_provider);
         }
 
         // Register PSGallery provider (cross-platform PowerShell)
         let psgallery_provider = Arc::new(psgallery::PSGalleryProvider::new());
-        if psgallery_provider.is_available().await {
-            registry.register_provider(psgallery_provider);
+        if psgallery_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(psgallery_provider);
         }
 
         // Register Bundler provider (Ruby dependency management)
         let bundler_provider = Arc::new(bundler::BundlerProvider::new());
-        if bundler_provider.is_available().await {
-            registry.register_provider(bundler_provider);
+        if bundler_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(bundler_provider);
         }
 
         // Register RubyGems provider (standalone gem management)
         let gem_provider = Arc::new(gem::GemProvider::new());
-        if gem_provider.is_available().await {
-            registry.register_provider(gem_provider);
+        if gem_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(gem_provider);
         }
 
         // Register Composer provider (PHP dependency management)
         let composer_provider = Arc::new(composer::ComposerProvider::new());
-        if composer_provider.is_available().await {
-            registry.register_provider(composer_provider);
+        if composer_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(composer_provider);
         }
 
         // Register Conda provider (Python data science package manager)
         let conda_provider = Arc::new(conda::CondaProvider::new());
-        if conda_provider.is_available().await {
-            registry.register_provider(conda_provider);
+        if conda_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(conda_provider);
         }
 
         // Register pipx provider (isolated Python CLI tools)
         let pipx_provider = Arc::new(pipx::PipxProvider::new());
-        if pipx_provider.is_available().await {
-            registry.register_provider(pipx_provider);
+        if pipx_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(pipx_provider);
         }
 
         let platform = current_platform();
@@ -409,94 +367,56 @@ impl ProviderRegistry {
             Platform::Linux => {
                 // APT (Debian/Ubuntu)
                 let apt_provider = Arc::new(apt::AptProvider::new());
-                if apt_provider.is_available().await {
-                    registry.register_provider(apt_provider);
-                }
+                registry.register_system_provider(apt_provider);
 
                 // DNF (Fedora/RHEL/CentOS)
                 let dnf_provider = Arc::new(dnf::DnfProvider::new());
-                if dnf_provider.is_available().await {
-                    registry.register_provider(dnf_provider);
-                }
+                registry.register_system_provider(dnf_provider);
 
                 // Pacman (Arch Linux)
                 let pacman_provider = Arc::new(pacman::PacmanProvider::new());
-                if pacman_provider.is_available().await {
-                    registry.register_provider(pacman_provider);
-                }
+                registry.register_system_provider(pacman_provider);
 
                 // Zypper (openSUSE)
                 let zypper_provider = Arc::new(zypper::ZypperProvider::new());
-                if zypper_provider.is_available().await {
-                    registry.register_provider(zypper_provider);
-                }
+                registry.register_system_provider(zypper_provider);
 
                 // APK (Alpine Linux)
                 let apk_provider = Arc::new(apk::ApkProvider::new());
-                if apk_provider.is_available().await {
-                    registry.register_provider(apk_provider);
-                }
+                registry.register_system_provider(apk_provider);
 
                 // Snap (Universal Linux)
                 let snap_provider = Arc::new(snap::SnapProvider::new());
-                if snap_provider.is_available().await {
-                    registry.register_provider(snap_provider);
-                }
+                registry.register_system_provider(snap_provider);
 
                 // Flatpak (Universal Linux)
                 let flatpak_provider = Arc::new(flatpak::FlatpakProvider::new());
-                if flatpak_provider.is_available().await {
-                    registry.register_provider(flatpak_provider);
-                }
-
-                // Nix (Linux)
-                let nix_provider = Arc::new(nix::NixProvider::new());
-                if nix_provider.is_available().await {
-                    registry.register_provider(nix_provider);
-                }
+                registry.register_system_provider(flatpak_provider);
             }
             Platform::MacOS => {
                 // Homebrew
                 let brew_provider = Arc::new(brew::BrewProvider::new());
-                if brew_provider.is_available().await {
-                    registry.register_provider(brew_provider);
-                }
+                registry.register_system_provider(brew_provider);
 
                 // MacPorts
                 let macports_provider = Arc::new(macports::MacPortsProvider::new());
-                if macports_provider.is_available().await {
-                    registry.register_provider(macports_provider);
-                }
-
-                // Nix (macOS)
-                let nix_provider = Arc::new(nix::NixProvider::new());
-                if nix_provider.is_available().await {
-                    registry.register_provider(nix_provider);
-                }
+                registry.register_system_provider(macports_provider);
             }
             Platform::Windows => {
                 let winget_provider = Arc::new(winget::WingetProvider::new());
-                if winget_provider.is_available().await {
-                    registry.register_provider(winget_provider);
-                }
+                registry.register_system_provider(winget_provider);
 
                 // Register Scoop provider (Windows only)
                 let scoop_provider = Arc::new(scoop::ScoopProvider::new());
-                if scoop_provider.is_available().await {
-                    registry.register_provider(scoop_provider);
-                }
+                registry.register_system_provider(scoop_provider);
 
                 // Register Chocolatey provider (Windows only)
                 let chocolatey_provider = Arc::new(chocolatey::ChocolateyProvider::new());
-                if chocolatey_provider.is_available().await {
-                    registry.register_provider(chocolatey_provider);
-                }
+                registry.register_system_provider(chocolatey_provider);
 
                 // Register WSL provider (Windows only)
                 let wsl_provider = Arc::new(wsl::WslProvider::new());
-                if wsl_provider.is_available().await {
-                    registry.register_provider(wsl_provider);
-                }
+                registry.register_system_provider(wsl_provider);
             }
             _ => {}
         }
@@ -506,6 +426,16 @@ impl ProviderRegistry {
 
     pub fn register_provider<P: Provider + 'static>(&mut self, provider: Arc<P>) {
         let id = provider.id().to_string();
+        self.providers.insert(id, provider);
+    }
+
+    pub fn register_system_provider<P: SystemPackageProvider + 'static>(
+        &mut self,
+        provider: Arc<P>,
+    ) {
+        let id = provider.id().to_string();
+        self.system_package_providers
+            .insert(id.clone(), provider.clone());
         self.providers.insert(id, provider);
     }
 
@@ -521,6 +451,21 @@ impl ProviderRegistry {
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn Provider>> {
         self.providers.get(id).cloned()
+    }
+
+    pub fn get_system_provider(&self, id: &str) -> Option<Arc<dyn SystemPackageProvider>> {
+        self.system_package_providers.get(id).cloned()
+    }
+
+    pub fn list_system_package_provider_ids(&self) -> Vec<String> {
+        self.system_package_providers
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_api_provider_config(&self, id: &str) -> Option<ApiProviderConfig> {
+        self.api_provider_config.get(id).cloned()
     }
 
     pub fn get_environment_provider(&self, id: &str) -> Option<Arc<dyn EnvironmentProvider>> {
@@ -539,6 +484,17 @@ impl ProviderRegistry {
         self.environment_providers
             .keys()
             .filter(|id| self.is_provider_enabled(id))
+            .map(|s| s.as_str())
+            .collect()
+    }
+
+    /// List all environment providers, regardless of enabled/disabled state.
+    ///
+    /// This is primarily used for UI enumeration and provider detail views, where "disabled"
+    /// should not hide a provider from visibility.
+    pub fn list_all_environment_providers(&self) -> Vec<&str> {
+        self.environment_providers
+            .keys()
             .map(|s| s.as_str())
             .collect()
     }
@@ -679,7 +635,9 @@ pub async fn create_shared_registry_with_defaults() -> CogniaResult<SharedRegist
 }
 
 /// Create a shared registry with providers configured from settings
-pub async fn create_shared_registry_with_settings(settings: &Settings) -> CogniaResult<SharedRegistry> {
+pub async fn create_shared_registry_with_settings(
+    settings: &Settings,
+) -> CogniaResult<SharedRegistry> {
     let registry = ProviderRegistry::with_settings(settings).await?;
     Ok(Arc::new(RwLock::new(registry)))
 }
@@ -703,5 +661,74 @@ mod tests {
 
         registry.set_provider_enabled("npm", true);
         assert!(registry.is_provider_enabled("npm"));
+    }
+
+    #[tokio::test]
+    async fn with_defaults_registers_known_providers_for_platform() {
+        let registry = ProviderRegistry::with_defaults().await.unwrap();
+
+        // Cross-platform providers that should always be visible (regardless of installation state).
+        for id in [
+            "github",
+            "gitlab",
+            "npm",
+            "pnpm",
+            "yarn",
+            "pip",
+            "uv",
+            "cargo",
+            "system-node",
+            "system-python",
+            "system-go",
+            "system-rust",
+            "system-deno",
+            "system-bun",
+        ] {
+            assert!(
+                registry.get_provider_info(id).is_some(),
+                "expected provider '{}' to be registered",
+                id
+            );
+        }
+
+        #[cfg(windows)]
+        for id in ["winget", "scoop", "chocolatey", "wsl"] {
+            assert!(
+                registry.get_provider_info(id).is_some(),
+                "expected provider '{}' to be registered on Windows",
+                id
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        for id in ["brew", "macports"] {
+            assert!(
+                registry.get_provider_info(id).is_some(),
+                "expected provider '{}' to be registered on macOS",
+                id
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        for id in ["apt", "dnf", "pacman", "zypper", "apk", "snap", "flatpak"] {
+            assert!(
+                registry.get_provider_info(id).is_some(),
+                "expected provider '{}' to be registered on Linux",
+                id
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_providers_remain_visible_in_provider_list() {
+        let mut settings = Settings::default();
+        settings
+            .provider_settings
+            .disabled_providers
+            .push("npm".to_string());
+
+        let registry = ProviderRegistry::with_settings(&settings).await.unwrap();
+        let npm_info = registry.get_provider_info("npm").expect("npm must exist");
+        assert!(!npm_info.enabled, "disabled providers must remain visible");
     }
 }

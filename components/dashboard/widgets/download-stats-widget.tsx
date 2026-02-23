@@ -37,17 +37,17 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
     };
 
     const data = [
-      { status: t("dashboard.widgets.dlActive"), count: active, fill: "hsl(var(--chart-1))" },
-      { status: t("dashboard.widgets.dlCompleted"), count: summary.completed, fill: "hsl(var(--chart-3))" },
-      { status: t("dashboard.widgets.dlFailed"), count: summary.failed, fill: "hsl(var(--chart-5))" },
-      { status: t("dashboard.widgets.dlPaused"), count: paused, fill: "hsl(var(--chart-4))" },
+      { status: t("dashboard.widgets.dlActive"), count: active, fill: "var(--chart-1)" },
+      { status: t("dashboard.widgets.dlCompleted"), count: summary.completed, fill: "var(--chart-3)" },
+      { status: t("dashboard.widgets.dlFailed"), count: summary.failed, fill: "var(--chart-5)" },
+      { status: t("dashboard.widgets.dlPaused"), count: paused, fill: "var(--chart-4)" },
     ].filter((d) => d.count > 0);
 
     return { chartData: data, summaryStats: summary };
   }, [tasks, history, t]);
 
   const chartConfig: ChartConfig = {
-    count: { label: t("dashboard.widgets.downloadCount"), color: "hsl(var(--chart-1))" },
+    count: { label: t("dashboard.widgets.downloadCount"), color: "var(--chart-1)" },
   };
 
   return (

@@ -155,13 +155,19 @@ describe("EnvironmentCardErrorBoundary", () => {
   });
 
   it("uses translation function when provided", () => {
-    const mockT = (key: string) => {
+    const mockT = (key: string, params?: Record<string, string | number>) => {
       const translations: Record<string, string> = {
         "environments.errorBoundary.cardTitle": "Error with {envType}",
         "environments.errorBoundary.cardDescription": "{envType} card failed",
         "environments.errorBoundary.tryAgain": "Retry",
       };
-      return translations[key] || key;
+      let value = translations[key] || key;
+      if (params) {
+        for (const [paramKey, paramValue] of Object.entries(params)) {
+          value = value.replaceAll(`{${paramKey}}`, String(paramValue));
+        }
+      }
+      return value;
     };
 
     render(

@@ -44,6 +44,7 @@ import {
 import { toast } from "sonner";
 import { useLocale } from "@/components/providers/locale-provider";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
+import { EolBadge } from "@/components/environments/eol-badge";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { formatSize } from "@/lib/utils";
 
@@ -207,7 +208,8 @@ export function EnvironmentCard({
                 <p className="text-xs text-muted-foreground mt-1">
                   {t("environments.currentVersion")}
                 </p>
-                <div className="mt-1">
+                <div className="mt-1 flex items-center gap-1.5">
+                  <EolBadge envType={env.env_type} version={env.current_version} compact t={t} />
                   <UpdateCheckerCard env={env} compact t={t} />
                 </div>
               </div>

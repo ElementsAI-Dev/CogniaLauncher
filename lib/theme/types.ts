@@ -63,3 +63,35 @@ export const CHART_COLOR_THEMES: ChartColorTheme[] = ['default', 'vibrant', 'pas
 export function isChartColorTheme(value?: string): value is ChartColorTheme {
   return typeof value === 'string' && (CHART_COLOR_THEMES as readonly string[]).includes(value);
 }
+
+export interface ChartColorPalette {
+  light: [string, string, string, string, string];
+  dark: [string, string, string, string, string];
+}
+
+export type InterfaceRadius = 0 | 0.3 | 0.5 | 0.625 | 0.75 | 1.0;
+
+export const INTERFACE_RADII: InterfaceRadius[] = [0, 0.3, 0.5, 0.625, 0.75, 1.0];
+
+export const INTERFACE_RADIUS_LABELS: Record<InterfaceRadius, string> = {
+  0: 'Sharp',
+  0.3: 'Slight',
+  0.5: 'Medium',
+  0.625: 'Default',
+  0.75: 'Round',
+  1.0: 'Full',
+};
+
+export function isInterfaceRadius(value?: string): boolean {
+  if (typeof value !== 'string') return false;
+  const num = parseFloat(value);
+  return !isNaN(num) && (INTERFACE_RADII as readonly number[]).includes(num);
+}
+
+export type InterfaceDensity = 'compact' | 'comfortable' | 'spacious';
+
+export const INTERFACE_DENSITIES: InterfaceDensity[] = ['compact', 'comfortable', 'spacious'];
+
+export function isInterfaceDensity(value?: string): value is InterfaceDensity {
+  return typeof value === 'string' && (INTERFACE_DENSITIES as readonly string[]).includes(value);
+}

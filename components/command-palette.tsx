@@ -39,6 +39,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       { href: "/logs", label: t("nav.logs") },
       { href: "/settings", label: t("nav.settings") },
       { href: "/about", label: t("nav.about") },
+      { href: "/docs", label: t("nav.docs") },
     ],
     [t],
   );

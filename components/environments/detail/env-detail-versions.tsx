@@ -34,12 +34,14 @@ import {
   Globe,
   Trash2,
   Loader2,
+  Eraser,
 } from "lucide-react";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { formatSize } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { VersionPinningSection } from "@/components/environments/version-pinning-section";
+import { CleanupDialog } from "@/components/environments/cleanup-dialog";
 
 interface EnvDetailVersionsProps {
   envType: string;
@@ -53,6 +55,7 @@ interface EnvDetailVersionsProps {
   selectedProviderId?: string;
   onProviderChange?: (providerId: string) => void;
   loading: boolean;
+  onCleanup?: (versions: string[]) => Promise<import('@/lib/tauri').EnvCleanupResult | null>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -68,6 +71,7 @@ export function EnvDetailVersions({
   selectedProviderId,
   onProviderChange,
   loading,
+  onCleanup,
   t,
 }: EnvDetailVersionsProps) {
   const [customVersion, setCustomVersion] = useState("");
@@ -75,6 +79,7 @@ export function EnvDetailVersions({
   const [uninstallingVersion, setUninstallingVersion] = useState<string | null>(
     null,
   );
+  const [cleanupOpen, setCleanupOpen] = useState(false);
 
   if (!env) {
     return (
@@ -220,9 +225,22 @@ export function EnvDetailVersions({
                 {t("environments.detail.manageInstalledVersions")}
               </CardDescription>
             </div>
-            <Badge variant="secondary">
-              {env.installed_versions.length}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">
+                {env.installed_versions.length}
+              </Badge>
+              {onCleanup && env.installed_versions.length > 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCleanupOpen(true)}
+                  className="gap-1.5 h-7 text-xs"
+                >
+                  <Eraser className="h-3 w-3" />
+                  {t("environments.cleanup.cleanOldVersions")}
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -354,6 +372,19 @@ export function EnvDetailVersions({
           />
         </CardContent>
       </Card>
+
+      {/* Cleanup Dialog */}
+      {onCleanup && env && (
+        <CleanupDialog
+          envType={envType}
+          installedVersions={env.installed_versions}
+          currentVersion={env.current_version}
+          open={cleanupOpen}
+          onOpenChange={setCleanupOpen}
+          onCleanup={onCleanup}
+          t={t}
+        />
+      )}
     </div>
   );
 }

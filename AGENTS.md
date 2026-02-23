@@ -48,9 +48,12 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Testing Guidelines
 
-- No test runner is configured yet. Recommended: Vitest (unit) and Playwright (e2e).
+- **Test Runner**: Jest 30 with jest-environment-jsdom and @testing-library/react.
 - Name tests `*.test.ts`/`*.test.tsx`; co-locate next to source or in `tests/`.
-- Prioritize `lib/` utilities and complex UI logic for coverage.
+- Run: pnpm test (all), pnpm test:watch (watch), pnpm test:coverage (coverage).
+- Coverage thresholds: branches 60%, functions 60%, lines 70%, statements 70%.
+- **Rust tests**: cargo test in src-tauri/ (270+ provider unit tests).
+- See docs/development/testing.md for detailed testing guide and best practices.
 
 ## Commit & Pull Request Guidelines
 

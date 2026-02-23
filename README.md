@@ -6,18 +6,22 @@ A cross-platform environment and package manager with a modern graphical interfa
 
 ## Features
 
-- 🔧 **Environment Management** - Manage Node.js (nvm), Python (pyenv), and Rust (rustup) versions with installation progress tracking
-- 📦 **Package Management** - Search, install, and update packages from multiple providers
-- 🔌 **Multi-Provider Support** - npm, pnpm, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, vcpkg, Docker, PSGallery, GitHub Releases
-- 💾 **Cache Management** - SQLite + JSON dual-backend caching with cleanup tools
+- 🔧 **Environment Management** - Manage Node.js (nvm/fnm/volta), Python (pyenv/conda), Rust (rustup), Go (goenv), Ruby (rbenv), Java/Kotlin (SDKMAN), PHP, Deno, .NET versions
+- 📦 **Package Management** - Search, install, and update packages from 48 providers
+- 🔌 **Multi-Provider Support** - npm, pnpm, yarn, bun, pip, uv, poetry, cargo, gem, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, Nix, vcpkg, Conan, Docker, GitHub/GitLab Releases, and more
+- 💾 **Cache Management** - SQLite + JSON dual-backend caching with cleanup tools and trash support
 - ⚙️ **Configuration System** - Network settings, proxies, mirrors, security options
 - 🖥️ **Cross-Platform** - Native desktop app for Windows, macOS, and Linux
-- 🎨 **Modern UI** - Beautiful interface with custom title bar, built with shadcn/ui and Tailwind CSS v4
+- 🎨 **Modern UI** - Frameless window with custom title bar, built with shadcn/ui and Tailwind CSS v4
 - 🌐 **Internationalization** - Multi-language support (English, Chinese) via next-intl
 - 🔄 **Auto Update** - Built-in self-update system for the application
 - 📊 **Batch Operations** - Perform bulk actions on environments and packages with progress tracking
 - ⌨️ **Command Palette** - Quick access to all features via keyboard shortcuts
-- 🧪 **Testing** - Comprehensive test suite with Jest 30 and Testing Library
+- 🐧 **WSL Management** - Full Windows Subsystem for Linux management (Windows)
+- 📥 **Download Manager** - Queue-based download system with throttling and history
+- 📋 **Onboarding** - First-run wizard with guided tour for new users
+- 📚 **Built-in Docs** - Integrated documentation viewer with Markdown rendering
+- 🧪 **Testing** - Comprehensive test suite with Jest 30, Testing Library, and 270+ Rust unit tests
 
 ## Prerequisites
 
@@ -104,7 +108,10 @@ This starts the Next.js development server at [http://localhost:3000](http://loc
 - `app/about/page.tsx` - About page with system information
 - `app/downloads/page.tsx` - Download management
 - `app/wsl/page.tsx` - WSL distribution management (Windows)
+- `app/wsl/distro/page.tsx` - WSL distro detail (filesystem, network, services, terminal)
 - `app/logs/page.tsx` - Application logs viewer
+- `app/docs/[[...slug]]/page.tsx` - Built-in documentation viewer
+- `app/providers/[id]/page.tsx` - Provider detail and configuration
 - `components/ui/` - Reusable UI components (shadcn/ui)
 - `lib/tauri.ts` - Tauri API bindings for Rust backend
 - `lib/hooks/` - React hooks for state management
@@ -183,13 +190,17 @@ CogniaLauncher/
 │   ├── layout.tsx           # Root layout with sidebar
 │   └── globals.css          # Global styles
 ├── components/              # React components
-│   ├── dashboard/           # Dashboard-specific components
+│   ├── dashboard/           # Dashboard with drag-and-drop widgets
 │   ├── environments/        # Environment cards and controls
 │   ├── packages/            # Package list and search components
+│   ├── provider-management/ # Provider cards, detail, toolbar
 │   ├── downloads/           # Download management components
+│   ├── wsl/                 # WSL distribution management
+│   ├── onboarding/          # First-run wizard and tour
+│   ├── docs/                # Documentation viewer components
 │   ├── log/                 # Log viewer components
 │   ├── settings/            # Settings panel components
-│   ├── layout/              # Sidebar and navigation
+│   ├── layout/              # Sidebar, titlebar, navigation
 │   └── ui/                  # shadcn/ui components
 ├── lib/                     # Utilities and state
 │   ├── hooks/               # React hooks (use-environments, use-packages, etc.)
@@ -207,7 +218,7 @@ CogniaLauncher/
 │   │   ├── cache/           # SQLite + JSON cache management
 │   │   ├── config/          # Configuration system
 │   │   ├── core/            # Core environment/package/batch logic
-│   │   ├── provider/        # Provider implementations (30+)
+│   │   ├── provider/        # Provider implementations (48)
 │   │   ├── platform/        # Platform abstraction layer
 │   │   ├── resolver/        # Dependency resolution
 │   │   └── lib.rs           # Main Tauri setup

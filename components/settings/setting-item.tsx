@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -294,6 +295,72 @@ export function SelectSettingItem({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SliderSettingItem — reusable Slider + Label + description row
+// ---------------------------------------------------------------------------
+
+export interface SliderSettingItemProps {
+  id: string;
+  label: string;
+  description: string;
+  value: number;
+  onValueChange: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  unit?: string;
+  highlightMatch?: boolean;
+}
+
+export function SliderSettingItem({
+  id,
+  label,
+  description,
+  value,
+  onValueChange,
+  min = 0,
+  max = 100,
+  step = 1,
+  disabled = false,
+  unit,
+  highlightMatch = false,
+}: SliderSettingItemProps) {
+  const descId = `${id}-desc`;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between py-2 rounded-md transition-colors",
+        highlightMatch && "bg-yellow-50 dark:bg-yellow-900/20 px-3 -mx-3",
+      )}
+    >
+      <div className="space-y-0.5 flex-1 mr-4">
+        <Label htmlFor={id}>{label}</Label>
+        <p id={descId} className="text-sm text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="flex items-center gap-3 w-48">
+        <Slider
+          id={id}
+          aria-describedby={descId}
+          value={[value]}
+          onValueChange={(v) => onValueChange(v[0])}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          className="flex-1"
+        />
+        <span className="text-sm text-muted-foreground tabular-nums w-12 text-right">
+          {value}{unit}
+        </span>
+      </div>
     </div>
   );
 }

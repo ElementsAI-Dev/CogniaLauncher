@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { EnvironmentInfo, DetectedEnvironment, VersionInfo, EnvironmentProviderInfo } from '../tauri';
+import type { EnvironmentInfo, DetectedEnvironment, VersionInfo, EnvironmentProviderInfo, EnvUpdateCheckResult } from '../tauri';
 import { DEFAULT_DETECTION_FILES } from '../constants/environments';
 
 export interface InstallationProgress {
@@ -69,6 +69,10 @@ interface EnvironmentState {
   detailsPanelOpen: boolean;
   detailsPanelEnvType: string | null;
   
+  // Update check state
+  updateCheckResults: Record<string, EnvUpdateCheckResult>;
+  lastEnvUpdateCheck: number | null;
+  
   // Actions
   setEnvironments: (envs: EnvironmentInfo[]) => void;
   setSelectedEnv: (envType: string | null) => void;
@@ -113,6 +117,11 @@ interface EnvironmentState {
   closeVersionBrowser: () => void;
   openDetailsPanel: (envType: string) => void;
   closeDetailsPanel: () => void;
+  
+  // Update check actions
+  setUpdateCheckResult: (envType: string, result: EnvUpdateCheckResult) => void;
+  setAllUpdateCheckResults: (results: EnvUpdateCheckResult[]) => void;
+  setLastEnvUpdateCheck: (timestamp: number) => void;
   
   // Search and filter actions
   setSearchQuery: (query: string) => void;
@@ -220,6 +229,10 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       statusFilter: 'all' as EnvironmentStatusFilter,
       sortBy: 'name' as EnvironmentSortBy,
       viewMode: 'grid' as EnvironmentViewMode,
+
+      // Update check state
+      updateCheckResults: {},
+      lastEnvUpdateCheck: null,
 
       setEnvironments: (environments) => set({ environments }),
       setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
@@ -397,6 +410,17 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       openDetailsPanel: (envType) => set({ detailsPanelOpen: true, detailsPanelEnvType: envType }),
       closeDetailsPanel: () => set({ detailsPanelOpen: false, detailsPanelEnvType: null }),
       
+      // Update check actions
+      setUpdateCheckResult: (envType, result) => set((state) => ({
+        updateCheckResults: { ...state.updateCheckResults, [envType]: result },
+      })),
+      setAllUpdateCheckResults: (results) => set(() => {
+        const map: Record<string, import('../tauri').EnvUpdateCheckResult> = {};
+        for (const r of results) { map[r.envType] = r; }
+        return { updateCheckResults: map };
+      }),
+      setLastEnvUpdateCheck: (timestamp) => set({ lastEnvUpdateCheck: timestamp }),
+      
       // Search and filter actions
       setSearchQuery: (searchQuery) => set({ searchQuery }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -410,6 +434,8 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       partialize: (state) => ({
         envSettings: state.envSettings,
         viewMode: state.viewMode,
+        updateCheckResults: state.updateCheckResults,
+        lastEnvUpdateCheck: state.lastEnvUpdateCheck,
       }),
     }
   )

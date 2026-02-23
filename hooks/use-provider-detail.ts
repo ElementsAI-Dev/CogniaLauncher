@@ -344,10 +344,9 @@ export function useProviderDetail(providerId: string) {
   const runHealthCheck = useCallback(async () => {
     setLoadingHealth(true);
     try {
-      const results = await tauri.healthCheckPackageManagers();
-      const found = results.find((r) => r.provider_id === providerId);
-      setHealthResult(found ?? null);
-      return found ?? null;
+      const result = await tauri.healthCheckPackageManager(providerId);
+      setHealthResult(result);
+      return result;
     } catch (err) {
       setError(formatError(err));
       return null;

@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, X, RefreshCw, ArrowUpDown, Filter, LayoutGrid, List } from "lucide-react";
+import { Search, X, RefreshCw, ArrowUpDown, Filter, LayoutGrid, List, ArrowUpCircle } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
   EnvironmentStatusFilter,
@@ -26,6 +26,7 @@ interface EnvironmentToolbarProps {
   sortBy: EnvironmentSortBy;
   onSortChange: (sort: EnvironmentSortBy) => void;
   onRefresh: () => void;
+  onCheckAllUpdates?: () => void;
   onClearFilters: () => void;
   isLoading: boolean;
   totalCount: number;
@@ -43,6 +44,7 @@ export function EnvironmentToolbar({
   sortBy,
   onSortChange,
   onRefresh,
+  onCheckAllUpdates,
   onClearFilters,
   isLoading,
   totalCount,
@@ -138,6 +140,20 @@ export function EnvironmentToolbar({
             <List className="h-4 w-4" />
           </ToggleGroupItem>
         </ToggleGroup>
+
+        {/* Check All Updates Button */}
+        {onCheckAllUpdates && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCheckAllUpdates}
+            disabled={isLoading}
+            className="h-9 gap-2"
+          >
+            <ArrowUpCircle className="h-4 w-4" />
+            {t("environments.updates.checkAll")}
+          </Button>
+        )}
 
         {/* Refresh Button */}
         <Button

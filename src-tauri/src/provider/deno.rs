@@ -126,8 +126,9 @@ impl DenoProvider {
     async fn fetch_available_versions(&self) -> CogniaResult<Vec<String>> {
         // Fetch from GitHub releases API
         let url = "https://api.github.com/repos/denoland/deno/releases?per_page=50";
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(url)
             .send()
             .await
@@ -332,10 +333,7 @@ impl Provider for DenoProvider {
                 }
 
                 // Parse DVM output - may have markers like "*" for current
-                let version = line
-                    .trim_start_matches('*')
-                    .trim_start_matches('-')
-                    .trim();
+                let version = line.trim_start_matches('*').trim_start_matches('-').trim();
 
                 if version.is_empty() {
                     continue;
@@ -363,7 +361,11 @@ impl Provider for DenoProvider {
             if let Ok(version) = self.get_deno_version().await {
                 let name = format!("deno@{}", version);
 
-                if filter.name_filter.as_ref().map_or(true, |f| name.contains(f)) {
+                if filter
+                    .name_filter
+                    .as_ref()
+                    .map_or(true, |f| name.contains(f))
+                {
                     let deno_dir = self.deno_dir().unwrap_or_default();
                     packages.push(InstalledPackage {
                         name,
@@ -513,10 +515,7 @@ impl EnvironmentProvider for DenoProvider {
                     for line in content.lines() {
                         let line = line.trim();
                         if line.starts_with("deno ") {
-                            let version = line
-                                .strip_prefix("deno ")
-                                .unwrap_or("")
-                                .trim();
+                            let version = line.strip_prefix("deno ").unwrap_or("").trim();
                             if !version.is_empty() {
                                 return Ok(Some(VersionDetection {
                                     version: version.to_string(),
@@ -534,33 +533,7 @@ impl EnvironmentProvider for DenoProvider {
             }
         }
 
-        // 3. Check deno.json or deno.jsonc for version hints
-        for config_name in &["deno.json", "deno.jsonc"] {
-            let config_file = start_path.join(config_name);
-            if config_file.exists() {
-                if let Ok(content) = crate::platform::fs::read_file_string(&config_file).await {
-                    // Try to parse as JSON (ignoring comments for .jsonc)
-                    let clean_content: String = content
-                        .lines()
-                        .filter(|line| !line.trim().starts_with("//"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&clean_content) {
-                        // Check for "deno" version field if it exists
-                        if let Some(version) = json.get("version").and_then(|v| v.as_str()) {
-                            return Ok(Some(VersionDetection {
-                                version: version.to_string(),
-                                source: VersionSource::Manifest,
-                                source_path: Some(config_file),
-                            }));
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Fall back to current version
+        // 3. Fall back to current version
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,

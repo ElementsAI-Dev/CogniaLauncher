@@ -24,6 +24,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "nav.logs": "Logs",
         "nav.settings": "Settings",
         "nav.about": "About",
+        "nav.docs": "Documentation",
       };
       return translations[key] || key;
     },

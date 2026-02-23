@@ -110,7 +110,7 @@ pub async fn launch_with_env(
 
         // Get environment modifications
         let env_mods = manager
-            .get_env_modifications(env_type, &version)
+            .get_env_modifications(env_type, &version, None)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -185,7 +185,7 @@ pub async fn launch_with_streaming(
 
         // Get environment modifications
         let env_mods = manager
-            .get_env_modifications(env_type, &version)
+            .get_env_modifications(env_type, &version, None)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -288,7 +288,7 @@ pub async fn env_activate(
 
     // Get environment modifications
     let env_mods = manager
-        .get_env_modifications(&env_type, &resolved_version)
+        .get_env_modifications(&env_type, &resolved_version, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -335,7 +335,7 @@ pub async fn env_get_info(
     let manager = EnvironmentManager::new(registry.inner().clone());
 
     let env_mods = manager
-        .get_env_modifications(&env_type, &version)
+        .get_env_modifications(&env_type, &version, None)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -390,7 +390,7 @@ pub async fn exec_shell_with_env(
         };
 
         let env_mods = manager
-            .get_env_modifications(env_type, &version)
+            .get_env_modifications(env_type, &version, None)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -445,7 +445,7 @@ pub async fn which_program(
     };
 
     let env_mods = manager
-        .get_env_modifications(&env_type, &version)
+        .get_env_modifications(&env_type, &version, None)
         .await
         .map_err(|e| e.to_string())?;
 

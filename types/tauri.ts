@@ -416,6 +416,58 @@ export interface SelfUpdateProgressEvent {
 }
 
 // ============================================================================
+// Environment Update Check Types
+// ============================================================================
+
+export interface EnvUpdateCheckResult {
+  envType: string;
+  providerId: string;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  latestLts: string | null;
+  newerCount: number;
+  isOutdated: boolean;
+}
+
+export interface EnvCleanupResult {
+  removed: CleanedVersion[];
+  freedBytes: number;
+  errors: string[];
+}
+
+export interface CleanedVersion {
+  version: string;
+  size: number;
+}
+
+export interface GlobalPackageInfo {
+  name: string;
+  version: string;
+}
+
+export interface EnvMigrateResult {
+  migrated: string[];
+  failed: MigrateFailure[];
+  skipped: string[];
+}
+
+export interface MigrateFailure {
+  name: string;
+  error: string;
+}
+
+export interface EolCycleInfo {
+  cycle: string;
+  releaseDate: string | null;
+  eol: string | null;
+  latest: string | null;
+  lts: string | null;
+  support: string | null;
+  isEol: boolean;
+  eolApproaching: boolean;
+}
+
+// ============================================================================
 // Install History Types
 // ============================================================================
 

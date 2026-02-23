@@ -2,7 +2,7 @@
 
 ## Purpose
 
-CogniaLauncher is a cross-platform environment and package manager with a modern graphical interface. It provides unified management for development environments (Node.js, Python, Rust) and packages from multiple providers (npm, PyPI, apt, Homebrew, winget, GitHub Releases). Built with **Next.js 16**, **React 19**, and **Tauri 2.9** for native desktop performance on Windows, macOS, and Linux.
+CogniaLauncher is a cross-platform environment and package manager with a modern graphical interface. It provides unified management for 11 language environments (Node.js, Python, Rust, Go, Ruby, Java, Kotlin, PHP, Deno, .NET, Bun) and packages from 48 providers (npm, pnpm, yarn, bun, pip, uv, poetry, cargo, gem, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, Nix, vcpkg, Conan, Docker, GitHub/GitLab Releases, and more). Built with **Next.js 16**, **React 19**, and **Tauri 2.9** for native desktop performance on Windows, macOS, and Linux.
 
 ## Tech Stack
 
@@ -58,9 +58,9 @@ CogniaLauncher is a cross-platform environment and package manager with a modern
 
 CogniaLauncher serves as a unified interface for managing development environments and packages across multiple ecosystems:
 
-- **Environment Providers**: nvm (Node.js), pyenv (Python), rustup (Rust) - manage runtime versions with global/local switching
-- **Package Providers**: npm, pnpm, uv, Cargo, Chocolatey, Scoop, winget, Homebrew, apt, vcpkg, Docker, PSGallery, GitHub Releases - search, install, update packages with global package listing
-- **Core Features**: Cache management, configuration system, dependency resolution, update checking
+- **Environment Managers**: nvm, fnm, volta (Node.js), pyenv, conda (Python), rustup (Rust), goenv (Go), rbenv (Ruby), SDKMAN (Java/Kotlin), phpbrew (PHP), deno, asdf, mise - manage runtime versions with global/local switching
+- **Package Providers**: npm, pnpm, yarn, bun, pip, uv, poetry, pipx, conda, cargo, gem, bundler, composer, dotnet, Chocolatey, Scoop, winget, Homebrew, MacPorts, apt, dnf, pacman, zypper, apk, snap, flatpak, Nix, vcpkg, Conan, Xmake, Docker, Podman, PSGallery, GitHub/GitLab Releases (48 providers)
+- **Core Features**: Cache management, configuration system, dependency resolution, update checking, download management, WSL management, system tray, command palette, custom version detection, health checks, profiles, onboarding, built-in documentation viewer
 
 ## Important Constraints
 

@@ -609,39 +609,42 @@ pub fn get_api_client() -> &'static PackageApiClient {
     API_CLIENT.get_or_init(PackageApiClient::new)
 }
 
+fn pypi_base_url_from_index_url(index_url: &str) -> String {
+    let trimmed = index_url.trim_end_matches('/');
+    if let Some(base) = trimmed.strip_suffix("/simple") {
+        base.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Update the global API client configuration from Settings
 pub fn update_api_client_from_settings(settings: &crate::config::Settings) {
     let client = get_api_client();
-    
+
     if let Some(pypi_url) = settings.get_mirror_url("pypi") {
-        client.set_pypi_url(&pypi_url);
+        // mirrors.pypi is a pip/uv index-url (usually ends with /simple). The JSON API base
+        // must not include /simple.
+        client.set_pypi_url(&pypi_base_url_from_index_url(&pypi_url));
     }
-    
+
     if let Some(npm_url) = settings.get_mirror_url("npm") {
         client.set_npm_registry(&npm_url);
-    }
-    
-    if let Some(crates_url) = settings.get_mirror_url("crates") {
-        client.set_crates_registry(&crates_url);
     }
 }
 
 /// Build an ApiClientConfig from Settings
 pub fn config_from_settings(settings: &crate::config::Settings) -> ApiClientConfig {
     let mut config = ApiClientConfig::default();
-    
+
     if let Some(pypi_url) = settings.get_mirror_url("pypi") {
-        config.pypi_base_url = pypi_url;
+        config.pypi_base_url = pypi_base_url_from_index_url(&pypi_url);
     }
-    
+
     if let Some(npm_url) = settings.get_mirror_url("npm") {
         config.npm_registry_url = npm_url;
     }
-    
-    if let Some(crates_url) = settings.get_mirror_url("crates") {
-        config.crates_registry_url = crates_url;
-    }
-    
+
     config
 }
 
@@ -650,6 +653,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Live network test (PyPI). Run with: cargo test -- --ignored"]
     async fn test_pypi_search() {
         let client = PackageApiClient::new();
         let results = client.search_pypi("requests", 10).await;
@@ -657,6 +661,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Live network test (npm registry). Run with: cargo test -- --ignored"]
     async fn test_npm_search() {
         let client = PackageApiClient::new();
         let results = client.search_npm("react", 10).await;
@@ -664,6 +669,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "Live network test (crates.io). Run with: cargo test -- --ignored"]
     async fn test_crates_search() {
         let client = PackageApiClient::new();
         let results = client.search_crates("serde", 10).await;
@@ -676,7 +682,7 @@ mod tests {
             .with_pypi_url("https://pypi.tuna.tsinghua.edu.cn")
             .with_npm_registry("https://registry.npmmirror.com")
             .with_crates_registry("https://rsproxy.cn");
-        
+
         assert_eq!(config.pypi_base_url, "https://pypi.tuna.tsinghua.edu.cn");
         assert_eq!(config.npm_registry_url, "https://registry.npmmirror.com");
         assert_eq!(config.crates_registry_url, "https://rsproxy.cn");
@@ -685,14 +691,35 @@ mod tests {
     #[test]
     fn test_api_client_config_update() {
         let client = PackageApiClient::new();
-        
+
         client.set_pypi_url("https://custom.pypi.org");
         assert_eq!(client.get_pypi_url(), "https://custom.pypi.org");
-        
+
         client.set_npm_registry("https://custom.npm.org");
         assert_eq!(client.get_npm_registry(), "https://custom.npm.org");
-        
+
         client.set_crates_registry("https://custom.crates.io");
         assert_eq!(client.get_crates_registry(), "https://custom.crates.io");
+    }
+
+    #[test]
+    fn test_pypi_base_url_derivation() {
+        assert_eq!(
+            pypi_base_url_from_index_url("https://pypi.org/simple"),
+            "https://pypi.org"
+        );
+        assert_eq!(
+            pypi_base_url_from_index_url("https://pypi.org/simple/"),
+            "https://pypi.org"
+        );
+        assert_eq!(
+            pypi_base_url_from_index_url("https://mirror.example.com/simple"),
+            "https://mirror.example.com"
+        );
+        // If it's not an index-url, keep it as-is.
+        assert_eq!(
+            pypi_base_url_from_index_url("https://pypi.org"),
+            "https://pypi.org"
+        );
     }
 }

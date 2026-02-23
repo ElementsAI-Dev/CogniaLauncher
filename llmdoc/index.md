@@ -1,42 +1,51 @@
 # CogniaLauncher 文档索引
 
-> Last Updated: 2026-02-05 | v1.3.0
+> Last Updated: 2026-02-23 | v1.4.0
 
 本文档提供 CogniaLauncher 项目的 AI 上下文文档导航索引。
 
-## 快速查找 v1.3.0 新增内容
+## 快速查找 v1.4.0 新增内容
 
-| 类型 | 文档 | 描述 |
-|------|------|------|
-| 架构 | `dashboard-components.md` | 仪表板 UI 组件 (flexbox 布局, 文本溢出) |
-| 架构 | `ssr-internationalization.md` | SSR 安全国际化 (useSyncExternalStore) |
-| 参考 | `provider-version-detection.md` | Provider 版本检测增强 API |
-| 增强 | `provider-system.md` | 更新增强版本元数据支持 |
-| 增强 | `testing-architecture.md` | 更新至 18 个测试文件 |
-| 增强 | `testing-infrastructure.md` | 更新测试覆盖统计 |
+| 类型 | 描述 |
+|------|------|
+| 功能 | WSL 管理系统 (安装/导出/导入/配置/终端/网络/文件系统) |
+| 功能 | 引导向导 (Onboarding) 和交互式巡览 |
+| 功能 | 内置文档查看器 (`/docs` 路由，Markdown 渲染) |
+| 功能 | GitLab Releases 下载支持 |
+| 功能 | 启动/Shim/PATH 管理系统 |
+| 功能 | 无边框窗口和自定义标题栏 |
+| 功能 | Kotlin 语言支持 (SDKMAN) |
+| 增强 | 48 个 Provider (新增 14 个：asdf, bun, conan, conda, gem, gitlab, macports, mise, nix, pipx, podman, volta, wsl, xmake) |
+| 增强 | 260+ Tauri 命令 (跨 20 个模块) |
+| 增强 | 100+ 测试文件 (55+ 组件测试, 270+ Rust 单元测试) |
 
 ---
 
-## v1.3.0 更新内容 (2026-02-05)
+## v1.4.0 更新内容 (2026-02-23)
 
-### 新增文档
-- `llmdoc/architecture/dashboard-components.md` - 仪表板 UI 组件架构 (flexbox 布局, 文本溢出处理)
-- `llmdoc/architecture/ssr-internationalization.md` - SSR 安全的国际化架构 (useSyncExternalStore)
-- `llmdoc/reference/provider-version-detection.md` - Provider 版本检测增强 API (发布日期、弃用状态、下载计数)
+### 新增功能
+- **WSL 管理**: 完整的 Windows Subsystem for Linux 管理 (21+ 命令，distro 详情页含文件系统/网络/服务/终端)
+- **引导系统**: 首次运行引导向导 + 交互式巡览覆盖层
+- **文档查看器**: 内置 Markdown 文档浏览器，支持 TOC 和侧边栏导航
+- **GitLab 集成**: GitLab Releases 下载支持 (15 条命令)
+- **启动/Shim/PATH**: 环境激活、Shim 创建、PATH 管理 (16 条命令)
+- **无边框窗口**: 自定义标题栏，Windows 最大化边距补偿
+- **Kotlin 支持**: 通过 SDKMAN 管理 Kotlin 编译器
+
+### 新增 Provider (14 个)
+- `asdf`, `bun`, `conan`, `conda`, `gem`, `gitlab`, `macports`, `mise`, `nix`, `pipx`, `podman`, `volta`, `wsl`, `xmake`
 
 ### 架构增强
-- **Provider 系统**: 新增增强版本元数据支持，包括发布日期、yanked/deprecated 状态、每版本下载计数
-- **测试基础设施**: 更新至 18 个测试文件，覆盖所有核心 hooks 和功能
-- **仪表板组件**: 新增 flexbox 溢出处理模式和文本截断最佳实践文档
-- **国际化**: 新增 SSR 安全的 locale provider 架构文档
+- **Provider 系统**: 完整审计和修复，48 个 Provider 全部经过 bug 修复
+- **核心模块**: 新增 eol, history, project_env_detect (共 12 个)
+- **Zustand Stores**: 新增 dashboard, onboarding, window-state (共 8 个)
+- **路由**: 新增 docs, package detail, provider detail, wsl distro detail (共 16 页)
+- **测试**: 100+ 测试文件 (Frontend), 270+ Rust 单元测试
 
-### 文档更新
-- `llmdoc/index.md` - 完整文档索引更新
-- `llmdoc/architecture/provider-system.md` - Provider 系统增强文档
-- `llmdoc/overview/testing-infrastructure.md` - 测试基础设施更新 (18 个测试文件)
-- `llmdoc/architecture/testing-architecture.md` - 测试架构详细文档
-- `CLAUDE.md` - 项目根文档 v1.3.0
-- `src-tauri/CLAUDE.md` - Tauri 后端文档 v1.3.0
+### v1.3.0 更新 (2026-02-05)
+- Health Check 系统、Profiles 系统
+- 新增 deno, phpbrew, bundler, composer, dotnet, poetry 提供商
+- 增强版本元数据 (发布日期、yanked/deprecated 状态)
 
 ---
 
@@ -141,17 +150,22 @@
 - **状态**: `lib/stores/packages.ts`
 - **后端**: `src-tauri/src/commands/package.rs` - 包命令
 
-#### Provider 系统 (v1.3.0 增强)
-- **后端**: `src-tauri/src/provider/` - 40+ provider 实现
+#### Provider 系统 (v1.4.0 增强)
+- **后端**: `src-tauri/src/provider/` - 48 provider 实现 + 6 基础设施文件
 - **注册表**: `src-tauri/src/provider/registry.rs` - Provider 注册和发现
 - **Traits**: `src-tauri/src/provider/traits.rs` - Provider trait 定义和系统检测
-- **系统检测**: `src-tauri/src/provider/traits.rs:182-272` - 可执行文件版本检测
-- **前端**: `app/providers/page.tsx` - Provider 配置 UI
-- **组件**: `components/providers/` - Provider 相关组件
-- **常量**: `lib/constants/environments.ts` - 环境类型定义
+- **系统检测**: `src-tauri/src/provider/system.rs` - 系统安装的运行时检测 (11 种类型)
+- **前端**: `app/providers/page.tsx` - Provider 管理 UI
+- **详情页**: `app/providers/[id]/page.tsx` - 单个 Provider 配置详情
+- **组件**: `components/provider-management/` - Provider 卡片、列表、工具栏
+- **常量**: `lib/constants/environments.ts` - 11 种语言环境定义
 - **架构**: `llmdoc/architecture/provider-system.md` - Provider 系统架构
-- **版本检测 API**: `llmdoc/reference/provider-version-detection.md` - 增强版本元数据 API (发布日期、弃用状态、下载计数)
-- **新提供商**: `rbenv`, `sdkman`, `goenv` (Ruby/Java/Go 版本管理), `deno`, `phpbrew`, `bundler`, `composer`, `dotnet`, `poetry`
+- **版本检测 API**: `llmdoc/reference/provider-version-detection.md` - 增强版本元数据 API
+- **环境管理器**: nvm, fnm, volta, pyenv, rustup, rbenv, sdkman, goenv, phpbrew, deno, asdf, mise
+- **语言包管理器**: npm, pnpm, yarn, bun, pip, uv, poetry, pipx, conda, cargo, gem, bundler, composer, dotnet
+- **系统包管理器**: brew, macports, apt, dnf, pacman, zypper, apk, snap, flatpak, nix, winget, chocolatey, scoop
+- **C/C++**: vcpkg, conan, xmake
+- **其他**: docker, podman, github, gitlab, psgallery, wsl, system
 
 #### 自定义检测系统
 - **后端**: `src-tauri/src/core/custom_detection.rs` - 核心检测逻辑
@@ -280,24 +294,60 @@
 - **架构**: `llmdoc/architecture/profiles-system.md`
 - **API 参考**: `llmdoc/reference/profiles-api.md`
 
+#### WSL 管理系统
+- **后端**: `src-tauri/src/provider/wsl.rs` - WSL Provider
+- **命令**: `src-tauri/src/commands/wsl.rs` - 21+ WSL 命令
+- **前端**: `app/wsl/page.tsx` - WSL 分发列表页面
+- **详情页**: `app/wsl/distro/page.tsx` - Distro 详情 (概览/文件系统/网络/服务/终端)
+- **组件**: `components/wsl/` - 33 个 WSL 组件文件
+- **Hook**: `hooks/use-wsl.ts` - WSL 操作 Hook
+- **功能**: 安装/卸载、导出/导入、配置管理、终端执行、网络信息、文件系统管理
+
+#### 引导系统 (Onboarding)
+- **组件**: `components/onboarding/onboarding-wizard.tsx` - 引导向导
+- **组件**: `components/onboarding/tour-overlay.tsx` - 交互式巡览覆盖层
+- **步骤**: `components/onboarding/steps/` - 引导步骤
+- **状态**: `lib/stores/onboarding.ts` - 引导进度状态
+- **Hook**: `hooks/use-onboarding.ts` - 引导操作 Hook
+
+#### 文档查看器
+- **前端**: `app/docs/[[...slug]]/page.tsx` - 文档路由 (catch-all)
+- **组件**: `components/docs/` - Markdown 渲染器、侧边栏、TOC
+- **数据**: `lib/docs/content.ts` - 文档内容
+- **导航**: `lib/docs/navigation.ts` - 文档导航树
+
+#### GitLab 集成
+- **后端**: `src-tauri/src/commands/gitlab.rs` - 15 条 GitLab 命令
+- **后端**: `src-tauri/src/provider/gitlab.rs` - GitLab Releases Provider
+- **Hook**: `hooks/use-gitlab-downloads.ts` - GitLab 下载 Hook
+
+#### 启动/Shim/PATH 系统
+- **后端**: `src-tauri/src/commands/launch.rs` - 6 条启动命令
+- **后端**: `src-tauri/src/commands/shim.rs` - 10 条 Shim/PATH 命令
+- **Hook**: `hooks/use-launch.ts` - 启动操作 Hook
+- **Hook**: `hooks/use-shim.ts` - Shim/PATH 管理 Hook
+
 #### 测试基础设施
 - **配置**: `jest.config.ts` - Jest 30 配置和覆盖率阈值
 - **总览**: `llmdoc/overview/testing-infrastructure.md` - 测试框架概览
-- **架构**: `llmdoc/architecture/testing-architecture.md` - 18 个测试文件的详细架构
+- **架构**: `llmdoc/architecture/testing-architecture.md` - 100+ 测试文件
 - **指南**: `llmdoc/guides/testing-guide.md` - 测试代码和运行测试
+- **Rust 测试**: 270+ 单元测试 (Provider 解析、版本检测)
 
 ### 按技术栈
 
 #### TypeScript/React
-- 类型定义: `lib/tauri.ts`
-- Hooks: `hooks/` (30 hooks)
+- 类型定义: `lib/tauri.ts`, `types/tauri.ts`
+- Hooks: `hooks/` (35+ hooks)
 - UI 组件: `components/ui/` (26+ shadcn/ui 组件)
-- 状态: `lib/stores/` (6 Zustand stores)
+- 功能组件: `components/` (15 个功能目录)
+- 状态: `lib/stores/` (8 Zustand stores)
+- 文档: `lib/docs/` (内容和导航)
 
 #### Rust
-- 命令: `src-tauri/src/commands/` - 15 个模块, 120+ 命令
-- 核心逻辑: `src-tauri/src/core/` (9 模块: profiles, health_check, custom_detection, batch, etc.)
-- Provider: `src-tauri/src/provider/` - 40+ 提供商
+- 命令: `src-tauri/src/commands/` - 20 个模块, 260+ 命令
+- 核心逻辑: `src-tauri/src/core/` (12 模块: batch, custom_detection, environment, eol, health_check, history, installer, orchestrator, profiles, project_env_detect, shim)
+- Provider: `src-tauri/src/provider/` - 48 提供商 + 6 基础设施文件
 - 平台抽象: `src-tauri/src/platform/`
 - 缓存系统: `src-tauri/src/cache/`
 - 下载管理: `src-tauri/src/download/`
@@ -331,12 +381,17 @@
 
 ## 文档维护
 
-- **当前版本:** v1.3.0 (2026-02-05)
-- **覆盖范围:** 90% (270/300 files)
+- **当前版本:** v1.4.0 (2026-02-23)
+- **覆盖范围:** 95% (380/400+ files)
 - **文档总数:** 49 (概述: 9, 指南: 9, 架构: 17, 参考: 14)
-- **Provider 数量:** 40+
-- **Tauri 命令:** 120+
-- **测试文件:** 18
+- **Provider 数量:** 48
+- **Tauri 命令:** 260+
+- **命令模块:** 20
+- **核心模块:** 12
+- **Hooks:** 35+
+- **Zustand Stores:** 8
+- **前端路由:** 16 页
+- **测试文件:** 100+ (前端) + 270+ (Rust)
 - **更新频率:** 每次重大功能变更后
 - **责任:** 开发团队
 - **审查:** 技术负责人
@@ -347,5 +402,5 @@
 
 - [README.md](/README.md) - 用户文档
 - [AGENTS.md](/AGENTS.md) - AI 指南
-- [CI_CD.md](/CI_CD.md) - CI/CD 配置
-- [TESTING.md](/TESTING.md) - 测试策略
+- [docs/development/ci-cd.md](/docs/development/ci-cd.md) - CI/CD 配置
+- [docs/development/testing.md](/docs/development/testing.md) - 测试指南

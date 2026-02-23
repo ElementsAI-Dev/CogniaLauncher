@@ -31,6 +31,7 @@ const PROVIDER_MAP = {
   docker: { slug: "docker", darkColor: "2496ED" },
   podman: { slug: "podman", darkColor: "892CA0" },
   github: { slug: "github", darkColor: "FFFFFF" },
+  gitlab: { slug: "gitlab", darkColor: "FC6D26" },
   chocolatey: { slug: "chocolatey", darkColor: "80B5E3" },
   brew: { slug: "homebrew", darkColor: "FBB040" },
   apt: { slug: "debian", darkColor: "A81D33" },
@@ -48,18 +49,13 @@ const PROVIDER_MAP = {
   phpbrew: { slug: "php", darkColor: "777BB4" },
   nix: { slug: "nixos", darkColor: "5277C3" },
   conan: { slug: "conan", darkColor: "6699CB" },
-  xmake: { slug: "xmake", darkColor: "22A079" },
   "sdkman-kotlin": { slug: "kotlin", darkColor: "7F52FF" },
   sdkman: { slug: "openjdk", darkColor: "FFFFFF" },
-  volta: { slug: "volta", darkColor: "FFA940" },
-  psgallery: { slug: "powershell", darkColor: "5391FE" },
   wsl: { slug: "linux", darkColor: "FCC624" },
-  asdf: { slug: "asdf", darkColor: "4B0082" },
-  mise: { slug: "mise", darkColor: "4B0082" },
   macports: { slug: "macports", darkColor: "FFFFFF" },
-  scoop: { slug: "scoop", darkColor: "FFFFFF" },
-  winget: { slug: "windows", darkColor: "0078D4" },
   vcpkg: { slug: "cplusplus", darkColor: "00599C" },
+  // The following use custom SVGs managed by fix-missing-icons.mjs:
+  // xmake, volta, psgallery, asdf, mise, scoop, winget
 };
 
 const PLATFORM_MAP = {
@@ -81,19 +77,30 @@ const LANGUAGE_MAP = {
   dotnet: { slug: "dotnet", darkColor: "512BD4" },
   deno: { slug: "deno", darkColor: "FFFFFF" },
   bun: { slug: "bun", darkColor: "FBF0DF" },
+  c: { slug: "c", darkColor: "A8B9CC" },
+  cpp: { slug: "cplusplus", darkColor: "00599C" },
+  swift: { slug: "swift", darkColor: "F05138" },
+  scala: { slug: "scala", darkColor: "DC322F" },
+  groovy: { slug: "apachegroovy", darkColor: "4298B8" },
+  perl: { slug: "perl", darkColor: "39457E" },
+  r: { slug: "r", darkColor: "276DC3" },
+  elixir: { slug: "elixir", darkColor: "4B275F" },
+  erlang: { slug: "erlang", darkColor: "A90533" },
+  lua: { slug: "lua", darkColor: "2C2D72" },
+  zig: { slug: "zig", darkColor: "F7A41D" },
+  julia: { slug: "julia", darkColor: "9558B2" },
+  dart: { slug: "dart", darkColor: "0175C2" },
+  typescript: { slug: "typescript", darkColor: "3178C6" },
+  haskell: { slug: "haskell", darkColor: "5D4F85" },
+  clojure: { slug: "clojure", darkColor: "5881D8" },
+  crystal: { slug: "crystal", darkColor: "000000" },
+  nim: { slug: "nim", darkColor: "FFE953" },
+  ocaml: { slug: "ocaml", darkColor: "EC6813" },
+  fortran: { slug: "fortran", darkColor: "734F96" },
 };
 
-// Custom SVGs for providers not in Simple Icons
-const CUSTOM_SVGS = {
-  scoop: {
-    light: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#4682B4"><path d="M12 2C8.13 2 5 5.13 5 9c0 1.66.58 3.18 1.54 4.38L12 22l5.46-8.62C18.42 12.18 19 10.66 19 9c0-3.87-3.13-7-7-7zm0 2c2.76 0 5 2.24 5 5 0 1.12-.37 2.16-1 3H8c-.63-.84-1-1.88-1-3 0-2.76 2.24-5 5-5zm-3 10h6l-3 4.74L9 14z"/></svg>`,
-    dark: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#87CEEB"><path d="M12 2C8.13 2 5 5.13 5 9c0 1.66.58 3.18 1.54 4.38L12 22l5.46-8.62C18.42 12.18 19 10.66 19 9c0-3.87-3.13-7-7-7zm0 2c2.76 0 5 2.24 5 5 0 1.12-.37 2.16-1 3H8c-.63-.84-1-1.88-1-3 0-2.76 2.24-5 5-5zm-3 10h6l-3 4.74L9 14z"/></svg>`,
-  },
-  macports: {
-    light: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1E3A5F"><path d="M12 2L4 6v4c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V6l-8-4zm0 2.18L18 7.3v2.7c0 4.83-3.4 9.36-6 10.55V4.18z"/><circle cx="12" cy="10" r="3"/></svg>`,
-    dark: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12 2L4 6v4c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V6l-8-4zm0 2.18L18 7.3v2.7c0 4.83-3.4 9.36-6 10.55V4.18z"/><circle cx="12" cy="10" r="3"/></svg>`,
-  },
-};
+// Custom SVGs are now managed by fix-missing-icons.mjs
+const CUSTOM_SVGS = {};
 
 async function fetchSvg(slug, color) {
   const url = color ? `${BASE_URL}/${slug}/${color}` : `${BASE_URL}/${slug}`;

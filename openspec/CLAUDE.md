@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **openspec**
 
-> Last Updated: 2026-01-15
+> Last Updated: 2026-02-23
 > OpenSpec change management and specifications for CogniaLauncher
 
 ---
@@ -66,8 +66,8 @@ openspec/
 | Spec | Description | Key Requirements |
 |------|-------------|------------------|
 | **platform-abstraction** | Cross-platform FS, process, network, env operations | File system, process execution, HTTP downloads, environment variables |
-| **provider-system** | Package provider registry and implementations | Provider trait, registry, environment providers, 30+ package providers |
-| **environment-management** | Version management for Node.js, Python, Rust | List/install/uninstall versions, global/local switching |
+| **provider-system** | Package provider registry and implementations | Provider trait, registry, environment providers, 48 providers |
+| **environment-management** | Version management for 11 languages (Node.js, Python, Rust, Go, Ruby, Java, Kotlin, PHP, Deno, .NET, Bun) | List/install/uninstall versions, global/local switching |
 | **package-installation** | Package install/uninstall/update operations | Search, install, uninstall, version selection |
 | **dependency-resolution** | Dependency resolution with PubGrub algorithm | Constraint resolution, version comparison |
 | **configuration-system** | Settings and configuration management | Get/set config, persistence, validation |

@@ -221,10 +221,9 @@ describe("QuickSearch", () => {
     });
 
     // Click on the result
-    const result = screen.getByText("node").closest("button");
-    if (result) {
-      fireEvent.click(result);
-    }
+    const resultText = screen.getByText("node");
+    const resultItem = resultText.closest("[cmdk-item]") ?? resultText;
+    fireEvent.click(resultItem);
 
     expect(mockPush).toHaveBeenCalledWith("/environments");
   });

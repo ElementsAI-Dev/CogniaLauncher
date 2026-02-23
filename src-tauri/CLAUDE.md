@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-02-05 | v1.3.0
+> Last Updated: 2026-02-23 | v1.4.0
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -11,9 +11,9 @@
 
 This module contains the **Rust backend** for CogniaLauncher, running as a native desktop application via Tauri. It provides:
 
-- **IPC Commands**: Exposed to frontend via Tauri's invoke system (120+ commands across 15 modules)
-- **Core Logic**: Environment and package management operations (9 modules including profiles, health_check, custom_detection)
-- **Provider System**: Extensible provider registry for package sources (40+ providers)
+- **IPC Commands**: Exposed to frontend via Tauri's invoke system (260+ commands across 20 modules)
+- **Core Logic**: Environment and package management operations (12 modules including profiles, health_check, custom_detection, eol, history, project_env_detect)
+- **Provider System**: Extensible provider registry for package sources (48 providers)
 - **Cache Management**: Download and metadata caching with SQLite
 - **Platform Abstraction**: Cross-platform file system, process, and network operations
 - **Dependency Resolution**: Version constraint resolution using PubGrub
@@ -231,6 +231,117 @@ All commands are registered in `src/lib.rs` and organized by module.
 | `log_export` | Export logs to file |
 | `log_clear` | Clear log files |
 | `log_get_dir` | Get log directory path |
+| `log_get_total_size` | Get total size of all log files |
+
+### WSL Commands (`commands::wsl`) — Windows only
+
+| Command | Purpose |
+|---------|---------|
+| `wsl_list_distros` | List installed WSL distributions |
+| `wsl_list_online` | List available distributions from Microsoft |
+| `wsl_status` | Get WSL status and kernel version |
+| `wsl_terminate` | Terminate a specific distribution |
+| `wsl_shutdown` | Shutdown all WSL distributions |
+| `wsl_set_default` | Set default distribution |
+| `wsl_set_version` | Set WSL version for a distribution |
+| `wsl_set_default_version` | Set default WSL version |
+| `wsl_export` | Export distribution to file |
+| `wsl_import` | Import distribution from file |
+| `wsl_import_in_place` | Import distribution in-place |
+| `wsl_update` | Update WSL |
+| `wsl_launch` | Launch a distribution |
+| `wsl_list_running` | List running distributions |
+| `wsl_is_available` | Check if WSL is available |
+| `wsl_mount` | Mount a disk in WSL |
+| `wsl_unmount` | Unmount a disk from WSL |
+| `wsl_get_ip` | Get IP address of a distribution |
+| `wsl_change_default_user` | Change default user for a distribution |
+| `wsl_get_distro_config` | Get per-distro wsl.conf configuration |
+| `wsl_set_distro_config` | Set per-distro wsl.conf values |
+
+### GitHub Commands (`commands::github`)
+
+| Command | Purpose |
+|---------|---------|
+| `github_get_releases` | Get releases for a GitHub repo |
+| `github_get_release_assets` | Get assets for a specific release |
+| `github_download_asset` | Download a release asset |
+| `github_get_latest_release` | Get latest release info |
+| `github_search_repos` | Search GitHub repositories |
+| + 7 more | Asset matching, version comparison, etc. |
+
+### GitLab Commands (`commands::gitlab`)
+
+| Command | Purpose |
+|---------|---------|
+| `gitlab_get_releases` | Get releases for a GitLab project |
+| `gitlab_get_release_assets` | Get assets for a specific release |
+| `gitlab_download_asset` | Download a release asset |
+| `gitlab_get_latest_release` | Get latest release info |
+| `gitlab_search_projects` | Search GitLab projects |
+| + 10 more | Instance management, authentication, etc. |
+
+### Health Check Commands (`commands::health_check`)
+
+| Command | Purpose |
+|---------|---------|
+| `health_check_environment` | Run health check on a specific environment |
+| `health_check_system` | Run system-wide health check |
+| `health_check_all` | Run health checks on all environments |
+| `health_check_fix` | Apply fix for detected issue |
+
+### Profiles Commands (`commands::profiles`)
+
+| Command | Purpose |
+|---------|---------|
+| `profile_list` | List all saved profiles |
+| `profile_get` | Get a specific profile |
+| `profile_create` | Create profile from current environment state |
+| `profile_apply` | Apply a profile (switch versions) |
+| `profile_delete` | Delete a profile |
+| `profile_update` | Update an existing profile |
+| `profile_export` | Export profile to file |
+| `profile_import` | Import profile from file |
+| `profile_duplicate` | Duplicate an existing profile |
+
+### Launch Commands (`commands::launch`)
+
+| Command | Purpose |
+|---------|---------|
+| `launch_with_env` | Launch program with environment modifications |
+| `launch_with_streaming` | Launch with streaming output |
+| `env_activate` | Get activation script for an environment |
+| `env_get_info` | Get environment info (paths, versions) |
+| `exec_shell_with_env` | Execute shell command with environment |
+| `which_program` | Find program location in PATH |
+
+### Shim/PATH Commands (`commands::shim`)
+
+| Command | Purpose |
+|---------|---------|
+| `shim_create` | Create a shim for an executable |
+| `shim_remove` | Remove a shim |
+| `shim_list` | List all created shims |
+| `shim_update` | Update a shim's target |
+| `shim_regenerate_all` | Regenerate all shims |
+| `path_status` | Get PATH configuration status |
+| `path_setup` | Add paths to system PATH |
+| `path_remove` | Remove paths from system PATH |
+| `path_check` | Check if a path is in PATH |
+| `path_get_add_command` | Get shell command to add path |
+
+### Manifest Commands (`commands::manifest`)
+
+| Command | Purpose |
+|---------|---------|
+| `manifest_read` | Read project manifest (package.json, Cargo.toml, etc.) |
+| `manifest_detect` | Detect project type and manifest file |
+
+### FS Utils Commands (`commands::fs_utils`)
+
+| Command | Purpose |
+|---------|---------|
+| `fs_read_text_file` | Read a text file safely |
 
 ---
 
@@ -267,46 +378,94 @@ pub async fn package_search(
 - `environment.rs` - Environment version management
 - `installer.rs` - Package installation logic
 - `orchestrator.rs` - Operation orchestration
-- `batch.rs` - Batch operations
+- `batch.rs` - Batch operations (with PackageSpec parsing)
 - `shim.rs` - Shim creation for executables
-- `custom_detection.rs` - Custom version detection rules (17 commands)
+- `custom_detection.rs` - Custom version detection rules
+- `health_check.rs` - Environment and system health diagnostics
+- `profiles.rs` - Environment configuration snapshot management
+- `history.rs` - Installation history tracking
+- `eol.rs` - End-of-life version tracking
+- `project_env_detect.rs` - Project-level environment detection
 
 ### provider/ - Package Providers
 
 **Purpose:** Implementations of package and environment providers
 
-**Available Providers:**
+**Available Providers (48 total):**
 
-| Provider | Type | Platform | Description |
-|----------|------|----------|-------------|
-| `nvm` | Environment | Cross | Node.js version management |
-| `fnm` | Environment | Cross | Fast Node.js manager |
-| `pyenv` | Environment | Cross | Python version management |
-| `rustup` | Environment | Cross | Rust toolchain management |
-| `rbenv` | Environment | Cross | Ruby version management |
-| `sdkman` | Environment | Cross | SDKMAN for JVM |
-| `goenv` | Environment | Cross | Go version management |
-| `npm` | Package | Cross | Node.js packages |
-| `pnpm` | Package | Cross | Fast Node.js package manager |
-| `yarn` | Package | Cross | Node.js package manager |
-| `pip` | Package | Cross | Python packages |
-| `uv` | Package | Cross | Fast Python package installer |
-| `cargo` | Package | Cross | Rust packages |
-| `brew` | Package | macOS | macOS package manager |
-| `apt` | Package | Linux | Debian/Ubuntu packages |
-| `dnf` | Package | Linux | Fedora packages |
-| `pacman` | Package | Linux | Arch packages |
-| `zypper` | Package | Linux | openSUSE packages |
-| `snap` | Package | Linux | Universal Linux packages |
-| `flatpak` | Package | Linux | Desktop application framework |
-| `winget` | Package | Windows | Windows package manager |
-| `chocolatey` | Package | Windows | Windows package manager |
-| `scoop` | Package | Windows | Windows package manager |
-| `vcpkg` | Package | Cross | C++ package manager |
-| `docker` | Package | Cross | Container images |
-| `github` | Package | Cross | GitHub Releases |
-| `registry` | Package | Cross | Language package registries |
-| `psgallery` | Package | Windows | PowerShell Gallery |
+**Environment Managers (version switching):**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `nvm` | Cross | Node.js version management |
+| `fnm` | Cross | Fast Node.js manager (Rust) |
+| `volta` | Cross | Hassle-free JavaScript tool manager |
+| `pyenv` | Cross | Python version management |
+| `rustup` | Cross | Rust toolchain management |
+| `rbenv` | Cross | Ruby version management |
+| `sdkman` | Cross | SDKMAN for Java/Kotlin/Gradle/Maven/Scala |
+| `goenv` | Cross | Go version management (+ GoModProvider) |
+| `phpbrew` | Cross | PHP version management |
+| `deno` | Cross | Deno runtime management |
+| `asdf` | Cross | Polyglot version manager |
+| `mise` | Cross | Polyglot version manager (successor to rtx/asdf) |
+
+**Language Package Managers:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `npm` | Cross | Node.js packages |
+| `pnpm` | Cross | Fast Node.js package manager |
+| `yarn` | Cross | Node.js package manager |
+| `bun` | Cross | Bun JavaScript runtime & package manager |
+| `pip` | Cross | Python packages |
+| `uv` | Cross | Fast Python package installer |
+| `poetry` | Cross | Python dependency management |
+| `pipx` | Cross | Isolated Python CLI tools |
+| `conda` | Cross | Conda/Mamba data science packages |
+| `cargo` | Cross | Rust packages |
+| `gem` | Cross | RubyGems packages |
+| `bundler` | Cross | Ruby dependency management |
+| `composer` | Cross | PHP packages |
+| `dotnet` | Cross | .NET packages (NuGet) |
+
+**System Package Managers:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `brew` | macOS | Homebrew package manager |
+| `macports` | macOS | MacPorts package manager |
+| `apt` | Linux | Debian/Ubuntu packages |
+| `dnf` | Linux | Fedora packages |
+| `pacman` | Linux | Arch packages |
+| `zypper` | Linux | openSUSE packages |
+| `apk` | Linux | Alpine packages |
+| `snap` | Linux | Universal Linux packages |
+| `flatpak` | Linux | Desktop application framework |
+| `nix` | Linux/macOS | Nix package manager |
+| `winget` | Windows | Windows package manager |
+| `chocolatey` | Windows | Windows package manager |
+| `scoop` | Windows | Windows package manager |
+
+**C/C++ Package Managers:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `vcpkg` | Cross | Microsoft C++ package manager |
+| `conan` | Cross | Conan 2.x C/C++ package manager |
+| `xmake` | Cross | Xmake/Xrepo C/C++ package manager |
+
+**Other Providers:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `docker` | Cross | Container images |
+| `podman` | Cross | Podman container images |
+| `github` | Cross | GitHub Releases |
+| `gitlab` | Cross | GitLab Releases |
+| `psgallery` | Windows | PowerShell Gallery |
+| `wsl` | Windows | Windows Subsystem for Linux |
+| `system` | Cross | System-installed runtime detection |
 
 **Provider Traits:**
 
@@ -496,23 +655,12 @@ Defines permissions including `updater:default` for self-update functionality.
 
 ### Current Status
 
-No Rust unit tests are currently configured.
+270+ Rust unit tests across provider files. Tests cover output parsing, version detection, and provider metadata.
 
-### Recommendation
-
-Add test infrastructure:
-
-```rust
-// Example test structure
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_provider_search() {
-        // Test implementation
-    }
-}
+```bash
+cargo test              # Run all tests
+cargo test winget       # Run tests for a specific provider
+cargo test -- --nocapture  # Run with stdout output
 ```
 
 ### Quality Tools
@@ -608,73 +756,95 @@ impl Provider for MyProvider {
 src-tauri/
 ├── src/
 │   ├── main.rs              # Entry point
-│   ├── lib.rs               # Tauri builder, command registration
-│   ├── error.rs             # Error types
-│   ├── commands/            # Tauri command handlers
+│   ├── lib.rs               # Tauri builder, command registration (260+ commands)
+│   ├── error.rs             # Error types (CogniaError)
+│   ├── tray.rs              # System tray (multi-language, notifications, autostart)
+│   ├── commands/            # Tauri command handlers (20 modules)
 │   │   ├── mod.rs
-│   │   ├── environment.rs
-│   │   ├── package.rs
-│   │   ├── config.rs
-│   │   ├── cache.rs
-│   │   ├── batch.rs
-│   │   ├── search.rs
-│   │   ├── updater.rs
-│   │   ├── custom_detection.rs
-│   │   ├── download.rs
-│   │   ├── log.rs
-│   │   ├── launch.rs
-│   │   ├── manifest.rs
-│   │   └── shim.rs
-│   ├── core/                # Core business logic
+│   │   ├── environment.rs   # 36 env commands (install, detect, alias, etc.)
+│   │   ├── package.rs       # 13 package commands
+│   │   ├── config.rs        # 9 config commands
+│   │   ├── cache.rs         # 32 cache commands
+│   │   ├── batch.rs         # 12 batch commands
+│   │   ├── download.rs      # 32 download commands
+│   │   ├── wsl.rs           # 26 WSL commands (Windows only)
+│   │   ├── custom_detection.rs # 16 custom detection commands
+│   │   ├── gitlab.rs        # 15 GitLab commands
+│   │   ├── github.rs        # 12 GitHub commands
+│   │   ├── shim.rs          # 10 shim/PATH commands
+│   │   ├── profiles.rs      # 9 profile commands
+│   │   ├── launch.rs        # 6 launch/exec commands
+│   │   ├── log.rs           # 6 log commands
+│   │   ├── health_check.rs  # 4 health check commands
+│   │   ├── search.rs        # 3 search commands
+│   │   ├── updater.rs       # 2 self-update commands
+│   │   ├── manifest.rs      # 2 manifest commands
+│   │   └── fs_utils.rs      # 1 fs utility command
+│   ├── core/                # Core business logic (12 modules)
 │   │   ├── mod.rs
-│   │   ├── environment.rs
-│   │   ├── installer.rs
-│   │   ├── orchestrator.rs
-│   │   ├── batch.rs
-│   │   ├── shim.rs
-│   │   └── custom_detection.rs
-│   ├── provider/            # Provider implementations
+│   │   ├── environment.rs   # Environment version management
+│   │   ├── installer.rs     # Package installation logic
+│   │   ├── orchestrator.rs  # Operation orchestration
+│   │   ├── batch.rs         # Batch operations + PackageSpec parsing
+│   │   ├── shim.rs          # Shim creation for executables
+│   │   ├── custom_detection.rs # Custom version detection rules
+│   │   ├── health_check.rs  # Environment and system diagnostics
+│   │   ├── profiles.rs      # Configuration snapshot management
+│   │   ├── history.rs       # Installation history tracking
+│   │   ├── eol.rs           # End-of-life version tracking
+│   │   └── project_env_detect.rs # Project-level environment detection
+│   ├── provider/            # Provider implementations (48 + 6 infra)
+│   │   ├── mod.rs           # Module exports
+│   │   ├── traits.rs        # Provider/EnvironmentProvider/SystemPackageProvider traits
+│   │   ├── api.rs           # PackageApiClient (PyPI/npm/crates.io mirrors)
+│   │   ├── registry.rs      # Platform-aware provider registration
+│   │   ├── node_base.rs     # Shared Node.js utilities + split_name_version
+│   │   ├── system.rs        # System runtime detection (11 types)
+│   │   └── ... (48 provider .rs files)
+│   ├── cache/               # Cache management (10 modules)
 │   │   ├── mod.rs
-│   │   ├── traits.rs
-│   │   ├── api.rs
-│   │   ├── registry.rs
-│   │   ├── npm.rs
-│   │   ├── brew.rs
-│   │   └── ... (35+ providers)
-│   ├── cache/               # Cache management
-│   │   ├── mod.rs
-│   │   ├── download.rs
-│   │   ├── metadata.rs
-│   │   ├── db.rs
-│   │   └── enhanced.rs
+│   │   ├── db.rs            # Legacy database
+│   │   ├── sqlite_db.rs     # SQLite database operations
+│   │   ├── download.rs      # Download caching
+│   │   ├── download_history.rs # Download history persistence
+│   │   ├── metadata.rs      # Metadata caching
+│   │   ├── enhanced.rs      # Enhanced cache features
+│   │   ├── history.rs       # Cleanup history tracking
+│   │   ├── external.rs      # External cache management
+│   │   └── migration.rs     # Cache migration utilities
 │   ├── config/              # Configuration
 │   │   ├── mod.rs
-│   │   ├── settings.rs
-│   │   ├── manifest.rs
-│   │   └── lockfile.rs
+│   │   ├── settings.rs      # Settings management
+│   │   ├── manifest.rs      # Project manifests
+│   │   └── lockfile.rs      # Dependency lockfiles
 │   ├── download/            # Download management
 │   │   ├── mod.rs
-│   │   ├── manager.rs
-│   │   ├── queue.rs
-│   │   ├── task.rs
-│   │   ├── throttle.rs
-│   │   └── state.rs
-│   ├── platform/            # Platform abstraction
+│   │   ├── manager.rs       # DownloadManager coordinator
+│   │   ├── queue.rs         # Concurrency control
+│   │   ├── task.rs          # State machine (queued→downloading→completed)
+│   │   ├── throttle.rs      # Token bucket speed limiter
+│   │   ├── state.rs         # Error types and state transitions
+│   │   └── asset_picker.rs  # Platform-aware asset selection
+│   ├── platform/            # Platform abstraction (7 modules)
 │   │   ├── mod.rs
-│   │   ├── fs.rs
-│   │   ├── process.rs
-│   │   ├── network.rs
-│   │   └── env.rs
-│   ├── resolver/            # Dependency resolution
-│   │   ├── mod.rs
-│   │   ├── pubgrub.rs
-│   │   ├── constraint.rs
-│   │   └── version.rs
-│   └── tray.rs              # System tray implementation
+│   │   ├── fs.rs            # File system operations
+│   │   ├── process.rs       # Process execution
+│   │   ├── network.rs       # Network operations
+│   │   ├── env.rs           # Environment variables
+│   │   ├── disk.rs          # Disk space + format_size/format_duration
+│   │   └── paths.rs         # Platform-specific paths
+│   └── resolver/            # Dependency resolution
+│       ├── mod.rs
+│       ├── pubgrub.rs       # PubGrub algorithm
+│       ├── constraint.rs    # Version constraints
+│       └── version.rs       # Version parsing and comparison
 ├── Cargo.toml               # Rust dependencies
 ├── Cargo.lock               # Lock file
 ├── build.rs                 # Build script
 ├── tauri.conf.json          # Tauri configuration
+├── CLAUDE.md                # This file
+├── capabilities/            # Tauri capability permissions
+│   └── default.json
 └── icons/                   # App icons
 ```
 

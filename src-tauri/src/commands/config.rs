@@ -62,6 +62,8 @@ pub async fn config_list(
         "appearance.theme",
         "appearance.accent_color",
         "appearance.chart_color_theme",
+        "appearance.interface_radius",
+        "appearance.interface_density",
         "appearance.language",
         "appearance.reduced_motion",
         "paths.root",

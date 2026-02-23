@@ -1,1 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#FFD080" d="M13 2L4.5 14h5L7 22l11-13h-5.5z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><linearGradient id="voltaGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#FFD060"/><stop offset="100%" style="stop-color:#FFA940"/></linearGradient></defs><path fill="url(#voltaGrad)" d="M13.5 1L3.5 13.5h5.5l-2 9.5L19.5 10H14l3-9z"/><path fill="#FFFFFF" opacity="0.2" d="M13.5 1L14 10h5.5L7 23l2-9.5H3.5L13.5 1z" clip-path="inset(0 50% 0 0)"/></svg>

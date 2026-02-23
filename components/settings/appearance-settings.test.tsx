@@ -1,6 +1,33 @@
 import { render, screen } from "@testing-library/react";
 import { AppearanceSettings } from "./appearance-settings";
 
+jest.mock("@/lib/stores/appearance", () => ({
+  useAppearanceStore: jest.fn(() => ({
+    backgroundEnabled: false,
+    setBackgroundEnabled: jest.fn(),
+    backgroundOpacity: 20,
+    setBackgroundOpacity: jest.fn(),
+    backgroundBlur: 0,
+    setBackgroundBlur: jest.fn(),
+    backgroundFit: "cover",
+    setBackgroundFit: jest.fn(),
+    clearBackground: jest.fn(),
+  })),
+}));
+
+jest.mock("@/lib/theme/background", () => ({
+  getBackgroundImage: jest.fn(() => null),
+  removeBackgroundImage: jest.fn(),
+  setBackgroundImageData: jest.fn(),
+  notifyBackgroundChange: jest.fn(),
+  compressImage: jest.fn(() => Promise.resolve("data:image/jpeg;base64,test")),
+  BG_CHANGE_EVENT: "cognia-bg-change",
+}));
+
+jest.mock("@/lib/tauri", () => ({
+  isTauri: jest.fn(() => false),
+}));
+
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
     locale: "en",
@@ -30,6 +57,10 @@ const defaultProps = {
   setAccentColor: jest.fn(),
   chartColorTheme: "default" as const,
   setChartColorTheme: jest.fn(),
+  interfaceRadius: 0.625 as const,
+  setInterfaceRadius: jest.fn(),
+  interfaceDensity: "comfortable" as const,
+  setInterfaceDensity: jest.fn(),
   reducedMotion: false,
   setReducedMotion: jest.fn(),
   t: (key: string) => {
@@ -43,7 +74,18 @@ const defaultProps = {
       "settings.language": "Language",
       "settings.accentColor": "Accent Color",
       "settings.chartColorTheme": "Chart Color Theme",
+      "settings.interfaceRadius": "Border Radius",
+      "settings.interfaceDensity": "Interface Density",
       "settings.reducedMotion": "Reduced Motion",
+      "settings.radiusSharp": "Sharp",
+      "settings.radiusSlight": "Slight",
+      "settings.radiusMedium": "Medium",
+      "settings.radiusDefault": "Default",
+      "settings.radiusRound": "Round",
+      "settings.radiusFull": "Full",
+      "settings.densityCompact": "Compact",
+      "settings.densityComfortable": "Comfortable",
+      "settings.densitySpacious": "Spacious",
     };
     return translations[key] || key;
   },
@@ -74,6 +116,16 @@ describe("AppearanceSettings", () => {
   it("renders chart color theme selection", () => {
     render(<AppearanceSettings {...defaultProps} />);
     expect(screen.getByText("Chart Color Theme")).toBeInTheDocument();
+  });
+
+  it("renders border radius picker", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+    expect(screen.getByText("Border Radius")).toBeInTheDocument();
+  });
+
+  it("renders interface density selector", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+    expect(screen.getByText("Interface Density")).toBeInTheDocument();
   });
 
   it("renders reduced motion toggle", () => {

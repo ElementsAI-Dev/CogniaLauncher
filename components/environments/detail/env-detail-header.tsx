@@ -16,6 +16,7 @@ import {
   Download,
 } from "lucide-react";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
+import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { LANGUAGES } from "@/lib/constants/environments";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 
@@ -40,7 +41,6 @@ export function EnvDetailHeader({
 }: EnvDetailHeaderProps) {
   const langInfo = LANGUAGES.find((l) => l.id === envType);
   const displayName = langInfo?.name || envType;
-  const icon = langInfo?.icon || "📦";
 
   return (
     <div className="space-y-4">
@@ -64,8 +64,8 @@ export function EnvDetailHeader({
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 text-2xl">
-            {icon}
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
+            <LanguageIcon languageId={envType} size={36} />
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-3">

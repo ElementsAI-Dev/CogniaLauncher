@@ -45,6 +45,6 @@ describe("EnvDetailHeader", () => {
 
   it("renders back link to environments page", () => {
     render(<EnvDetailHeader {...defaultProps} />);
-    expect(screen.getByRole("link")).toHaveAttribute("href", "/environments");
+    expect(screen.getByRole("link", { name: "environments.title" })).toHaveAttribute("href", "/environments");
   });
 });

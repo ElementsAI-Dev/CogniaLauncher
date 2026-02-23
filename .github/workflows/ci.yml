@@ -33,7 +33,7 @@ name: CI/CD Pipeline
 # ⚠️ CODE SIGNING IS DISABLED BY DEFAULT - Tauri builds will be unsigned.
 # To enable code signing, uncomment the relevant sections in the workflow.
 # All features that require secrets will be skipped gracefully if not configured.
-# See CI_CD.md for detailed setup instructions.
+# See docs/development/ci-cd.md for detailed setup instructions.
 # ============================================================================
 
 on:
@@ -88,7 +88,7 @@ jobs:
           echo "ℹ️ To enable optional features:" >> "$GITHUB_STEP_SUMMARY"
           echo "1. Add the required secrets to your GitHub repository" >> "$GITHUB_STEP_SUMMARY"
           echo "2. Uncomment the relevant sections in \`.github/workflows/ci.yml\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "3. See \`CI_CD.md\` for detailed setup instructions" >> "$GITHUB_STEP_SUMMARY"
+          echo "3. See \`docs/development/ci-cd.md\` for detailed setup instructions" >> "$GITHUB_STEP_SUMMARY"
 
           # Uncomment the following sections to enable status checks for optional features:
           #
@@ -298,7 +298,7 @@ jobs:
   # To enable:
   # 1. Add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID to GitHub secrets
   # 2. Uncomment the entire job below
-  # 3. See CI_CD.md for detailed setup instructions
+  # 3. See docs/development/ci-cd.md for detailed setup instructions
   #
   # deploy-preview:
   #   name: Deploy Preview

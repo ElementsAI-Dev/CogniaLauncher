@@ -1,5 +1,5 @@
-export { SettingItem, validateField, SwitchSettingItem, SelectSettingItem } from "./setting-item";
-export type { SwitchSettingItemProps, SelectSettingItemProps, SelectSettingItemOption } from "./setting-item";
+export { SettingItem, validateField, SwitchSettingItem, SelectSettingItem, SliderSettingItem } from "./setting-item";
+export type { SwitchSettingItemProps, SelectSettingItemProps, SelectSettingItemOption, SliderSettingItemProps } from "./setting-item";
 export { GeneralSettings } from "./general-settings";
 export { NetworkSettings } from "./network-settings";
 export { SecuritySettings } from "./security-settings";

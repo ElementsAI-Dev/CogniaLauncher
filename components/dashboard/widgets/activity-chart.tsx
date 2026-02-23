@@ -10,6 +10,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
+import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
 
 interface ActivityChartProps {
@@ -49,11 +50,11 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
   const chartConfig: ChartConfig = {
     environments: {
       label: t("dashboard.widgets.environments"),
-      color: "#3B82F6",
+      color: getChartColor(0),
     },
     packages: {
       label: t("dashboard.widgets.packages"),
-      color: "#10B981",
+      color: getChartColor(1),
     },
   };
 
@@ -88,15 +89,15 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
         <ChartContainer config={chartConfig} className="h-[200px] w-full aspect-auto">
           <AreaChart data={chartData} margin={{ left: 0, right: 12 }}>
             <defs>
-              <linearGradient id="fillEnv" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.6} />
-                <stop offset="60%" stopColor="#60A5FA" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#93C5FD" stopOpacity={0.05} />
+              <linearGradient id={getGradientId("actEnv", 0)} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={getChartColor(0)} stopOpacity={0.6} />
+                <stop offset="60%" stopColor={getChartColor(0)} stopOpacity={0.2} />
+                <stop offset="95%" stopColor={getChartColor(0)} stopOpacity={0.05} />
               </linearGradient>
-              <linearGradient id="fillPkg" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10B981" stopOpacity={0.6} />
-                <stop offset="60%" stopColor="#34D399" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#6EE7B7" stopOpacity={0.05} />
+              <linearGradient id={getGradientId("actPkg", 0)} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={getChartColor(1)} stopOpacity={0.6} />
+                <stop offset="60%" stopColor={getChartColor(1)} stopOpacity={0.2} />
+                <stop offset="95%" stopColor={getChartColor(1)} stopOpacity={0.05} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
@@ -112,16 +113,16 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
             <Area
               type="monotone"
               dataKey="environments"
-              stroke="#3B82F6"
+              stroke={getChartColor(0)}
               strokeWidth={2.5}
-              fill="url(#fillEnv)"
+              fill={`url(#${getGradientId("actEnv", 0)})`}
             />
             <Area
               type="monotone"
               dataKey="packages"
-              stroke="#10B981"
+              stroke={getChartColor(1)}
               strokeWidth={2.5}
-              fill="url(#fillPkg)"
+              fill={`url(#${getGradientId("actPkg", 0)})`}
             />
           </AreaChart>
         </ChartContainer>

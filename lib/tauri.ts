@@ -5,6 +5,13 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 export type {
   EnvInstallProgressEvent,
   EnvVerifyResult,
+  EnvUpdateCheckResult,
+  EnvCleanupResult,
+  CleanedVersion,
+  GlobalPackageInfo,
+  EnvMigrateResult,
+  MigrateFailure,
+  EolCycleInfo,
   EnvironmentInfo,
   InstalledVersion,
   DetectedEnvironment,
@@ -128,6 +135,13 @@ export type {
 import type {
   EnvInstallProgressEvent,
   EnvVerifyResult,
+  EnvUpdateCheckResult,
+  EnvCleanupResult,
+  CleanedVersion,
+  GlobalPackageInfo,
+  EnvMigrateResult,
+  MigrateFailure,
+  EolCycleInfo,
   EnvironmentInfo,
   InstalledVersion,
   DetectedEnvironment,
@@ -309,6 +323,42 @@ export const envInstalledVersions = (envType: string) =>
 
 export const envCurrentVersion = (envType: string) =>
   invoke<string | null>('env_current_version', { envType });
+
+// Environment update checking & cleanup commands
+export const envCheckUpdates = (envType: string) =>
+  invoke<EnvUpdateCheckResult>('env_check_updates', { envType });
+
+export const envCheckUpdatesAll = () =>
+  invoke<EnvUpdateCheckResult[]>('env_check_updates_all');
+
+export const envCleanupVersions = (envType: string, versionsToRemove: string[]) =>
+  invoke<EnvCleanupResult>('env_cleanup_versions', { envType, versionsToRemove });
+
+export const envListGlobalPackages = (envType: string, version: string, providerId?: string) =>
+  invoke<GlobalPackageInfo[]>('env_list_global_packages', { envType, version, providerId });
+
+export const envMigratePackages = (
+  envType: string,
+  fromVersion: string,
+  toVersion: string,
+  packages: string[],
+  providerId?: string,
+) => invoke<EnvMigrateResult>('env_migrate_packages', { envType, fromVersion, toVersion, packages, providerId });
+
+export async function listenEnvMigrateProgress(
+  callback: (progress: { envType: string; current: number; total: number; package: string }) => void
+): Promise<UnlistenFn> {
+  return listen<{ envType: string; current: number; total: number; package: string }>('env-migrate-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+// EOL (End-of-Life) data commands
+export const envGetEolInfo = (envType: string) =>
+  invoke<EolCycleInfo[]>('env_get_eol_info', { envType });
+
+export const envGetVersionEol = (envType: string, version: string) =>
+  invoke<EolCycleInfo | null>('env_get_version_eol', { envType, version });
 
 // Rustup-specific commands
 export const rustupListComponents = (toolchain?: string) =>
@@ -986,6 +1036,10 @@ export const healthCheckEnvironment = (envType: string) =>
 /** Check health of all package managers */
 export const healthCheckPackageManagers = () =>
   invoke<PackageManagerHealthResult[]>('health_check_package_managers');
+
+/** Check health of a single package manager/provider */
+export const healthCheckPackageManager = (providerId: string) =>
+  invoke<PackageManagerHealthResult>('health_check_package_manager', { providerId });
 
 // ===== Environment Profiles Commands =====
 

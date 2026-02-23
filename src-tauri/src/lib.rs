@@ -17,8 +17,8 @@ use core::custom_detection::CustomDetectionManager;
 use log::info;
 use provider::ProviderRegistry;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
@@ -129,7 +129,8 @@ pub fn run() {
 
                 // Initialize download manager
                 let settings_guard = settings.read().await;
-                let download_manager = init_download_manager(app_handle_for_download, &settings_guard).await;
+                let download_manager =
+                    init_download_manager(app_handle_for_download, &settings_guard).await;
                 drop(settings_guard);
                 info!("Download manager initialized");
 
@@ -156,11 +157,14 @@ pub fn run() {
 
             Ok(())
         })
+        .manage(Arc::new(core::eol::EolCache::new()) as commands::environment::SharedEolCache)
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())) as SharedRegistry)
         .manage(Arc::new(RwLock::new(Settings::default())) as SharedSettings)
         .manage(Arc::new(RwLock::new(HashMap::new())) as CancellationTokens)
         .manage(Arc::new(RwLock::new(TrayState::default())) as SharedTrayState)
-        .manage(Arc::new(RwLock::new(CustomDetectionManager::new(std::path::Path::new("")))) as SharedCustomDetectionManager)
+        .manage(Arc::new(RwLock::new(CustomDetectionManager::new(
+            std::path::Path::new(""),
+        ))) as SharedCustomDetectionManager)
         .manage(core::create_shared_profile_manager(
             std::path::PathBuf::from(""),
             Arc::new(RwLock::new(ProviderRegistry::new())),
@@ -187,6 +191,15 @@ pub fn run() {
             commands::environment::env_verify_install,
             commands::environment::env_installed_versions,
             commands::environment::env_current_version,
+            // EOL commands
+            commands::environment::env_get_eol_info,
+            commands::environment::env_get_version_eol,
+            // Environment update checking & cleanup commands
+            commands::environment::env_check_updates,
+            commands::environment::env_check_updates_all,
+            commands::environment::env_cleanup_versions,
+            commands::environment::env_list_global_packages,
+            commands::environment::env_migrate_packages,
             // Rustup-specific commands
             commands::environment::rustup_list_components,
             commands::environment::rustup_add_component,
@@ -280,6 +293,7 @@ pub fn run() {
             // Health check commands
             commands::health_check::health_check_all,
             commands::health_check::health_check_environment,
+            commands::health_check::health_check_package_manager,
             commands::health_check::health_check_package_managers,
             // Profile commands
             commands::profiles::profile_list,
@@ -453,6 +467,7 @@ pub fn run() {
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -509,7 +524,9 @@ async fn cache_cleanup_task(settings: SharedSettings) {
         drop(s);
 
         // Clean expired metadata entries
-        if let Ok(mut metadata_cache) = MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await {
+        if let Ok(mut metadata_cache) =
+            MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await
+        {
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
                     info!("Auto-cleanup: removed {} expired metadata entries", count);

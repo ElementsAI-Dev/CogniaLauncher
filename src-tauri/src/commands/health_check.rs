@@ -1,4 +1,6 @@
-use crate::core::{EnvironmentHealthResult, HealthCheckManager, PackageManagerHealthResult, SystemHealthResult};
+use crate::core::{
+    EnvironmentHealthResult, HealthCheckManager, PackageManagerHealthResult, SystemHealthResult,
+};
 use crate::provider::SharedRegistry;
 use tauri::State;
 
@@ -32,6 +34,19 @@ pub async fn health_check_package_managers(
     let manager = HealthCheckManager::new(registry.inner().clone());
     manager
         .check_package_managers()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check health of a single package manager/provider
+#[tauri::command]
+pub async fn health_check_package_manager(
+    provider_id: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<PackageManagerHealthResult, String> {
+    let manager = HealthCheckManager::new(registry.inner().clone());
+    manager
+        .check_package_manager(&provider_id)
         .await
         .map_err(|e| e.to_string())
 }

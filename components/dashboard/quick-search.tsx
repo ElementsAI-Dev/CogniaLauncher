@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { Kbd } from "@/components/ui/kbd";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
@@ -111,7 +112,7 @@ export function QuickSearch({
         id: `env-${env.env_type}`,
         title: env.env_type,
         subtitle: `${env.provider} • ${env.current_version || t("common.none")}`,
-        icon: <Layers className="h-4 w-4" />,
+        icon: <LanguageIcon languageId={env.env_type} size={16} />,
         href: "/environments",
       }));
   }, [query, environments, t]);
@@ -225,6 +226,12 @@ export function QuickSearch({
             value={query}
             onValueChange={setQuery}
             onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setOpen(false);
+              }
+            }}
             className="h-10"
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">

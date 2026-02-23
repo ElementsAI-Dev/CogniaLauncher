@@ -79,7 +79,7 @@ export default function SettingsPage() {
   const { appSettings, setAppSettings, cogniaDir } = useSettingsStore();
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [originalConfig, setOriginalConfig] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
@@ -386,6 +386,28 @@ export default function SettingsPage() {
       }
     }
   }, [setChartColorTheme, updateConfigValue]);
+
+  const handleInterfaceRadiusChange = useCallback(async (radius: import('@/lib/theme/types').InterfaceRadius) => {
+    setInterfaceRadius(radius);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.interface_radius', String(radius));
+      } catch (err) {
+        console.error('Failed to sync interface radius to backend:', err);
+      }
+    }
+  }, [setInterfaceRadius, updateConfigValue]);
+
+  const handleInterfaceDensityChange = useCallback(async (density: string) => {
+    setInterfaceDensity(density as import('@/lib/theme/types').InterfaceDensity);
+    if (isTauri()) {
+      try {
+        await updateConfigValue('appearance.interface_density', density);
+      } catch (err) {
+        console.error('Failed to sync interface density to backend:', err);
+      }
+    }
+  }, [setInterfaceDensity, updateConfigValue]);
 
   const handleReducedMotionChange = useCallback(async (reduced: boolean) => {
     setReducedMotion(reduced);
@@ -711,6 +733,10 @@ export default function SettingsPage() {
                 setAccentColor={handleAccentColorChange}
                 chartColorTheme={chartColorTheme}
                 setChartColorTheme={handleChartColorThemeChange}
+                interfaceRadius={interfaceRadius}
+                setInterfaceRadius={handleInterfaceRadiusChange}
+                interfaceDensity={interfaceDensity}
+                setInterfaceDensity={handleInterfaceDensityChange}
                 reducedMotion={reducedMotion}
                 setReducedMotion={handleReducedMotionChange}
                 t={t}

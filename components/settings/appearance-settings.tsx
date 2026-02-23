@@ -4,7 +4,20 @@ import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { AccentColorPicker } from "./accent-color-picker";
 import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
-import type { AccentColor, ChartColorTheme } from "@/lib/theme/types";
+import { BackgroundSettings } from "./background-settings";
+import { cn } from "@/lib/utils";
+import {
+  INTERFACE_RADII,
+  INTERFACE_RADIUS_LABELS,
+  type AccentColor,
+  type ChartColorTheme,
+  type InterfaceRadius,
+  type InterfaceDensity,
+} from "@/lib/theme/types";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
 
 interface AppearanceSettingsProps {
   theme: string | undefined;
@@ -15,9 +28,13 @@ interface AppearanceSettingsProps {
   setAccentColor: (color: AccentColor) => void;
   chartColorTheme: ChartColorTheme;
   setChartColorTheme: (theme: string) => void;
+  interfaceRadius: InterfaceRadius;
+  setInterfaceRadius: (radius: InterfaceRadius) => void;
+  interfaceDensity: InterfaceDensity;
+  setInterfaceDensity: (density: InterfaceDensity) => void;
   reducedMotion: boolean;
   setReducedMotion: (reduced: boolean) => void;
-  t: (key: string) => string;
+  t: (key: string, values?: Record<string, string>) => string;
 }
 
 export function AppearanceSettings({
@@ -29,6 +46,10 @@ export function AppearanceSettings({
   setAccentColor,
   chartColorTheme,
   setChartColorTheme,
+  interfaceRadius,
+  setInterfaceRadius,
+  interfaceDensity,
+  setInterfaceDensity,
   reducedMotion,
   setReducedMotion,
   t,
@@ -98,6 +119,58 @@ export function AppearanceSettings({
           triggerClassName="w-40"
         />
         <Separator />
+        <div className="space-y-3 py-2">
+          <div className="space-y-0.5">
+            <Label id="interface-radius-label">{t("settings.interfaceRadius")}</Label>
+            <p id="interface-radius-desc" className="text-sm text-muted-foreground">
+              {t("settings.interfaceRadiusDesc")}
+            </p>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={String(interfaceRadius)}
+            onValueChange={(value) => {
+              if (value) setInterfaceRadius(parseFloat(value) as InterfaceRadius);
+            }}
+            className="flex flex-wrap gap-2"
+            aria-labelledby="interface-radius-label"
+            aria-describedby="interface-radius-desc"
+          >
+            {INTERFACE_RADII.map((r) => (
+              <ToggleGroupItem
+                key={r}
+                value={String(r)}
+                aria-label={t("settings.selectRadius", { radius: INTERFACE_RADIUS_LABELS[r] })}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-xs",
+                  "data-[state=on]:bg-primary data-[state=on]:text-primary-foreground",
+                )}
+              >
+                <div
+                  className="h-4 w-4 border border-current"
+                  style={{ borderRadius: `${r * 4}px` }}
+                />
+                {t(`settings.radius${INTERFACE_RADIUS_LABELS[r]}`)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+        <Separator />
+        <SelectSettingItem
+          id="interface-density"
+          label={t("settings.interfaceDensity")}
+          description={t("settings.interfaceDensityDesc")}
+          value={interfaceDensity}
+          onValueChange={(v) => setInterfaceDensity(v as InterfaceDensity)}
+          options={[
+            { value: "compact", label: t("settings.densityCompact") },
+            { value: "comfortable", label: t("settings.densityComfortable") },
+            { value: "spacious", label: t("settings.densitySpacious") },
+          ]}
+          placeholder={t("settings.interfaceDensity")}
+          triggerClassName="w-40"
+        />
+        <Separator />
         <SwitchSettingItem
           id="reduced-motion"
           label={t("settings.reducedMotion")}
@@ -105,6 +178,8 @@ export function AppearanceSettings({
           checked={reducedMotion}
           onCheckedChange={setReducedMotion}
         />
+        <Separator />
+        <BackgroundSettings t={t} />
     </div>
   );
 }

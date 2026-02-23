@@ -3,7 +3,7 @@
 ## 1. Identity
 
 - **What it is:** Extensible provider registry for package and environment management.
-- **Purpose:** Unified interface for 40+ package sources and version managers across multiple platforms.
+- **Purpose:** Unified interface for 48 package sources and version managers across multiple platforms.
 
 ## 2. Core Components
 
@@ -36,7 +36,23 @@
 - `src-tauri/src/provider/chocolatey.rs` (ChocolateyProvider): Windows package manager.
 - `src-tauri/src/provider/scoop.rs` (ScoopProvider): Windows package manager.
 - `src-tauri/src/provider/github.rs` (GitHubProvider): GitHub releases.
-- `src-tauri/src/provider/registry.rs` (RegistryProvider): Language package registries.
+- `src-tauri/src/provider/gitlab.rs` (GitLabProvider): GitLab releases.
+- `src-tauri/src/provider/volta.rs` (VoltaProvider): JavaScript tool manager.
+- `src-tauri/src/provider/asdf.rs` (AsdfProvider): Polyglot version manager.
+- `src-tauri/src/provider/mise.rs` (MiseProvider): Polyglot version manager (successor to rtx/asdf).
+- `src-tauri/src/provider/conda.rs` (CondaProvider): Conda/Mamba data science packages.
+- `src-tauri/src/provider/pipx.rs` (PipxProvider): Isolated Python CLI tools.
+- `src-tauri/src/provider/gem.rs` (GemProvider): RubyGems packages.
+- `src-tauri/src/provider/nix.rs` (NixProvider): Nix package manager.
+- `src-tauri/src/provider/conan.rs` (ConanProvider): Conan 2.x C/C++ package manager.
+- `src-tauri/src/provider/xmake.rs` (XmakeProvider): Xmake/Xrepo C/C++ package manager.
+- `src-tauri/src/provider/vcpkg.rs` (VcpkgProvider): Microsoft C++ package manager.
+- `src-tauri/src/provider/macports.rs` (MacPortsProvider): macOS MacPorts package manager.
+- `src-tauri/src/provider/pnpm.rs` (PnpmProvider): Fast Node.js package manager.
+- `src-tauri/src/provider/podman.rs` (PodmanProvider): Podman container images.
+- `src-tauri/src/provider/wsl.rs` (WslProvider): Windows Subsystem for Linux management.
+- `src-tauri/src/provider/system.rs` (SystemEnvironmentProvider): System-installed runtime detection (11 types).
+- `src-tauri/src/provider/node_base.rs`: Shared Node.js utilities + `split_name_version()`.
 
 ## 3. Execution Flow (LLM Retrieval Map)
 

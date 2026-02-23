@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 export function useAppearanceConfigSync(config: Record<string, string>) {
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion } = useAppearanceStore();
   const appearanceConfigRef = useRef<string>('');
 
   useEffect(() => {
@@ -20,6 +20,8 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
       theme: config['appearance.theme'],
       accentColor: config['appearance.accent_color'],
       chartColorTheme: config['appearance.chart_color_theme'],
+      interfaceRadius: config['appearance.interface_radius'],
+      interfaceDensity: config['appearance.interface_density'],
       reducedMotion: config['appearance.reduced_motion'],
       language: config['appearance.language'],
     });
@@ -40,6 +42,14 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
       setChartColorTheme(parsed.chartColorTheme);
     }
 
+    if (parsed.interfaceRadius !== undefined && parsed.interfaceRadius !== interfaceRadius) {
+      setInterfaceRadius(parsed.interfaceRadius);
+    }
+
+    if (parsed.interfaceDensity && parsed.interfaceDensity !== interfaceDensity) {
+      setInterfaceDensity(parsed.interfaceDensity);
+    }
+
     if (typeof parsed.reducedMotion === 'boolean' && parsed.reducedMotion !== reducedMotion) {
       setReducedMotion(parsed.reducedMotion);
     }
@@ -58,6 +68,10 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
               return t('settings.accentColor');
             case 'chartColorTheme':
               return t('settings.chartColorTheme');
+            case 'interfaceRadius':
+              return t('settings.interfaceRadius');
+            case 'interfaceDensity':
+              return t('settings.interfaceDensity');
             case 'reducedMotion':
               return t('settings.reducedMotion');
             case 'language':
@@ -72,5 +86,5 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
     }
 
     appearanceConfigRef.current = appearanceSnapshot;
-  }, [config, theme, accentColor, chartColorTheme, reducedMotion, locale, setTheme, setAccentColor, setChartColorTheme, setReducedMotion, setLocale, t]);
+  }, [config, theme, accentColor, chartColorTheme, interfaceRadius, interfaceDensity, reducedMotion, locale, setTheme, setAccentColor, setChartColorTheme, setInterfaceRadius, setInterfaceDensity, setReducedMotion, setLocale, t]);
 }

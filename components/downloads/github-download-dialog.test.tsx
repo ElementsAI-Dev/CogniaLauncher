@@ -9,8 +9,15 @@ jest.mock("@/hooks/use-github-downloads", () => ({
   useGitHubDownloads: () => ({
     repoInput: "",
     setRepoInput: jest.fn(),
+    token: "",
+    setToken: jest.fn(),
     parsedRepo: null,
     isValidating: false,
+    isValid: false,
+    sourceType: "release",
+    setSourceType: jest.fn(),
+    branches: [],
+    tags: [],
     loading: false,
     error: null,
     releases: [],
@@ -23,9 +30,9 @@ jest.mock("@/hooks/use-github-downloads", () => ({
 
 jest.mock("@/hooks/use-asset-matcher", () => ({
   useAssetMatcher: () => ({
-    matchedAssets: [],
-    otherAssets: [],
-    bestMatch: null,
+    parseAssets: jest.fn(() => []),
+    currentPlatform: "windows",
+    currentArch: "x64",
   }),
   getPlatformLabel: (p: string) => p,
   getArchLabel: (a: string) => a,

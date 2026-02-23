@@ -10,14 +10,20 @@ jest.mock('next-themes', () => ({
 // Mock appearance store
 const mockSetAccentColor = jest.fn();
 const mockSetChartColorTheme = jest.fn();
+const mockSetInterfaceRadius = jest.fn();
+const mockSetInterfaceDensity = jest.fn();
 const mockSetReducedMotion = jest.fn();
 jest.mock('@/lib/stores/appearance', () => ({
   useAppearanceStore: jest.fn(() => ({
     accentColor: 'blue',
     chartColorTheme: 'default',
+    interfaceRadius: 0.625,
+    interfaceDensity: 'comfortable',
     reducedMotion: false,
     setAccentColor: mockSetAccentColor,
     setChartColorTheme: mockSetChartColorTheme,
+    setInterfaceRadius: mockSetInterfaceRadius,
+    setInterfaceDensity: mockSetInterfaceDensity,
     setReducedMotion: mockSetReducedMotion,
   })),
 }));
@@ -46,6 +52,8 @@ jest.mock('@/lib/theme', () => ({
     theme: config['appearance.theme'] || config.theme,
     accentColor: config['appearance.accent_color'] || config.accentColor,
     chartColorTheme: config['appearance.chart_color_theme'] || config.chartColorTheme,
+    interfaceRadius: config['appearance.interface_radius'] ? parseFloat(config['appearance.interface_radius']) : undefined,
+    interfaceDensity: config['appearance.interface_density'],
     reducedMotion: config.reducedMotion === 'true',
     locale: config['appearance.language'],
     invalidKeys: [],
@@ -92,11 +100,27 @@ describe('useAppearanceConfigSync', () => {
     expect(mockSetChartColorTheme).toHaveBeenCalledWith('ocean');
   });
 
+  it('should sync interface radius from config', () => {
+    const config = { 'appearance.interface_radius': '0.75' };
+    renderHook(() => useAppearanceConfigSync(config));
+
+    expect(mockSetInterfaceRadius).toHaveBeenCalledWith(0.75);
+  });
+
+  it('should sync interface density from config', () => {
+    const config = { 'appearance.interface_density': 'compact' };
+    renderHook(() => useAppearanceConfigSync(config));
+
+    expect(mockSetInterfaceDensity).toHaveBeenCalledWith('compact');
+  });
+
   it('should sync all appearance settings from config', () => {
     const config = {
       theme: 'dark',
       accentColor: 'green',
       chartColorTheme: 'vibrant',
+      'appearance.interface_radius': '0.5',
+      'appearance.interface_density': 'spacious',
       reducedMotion: 'true',
     };
     renderHook(() => useAppearanceConfigSync(config));
@@ -104,6 +128,8 @@ describe('useAppearanceConfigSync', () => {
     expect(mockSetTheme).toHaveBeenCalledWith('dark');
     expect(mockSetAccentColor).toHaveBeenCalledWith('green');
     expect(mockSetChartColorTheme).toHaveBeenCalledWith('vibrant');
+    expect(mockSetInterfaceRadius).toHaveBeenCalledWith(0.5);
+    expect(mockSetInterfaceDensity).toHaveBeenCalledWith('spacious');
     expect(mockSetReducedMotion).toHaveBeenCalledWith(true);
   });
 

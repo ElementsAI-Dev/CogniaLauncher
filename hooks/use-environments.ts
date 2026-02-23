@@ -328,6 +328,72 @@ export function useEnvironments() {
     }
   }, []);
 
+  const checkEnvUpdates = useCallback(async (envType: string) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const result = await tauri.envCheckUpdates(envType);
+      useEnvironmentStore.getState().setUpdateCheckResult(envType, result);
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError]);
+
+  const checkAllEnvUpdates = useCallback(async () => {
+    if (!tauri.isTauri()) return [];
+    try {
+      const results = await tauri.envCheckUpdatesAll();
+      const { setAllUpdateCheckResults, setLastEnvUpdateCheck } = useEnvironmentStore.getState();
+      setAllUpdateCheckResults(results);
+      setLastEnvUpdateCheck(Date.now());
+      return results;
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, [setError]);
+
+  const cleanupVersions = useCallback(async (envType: string, versions: string[]) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const result = await tauri.envCleanupVersions(envType, versions);
+      // Refresh environment data after cleanup
+      const env = await tauri.envGet(envType);
+      updateEnvironment(env);
+      return result;
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError, updateEnvironment]);
+
+  const listGlobalPackages = useCallback(async (envType: string, version: string, providerId?: string) => {
+    if (!tauri.isTauri()) return [];
+    try {
+      return await tauri.envListGlobalPackages(envType, version, providerId);
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, [setError]);
+
+  const migratePackages = useCallback(async (
+    envType: string,
+    fromVersion: string,
+    toVersion: string,
+    packages: string[],
+    providerId?: string,
+  ) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.envMigratePackages(envType, fromVersion, toVersion, packages, providerId);
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError]);
+
   // Get full store for return (read-only state values)
   const store = useEnvironmentStore();
 
@@ -347,5 +413,10 @@ export function useEnvironments() {
     verifyInstall,
     getInstalledVersions,
     getCurrentVersion,
+    checkEnvUpdates,
+    checkAllEnvUpdates,
+    cleanupVersions,
+    listGlobalPackages,
+    migratePackages,
   };
 }

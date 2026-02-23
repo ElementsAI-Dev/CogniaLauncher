@@ -15,4 +15,4 @@ Comprehensive testing infrastructure covering:
 - Type definitions validation
 - Coverage enforcement (60-70% thresholds)
 
-**Test Coverage:** 18 test files covering hooks, utilities, and components. Tests are co-located with source files (`*.test.ts`, `*.test.tsx`) in the `hooks/` directory.
+**Test Coverage:** 100+ frontend test files (55+ component tests, 18+ hook tests, 7 store tests, 4 page tests) plus 270+ Rust unit tests. Tests are co-located with source files (`*.test.ts`, `*.test.tsx`) across `hooks/`, `components/`, `lib/stores/__tests__/`, and `app/` directories.

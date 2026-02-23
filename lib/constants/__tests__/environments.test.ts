@@ -17,7 +17,7 @@ describe('Environment Constants', () => {
     });
 
     it('contains all expected languages', () => {
-      const expectedIds = ['node', 'python', 'go', 'rust', 'ruby', 'java', 'php', 'dotnet', 'deno', 'bun'];
+      const expectedIds = ['node', 'python', 'go', 'rust', 'ruby', 'java', 'kotlin', 'php', 'dotnet', 'deno', 'bun', 'c', 'cpp', 'typescript', 'scala', 'groovy', 'elixir', 'erlang', 'lua', 'swift', 'zig', 'dart', 'julia', 'perl', 'r', 'haskell', 'clojure', 'crystal', 'nim', 'ocaml', 'fortran'];
       expectedIds.forEach((id) => {
         const lang = LANGUAGES.find((l) => l.id === id);
         expect(lang).toBeDefined();
@@ -126,7 +126,7 @@ describe('Environment Constants', () => {
     it('python has expected detection files', () => {
       const pythonFiles = DEFAULT_DETECTION_FILES.python;
       expect(pythonFiles).toContain('.python-version');
-      expect(pythonFiles).toContain('pyproject.toml');
+      expect(pythonFiles).toContain('pyproject.toml (project.requires-python)');
     });
 
     it('rust has expected detection files', () => {
@@ -135,9 +135,12 @@ describe('Environment Constants', () => {
       expect(rustFiles).toContain('rust-toolchain');
     });
 
-    it('all languages support .tool-versions', () => {
-      Object.values(DEFAULT_DETECTION_FILES).forEach((files) => {
-        expect(files).toContain('.tool-versions');
+    it('most languages support .tool-versions', () => {
+      const exceptions = ['c', 'cpp'];
+      Object.entries(DEFAULT_DETECTION_FILES).forEach(([id, files]) => {
+        if (!exceptions.includes(id)) {
+          expect(files).toContain('.tool-versions');
+        }
       });
     });
   });

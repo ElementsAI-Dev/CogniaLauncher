@@ -6,6 +6,8 @@ pub mod history;
 pub mod installer;
 pub mod orchestrator;
 pub mod profiles;
+pub mod project_env_detect;
+pub mod eol;
 pub mod shim;
 
 pub use batch::*;
@@ -16,4 +18,5 @@ pub use history::*;
 pub use installer::*;
 pub use orchestrator::*;
 pub use profiles::*;
+pub use project_env_detect::*;
 pub use shim::*;

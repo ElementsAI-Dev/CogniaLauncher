@@ -1,12 +1,14 @@
 import { locales, type Locale } from '@/lib/i18n';
-import { isAccentColor, isChartColorTheme, isThemeMode, type AccentColor, type ChartColorTheme, type ThemeMode } from './types';
+import { isAccentColor, isChartColorTheme, isInterfaceDensity, isInterfaceRadius, isThemeMode, type AccentColor, type ChartColorTheme, type InterfaceDensity, type InterfaceRadius, type ThemeMode } from './types';
 
-export type AppearanceConfigKey = 'theme' | 'accentColor' | 'chartColorTheme' | 'reducedMotion' | 'language';
+export type AppearanceConfigKey = 'theme' | 'accentColor' | 'chartColorTheme' | 'interfaceRadius' | 'interfaceDensity' | 'reducedMotion' | 'language';
 
 export interface ParsedAppearanceConfig {
   theme?: ThemeMode;
   accentColor?: AccentColor;
   chartColorTheme?: ChartColorTheme;
+  interfaceRadius?: InterfaceRadius;
+  interfaceDensity?: InterfaceDensity;
   reducedMotion?: boolean;
   locale?: Locale;
   invalidKeys: AppearanceConfigKey[];
@@ -40,6 +42,14 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
   const chartColorTheme = chartColorThemeValue && isChartColorTheme(chartColorThemeValue) ? chartColorThemeValue : undefined;
   if (chartColorThemeValue && !chartColorTheme) invalidKeys.push('chartColorTheme');
 
+  const interfaceRadiusValue = config['appearance.interface_radius'];
+  const interfaceRadius = interfaceRadiusValue && isInterfaceRadius(interfaceRadiusValue) ? parseFloat(interfaceRadiusValue) as InterfaceRadius : undefined;
+  if (interfaceRadiusValue && interfaceRadius === undefined) invalidKeys.push('interfaceRadius');
+
+  const interfaceDensityValue = config['appearance.interface_density'];
+  const interfaceDensity = interfaceDensityValue && isInterfaceDensity(interfaceDensityValue) ? interfaceDensityValue : undefined;
+  if (interfaceDensityValue && !interfaceDensity) invalidKeys.push('interfaceDensity');
+
   const reducedMotion = reducedMotionValue ? parseReducedMotion(reducedMotionValue) : undefined;
   if (reducedMotionValue && typeof reducedMotion !== 'boolean') invalidKeys.push('reducedMotion');
 
@@ -50,6 +60,8 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
     theme,
     accentColor,
     chartColorTheme,
+    interfaceRadius,
+    interfaceDensity,
     reducedMotion,
     locale,
     invalidKeys,

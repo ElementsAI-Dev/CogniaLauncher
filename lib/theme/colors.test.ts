@@ -1,5 +1,5 @@
-import { accentColors, applyAccentColor, removeAccentColor, getDefaultAccentColor } from './colors';
-import type { AccentColor } from './types';
+import { accentColors, applyAccentColor, removeAccentColor, getDefaultAccentColor, CHART_COLOR_PALETTES, applyChartColorTheme, removeChartColorTheme } from './colors';
+import type { AccentColor, ChartColorTheme } from './types';
 
 describe('accentColors', () => {
   const expectedColors: AccentColor[] = ['zinc', 'blue', 'green', 'purple', 'orange', 'rose'];
@@ -87,5 +87,86 @@ describe('removeAccentColor', () => {
 describe('getDefaultAccentColor', () => {
   it('returns blue as default', () => {
     expect(getDefaultAccentColor()).toBe('blue');
+  });
+});
+
+describe('CHART_COLOR_PALETTES', () => {
+  const expectedThemes: ChartColorTheme[] = ['default', 'vibrant', 'pastel', 'ocean', 'sunset', 'monochrome'];
+
+  it('contains all expected chart themes', () => {
+    expectedThemes.forEach((theme) => {
+      expect(CHART_COLOR_PALETTES[theme]).toBeDefined();
+    });
+  });
+
+  it('each theme has light and dark palettes with 5 colors', () => {
+    expectedThemes.forEach((theme) => {
+      expect(CHART_COLOR_PALETTES[theme].light).toHaveLength(5);
+      expect(CHART_COLOR_PALETTES[theme].dark).toHaveLength(5);
+    });
+  });
+
+  it('all color values use oklch format', () => {
+    expectedThemes.forEach((theme) => {
+      CHART_COLOR_PALETTES[theme].light.forEach((color) => {
+        expect(color).toMatch(/^oklch\(/);
+      });
+      CHART_COLOR_PALETTES[theme].dark.forEach((color) => {
+        expect(color).toMatch(/^oklch\(/);
+      });
+    });
+  });
+});
+
+describe('applyChartColorTheme', () => {
+  beforeEach(() => {
+    document.documentElement.style.cssText = '';
+  });
+
+  it('applies light mode chart colors correctly', () => {
+    applyChartColorTheme('default', false);
+
+    for (let i = 0; i < 5; i++) {
+      const value = document.documentElement.style.getPropertyValue(`--chart-${i + 1}`);
+      expect(value).toBe(CHART_COLOR_PALETTES.default.light[i]);
+    }
+  });
+
+  it('applies dark mode chart colors correctly', () => {
+    applyChartColorTheme('default', true);
+
+    for (let i = 0; i < 5; i++) {
+      const value = document.documentElement.style.getPropertyValue(`--chart-${i + 1}`);
+      expect(value).toBe(CHART_COLOR_PALETTES.default.dark[i]);
+    }
+  });
+
+  it('applies different themes', () => {
+    applyChartColorTheme('ocean', false);
+    expect(document.documentElement.style.getPropertyValue('--chart-1')).toBe(CHART_COLOR_PALETTES.ocean.light[0]);
+
+    applyChartColorTheme('sunset', true);
+    expect(document.documentElement.style.getPropertyValue('--chart-1')).toBe(CHART_COLOR_PALETTES.sunset.dark[0]);
+  });
+
+  it('handles unknown theme gracefully', () => {
+    const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
+    applyChartColorTheme('nonexistent' as ChartColorTheme, false);
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('nonexistent'));
+    consoleSpy.mockRestore();
+  });
+});
+
+describe('removeChartColorTheme', () => {
+  beforeEach(() => {
+    applyChartColorTheme('default', false);
+  });
+
+  it('removes all chart color properties', () => {
+    removeChartColorTheme();
+
+    for (let i = 1; i <= 5; i++) {
+      expect(document.documentElement.style.getPropertyValue(`--chart-${i}`)).toBe('');
+    }
   });
 });

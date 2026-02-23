@@ -1,8 +1,10 @@
 use crate::error::{CogniaError, CogniaResult};
-use crate::provider::{EnvironmentProvider, Provider, ProviderRegistry, SystemPackageProvider};
+use crate::provider::{EnvironmentProvider, Provider, ProviderRegistry};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 
 /// Health status of an environment
@@ -287,12 +289,9 @@ impl HealthCheckManager {
         }
 
         // Check package managers
-        let system_provider_ids = registry.get_system_provider_ids();
-        for provider_id in system_provider_ids {
-            if let Some(provider) = registry.get(&provider_id) {
-                let pm_result = self.check_package_manager_health(&*provider).await;
-                result.add_package_manager(pm_result);
-            }
+        drop(registry);
+        for pm_result in self.check_package_managers().await? {
+            result.add_package_manager(pm_result);
         }
 
         Ok(result)
@@ -301,10 +300,10 @@ impl HealthCheckManager {
     /// Run health check for a specific environment type
     pub async fn check_environment(&self, env_type: &str) -> CogniaResult<EnvironmentHealthResult> {
         let registry = self.registry.read().await;
-        
+
         // Find provider for this environment type by checking provider IDs
         let provider_id = self.env_type_to_provider(env_type);
-        
+
         let provider = registry
             .get_environment_provider(&provider_id)
             .ok_or_else(|| CogniaError::Provider(format!("No provider found for {}", env_type)))?;
@@ -315,17 +314,42 @@ impl HealthCheckManager {
     /// Run health check for all package managers
     pub async fn check_package_managers(&self) -> CogniaResult<Vec<PackageManagerHealthResult>> {
         let registry = self.registry.read().await;
-        let system_provider_ids = registry.get_system_provider_ids();
+        let mut provider_ids = registry.list_system_package_provider_ids();
+        // Bulk "package managers" health is for non-environment providers (environment providers
+        // have their own health section).
+        provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
+        provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
+        provider_ids.sort();
+        provider_ids.dedup();
         let mut results = Vec::new();
 
-        for provider_id in system_provider_ids {
-            if let Some(provider) = registry.get(&provider_id) {
-                let pm_result = self.check_package_manager_health(&*provider).await;
-                results.push(pm_result);
-            }
+        let providers: Vec<Arc<dyn Provider>> = provider_ids
+            .into_iter()
+            .filter_map(|id| registry.get(&id))
+            .collect();
+        drop(registry);
+
+        for provider in providers {
+            let pm_result = self.check_package_manager_health(&*provider).await;
+            results.push(pm_result);
         }
 
         Ok(results)
+    }
+
+    /// Run health check for a single package manager/provider by id
+    pub async fn check_package_manager(
+        &self,
+        provider_id: &str,
+    ) -> CogniaResult<PackageManagerHealthResult> {
+        let provider = {
+            let registry = self.registry.read().await;
+            registry
+                .get(provider_id)
+                .ok_or_else(|| CogniaError::ProviderNotFound(provider_id.to_string()))?
+        };
+
+        Ok(self.check_package_manager_health(&*provider).await)
     }
 
     /// Check a specific package manager's health
@@ -335,9 +359,13 @@ impl HealthCheckManager {
     ) -> PackageManagerHealthResult {
         let mut result = PackageManagerHealthResult::new(provider.id(), provider.display_name());
 
+        if provider.id() == "github" || provider.id() == "gitlab" {
+            return self.check_api_provider_health(provider).await;
+        }
+
         // Check 1: Provider availability
         let is_available = provider.is_available().await;
-        
+
         if !is_available {
             result.add_issue(
                 HealthIssue::new(
@@ -351,16 +379,30 @@ impl HealthCheckManager {
                 ))
                 .with_fix(
                     self.get_install_command(provider.id()),
-                    format!("Install {} to enable package management", provider.display_name()),
+                    format!(
+                        "Install {} to enable package management",
+                        provider.display_name()
+                    ),
                 ),
             );
-            result.install_instructions = Some(self.get_install_instructions(provider.id()));
+            let system_provider = {
+                let registry = self.registry.read().await;
+                registry.get_system_provider(provider.id())
+            };
+
+            result.install_instructions = system_provider
+                .and_then(|p| p.get_install_instructions())
+                .or_else(|| Some(self.get_install_instructions(provider.id())));
             result.finalize();
             return result;
         }
 
         // Check 2: Get version (using SystemPackageProvider trait if available)
-        if let Some(system_provider) = self.as_system_provider(provider) {
+        let system_provider = {
+            let registry = self.registry.read().await;
+            registry.get_system_provider(provider.id())
+        };
+        if let Some(system_provider) = system_provider {
             if let Ok(version) = system_provider.get_version().await {
                 result.version = Some(version);
             }
@@ -368,10 +410,15 @@ impl HealthCheckManager {
                 result.executable_path = Some(path);
             }
             result.install_instructions = system_provider.get_install_instructions();
+        } else {
+            result.install_instructions = Some(self.get_install_instructions(provider.id()));
         }
 
         // Check 3: Verify the provider can list packages (functional check)
-        match provider.list_installed(crate::provider::InstalledFilter::default()).await {
+        match provider
+            .list_installed(crate::provider::InstalledFilter::default())
+            .await
+        {
             Ok(_) => {
                 // Provider is functional
             }
@@ -391,12 +438,81 @@ impl HealthCheckManager {
         result
     }
 
-    /// Try to get SystemPackageProvider trait from Provider
-    fn as_system_provider<'a>(&self, _provider: &'a dyn Provider) -> Option<&'a dyn SystemPackageProvider> {
-        // Note: This requires downcasting which isn't directly supported
-        // For now, we handle this through the check_package_manager_health method
-        // by calling provider methods directly
-        None
+    async fn check_api_provider_health(
+        &self,
+        provider: &dyn Provider,
+    ) -> PackageManagerHealthResult {
+        let provider_id = provider.id();
+        let mut result = PackageManagerHealthResult::new(provider_id, provider.display_name());
+
+        let config = {
+            let registry = self.registry.read().await;
+            registry.get_api_provider_config(provider_id)
+        };
+
+        if let Some(config) = &config {
+            if !config.has_token {
+                result.add_issue(
+                    HealthIssue::new(
+                        Severity::Info,
+                        IssueCategory::ConfigError,
+                        "No API token configured (rate limits may apply)",
+                    )
+                    .with_details(
+                        "Configure a personal access token in Settings to increase API limits.",
+                    ),
+                );
+            }
+        }
+
+        let url = match provider_id {
+            "github" => "https://api.github.com/rate_limit".to_string(),
+            "gitlab" => {
+                let base = config
+                    .and_then(|c| c.base_url)
+                    .unwrap_or_else(|| "https://gitlab.com".into());
+                format!("{}/api/v4/version", base.trim_end_matches('/'))
+            }
+            _ => {
+                result.finalize();
+                return result;
+            }
+        };
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("CogniaLauncher/0.1.0")
+            .build()
+            .unwrap_or_default();
+
+        match client.get(url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                // OK
+            }
+            Ok(resp) => {
+                result.add_issue(
+                    HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::NetworkError,
+                        format!("API returned {}", resp.status()),
+                    )
+                    .with_details("The remote API endpoint returned a non-success response."),
+                );
+            }
+            Err(e) => {
+                result.add_issue(
+                    HealthIssue::new(
+                        Severity::Error,
+                        IssueCategory::NetworkError,
+                        "Failed to reach API endpoint",
+                    )
+                    .with_details(format!("Request error: {}", e)),
+                );
+            }
+        }
+
+        result.finalize();
+        result
     }
 
     /// Get install instructions for a package manager
@@ -466,7 +582,10 @@ impl HealthCheckManager {
                 HealthIssue::new(
                     Severity::Error,
                     IssueCategory::ProviderNotFound,
-                    format!("{} is not available or not installed", provider.display_name()),
+                    format!(
+                        "{} is not available or not installed",
+                        provider.display_name()
+                    ),
                 )
                 .with_details(format!(
                     "The {} command was not found in your PATH",
@@ -474,7 +593,11 @@ impl HealthCheckManager {
                 ))
                 .with_fix(
                     self.get_install_command(provider.id()),
-                    format!("Install {} to enable {} version management", provider.id(), env_type),
+                    format!(
+                        "Install {} to enable {} version management",
+                        provider.id(),
+                        env_type
+                    ),
                 ),
             );
             result.finalize();
@@ -650,14 +773,17 @@ impl HealthCheckManager {
 
         // Check if provider's typical paths are in PATH
         let expected_patterns = self.get_expected_path_patterns(provider_id);
-        
+
         for pattern in expected_patterns {
             if !path.to_lowercase().contains(&pattern.to_lowercase()) {
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Warning,
                         IssueCategory::ShellIntegration,
-                        format!("{} may not be properly configured in your shell", provider.display_name()),
+                        format!(
+                            "{} may not be properly configured in your shell",
+                            provider.display_name()
+                        ),
                     )
                     .with_details(format!("Expected to find '{}' in PATH", pattern))
                     .with_fix(
@@ -701,7 +827,7 @@ impl HealthCheckManager {
                 if cfg!(windows) {
                     "winget install CoreyButler.NVMforWindows".to_string()
                 } else {
-                    "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash".to_string()
+                    "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash".to_string()
                 }
             }
             "deno" => {
@@ -790,7 +916,7 @@ mod tests {
         let error = Severity::Error;
         let warning = Severity::Warning;
         let info = Severity::Info;
-        
+
         assert!(matches!(critical, Severity::Critical));
         assert!(matches!(error, Severity::Error));
         assert!(matches!(warning, Severity::Warning));
@@ -804,7 +930,7 @@ mod tests {
             IssueCategory::ProviderNotFound,
             "Test issue",
         );
-        
+
         assert!(matches!(issue.severity, Severity::Error));
         assert!(matches!(issue.category, IssueCategory::ProviderNotFound));
         assert_eq!(issue.message, "Test issue");
@@ -820,7 +946,7 @@ mod tests {
             "Config issue",
         )
         .with_details("More details here");
-        
+
         assert_eq!(issue.details, Some("More details here".to_string()));
     }
 
@@ -832,15 +958,18 @@ mod tests {
             "Missing package",
         )
         .with_fix("npm install pkg", "Install the package");
-        
+
         assert_eq!(issue.fix_command, Some("npm install pkg".to_string()));
-        assert_eq!(issue.fix_description, Some("Install the package".to_string()));
+        assert_eq!(
+            issue.fix_description,
+            Some("Install the package".to_string())
+        );
     }
 
     #[test]
     fn test_package_manager_health_result_new() {
         let result = PackageManagerHealthResult::new("winget", "Windows Package Manager");
-        
+
         assert_eq!(result.provider_id, "winget");
         assert_eq!(result.display_name, "Windows Package Manager");
         assert!(matches!(result.status, HealthStatus::Unknown));
@@ -853,13 +982,13 @@ mod tests {
     #[test]
     fn test_package_manager_health_result_add_issue_error() {
         let mut result = PackageManagerHealthResult::new("scoop", "Scoop");
-        
+
         result.add_issue(HealthIssue::new(
             Severity::Error,
             IssueCategory::ProviderNotFound,
             "Scoop not found",
         ));
-        
+
         assert!(matches!(result.status, HealthStatus::Error));
         assert_eq!(result.issues.len(), 1);
     }
@@ -867,13 +996,13 @@ mod tests {
     #[test]
     fn test_package_manager_health_result_add_issue_warning() {
         let mut result = PackageManagerHealthResult::new("brew", "Homebrew");
-        
+
         result.add_issue(HealthIssue::new(
             Severity::Warning,
             IssueCategory::ConfigError,
             "Outdated version",
         ));
-        
+
         assert!(matches!(result.status, HealthStatus::Warning));
     }
 
@@ -881,7 +1010,7 @@ mod tests {
     fn test_package_manager_health_result_finalize_healthy() {
         let mut result = PackageManagerHealthResult::new("apt", "APT");
         result.finalize();
-        
+
         assert!(matches!(result.status, HealthStatus::Healthy));
     }
 
@@ -894,7 +1023,7 @@ mod tests {
             "Minor issue",
         ));
         result.finalize();
-        
+
         // Status should remain Warning, not change to Healthy
         assert!(matches!(result.status, HealthStatus::Warning));
     }
@@ -902,7 +1031,7 @@ mod tests {
     #[test]
     fn test_system_health_result_new() {
         let result = SystemHealthResult::new();
-        
+
         assert!(matches!(result.overall_status, HealthStatus::Healthy));
         assert!(result.environments.is_empty());
         assert!(result.package_managers.is_empty());
@@ -918,9 +1047,9 @@ mod tests {
             IssueCategory::ProviderNotFound,
             "Not installed",
         ));
-        
+
         system_result.add_package_manager(pm_result);
-        
+
         assert!(matches!(system_result.overall_status, HealthStatus::Error));
         assert_eq!(system_result.package_managers.len(), 1);
     }
@@ -934,16 +1063,19 @@ mod tests {
             IssueCategory::ConfigError,
             "Config issue",
         ));
-        
+
         system_result.add_package_manager(pm_result);
-        
-        assert!(matches!(system_result.overall_status, HealthStatus::Warning));
+
+        assert!(matches!(
+            system_result.overall_status,
+            HealthStatus::Warning
+        ));
     }
 
     #[test]
     fn test_environment_health_result_new() {
         let result = EnvironmentHealthResult::new("node");
-        
+
         assert_eq!(result.env_type, "node");
         assert!(matches!(result.status, HealthStatus::Unknown));
         assert!(result.provider_id.is_none());
@@ -953,7 +1085,7 @@ mod tests {
     #[test]
     fn test_environment_health_result_with_provider() {
         let result = EnvironmentHealthResult::new("python").with_provider("pyenv");
-        
+
         assert_eq!(result.provider_id, Some("pyenv".to_string()));
     }
 
@@ -961,7 +1093,7 @@ mod tests {
     fn test_environment_health_result_add_suggestion() {
         let mut result = EnvironmentHealthResult::new("rust");
         result.add_suggestion("Current version: 1.75.0");
-        
+
         assert_eq!(result.suggestions.len(), 1);
         assert_eq!(result.suggestions[0], "Current version: 1.75.0");
     }
@@ -979,7 +1111,7 @@ mod tests {
             IssueCategory::ShellIntegration,
             IssueCategory::Other,
         ];
-        
+
         assert_eq!(categories.len(), 9);
     }
 }

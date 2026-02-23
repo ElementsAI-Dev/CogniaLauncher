@@ -1,11 +1,30 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-02-05 | v1.3.0
+> Last Updated: 2026-02-23 | v1.4.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-02-23 (v1.4.0)
+- **NEW: WSL Management**: Full Windows Subsystem for Linux management (install, export/import, config, terminal, networking, filesystem)
+- **NEW: Onboarding System**: First-run onboarding wizard with guided tour overlay
+- **NEW: Docs Viewer**: Built-in documentation browser at `/docs` with Markdown rendering, TOC, sidebar navigation
+- **NEW: GitLab Integration**: GitLab releases download support alongside GitHub
+- **NEW: Launch/Shim/PATH System**: Environment activation, shim creation, PATH management commands
+- **NEW: Frameless Window & Titlebar**: Custom frameless window with drag regions, maximize padding for Windows
+- **NEW: Kotlin Support**: Kotlin language management via SDKMAN
+- **NEW Providers**: asdf, bun, conan, conda, gem, gitlab, macports, mise, nix, pipx, podman, volta, wsl, xmake (14 new)
+- **Provider audit**: Complete audit and bugfix pass across all 48 providers
+- **Updated provider count**: 48 providers (previously 40+)
+- **Updated command count**: 260+ Tauri commands across 20 modules (previously 120+)
+- **Updated core modules**: 12 (added eol, history, project_env_detect)
+- **Updated hooks**: 35+ hooks (previously 30)
+- **Updated stores**: 8 Zustand stores (added dashboard, onboarding, window-state)
+- **Updated routes**: 16 pages (added docs, package detail, provider detail, wsl distro detail)
+- **Updated test files**: 100+ test files (55+ component tests, 15+ hook tests, 7+ store tests)
+- **New dependencies**: @tanstack/react-query, @dnd-kit/core, react-markdown, rehype-highlight, rehype-slug, remark-gfm, sonner
 
 ### 2026-02-05 (v1.3.0)
 - **NEW: Health Check System**: Environment and system health diagnostics with issue detection and remediation
@@ -48,9 +67,9 @@ CogniaLauncher is a **cross-platform environment and package manager** with a mo
 - **Desktop mode** (`pnpm tauri dev`): Tauri wraps Next.js in a native window
 
 The project provides unified management for:
-- **Development Environments**: Node.js (nvm/fnm/bun), Python (pyenv), Rust (rustup), Go (goenv), Ruby (rbenv), Java (SDKMAN), PHP (phpbrew), Deno version management
-- **Package Providers**: npm, pnpm, yarn, pip, uv, poetry, cargo, bundler, composer, dotnet, Chocolatey, Scoop, winget, Homebrew, apt, dnf, pacman, vcpkg, Docker, PSGallery, GitHub Releases (40+ providers)
-- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection, health checks, profiles
+- **Development Environments**: Node.js (nvm/fnm/volta/bun), Python (pyenv/conda/mise), Rust (rustup), Go (goenv), Ruby (rbenv), Java/Kotlin (SDKMAN), PHP (phpbrew), Deno, .NET, plus polyglot managers (asdf, mise)
+- **Package Providers**: npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo, gem, bundler, composer, dotnet, conda, Chocolatey, Scoop, winget, Homebrew, MacPorts, apt, dnf, pacman, zypper, apk, snap, flatpak, Nix, vcpkg, Conan, Xmake, Docker, Podman, PSGallery, GitHub Releases, GitLab Releases (48 providers)
+- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection, health checks, profiles, WSL management, onboarding, built-in docs viewer, launch/shim/PATH management
 
 ---
 
@@ -74,6 +93,8 @@ graph TD
     B --> B7["downloads/ - 下载管理"]
     B --> B8["logs/ - 日志查看"]
     B --> B9["about/ - 关于页面"]
+    B --> B10["wsl/ - WSL 管理"]
+    B --> B11["docs/ - 文档查看"]
 
     C --> C1["ui/ - shadcn/ui 组件"]
     C --> C2["dashboard/ - 仪表板组件"]
@@ -84,6 +105,10 @@ graph TD
     C --> C7["log/ - 日志组件"]
     C --> C8["downloads/ - 下载组件"]
     C --> C9["providers/ - 上下文提供者"]
+    C --> C10["wsl/ - WSL 组件"]
+    C --> C11["onboarding/ - 引导组件"]
+    C --> C12["provider-management/ - 提供商管理"]
+    C --> C13["docs/ - 文档组件"]
 
     D --> D1["stores/ - Zustand 存储"]
     D --> D2["hooks/ - React Hooks"]
@@ -152,28 +177,33 @@ cargo clippy          # Run Rust linter
 
 ### Frontend Structure
 
-- `app/` - Next.js App Router (layout.tsx, page.tsx, globals.css)
+- `app/` - Next.js App Router (layout.tsx, page.tsx, globals.css) — 16 pages
   - `page.tsx` - Dashboard overview
-  - `environments/` - Environment management UI
-  - `packages/` - Package management UI
-  - `providers/` - Provider configuration UI
-  - `cache/` - Cache management UI
+  - `environments/` - Environment management UI (list + `[envType]` detail)
+  - `packages/` - Package management UI (list + `detail/` page)
+  - `providers/` - Provider configuration UI (list + `[id]` detail)
+  - `cache/` - Cache management UI (overview + `[cacheType]` detail)
   - `settings/` - Application settings UI
-  - `downloads/` - **NEW** Download management UI
-  - `logs/` - **NEW** Log viewer UI
+  - `downloads/` - Download management UI
+  - `logs/` - Log viewer UI
+  - `wsl/` - WSL distribution management (list + `distro/` detail)
+  - `docs/` - Built-in documentation viewer (`[[...slug]]` catch-all)
   - `about/` - About page with system info
 - `components/ui/` - shadcn/ui components using Radix UI + class-variance-authority
-  - `button.tsx`, `card.tsx`, `dialog.tsx`, `input.tsx`, `command.tsx` (NEW), etc.
-- `components/{feature}/` - Feature-specific components
-  - `dashboard/`, `environments/`, `packages/`, `settings/`, `log/` (NEW), `downloads/` (NEW), `layout/`
+- `components/{feature}/` - Feature-specific components (15 directories)
+  - `about/`, `cache/`, `dashboard/`, `docs/`, `downloads/`, `environments/`, `layout/`, `log/`, `onboarding/`, `packages/`, `provider-management/`, `providers/`, `settings/`, `ui/`, `wsl/`
 - `components/providers/` - Context providers
-  - `theme-provider.tsx`, `locale-provider.tsx`, `log-provider.tsx`, `tray-provider.tsx` (NEW)
+  - `theme-provider.tsx`, `locale-provider.tsx`, `log-provider.tsx`, `tray-provider.tsx`
 - `lib/utils.ts` - `cn()` utility (clsx + tailwind-merge)
-- `lib/stores/` - Zustand state stores
-  - `packages.ts`, `environment.ts`, `settings.ts`, `appearance.ts`, `download.ts` (NEW), `log.ts` (NEW)
-- `lib/hooks/` - Custom React hooks
-  - `use-packages.ts`, `use-environments.ts`, `use-settings.ts`, `use-downloads.ts` (NEW), `use-tray-sync.ts` (NEW), `use-logs.ts` (NEW)
-- `i18n/`, `messages/` - Internationalization
+- `lib/stores/` - Zustand state stores (8 stores)
+  - `packages.ts`, `environment.ts`, `settings.ts`, `appearance.ts`, `download.ts`, `log.ts`, `dashboard.ts`, `onboarding.ts`, `window-state.ts`
+- `lib/docs/` - Documentation content and navigation utilities
+- `hooks/` - Custom React hooks (35+ hooks)
+  - Core: `use-packages.ts`, `use-environments.ts`, `use-settings.ts`, `use-downloads.ts`, `use-logs.ts`
+  - Features: `use-wsl.ts`, `use-launch.ts`, `use-shim.ts`, `use-profiles.ts`, `use-health-check.ts`, `use-onboarding.ts`
+  - UI: `use-tray-sync.ts`, `use-keyboard-shortcuts.ts`, `use-settings-shortcuts.ts`, `use-mobile.ts`
+  - Data: `use-about-data.ts`, `use-auto-version.ts`, `use-version-cache.ts`, `use-provider-detail.ts`, `use-github-downloads.ts`, `use-gitlab-downloads.ts`
+- `i18n/`, `messages/` - Internationalization (en.json + zh.json, 1700+ keys each)
 
 ### Tauri Integration
 
@@ -182,16 +212,15 @@ cargo clippy          # Run Rust linter
   - `beforeDevCommand`: runs `pnpm dev`
   - `beforeBuildCommand`: runs `pnpm build`
   - `src/` - Rust source code
-    - `commands/` - Tauri command handlers (15 modules, 120+ commands)
-    - `core/` - Core business logic
-    - `provider/` - Provider implementations (32 providers)
+    - `commands/` - Tauri command handlers (20 modules, 260+ commands)
+    - `core/` - Core business logic (12 modules: batch, custom_detection, environment, eol, health_check, history, installer, orchestrator, profiles, project_env_detect, shim)
+    - `provider/` - Provider implementations (48 providers + 6 infra files)
     - `cache/` - Cache management (SQLite + JSON)
     - `download/` - Download manager with queue and throttling
     - `config/` - Configuration
     - `platform/` - Platform abstraction
     - `resolver/` - Dependency resolution
     - `tray.rs` - System tray (multi-language, notifications, autostart)
-    - `core/custom_detection.rs` - Custom version detection rules (17 commands)
 
 See [Tauri Backend Documentation](./src-tauri/CLAUDE.md) for detailed backend architecture.
 
@@ -227,8 +256,8 @@ cn("base-classes", condition && "conditional", className)
 
 | Module | Path | Description | Documentation |
 |--------|------|-------------|---------------|
-| Frontend | `app/`, `components/`, `lib/` | Next.js 16 + React 19 UI | Below |
-| Tauri Backend | `src-tauri/` | Rust backend with 30+ providers | [View](./src-tauri/CLAUDE.md) |
+| Frontend | `app/`, `components/`, `lib/` | Next.js 16 + React 19 UI (16 pages) | Below |
+| Tauri Backend | `src-tauri/` | Rust backend with 48 providers, 260+ commands | [View](./src-tauri/CLAUDE.md) |
 | OpenSpec | `openspec/` | Feature specifications | [AGENTS.md](./openspec/AGENTS.md) |
 | LLMDoc | `llmdoc/` | Documentation system | [index.md](./llmdoc/index.md) |
 
@@ -236,29 +265,41 @@ cn("base-classes", condition && "conditional", className)
 
 | Route | Path | Purpose |
 |-------|------|---------|
-| Dashboard | `app/page.tsx` | Overview with stats cards |
+| Dashboard | `app/page.tsx` | Overview with stats cards and widgets |
 | Environments | `app/environments/page.tsx` | Version management UI |
+| Environment Detail | `app/environments/[envType]/page.tsx` | Per-language environment detail |
 | Packages | `app/packages/page.tsx` | Package search and install |
-| Providers | `app/providers/page.tsx` | Provider configuration |
+| Package Detail | `app/packages/detail/page.tsx` | Package detail view |
+| Providers | `app/providers/page.tsx` | Provider management |
+| Provider Detail | `app/providers/[id]/page.tsx` | Per-provider detail/config |
 | Cache | `app/cache/page.tsx` | Cache management interface |
+| Cache Detail | `app/cache/[cacheType]/page.tsx` | Per-cache-type detail |
 | Settings | `app/settings/page.tsx` | Application settings |
-| Downloads | `app/downloads/page.tsx` | **NEW** Download management |
-| WSL | `app/wsl/page.tsx` | **NEW** WSL distribution management |
-| Logs | `app/logs/page.tsx` | **NEW** Log viewer |
+| Downloads | `app/downloads/page.tsx` | Download management |
+| WSL | `app/wsl/page.tsx` | WSL distribution management |
+| WSL Distro Detail | `app/wsl/distro/page.tsx` | WSL distro detail (filesystem, network, services, terminal) |
+| Logs | `app/logs/page.tsx` | Log viewer |
+| Docs | `app/docs/[[...slug]]/page.tsx` | Built-in documentation viewer |
 | About | `app/about/page.tsx` | System info and updates |
 
 ### Key Components
 
 | Component | Path | Purpose |
 |-----------|------|---------|
-| AppShell | `components/app-shell.tsx` | Main layout wrapper |
+| AppShell | `components/app-shell.tsx` | Main layout wrapper with frameless window support |
 | AppSidebar | `components/app-sidebar.tsx` | Navigation sidebar |
-| CommandPalette | `components/command-palette.tsx` | **NEW** Global command search (Ctrl+K) |
-| TrayProvider | `components/providers/tray-provider.tsx` | **NEW** System tray sync |
+| Titlebar | `components/layout/titlebar.tsx` | Custom frameless titlebar with window controls |
+| CommandPalette | `components/command-palette.tsx` | Global command search (Ctrl+K) |
+| OnboardingWizard | `components/onboarding/onboarding-wizard.tsx` | First-run onboarding |
+| TourOverlay | `components/onboarding/tour-overlay.tsx` | Guided tour overlay |
+| TrayProvider | `components/providers/tray-provider.tsx` | System tray sync |
+| ProviderCard | `components/provider-management/provider-card.tsx` | Provider display/management |
+| WslDistroCard | `components/wsl/wsl-distro-card.tsx` | WSL distro display |
+| WslDistroDetailPage | `components/wsl/wsl-distro-detail-page.tsx` | WSL distro detail (overview, filesystem, network, services, terminal) |
+| MarkdownRenderer | `components/docs/markdown-renderer.tsx` | Markdown rendering for docs viewer |
 | StatsCard | `components/dashboard/stats-card.tsx` | Dashboard stat display |
-| PackageList | `components/packages/package-list.tsx` | Package listing |
-| EnvironmentCard | `components/environments/environment-card.tsx` | Environment display |
-| LogPanel | `components/log/log-panel.tsx` | **NEW** Real-time log viewer |
+| WidgetGrid | `components/dashboard/widget-grid.tsx` | Dashboard widget grid (drag-and-drop) |
+| LogPanel | `components/log/log-panel.tsx` | Real-time log viewer |
 
 ### State Management
 
@@ -267,9 +308,12 @@ cn("base-classes", condition && "conditional", className)
 | usePackageStore | `lib/stores/packages.ts` | Package state management |
 | useEnvironmentStore | `lib/stores/environment.ts` | Environment state |
 | useSettingsStore | `lib/stores/settings.ts` | Settings state |
-| useDownloadStore | `lib/stores/download.ts` | **NEW** Download state |
-| useLogStore | `lib/stores/log.ts` | **NEW** Log state |
-| useAppearanceStore | `lib/stores/appearance.ts` | Theme/appearance state |
+| useDownloadStore | `lib/stores/download.ts` | Download state |
+| useLogStore | `lib/stores/log.ts` | Log state |
+| useAppearanceStore | `lib/stores/appearance.ts` | Theme/appearance state (chart color themes) |
+| useDashboardStore | `lib/stores/dashboard.ts` | Dashboard widget layout and customization |
+| useOnboardingStore | `lib/stores/onboarding.ts` | Onboarding wizard progress |
+| useWindowStateStore | `lib/stores/window-state.ts` | Window state (maximized, fullscreen, focused) |
 
 ---
 
@@ -399,6 +443,10 @@ cn("base-classes", condition && "conditional", className)
 
 - Co-located: `*.test.ts` or `*.test.tsx` next to source
 - Example: `app/page.test.tsx`
+- **Component tests**: 55+ files in `components/`
+- **Hook tests**: 15+ files in `hooks/`
+- **Store tests**: 7 files in `lib/stores/__tests__/`
+- **Rust tests**: 270+ unit tests across provider files
 
 ---
 
@@ -414,9 +462,15 @@ cn("base-classes", condition && "conditional", className)
 | Tailwind CSS | 4.1.18 | Utility-first styling |
 | shadcn/ui | Latest | Radix UI + CVA components |
 | Zustand | 5.0.11 | State management |
+| @tanstack/react-query | 5.90.20 | Server state management |
 | next-intl | 4.8.2 | Internationalization |
 | next-themes | 0.4.6 | Dark mode theming |
 | cmdk | 1.1.1 | Command palette |
+| @dnd-kit | 6.3.1 | Drag and drop (dashboard widgets) |
+| react-markdown | 10.1.0 | Markdown rendering (docs viewer) |
+| recharts | 3.7.0 | Charts and data visualization |
+| sonner | 2.0.7 | Toast notifications |
+| lucide-react | 0.546.0 | Icon library |
 
 ### Backend
 
@@ -444,32 +498,32 @@ cn("base-classes", condition && "conditional", className)
 
 ## Coverage Report
 
-### Scan Summary (2026-02-04)
+### Scan Summary (2026-02-23)
 
 | Metric | Value |
 |--------|-------|
-| Total Files (Estimated) | 250 |
-| Files Scanned | 200 |
-| Coverage | 80% |
+| Total Files (Estimated) | 400+ |
+| Files Scanned | 380+ |
+| Coverage | 95% |
 
 ### By Language
 
 | Language | File Count |
 |----------|------------|
-| TypeScript/TSX | 90 |
-| Rust | 70 |
-| Markdown | 32 |
+| TypeScript/TSX | 180+ |
+| Rust | 100+ |
+| Markdown | 60+ |
 | JSON | 20 |
 | CSS | 10 |
 
-### Gaps & Recommendations
+### Test Infrastructure
 
-| Area | Status | Recommendation |
-|------|--------|----------------|
-| Rust Unit Tests | Missing | Add `cargo test` infrastructure |
-| E2E Tests | Missing | Consider Playwright |
-| CI/CD | Missing | Add GitHub Actions workflow |
-| Tray Icon Variations | Partial | Add icons for downloading/update/error states |
+| Area | Status | Details |
+|------|--------|---------|
+| Frontend Unit Tests | ✅ Active | Jest 30 + Testing Library, 100+ test files |
+| Rust Unit Tests | ✅ Active | 270+ provider tests, parsing tests across providers |
+| CI/CD | ✅ Active | GitHub Actions workflow (`.github/workflows/ci.yml`) |
+| E2E Tests | ❌ Missing | Consider Playwright |
 
 ---
 
@@ -534,7 +588,7 @@ Use this documentation when:
 - [Tauri Backend Docs](./src-tauri/CLAUDE.md) - Backend module documentation
 - [LLMDoc Index](./llmdoc/index.md) - Complete documentation system
 
-### Quick Links to New Features
+### Quick Links to Features
 
 - [Downloads System Overview](./llmdoc/overview/downloads-system.md)
 - [System Tray Overview](./llmdoc/overview/system-tray.md)
@@ -542,3 +596,8 @@ Use this documentation when:
 - [Custom Detection System](./src-tauri/src/core/custom_detection.rs) - User-defined version detection rules
 - [Log Panel Architecture](./llmdoc/architecture/log-panel-system.md)
 - [Enhanced Cache System](./llmdoc/architecture/cache-system.md)
+- WSL Management: `components/wsl/`, `hooks/use-wsl.ts`, `src-tauri/src/commands/wsl.rs`
+- Onboarding: `components/onboarding/`, `hooks/use-onboarding.ts`, `lib/stores/onboarding.ts`
+- Docs Viewer: `app/docs/`, `components/docs/`, `lib/docs/`
+- GitLab Integration: `src-tauri/src/commands/gitlab.rs`, `hooks/use-gitlab-downloads.ts`
+- Launch/Shim/PATH: `src-tauri/src/commands/launch.rs`, `hooks/use-launch.ts`, `hooks/use-shim.ts`

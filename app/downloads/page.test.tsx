@@ -294,7 +294,7 @@ describe('DownloadsPage', () => {
 
     expect(screen.getByText('file.zip')).toBeInTheDocument();
     expect(screen.getByText('https://example.com/file.zip')).toBeInTheDocument();
-    expect(screen.getByText('Downloading')).toBeInTheDocument();
+    expect(screen.getAllByText('Downloading').length).toBeGreaterThan(0);
   });
 
   it('shows history entries when switching tabs', async () => {

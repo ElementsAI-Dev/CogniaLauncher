@@ -20,6 +20,9 @@ describe('useEnvironmentStore', () => {
       versionBrowserEnvType: null,
       detailsPanelOpen: false,
       detailsPanelEnvType: null,
+      // Update check state
+      updateCheckResults: {},
+      lastEnvUpdateCheck: null,
       // Search and filter state
       searchQuery: '',
       statusFilter: 'all',
@@ -310,6 +313,60 @@ describe('useEnvironmentStore', () => {
       useEnvironmentStore.getState().closeDetailsPanel();
       expect(useEnvironmentStore.getState().detailsPanelOpen).toBe(false);
       expect(useEnvironmentStore.getState().detailsPanelEnvType).toBeNull();
+    });
+  });
+
+  describe('update check actions', () => {
+    it('should set update check result for a single env type', () => {
+      const result = {
+        envType: 'node',
+        providerId: 'fnm',
+        currentVersion: '20.10.0',
+        latestVersion: '22.0.0',
+        latestLts: '22.0.0',
+        newerCount: 5,
+        isOutdated: true,
+      };
+      useEnvironmentStore.getState().setUpdateCheckResult('node', result);
+      expect(useEnvironmentStore.getState().updateCheckResults.node).toEqual(result);
+    });
+
+    it('should set all update check results at once', () => {
+      const results = [
+        { envType: 'node', providerId: 'fnm', currentVersion: '20.10.0', latestVersion: '22.0.0', latestLts: '22.0.0', newerCount: 5, isOutdated: true },
+        { envType: 'python', providerId: 'pyenv', currentVersion: '3.11.0', latestVersion: '3.12.0', latestLts: '3.12.0', newerCount: 2, isOutdated: true },
+      ];
+      useEnvironmentStore.getState().setAllUpdateCheckResults(results);
+      const state = useEnvironmentStore.getState().updateCheckResults;
+      expect(state.node?.envType).toBe('node');
+      expect(state.python?.envType).toBe('python');
+      expect(Object.keys(state)).toHaveLength(2);
+    });
+
+    it('should overwrite previous results when setting all', () => {
+      useEnvironmentStore.getState().setUpdateCheckResult('go', {
+        envType: 'go', providerId: 'goenv', currentVersion: '1.21.0', latestVersion: '1.22.0', latestLts: '1.22.0', newerCount: 1, isOutdated: true,
+      });
+      useEnvironmentStore.getState().setAllUpdateCheckResults([
+        { envType: 'node', providerId: 'fnm', currentVersion: '22.0.0', latestVersion: '22.0.0', latestLts: '22.0.0', newerCount: 0, isOutdated: false },
+      ]);
+      const state = useEnvironmentStore.getState().updateCheckResults;
+      expect(state.go).toBeUndefined();
+      expect(state.node).toBeDefined();
+    });
+
+    it('should set last env update check timestamp', () => {
+      const now = Date.now();
+      useEnvironmentStore.getState().setLastEnvUpdateCheck(now);
+      expect(useEnvironmentStore.getState().lastEnvUpdateCheck).toBe(now);
+    });
+
+    it('should preserve update check results when updating other state', () => {
+      useEnvironmentStore.getState().setUpdateCheckResult('node', {
+        envType: 'node', providerId: 'fnm', currentVersion: '20.10.0', latestVersion: '22.0.0', latestLts: '22.0.0', newerCount: 5, isOutdated: true,
+      });
+      useEnvironmentStore.getState().setSearchQuery('python');
+      expect(useEnvironmentStore.getState().updateCheckResults.node).toBeDefined();
     });
   });
 

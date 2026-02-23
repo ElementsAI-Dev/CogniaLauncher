@@ -10,6 +10,7 @@ import { EnvironmentErrorBoundary, EnvironmentCardErrorBoundary } from '@/compon
 import { EmptyState } from '@/components/environments/empty-state';
 import { EnvironmentBatchOperations } from '@/components/environments/batch-operations';
 import { EnvironmentToolbar } from '@/components/environments/environment-toolbar';
+import { EnvUpdatesSummary } from '@/components/environments/env-updates-summary';
 import { ProfileManager } from '@/components/environments/profile-manager';
 import { PageHeader } from '@/components/layout/page-header';
 import { useEnvironmentStore } from '@/lib/stores/environment';
@@ -37,6 +38,7 @@ export default function EnvironmentsPage() {
     detectVersions,
     fetchProviders,
     openAddDialog,
+    checkAllEnvUpdates,
   } = useEnvironments();
   
   const {
@@ -57,6 +59,7 @@ export default function EnvironmentsPage() {
     setSortBy,
     setViewMode,
     clearFilters,
+    updateCheckResults,
   } = useEnvironmentStore();
   const { t } = useLocale();
   const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({});
@@ -243,12 +246,21 @@ export default function EnvironmentsPage() {
           sortBy={sortBy}
           onSortChange={setSortBy}
           onRefresh={handleRefresh}
+          onCheckAllUpdates={checkAllEnvUpdates}
           onClearFilters={clearFilters}
           isLoading={loading}
           totalCount={environments.length}
           filteredCount={filteredEnvironments.length}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          t={t}
+        />
+
+        <EnvUpdatesSummary
+          results={updateCheckResults}
+          loading={loading}
+          onCheckAll={checkAllEnvUpdates}
+          onUpgrade={(envType, version) => handleInstallVersion(envType, version)}
           t={t}
         />
 

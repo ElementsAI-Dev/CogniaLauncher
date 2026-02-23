@@ -13,10 +13,11 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { Titlebar } from "@/components/layout/titlebar";
+import { BackgroundImage } from "@/components/layout/background-image";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { useWindowStateStore } from "@/lib/stores/window-state";
 import { LogDrawer } from "@/components/log/log-drawer";
 import { Button } from "@/components/ui/button";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { CommandPalette } from "@/components/command-palette";
 import { SplashScreen } from "@/components/splash-screen";
 import { OnboardingWizard, TourOverlay } from "@/components/onboarding";
@@ -105,6 +106,7 @@ export function AppShell({ children }: AppShellProps) {
         className="flex h-screen flex-col overflow-hidden"
         style={{ visibility: showSplash && !isReady ? "hidden" : "visible" }}
       >
+        <BackgroundImage />
         <Titlebar />
         <div
           className="flex flex-1 overflow-hidden"
