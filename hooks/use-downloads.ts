@@ -468,25 +468,13 @@ export function useDownloads() {
   };
 }
 
-/**
- * Format bytes to human-readable string
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
+// Re-export formatBytes from shared utils for backward compatibility
+export { formatBytes } from '@/lib/utils';
 
 /**
  * Format speed to human-readable string
  */
-export function formatSpeed(bytesPerSecond: number): string {
-  return `${formatBytes(bytesPerSecond)}/s`;
-}
+export { formatSpeed } from '@/lib/utils';
 
 /**
  * Format duration in seconds to human-readable string

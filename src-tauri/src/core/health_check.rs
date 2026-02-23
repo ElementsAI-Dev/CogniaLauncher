@@ -545,8 +545,12 @@ impl HealthCheckManager {
             "ruby" => "rbenv".to_string(),
             "java" => "sdkman".to_string(),
             "kotlin" => "sdkman-kotlin".to_string(),
+            "scala" => "sdkman-scala".to_string(),
             "php" => "phpbrew".to_string(),
             "dotnet" => "dotnet".to_string(),
+            "zig" => "zig".to_string(),
+            "dart" => "fvm".to_string(),
+            "lua" => "system-lua".to_string(),
             _ => env_type.to_string(),
         }
     }
@@ -799,16 +803,19 @@ impl HealthCheckManager {
     /// Map provider ID to environment type
     fn provider_to_env_type(&self, provider_id: &str) -> String {
         match provider_id {
-            "fnm" | "nvm" => "node".to_string(),
+            "fnm" | "nvm" | "volta" => "node".to_string(),
             "deno" => "deno".to_string(),
-            "pyenv" => "python".to_string(),
+            "pyenv" | "uv" | "conda" => "python".to_string(),
             "goenv" => "go".to_string(),
             "rustup" => "rust".to_string(),
             "rbenv" => "ruby".to_string(),
             "sdkman" => "java".to_string(),
             "sdkman-kotlin" => "kotlin".to_string(),
+            "sdkman-scala" => "scala".to_string(),
             "phpbrew" => "php".to_string(),
             "dotnet" => "dotnet".to_string(),
+            "zig" => "zig".to_string(),
+            "fvm" => "dart".to_string(),
             _ => provider_id.to_string(),
         }
     }
@@ -830,6 +837,13 @@ impl HealthCheckManager {
                     "curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash".to_string()
                 }
             }
+            "volta" => {
+                if cfg!(windows) {
+                    "winget install Volta.Volta".to_string()
+                } else {
+                    "curl https://get.volta.sh | bash".to_string()
+                }
+            }
             "deno" => {
                 if cfg!(windows) {
                     "irm https://deno.land/install.ps1 | iex".to_string()
@@ -844,6 +858,14 @@ impl HealthCheckManager {
                     "curl https://pyenv.run | bash".to_string()
                 }
             }
+            "uv" => {
+                if cfg!(windows) {
+                    "powershell -c \"irm https://astral.sh/uv/install.ps1 | iex\"".to_string()
+                } else {
+                    "curl -LsSf https://astral.sh/uv/install.sh | sh".to_string()
+                }
+            }
+            "conda" => "Download Miniconda: https://docs.conda.io/en/latest/miniconda.html".to_string(),
             "goenv" => "git clone https://github.com/syndbg/goenv.git ~/.goenv".to_string(),
             "rustup" => {
                 if cfg!(windows) {
@@ -853,13 +875,24 @@ impl HealthCheckManager {
                 }
             }
             "rbenv" => "git clone https://github.com/rbenv/rbenv.git ~/.rbenv".to_string(),
-            "sdkman" | "sdkman-kotlin" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
             "phpbrew" => "curl -L -O https://github.com/phpbrew/phpbrew/releases/latest/download/phpbrew.phar && chmod +x phpbrew.phar && sudo mv phpbrew.phar /usr/local/bin/phpbrew".to_string(),
             "dotnet" => {
                 if cfg!(windows) {
                     "winget install Microsoft.DotNet.SDK.8".to_string()
                 } else {
                     "curl -sSL https://dot.net/v1/dotnet-install.sh | bash".to_string()
+                }
+            }
+            "zig" => "Download from https://ziglang.org/download/".to_string(),
+            "fvm" => "dart pub global activate fvm".to_string(),
+            "system-lua" => {
+                if cfg!(windows) {
+                    "Download from https://www.lua.org/download.html or install via scoop: scoop install lua".to_string()
+                } else if cfg!(target_os = "macos") {
+                    "brew install lua".to_string()
+                } else {
+                    "sudo apt install lua5.4 || sudo dnf install lua".to_string()
                 }
             }
             _ => format!("# Install {} manually", provider_id),
@@ -871,14 +904,20 @@ impl HealthCheckManager {
         match provider_id {
             "fnm" => vec!["fnm".to_string()],
             "nvm" => vec!["nvm".to_string()],
+            "volta" => vec![".volta".to_string()],
             "deno" => vec![".deno".to_string()],
             "pyenv" => vec!["pyenv".to_string(), ".pyenv".to_string()],
+            "uv" => vec!["uv".to_string(), ".local/share/uv".to_string()],
+            "conda" => vec!["conda".to_string(), "miniconda".to_string(), "anaconda".to_string()],
             "goenv" => vec!["goenv".to_string(), ".goenv".to_string()],
             "rustup" => vec![".cargo".to_string(), ".rustup".to_string()],
             "rbenv" => vec!["rbenv".to_string(), ".rbenv".to_string()],
-            "sdkman" | "sdkman-kotlin" => vec!["sdkman".to_string(), ".sdkman".to_string()],
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => vec!["sdkman".to_string(), ".sdkman".to_string()],
             "phpbrew" => vec!["phpbrew".to_string(), ".phpbrew".to_string()],
             "dotnet" => vec!["dotnet".to_string()],
+            "zig" => vec![".zig".to_string()],
+            "fvm" => vec![".fvm".to_string(), "fvm".to_string()],
+            "system-lua" => vec!["lua".to_string()],
             _ => vec![],
         }
     }
@@ -888,13 +927,19 @@ impl HealthCheckManager {
         match provider_id {
             "fnm" => "eval \"$(fnm env)\"".to_string(),
             "nvm" => "source ~/.nvm/nvm.sh".to_string(),
+            "volta" => "export VOLTA_HOME=\"$HOME/.volta\" && export PATH=\"$VOLTA_HOME/bin:$PATH\"".to_string(),
             "deno" => "export PATH=\"$HOME/.deno/bin:$PATH\"".to_string(),
             "pyenv" => "eval \"$(pyenv init -)\"".to_string(),
+            "uv" => "# uv manages PATH automatically".to_string(),
+            "conda" => "eval \"$(conda shell.bash hook)\"".to_string(),
             "goenv" => "eval \"$(goenv init -)\"".to_string(),
             "rustup" => "source $HOME/.cargo/env".to_string(),
             "rbenv" => "eval \"$(rbenv init -)\"".to_string(),
-            "sdkman" | "sdkman-kotlin" => "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string(),
             "phpbrew" => "source ~/.phpbrew/bashrc".to_string(),
+            "zig" => "export PATH=\"$HOME/.zig/current:$PATH\"".to_string(),
+            "fvm" => "export PATH=\"$HOME/fvm/default/bin:$PATH\"".to_string(),
+            "system-lua" => "eval $(luarocks path)".to_string(),
             _ => format!("# Configure {} in your shell", provider_id),
         }
     }

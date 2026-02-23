@@ -1071,7 +1071,11 @@
     "infoSystem": "System Package Providers",
     "infoSystemDesc": "apt, Homebrew, winget, Scoop, Chocolatey - Interface with OS-level package managers for system software.",
     "infoCpp": "C++ Package Providers",
-    "infoCppDesc": "vcpkg, Conan, Xmake/Xrepo - Manage C/C++ libraries across platforms with dependency resolution and binary caching.",
+    "infoCppDesc": "vcpkg, Conan, Xmake/Xrepo, MSVC, MSYS2 - Manage C/C++ libraries across platforms with dependency resolution and binary caching. Detect Visual Studio Build Tools and MSYS2/MinGW toolchains on Windows.",
+    "infoDart": "Dart/Flutter Providers",
+    "infoDartDesc": "FVM, Dart Pub - Flutter SDK version management and pub.dev package management with dependency resolution.",
+    "infoLua": "Lua Package Providers",
+    "infoLuaDesc": "LuaRocks - Install and manage Lua rocks (modules) with dependency resolution and rockspec support.",
     "infoContainer": "Container Providers",
     "infoContainerDesc": "Docker, Podman - Manage container images with pull, list, and update functionality. Podman provides daemonless, rootless container management.",
     "infoPowershell": "PowerShell Providers",
@@ -1844,7 +1848,16 @@
     "sectionReset": "{section} settings reset to defaults",
     "loading": "Loading settings",
     "modified": "Modified",
-    "selectAccentColor": "Select {color} accent color"
+    "selectAccentColor": "Select {color} accent color",
+    "onboardingTitle": "Onboarding & Tour",
+    "onboardingDesc": "Re-run the setup wizard or start the guided tour to explore CogniaLauncher features.",
+    "onboardingRerun": "Re-run Setup Wizard",
+    "onboardingStartTour": "Start Guided Tour",
+    "onboardingResetSuccess": "Setup wizard has been reset. It will appear shortly.",
+    "onboardingTourStarted": "Guided tour started!",
+    "onboardingStatusCompleted": "Setup completed",
+    "onboardingStatusSkipped": "Setup was skipped",
+    "onboardingTourDone": "Tour completed"
   },
   "validation": {
     "mustBeNumber": "Must be a number",
@@ -1904,7 +1917,7 @@
     "licenseCertificatesDesc": "Open source license and copyright information",
     "mitLicense": "MIT License",
     "mitLicenseDesc": "Open source software - free to use, modify, and distribute",
-    "copyright": "Copyright © 2025 Max Qian",
+    "copyright": "Copyright © 2025-2026 Max Qian",
     "copyrightDesc": "All rights reserved under the MIT License terms",
     "actions": "Actions",
     "actionsDesc": "Quick links and common operations",
@@ -1928,15 +1941,9 @@
     "updateDesktopOnly": "Desktop only",
     "updateBannerDesc": "A new version is available for download",
     "errorTitle": "Error",
-    "onboardingTitle": "Onboarding & Tour",
-    "onboardingDesc": "Re-run the setup wizard or start the guided tour to explore CogniaLauncher features.",
-    "onboardingRerun": "Re-run Setup Wizard",
-    "onboardingStartTour": "Start Guided Tour",
-    "onboardingResetSuccess": "Setup wizard has been reset. It will appear shortly.",
-    "onboardingTourStarted": "Guided tour started!",
-    "onboardingStatusCompleted": "Setup completed",
-    "onboardingStatusSkipped": "Setup was skipped",
-    "onboardingTourDone": "Tour completed"
+    "exportDiagnostics": "Export Diagnostics",
+    "diagnosticsCopied": "Diagnostic report copied to clipboard",
+    "diagnosticsFailed": "Failed to generate diagnostic report"
   },
   "theme": {
     "toggle": "Toggle theme",
@@ -2214,7 +2221,16 @@
       "sourceAdded": "Source archive added to download queue",
       "yourPlatform": "Your platform",
       "rosetta": "Rosetta",
-      "folderPickerError": "Failed to open folder picker"
+      "folderPickerError": "Failed to open folder picker",
+      "draft": "Draft",
+      "archived": "Archived",
+      "releaseNotes": "Release Notes",
+      "selectRecommended": "Select Recommended",
+      "saveToken": "Save",
+      "clearToken": "Clear",
+      "tokenSaved": "Token saved",
+      "tokenCleared": "Token cleared",
+      "downloadCount": "downloads"
     },
     "gitlab": {
       "dialogTitle": "Download from GitLab",
@@ -2244,7 +2260,11 @@
       "noSelection": "Please select at least one item to download",
       "assetsAdded": "{count} asset(s) added to download queue",
       "sourceAdded": "Source archive added to download queue",
-      "folderPickerError": "Failed to open folder picker"
+      "folderPickerError": "Failed to open folder picker",
+      "saveToken": "Save",
+      "clearToken": "Clear",
+      "tokenSaved": "Token saved",
+      "tokenCleared": "Token cleared"
     },
     "dialogError": "Failed to open file dialog"
   },
@@ -2578,5 +2598,21 @@
     "tourSettingsDesc": "Configure mirrors, themes, paths, providers, and all other preferences here.",
     "tourNext": "Next",
     "tourDone": "Done"
+  },
+  "go": {
+    "envInfo": "Go Environment",
+    "envInfoDesc": "Go toolchain environment variables",
+    "modTidy": "Tidy Modules",
+    "modTidyDesc": "Run go mod tidy to clean up module dependencies",
+    "modDownload": "Download Modules",
+    "modDownloadDesc": "Download all module dependencies",
+    "cleanCache": "Clean Cache",
+    "cleanBuildCache": "Clean Build Cache",
+    "cleanModCache": "Clean Module Cache",
+    "cleanTestCache": "Clean Test Cache",
+    "cleanAllCaches": "Clean All Caches",
+    "cacheInfo": "Cache Info",
+    "buildCache": "Build Cache",
+    "modCache": "Module Cache"
   }
 }

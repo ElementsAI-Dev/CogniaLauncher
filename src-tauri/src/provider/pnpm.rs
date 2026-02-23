@@ -53,7 +53,8 @@ impl PnpmProvider {
         let full_args = self.build_pnpm_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
         
-        let out = process::execute("pnpm", &args_refs, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let out = process::execute("pnpm", &args_refs, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -62,7 +63,8 @@ impl PnpmProvider {
     }
 
     async fn run_pnpm_raw(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("pnpm", args, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let out = process::execute("pnpm", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -127,6 +129,7 @@ impl Provider for PnpmProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -302,11 +305,15 @@ impl Provider for PnpmProvider {
             req.name.clone()
         };
 
-        let args = if req.global {
+        let mut args = if req.global {
             vec!["add", "-g", &pkg]
         } else {
             vec!["add", &pkg]
         };
+
+        if req.force {
+            args.push("--force");
+        }
 
         self.run_pnpm(&args).await?;
 
@@ -340,7 +347,10 @@ impl Provider for PnpmProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let args = vec!["remove", "-g", &req.name];
+        let mut args = vec!["remove", "-g", &req.name];
+        if req.force {
+            args.push("--force");
+        }
         self.run_pnpm(&args).await?;
         Ok(())
     }
@@ -463,6 +473,16 @@ impl SystemPackageProvider for PnpmProvider {
         let out = self.run_pnpm_raw(&["list", "-g", name, "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
     }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        self.run_pnpm(&["update", "-g", name]).await?;
+        Ok(())
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        self.run_pnpm_raw(&["update", "-g"]).await?;
+        Ok(vec!["All global pnpm packages upgraded".into()])
+    }
 }
 
 #[cfg(test)]
@@ -487,5 +507,14 @@ mod tests {
         assert!(args.contains(&"add".to_string()));
         assert!(args.contains(&"lodash".to_string()));
         assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_pnpm_capabilities_include_upgrade() {
+        let provider = PnpmProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Update));
     }
 }

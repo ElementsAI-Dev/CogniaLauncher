@@ -35,6 +35,7 @@ export default function AboutPage() {
     reloadSystemInfo,
     handleUpdate,
     clearError,
+    exportDiagnostics,
   } = useAboutData(locale);
 
   const changelogEntries = getChangelog(locale);
@@ -96,8 +97,10 @@ export default function AboutPage() {
       <section aria-label={t('about.actions')}>
         <ActionsCard
           loading={loading}
+          isDesktop={isDesktop}
           onCheckUpdate={checkForUpdate}
           onOpenChangelog={() => setChangelogOpen(true)}
+          onExportDiagnostics={() => exportDiagnostics(t)}
           t={t}
         />
       </section>

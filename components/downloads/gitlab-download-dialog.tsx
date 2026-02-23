@@ -51,6 +51,8 @@ import {
   Eye,
   EyeOff,
   Globe,
+  Save,
+  Trash2,
 } from "lucide-react";
 import type {
   GitLabAssetInfo,
@@ -93,6 +95,8 @@ export function GitLabDownloadDialog({
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    saveToken,
+    clearSavedToken,
     reset,
   } = useGitLabDownloads();
 
@@ -143,6 +147,16 @@ export function GitLabDownloadDialog({
       return [...prev, asset];
     });
   }, []);
+
+  const handleSaveToken = useCallback(async () => {
+    await saveToken();
+    toast.success(t("downloads.gitlab.tokenSaved"));
+  }, [saveToken, t]);
+
+  const handleClearToken = useCallback(async () => {
+    await clearSavedToken();
+    toast.success(t("downloads.gitlab.tokenCleared"));
+  }, [clearSavedToken, t]);
 
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
@@ -278,26 +292,46 @@ export function GitLabDownloadDialog({
                 </p>
                 <div className="space-y-2">
                   <Label className="text-xs">{t("downloads.auth.token")}</Label>
-                  <div className="relative">
-                    <Input
-                      type={showToken ? "text" : "password"}
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      placeholder={t("downloads.auth.tokenPlaceholder")}
-                      className="pr-10 font-mono text-sm"
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showToken ? "text" : "password"}
+                        value={token}
+                        onChange={(e) => setToken(e.target.value)}
+                        placeholder={t("downloads.auth.tokenPlaceholder")}
+                        className="pr-10 font-mono text-sm"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                        onClick={() => setShowToken(!showToken)}
+                      >
+                        {showToken ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                     <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                      onClick={() => setShowToken(!showToken)}
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSaveToken}
+                      disabled={!token.trim() || !isDesktop}
                     >
-                      {showToken ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
+                      <Save className="h-3 w-3 mr-1" />
+                      {t("downloads.gitlab.saveToken")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearToken}
+                      disabled={!isDesktop}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      {t("downloads.gitlab.clearToken")}
                     </Button>
                   </div>
                 </div>

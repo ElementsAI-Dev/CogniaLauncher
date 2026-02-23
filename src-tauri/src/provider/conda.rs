@@ -434,7 +434,85 @@ impl SystemPackageProvider for CondaProvider {
         false
     }
 
+    async fn get_version(&self) -> CogniaResult<String> {
+        let out = self.run_conda(&["--version"]).await?;
+        // Output: "conda 24.11.1"
+        Ok(out.trim().split_whitespace().last().unwrap_or("unknown").to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which(&self.command)
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider(format!("{} not found", self.command)))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("Download Miniconda: https://docs.conda.io/en/latest/miniconda.html".into())
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         Ok(self.query_installed_version(name).await.is_ok())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = CondaProvider::new();
+        assert_eq!(provider.id(), "conda");
+        assert_eq!(provider.display_name(), "Conda (Package & Environment Manager)");
+        assert_eq!(provider.priority(), 80);
+
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = CondaProvider::new();
+        let caps = provider.capabilities();
+
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::LockVersion));
+    }
+
+    #[test]
+    fn test_default_command() {
+        let provider = CondaProvider::new();
+        assert_eq!(provider.command, "conda");
+        assert!(provider.channels.is_empty());
+    }
+
+    #[test]
+    fn test_with_channel() {
+        let provider = CondaProvider::new()
+            .with_channel("conda-forge")
+            .with_channel("bioconda");
+        assert_eq!(provider.channels.len(), 2);
+    }
+
+    #[test]
+    fn test_build_channel_args() {
+        let provider = CondaProvider::new()
+            .with_channel("conda-forge");
+        let args = provider.build_channel_args();
+        assert_eq!(args, vec!["-c", "conda-forge"]);
+    }
+
+    #[test]
+    fn test_build_channel_args_empty() {
+        let provider = CondaProvider::new();
+        let args = provider.build_channel_args();
+        assert!(args.is_empty());
     }
 }

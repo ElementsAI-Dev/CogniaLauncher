@@ -351,6 +351,7 @@ pub async fn env_list_providers(
                     "Hassle-free JavaScript tool manager with seamless per-project versions",
                 ),
                 "pyenv" => ("python", "Simple Python version management"),
+                "uv" => ("python", "Fast Python version & package manager by Astral"),
                 "conda" => (
                     "python",
                     "Conda package, dependency, and environment manager",
@@ -360,9 +361,13 @@ pub async fn env_list_providers(
                 "rbenv" => ("ruby", "Seamless Ruby version management"),
                 "sdkman" => ("java", "SDKMAN! - Software Development Kit Manager for JVM"),
                 "sdkman-kotlin" => ("kotlin", "SDKMAN! - Kotlin compiler manager"),
+                "sdkman-scala" => ("scala", "SDKMAN! - Scala compiler manager"),
+                "sdkman-groovy" => ("groovy", "SDKMAN! - Groovy compiler manager"),
                 "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
                 "dotnet" => ("dotnet", ".NET SDK version management"),
                 "deno" => ("deno", "Deno runtime version management"),
+                "zig" => ("zig", "Zig version management via ziglang.org downloads"),
+                "fvm" => ("dart", "Flutter Version Manager for Dart/Flutter SDK"),
                 "mise" => (
                     "polyglot",
                     "Modern polyglot version manager (successor to rtx/asdf)",
@@ -418,15 +423,18 @@ pub async fn env_resolve_alias(
     let alias_lower = alias.to_lowercase();
     let alias_env_type = match env_type.as_str() {
         "fnm" | "nvm" | "volta" => "node",
-        "pyenv" | "conda" | "pipx" => "python",
+        "pyenv" | "uv" | "conda" | "pipx" => "python",
         "goenv" => "go",
         "rustup" => "rust",
         "rbenv" => "ruby",
         "sdkman" => "java",
         "sdkman-kotlin" => "kotlin",
+        "sdkman-scala" => "scala",
+        "sdkman-groovy" => "groovy",
         "phpbrew" => "php",
         "dotnet" => "dotnet",
         "deno" => "deno",
+        "zig" => "zig",
         _ => env_type.as_str(),
     };
 
@@ -627,6 +635,23 @@ pub async fn env_detect_system(env_type: String) -> Result<Option<SystemEnvironm
         "dotnet" | ".net" => Some(SystemEnvironmentType::Dotnet),
         "deno" => Some(SystemEnvironmentType::Deno),
         "bun" => Some(SystemEnvironmentType::Bun),
+        "zig" => Some(SystemEnvironmentType::Zig),
+        "dart" | "flutter" => Some(SystemEnvironmentType::Dart),
+        "lua" => Some(SystemEnvironmentType::Lua),
+        "scala" => Some(SystemEnvironmentType::Scala),
+        "groovy" => Some(SystemEnvironmentType::Groovy),
+        "elixir" => Some(SystemEnvironmentType::Elixir),
+        "erlang" | "otp" => Some(SystemEnvironmentType::Erlang),
+        "swift" => Some(SystemEnvironmentType::Swift),
+        "julia" => Some(SystemEnvironmentType::Julia),
+        "perl" => Some(SystemEnvironmentType::Perl),
+        "r" | "rlang" => Some(SystemEnvironmentType::R),
+        "haskell" | "ghc" => Some(SystemEnvironmentType::Haskell),
+        "clojure" | "clj" => Some(SystemEnvironmentType::Clojure),
+        "crystal" => Some(SystemEnvironmentType::Crystal),
+        "nim" => Some(SystemEnvironmentType::Nim),
+        "ocaml" => Some(SystemEnvironmentType::Ocaml),
+        "fortran" | "gfortran" => Some(SystemEnvironmentType::Fortran),
         _ => None,
     };
 
@@ -667,12 +692,14 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("nvm".to_string(), "node".to_string());
     mapping.insert("volta".to_string(), "node".to_string());
     mapping.insert("pyenv".to_string(), "python".to_string());
+    mapping.insert("uv".to_string(), "python".to_string());
     mapping.insert("conda".to_string(), "python".to_string());
     mapping.insert("goenv".to_string(), "go".to_string());
     mapping.insert("rbenv".to_string(), "ruby".to_string());
     mapping.insert("rustup".to_string(), "rust".to_string());
     mapping.insert("sdkman".to_string(), "java".to_string());
     mapping.insert("sdkman-kotlin".to_string(), "kotlin".to_string());
+    mapping.insert("sdkman-scala".to_string(), "scala".to_string());
     mapping.insert("phpbrew".to_string(), "php".to_string());
     mapping.insert("dotnet".to_string(), "dotnet".to_string());
     mapping.insert("deno".to_string(), "deno".to_string());
@@ -680,6 +707,9 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("asdf".to_string(), "polyglot".to_string());
     mapping.insert("nix".to_string(), "polyglot".to_string());
     mapping.insert("pipx".to_string(), "python".to_string());
+    mapping.insert("zig".to_string(), "zig".to_string());
+    mapping.insert("fvm".to_string(), "dart".to_string());
+    mapping.insert("sdkman-groovy".to_string(), "groovy".to_string());
 
     // System providers
     mapping.insert("system-node".to_string(), "node".to_string());
@@ -693,6 +723,24 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("system-dotnet".to_string(), "dotnet".to_string());
     mapping.insert("system-deno".to_string(), "deno".to_string());
     mapping.insert("system-bun".to_string(), "bun".to_string());
+    mapping.insert("system-zig".to_string(), "zig".to_string());
+    mapping.insert("system-dart".to_string(), "dart".to_string());
+    mapping.insert("luarocks".to_string(), "lua".to_string());
+    mapping.insert("system-lua".to_string(), "lua".to_string());
+    mapping.insert("system-scala".to_string(), "scala".to_string());
+    mapping.insert("system-groovy".to_string(), "groovy".to_string());
+    mapping.insert("system-elixir".to_string(), "elixir".to_string());
+    mapping.insert("system-erlang".to_string(), "erlang".to_string());
+    mapping.insert("system-swift".to_string(), "swift".to_string());
+    mapping.insert("system-julia".to_string(), "julia".to_string());
+    mapping.insert("system-perl".to_string(), "perl".to_string());
+    mapping.insert("system-r".to_string(), "r".to_string());
+    mapping.insert("system-haskell".to_string(), "haskell".to_string());
+    mapping.insert("system-clojure".to_string(), "clojure".to_string());
+    mapping.insert("system-crystal".to_string(), "crystal".to_string());
+    mapping.insert("system-nim".to_string(), "nim".to_string());
+    mapping.insert("system-ocaml".to_string(), "ocaml".to_string());
+    mapping.insert("system-fortran".to_string(), "fortran".to_string());
 
     Ok(mapping)
 }
@@ -876,6 +924,8 @@ pub async fn env_list_global_packages(
     let packages = match logical.as_str() {
         "node" => list_node_global_packages(&env_mods).await,
         "python" => list_python_global_packages(&env_mods).await,
+        "rust" => list_rust_global_packages(&env_mods).await,
+        "go" => list_go_global_packages(&env_mods).await,
         _ => Ok(vec![]),
     };
 
@@ -932,6 +982,8 @@ pub async fn env_migrate_packages(
         let result = match logical.as_str() {
             "node" => install_node_global_package(pkg, &env_mods).await,
             "python" => install_python_global_package(pkg, &env_mods).await,
+            "rust" => install_rust_global_package(pkg, &env_mods).await,
+            "go" => install_go_global_package(pkg, &env_mods).await,
             _ => {
                 skipped.push(pkg.clone());
                 continue;
@@ -1044,11 +1096,21 @@ async fn list_python_global_packages(
     use crate::platform::process;
 
     let opts = build_process_opts(env_mods, 30);
-    let output = process::execute("pip", &["list", "--format=json"], Some(opts)).await;
 
-    let stdout = match output {
-        Ok(o) => o.stdout,
-        Err(_) => return Ok(vec![]),
+    // Try uv first (10-100x faster), fallback to pip
+    let stdout = if let Ok(o) = process::execute("uv", &["pip", "list", "--format", "json"], Some(opts.clone())).await {
+        if o.success { o.stdout } else { String::new() }
+    } else {
+        String::new()
+    };
+
+    let stdout = if stdout.is_empty() {
+        match process::execute("pip", &["list", "--format=json"], Some(opts)).await {
+            Ok(o) => o.stdout,
+            Err(_) => return Ok(vec![]),
+        }
+    } else {
+        stdout
     };
 
     let mut packages = Vec::new();
@@ -1103,10 +1165,149 @@ async fn install_python_global_package(
     use crate::platform::process;
 
     let opts = build_process_opts(env_mods, 120);
+
+    // Try uv first (faster), fallback to pip
+    if let Ok(o) = process::execute("uv", &["pip", "install", name], Some(opts.clone())).await {
+        if o.success {
+            return Ok(());
+        }
+    }
+
     match process::execute("pip", &["install", name], Some(opts)).await {
         Ok(o) if o.success => Ok(()),
         Ok(o) => Err(crate::error::CogniaError::Provider(format!(
             "pip install {} failed: {}",
+            name, o.stderr
+        ))),
+        Err(e) => Err(crate::error::CogniaError::Provider(format!(
+            "Failed to install {}: {}",
+            name, e
+        ))),
+    }
+}
+
+async fn list_rust_global_packages(
+    env_mods: &crate::platform::env::EnvModifications,
+) -> Result<Vec<GlobalPackageInfo>, crate::error::CogniaError> {
+    use crate::platform::process;
+    use crate::provider::cargo::parse_installed_list_output;
+
+    let opts = build_process_opts(env_mods, 30);
+    let output = process::execute("cargo", &["install", "--list"], Some(opts)).await;
+
+    let stdout = match output {
+        Ok(o) => o.stdout,
+        Err(_) => return Ok(vec![]),
+    };
+
+    // Reuse the cargo provider's parsing logic
+    let packages = parse_installed_list_output(&stdout)
+        .into_iter()
+        .map(|(name, version)| GlobalPackageInfo { name, version })
+        .collect();
+
+    Ok(packages)
+}
+
+async fn install_rust_global_package(
+    name: &str,
+    env_mods: &crate::platform::env::EnvModifications,
+) -> Result<(), crate::error::CogniaError> {
+    use crate::platform::process;
+
+    let opts = build_process_opts(env_mods, 300);
+    match process::execute("cargo", &["install", name], Some(opts)).await {
+        Ok(o) if o.success => Ok(()),
+        Ok(o) => Err(crate::error::CogniaError::Provider(format!(
+            "cargo install {} failed: {}",
+            name, o.stderr
+        ))),
+        Err(e) => Err(crate::error::CogniaError::Provider(format!(
+            "Failed to install {}: {}",
+            name, e
+        ))),
+    }
+}
+
+async fn list_go_global_packages(
+    env_mods: &crate::platform::env::EnvModifications,
+) -> Result<Vec<GlobalPackageInfo>, crate::error::CogniaError> {
+    // List binaries in GOBIN or GOPATH/bin
+    let bin_dir = env_mods
+        .set_variables
+        .get("GOBIN")
+        .map(|s| std::path::PathBuf::from(s))
+        .or_else(|| {
+            env_mods
+                .set_variables
+                .get("GOPATH")
+                .map(|s| std::path::PathBuf::from(s).join("bin"))
+        })
+        .or_else(|| {
+            std::env::var("GOBIN")
+                .ok()
+                .map(std::path::PathBuf::from)
+                .or_else(|| {
+                    std::env::var("GOPATH")
+                        .ok()
+                        .map(|p| std::path::PathBuf::from(p).join("bin"))
+                })
+                .or_else(|| {
+                    std::env::var("HOME")
+                        .or_else(|_| std::env::var("USERPROFILE"))
+                        .ok()
+                        .map(|h| std::path::PathBuf::from(h).join("go").join("bin"))
+                })
+        });
+
+    let bin_dir = match bin_dir {
+        Some(dir) if dir.exists() => dir,
+        _ => return Ok(vec![]),
+    };
+
+    let mut packages = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&bin_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    #[cfg(windows)]
+                    if !name.ends_with(".exe") {
+                        continue;
+                    }
+
+                    let display_name = name.strip_suffix(".exe").unwrap_or(name);
+
+                    // Go binaries don't embed version metadata,
+                    // so we report "installed" as the version
+                    packages.push(GlobalPackageInfo {
+                        name: display_name.to_string(),
+                        version: "installed".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(packages)
+}
+
+async fn install_go_global_package(
+    name: &str,
+    env_mods: &crate::platform::env::EnvModifications,
+) -> Result<(), crate::error::CogniaError> {
+    use crate::platform::process;
+
+    let opts = build_process_opts(env_mods, 120);
+    let pkg = if name.contains('@') {
+        name.to_string()
+    } else {
+        format!("{}@latest", name)
+    };
+    match process::execute("go", &["install", &pkg], Some(opts)).await {
+        Ok(o) if o.success => Ok(()),
+        Ok(o) => Err(crate::error::CogniaError::Provider(format!(
+            "go install {} failed: {}",
             name, o.stderr
         ))),
         Err(e) => Err(crate::error::CogniaError::Provider(format!(
@@ -1305,4 +1506,299 @@ pub async fn rustup_update_all(registry: State<'_, SharedRegistry>) -> Result<St
         .ok_or("Failed to get RustupProvider")?;
 
     rustup.update_all().await.map_err(|e| e.to_string())
+}
+
+/// Set a directory override for toolchain selection
+#[tauri::command]
+pub async fn rustup_override_set(
+    toolchain: String,
+    path: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    let path_buf = path.map(std::path::PathBuf::from);
+    rustup
+        .override_set(&toolchain, path_buf.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a directory override
+#[tauri::command]
+pub async fn rustup_override_unset(
+    path: Option<String>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    let path_buf = path.map(std::path::PathBuf::from);
+    rustup
+        .override_unset(path_buf.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List all directory overrides
+#[tauri::command]
+pub async fn rustup_override_list(
+    registry: State<'_, SharedRegistry>,
+) -> Result<Vec<crate::provider::rustup::RustupOverride>, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    rustup.override_list().await.map_err(|e| e.to_string())
+}
+
+/// Run a command with a specific toolchain
+#[tauri::command]
+pub async fn rustup_run(
+    toolchain: String,
+    command: String,
+    args: Option<Vec<String>>,
+    registry: State<'_, SharedRegistry>,
+) -> Result<String, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    let args_ref: Vec<&str> = args
+        .as_ref()
+        .map(|a| a.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
+    rustup
+        .run_with_toolchain(&toolchain, &command, &args_ref)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Resolve which binary will be run for a given command
+#[tauri::command]
+pub async fn rustup_which(
+    binary: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<String, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    rustup
+        .which_binary(&binary)
+        .await
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// Get the current rustup profile
+#[tauri::command]
+pub async fn rustup_get_profile(
+    registry: State<'_, SharedRegistry>,
+) -> Result<String, String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    rustup.get_profile().await.map_err(|e| e.to_string())
+}
+
+/// Set the rustup profile (minimal, default, complete)
+#[tauri::command]
+pub async fn rustup_set_profile(
+    profile: String,
+    registry: State<'_, SharedRegistry>,
+) -> Result<(), String> {
+    let registry_guard = registry.read().await;
+    let provider = registry_guard
+        .get_environment_provider("rustup")
+        .ok_or("Rustup provider not found")?;
+
+    let rustup = provider
+        .as_any()
+        .downcast_ref::<crate::provider::rustup::RustupProvider>()
+        .ok_or("Failed to get RustupProvider")?;
+
+    rustup
+        .set_profile(&profile)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ──────────────────────────────────────────────────────
+// Go-specific commands: env info, mod tidy, cache mgmt
+// These use direct `go` CLI execution (no provider downcast needed)
+// ──────────────────────────────────────────────────────
+
+/// Run a `go` command with optional GOPROXY mirror injection
+async fn run_go_command(
+    args: &[&str],
+    cwd: Option<&str>,
+    timeout_secs: u64,
+    proxy_url: Option<&str>,
+) -> Result<String, String> {
+    use crate::platform::process::{self, ProcessOptions};
+
+    let mut opts = ProcessOptions::new()
+        .with_timeout(std::time::Duration::from_secs(timeout_secs));
+
+    if let Some(cwd_path) = cwd {
+        opts.cwd = Some(cwd_path.to_string());
+    }
+
+    // Inject GOPROXY when a mirror is configured in settings
+    if let Some(proxy) = proxy_url {
+        opts.env
+            .insert("GOPROXY".into(), format!("{},direct", proxy));
+    }
+
+    let output = process::execute("go", args, Some(opts))
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if output.success {
+        Ok(output.stdout)
+    } else {
+        Err(output.stderr)
+    }
+}
+
+/// Get Go environment info via `go env -json`
+#[tauri::command]
+pub async fn go_env_info() -> Result<crate::provider::goenv::GoEnvInfo, String> {
+    let output = run_go_command(&["env", "-json"], None, 10, None).await?;
+    let json: serde_json::Value = serde_json::from_str(&output)
+        .map_err(|e| format!("Failed to parse go env JSON: {}", e))?;
+
+    Ok(crate::provider::goenv::GoEnvInfo {
+        goroot: json["GOROOT"].as_str().unwrap_or("").to_string(),
+        gopath: json["GOPATH"].as_str().unwrap_or("").to_string(),
+        gobin: json["GOBIN"].as_str().unwrap_or("").to_string(),
+        goproxy: json["GOPROXY"].as_str().unwrap_or("").to_string(),
+        goprivate: json["GOPRIVATE"].as_str().unwrap_or("").to_string(),
+        gonosumdb: json["GONOSUMDB"].as_str().unwrap_or("").to_string(),
+        gotoolchain: json["GOTOOLCHAIN"].as_str().unwrap_or("").to_string(),
+        gomodcache: json["GOMODCACHE"].as_str().unwrap_or("").to_string(),
+        goos: json["GOOS"].as_str().unwrap_or("").to_string(),
+        goarch: json["GOARCH"].as_str().unwrap_or("").to_string(),
+        goversion: json["GOVERSION"].as_str().unwrap_or("").to_string(),
+        goflags: json["GOFLAGS"].as_str().unwrap_or("").to_string(),
+        cgo_enabled: json["CGO_ENABLED"].as_str().unwrap_or("").to_string(),
+    })
+}
+
+/// Run `go mod tidy` in a project directory (uses go mirror from settings)
+#[tauri::command]
+pub async fn go_mod_tidy(
+    project_path: String,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<String, String> {
+    let go_mirror = config.read().await.get_mirror_url("go");
+    run_go_command(
+        &["mod", "tidy"],
+        Some(&project_path),
+        120,
+        go_mirror.as_deref(),
+    )
+    .await
+}
+
+/// Run `go mod download` in a project directory (uses go mirror from settings)
+#[tauri::command]
+pub async fn go_mod_download(
+    project_path: String,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<String, String> {
+    let go_mirror = config.read().await.get_mirror_url("go");
+    run_go_command(
+        &["mod", "download"],
+        Some(&project_path),
+        300,
+        go_mirror.as_deref(),
+    )
+    .await
+}
+
+/// Clean Go caches (build, mod, test, or all)
+#[tauri::command]
+pub async fn go_clean_cache(cache_type: String) -> Result<String, String> {
+    let args: Vec<&str> = match cache_type.as_str() {
+        "build" => vec!["clean", "-cache"],
+        "mod" => vec!["clean", "-modcache"],
+        "test" => vec!["clean", "-testcache"],
+        "all" => vec!["clean", "-cache", "-modcache", "-testcache"],
+        _ => return Err(format!("Unknown cache type: {}. Use 'build', 'mod', 'test', or 'all'", cache_type)),
+    };
+    run_go_command(&args, None, 60, None).await?;
+    Ok(format!("Successfully cleaned {} cache", cache_type))
+}
+
+/// Get Go cache paths and sizes
+#[tauri::command]
+pub async fn go_cache_info() -> Result<crate::provider::goenv::GoCacheInfo, String> {
+    let output = run_go_command(&["env", "GOCACHE", "GOMODCACHE"], None, 10, None).await?;
+
+    let lines: Vec<&str> = output.lines().collect();
+    let build_cache_path = lines.first().map(|s| s.trim()).unwrap_or("").to_string();
+    let mod_cache_path = lines.get(1).map(|s| s.trim()).unwrap_or("").to_string();
+
+    let build_cache_size = if !build_cache_path.is_empty() {
+        crate::provider::goenv::go_dir_size(&build_cache_path)
+    } else {
+        0
+    };
+    let mod_cache_size = if !mod_cache_path.is_empty() {
+        crate::provider::goenv::go_dir_size(&mod_cache_path)
+    } else {
+        0
+    };
+
+    Ok(crate::provider::goenv::GoCacheInfo {
+        build_cache_path,
+        build_cache_size,
+        build_cache_size_human: crate::provider::goenv::go_format_bytes(build_cache_size),
+        mod_cache_path,
+        mod_cache_size,
+        mod_cache_size_human: crate::provider::goenv::go_format_bytes(mod_cache_size),
+    })
 }

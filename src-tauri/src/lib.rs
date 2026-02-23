@@ -210,6 +210,19 @@ pub fn run() {
             commands::environment::rustup_show,
             commands::environment::rustup_self_update,
             commands::environment::rustup_update_all,
+            commands::environment::rustup_override_set,
+            commands::environment::rustup_override_unset,
+            commands::environment::rustup_override_list,
+            commands::environment::rustup_run,
+            commands::environment::rustup_which,
+            commands::environment::rustup_get_profile,
+            commands::environment::rustup_set_profile,
+            // Go-specific commands
+            commands::environment::go_env_info,
+            commands::environment::go_mod_tidy,
+            commands::environment::go_mod_download,
+            commands::environment::go_clean_cache,
+            commands::environment::go_cache_info,
             // Package commands
             commands::package::package_search,
             commands::package::package_info,
@@ -379,6 +392,7 @@ pub fn run() {
             // GitHub commands
             commands::github::github_parse_url,
             commands::github::github_validate_repo,
+            commands::github::github_get_repo_info,
             commands::github::github_list_branches,
             commands::github::github_list_tags,
             commands::github::github_list_releases,

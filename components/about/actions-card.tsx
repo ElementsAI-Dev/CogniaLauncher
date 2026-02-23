@@ -11,19 +11,24 @@ import {
   Bug,
   MessageSquarePlus,
   FileText,
+  ClipboardList,
 } from "lucide-react";
 
 interface ActionsCardProps {
   loading: boolean;
+  isDesktop: boolean;
   onCheckUpdate: () => void;
   onOpenChangelog: () => void;
+  onExportDiagnostics: () => void;
   t: (key: string) => string;
 }
 
 export function ActionsCard({
   loading,
+  isDesktop,
   onCheckUpdate,
   onOpenChangelog,
+  onExportDiagnostics,
   t,
 }: ActionsCardProps) {
   const handleOpen = (url: string) => () => {
@@ -62,6 +67,17 @@ export function ActionsCard({
           <Button variant="outline" onClick={onOpenChangelog}>
             <FileText className="h-4 w-4 mr-2" aria-hidden="true" />
             {t("about.changelog")}
+          </Button>
+
+          {/* Export Diagnostics */}
+          <Button
+            variant="outline"
+            onClick={onExportDiagnostics}
+            disabled={!isDesktop}
+            title={!isDesktop ? t("about.updateDesktopOnly") : undefined}
+          >
+            <ClipboardList className="h-4 w-4 mr-2" aria-hidden="true" />
+            {t("about.exportDiagnostics")}
           </Button>
 
           {/* GitHub */}

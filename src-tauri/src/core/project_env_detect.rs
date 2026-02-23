@@ -19,6 +19,7 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             ".python-version",
             "pyproject.toml (project.requires-python)",
             "pyproject.toml (tool.poetry.dependencies.python)",
+            "uv.toml (requires-python)",
             "Pipfile (requires.python_version)",
             "runtime.txt",
             ".tool-versions",
@@ -32,8 +33,15 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
         // rustup precedence: rust-toolchain wins if both files exist.
         "rust" => &["rust-toolchain", "rust-toolchain.toml", ".tool-versions"],
         "ruby" => &[".ruby-version", "Gemfile", ".tool-versions"],
-        "java" => &[".java-version", ".sdkmanrc", ".tool-versions"],
+        "java" => &[
+            ".java-version",
+            ".sdkmanrc",
+            ".tool-versions",
+            "pom.xml (java.version)",
+            "build.gradle (sourceCompatibility)",
+        ],
         "kotlin" => &[".kotlin-version", ".sdkmanrc", ".tool-versions"],
+        "scala" => &["build.sbt", ".scala-version", ".sdkmanrc", ".tool-versions"],
         "php" => &[
             ".php-version",
             "composer.json (require.php)",
@@ -47,6 +55,22 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             ".tool-versions",
             "package.json (engines.bun)",
         ],
+        "zig" => &[".zig-version", "build.zig.zon (minimum_zig_version)", ".tool-versions"],
+        "dart" => &["pubspec.yaml (environment.sdk)", ".fvmrc", ".dart-version", ".tool-versions"],
+        "lua" => &[".lua-version", ".tool-versions"],
+        "groovy" => &[".sdkmanrc", ".tool-versions"],
+        "elixir" => &[".elixir-version", "mix.exs (elixir)", ".tool-versions"],
+        "erlang" => &[".erlang-version", ".tool-versions"],
+        "swift" => &[".swift-version", "Package.swift (swift-tools-version)", ".tool-versions"],
+        "julia" => &[".julia-version", "Project.toml (compat.julia)", ".tool-versions"],
+        "perl" => &[".perl-version", ".tool-versions"],
+        "r" => &[".Rversion", ".tool-versions"],
+        "haskell" => &[".tool-versions"],
+        "clojure" => &[".tool-versions"],
+        "crystal" => &[".crystal-version", "shard.yml (crystal)", ".tool-versions"],
+        "nim" => &[".nim-version", ".tool-versions"],
+        "ocaml" => &[".ocaml-version", ".tool-versions"],
+        "fortran" => &[".tool-versions"],
         _ => &[],
     }
 }
@@ -125,10 +149,27 @@ async fn detect_from_source(
         "ruby" => detect_ruby(dir, source).await,
         "java" => detect_java(dir, source).await,
         "kotlin" => detect_kotlin(dir, source).await,
+        "scala" => detect_scala(dir, source).await,
         "php" => detect_php(dir, source).await,
         "dotnet" => detect_dotnet(dir, source).await,
         "deno" => detect_deno(dir, source).await,
         "bun" => detect_bun(dir, source).await,
+        "zig" => detect_zig(dir, source).await,
+        "dart" => detect_dart(dir, source).await,
+        "lua" => detect_lua(dir, source).await,
+        "groovy" => detect_groovy(dir, source).await,
+        "elixir" => detect_elixir(dir, source).await,
+        "erlang" => detect_erlang(dir, source).await,
+        "swift" => detect_swift(dir, source).await,
+        "julia" => detect_julia(dir, source).await,
+        "perl" => detect_perl(dir, source).await,
+        "r" => detect_r(dir, source).await,
+        "haskell" => detect_haskell(dir, source).await,
+        "clojure" => detect_clojure(dir, source).await,
+        "crystal" => detect_crystal(dir, source).await,
+        "nim" => detect_nim(dir, source).await,
+        "ocaml" => detect_ocaml(dir, source).await,
+        "fortran" => detect_fortran(dir, source).await,
         _ => Ok(None),
     }
 }
@@ -169,6 +210,9 @@ async fn detect_python(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         }
         "Pipfile" | "Pipfile (requires.python_version)" => {
             read_pipfile_python(dir.join("Pipfile")).await
+        }
+        "uv.toml (requires-python)" => {
+            read_uv_toml_requires_python(dir.join("uv.toml")).await
         }
         "runtime.txt" => read_runtime_txt_python(dir.join("runtime.txt")).await,
         ".tool-versions" => {
@@ -227,8 +271,88 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["java"], ".tool-versions").await
         }
+        "pom.xml (java.version)" => {
+            let path = dir.join("pom.xml");
+            if !path.is_file() {
+                return Ok(None);
+            }
+            let content = crate::platform::fs::read_file_string(&path).await?;
+            match crate::provider::sdkman::extract_java_version_from_pom(&content) {
+                Some(ver) => Ok(Some(DetectedValue {
+                    value: ver,
+                    source: source.to_string(),
+                    path,
+                })),
+                None => Ok(None),
+            }
+        }
+        "build.gradle (sourceCompatibility)" => {
+            for name in &["build.gradle.kts", "build.gradle"] {
+                let path = dir.join(name);
+                if path.is_file() {
+                    let content = crate::platform::fs::read_file_string(&path).await?;
+                    if let Some(ver) =
+                        crate::provider::sdkman::extract_java_version_from_gradle(&content)
+                    {
+                        return Ok(Some(DetectedValue {
+                            value: ver,
+                            source: source.to_string(),
+                            path,
+                        }));
+                    }
+                }
+            }
+            Ok(None)
+        }
         _ => Ok(None),
     }
+}
+
+async fn detect_scala(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        "build.sbt" => read_build_sbt_scala_version(dir.join("build.sbt")).await,
+        ".scala-version" => {
+            read_version_file(dir.join(".scala-version"), ".scala-version").await
+        }
+        ".sdkmanrc" => read_sdkmanrc_version(dir.join(".sdkmanrc"), "scala").await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["scala"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Extract Scala version from `build.sbt`.
+/// Matches patterns like `scalaVersion := "3.3.1"` and `ThisBuild / scalaVersion := "2.13.12"`.
+async fn read_build_sbt_scala_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let re = match regex::Regex::new(r#"scalaVersion\s*:=\s*"([^"]+)""#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "build.sbt".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 async fn detect_kotlin(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
@@ -300,6 +424,135 @@ async fn detect_bun(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         "bunfig.toml" => Ok(None),
         _ => Ok(None),
     }
+}
+
+async fn detect_zig(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".zig-version" => read_version_file(dir.join(".zig-version"), ".zig-version").await,
+        "build.zig.zon (minimum_zig_version)" => {
+            read_build_zig_zon_min_version(dir.join("build.zig.zon")).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["zig"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn read_build_zig_zon_min_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // ZON is a Zig-specific format, not JSON/TOML. Use regex to extract the field.
+    let re = match regex::Regex::new(r#"\.minimum_zig_version\s*=\s*"([^"]+)""#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "build.zig.zon (minimum_zig_version)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+async fn detect_lua(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".lua-version" => read_version_file(dir.join(".lua-version"), ".lua-version").await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["lua"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_dart(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".dart-version" => read_version_file(dir.join(".dart-version"), ".dart-version").await,
+        ".fvmrc" => read_fvmrc(dir.join(".fvmrc")).await,
+        "pubspec.yaml (environment.sdk)" => read_pubspec_sdk(dir.join("pubspec.yaml")).await,
+        ".tool-versions" => {
+            read_tool_versions(
+                dir.join(".tool-versions"),
+                &["dart", "flutter"],
+                ".tool-versions",
+            )
+            .await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn read_fvmrc(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Reuse the canonical .fvmrc parser from the FVM provider
+    match crate::provider::fvm::parse_fvmrc(&content) {
+        Some(version) => Ok(Some(DetectedValue {
+            value: version,
+            source: ".fvmrc".to_string(),
+            path,
+        })),
+        None => Ok(None),
+    }
+}
+
+async fn read_pubspec_sdk(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // pubspec.yaml uses YAML; the SDK constraint is under environment.sdk
+    // Example: environment:\n  sdk: ">=3.0.0 <4.0.0"
+    // We extract the first version-like number from the constraint.
+    let doc: serde_json::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    let sdk = doc
+        .get("environment")
+        .and_then(|v| v.get("sdk"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+
+    if sdk.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(DetectedValue {
+        value: sdk.to_string(),
+        source: "pubspec.yaml (environment.sdk)".to_string(),
+        path,
+    }))
 }
 
 async fn read_version_file(
@@ -956,6 +1209,325 @@ fn first_nonempty_noncomment_line(content: &str, comment_prefix: char) -> Option
     None
 }
 
+// ── uv.toml parser for Python ──
+
+async fn read_uv_toml_requires_python(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let doc: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(requires) = doc
+        .get("requires-python")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+    {
+        if !requires.is_empty() {
+            return Ok(Some(DetectedValue {
+                value: requires.to_string(),
+                source: "uv.toml (requires-python)".to_string(),
+                path,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+// ── New language detect functions ──
+
+async fn detect_groovy(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".sdkmanrc" => read_sdkmanrc_version(dir.join(".sdkmanrc"), "groovy").await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["groovy"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_elixir(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".elixir-version" => {
+            read_version_file(dir.join(".elixir-version"), ".elixir-version").await
+        }
+        "mix.exs (elixir)" => read_mix_exs_elixir_version(dir.join("mix.exs")).await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["elixir"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_erlang(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".erlang-version" => {
+            read_version_file(dir.join(".erlang-version"), ".erlang-version").await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["erlang"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_swift(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".swift-version" => {
+            read_version_file(dir.join(".swift-version"), ".swift-version").await
+        }
+        "Package.swift (swift-tools-version)" => {
+            read_package_swift_tools_version(dir.join("Package.swift")).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["swift"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_julia(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".julia-version" => {
+            read_version_file(dir.join(".julia-version"), ".julia-version").await
+        }
+        "Project.toml (compat.julia)" => {
+            read_project_toml_julia_compat(dir.join("Project.toml")).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["julia"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_perl(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".perl-version" => {
+            read_version_file(dir.join(".perl-version"), ".perl-version").await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["perl"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_r(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".Rversion" => read_version_file(dir.join(".Rversion"), ".Rversion").await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["R"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_haskell(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".tool-versions" => {
+            read_tool_versions(
+                dir.join(".tool-versions"),
+                &["haskell", "ghc"],
+                ".tool-versions",
+            )
+            .await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_clojure(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["clojure"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_crystal(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".crystal-version" => {
+            read_version_file(dir.join(".crystal-version"), ".crystal-version").await
+        }
+        "shard.yml (crystal)" => read_shard_yml_crystal(dir.join("shard.yml")).await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["crystal"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_nim(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".nim-version" => read_version_file(dir.join(".nim-version"), ".nim-version").await,
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["nim"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_ocaml(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".ocaml-version" => {
+            read_version_file(dir.join(".ocaml-version"), ".ocaml-version").await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["ocaml"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+async fn detect_fortran(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["fortran"], ".tool-versions").await
+        }
+        _ => Ok(None),
+    }
+}
+
+// ── New manifest parsers ──
+
+async fn read_mix_exs_elixir_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let re = match regex::Regex::new(r#"elixir:\s*"([^"]+)""#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "mix.exs (elixir)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+async fn read_package_swift_tools_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let re = match regex::Regex::new(r"swift-tools-version:\s*(\d+\.\d+(?:\.\d+)?)") {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "Package.swift (swift-tools-version)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+async fn read_project_toml_julia_compat(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let doc: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(julia) = doc
+        .get("compat")
+        .and_then(|v| v.get("julia"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+    {
+        if !julia.is_empty() {
+            return Ok(Some(DetectedValue {
+                value: julia.to_string(),
+                source: "Project.toml (compat.julia)".to_string(),
+                path,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+async fn read_shard_yml_crystal(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let doc: serde_json::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    let crystal = doc
+        .get("crystal")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+
+    if crystal.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(DetectedValue {
+        value: crystal.to_string(),
+        source: "shard.yml (crystal)".to_string(),
+        path,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1146,5 +1718,487 @@ channel = "stable"
         let sources = vec!["deno.json".to_string()];
         let detected = detect_env_version("deno", root, &sources).await.unwrap();
         assert!(detected.is_none());
+    }
+
+    // ── Scala detection tests ──
+
+    #[tokio::test]
+    async fn scala_detects_scala_version_file() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".scala-version"), "3.3.1")
+            .await
+            .unwrap();
+
+        let sources = vec![".scala-version".to_string()];
+        let detected = detect_env_version("scala", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "scala");
+        assert_eq!(detected.version, "3.3.1");
+        assert_eq!(detected.source, ".scala-version");
+    }
+
+    #[tokio::test]
+    async fn scala_detects_sdkmanrc() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".sdkmanrc"), "scala=3.4.0\njava=21.0.2-tem\n")
+            .await
+            .unwrap();
+
+        let sources = vec![".sdkmanrc".to_string()];
+        let detected = detect_env_version("scala", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "scala");
+        assert_eq!(detected.version, "3.4.0");
+        assert_eq!(detected.source, ".sdkmanrc");
+    }
+
+    #[tokio::test]
+    async fn scala_detects_build_sbt() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.sbt"),
+            r#"
+name := "my-project"
+version := "1.0.0"
+scalaVersion := "2.13.12"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.sbt".to_string()];
+        let detected = detect_env_version("scala", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "scala");
+        assert_eq!(detected.version, "2.13.12");
+        assert_eq!(detected.source, "build.sbt");
+    }
+
+    #[tokio::test]
+    async fn scala_detects_build_sbt_this_build_syntax() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.sbt"),
+            r#"
+ThisBuild / scalaVersion := "3.3.1"
+ThisBuild / organization := "com.example"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.sbt".to_string()];
+        let detected = detect_env_version("scala", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.3.1");
+    }
+
+    #[tokio::test]
+    async fn scala_build_sbt_returns_none_when_no_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.sbt"),
+            r#"name := "my-project""#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.sbt".to_string()];
+        let detected = detect_env_version("scala", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn scala_build_sbt_missing_file_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["build.sbt".to_string()];
+        let detected = detect_env_version("scala", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn scala_tool_versions_detection() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".tool-versions"), "scala 3.4.2\njava 21.0.2\n")
+            .await
+            .unwrap();
+
+        let sources = vec![".tool-versions".to_string()];
+        let detected = detect_env_version("scala", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "scala");
+        assert_eq!(detected.version, "3.4.2");
+        assert_eq!(detected.source, ".tool-versions");
+    }
+
+    // ── Java pom.xml / build.gradle detection tests ──
+
+    #[tokio::test]
+    async fn java_detects_pom_xml_java_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("pom.xml"),
+            r#"<project>
+  <properties>
+    <java.version>17</java.version>
+  </properties>
+</project>"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["pom.xml (java.version)".to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "java");
+        assert_eq!(detected.version, "17");
+        assert_eq!(detected.source, "pom.xml (java.version)");
+    }
+
+    #[tokio::test]
+    async fn java_detects_pom_xml_compiler_release() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("pom.xml"),
+            r#"<project>
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+  </properties>
+</project>"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["pom.xml (java.version)".to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "21");
+    }
+
+    #[tokio::test]
+    async fn java_pom_xml_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["pom.xml (java.version)".to_string()];
+        let detected = detect_env_version("java", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn java_detects_build_gradle_source_compat() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("build.gradle"),
+            r#"
+plugins {
+    id 'java'
+}
+sourceCompatibility = '17'
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.gradle (sourceCompatibility)".to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "java");
+        assert_eq!(detected.version, "17");
+        assert_eq!(detected.source, "build.gradle (sourceCompatibility)");
+    }
+
+    #[tokio::test]
+    async fn java_detects_build_gradle_kts_over_gradle() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Both files exist, .kts should be checked first
+        crate::platform::fs::write_file_string(
+            root.join("build.gradle.kts"),
+            r#"
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+}
+"#,
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("build.gradle"),
+            r#"sourceCompatibility = '11'"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["build.gradle (sourceCompatibility)".to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "21");
+    }
+
+    #[tokio::test]
+    async fn java_build_gradle_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["build.gradle (sourceCompatibility)".to_string()];
+        let detected = detect_env_version("java", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn java_traditional_sources_take_priority_over_manifest() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".java-version"), "21")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("pom.xml"),
+            r#"<project><properties><java.version>17</java.version></properties></project>"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![
+            ".java-version".to_string(),
+            "pom.xml (java.version)".to_string(),
+        ];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // .java-version is listed first, so it wins
+        assert_eq!(detected.version, "21");
+        assert_eq!(detected.source, ".java-version");
+    }
+
+    // ── Dart detection tests ──
+
+    #[tokio::test]
+    async fn dart_detects_from_dart_version_file() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".dart-version"), "3.3.0")
+            .await
+            .unwrap();
+
+        let sources = vec![".dart-version".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "dart");
+        assert_eq!(detected.version, "3.3.0");
+        assert_eq!(detected.source, ".dart-version");
+    }
+
+    #[tokio::test]
+    async fn dart_detects_from_fvmrc() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".fvmrc"),
+            r#"{"flutter": "3.19.0"}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".fvmrc".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "dart");
+        assert_eq!(detected.version, "3.19.0");
+        assert_eq!(detected.source, ".fvmrc");
+    }
+
+    #[tokio::test]
+    async fn dart_detects_from_fvmrc_channel() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".fvmrc"),
+            r#"{"flutter": "stable"}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".fvmrc".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "stable");
+    }
+
+    #[tokio::test]
+    async fn dart_fvmrc_invalid_json_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".fvmrc"), "not json at all")
+            .await
+            .unwrap();
+
+        let sources = vec![".fvmrc".to_string()];
+        let detected = detect_env_version("dart", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn dart_detects_from_pubspec_yaml() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("pubspec.yaml"),
+            "name: my_app\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["pubspec.yaml (environment.sdk)".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "dart");
+        assert_eq!(detected.version, ">=3.0.0 <4.0.0");
+        assert_eq!(detected.source, "pubspec.yaml (environment.sdk)");
+    }
+
+    #[tokio::test]
+    async fn dart_pubspec_yaml_no_sdk_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("pubspec.yaml"),
+            "name: my_app\ndependencies:\n  http: ^1.0.0\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["pubspec.yaml (environment.sdk)".to_string()];
+        let detected = detect_env_version("dart", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn dart_detects_from_tool_versions_dart() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".tool-versions"),
+            "dart 3.3.0\nnode 20.10.0\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".tool-versions".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "dart");
+        assert_eq!(detected.version, "3.3.0");
+        assert_eq!(detected.source, ".tool-versions");
+    }
+
+    #[tokio::test]
+    async fn dart_detects_from_tool_versions_flutter() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".tool-versions"),
+            "flutter 3.19.0\npython 3.12.0\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".tool-versions".to_string()];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.19.0");
+        assert_eq!(detected.source, ".tool-versions");
+    }
+
+    #[tokio::test]
+    async fn dart_fvmrc_takes_priority_over_pubspec() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".fvmrc"),
+            r#"{"flutter": "3.19.0"}"#,
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("pubspec.yaml"),
+            "name: my_app\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![
+            ".fvmrc".to_string(),
+            "pubspec.yaml (environment.sdk)".to_string(),
+        ];
+        let detected = detect_env_version("dart", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.19.0");
+        assert_eq!(detected.source, ".fvmrc");
     }
 }

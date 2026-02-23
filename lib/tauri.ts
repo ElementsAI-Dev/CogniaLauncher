@@ -24,6 +24,9 @@ export type {
   RustComponent,
   RustTarget,
   RustupShowInfo,
+  RustupOverride,
+  GoEnvInfo,
+  GoCacheInfo,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -152,6 +155,9 @@ import type {
   RustComponent,
   RustTarget,
   RustupShowInfo,
+  RustupOverride,
+  GoEnvInfo,
+  GoCacheInfo,
   PackageSummary,
   PackageInfo,
   VersionInfo,
@@ -387,6 +393,45 @@ export const rustupSelfUpdate = () =>
 
 export const rustupUpdateAll = () =>
   invoke<string>('rustup_update_all');
+
+// Rustup override management
+export const rustupOverrideSet = (toolchain: string, path?: string) =>
+  invoke<void>('rustup_override_set', { toolchain, path });
+
+export const rustupOverrideUnset = (path?: string) =>
+  invoke<void>('rustup_override_unset', { path });
+
+export const rustupOverrideList = () =>
+  invoke<RustupOverride[]>('rustup_override_list');
+
+// Rustup run, which, profile
+export const rustupRun = (toolchain: string, command: string, args?: string[]) =>
+  invoke<string>('rustup_run', { toolchain, command, args });
+
+export const rustupWhich = (binary: string) =>
+  invoke<string>('rustup_which', { binary });
+
+export const rustupGetProfile = () =>
+  invoke<string>('rustup_get_profile');
+
+export const rustupSetProfile = (profile: string) =>
+  invoke<void>('rustup_set_profile', { profile });
+
+// Go-specific commands
+export const goEnvInfo = () =>
+  invoke<GoEnvInfo>('go_env_info');
+
+export const goModTidy = (projectPath: string) =>
+  invoke<string>('go_mod_tidy', { projectPath });
+
+export const goModDownload = (projectPath: string) =>
+  invoke<string>('go_mod_download', { projectPath });
+
+export const goCleanCache = (cacheType: string) =>
+  invoke<string>('go_clean_cache', { cacheType });
+
+export const goCacheInfo = () =>
+  invoke<GoCacheInfo>('go_cache_info');
 
 // Package commands
 export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
@@ -1093,6 +1138,7 @@ import type {
   GitHubReleaseInfo,
   GitHubAssetInfo,
   GitHubParsedRepo,
+  GitHubRepoInfoResponse,
 } from '@/types/github';
 
 export type {
@@ -1101,6 +1147,7 @@ export type {
   GitHubReleaseInfo,
   GitHubAssetInfo,
   GitHubParsedRepo,
+  GitHubRepoInfoResponse,
 };
 
 /** Parse a GitHub URL or owner/repo string */
@@ -1110,6 +1157,10 @@ export const githubParseUrl = (url: string) =>
 /** Validate if a repository exists (with optional token for private repos) */
 export const githubValidateRepo = (repo: string, token?: string) =>
   invoke<boolean>('github_validate_repo', { repo, token: token || null });
+
+/** Get repository metadata (description, stars, license, etc.) */
+export const githubGetRepoInfo = (repo: string, token?: string) =>
+  invoke<GitHubRepoInfoResponse>('github_get_repo_info', { repo, token: token || null });
 
 /** List branches from a repository */
 export const githubListBranches = (repo: string, token?: string) =>

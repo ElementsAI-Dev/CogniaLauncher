@@ -2,11 +2,12 @@ use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     env::{dirs_home, EnvModifications, Platform},
-    process,
+    process::{self, ProcessOptions},
 };
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub struct PyenvProvider {
     pyenv_root: Option<PathBuf>,
@@ -29,7 +30,18 @@ impl PyenvProvider {
     }
 
     async fn run_pyenv(&self, args: &[&str]) -> CogniaResult<String> {
-        let output = process::execute("pyenv", args, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let output = process::execute("pyenv", args, Some(opts)).await?;
+        if output.success {
+            Ok(output.stdout)
+        } else {
+            Err(CogniaError::Provider(output.stderr))
+        }
+    }
+
+    async fn run_pyenv_long(&self, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(900));
+        let output = process::execute("pyenv", args, Some(opts)).await?;
         if output.success {
             Ok(output.stdout)
         } else {
@@ -59,6 +71,8 @@ impl Provider for PyenvProvider {
             Capability::Install,
             Capability::Uninstall,
             Capability::List,
+            Capability::Search,
+            Capability::Update,
             Capability::VersionSwitch,
             Capability::MultiVersion,
             Capability::ProjectLocal,
@@ -178,8 +192,8 @@ impl Provider for PyenvProvider {
             let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Downloading and compiling Python (this may take several minutes)")).await;
         }
 
-        // Run the actual installation
-        let result = self.run_pyenv(&["install", &version]).await;
+        // Run the actual installation (may compile from source, needs long timeout)
+        let result = self.run_pyenv_long(&["install", &version]).await;
 
         if let Err(ref e) = result {
             if let Some(ref tx) = progress {
@@ -258,26 +272,30 @@ impl Provider for PyenvProvider {
         let installed = self.run_pyenv(&["versions", "--bare"]).await.unwrap_or_default();
         let available = self.run_pyenv(&["install", "--list"]).await.unwrap_or_default();
 
-        // Find latest stable CPython version (e.g., "3.13.2", not "3.13.2t" or "miniconda")
-        let latest = available
-            .lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty())
-            .filter(|l| {
-                // Only match pure version numbers like "3.x.y"
-                l.chars().next().map_or(false, |c| c.is_ascii_digit())
-                    && !l.contains('-')
-                    && !l.contains('a')
-                    && !l.contains('b')
-                    && !l.contains("rc")
-                    && !l.ends_with('t')
-            })
-            .last()
-            .unwrap_or("")
-            .to_string();
+        // Build a map of (major, minor) -> latest_patch for stable CPython versions
+        let mut latest_per_series: std::collections::HashMap<(u32, u32), String> =
+            std::collections::HashMap::new();
 
-        if latest.is_empty() {
-            return Ok(vec![]);
+        for line in available.lines() {
+            let v = line.trim();
+            if v.is_empty() { continue; }
+            // Only match pure stable version numbers like "3.x.y"
+            if !v.chars().next().map_or(false, |c| c.is_ascii_digit())
+                || v.contains('-')
+                || v.contains('a')
+                || v.contains('b')
+                || v.contains("rc")
+                || v.ends_with('t')
+            {
+                continue;
+            }
+            let parts: Vec<&str> = v.splitn(3, '.').collect();
+            if parts.len() >= 2 {
+                if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    // pyenv install --list is sorted ascending, so last seen wins
+                    latest_per_series.insert((major, minor), v.to_string());
+                }
+            }
         }
 
         let mut updates = Vec::new();
@@ -286,22 +304,20 @@ impl Provider for PyenvProvider {
             if version.is_empty() || !version.chars().next().map_or(false, |c| c.is_ascii_digit()) {
                 continue;
             }
-            // Compare major.minor: only suggest update if same major.minor has newer patch
-            let installed_parts: Vec<&str> = version.splitn(3, '.').collect();
-            let latest_parts: Vec<&str> = latest.splitn(3, '.').collect();
-
-            if installed_parts.len() >= 2
-                && latest_parts.len() >= 2
-                && installed_parts[0] == latest_parts[0]
-                && installed_parts[1] == latest_parts[1]
-                && version != latest
-            {
-                updates.push(UpdateInfo {
-                    name: "python".into(),
-                    current_version: version.to_string(),
-                    latest_version: latest.clone(),
-                    provider: self.id().into(),
-                });
+            let parts: Vec<&str> = version.splitn(3, '.').collect();
+            if parts.len() >= 2 {
+                if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    if let Some(latest) = latest_per_series.get(&(major, minor)) {
+                        if latest != version {
+                            updates.push(UpdateInfo {
+                                name: "python".into(),
+                                current_version: version.to_string(),
+                                latest_version: latest.clone(),
+                                provider: self.id().into(),
+                            });
+                        }
+                    }
+                }
             }
         }
 
@@ -462,7 +478,14 @@ impl EnvironmentProvider for PyenvProvider {
 
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
         let pyenv_root = self.pyenv_root()?;
-        let python_path = pyenv_root.join("versions").join(version).join("bin");
+        let version_dir = pyenv_root.join("versions").join(version);
+        // On Windows (pyenv-win), executables are in the version root dir;
+        // on Unix, they are under the "bin" subdirectory.
+        let python_path = if cfg!(windows) {
+            version_dir
+        } else {
+            version_dir.join("bin")
+        };
 
         Ok(EnvModifications::new().prepend_path(python_path))
     }
@@ -473,5 +496,66 @@ impl EnvironmentProvider for PyenvProvider {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = PyenvProvider::new();
+        assert_eq!(provider.id(), "pyenv");
+        assert_eq!(provider.display_name(), "Python Version Manager");
+        assert_eq!(provider.priority(), 100);
+
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_capabilities_match_implementations() {
+        let provider = PyenvProvider::new();
+        let caps = provider.capabilities();
+
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+    }
+
+    #[test]
+    fn test_default_construction() {
+        let provider = PyenvProvider::default();
+        assert_eq!(provider.id(), "pyenv");
+    }
+
+    #[test]
+    fn test_env_modifications_path() {
+        let provider = PyenvProvider {
+            pyenv_root: Some(PathBuf::from("/home/user/.pyenv")),
+        };
+
+        let mods = provider.get_env_modifications("3.12.3").unwrap();
+        let expected = if cfg!(windows) {
+            PathBuf::from("/home/user/.pyenv/versions/3.12.3")
+        } else {
+            PathBuf::from("/home/user/.pyenv/versions/3.12.3/bin")
+        };
+        assert_eq!(mods.path_prepend.len(), 1);
+        assert_eq!(mods.path_prepend[0], expected);
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = PyenvProvider::new();
+        assert_eq!(provider.version_file_name(), ".python-version");
     }
 }

@@ -1071,7 +1071,11 @@
     "infoSystem": "系统包提供商",
     "infoSystemDesc": "apt、Homebrew、winget、Scoop、Chocolatey - 与操作系统级别的包管理器交互。",
     "infoCpp": "C++ 包提供商",
-    "infoCppDesc": "vcpkg、Conan、Xmake/Xrepo - 跨平台管理 C/C++ 库，支持依赖解析和二进制缓存。",
+    "infoCppDesc": "vcpkg、Conan、Xmake/Xrepo、MSVC、MSYS2 - 跨平台管理 C/C++ 库，支持依赖解析和二进制缓存。在 Windows 上检测 Visual Studio Build Tools 和 MSYS2/MinGW 工具链。",
+    "infoDart": "Dart/Flutter 提供者",
+    "infoDartDesc": "FVM、Dart Pub - Flutter SDK 版本管理和 pub.dev 包管理，支持依赖解析。",
+    "infoLua": "Lua 包提供商",
+    "infoLuaDesc": "LuaRocks - 安装和管理 Lua rocks（模块），支持依赖解析和 rockspec。",
     "infoContainer": "容器提供商",
     "infoContainerDesc": "Docker、Podman - 管理容器镜像，支持拉取、列出和更新功能。Podman 提供无守护进程、无 root 的容器管理。",
     "infoPowershell": "PowerShell 提供商",
@@ -1844,7 +1848,16 @@
     "sectionReset": "{section} 设置已重置为默认值",
     "loading": "加载设置中",
     "modified": "已修改",
-    "selectAccentColor": "选择{color}强调色"
+    "selectAccentColor": "选择{color}强调色",
+    "onboardingTitle": "引导与导览",
+    "onboardingDesc": "重新运行设置向导或启动引导导览以探索 CogniaLauncher 功能。",
+    "onboardingRerun": "重新运行设置向导",
+    "onboardingStartTour": "开始引导导览",
+    "onboardingResetSuccess": "设置向导已重置，即将显示。",
+    "onboardingTourStarted": "引导导览已开始！",
+    "onboardingStatusCompleted": "设置已完成",
+    "onboardingStatusSkipped": "设置已跳过",
+    "onboardingTourDone": "导览已完成"
   },
   "validation": {
     "mustBeNumber": "必须是数字",
@@ -1904,7 +1917,7 @@
     "licenseCertificatesDesc": "开源许可证和版权信息",
     "mitLicense": "MIT 许可证",
     "mitLicenseDesc": "开源软件 - 可自由使用、修改和分发",
-    "copyright": "版权所有 © 2025 Max Qian",
+    "copyright": "版权所有 © 2025-2026 Max Qian",
     "copyrightDesc": "在 MIT 许可证条款下保留所有权利",
     "actions": "操作",
     "actionsDesc": "快捷链接和常用操作",
@@ -1928,15 +1941,9 @@
     "updateDesktopOnly": "仅桌面端支持",
     "updateBannerDesc": "有新版本可供下载",
     "errorTitle": "错误",
-    "onboardingTitle": "引导与导览",
-    "onboardingDesc": "重新运行设置向导或启动引导导览以探索 CogniaLauncher 功能。",
-    "onboardingRerun": "重新运行设置向导",
-    "onboardingStartTour": "开始引导导览",
-    "onboardingResetSuccess": "设置向导已重置，即将显示。",
-    "onboardingTourStarted": "引导导览已开始！",
-    "onboardingStatusCompleted": "设置已完成",
-    "onboardingStatusSkipped": "设置已跳过",
-    "onboardingTourDone": "导览已完成"
+    "exportDiagnostics": "导出诊断信息",
+    "diagnosticsCopied": "诊断报告已复制到剪贴板",
+    "diagnosticsFailed": "生成诊断报告失败"
   },
   "theme": {
     "toggle": "切换主题",
@@ -2214,7 +2221,16 @@
       "sourceAdded": "已将源码包添加到下载队列",
       "yourPlatform": "当前平台",
       "rosetta": "Rosetta",
-      "folderPickerError": "打开文件夹选择器失败"
+      "folderPickerError": "打开文件夹选择器失败",
+      "draft": "草稿",
+      "archived": "已归档",
+      "releaseNotes": "发布说明",
+      "selectRecommended": "选择推荐",
+      "saveToken": "保存",
+      "clearToken": "清除",
+      "tokenSaved": "令牌已保存",
+      "tokenCleared": "令牌已清除",
+      "downloadCount": "次下载"
     },
     "gitlab": {
       "dialogTitle": "从 GitLab 下载",
@@ -2244,7 +2260,11 @@
       "noSelection": "请至少选择一个要下载的项目",
       "assetsAdded": "已将 {count} 个文件添加到下载队列",
       "sourceAdded": "已将源码包添加到下载队列",
-      "folderPickerError": "打开文件夹选择器失败"
+      "folderPickerError": "打开文件夹选择器失败",
+      "saveToken": "保存",
+      "clearToken": "清除",
+      "tokenSaved": "令牌已保存",
+      "tokenCleared": "令牌已清除"
     },
     "dialogError": "打开文件对话框失败"
   },
@@ -2578,5 +2598,21 @@
     "tourSettingsDesc": "在这里配置镜像、主题、路径、提供者和所有其他偏好设置。",
     "tourNext": "下一步",
     "tourDone": "完成"
+  },
+  "go": {
+    "envInfo": "Go 环境",
+    "envInfoDesc": "Go 工具链环境变量",
+    "modTidy": "整理模块",
+    "modTidyDesc": "运行 go mod tidy 清理模块依赖",
+    "modDownload": "下载模块",
+    "modDownloadDesc": "下载所有模块依赖",
+    "cleanCache": "清理缓存",
+    "cleanBuildCache": "清理构建缓存",
+    "cleanModCache": "清理模块缓存",
+    "cleanTestCache": "清理测试缓存",
+    "cleanAllCaches": "清理所有缓存",
+    "cacheInfo": "缓存信息",
+    "buildCache": "构建缓存",
+    "modCache": "模块缓存"
   }
 }

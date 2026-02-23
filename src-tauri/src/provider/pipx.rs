@@ -111,6 +111,7 @@ impl Provider for PipxProvider {
         HashSet::from([
             Capability::Install,
             Capability::Uninstall,
+            Capability::Search,
             Capability::List,
             Capability::Update,
         ])
@@ -328,7 +329,100 @@ impl SystemPackageProvider for PipxProvider {
         false
     }
 
+    async fn get_version(&self) -> CogniaResult<String> {
+        let out = self.run_pipx(&["--version"]).await?;
+        // Output: "1.7.1"
+        Ok(out.trim().to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("pipx")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("pipx not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("pip install pipx && pipx ensurepath".into())
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         Ok(self.get_installed_version(name).await?.is_some())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = PipxProvider::new();
+        assert_eq!(provider.id(), "pipx");
+        assert_eq!(provider.display_name(), "pipx (Python CLI Tool Manager)");
+        assert_eq!(provider.priority(), 78);
+
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_capabilities_include_search() {
+        let provider = PipxProvider::new();
+        let caps = provider.capabilities();
+
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_default_construction() {
+        let provider = PipxProvider::default();
+        assert_eq!(provider.id(), "pipx");
+    }
+
+    #[test]
+    fn test_parse_pipx_list_json() {
+        let json = r#"{
+            "venvs": {
+                "black": {
+                    "metadata": {
+                        "main_package": {
+                            "package_version": "24.3.0"
+                        }
+                    }
+                },
+                "ruff": {
+                    "metadata": {
+                        "main_package": {
+                            "package_version": "0.3.4"
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let packages = PipxProvider::parse_pipx_list_json(json);
+        assert_eq!(packages.len(), 2);
+
+        let black = packages.iter().find(|p| p.name == "black");
+        assert!(black.is_some());
+        assert_eq!(black.unwrap().version, "24.3.0");
+
+        let ruff = packages.iter().find(|p| p.name == "ruff");
+        assert!(ruff.is_some());
+        assert_eq!(ruff.unwrap().version, "0.3.4");
+    }
+
+    #[test]
+    fn test_parse_pipx_list_json_empty() {
+        let json = r#"{"venvs": {}}"#;
+        let packages = PipxProvider::parse_pipx_list_json(json);
+        assert!(packages.is_empty());
     }
 }

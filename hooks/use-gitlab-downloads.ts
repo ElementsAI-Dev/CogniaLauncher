@@ -32,6 +32,8 @@ interface UseGitLabDownloadsReturn {
   validateAndFetch: () => Promise<void>;
   downloadAsset: (asset: GitLabAssetInfo, destination: string) => Promise<string>;
   downloadSource: (refName: string, format: GitLabArchiveFormat, destination: string) => Promise<string>;
+  saveToken: () => Promise<void>;
+  clearSavedToken: () => Promise<void>;
   reset: () => void;
 }
 
@@ -62,6 +64,14 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     setTags([]);
     setReleases([]);
     setError(null);
+  }, []);
+
+  // Load saved token on mount
+  useEffect(() => {
+    if (!isTauri()) return;
+    import('@/lib/tauri').then(t => t.gitlabGetToken()).then(saved => {
+      if (saved) setToken(saved);
+    }).catch(() => {});
   }, []);
 
   const validateAndFetch = useCallback(async () => {
@@ -157,6 +167,19 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     [parsedProject, token, instanceUrl]
   );
 
+  const saveToken = useCallback(async () => {
+    if (!isTauri() || !token.trim()) return;
+    const tauri = await import('@/lib/tauri');
+    await tauri.gitlabSetToken(token.trim());
+  }, [token]);
+
+  const clearSavedToken = useCallback(async () => {
+    if (!isTauri()) return;
+    const tauri = await import('@/lib/tauri');
+    await tauri.gitlabClearToken();
+    setToken('');
+  }, []);
+
   useEffect(() => {
     if (!projectInput.trim()) {
       setParsedProject(null);
@@ -189,6 +212,8 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    saveToken,
+    clearSavedToken,
     reset,
   };
 }

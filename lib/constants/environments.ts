@@ -47,6 +47,7 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'nvm', name: 'nvm', description: 'Node Version Manager' },
   ],
   python: [
+    { id: 'uv', name: 'uv', description: 'Fast Python version & package manager by Astral' },
     { id: 'pyenv', name: 'pyenv', description: 'Python version management' },
     { id: 'conda', name: 'Conda', description: 'Anaconda/Miniconda environment manager' },
     { id: 'mise', name: 'mise', description: 'Polyglot version manager (formerly rtx)' },
@@ -63,7 +64,8 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'mise', name: 'mise', description: 'Polyglot version manager (formerly rtx)' },
   ],
   java: [
-    { id: 'sdkman', name: 'SDKMAN!', description: 'Software Development Kit Manager' },
+    { id: 'sdkman', name: 'SDKMAN!', description: 'Software Development Kit Manager (macOS/Linux)' },
+    { id: 'mise', name: 'mise', description: 'Polyglot version manager (cross-platform)' },
   ],
   kotlin: [
     { id: 'sdkman-kotlin', name: 'SDKMAN!', description: 'Kotlin compiler via SDKMAN!' },
@@ -83,11 +85,15 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
   c: [
     { id: 'vcpkg', name: 'vcpkg', description: 'C/C++ package manager by Microsoft' },
     { id: 'conan', name: 'Conan', description: 'C/C++ package manager' },
+    { id: 'msvc', name: 'MSVC', description: 'Visual Studio Build Tools detection' },
+    { id: 'msys2', name: 'MSYS2', description: 'MSYS2 pacman package manager (Windows)' },
   ],
   cpp: [
     { id: 'vcpkg', name: 'vcpkg', description: 'C/C++ package manager by Microsoft' },
     { id: 'conan', name: 'Conan', description: 'C/C++ package manager' },
     { id: 'xmake', name: 'xmake', description: 'Cross-platform C/C++ build utility' },
+    { id: 'msvc', name: 'MSVC', description: 'Visual Studio Build Tools detection' },
+    { id: 'msys2', name: 'MSYS2', description: 'MSYS2 pacman package manager (Windows)' },
   ],
   typescript: [
     { id: 'npm', name: 'npm', description: 'Node.js package manager' },
@@ -95,7 +101,7 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'yarn', name: 'Yarn', description: 'Fast, reliable dependency management' },
   ],
   scala: [
-    { id: 'sdkman', name: 'SDKMAN!', description: 'Scala via SDKMAN!' },
+    { id: 'sdkman-scala', name: 'SDKMAN!', description: 'Scala via SDKMAN!' },
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
   groovy: [
@@ -110,6 +116,7 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
   lua: [
+    { id: 'luarocks', name: 'LuaRocks', description: 'Lua package manager for rocks' },
     { id: 'asdf', name: 'asdf', description: 'Extendable version manager' },
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
@@ -117,9 +124,11 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
   zig: [
+    { id: 'zig', name: 'Zig', description: 'Direct Zig version management via ziglang.org' },
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
   dart: [
+    { id: 'fvm', name: 'FVM', description: 'Flutter Version Manager for Dart/Flutter SDK' },
     { id: 'asdf', name: 'asdf', description: 'Extendable version manager' },
     { id: 'mise', name: 'mise', description: 'Polyglot version manager' },
   ],
@@ -168,6 +177,7 @@ export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
     '.python-version',
     'pyproject.toml (project.requires-python)',
     'pyproject.toml (tool.poetry.dependencies.python)',
+    'uv.toml (requires-python)',
     'Pipfile (requires.python_version)',
     'runtime.txt',
     '.tool-versions',
@@ -175,7 +185,7 @@ export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   go: ['go.mod (toolchain)', 'go.mod (go)', '.go-version', '.tool-versions'],
   rust: ['rust-toolchain', 'rust-toolchain.toml', '.tool-versions'],
   ruby: ['.ruby-version', 'Gemfile', '.tool-versions'],
-  java: ['.java-version', '.sdkmanrc', '.tool-versions'],
+  java: ['.java-version', '.sdkmanrc', '.tool-versions', 'pom.xml (java.version)', 'build.gradle (sourceCompatibility)'],
   kotlin: ['.kotlin-version', '.sdkmanrc', '.tool-versions'],
   php: ['.php-version', 'composer.json (require.php)', '.tool-versions'],
   dotnet: ['global.json (sdk.version)', '.tool-versions'],
@@ -190,8 +200,8 @@ export const DEFAULT_DETECTION_FILES: Record<string, string[]> = {
   erlang: ['rebar.config', '.erlang-version', '.tool-versions'],
   lua: ['.lua-version', 'xmake.lua', '.tool-versions'],
   swift: ['Package.swift', '.swift-version', '.tool-versions'],
-  zig: ['build.zig', '.zig-version', '.tool-versions'],
-  dart: ['pubspec.yaml', '.dart-version', '.tool-versions'],
+  zig: ['build.zig', 'build.zig.zon (minimum_zig_version)', '.zig-version', '.tool-versions'],
+  dart: ['pubspec.yaml (environment.sdk)', '.fvmrc', '.dart-version', '.tool-versions'],
   julia: ['Project.toml', '.julia-version', '.tool-versions'],
   perl: ['cpanfile', '.perl-version', '.tool-versions'],
   r: ['DESCRIPTION', '.Rversion', '.tool-versions'],

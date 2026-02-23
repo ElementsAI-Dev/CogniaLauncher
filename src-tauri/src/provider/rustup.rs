@@ -247,6 +247,107 @@ impl RustupProvider {
     pub async fn update_all(&self) -> CogniaResult<String> {
         self.run_rustup(&["update"]).await
     }
+
+    /// Set a directory override for toolchain selection
+    pub async fn override_set(&self, toolchain: &str, path: Option<&Path>) -> CogniaResult<()> {
+        let mut args = vec!["override", "set", toolchain];
+        let path_str;
+        if let Some(p) = path {
+            path_str = p.to_string_lossy().to_string();
+            args.push("--path");
+            args.push(&path_str);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// Remove a directory override
+    pub async fn override_unset(&self, path: Option<&Path>) -> CogniaResult<()> {
+        let mut args = vec!["override", "unset"];
+        let path_str;
+        if let Some(p) = path {
+            path_str = p.to_string_lossy().to_string();
+            args.push("--path");
+            args.push(&path_str);
+        }
+        self.run_rustup(&args).await?;
+        Ok(())
+    }
+
+    /// List all directory overrides
+    pub async fn override_list(&self) -> CogniaResult<Vec<RustupOverride>> {
+        let output = self.run_rustup(&["override", "list"]).await?;
+        let mut overrides = Vec::new();
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.contains("no overrides") {
+                continue;
+            }
+            // Format: "/path/to/project    toolchain-name"
+            // Split on whitespace, but path may contain spaces on Windows
+            // The toolchain is always the last whitespace-separated token
+            if let Some(last_space) = line.rfind(char::is_whitespace) {
+                let path = line[..last_space].trim();
+                let toolchain = line[last_space..].trim();
+                if !path.is_empty() && !toolchain.is_empty() {
+                    overrides.push(RustupOverride {
+                        path: PathBuf::from(path),
+                        toolchain: toolchain.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(overrides)
+    }
+
+    /// Run a command with a specific toolchain
+    pub async fn run_with_toolchain(
+        &self,
+        toolchain: &str,
+        command: &str,
+        args: &[&str],
+    ) -> CogniaResult<String> {
+        let mut rustup_args = vec!["run", toolchain, command];
+        rustup_args.extend_from_slice(args);
+        self.run_rustup(&rustup_args).await
+    }
+
+    /// Resolve which binary will be run for a given command
+    pub async fn which_binary(&self, binary: &str) -> CogniaResult<PathBuf> {
+        let output = self.run_rustup(&["which", binary]).await?;
+        Ok(PathBuf::from(output.trim()))
+    }
+
+    /// Get the current rustup profile (minimal, default, complete)
+    pub async fn get_profile(&self) -> CogniaResult<String> {
+        let output = self.run_rustup(&["show"]).await?;
+        // Look for "profile" line in rustup show output
+        for line in output.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("profile") {
+                // Format: "profile: 'default'" or "profile  default"
+                let profile = rest
+                    .trim_start_matches(':')
+                    .trim()
+                    .trim_matches('\'')
+                    .trim_matches('"')
+                    .trim();
+                if !profile.is_empty() {
+                    return Ok(profile.to_string());
+                }
+            }
+        }
+        // Default profile if not found in output
+        Ok("default".to_string())
+    }
+
+    /// Set the rustup profile (minimal, default, complete)
+    pub async fn set_profile(&self, profile: &str) -> CogniaResult<()> {
+        self.run_rustup(&["set", "profile", profile]).await?;
+        Ok(())
+    }
 }
 
 impl Default for RustupProvider {
@@ -272,6 +373,7 @@ impl Provider for RustupProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
             Capability::VersionSwitch,
             Capability::MultiVersion,
             Capability::ProjectLocal,
@@ -454,7 +556,9 @@ impl Provider for RustupProvider {
             let line = line.trim();
             if line.contains("Update available") || line.contains("update available") {
                 // Parse: toolchain - Update available : current -> latest
-                let parts: Vec<&str> = line.splitn(2, '-').collect();
+                // Use " - " (space-dash-space) as separator to avoid splitting
+                // inside toolchain names like "stable-x86_64-unknown-linux-gnu"
+                let parts: Vec<&str> = line.splitn(2, " - ").collect();
                 let toolchain = parts.first().map(|s| s.trim()).unwrap_or("");
 
                 if let Some(versions_part) = line.split(':').last() {
@@ -701,6 +805,28 @@ impl SystemPackageProvider for RustupProvider {
         Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".to_string())
     }
 
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        self.run_rustup(&["update", name]).await?;
+        Ok(())
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        let output = self.run_rustup(&["update"]).await?;
+        let mut upgraded = Vec::new();
+        for line in output.lines() {
+            let line = line.trim();
+            if line.contains("updated") || line.contains("Updated") {
+                if let Some(toolchain) = line.split_whitespace().next() {
+                    upgraded.push(toolchain.to_string());
+                }
+            }
+        }
+        if upgraded.is_empty() {
+            upgraded.push("All toolchains updated".to_string());
+        }
+        Ok(upgraded)
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let versions = self.list_installed_versions().await?;
         Ok(versions.iter().any(|v| v.version.contains(name)))
@@ -734,4 +860,200 @@ pub struct RustupShowInfo {
     pub installed_toolchains: Vec<String>,
     pub installed_targets: Vec<String>,
     pub rustc_version: Option<String>,
+}
+
+/// Directory override entry from `rustup override list`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RustupOverride {
+    pub path: PathBuf,
+    pub toolchain: String,
+}
+
+// ── Pure parsing helpers (extracted for testability) ──
+
+/// Parse `rustup check` output into (toolchain, current_version, latest_version) tuples
+pub(crate) fn parse_check_updates_output(output: &str) -> Vec<(String, String, String)> {
+    let mut updates = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.contains("Update available") || line.contains("update available") {
+            let parts: Vec<&str> = line.splitn(2, " - ").collect();
+            let toolchain = parts.first().map(|s| s.trim()).unwrap_or("").to_string();
+
+            if let Some(versions_part) = line.split(':').last() {
+                let versions: Vec<&str> = versions_part.split("->").collect();
+                if versions.len() == 2 {
+                    let current = versions[0]
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    let latest = versions[1]
+                        .trim()
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    if !current.is_empty() && !latest.is_empty() {
+                        updates.push((toolchain, current, latest));
+                    }
+                }
+            }
+        }
+    }
+    updates
+}
+
+/// Parse `rustup override list` output into (path, toolchain) tuples
+pub(crate) fn parse_override_list_output(output: &str) -> Vec<(String, String)> {
+    let mut overrides = Vec::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.contains("no overrides") {
+            continue;
+        }
+        if let Some(last_space) = line.rfind(char::is_whitespace) {
+            let path = line[..last_space].trim().to_string();
+            let toolchain = line[last_space..].trim().to_string();
+            if !path.is_empty() && !toolchain.is_empty() {
+                overrides.push((path, toolchain));
+            }
+        }
+    }
+    overrides
+}
+
+/// Parse `rustup component list` output into (name, installed, default) tuples
+pub(crate) fn parse_component_list_output(output: &str) -> Vec<(String, bool, bool)> {
+    output
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|line| {
+            let line = line.trim();
+            let installed = line.contains("(installed)");
+            let default = line.contains("(default)");
+            let name = line
+                .split_whitespace()
+                .next()
+                .unwrap_or(line)
+                .to_string();
+            (name, installed, default)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_provider_creation() {
+        let provider = RustupProvider::new();
+        assert_eq!(provider.id(), "rustup");
+        assert_eq!(provider.display_name(), "Rust Toolchain Manager");
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = RustupProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+    }
+
+    #[test]
+    fn test_parse_check_updates_with_update() {
+        let output = "\
+stable-x86_64-unknown-linux-gnu - Update available : 1.74.0 (79e9716c9 2023-11-13) -> 1.75.0 (82e1608df 2023-12-21)
+nightly-x86_64-unknown-linux-gnu - Up to date : 1.76.0-nightly (abc1234 2024-01-01)";
+
+        let updates = parse_check_updates_output(output);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, "stable-x86_64-unknown-linux-gnu");
+        assert_eq!(updates[0].1, "1.74.0");
+        assert_eq!(updates[0].2, "1.75.0");
+    }
+
+    #[test]
+    fn test_parse_check_updates_up_to_date() {
+        let output = "\
+stable-x86_64-unknown-linux-gnu - Up to date : 1.75.0 (82e1608df 2023-12-21)
+nightly-x86_64-unknown-linux-gnu - Up to date : 1.76.0-nightly (abc1234 2024-01-01)";
+
+        let updates = parse_check_updates_output(output);
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn test_parse_check_updates_preserves_full_toolchain_name() {
+        let output = "stable-x86_64-pc-windows-msvc - Update available : 1.80.0 (abc 2024-01-01) -> 1.82.0 (def 2024-08-01)";
+        let updates = parse_check_updates_output(output);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].0, "stable-x86_64-pc-windows-msvc");
+    }
+
+    #[test]
+    fn test_parse_override_list() {
+        let output = "\
+/home/user/project1                            nightly-2024-01-01
+/home/user/project2                            stable-x86_64-unknown-linux-gnu";
+
+        let overrides = parse_override_list_output(output);
+        assert_eq!(overrides.len(), 2);
+        assert_eq!(overrides[0].0, "/home/user/project1");
+        assert_eq!(overrides[0].1, "nightly-2024-01-01");
+        assert_eq!(overrides[1].0, "/home/user/project2");
+        assert_eq!(overrides[1].1, "stable-x86_64-unknown-linux-gnu");
+    }
+
+    #[test]
+    fn test_parse_override_list_no_overrides() {
+        let output = "no overrides\n";
+        let overrides = parse_override_list_output(output);
+        assert!(overrides.is_empty());
+    }
+
+    #[test]
+    fn test_parse_component_list() {
+        let output = "\
+cargo-x86_64-unknown-linux-gnu (installed)
+clippy-x86_64-unknown-linux-gnu (installed)
+llvm-tools-preview-x86_64-unknown-linux-gnu
+miri-x86_64-unknown-linux-gnu
+rust-analyzer-x86_64-unknown-linux-gnu (installed)
+rust-src (installed)
+rustc-x86_64-unknown-linux-gnu (default)
+rustfmt-x86_64-unknown-linux-gnu (installed)";
+
+        let components = parse_component_list_output(output);
+        assert_eq!(components.len(), 8);
+
+        // cargo installed
+        assert_eq!(components[0].0, "cargo-x86_64-unknown-linux-gnu");
+        assert!(components[0].1); // installed
+        assert!(!components[0].2); // not default
+
+        // llvm-tools not installed
+        assert_eq!(components[2].0, "llvm-tools-preview-x86_64-unknown-linux-gnu");
+        assert!(!components[2].1);
+
+        // rustc default
+        assert_eq!(components[6].0, "rustc-x86_64-unknown-linux-gnu");
+        assert!(components[6].2); // default
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = RustupProvider::new();
+        assert_eq!(provider.version_file_name(), "rust-toolchain.toml");
+    }
 }

@@ -84,6 +84,39 @@ export interface RustupShowInfo {
   rustcVersion: string | null;
 }
 
+/** Rustup directory override entry from `rustup override list` */
+export interface RustupOverride {
+  path: string;
+  toolchain: string;
+}
+
+/** Go environment info from `go env -json` */
+export interface GoEnvInfo {
+  goroot: string;
+  gopath: string;
+  gobin: string;
+  goproxy: string;
+  goprivate: string;
+  gonosumdb: string;
+  gotoolchain: string;
+  gomodcache: string;
+  goos: string;
+  goarch: string;
+  goversion: string;
+  goflags: string;
+  cgoEnabled: string;
+}
+
+/** Go cache size info */
+export interface GoCacheInfo {
+  buildCachePath: string;
+  buildCacheSize: number;
+  buildCacheSizeHuman: string;
+  modCachePath: string;
+  modCacheSize: number;
+  modCacheSizeHuman: string;
+}
+
 /** Result of verifying an environment installation */
 export interface EnvVerifyResult {
   installed: boolean;

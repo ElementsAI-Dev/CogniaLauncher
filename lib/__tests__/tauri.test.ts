@@ -17,6 +17,8 @@ import type {
   EnhancedCleanResult,
   CleanupRecord,
   CleanupHistorySummary,
+  GoEnvInfo,
+  GoCacheInfo,
 } from '../tauri';
 
 import { isTauri, getAppVersion, openExternal } from '../tauri';
@@ -590,6 +592,121 @@ describe('Tauri Types', () => {
       };
       expect(summary.total_cleanups).toBe(0);
       expect(summary.total_files_cleaned).toBe(0);
+    });
+  });
+
+  describe('GoEnvInfo', () => {
+    it('should have correct structure with all fields', () => {
+      const info: GoEnvInfo = {
+        goroot: '/usr/local/go',
+        gopath: '/home/user/go',
+        gobin: '/home/user/go/bin',
+        goproxy: 'https://proxy.golang.org,direct',
+        goprivate: '',
+        gonosumdb: '',
+        gotoolchain: 'auto',
+        gomodcache: '/home/user/go/pkg/mod',
+        goos: 'linux',
+        goarch: 'amd64',
+        goversion: 'go1.22.5',
+        goflags: '',
+        cgoEnabled: '1',
+      };
+      expect(info.goroot).toBe('/usr/local/go');
+      expect(info.gopath).toBe('/home/user/go');
+      expect(info.goproxy).toBe('https://proxy.golang.org,direct');
+      expect(info.gotoolchain).toBe('auto');
+      expect(info.goos).toBe('linux');
+      expect(info.goarch).toBe('amd64');
+      expect(info.goversion).toBe('go1.22.5');
+      expect(info.cgoEnabled).toBe('1');
+    });
+
+    it('should accept empty string values', () => {
+      const info: GoEnvInfo = {
+        goroot: '',
+        gopath: '',
+        gobin: '',
+        goproxy: '',
+        goprivate: '',
+        gonosumdb: '',
+        gotoolchain: '',
+        gomodcache: '',
+        goos: '',
+        goarch: '',
+        goversion: '',
+        goflags: '',
+        cgoEnabled: '',
+      };
+      expect(info.goroot).toBe('');
+      expect(info.cgoEnabled).toBe('');
+    });
+
+    it('should support Windows-style paths', () => {
+      const info: GoEnvInfo = {
+        goroot: 'C:\\Go',
+        gopath: 'C:\\Users\\user\\go',
+        gobin: 'C:\\Users\\user\\go\\bin',
+        goproxy: 'https://goproxy.cn,direct',
+        goprivate: 'github.com/myorg/*',
+        gonosumdb: 'github.com/myorg/*',
+        gotoolchain: 'go1.22.5',
+        gomodcache: 'C:\\Users\\user\\go\\pkg\\mod',
+        goos: 'windows',
+        goarch: 'amd64',
+        goversion: 'go1.22.5',
+        goflags: '',
+        cgoEnabled: '0',
+      };
+      expect(info.goos).toBe('windows');
+      expect(info.goroot).toBe('C:\\Go');
+      expect(info.goprivate).toBe('github.com/myorg/*');
+    });
+  });
+
+  describe('GoCacheInfo', () => {
+    it('should have correct structure', () => {
+      const info: GoCacheInfo = {
+        buildCachePath: '/home/user/.cache/go-build',
+        buildCacheSize: 104857600,
+        buildCacheSizeHuman: '100.0 MB',
+        modCachePath: '/home/user/go/pkg/mod',
+        modCacheSize: 52428800,
+        modCacheSizeHuman: '50.0 MB',
+      };
+      expect(info.buildCachePath).toBe('/home/user/.cache/go-build');
+      expect(info.buildCacheSize).toBe(104857600);
+      expect(info.buildCacheSizeHuman).toBe('100.0 MB');
+      expect(info.modCachePath).toBe('/home/user/go/pkg/mod');
+      expect(info.modCacheSize).toBe(52428800);
+      expect(info.modCacheSizeHuman).toBe('50.0 MB');
+    });
+
+    it('should handle zero cache sizes', () => {
+      const info: GoCacheInfo = {
+        buildCachePath: '',
+        buildCacheSize: 0,
+        buildCacheSizeHuman: '0 B',
+        modCachePath: '',
+        modCacheSize: 0,
+        modCacheSizeHuman: '0 B',
+      };
+      expect(info.buildCacheSize).toBe(0);
+      expect(info.modCacheSize).toBe(0);
+      expect(info.buildCacheSizeHuman).toBe('0 B');
+    });
+
+    it('should handle large cache sizes', () => {
+      const info: GoCacheInfo = {
+        buildCachePath: '/cache/go-build',
+        buildCacheSize: 1073741824,
+        buildCacheSizeHuman: '1.0 GB',
+        modCachePath: '/cache/go-mod',
+        modCacheSize: 5368709120,
+        modCacheSizeHuman: '5.0 GB',
+      };
+      expect(info.buildCacheSize).toBe(1073741824);
+      expect(info.modCacheSize).toBe(5368709120);
     });
   });
 });

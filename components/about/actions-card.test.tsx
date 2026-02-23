@@ -15,6 +15,8 @@ const mockT = (key: string) => {
     "about.documentation": "Documentation",
     "about.reportBug": "Report Bug",
     "about.featureRequest": "Feature Request",
+    "about.exportDiagnostics": "Export Diagnostics",
+    "about.updateDesktopOnly": "Desktop only",
     "about.openInNewTab": "opens in new tab",
   };
   return translations[key] || key;
@@ -22,8 +24,10 @@ const mockT = (key: string) => {
 
 const defaultProps = {
   loading: false,
+  isDesktop: true,
   onCheckUpdate: jest.fn(),
   onOpenChangelog: jest.fn(),
+  onExportDiagnostics: jest.fn(),
   t: mockT,
 };
 
@@ -67,5 +71,21 @@ describe("ActionsCard", () => {
   it("has correct aria region", () => {
     render(<ActionsCard {...defaultProps} />);
     expect(screen.getByRole("region")).toBeInTheDocument();
+  });
+
+  it("renders Export Diagnostics button", () => {
+    render(<ActionsCard {...defaultProps} />);
+    expect(screen.getByText("Export Diagnostics")).toBeInTheDocument();
+  });
+
+  it("calls onExportDiagnostics when Export Diagnostics is clicked", async () => {
+    render(<ActionsCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Export Diagnostics"));
+    expect(defaultProps.onExportDiagnostics).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables Export Diagnostics when not desktop", () => {
+    render(<ActionsCard {...defaultProps} isDesktop={false} />);
+    expect(screen.getByText("Export Diagnostics").closest("button")).toBeDisabled();
   });
 });

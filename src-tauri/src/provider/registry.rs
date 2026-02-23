@@ -3,9 +3,9 @@ use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider, SystemPackageProvider};
 use super::{
     apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno, dnf,
-    docker, dotnet, flatpak, fnm, gem, github, gitlab, goenv, macports, mise, nix, npm, nvm,
-    pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery, pyenv, rbenv, rustup, scoop,
-    sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zypper,
+    docker, dotnet, flatpak, fnm, fvm, gem, github, gitlab, goenv, luarocks, macports, mise, msvc,
+    msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery, pub_dev, pyenv,
+    rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zig, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;
@@ -61,6 +61,7 @@ impl ProviderRegistry {
         let npm_mirror = settings.get_mirror_url("npm");
         let pypi_mirror = settings.get_mirror_url("pypi");
         let crates_mirror = settings.get_mirror_url("crates");
+        let go_mirror = settings.get_mirror_url("go");
 
         let platform = current_platform();
 
@@ -68,7 +69,8 @@ impl ProviderRegistry {
         // not a gating condition for whether a provider exists in the registry.
         let volta_provider = Arc::new(volta::VoltaProvider::new());
         if volta_provider.supported_platforms().contains(&platform) {
-            registry.register_environment_provider(volta_provider);
+            registry.register_environment_provider(volta_provider.clone());
+            registry.register_system_provider(volta_provider);
         }
 
         let fnm_provider = Arc::new(fnm::FnmProvider::new());
@@ -79,7 +81,8 @@ impl ProviderRegistry {
 
         let nvm_provider = Arc::new(nvm::NvmProvider::new());
         if nvm_provider.supported_platforms().contains(&platform) {
-            registry.register_environment_provider(nvm_provider);
+            registry.register_environment_provider(nvm_provider.clone());
+            registry.register_system_provider(nvm_provider);
         }
 
         let mise_provider = Arc::new(mise::MiseProvider::new());
@@ -127,6 +130,18 @@ impl ProviderRegistry {
             registry.register_system_provider(sdkman_kotlin);
         }
 
+        let sdkman_scala = Arc::new(sdkman::SdkmanProvider::new("scala"));
+        if sdkman_scala.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_scala.clone());
+            registry.register_system_provider(sdkman_scala);
+        }
+
+        let sdkman_groovy = Arc::new(sdkman::SdkmanProvider::new("groovy"));
+        if sdkman_groovy.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_groovy.clone());
+            registry.register_system_provider(sdkman_groovy);
+        }
+
         let phpbrew_provider = Arc::new(phpbrew::PhpbrewProvider::new());
         if phpbrew_provider.supported_platforms().contains(&platform) {
             registry.register_environment_provider(phpbrew_provider.clone());
@@ -143,6 +158,23 @@ impl ProviderRegistry {
         if deno_provider.supported_platforms().contains(&platform) {
             registry.register_environment_provider(deno_provider.clone());
             registry.register_system_provider(deno_provider);
+        }
+
+        let fvm_provider = Arc::new(fvm::FvmProvider::new());
+        if fvm_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(fvm_provider.clone());
+            registry.register_system_provider(fvm_provider);
+        }
+
+        let pub_provider = Arc::new(pub_dev::PubProvider::new());
+        if pub_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(pub_provider);
+        }
+
+        let zig_provider = Arc::new(zig::ZigProvider::new());
+        if zig_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(zig_provider.clone());
+            registry.register_system_provider(zig_provider);
         }
 
         let nix_provider = Arc::new(nix::NixProvider::new());
@@ -183,6 +215,57 @@ impl ProviderRegistry {
         )));
         registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
             SystemEnvironmentType::Bun,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Zig,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Dart,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Lua,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Scala,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Groovy,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Elixir,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Erlang,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Swift,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Julia,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Perl,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::R,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Haskell,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Clojure,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Crystal,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Nim,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Ocaml,
+        )));
+        registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
+            SystemEnvironmentType::Fortran,
         )));
 
         // GitHub provider with optional token from settings
@@ -269,10 +352,10 @@ impl ProviderRegistry {
             registry.register_system_provider(pip_provider);
         }
 
-        // Register Go modules provider
-        let go_provider = Arc::new(goenv::GoModProvider::new());
+        // Register Go modules provider with mirror configuration
+        let go_provider = Arc::new(goenv::GoModProvider::new().with_proxy_opt(go_mirror));
         if go_provider.supported_platforms().contains(&platform) {
-            registry.register_provider(go_provider);
+            registry.register_system_provider(go_provider);
         }
 
         // Register vcpkg provider (cross-platform C++ package manager)
@@ -305,9 +388,10 @@ impl ProviderRegistry {
             registry.register_system_provider(podman_provider);
         }
 
-        // Register uv provider with mirror configuration
+        // Register uv provider with mirror configuration (package manager + Python version manager)
         let uv_provider = Arc::new(uv::UvProvider::new().with_index_url_opt(pypi_mirror.clone()));
         if uv_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(uv_provider.clone());
             registry.register_system_provider(uv_provider);
         }
 
@@ -341,6 +425,12 @@ impl ProviderRegistry {
         let gem_provider = Arc::new(gem::GemProvider::new());
         if gem_provider.supported_platforms().contains(&platform) {
             registry.register_system_provider(gem_provider);
+        }
+
+        // Register LuaRocks provider (Lua package manager)
+        let luarocks_provider = Arc::new(luarocks::LuaRocksProvider::new());
+        if luarocks_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(luarocks_provider);
         }
 
         // Register Composer provider (PHP dependency management)
@@ -417,6 +507,14 @@ impl ProviderRegistry {
                 // Register WSL provider (Windows only)
                 let wsl_provider = Arc::new(wsl::WslProvider::new());
                 registry.register_system_provider(wsl_provider);
+
+                // Register MSVC provider (Visual Studio Build Tools detection)
+                let msvc_provider = Arc::new(msvc::MsvcProvider::new());
+                registry.register_system_provider(msvc_provider);
+
+                // Register MSYS2 provider (pacman-based package manager)
+                let msys2_provider = Arc::new(msys2::Msys2Provider::new());
+                registry.register_system_provider(msys2_provider);
             }
             _ => {}
         }
@@ -569,7 +667,7 @@ impl ProviderRegistry {
         let platform = current_platform();
 
         let system_providers = match platform {
-            Platform::Windows => vec!["winget", "scoop", "chocolatey", "wsl"],
+            Platform::Windows => vec!["winget", "scoop", "chocolatey", "wsl", "msvc", "msys2"],
             Platform::MacOS => vec!["brew", "macports"],
             Platform::Linux => vec!["apt", "dnf", "pacman", "zypper", "apk", "snap", "flatpak"],
             _ => vec![],
@@ -683,6 +781,7 @@ mod tests {
             "system-rust",
             "system-deno",
             "system-bun",
+            "system-zig",
         ] {
             assert!(
                 registry.get_provider_info(id).is_some(),
@@ -692,7 +791,7 @@ mod tests {
         }
 
         #[cfg(windows)]
-        for id in ["winget", "scoop", "chocolatey", "wsl"] {
+        for id in ["winget", "scoop", "chocolatey", "wsl", "msvc", "msys2"] {
             assert!(
                 registry.get_provider_info(id).is_some(),
                 "expected provider '{}' to be registered on Windows",

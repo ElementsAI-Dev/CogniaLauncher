@@ -132,6 +132,7 @@ impl Provider for CargoProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -427,6 +428,9 @@ impl Provider for CargoProvider {
             ver = format!("--version={}", v);
             args.push(&ver);
         }
+        if req.force {
+            args.push("--force");
+        }
 
         self.run_cargo(&args).await?;
 
@@ -556,6 +560,63 @@ impl SystemPackageProvider for CargoProvider {
         false
     }
 
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_cargo(&["--version"]).await?;
+        // Output: "cargo 1.82.0 (8f40fc59f 2024-08-21)"
+        Ok(output
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("unknown")
+            .to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("cargo")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("cargo not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        if cfg!(windows) {
+            Some("winget install Rustlang.Rustup".to_string())
+        } else {
+            Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".to_string())
+        }
+    }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        // cargo install --force compiles from source; use a longer timeout
+        let mut opts = ProcessOptions::new().with_timeout(Duration::from_secs(600));
+        for (key, value) in &self.env_vars {
+            opts = opts.with_env(key, value);
+        }
+        if let Some(ref url) = self.registry_url {
+            opts = opts.with_env("CARGO_REGISTRIES_CRATES_IO_PROTOCOL", "sparse");
+            opts = opts.with_env("CARGO_REGISTRIES_CRATES_IO_INDEX", url);
+        }
+        let out = process::execute("cargo", &["install", "--force", name], Some(opts)).await?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        let out = self.run_cargo(&["install", "--list"]).await?;
+        let packages = parse_installed_list_output(&out);
+        let mut upgraded = Vec::new();
+
+        for (name, _version) in &packages {
+            if self.upgrade_package(name).await.is_ok() {
+                upgraded.push(name.clone());
+            }
+        }
+
+        Ok(upgraded)
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_cargo(&["install", "--list"]).await;
         Ok(out
@@ -573,6 +634,36 @@ impl SystemPackageProvider for CargoProvider {
             })
             .unwrap_or(false))
     }
+}
+
+// ── Pure parsing helpers (extracted for testability) ──
+
+/// Parse `cargo install --list` output into (name, version) tuples
+pub(crate) fn parse_installed_list_output(output: &str) -> Vec<(String, String)> {
+    let mut packages = Vec::new();
+    for line in output.lines() {
+        if !line.starts_with(' ') && !line.is_empty() {
+            let parts: Vec<&str> = line.trim_end_matches(':').split_whitespace().collect();
+            if parts.len() >= 2 {
+                let name = parts[0].to_string();
+                let version = parts[1].trim_start_matches('v').to_string();
+                packages.push((name, version));
+            }
+        }
+    }
+    packages
+}
+
+/// Check if a crate name matches exactly in `cargo install --list` output
+pub(crate) fn is_crate_in_installed_output(output: &str, name: &str) -> bool {
+    output.lines().any(|l| {
+        if l.starts_with(' ') || l.is_empty() {
+            return false;
+        }
+        l.split_whitespace()
+            .next()
+            .map_or(false, |crate_name| crate_name == name)
+    })
 }
 
 #[cfg(test)]
@@ -596,5 +687,81 @@ mod tests {
             provider.env_vars.get("CARGO_HTTP_PROXY"),
             Some(&"http://proxy.example.com:8080".to_string())
         );
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = CargoProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+    }
+
+    #[test]
+    fn test_parse_installed_list() {
+        let output = "\
+cargo-audit v0.18.3:
+    cargo-audit
+cargo-edit v0.12.2:
+    cargo-add
+    cargo-rm
+    cargo-upgrade
+ripgrep v14.1.0:
+    rg";
+
+        let packages = parse_installed_list_output(output);
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].0, "cargo-audit");
+        assert_eq!(packages[0].1, "0.18.3");
+        assert_eq!(packages[1].0, "cargo-edit");
+        assert_eq!(packages[1].1, "0.12.2");
+        assert_eq!(packages[2].0, "ripgrep");
+        assert_eq!(packages[2].1, "14.1.0");
+    }
+
+    #[test]
+    fn test_parse_installed_list_empty() {
+        let output = "";
+        let packages = parse_installed_list_output(output);
+        assert!(packages.is_empty());
+    }
+
+    #[test]
+    fn test_is_crate_installed_exact_match() {
+        let output = "\
+serde v1.0.200:
+    serde
+serde_json v1.0.117:
+    serde_json";
+
+        assert!(is_crate_in_installed_output(output, "serde"));
+        assert!(is_crate_in_installed_output(output, "serde_json"));
+        assert!(!is_crate_in_installed_output(output, "serd"));
+        assert!(!is_crate_in_installed_output(output, "serde_yaml"));
+    }
+
+    #[test]
+    fn test_get_cargo_home_env_var() {
+        // This tests the fallback logic structure, not actual env var
+        let home = CargoProvider::get_cargo_home();
+        // Should always return Some on any platform (either CARGO_HOME or HOME/.cargo)
+        assert!(home.is_some());
+    }
+
+    #[test]
+    fn test_cargo_provider_with_registry_opt_none() {
+        let provider = CargoProvider::new().with_registry_opt(None);
+        assert_eq!(provider.registry_url, None);
+    }
+
+    #[test]
+    fn test_cargo_provider_with_registry_opt_some() {
+        let provider = CargoProvider::new()
+            .with_registry_opt(Some("https://rsproxy.cn".to_string()));
+        assert_eq!(provider.registry_url, Some("https://rsproxy.cn".to_string()));
     }
 }

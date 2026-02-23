@@ -281,9 +281,55 @@ impl Provider for FnmProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        // fnm doesn't have built-in update checking
-        // Would need to compare installed with latest LTS
-        Ok(vec![])
+        let installed = self.list_installed_versions().await.unwrap_or_default();
+        if installed.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let remote_output = self.run_fnm(&["ls-remote"]).await.unwrap_or_default();
+        let remote_versions: Vec<&str> = remote_output
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        let mut updates = Vec::new();
+        for iv in &installed {
+            let ver = iv.version.trim_start_matches('v');
+            let parts: Vec<&str> = ver.split('.').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let major = parts[0];
+
+            // Find the latest version in the same major line
+            let latest_in_major = remote_versions
+                .iter()
+                .filter_map(|rv| {
+                    let rv_clean = rv.trim_start_matches('v');
+                    let rv_parts: Vec<&str> = rv_clean.split('.').collect();
+                    if rv_parts.first() == Some(&major) {
+                        Some(*rv)
+                    } else {
+                        None
+                    }
+                })
+                .last(); // remote list is sorted ascending
+
+            if let Some(latest) = latest_in_major {
+                let latest_clean = latest.trim_start_matches('v');
+                if latest_clean != ver {
+                    updates.push(UpdateInfo {
+                        name: format!("node@{}", iv.version),
+                        current_version: iv.version.clone(),
+                        latest_version: latest.to_string(),
+                        provider: self.id().into(),
+                    });
+                }
+            }
+        }
+
+        Ok(updates)
     }
 }
 

@@ -30,6 +30,20 @@ jest.mock("@/lib/tauri", () => ({
     app_version: "0.1.0",
   }),
   getCogniaDir: jest.fn().mockResolvedValue("C:\\Users\\Test\\.cognia"),
+  providerStatusAll: jest.fn().mockResolvedValue([
+    { id: "npm", display_name: "npm", installed: true, platforms: ["windows"] },
+    { id: "pip", display_name: "pip", installed: true, platforms: ["windows"] },
+  ]),
+  getCombinedCacheStats: jest.fn().mockResolvedValue({
+    internalSize: 1024000,
+    internalSizeHuman: "1.0 MB",
+    externalSize: 2048000,
+    externalSizeHuman: "2.0 MB",
+    totalSize: 3072000,
+    totalSizeHuman: "3.0 MB",
+    externalCaches: [],
+  }),
+  logGetTotalSize: jest.fn().mockResolvedValue(512000),
 }));
 
 // Mock sonner toast
@@ -109,6 +123,9 @@ const mockMessages = {
       timeoutError: "Timeout error",
       updateCheckFailed: "Update check failed",
       updateDesktopOnly: "Desktop only",
+      exportDiagnostics: "Export Diagnostics",
+      diagnosticsCopied: "Diagnostic report copied",
+      diagnosticsFailed: "Failed to generate diagnostics",
     },
   },
   zh: {

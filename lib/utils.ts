@@ -40,16 +40,33 @@ export function formatSpeed(bytesPerSec: number): string {
 }
 
 /**
- * Format bytes to human-readable size string (alternative implementation)
+ * Format bytes to human-readable size string
  * @param bytes - Number of bytes
  * @returns Formatted size string (e.g., "1.5 MB")
  */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
+}
+
+/**
+ * Format seconds to human-readable uptime string
+ * @param seconds - Number of seconds
+ * @returns Formatted uptime string (e.g., "2d 5h 30m")
+ */
+export function formatUptime(seconds: number): string {
+  if (seconds === 0) return '';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  return parts.join(' ') || '< 1m';
 }
 
 /**

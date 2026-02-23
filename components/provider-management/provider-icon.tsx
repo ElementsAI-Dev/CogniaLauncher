@@ -70,6 +70,7 @@ const PROVIDER_ICON_FILES: Record<string, string> = {
   "system-dotnet": "dotnet",
   "system-deno": "deno",
   "system-bun": "bun",
+  "system-zig": "zig",
 };
 
 const PLATFORM_ICON_FILES: Record<string, string> = {

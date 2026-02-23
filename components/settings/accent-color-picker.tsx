@@ -20,6 +20,8 @@ interface AccentColorPickerProps {
   onAccentColorChange: (color: AccentColor) => void;
   className?: string;
   t?: (key: string, params?: Record<string, string>) => string;
+  "aria-labelledby"?: string;
+  "aria-describedby"?: string;
 }
 
 export function AccentColorPicker({
@@ -27,6 +29,8 @@ export function AccentColorPicker({
   onAccentColorChange,
   className,
   t,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
 }: AccentColorPickerProps) {
   const getAriaLabel = (color: AccentColor) => {
     if (t) {
@@ -45,6 +49,8 @@ export function AccentColorPicker({
         if (value) onAccentColorChange(value as AccentColor);
       }}
       className={cn("flex flex-wrap gap-2", className)}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
     >
       {ACCENT_COLORS.map((color) => (
         <Tooltip key={color}>

@@ -37,6 +37,7 @@ export interface UseAboutDataReturn {
   reloadSystemInfo: () => Promise<void>;
   handleUpdate: (t: (key: string) => string) => Promise<void>;
   clearError: () => void;
+  exportDiagnostics: (t: (key: string) => string) => Promise<void>;
 }
 
 export function useAboutData(locale: string): UseAboutDataReturn {
@@ -229,6 +230,82 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     setError(null);
   }, []);
 
+  const exportDiagnostics = useCallback(async (t: (key: string) => string) => {
+    if (!tauri.isTauri()) {
+      toast.error(t('about.updateDesktopOnly'));
+      return;
+    }
+
+    try {
+      const [providers, cacheStats, logSize] = await Promise.allSettled([
+        tauri.providerStatusAll(),
+        tauri.getCombinedCacheStats(),
+        tauri.logGetTotalSize(),
+      ]);
+
+      const lines: string[] = [
+        'CogniaLauncher Diagnostic Report',
+        '================================',
+        `Generated: ${new Date().toISOString()}`,
+        '',
+        '--- System Info ---',
+        `App Version: v${updateInfo?.current_version || systemInfo?.appVersion || APP_VERSION}`,
+        `OS: ${systemInfo?.osLongVersion || systemInfo?.os || 'Unknown'}`,
+        `Arch: ${systemInfo?.arch || 'Unknown'}`,
+        `Kernel: ${systemInfo?.kernelVersion || 'Unknown'}`,
+        `Hostname: ${systemInfo?.hostname || 'Unknown'}`,
+        `CPU: ${systemInfo?.cpuModel || 'Unknown'} (${systemInfo?.cpuCores || 0} cores)`,
+        `Memory: ${systemInfo?.totalMemory ? `${Math.round(systemInfo.totalMemory / (1024 * 1024 * 1024))} GB` : 'Unknown'}`,
+        `Data Dir: ${systemInfo?.homeDir || 'Unknown'}`,
+        `Locale: ${systemInfo?.locale || 'Unknown'}`,
+      ];
+
+      if (updateInfo) {
+        lines.push('', '--- Update Status ---');
+        lines.push(`Current: v${updateInfo.current_version}`);
+        lines.push(`Latest: v${updateInfo.latest_version || updateInfo.current_version}`);
+        lines.push(`Update Available: ${updateInfo.update_available ? 'Yes' : 'No'}`);
+      }
+
+      if (providers.status === 'fulfilled') {
+        const all = providers.value;
+        const installed = all.filter((p) => p.installed);
+        lines.push('', '--- Providers ---');
+        lines.push(`Total: ${all.length}, Available: ${installed.length}`);
+        if (installed.length > 0) {
+          lines.push(`Installed: ${installed.map((p) => p.id).join(', ')}`);
+        }
+        const notInstalled = all.filter((p) => !p.installed);
+        if (notInstalled.length > 0) {
+          lines.push(`Not Available: ${notInstalled.map((p) => p.id).join(', ')}`);
+        }
+      }
+
+      if (cacheStats.status === 'fulfilled') {
+        const stats = cacheStats.value;
+        lines.push('', '--- Cache ---');
+        lines.push(`Internal: ${stats.internalSizeHuman}`);
+        lines.push(`External: ${stats.externalSizeHuman}`);
+        lines.push(`Total: ${stats.totalSizeHuman}`);
+      }
+
+      if (logSize.status === 'fulfilled') {
+        const bytes = logSize.value;
+        const sizeStr = bytes > 0
+          ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+          : '0 B';
+        lines.push('', '--- Logs ---');
+        lines.push(`Total Log Size: ${sizeStr}`);
+      }
+
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toast.success(t('about.diagnosticsCopied'));
+    } catch (err) {
+      console.error('Failed to export diagnostics:', err);
+      toast.error(t('about.diagnosticsFailed'));
+    }
+  }, [updateInfo, systemInfo]);
+
   return {
     updateInfo,
     loading,
@@ -244,5 +321,6 @@ export function useAboutData(locale: string): UseAboutDataReturn {
     reloadSystemInfo: loadSystemInfo,
     handleUpdate,
     clearError,
+    exportDiagnostics,
   };
 }

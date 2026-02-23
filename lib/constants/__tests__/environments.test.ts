@@ -105,6 +105,22 @@ describe('Environment Constants', () => {
       const rustup = rustProviders.find((p) => p.id === 'rustup');
       expect(rustup).toBeDefined();
     });
+
+    it('java has sdkman and mise providers', () => {
+      const javaProviders = DEFAULT_PROVIDERS.java;
+      const sdkman = javaProviders.find((p) => p.id === 'sdkman');
+      const mise = javaProviders.find((p) => p.id === 'mise');
+      expect(sdkman).toBeDefined();
+      expect(mise).toBeDefined();
+    });
+
+    it('scala uses sdkman-scala provider id (not sdkman)', () => {
+      const scalaProviders = DEFAULT_PROVIDERS.scala;
+      const sdkmanScala = scalaProviders.find((p) => p.id === 'sdkman-scala');
+      const sdkmanPlain = scalaProviders.find((p) => p.id === 'sdkman');
+      expect(sdkmanScala).toBeDefined();
+      expect(sdkmanPlain).toBeUndefined();
+    });
   });
 
   describe('DEFAULT_DETECTION_FILES', () => {
@@ -133,6 +149,20 @@ describe('Environment Constants', () => {
       const rustFiles = DEFAULT_DETECTION_FILES.rust;
       expect(rustFiles).toContain('rust-toolchain.toml');
       expect(rustFiles).toContain('rust-toolchain');
+    });
+
+    it('java has pom.xml and build.gradle detection files', () => {
+      const javaFiles = DEFAULT_DETECTION_FILES.java;
+      expect(javaFiles).toContain('pom.xml (java.version)');
+      expect(javaFiles).toContain('build.gradle (sourceCompatibility)');
+    });
+
+    it('scala has build.sbt detection file', () => {
+      const scalaFiles = DEFAULT_DETECTION_FILES.scala;
+      expect(scalaFiles).toContain('build.sbt');
+      expect(scalaFiles).toContain('.scala-version');
+      expect(scalaFiles).toContain('.sdkmanrc');
+      expect(scalaFiles).toContain('.tool-versions');
     });
 
     it('most languages support .tool-versions', () => {

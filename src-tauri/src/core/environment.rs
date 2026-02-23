@@ -49,14 +49,24 @@ fn normalize_env_type(input: &str) -> String {
         // Java/Kotlin providers
         "sdkman" | "system-java" => "java".to_string(),
         "sdkman-kotlin" | "system-kotlin" => "kotlin".to_string(),
+        // Scala providers
+        "sdkman-scala" => "scala".to_string(),
+        // Groovy providers
+        "sdkman-groovy" => "groovy".to_string(),
         // PHP providers
         "phpbrew" | "system-php" => "php".to_string(),
         // .NET providers
         "dotnet" | "system-dotnet" => "dotnet".to_string(),
         // Deno providers
         "deno" | "system-deno" => "deno".to_string(),
+        // Zig providers
+        "zig" | "system-zig" => "zig".to_string(),
+        // Dart/Flutter providers
+        "fvm" | "system-dart" => "dart".to_string(),
         // Bun providers
         "system-bun" => "bun".to_string(),
+        // Lua providers
+        "system-lua" => "lua".to_string(),
         _ if input.starts_with("system-") => {
             input.strip_prefix("system-").unwrap_or(input).to_string()
         }
@@ -74,10 +84,27 @@ fn candidate_provider_ids(env_type: &str) -> &'static [&'static str] {
         "ruby" => &["rbenv", "mise", "asdf", "system-ruby"],
         "java" => &["sdkman", "mise", "asdf", "system-java"],
         "kotlin" => &["sdkman-kotlin", "mise", "asdf", "system-kotlin"],
+        "scala" => &["sdkman-scala", "mise", "asdf", "system-scala"],
         "php" => &["phpbrew", "mise", "asdf", "system-php"],
         "dotnet" => &["dotnet", "mise", "asdf", "system-dotnet"],
         "deno" => &["deno", "mise", "asdf", "system-deno"],
+        "zig" => &["zig", "mise", "asdf", "system-zig"],
+        "dart" => &["fvm", "mise", "asdf", "system-dart"],
         "bun" => &["system-bun"],
+        "lua" => &["mise", "asdf", "system-lua"],
+        "groovy" => &["sdkman-groovy", "mise", "asdf", "system-groovy"],
+        "elixir" => &["mise", "asdf", "system-elixir"],
+        "erlang" => &["mise", "asdf", "system-erlang"],
+        "swift" => &["mise", "asdf", "system-swift"],
+        "julia" => &["mise", "asdf", "system-julia"],
+        "perl" => &["mise", "asdf", "system-perl"],
+        "r" => &["mise", "asdf", "system-r"],
+        "haskell" => &["mise", "asdf", "system-haskell"],
+        "clojure" => &["mise", "asdf", "system-clojure"],
+        "crystal" => &["mise", "asdf", "system-crystal"],
+        "nim" => &["mise", "asdf", "system-nim"],
+        "ocaml" => &["mise", "asdf", "system-ocaml"],
+        "fortran" => &["system-fortran"],
         _ => &[],
     }
 }
@@ -777,6 +804,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn normalize_env_type_maps_sdkman_scala() {
+        assert_eq!(normalize_env_type("sdkman-scala"), "scala");
+    }
+
+    #[test]
+    fn normalize_env_type_maps_all_jvm_providers() {
+        assert_eq!(normalize_env_type("sdkman"), "java");
+        assert_eq!(normalize_env_type("sdkman-kotlin"), "kotlin");
+        assert_eq!(normalize_env_type("sdkman-scala"), "scala");
+        assert_eq!(normalize_env_type("system-java"), "java");
+        assert_eq!(normalize_env_type("system-kotlin"), "kotlin");
+    }
+
+    #[test]
+    fn candidate_provider_ids_includes_scala() {
+        let candidates = candidate_provider_ids("scala");
+        assert!(candidates.contains(&"sdkman-scala"));
+        assert!(candidates.contains(&"mise"));
+        assert!(candidates.contains(&"asdf"));
+    }
+
     #[tokio::test]
     async fn resolve_provider_skips_disabled_direct_provider() {
         let mut registry = ProviderRegistry::new();
@@ -859,5 +908,30 @@ mod tests {
         let deser: EnvCleanupResult = serde_json::from_str(&json).unwrap();
         assert_eq!(deser.removed.len(), 2);
         assert_eq!(deser.freed_bytes, 3072);
+    }
+
+    #[test]
+    fn normalize_env_type_dart_providers() {
+        assert_eq!(normalize_env_type("fvm"), "dart");
+        assert_eq!(normalize_env_type("system-dart"), "dart");
+        // dart itself should pass through
+        assert_eq!(normalize_env_type("dart"), "dart");
+    }
+
+    #[test]
+    fn candidate_provider_ids_dart() {
+        let candidates = candidate_provider_ids("dart");
+        assert!(candidates.contains(&"fvm"), "fvm should be a candidate for dart");
+        assert!(candidates.contains(&"system-dart"), "system-dart should be a candidate for dart");
+        // fvm should come before system-dart (dedicated manager first)
+        let fvm_pos = candidates.iter().position(|&x| x == "fvm").unwrap();
+        let sys_pos = candidates.iter().position(|&x| x == "system-dart").unwrap();
+        assert!(fvm_pos < sys_pos, "fvm should be listed before system-dart");
+    }
+
+    #[test]
+    fn candidate_provider_ids_unknown_returns_empty() {
+        let candidates = candidate_provider_ids("unknown_language");
+        assert!(candidates.is_empty());
     }
 }

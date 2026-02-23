@@ -58,7 +58,8 @@ impl NpmProvider {
         let full_args = self.build_npm_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
         
-        let out = process::execute("npm", &args_refs, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let out = process::execute("npm", &args_refs, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -68,7 +69,8 @@ impl NpmProvider {
 
     /// Run npm without registry arguments (for commands that don't need them)
     async fn run_npm_raw(&self, args: &[&str]) -> CogniaResult<String> {
-        let out = process::execute("npm", args, None).await?;
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let out = process::execute("npm", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -80,7 +82,7 @@ impl NpmProvider {
         if cfg!(windows) {
             std::env::var("APPDATA")
                 .ok()
-                .map(|p| PathBuf::from(p).join("npm"))
+                .map(|p| PathBuf::from(p).join("npm").join("node_modules"))
         } else {
             Some(PathBuf::from("/usr/local/lib/node_modules"))
         }
@@ -132,6 +134,7 @@ impl Provider for NpmProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -310,11 +313,15 @@ impl Provider for NpmProvider {
             req.name.clone()
         };
 
-        let args = if req.global {
+        let mut args = if req.global {
             vec!["install", "-g", &pkg]
         } else {
             vec!["install", &pkg]
         };
+
+        if req.force {
+            args.push("--force");
+        }
 
         self.run_npm(&args).await?;
 
@@ -349,7 +356,10 @@ impl Provider for NpmProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let args = vec!["uninstall", "-g", &req.name];
+        let mut args = vec!["uninstall", "-g", &req.name];
+        if req.force {
+            args.push("--force");
+        }
         self.run_npm(&args).await?;
         Ok(())
     }
@@ -473,6 +483,16 @@ impl SystemPackageProvider for NpmProvider {
         let out = self.run_npm_raw(&["list", "-g", name, "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
     }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        self.run_npm(&["update", "-g", name]).await?;
+        Ok(())
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        self.run_npm_raw(&["update", "-g"]).await?;
+        Ok(vec!["All global npm packages upgraded".into()])
+    }
 }
 
 #[cfg(test)]
@@ -505,5 +525,24 @@ mod tests {
         let args = provider.build_npm_args(&["install", "lodash"]);
         
         assert_eq!(args, vec!["install".to_string(), "lodash".to_string()]);
+    }
+
+    #[test]
+    fn test_npm_capabilities_include_upgrade() {
+        let provider = NpmProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Upgrade));
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_npm_global_prefix_includes_node_modules() {
+        let provider = NpmProvider::new();
+        if let Some(prefix) = provider.get_global_prefix() {
+            if cfg!(windows) {
+                assert!(prefix.to_string_lossy().contains("node_modules"));
+            }
+        }
     }
 }

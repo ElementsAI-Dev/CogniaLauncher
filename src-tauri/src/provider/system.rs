@@ -23,6 +23,23 @@ pub enum SystemEnvironmentType {
     Dotnet,
     Deno,
     Bun,
+    Zig,
+    Dart,
+    Lua,
+    Scala,
+    Groovy,
+    Elixir,
+    Erlang,
+    Swift,
+    Julia,
+    Perl,
+    R,
+    Haskell,
+    Clojure,
+    Crystal,
+    Nim,
+    Ocaml,
+    Fortran,
 }
 
 impl SystemEnvironmentType {
@@ -39,6 +56,23 @@ impl SystemEnvironmentType {
             Self::Dotnet => "system-dotnet",
             Self::Deno => "system-deno",
             Self::Bun => "system-bun",
+            Self::Zig => "system-zig",
+            Self::Dart => "system-dart",
+            Self::Lua => "system-lua",
+            Self::Scala => "system-scala",
+            Self::Groovy => "system-groovy",
+            Self::Elixir => "system-elixir",
+            Self::Erlang => "system-erlang",
+            Self::Swift => "system-swift",
+            Self::Julia => "system-julia",
+            Self::Perl => "system-perl",
+            Self::R => "system-r",
+            Self::Haskell => "system-haskell",
+            Self::Clojure => "system-clojure",
+            Self::Crystal => "system-crystal",
+            Self::Nim => "system-nim",
+            Self::Ocaml => "system-ocaml",
+            Self::Fortran => "system-fortran",
         }
     }
 
@@ -55,6 +89,23 @@ impl SystemEnvironmentType {
             Self::Dotnet => ".NET (System)",
             Self::Deno => "Deno (System)",
             Self::Bun => "Bun (System)",
+            Self::Zig => "Zig (System)",
+            Self::Dart => "Dart (System)",
+            Self::Lua => "Lua (System)",
+            Self::Scala => "Scala (System)",
+            Self::Groovy => "Groovy (System)",
+            Self::Elixir => "Elixir (System)",
+            Self::Erlang => "Erlang/OTP (System)",
+            Self::Swift => "Swift (System)",
+            Self::Julia => "Julia (System)",
+            Self::Perl => "Perl (System)",
+            Self::R => "R (System)",
+            Self::Haskell => "Haskell/GHC (System)",
+            Self::Clojure => "Clojure (System)",
+            Self::Crystal => "Crystal (System)",
+            Self::Nim => "Nim (System)",
+            Self::Ocaml => "OCaml (System)",
+            Self::Fortran => "Fortran (System)",
         }
     }
 
@@ -71,6 +122,23 @@ impl SystemEnvironmentType {
             Self::Dotnet => "dotnet",
             Self::Deno => "deno",
             Self::Bun => "bun",
+            Self::Zig => "zig",
+            Self::Dart => "dart",
+            Self::Lua => "lua",
+            Self::Scala => "scala",
+            Self::Groovy => "groovy",
+            Self::Elixir => "elixir",
+            Self::Erlang => "erlang",
+            Self::Swift => "swift",
+            Self::Julia => "julia",
+            Self::Perl => "perl",
+            Self::R => "r",
+            Self::Haskell => "haskell",
+            Self::Clojure => "clojure",
+            Self::Crystal => "crystal",
+            Self::Nim => "nim",
+            Self::Ocaml => "ocaml",
+            Self::Fortran => "fortran",
         }
     }
 
@@ -160,6 +228,128 @@ impl SystemEnvironmentType {
                 version_files: vec![".bun-version", ".tool-versions"],
                 manifest_files: vec![],
             },
+            Self::Zig => SystemDetectionConfig {
+                commands: vec!["zig"],
+                version_args: vec!["version"],
+                version_pattern: r"(\d+\.\d+\.\d+(?:-dev\.\d+\+\w+)?)",
+                version_files: vec![".zig-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Dart => SystemDetectionConfig {
+                commands: vec!["dart"],
+                version_args: vec!["--version"],
+                version_pattern: r"Dart SDK version: (\d+\.\d+\.\d+)",
+                version_files: vec![".dart-version", ".tool-versions"],
+                manifest_files: vec![("pubspec.yaml", r#"sdk:\s*['"]?[>=<^]*\s*(\d+\.\d+\.\d+)"#)],
+            },
+            Self::Lua => SystemDetectionConfig {
+                commands: vec!["lua"],
+                version_args: vec!["-v"],
+                version_pattern: r"Lua (\d+\.\d+(?:\.\d+)?)",
+                version_files: vec![".lua-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Scala => SystemDetectionConfig {
+                commands: vec!["scala"],
+                version_args: vec!["-version"],
+                version_pattern: r"version (\d+\.\d+\.\d+)",
+                version_files: vec![".scala-version", ".tool-versions", ".sdkmanrc"],
+                manifest_files: vec![],
+            },
+            Self::Groovy => SystemDetectionConfig {
+                commands: vec!["groovy"],
+                version_args: vec!["--version"],
+                version_pattern: r"Groovy Version: (\d+\.\d+\.\d+)",
+                version_files: vec![".tool-versions", ".sdkmanrc"],
+                manifest_files: vec![],
+            },
+            Self::Elixir => SystemDetectionConfig {
+                commands: vec!["elixir"],
+                version_args: vec!["--version"],
+                version_pattern: r"Elixir (\d+\.\d+\.\d+)",
+                version_files: vec![".elixir-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Erlang => SystemDetectionConfig {
+                commands: vec!["erl"],
+                version_args: vec!["-noshell", "-eval", r#"io:format("~s~n",[erlang:system_info(otp_release)]),halt()."#],
+                version_pattern: r"(\d+)",
+                version_files: vec![".erlang-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Swift => SystemDetectionConfig {
+                commands: vec!["swift"],
+                version_args: vec!["--version"],
+                version_pattern: r"(?:Apple )?Swift version (\d+\.\d+(?:\.\d+)?)",
+                version_files: vec![".swift-version", ".tool-versions"],
+                manifest_files: vec![("Package.swift", r"swift-tools-version:\s*(\d+\.\d+(?:\.\d+)?)")],
+            },
+            Self::Julia => SystemDetectionConfig {
+                commands: vec!["julia"],
+                version_args: vec!["--version"],
+                version_pattern: r"julia version (\d+\.\d+\.\d+)",
+                version_files: vec![".julia-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Perl => SystemDetectionConfig {
+                commands: vec!["perl"],
+                version_args: vec!["-e", "print $^V"],
+                version_pattern: r"v(\d+\.\d+\.\d+)",
+                version_files: vec![".perl-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::R => SystemDetectionConfig {
+                commands: vec!["Rscript", "R"],
+                version_args: vec!["--version"],
+                version_pattern: r"(\d+\.\d+\.\d+)",
+                version_files: vec![".Rversion", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Haskell => SystemDetectionConfig {
+                commands: vec!["ghc"],
+                version_args: vec!["--version"],
+                version_pattern: r"version (\d+\.\d+\.\d+)",
+                version_files: vec![".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Clojure => SystemDetectionConfig {
+                #[cfg(windows)]
+                commands: vec!["clojure", "clj"],
+                #[cfg(not(windows))]
+                commands: vec!["clj", "clojure"],
+                version_args: vec!["--version"],
+                version_pattern: r"version (\d+\.\d+\.\d+(?:\.\d+)?)",
+                version_files: vec![".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Crystal => SystemDetectionConfig {
+                commands: vec!["crystal"],
+                version_args: vec!["--version"],
+                version_pattern: r"Crystal (\d+\.\d+\.\d+)",
+                version_files: vec![".crystal-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Nim => SystemDetectionConfig {
+                commands: vec!["nim"],
+                version_args: vec!["--version"],
+                version_pattern: r"Version (\d+\.\d+\.\d+)",
+                version_files: vec![".nim-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Ocaml => SystemDetectionConfig {
+                commands: vec!["ocaml"],
+                version_args: vec!["--version"],
+                version_pattern: r"version (\d+\.\d+\.\d+)",
+                version_files: vec![".ocaml-version", ".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Fortran => SystemDetectionConfig {
+                commands: vec!["gfortran"],
+                version_args: vec!["--version"],
+                version_pattern: r"(\d+\.\d+\.\d+)",
+                version_files: vec![".tool-versions"],
+                manifest_files: vec![],
+            },
         }
     }
 
@@ -177,6 +367,23 @@ impl SystemEnvironmentType {
             Self::Dotnet,
             Self::Deno,
             Self::Bun,
+            Self::Zig,
+            Self::Dart,
+            Self::Lua,
+            Self::Scala,
+            Self::Groovy,
+            Self::Elixir,
+            Self::Erlang,
+            Self::Swift,
+            Self::Julia,
+            Self::Perl,
+            Self::R,
+            Self::Haskell,
+            Self::Clojure,
+            Self::Crystal,
+            Self::Nim,
+            Self::Ocaml,
+            Self::Fortran,
         ]
     }
 }
@@ -535,11 +742,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_system_dart_detection() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Dart);
+        let available = provider.is_available().await;
+        println!("Dart system available: {}", available);
+
+        if available {
+            let version = provider.get_current_version().await.unwrap();
+            println!("Dart version: {:?}", version);
+        }
+    }
+
+    #[tokio::test]
     async fn test_all_system_environments() {
         for env_type in SystemEnvironmentType::all() {
             let provider = SystemEnvironmentProvider::new(env_type);
             let available = provider.is_available().await;
             println!("{:?} available: {}", env_type, available);
         }
+    }
+
+    #[test]
+    fn test_dart_system_config() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Dart);
+        assert_eq!(provider.id(), "system-dart");
+        assert_eq!(provider.display_name(), "Dart (System)");
+        assert_eq!(provider.version_file_name(), ".dart-version");
     }
 }

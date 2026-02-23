@@ -514,6 +514,23 @@ impl SystemPackageProvider for PipProvider {
         false
     }
 
+    async fn get_version(&self) -> CogniaResult<String> {
+        let out = self.run_pip_raw(&["--version"]).await?;
+        // Output: "pip 24.3.1 from /path/site-packages/pip (python 3.12)"
+        Ok(out.trim().split_whitespace().nth(1).unwrap_or("unknown").to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("pip")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("pip not found".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("python -m ensurepip --upgrade".into())
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         // show doesn't need mirror args
         let out = self.run_pip_raw(&["show", name]).await;

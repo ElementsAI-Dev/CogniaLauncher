@@ -56,14 +56,17 @@ pub use environment::{
     env_installed_versions, env_list, env_list_global_packages, env_list_providers,
     env_load_settings, env_migrate_packages, env_resolve_alias, env_save_settings, env_uninstall,
     env_use_global, env_use_local, env_verify_install, env_get_eol_info, env_get_version_eol,
-    rustup_add_component, rustup_add_target,
-    rustup_list_components, rustup_list_targets, rustup_remove_component, rustup_remove_target,
-    rustup_self_update, rustup_show, rustup_update_all,
+    rustup_add_component, rustup_add_target, rustup_get_profile,
+    rustup_list_components, rustup_list_targets, rustup_override_list, rustup_override_set,
+    rustup_override_unset, rustup_remove_component, rustup_remove_target, rustup_run,
+    rustup_self_update, rustup_set_profile, rustup_show, rustup_update_all, rustup_which,
+    go_env_info, go_mod_tidy, go_mod_download, go_clean_cache, go_cache_info,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
-    github_get_token, github_list_branches, github_list_releases, github_list_tags,
-    github_parse_url, github_set_token, github_validate_repo, github_validate_token,
+    github_get_repo_info, github_get_token, github_list_branches, github_list_releases,
+    github_list_tags, github_parse_url, github_set_token, github_validate_repo,
+    github_validate_token,
 };
 pub use gitlab::{
     gitlab_clear_token, gitlab_download_asset, gitlab_download_source, gitlab_get_instance_url,

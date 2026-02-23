@@ -1,4 +1,4 @@
-use super::api::get_api_client;
+use super::api::{get_api_client, DEFAULT_NPM_REGISTRY};
 use super::node_base::split_name_version;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
@@ -8,22 +8,29 @@ use crate::platform::{
 };
 use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
+use reqwest::Client;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::sync::OnceCell;
 
 /// Yarn package manager for Node.js
 ///
-/// Supports custom npm registry configuration via `--registry` flag.
+/// Supports both Yarn Classic (v1) and Yarn Berry (v2+/v4+).
+/// Yarn Berry removed `yarn global` — global package operations are
+/// only available on Yarn Classic.
 pub struct YarnProvider {
     /// Custom registry URL
     registry_url: Option<String>,
+    /// Cached major version (detected lazily)
+    major_version: OnceCell<u32>,
 }
 
 impl YarnProvider {
     pub fn new() -> Self {
         Self {
             registry_url: None,
+            major_version: OnceCell::new(),
         }
     }
 
@@ -85,8 +92,37 @@ impl YarnProvider {
         }
     }
 
-    /// Get the installed version of a global package
+    /// Detect and cache the Yarn major version (1 for Classic, 2+ for Berry)
+    async fn get_major_version(&self) -> u32 {
+        *self.major_version.get_or_init(|| async {
+            let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+            match process::execute("yarn", &["--version"], Some(opts)).await {
+                Ok(output) if output.success => {
+                    let version_str = output.stdout.trim();
+                    version_str
+                        .split('.')
+                        .next()
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(1)
+                }
+                _ => 1,
+            }
+        }).await
+    }
+
+    /// Check if this is Yarn Berry (v2+)
+    async fn is_berry(&self) -> bool {
+        self.get_major_version().await >= 2
+    }
+
+    /// Get the installed version of a global package (Yarn Classic only)
     async fn get_package_version(&self, name: &str, global: bool) -> CogniaResult<String> {
+        if global && self.is_berry().await {
+            return Err(CogniaError::Provider(
+                "Yarn Berry (v2+) does not support global packages".into(),
+            ));
+        }
+
         let args = if global {
             vec!["global", "list", "--depth=0", "--json"]
         } else {
@@ -100,7 +136,6 @@ impl YarnProvider {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(data) = json.get("data") {
                     if let Some(trees) = data.as_str() {
-                        // Look for package@version pattern
                         for part in trees.split(',') {
                             let part = part.trim();
                             let (pkg_name, pkg_version) = split_name_version(part);
@@ -111,7 +146,6 @@ impl YarnProvider {
                             }
                         }
                     }
-                    // Also handle trees as array (Yarn 2+)
                     if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
                         for tree in trees {
                             if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
@@ -129,6 +163,49 @@ impl YarnProvider {
         }
         
         Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
+
+    /// Fetch dependencies via npm registry API (used as fallback for Berry)
+    async fn get_dependencies_via_api(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        let pkg_path = if version.is_empty() {
+            format!("{}/latest", name)
+        } else {
+            format!("{}/{}", name, version)
+        };
+
+        let registry_url = self.registry_url
+            .as_deref()
+            .unwrap_or(DEFAULT_NPM_REGISTRY);
+        let url = format!("{}/{}", registry_url, pkg_path);
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("CogniaLauncher/0.1.0")
+            .build()
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+
+        if let Ok(resp) = client.get(&url).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(deps) = json["dependencies"].as_object() {
+                        return Ok(deps
+                            .iter()
+                            .filter_map(|(dep_name, constraint_val)| {
+                                let constraint_str = constraint_val.as_str()?;
+                                let parsed = constraint_str
+                                    .parse::<VersionConstraint>()
+                                    .unwrap_or(VersionConstraint::Any);
+                                Some(Dependency {
+                                    name: dep_name.to_string(),
+                                    constraint: parsed,
+                                })
+                            })
+                            .collect());
+                    }
+                }
+            }
+        }
+        Ok(vec![])
     }
 }
 
@@ -155,6 +232,7 @@ impl Provider for YarnProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
             Capability::LockVersion,
         ])
     }
@@ -225,6 +303,11 @@ impl Provider for YarnProvider {
     }
 
     async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
+        // Yarn Berry uses `yarn npm info` instead of `yarn info`
+        if self.is_berry().await {
+            return self.get_dependencies_via_api(name, version).await;
+        }
+
         let pkg = if version.is_empty() { name.to_string() } else { format!("{}@{}", name, version) };
         let out = self.run_yarn(&["info", &pkg, "dependencies", "--json"]).await?;
 
@@ -280,21 +363,30 @@ impl Provider for YarnProvider {
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+        if req.global && self.is_berry().await {
+            return Err(CogniaError::Provider(
+                "Yarn Berry (v2+) does not support global packages. Use npm or pnpm for global installs.".into(),
+            ));
+        }
+
         let pkg = if let Some(v) = &req.version {
             format!("{}@{}", req.name, v)
         } else {
             req.name.clone()
         };
 
-        let args = if req.global {
+        let mut args = if req.global {
             vec!["global", "add", &pkg]
         } else {
             vec!["add", &pkg]
         };
 
+        if req.force {
+            args.push("--force");
+        }
+
         self.run_yarn(&args).await?;
 
-        // Get the actual installed version
         let actual_version = self
             .get_package_version(&req.name, req.global)
             .await
@@ -324,12 +416,25 @@ impl Provider for YarnProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let args = vec!["global", "remove", &req.name];
+        if self.is_berry().await {
+            return Err(CogniaError::Provider(
+                "Yarn Berry (v2+) does not support global packages. Use npm or pnpm for global uninstalls.".into(),
+            ));
+        }
+
+        let mut args = vec!["global", "remove", &req.name];
+        if req.force {
+            args.push("--force");
+        }
         self.run_yarn(&args).await?;
         Ok(())
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        if self.is_berry().await {
+            return Ok(vec![]);
+        }
+
         let output = self.run_yarn_raw(&["global", "list", "--json"]).await?;
 
         let mut packages = Vec::new();
@@ -376,47 +481,32 @@ impl Provider for YarnProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        // yarn outdated may return non-zero exit code when packages are outdated
-        let result = process::execute("yarn", &["outdated", "--json"], None).await;
+        // For Yarn Berry or global package checking, use npm registry API
+        // (Yarn Classic's `yarn outdated` only checks local project deps, not global)
+        let installed = self.list_installed(InstalledFilter {
+            global_only: true,
+            name_filter: None,
+        }).await.unwrap_or_default();
 
-        let output = result.map(|o| {
-            if o.stdout.trim().is_empty() { Err(()) } else { Ok(o.stdout) }
-        }).unwrap_or(Err(()));
-
-        let Ok(out_str) = output else {
-            return Ok(vec![]);
-        };
-
-        // Filter helper closure
-        let should_include = |name: &str| -> bool {
-            packages.is_empty() || packages.iter().any(|p| p == name)
+        let targets: Vec<&InstalledPackage> = if packages.is_empty() {
+            installed.iter().collect()
+        } else {
+            installed.iter().filter(|p| packages.contains(&p.name)).collect()
         };
 
         let mut updates = Vec::new();
-        for line in out_str.lines() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(data) = json.get("data") {
-                    if let Some(body) = data.get("body") {
-                        if let Some(arr) = body.as_array() {
-                            for item in arr {
-                                if let Some(pkg_arr) = item.as_array() {
-                                    if pkg_arr.len() >= 4 {
-                                        let name = pkg_arr[0].as_str().unwrap_or("").to_string();
-                                        let current = pkg_arr[1].as_str().unwrap_or("").to_string();
-                                        let latest = pkg_arr[3].as_str().unwrap_or("").to_string();
+        let api = get_api_client();
 
-                                        if !name.is_empty() && current != latest && should_include(&name) {
-                                            updates.push(UpdateInfo {
-                                                name,
-                                                current_version: current,
-                                                latest_version: latest,
-                                                provider: self.id().into(),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
+        for pkg in targets {
+            if let Ok(info) = api.get_npm_package(&pkg.name).await {
+                if let Some(latest) = info.dist_tags.get("latest") {
+                    if *latest != pkg.version {
+                        updates.push(UpdateInfo {
+                            name: pkg.name.clone(),
+                            current_version: pkg.version.clone(),
+                            latest_version: latest.clone(),
+                            provider: self.id().into(),
+                        });
                     }
                 }
             }
@@ -453,8 +543,31 @@ impl SystemPackageProvider for YarnProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        if self.is_berry().await {
+            return Ok(false);
+        }
         let out = self.run_yarn_raw(&["global", "list", "--depth=0"]).await;
         Ok(out.map(|s| s.contains(name)).unwrap_or(false))
+    }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        if self.is_berry().await {
+            return Err(CogniaError::Provider(
+                "Yarn Berry (v2+) does not support global packages. Use npm or pnpm for upgrades.".into(),
+            ));
+        }
+        self.run_yarn(&["global", "upgrade", name]).await?;
+        Ok(())
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        if self.is_berry().await {
+            return Err(CogniaError::Provider(
+                "Yarn Berry (v2+) does not support global packages.".into(),
+            ));
+        }
+        self.run_yarn_raw(&["global", "upgrade"]).await?;
+        Ok(vec!["All global yarn packages upgraded".into()])
     }
 }
 
@@ -480,5 +593,12 @@ mod tests {
         assert!(args.contains(&"add".to_string()));
         assert!(args.contains(&"lodash".to_string()));
         assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
+    }
+
+    #[test]
+    fn test_yarn_default_version() {
+        let provider = YarnProvider::new();
+        // major_version is lazily initialized, default state is unset
+        assert!(provider.major_version.get().is_none());
     }
 }

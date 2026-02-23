@@ -79,4 +79,26 @@ describe("AccentColorPicker", () => {
     const group = firstRadio.parentElement!;
     expect(group).toHaveClass("custom-class");
   });
+
+  it("forwards aria-labelledby and aria-describedby to ToggleGroup", () => {
+    render(
+      <AccentColorPicker
+        {...defaultProps}
+        aria-labelledby="my-label"
+        aria-describedby="my-desc"
+      />,
+    );
+
+    const group = screen.getByRole("group");
+    expect(group).toHaveAttribute("aria-labelledby", "my-label");
+    expect(group).toHaveAttribute("aria-describedby", "my-desc");
+  });
+
+  it("omits aria attributes when not provided", () => {
+    render(<AccentColorPicker {...defaultProps} />);
+
+    const group = screen.getByRole("group");
+    expect(group).not.toHaveAttribute("aria-labelledby");
+    expect(group).not.toHaveAttribute("aria-describedby");
+  });
 });

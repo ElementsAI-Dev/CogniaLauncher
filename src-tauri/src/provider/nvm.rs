@@ -2,11 +2,12 @@ use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     env::{dirs_home, EnvModifications, Platform},
-    process,
+    process::{self, ProcessOptions},
 };
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub struct NvmProvider {
     nvm_dir: Option<PathBuf>,
@@ -29,12 +30,14 @@ impl NvmProvider {
     }
 
     async fn run_nvm(&self, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
+
         #[cfg(unix)]
         {
             let nvm_dir = self.nvm_dir()?;
             let nvm_sh = nvm_dir.join("nvm.sh");
             let cmd = format!("source \"{}\" && nvm {}", nvm_sh.display(), args.join(" "));
-            let output = process::execute_shell(&cmd, None).await?;
+            let output = process::execute_shell(&cmd, Some(opts)).await?;
             if output.success {
                 Ok(output.stdout)
             } else {
@@ -45,7 +48,7 @@ impl NvmProvider {
         #[cfg(windows)]
         {
             // nvm_dir is not used on windows for running nvm command as it uses system PATH
-            let output = process::execute("nvm", args, None).await?;
+            let output = process::execute("nvm", args, Some(opts)).await?;
             if output.success {
                 Ok(output.stdout)
             } else {
@@ -75,6 +78,7 @@ impl Provider for NvmProvider {
         HashSet::from([
             Capability::Install,
             Capability::Uninstall,
+            Capability::Search,
             Capability::List,
             Capability::VersionSwitch,
             Capability::MultiVersion,
@@ -110,6 +114,9 @@ impl Provider for NvmProvider {
         query: &str,
         _options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
+        #[cfg(windows)]
+        let output = self.run_nvm(&["list", "available"]).await?;
+        #[cfg(not(windows))]
         let output = self.run_nvm(&["ls-remote", "--lts"]).await?;
 
         let versions: Vec<PackageSummary> = output
@@ -151,6 +158,9 @@ impl Provider for NvmProvider {
     }
 
     async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
+        #[cfg(windows)]
+        let output = self.run_nvm(&["list", "available"]).await?;
+        #[cfg(not(windows))]
         let output = self.run_nvm(&["ls-remote"]).await?;
 
         let versions: Vec<VersionInfo> = output
@@ -174,11 +184,17 @@ impl Provider for NvmProvider {
     }
 
     async fn install(&self, request: InstallRequest) -> CogniaResult<InstallReceipt> {
-        let version = request.version.as_deref().unwrap_or("--lts");
+        // nvm-windows uses "lts" without "--" prefix
+        #[cfg(windows)]
+        let default_version = "lts";
+        #[cfg(not(windows))]
+        let default_version = "--lts";
+
+        let version = request.version.as_deref().unwrap_or(default_version);
 
         self.run_nvm(&["install", version]).await?;
 
-        // Resolve actual version (especially when --lts was used)
+        // Resolve actual version (especially when lts was used)
         let actual_version = if version == "--lts" || version == "lts" {
             self.get_current_version()
                 .await?
@@ -213,6 +229,9 @@ impl Provider for NvmProvider {
         &self,
         filter: InstalledFilter,
     ) -> CogniaResult<Vec<InstalledPackage>> {
+        #[cfg(windows)]
+        let output = self.run_nvm(&["list"]).await?;
+        #[cfg(not(windows))]
         let output = self.run_nvm(&["ls"]).await?;
         let nvm_dir = self.nvm_dir()?;
 
@@ -246,13 +265,69 @@ impl Provider for NvmProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        Ok(vec![])
+        let installed = self.list_installed_versions().await.unwrap_or_default();
+        if installed.is_empty() {
+            return Ok(vec![]);
+        }
+
+        #[cfg(windows)]
+        let remote_output = self.run_nvm(&["list", "available"]).await.unwrap_or_default();
+        #[cfg(not(windows))]
+        let remote_output = self.run_nvm(&["ls-remote"]).await.unwrap_or_default();
+
+        let remote_versions: Vec<&str> = remote_output
+            .lines()
+            .filter_map(|l| {
+                let trimmed = l.trim();
+                trimmed.split_whitespace().find(|s| s.starts_with('v'))
+            })
+            .collect();
+
+        let mut updates = Vec::new();
+        for iv in &installed {
+            let ver = iv.version.trim_start_matches('v');
+            let parts: Vec<&str> = ver.split('.').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let major = parts[0];
+
+            let latest_in_major = remote_versions
+                .iter()
+                .filter_map(|rv| {
+                    let rv_clean = rv.trim_start_matches('v');
+                    let rv_parts: Vec<&str> = rv_clean.split('.').collect();
+                    if rv_parts.first() == Some(&major) {
+                        Some(*rv)
+                    } else {
+                        None
+                    }
+                })
+                .last();
+
+            if let Some(latest) = latest_in_major {
+                let latest_clean = latest.trim_start_matches('v');
+                if latest_clean != ver {
+                    updates.push(UpdateInfo {
+                        name: format!("node@{}", iv.version),
+                        current_version: iv.version.clone(),
+                        latest_version: latest.to_string(),
+                        provider: self.id().into(),
+                    });
+                }
+            }
+        }
+
+        Ok(updates)
     }
 }
 
 #[async_trait]
 impl EnvironmentProvider for NvmProvider {
     async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
+        #[cfg(windows)]
+        let output = self.run_nvm(&["list"]).await?;
+        #[cfg(not(windows))]
         let output = self.run_nvm(&["ls"]).await?;
         let current = self.get_current_version().await?.unwrap_or_default();
         let nvm_dir = self.nvm_dir()?;
@@ -288,6 +363,10 @@ impl EnvironmentProvider for NvmProvider {
     }
 
     async fn set_global_version(&self, version: &str) -> CogniaResult<()> {
+        // nvm-windows doesn't have `alias` command; `nvm use` sets the persistent default
+        #[cfg(windows)]
+        self.run_nvm(&["use", version]).await?;
+        #[cfg(not(windows))]
         self.run_nvm(&["alias", "default", version]).await?;
         Ok(())
     }
@@ -418,5 +497,106 @@ impl EnvironmentProvider for NvmProvider {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for NvmProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        #[cfg(windows)]
+        {
+            let opts = ProcessOptions::new().with_timeout(Duration::from_secs(10));
+            let output = process::execute("nvm", &["version"], Some(opts)).await?;
+            if output.success {
+                Ok(output.stdout.trim().to_string())
+            } else {
+                Err(CogniaError::Provider(output.stderr))
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let output = self.run_nvm(&["--version"]).await?;
+            Ok(output.trim().to_string())
+        }
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        #[cfg(windows)]
+        {
+            process::which("nvm")
+                .await
+                .map(PathBuf::from)
+                .ok_or_else(|| CogniaError::Provider("nvm not found in PATH".into()))
+        }
+        #[cfg(not(windows))]
+        {
+            // nvm is a shell function, not a binary — return the nvm.sh script path
+            self.nvm_dir()
+                .map(|d| d.join("nvm.sh"))
+        }
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        if cfg!(windows) {
+            Some("Install nvm-windows: winget install CoreyButler.NVMforWindows".into())
+        } else {
+            Some("Install nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash".into())
+        }
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let versions = self.list_installed_versions().await?;
+        Ok(versions.iter().any(|v| v.version == name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nvm_capabilities_include_search() {
+        let provider = NvmProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+    }
+
+    #[test]
+    fn test_nvm_provider_id() {
+        let provider = NvmProvider::new();
+        assert_eq!(provider.id(), "nvm");
+        assert_eq!(provider.display_name(), "Node Version Manager");
+    }
+
+    #[test]
+    fn test_nvm_install_instructions() {
+        let provider = NvmProvider::new();
+        let instructions = provider.get_install_instructions();
+        assert!(instructions.is_some());
+        let text = instructions.unwrap();
+        if cfg!(windows) {
+            assert!(text.contains("winget") || text.contains("nvm"));
+        } else {
+            assert!(text.contains("curl") || text.contains("nvm"));
+        }
+    }
+
+    #[test]
+    fn test_nvm_no_elevation_required() {
+        let provider = NvmProvider::new();
+        assert!(!provider.requires_elevation("install"));
     }
 }

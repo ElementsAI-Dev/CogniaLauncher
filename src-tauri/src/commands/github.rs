@@ -264,6 +264,47 @@ pub async fn github_clear_token() -> Result<(), String> {
     settings.save().await.map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoInfoResponse {
+    pub full_name: String,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub license: Option<String>,
+    pub stargazers_count: u64,
+    pub forks_count: u64,
+    pub open_issues_count: u64,
+    pub default_branch: Option<String>,
+    pub archived: bool,
+    pub disabled: bool,
+    pub topics: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn github_get_repo_info(
+    repo: String,
+    token: Option<String>,
+) -> Result<RepoInfoResponse, String> {
+    let provider = make_github_provider(token);
+    let info = provider
+        .get_repo_info(&repo)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(RepoInfoResponse {
+        full_name: info.full_name,
+        description: info.description,
+        homepage: info.homepage,
+        license: info.license.map(|l| l.spdx_id),
+        stargazers_count: info.stargazers_count.unwrap_or(0),
+        forks_count: info.forks_count.unwrap_or(0),
+        open_issues_count: info.open_issues_count.unwrap_or(0),
+        default_branch: info.default_branch,
+        archived: info.archived.unwrap_or(false),
+        disabled: info.disabled.unwrap_or(false),
+        topics: info.topics.unwrap_or_default(),
+    })
+}
+
 #[tauri::command]
 pub async fn github_validate_token(token: String) -> Result<bool, String> {
     let provider = GitHubProvider::new().with_token(Some(token));

@@ -431,3 +431,43 @@ impl EnvironmentProvider for VoltaProvider {
         self
     }
 }
+
+#[async_trait]
+impl SystemPackageProvider for VoltaProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let out = self.run_volta(&["--version"]).await?;
+        Ok(out.trim().to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("volta")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("volta not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        if cfg!(windows) {
+            Some("Install Volta: winget install Volta.Volta".into())
+        } else {
+            Some("Install Volta: curl https://get.volta.sh | bash".into())
+        }
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        if let Ok(out) = self.run_volta(&["list", name]).await {
+            let items = Self::parse_volta_list(&out);
+            Ok(!items.is_empty())
+        } else {
+            Ok(false)
+        }
+    }
+}

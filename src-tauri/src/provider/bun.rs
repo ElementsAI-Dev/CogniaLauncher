@@ -140,6 +140,7 @@ impl Provider for BunProvider {
             Capability::Search,
             Capability::List,
             Capability::Update,
+            Capability::Upgrade,
         ])
     }
 
@@ -272,11 +273,15 @@ impl Provider for BunProvider {
             req.name.clone()
         };
 
-        let args = if req.global {
+        let mut args = if req.global {
             vec!["add", "-g", &pkg]
         } else {
             vec!["add", &pkg]
         };
+
+        if req.force {
+            args.push("--force");
+        }
 
         self.run_bun(&args).await?;
 
@@ -310,8 +315,10 @@ impl Provider for BunProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        // Use -g flag for global uninstall (matching install behavior)
-        let args = vec!["remove", "-g", &req.name];
+        let mut args = vec!["remove", "-g", &req.name];
+        if req.force {
+            args.push("--force");
+        }
         self.run_bun_raw(&args).await?;
         Ok(())
     }
@@ -445,6 +452,16 @@ impl SystemPackageProvider for BunProvider {
         let output = self.run_bun_raw(&["pm", "ls"]).await;
         Ok(output.map(|s| s.contains(name)).unwrap_or(false))
     }
+
+    async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
+        self.run_bun(&["update", "-g", name]).await?;
+        Ok(())
+    }
+
+    async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
+        self.run_bun_raw(&["update", "-g"]).await?;
+        Ok(vec!["All global bun packages upgraded".into()])
+    }
 }
 
 #[cfg(test)]
@@ -503,6 +520,7 @@ mod tests {
         assert!(caps.contains(&Capability::Search));
         assert!(caps.contains(&Capability::List));
         assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
     }
 
     #[test]

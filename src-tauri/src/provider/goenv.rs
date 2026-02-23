@@ -387,22 +387,38 @@ impl EnvironmentProvider for GoenvProvider {
             }
         }
 
-        // 3. Check go.mod for go directive
+        // 3. Check go.mod for toolchain directive (Go 1.21+) and go directive
         let go_mod = start_path.join("go.mod");
         if go_mod.exists() {
             if let Ok(content) = crate::platform::fs::read_file_string(&go_mod).await {
+                let mut go_version: Option<String> = None;
+                let mut toolchain_version: Option<String> = None;
+
                 for line in content.lines() {
                     let line = line.trim();
-                    if let Some(stripped) = line.strip_prefix("go ") {
+                    // Parse "toolchain goX.Y.Z" (Go 1.21+) — the actual build toolchain
+                    if let Some(stripped) = line.strip_prefix("toolchain go") {
                         let version = stripped.trim().to_string();
                         if !version.is_empty() {
-                            return Ok(Some(VersionDetection {
-                                version,
-                                source: VersionSource::Manifest,
-                                source_path: Some(go_mod),
-                            }));
+                            toolchain_version = Some(version);
                         }
                     }
+                    // Parse "go X.Y.Z" — minimum required version
+                    else if let Some(stripped) = line.strip_prefix("go ") {
+                        let version = stripped.trim().to_string();
+                        if !version.is_empty() {
+                            go_version = Some(version);
+                        }
+                    }
+                }
+
+                // Prefer toolchain directive (more precise) over go directive
+                if let Some(version) = toolchain_version.or(go_version) {
+                    return Ok(Some(VersionDetection {
+                        version,
+                        source: VersionSource::Manifest,
+                        source_path: Some(go_mod),
+                    }));
                 }
             }
         }
@@ -457,6 +473,24 @@ impl SystemPackageProvider for GoenvProvider {
         false
     }
 
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_goenv(&["--version"]).await?;
+        // Output format: "goenv 2.1.11" or similar
+        let version = output.trim().strip_prefix("goenv ").unwrap_or(output.trim());
+        Ok(version.to_string())
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("goenv")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("goenv not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        Some("git clone https://github.com/go-nv/goenv.git ~/.goenv && echo 'export GOENV_ROOT=\"$HOME/.goenv\"' >> ~/.bashrc && echo 'export PATH=\"$GOENV_ROOT/bin:$PATH\"' >> ~/.bashrc".to_string())
+    }
+
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let versions = self.list_installed_versions().await?;
         Ok(versions.iter().any(|v| v.version == name))
@@ -464,15 +498,35 @@ impl SystemPackageProvider for GoenvProvider {
 }
 
 /// Go package provider using go modules
-pub struct GoModProvider;
+pub struct GoModProvider {
+    /// Custom GOPROXY URL (mirrors like goproxy.cn, goproxy.io)
+    proxy_url: Option<String>,
+}
 
 impl GoModProvider {
     pub fn new() -> Self {
-        Self
+        Self { proxy_url: None }
+    }
+
+    /// Configure a custom Go module proxy URL (e.g. from mirror settings)
+    pub fn with_proxy_opt(mut self, url: Option<String>) -> Self {
+        self.proxy_url = url;
+        self
+    }
+
+    /// Get the configured proxy URL or the default Go proxy
+    fn proxy_base_url(&self) -> &str {
+        self.proxy_url
+            .as_deref()
+            .unwrap_or("https://proxy.golang.org")
     }
 
     async fn run_go(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(60));
+        let mut opts = ProcessOptions::new().with_timeout(Duration::from_secs(60));
+        // Pass GOPROXY env var when a custom proxy is configured
+        if let Some(ref proxy) = self.proxy_url {
+            opts.env.insert("GOPROXY".into(), format!("{},direct", proxy));
+        }
         let output = process::execute("go", args, Some(opts)).await?;
         if output.success {
             Ok(output.stdout)
@@ -505,6 +559,80 @@ impl GoModProvider {
 impl Default for GoModProvider {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Go environment info from `go env -json`
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoEnvInfo {
+    pub goroot: String,
+    pub gopath: String,
+    pub gobin: String,
+    pub goproxy: String,
+    pub goprivate: String,
+    pub gonosumdb: String,
+    pub gotoolchain: String,
+    pub gomodcache: String,
+    pub goos: String,
+    pub goarch: String,
+    pub goversion: String,
+    pub goflags: String,
+    pub cgo_enabled: String,
+}
+
+/// Go cache size info
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoCacheInfo {
+    pub build_cache_path: String,
+    pub build_cache_size: u64,
+    pub build_cache_size_human: String,
+    pub mod_cache_path: String,
+    pub mod_cache_size: u64,
+    pub mod_cache_size_human: String,
+}
+
+
+/// Calculate directory size in bytes (best-effort, non-recursive symlink following)
+pub fn go_dir_size(path: &str) -> u64 {
+    let path = std::path::Path::new(path);
+    if !path.exists() {
+        return 0;
+    }
+    go_walkdir_size(path)
+}
+
+fn go_walkdir_size(path: &std::path::Path) -> u64 {
+    let mut total: u64 = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_file() {
+                total += meta.len();
+            } else if meta.is_dir() {
+                total += go_walkdir_size(&entry.path());
+            }
+        }
+    }
+    total
+}
+
+pub fn go_format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
@@ -698,8 +826,9 @@ impl Provider for GoModProvider {
         // Try go list -m -json all in a temp module context
         // For now, query the Go module proxy for dependencies
         let proxy_url = format!(
-            "https://proxy.golang.org/{}/@v/{}.mod",
-            name,
+            "{}/@v/{}.mod",
+            // Remove trailing slash from proxy base URL if present
+            self.proxy_base_url().trim_end_matches('/').to_string() + "/" + name,
             if version.is_empty() { "latest" } else { version }
         );
 
@@ -887,5 +1016,487 @@ impl Provider for GoModProvider {
         }
 
         Ok(updates)
+    }
+}
+
+#[async_trait]
+impl SystemPackageProvider for GoModProvider {
+    async fn check_system_requirements(&self) -> CogniaResult<bool> {
+        Ok(self.is_available().await)
+    }
+
+    fn requires_elevation(&self, _operation: &str) -> bool {
+        false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        let output = self.run_go(&["version"]).await?;
+        // Output: "go version go1.22.5 linux/amd64"
+        let re = regex::Regex::new(r"go(\d+\.\d+(?:\.\d+)?)")
+            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        if let Some(caps) = re.captures(&output) {
+            if let Some(version) = caps.get(1) {
+                return Ok(version.as_str().to_string());
+            }
+        }
+        Err(CogniaError::Provider("Failed to parse Go version".into()))
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        process::which("go")
+            .await
+            .map(PathBuf::from)
+            .ok_or_else(|| CogniaError::Provider("go not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        if cfg!(windows) {
+            Some("winget install GoLang.Go".to_string())
+        } else if cfg!(target_os = "macos") {
+            Some("brew install go".to_string())
+        } else {
+            Some("Download from https://go.dev/dl/ or use your system package manager".to_string())
+        }
+    }
+
+    async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
+        let bin_dir = match Self::get_gobin() {
+            Some(dir) => dir,
+            None => return Ok(false),
+        };
+
+        let binary_name = name.rsplit('/').next().unwrap_or(name);
+        let mut binary_path = bin_dir.join(binary_name);
+
+        if cfg!(windows) && !binary_name.ends_with(".exe") {
+            binary_path = bin_dir.join(format!("{}.exe", binary_name));
+        }
+
+        Ok(binary_path.exists())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── GoenvProvider trait tests ──────────────────────────
+
+    #[test]
+    fn test_goenv_provider_id_and_display_name() {
+        let provider = GoenvProvider::new();
+        assert_eq!(provider.id(), "goenv");
+        assert_eq!(provider.display_name(), "goenv (Go Version Manager)");
+    }
+
+    #[test]
+    fn test_goenv_provider_capabilities() {
+        let provider = GoenvProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+        assert_eq!(caps.len(), 7);
+    }
+
+    #[test]
+    fn test_goenv_provider_supported_platforms() {
+        let provider = GoenvProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(!platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_goenv_provider_priority() {
+        let provider = GoenvProvider::new();
+        assert_eq!(provider.priority(), 80);
+    }
+
+    #[test]
+    fn test_goenv_provider_version_file_name() {
+        let provider = GoenvProvider::new();
+        assert_eq!(provider.version_file_name(), ".go-version");
+    }
+
+    #[test]
+    fn test_goenv_provider_requires_elevation() {
+        let provider = GoenvProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_goenv_provider_install_instructions() {
+        let provider = GoenvProvider::new();
+        let instructions = provider.get_install_instructions();
+        assert!(instructions.is_some());
+        let text = instructions.unwrap();
+        assert!(text.contains("goenv"));
+        assert!(text.contains("git clone"));
+    }
+
+    #[test]
+    fn test_goenv_provider_default() {
+        let provider = GoenvProvider::default();
+        assert_eq!(provider.id(), "goenv");
+    }
+
+    // ── GoModProvider trait tests ──────────────────────────
+
+    #[test]
+    fn test_go_mod_provider_id_and_display_name() {
+        let provider = GoModProvider::new();
+        assert_eq!(provider.id(), "go");
+        assert_eq!(provider.display_name(), "Go Modules");
+    }
+
+    #[test]
+    fn test_go_mod_provider_capabilities() {
+        let provider = GoModProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert_eq!(caps.len(), 4);
+        // Should NOT have version management capabilities
+        assert!(!caps.contains(&Capability::VersionSwitch));
+        assert!(!caps.contains(&Capability::MultiVersion));
+    }
+
+    #[test]
+    fn test_go_mod_provider_supported_platforms() {
+        let provider = GoModProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 3);
+    }
+
+    #[test]
+    fn test_go_mod_provider_priority() {
+        let provider = GoModProvider::new();
+        assert_eq!(provider.priority(), 75);
+    }
+
+    #[test]
+    fn test_go_mod_provider_requires_elevation() {
+        let provider = GoModProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_go_mod_provider_install_instructions() {
+        let provider = GoModProvider::new();
+        let instructions = provider.get_install_instructions();
+        assert!(instructions.is_some());
+        let text = instructions.unwrap();
+        // On Windows CI: "winget install GoLang.Go"
+        // On other platforms: different instructions
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn test_go_mod_provider_default() {
+        let provider = GoModProvider::default();
+        assert_eq!(provider.id(), "go");
+        assert!(provider.proxy_url.is_none());
+    }
+
+    // ── GOPROXY mirror configuration tests ────────────────
+
+    #[test]
+    fn test_go_mod_provider_with_proxy() {
+        let provider = GoModProvider::new();
+        assert!(provider.proxy_url.is_none());
+        assert_eq!(provider.proxy_base_url(), "https://proxy.golang.org");
+
+        let provider = GoModProvider::new().with_proxy_opt(Some("https://goproxy.cn".into()));
+        assert_eq!(provider.proxy_url.as_deref(), Some("https://goproxy.cn"));
+        assert_eq!(provider.proxy_base_url(), "https://goproxy.cn");
+
+        let provider = GoModProvider::new().with_proxy_opt(None);
+        assert!(provider.proxy_url.is_none());
+        assert_eq!(provider.proxy_base_url(), "https://proxy.golang.org");
+    }
+
+    #[test]
+    fn test_go_mod_provider_proxy_with_trailing_slash() {
+        let provider =
+            GoModProvider::new().with_proxy_opt(Some("https://goproxy.io/".into()));
+        assert_eq!(provider.proxy_base_url(), "https://goproxy.io/");
+    }
+
+    #[test]
+    fn test_go_mod_provider_proxy_chain() {
+        // Builder pattern should work with chaining
+        let provider = GoModProvider::new()
+            .with_proxy_opt(Some("https://first.proxy".into()))
+            .with_proxy_opt(Some("https://second.proxy".into()));
+        assert_eq!(provider.proxy_base_url(), "https://second.proxy");
+    }
+
+    // ── Toolchain directive parsing tests ──────────────────
+
+    /// Helper that simulates the go.mod parsing logic from detect_version
+    fn parse_go_mod_versions(content: &str) -> (Option<String>, Option<String>) {
+        let mut go_version: Option<String> = None;
+        let mut toolchain_version: Option<String> = None;
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(stripped) = line.strip_prefix("toolchain go") {
+                let version = stripped.trim().to_string();
+                if !version.is_empty() {
+                    toolchain_version = Some(version);
+                }
+            } else if let Some(stripped) = line.strip_prefix("go ") {
+                let version = stripped.trim().to_string();
+                if !version.is_empty() {
+                    go_version = Some(version);
+                }
+            }
+        }
+        (go_version, toolchain_version)
+    }
+
+    #[test]
+    fn test_parse_toolchain_directive() {
+        let content = "module example.com/mymodule\n\ngo 1.22.0\ntoolchain go1.22.5\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.9.1\n)\n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+
+        assert_eq!(go_ver.as_deref(), Some("1.22.0"));
+        assert_eq!(tc_ver.as_deref(), Some("1.22.5"));
+        // toolchain should be preferred over go directive
+        let detected = tc_ver.or(go_ver);
+        assert_eq!(detected.as_deref(), Some("1.22.5"));
+    }
+
+    #[test]
+    fn test_parse_go_mod_without_toolchain() {
+        let content = "module example.com/mymodule\n\ngo 1.21.0\n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+
+        assert_eq!(go_ver.as_deref(), Some("1.21.0"));
+        assert!(tc_ver.is_none());
+        let detected = tc_ver.or(go_ver);
+        assert_eq!(detected.as_deref(), Some("1.21.0"));
+    }
+
+    #[test]
+    fn test_parse_go_mod_only_toolchain() {
+        let content = "module example.com/m\ntoolchain go1.23.0\n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+
+        assert!(go_ver.is_none());
+        assert_eq!(tc_ver.as_deref(), Some("1.23.0"));
+    }
+
+    #[test]
+    fn test_parse_go_mod_empty() {
+        let content = "";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+        assert!(go_ver.is_none());
+        assert!(tc_ver.is_none());
+    }
+
+    #[test]
+    fn test_parse_go_mod_no_version_lines() {
+        let content = "module example.com/mymodule\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+        assert!(go_ver.is_none());
+        assert!(tc_ver.is_none());
+    }
+
+    #[test]
+    fn test_parse_go_mod_with_whitespace() {
+        let content = "module example.com/m\n\n  go 1.21.3  \n  toolchain go1.21.6  \n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+        assert_eq!(go_ver.as_deref(), Some("1.21.3"));
+        assert_eq!(tc_ver.as_deref(), Some("1.21.6"));
+    }
+
+    #[test]
+    fn test_parse_go_mod_toolchain_without_go_prefix_ignored() {
+        // "toolchain 1.22.0" (no "go" prefix) should NOT be parsed
+        let content = "module example.com/m\ngo 1.21.0\ntoolchain 1.22.0\n";
+        let (go_ver, tc_ver) = parse_go_mod_versions(content);
+        assert_eq!(go_ver.as_deref(), Some("1.21.0"));
+        // "toolchain 1.22.0" doesn't match "toolchain go" prefix
+        assert!(tc_ver.is_none());
+    }
+
+    // ── GoEnvInfo serde tests ─────────────────────────────
+
+    #[test]
+    fn test_go_env_info_json_parsing() {
+        let sample_json = r#"{
+            "GOROOT": "/usr/local/go",
+            "GOPATH": "/home/user/go",
+            "GOBIN": "",
+            "GOPROXY": "https://proxy.golang.org,direct",
+            "GOPRIVATE": "",
+            "GONOSUMDB": "",
+            "GOTOOLCHAIN": "auto",
+            "GOMODCACHE": "/home/user/go/pkg/mod",
+            "GOOS": "linux",
+            "GOARCH": "amd64",
+            "GOVERSION": "go1.22.5",
+            "GOFLAGS": "",
+            "CGO_ENABLED": "1"
+        }"#;
+
+        let json: serde_json::Value = serde_json::from_str(sample_json).unwrap();
+        let info = GoEnvInfo {
+            goroot: json["GOROOT"].as_str().unwrap_or("").to_string(),
+            gopath: json["GOPATH"].as_str().unwrap_or("").to_string(),
+            gobin: json["GOBIN"].as_str().unwrap_or("").to_string(),
+            goproxy: json["GOPROXY"].as_str().unwrap_or("").to_string(),
+            goprivate: json["GOPRIVATE"].as_str().unwrap_or("").to_string(),
+            gonosumdb: json["GONOSUMDB"].as_str().unwrap_or("").to_string(),
+            gotoolchain: json["GOTOOLCHAIN"].as_str().unwrap_or("").to_string(),
+            gomodcache: json["GOMODCACHE"].as_str().unwrap_or("").to_string(),
+            goos: json["GOOS"].as_str().unwrap_or("").to_string(),
+            goarch: json["GOARCH"].as_str().unwrap_or("").to_string(),
+            goversion: json["GOVERSION"].as_str().unwrap_or("").to_string(),
+            goflags: json["GOFLAGS"].as_str().unwrap_or("").to_string(),
+            cgo_enabled: json["CGO_ENABLED"].as_str().unwrap_or("").to_string(),
+        };
+
+        assert_eq!(info.goroot, "/usr/local/go");
+        assert_eq!(info.gopath, "/home/user/go");
+        assert_eq!(info.gobin, "");
+        assert_eq!(info.goproxy, "https://proxy.golang.org,direct");
+        assert_eq!(info.gotoolchain, "auto");
+        assert_eq!(info.gomodcache, "/home/user/go/pkg/mod");
+        assert_eq!(info.goos, "linux");
+        assert_eq!(info.goarch, "amd64");
+        assert_eq!(info.goversion, "go1.22.5");
+        assert_eq!(info.cgo_enabled, "1");
+    }
+
+    #[test]
+    fn test_go_env_info_serde_camel_case() {
+        let info = GoEnvInfo {
+            goroot: "/usr/local/go".into(),
+            gopath: "/home/user/go".into(),
+            gobin: "".into(),
+            goproxy: "https://proxy.golang.org".into(),
+            goprivate: "".into(),
+            gonosumdb: "".into(),
+            gotoolchain: "auto".into(),
+            gomodcache: "/home/user/go/pkg/mod".into(),
+            goos: "linux".into(),
+            goarch: "amd64".into(),
+            goversion: "go1.22.5".into(),
+            goflags: "".into(),
+            cgo_enabled: "1".into(),
+        };
+
+        let serialized = serde_json::to_string(&info).unwrap();
+        // cgo_enabled should serialize as cgoEnabled (camelCase)
+        assert!(serialized.contains("\"cgoEnabled\""));
+        assert!(!serialized.contains("\"cgo_enabled\""));
+        // Other fields are already lowercase single-word, no rename needed
+        assert!(serialized.contains("\"goroot\""));
+        assert!(serialized.contains("\"gopath\""));
+        assert!(serialized.contains("\"goproxy\""));
+        assert!(serialized.contains("\"gomodcache\""));
+
+        // Roundtrip: deserialize the camelCase JSON back
+        let deserialized: GoEnvInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.cgo_enabled, "1");
+        assert_eq!(deserialized.goroot, "/usr/local/go");
+    }
+
+    // ── GoCacheInfo serde tests ───────────────────────────
+
+    #[test]
+    fn test_go_cache_info_serde_camel_case() {
+        let info = GoCacheInfo {
+            build_cache_path: "/home/user/.cache/go-build".into(),
+            build_cache_size: 104857600,
+            build_cache_size_human: "100.0 MB".into(),
+            mod_cache_path: "/home/user/go/pkg/mod".into(),
+            mod_cache_size: 52428800,
+            mod_cache_size_human: "50.0 MB".into(),
+        };
+
+        let serialized = serde_json::to_string(&info).unwrap();
+        // Snake_case fields should serialize as camelCase
+        assert!(serialized.contains("\"buildCachePath\""));
+        assert!(serialized.contains("\"buildCacheSize\""));
+        assert!(serialized.contains("\"buildCacheSizeHuman\""));
+        assert!(serialized.contains("\"modCachePath\""));
+        assert!(serialized.contains("\"modCacheSize\""));
+        assert!(serialized.contains("\"modCacheSizeHuman\""));
+        // Should NOT contain snake_case
+        assert!(!serialized.contains("\"build_cache_path\""));
+        assert!(!serialized.contains("\"mod_cache_size\""));
+
+        // Roundtrip
+        let deserialized: GoCacheInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.build_cache_path, "/home/user/.cache/go-build");
+        assert_eq!(deserialized.build_cache_size, 104857600);
+        assert_eq!(deserialized.mod_cache_path, "/home/user/go/pkg/mod");
+    }
+
+    #[test]
+    fn test_go_cache_info_zero_values() {
+        let info = GoCacheInfo {
+            build_cache_path: "".into(),
+            build_cache_size: 0,
+            build_cache_size_human: "0 B".into(),
+            mod_cache_path: "".into(),
+            mod_cache_size: 0,
+            mod_cache_size_human: "0 B".into(),
+        };
+        let serialized = serde_json::to_string(&info).unwrap();
+        let deserialized: GoCacheInfo = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.build_cache_size, 0);
+        assert_eq!(deserialized.mod_cache_size, 0);
+    }
+
+    // ── Helper function tests ─────────────────────────────
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(go_format_bytes(0), "0 B");
+        assert_eq!(go_format_bytes(512), "512 B");
+        assert_eq!(go_format_bytes(1023), "1023 B");
+        assert_eq!(go_format_bytes(1024), "1.0 KB");
+        assert_eq!(go_format_bytes(1536), "1.5 KB");
+        assert_eq!(go_format_bytes(1048576), "1.0 MB");
+        assert_eq!(go_format_bytes(1073741824), "1.0 GB");
+        assert_eq!(go_format_bytes(2147483648), "2.0 GB");
+    }
+
+    #[test]
+    fn test_go_dir_size_nonexistent() {
+        let size = go_dir_size("/nonexistent/path/that/should/not/exist/12345");
+        assert_eq!(size, 0);
+    }
+
+    #[test]
+    fn test_go_dir_size_with_temp_dir() {
+        let tmp = std::env::temp_dir().join("cognia_test_go_dir_size");
+        let _ = std::fs::create_dir_all(&tmp);
+
+        // Write a small file
+        let test_file = tmp.join("test.txt");
+        std::fs::write(&test_file, "hello world").unwrap();
+
+        let size = go_dir_size(tmp.to_str().unwrap());
+        assert!(size > 0, "dir size should be > 0 for non-empty dir");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

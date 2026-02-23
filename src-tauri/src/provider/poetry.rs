@@ -38,7 +38,10 @@ impl PoetryProvider {
     }
 
     async fn run_poetry(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(180));
+        let mut opts = ProcessOptions::new().with_timeout(Duration::from_secs(180));
+        if let Some(ref url) = self.index_url {
+            opts = opts.with_env("PIP_INDEX_URL", url);
+        }
         let output = process::execute("poetry", args, Some(opts)).await?;
         if output.success {
             Ok(output.stdout)

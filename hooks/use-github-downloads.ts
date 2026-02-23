@@ -6,6 +6,7 @@ import type {
   GitHubReleaseInfo,
   GitHubAssetInfo,
   GitHubParsedRepo,
+  GitHubRepoInfoResponse,
   GitHubSourceType,
   GitHubArchiveFormat,
 } from '@/types/github';
@@ -16,6 +17,7 @@ interface UseGitHubDownloadsReturn {
   token: string;
   setToken: (value: string) => void;
   parsedRepo: GitHubParsedRepo | null;
+  repoInfo: GitHubRepoInfoResponse | null;
   isValidating: boolean;
   isValid: boolean | null;
   sourceType: GitHubSourceType;
@@ -28,6 +30,8 @@ interface UseGitHubDownloadsReturn {
   validateAndFetch: () => Promise<void>;
   downloadAsset: (asset: GitHubAssetInfo, destination: string) => Promise<string>;
   downloadSource: (refName: string, format: GitHubArchiveFormat, destination: string) => Promise<string>;
+  saveToken: () => Promise<void>;
+  clearSavedToken: () => Promise<void>;
   reset: () => void;
 }
 
@@ -35,6 +39,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
   const [repoInput, setRepoInput] = useState('');
   const [token, setToken] = useState('');
   const [parsedRepo, setParsedRepo] = useState<GitHubParsedRepo | null>(null);
+  const [repoInfo, setRepoInfo] = useState<GitHubRepoInfoResponse | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [isValid, setIsValid] = useState<boolean | null>(null);
   const [sourceType, setSourceType] = useState<GitHubSourceType>('release');
@@ -48,12 +53,21 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     setRepoInput('');
     setToken('');
     setParsedRepo(null);
+    setRepoInfo(null);
     setIsValid(null);
     setSourceType('release');
     setBranches([]);
     setTags([]);
     setReleases([]);
     setError(null);
+  }, []);
+
+  // Load saved token on mount
+  useEffect(() => {
+    if (!isTauri()) return;
+    import('@/lib/tauri').then(t => t.githubGetToken()).then(saved => {
+      if (saved) setToken(saved);
+    }).catch(() => {});
   }, []);
 
   const validateAndFetch = useCallback(async () => {
@@ -90,15 +104,17 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
 
       setLoading(true);
 
-      const [releasesData, branchesData, tagsData] = await Promise.all([
+      const [releasesData, branchesData, tagsData, info] = await Promise.all([
         tauri.githubListReleases(parsed.fullName, authToken).catch(() => []),
         tauri.githubListBranches(parsed.fullName, authToken).catch(() => []),
         tauri.githubListTags(parsed.fullName, authToken).catch(() => []),
+        tauri.githubGetRepoInfo(parsed.fullName, authToken).catch(() => null),
       ]);
 
       setReleases(releasesData);
       setBranches(branchesData);
       setTags(tagsData);
+      setRepoInfo(info);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setIsValid(false);
@@ -141,9 +157,23 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     [parsedRepo, token]
   );
 
+  const saveToken = useCallback(async () => {
+    if (!isTauri() || !token.trim()) return;
+    const tauri = await import('@/lib/tauri');
+    await tauri.githubSetToken(token.trim());
+  }, [token]);
+
+  const clearSavedToken = useCallback(async () => {
+    if (!isTauri()) return;
+    const tauri = await import('@/lib/tauri');
+    await tauri.githubClearToken();
+    setToken('');
+  }, []);
+
   useEffect(() => {
     if (!repoInput.trim()) {
       setParsedRepo(null);
+      setRepoInfo(null);
       setIsValid(null);
       setBranches([]);
       setTags([]);
@@ -157,6 +187,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     token,
     setToken,
     parsedRepo,
+    repoInfo,
     isValidating,
     isValid,
     sourceType,
@@ -169,6 +200,8 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    saveToken,
+    clearSavedToken,
     reset,
   };
 }

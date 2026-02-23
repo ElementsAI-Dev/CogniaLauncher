@@ -56,6 +56,9 @@ import {
   ChevronDown,
   Eye,
   EyeOff,
+  FileText,
+  Save,
+  Trash2,
 } from "lucide-react";
 import type {
   GitHubAssetInfo,
@@ -83,6 +86,7 @@ export function GitHubDownloadDialog({
     token,
     setToken,
     parsedRepo,
+    repoInfo,
     isValidating,
     isValid,
     sourceType,
@@ -95,10 +99,13 @@ export function GitHubDownloadDialog({
     validateAndFetch,
     downloadAsset,
     downloadSource,
+    saveToken,
+    clearSavedToken,
     reset,
   } = useGitHubDownloads();
 
-  const { parseAssets, currentPlatform, currentArch } = useAssetMatcher();
+  const { parseAssets, currentPlatform, currentArch, getRecommendedAsset } =
+    useAssetMatcher();
 
   const [destination, setDestination] = useState("");
   const [selectedRelease, setSelectedRelease] = useState<string | null>(null);
@@ -151,6 +158,22 @@ export function GitHubDownloadDialog({
       return [...prev, asset];
     });
   }, []);
+
+  const handleSelectRecommended = useCallback(() => {
+    if (!currentRelease) return;
+    const rec = getRecommendedAsset(currentRelease.assets);
+    if (rec) setSelectedAssets([rec]);
+  }, [currentRelease, getRecommendedAsset]);
+
+  const handleSaveToken = useCallback(async () => {
+    await saveToken();
+    toast.success(t("downloads.github.tokenSaved"));
+  }, [saveToken, t]);
+
+  const handleClearToken = useCallback(async () => {
+    await clearSavedToken();
+    toast.success(t("downloads.github.tokenCleared"));
+  }, [clearSavedToken, t]);
 
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
@@ -242,10 +265,35 @@ export function GitHubDownloadDialog({
             fetchLabel={t("downloads.github.fetch")}
             validMessage={
               parsedRepo && isValid ? (
-                <p className="text-sm text-muted-foreground">
-                  {t("downloads.github.repoValid")}:{" "}
-                  <code>{parsedRepo.fullName}</code>
-                </p>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>
+                      {t("downloads.github.repoValid")}:{" "}
+                      <code>{parsedRepo.fullName}</code>
+                    </span>
+                    {repoInfo && (
+                      <>
+                        <span className="inline-flex items-center gap-1">
+                          <Star className="h-3 w-3" />
+                          {repoInfo.stargazersCount.toLocaleString()}
+                        </span>
+                        {repoInfo.license && (
+                          <Badge variant="outline" className="text-xs">
+                            {repoInfo.license}
+                          </Badge>
+                        )}
+                        {repoInfo.archived && (
+                          <Badge variant="destructive" className="text-xs">
+                            {t("downloads.github.archived")}
+                          </Badge>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {repoInfo?.description && (
+                    <p className="text-xs">{repoInfo.description}</p>
+                  )}
+                </div>
               ) : undefined
             }
           />
@@ -299,6 +347,24 @@ export function GitHubDownloadDialog({
                       )}
                     </Button>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveToken}
+                    disabled={!token.trim() || !isDesktop}
+                  >
+                    <Save className="h-3 w-3 mr-1" />
+                    {t("downloads.github.saveToken")}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearToken}
+                    disabled={!isDesktop}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    {t("downloads.github.clearToken")}
+                  </Button>
                 </div>
               </div>
             </CollapsibleContent>
@@ -387,6 +453,11 @@ export function GitHubDownloadDialog({
                                         {release.name}
                                       </span>
                                     )}
+                                  {release.draft && (
+                                    <Badge variant="destructive">
+                                      {t("downloads.github.draft")}
+                                    </Badge>
+                                  )}
                                   {release.prerelease && (
                                     <Badge variant="secondary">
                                       {t("downloads.github.prerelease")}
@@ -412,17 +483,43 @@ export function GitHubDownloadDialog({
                       )}
                     </ScrollArea>
 
+                    {/* Release Notes */}
+                    {currentRelease?.body && (
+                      <Collapsible className="mt-2">
+                        <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                          <ChevronDown className="h-4 w-4" />
+                          <FileText className="h-4 w-4" />
+                          {t("downloads.github.releaseNotes")}
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <pre className="text-xs whitespace-pre-wrap max-h-[120px] overflow-auto p-2 bg-muted rounded-md mt-1">
+                            {currentRelease.body}
+                          </pre>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+
                     {/* Asset Selection */}
                     {currentRelease && parsedAssets.length > 0 && (
                       <div className="mt-3">
                         <div className="flex items-center justify-between mb-2">
                           <Label>{t("downloads.github.selectAssets")}</Label>
                           {currentPlatform !== "unknown" && (
-                            <span className="text-xs text-muted-foreground">
-                              {t("downloads.github.yourPlatform")}:{" "}
-                              {getPlatformLabel(currentPlatform)}{" "}
-                              {getArchLabel(currentArch)}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={handleSelectRecommended}
+                              >
+                                <Star className="h-3 w-3 mr-1" />
+                                {t("downloads.github.selectRecommended")}
+                              </Button>
+                              <span className="text-xs text-muted-foreground">
+                                {getPlatformLabel(currentPlatform)}{" "}
+                                {getArchLabel(currentArch)}
+                              </span>
+                            </div>
                           )}
                         </div>
                         <ScrollArea className="h-[140px] border rounded-md">
@@ -491,6 +588,13 @@ export function GitHubDownloadDialog({
                                           {t("downloads.github.rosetta")}
                                         </Badge>
                                       )}
+                                      {asset.downloadCount != null &&
+                                        asset.downloadCount > 0 && (
+                                          <span className="text-xs text-muted-foreground">
+                                            {"\u2193"}{" "}
+                                            {asset.downloadCount.toLocaleString()}
+                                          </span>
+                                        )}
                                       <span className="text-xs text-muted-foreground">
                                         {asset.sizeHuman}
                                       </span>

@@ -24,6 +24,7 @@ import {
   Server,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatBytes, formatUptime } from "@/lib/utils";
 import type { SystemInfo } from "@/hooks/use-about-data";
 import type { SelfUpdateInfo } from "@/lib/tauri";
 import { APP_VERSION } from "@/lib/app-version";
@@ -68,26 +69,6 @@ function InfoRow({
       )}
     </div>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i > 1 ? 1 : 0)} ${units[i]}`;
-}
-
-function formatUptime(seconds: number): string {
-  if (seconds === 0) return "";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  return parts.join(" ") || "< 1m";
 }
 
 interface SystemInfoCardProps {

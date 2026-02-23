@@ -290,6 +290,62 @@ html:not(.no-transitions) [data-state="closed"] {
   background-color: color-mix(in oklch, var(--color-background) 60%, transparent);
 }
 
+/* --- Portal: Modals (16px blur, 80% opaque) --- */
+[data-bg-active] [data-slot="dialog-content"],
+[data-bg-active] [data-slot="alert-dialog-content"],
+[data-bg-active] [data-slot="sheet-content"] {
+  background-color: color-mix(in oklch, var(--color-background) 80%, transparent) !important;
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
+/* --- Portal: Floating menus / popovers (12px blur, 85% opaque) --- */
+[data-bg-active] [data-slot="popover-content"],
+[data-bg-active] [data-slot="dropdown-menu-content"],
+[data-bg-active] [data-slot="dropdown-menu-sub-content"],
+[data-bg-active] [data-slot="context-menu-content"],
+[data-bg-active] [data-slot="context-menu-sub-content"],
+[data-bg-active] [data-slot="select-content"] {
+  background-color: color-mix(in oklch, var(--color-popover) 85%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+/* --- Command inside Dialog: transparent so dialog glass shows through --- */
+[data-bg-active] [data-slot="dialog-content"] [cmdk-root] {
+  background-color: transparent !important;
+}
+
+/* --- Inline containers: Card & Alert (8px blur, 80% opaque) --- */
+[data-bg-active] [data-slot="card"],
+[data-bg-active] [data-slot="alert"] {
+  background-color: color-mix(in oklch, var(--color-card) 80%, transparent) !important;
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  border-color: color-mix(in oklch, var(--color-border) 60%, var(--color-foreground) 15%);
+}
+
+/* --- Inline: TabsList (6px blur, 75% opaque) --- */
+[data-bg-active] [data-slot="tabs-list"] {
+  background-color: color-mix(in oklch, var(--color-muted) 75%, transparent) !important;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* --- Sonner toast (12px blur, 80% opaque) --- */
+[data-bg-active] [data-sonner-toast][data-styled='true'] {
+  background: color-mix(in oklch, var(--color-popover) 80%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+/* --- Chart tooltip (8px blur, 85% opaque) --- */
+[data-bg-active] [data-slot="chart-tooltip"] {
+  background-color: color-mix(in oklch, var(--color-background) 85%, transparent) !important;
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
 /* ===== Splash Screen Animations ===== */
 
 /* Background orbs */

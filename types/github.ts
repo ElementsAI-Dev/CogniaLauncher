@@ -43,6 +43,20 @@ export interface GitHubParsedRepo {
   fullName: string;
 }
 
+export interface GitHubRepoInfoResponse {
+  fullName: string;
+  description: string | null;
+  homepage: string | null;
+  license: string | null;
+  stargazersCount: number;
+  forksCount: number;
+  openIssuesCount: number;
+  defaultBranch: string | null;
+  archived: boolean;
+  disabled: boolean;
+  topics: string[];
+}
+
 export type GitHubSourceType = 'release' | 'branch' | 'tag';
 
 export type GitHubArchiveFormat = 'zip' | 'tar.gz';
