@@ -3,7 +3,7 @@
 ## 1. Identity
 
 - **What it is:** Extensible provider registry for package and environment management.
-- **Purpose:** Unified interface for 48 package sources and version managers across multiple platforms.
+- **Purpose:** Unified interface for 55 package sources and version managers across multiple platforms.
 
 ## 2. Core Components
 
@@ -51,7 +51,14 @@
 - `src-tauri/src/provider/pnpm.rs` (PnpmProvider): Fast Node.js package manager.
 - `src-tauri/src/provider/podman.rs` (PodmanProvider): Podman container images.
 - `src-tauri/src/provider/wsl.rs` (WslProvider): Windows Subsystem for Linux management.
-- `src-tauri/src/provider/system.rs` (SystemEnvironmentProvider): System-installed runtime detection (11 types).
+- `src-tauri/src/provider/git.rs` (GitProvider): Git version management and repository inspection (branches, tags, log, blame, stash, contributors).
+- `src-tauri/src/provider/fvm.rs` (FvmProvider): Flutter Version Manager for Dart/Flutter SDK version management.
+- `src-tauri/src/provider/pub_dev.rs` (PubDevProvider): Dart Pub packages via pub.dev API.
+- `src-tauri/src/provider/luarocks.rs` (LuaRocksProvider): LuaRocks Lua module manager.
+- `src-tauri/src/provider/zig.rs` (ZigProvider): Zig version management via ziglang.org download index.
+- `src-tauri/src/provider/msvc.rs` (MsvcProvider): Visual Studio Build Tools detection via vswhere.exe (Windows).
+- `src-tauri/src/provider/msys2.rs` (Msys2Provider): MSYS2 pacman package manager (Windows).
+- `src-tauri/src/provider/system.rs` (SystemEnvironmentProvider): System-installed runtime detection (28 types).
 - `src-tauri/src/provider/node_base.rs`: Shared Node.js utilities + `split_name_version()`.
 
 ## 3. Execution Flow (LLM Retrieval Map)

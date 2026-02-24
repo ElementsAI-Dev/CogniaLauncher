@@ -15,8 +15,8 @@ CogniaLauncher 使用 Zustand 5 进行状态管理，共 9 个 Store，全部使
 | Settings | `lib/stores/settings.ts` | 通用应用设置 |
 | Window State | `lib/stores/window-state.ts` | 窗口最大化/全屏/焦点状态 |
 | Environment | `lib/stores/environment.ts` | 环境列表缓存 |
-| Package | `lib/stores/package.ts` | 包管理状态 |
-| Provider | `lib/stores/provider.ts` | Provider 状态缓存 |
+| Onboarding | `lib/stores/onboarding.ts` | 引导向导进度状态 |
+| Package | `lib/stores/packages.ts` | 包管理状态 |
 
 ---
 

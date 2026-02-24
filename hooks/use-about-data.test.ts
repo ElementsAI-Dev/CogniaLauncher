@@ -24,6 +24,10 @@ const mockGetPlatformInfo = jest.fn();
 const mockGetCogniaDir = jest.fn();
 const mockListenSelfUpdateProgress = jest.fn();
 
+jest.mock('@/lib/platform', () => ({
+  isTauri: () => mockIsTauri(),
+}));
+
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
   selfCheckUpdate: (...args: unknown[]) => mockSelfCheckUpdate(...args),
@@ -31,6 +35,9 @@ jest.mock('@/lib/tauri', () => ({
   getPlatformInfo: (...args: unknown[]) => mockGetPlatformInfo(...args),
   getCogniaDir: (...args: unknown[]) => mockGetCogniaDir(...args),
   listenSelfUpdateProgress: (...args: unknown[]) => mockListenSelfUpdateProgress(...args),
+  providerStatusAll: jest.fn().mockResolvedValue([]),
+  getCombinedCacheStats: jest.fn().mockResolvedValue({ internalSizeHuman: '0 B', externalSizeHuman: '0 B', totalSizeHuman: '0 B' }),
+  logGetTotalSize: jest.fn().mockResolvedValue(0),
 }));
 
 describe('useAboutData', () => {
@@ -109,16 +116,29 @@ describe('useAboutData', () => {
       mockGetPlatformInfo.mockResolvedValue({
         os: 'windows',
         arch: 'x86_64',
-        os_version: '10.0',
-        os_long_version: 'Windows 10',
-        kernel_version: '10.0.19041',
+        osVersion: '10.0',
+        osLongVersion: 'Windows 10',
+        kernelVersion: '10.0.19041',
         hostname: 'test-pc',
-        cpu_model: 'Intel i7',
-        cpu_cores: 8,
-        total_memory: 16000000000,
-        available_memory: 8000000000,
+        osName: 'Windows',
+        distributionId: '',
+        cpuArch: 'x86_64',
+        cpuModel: 'Intel i7',
+        cpuVendorId: 'GenuineIntel',
+        cpuFrequency: 3600,
+        cpuCores: 8,
+        physicalCoreCount: 4,
+        globalCpuUsage: 10,
+        totalMemory: 16000000000,
+        availableMemory: 8000000000,
+        usedMemory: 8000000000,
+        totalSwap: 0,
+        usedSwap: 0,
         uptime: 3600,
-        app_version: '1.0.0',
+        bootTime: 1700000000,
+        loadAverage: [0, 0, 0],
+        gpus: [],
+        appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('C:\\Users\\test\\.cognia');
 
@@ -138,9 +158,13 @@ describe('useAboutData', () => {
       };
       mockSelfCheckUpdate.mockResolvedValue(updateData);
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/home/test/.cognia');
 
@@ -156,9 +180,13 @@ describe('useAboutData', () => {
     it('should handle network error during update check', async () => {
       mockSelfCheckUpdate.mockRejectedValue(new Error('network error'));
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/home/test/.cognia');
 
@@ -172,9 +200,13 @@ describe('useAboutData', () => {
     it('should handle timeout error during update check', async () => {
       mockSelfCheckUpdate.mockRejectedValue(new Error('request timed out'));
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/home/test/.cognia');
 
@@ -188,9 +220,13 @@ describe('useAboutData', () => {
     it('should handle generic error during update check', async () => {
       mockSelfCheckUpdate.mockRejectedValue(new Error('something broke'));
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/home/test/.cognia');
 
@@ -207,11 +243,15 @@ describe('useAboutData', () => {
         update_available: false, release_notes: null,
       });
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '10.0',
-        os_long_version: 'Windows 10 Pro', kernel_version: '10.0.19041',
-        hostname: 'my-pc', cpu_model: 'AMD Ryzen 9', cpu_cores: 16,
-        total_memory: 32000000000, available_memory: 16000000000,
-        uptime: 7200, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '10.0',
+        osLongVersion: 'Windows 10 Pro', kernelVersion: '10.0.19041',
+        hostname: 'my-pc', osName: 'Windows', distributionId: '',
+        cpuArch: 'x86_64', cpuModel: 'AMD Ryzen 9', cpuVendorId: 'AuthenticAMD',
+        cpuFrequency: 4500, cpuCores: 16, physicalCoreCount: 8,
+        globalCpuUsage: 20, totalMemory: 32000000000, availableMemory: 16000000000,
+        usedMemory: 16000000000, totalSwap: 8000000000, usedSwap: 2000000000,
+        uptime: 7200, bootTime: 1700000000, loadAverage: [0, 0, 0],
+        gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('C:\\Users\\test\\.cognia');
 
@@ -247,9 +287,13 @@ describe('useAboutData', () => {
       });
       mockSelfUpdate.mockResolvedValue(undefined);
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/tmp');
 
@@ -274,9 +318,13 @@ describe('useAboutData', () => {
       });
       mockSelfUpdate.mockRejectedValue(new Error('Update failed'));
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/tmp');
 
@@ -296,9 +344,13 @@ describe('useAboutData', () => {
     it('should clear error', async () => {
       mockSelfCheckUpdate.mockRejectedValue(new Error('network error'));
       mockGetPlatformInfo.mockResolvedValue({
-        os: 'windows', arch: 'x86_64', os_version: '', os_long_version: '',
-        kernel_version: '', hostname: '', cpu_model: '', cpu_cores: 0,
-        total_memory: 0, available_memory: 0, uptime: 0, app_version: '1.0.0',
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
       });
       mockGetCogniaDir.mockResolvedValue('/tmp');
 

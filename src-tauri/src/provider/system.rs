@@ -177,7 +177,7 @@ impl SystemEnvironmentType {
                 version_args: vec!["--version"],
                 version_pattern: r"rustc (\d+\.\d+\.\d+)",
                 version_files: vec!["rust-toolchain", "rust-toolchain.toml", ".tool-versions"],
-                manifest_files: vec![],
+                manifest_files: vec![("Cargo.toml", r#"rust-version\s*=\s*"(\d+\.\d+(?:\.\d+)?)"#)],
             },
             Self::Ruby => SystemDetectionConfig {
                 commands: vec!["ruby"],

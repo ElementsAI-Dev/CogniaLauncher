@@ -17,16 +17,29 @@ const mockT = (key: string) => {
 const mockPlatformInfo: PlatformInfo = {
   os: "Windows 11",
   arch: "x86_64",
-  os_version: "10.0.22631",
-  os_long_version: "Windows 11 Pro 23H2",
-  kernel_version: "10.0.22631",
+  osVersion: "10.0.22631",
+  osLongVersion: "Windows 11 Pro 23H2",
+  kernelVersion: "10.0.22631",
   hostname: "DESKTOP-TEST",
-  cpu_model: "Intel Core i7",
-  cpu_cores: 8,
-  total_memory: 17179869184,
-  available_memory: 8589934592,
+  osName: "Windows",
+  distributionId: "",
+  cpuArch: "x86_64",
+  cpuModel: "Intel Core i7",
+  cpuVendorId: "GenuineIntel",
+  cpuFrequency: 3600,
+  cpuCores: 8,
+  physicalCoreCount: 4,
+  globalCpuUsage: 15.5,
+  totalMemory: 17179869184,
+  availableMemory: 8589934592,
+  usedMemory: 8589934592,
+  totalSwap: 4294967296,
+  usedSwap: 1073741824,
   uptime: 86400,
-  app_version: "0.1.0",
+  bootTime: 1700000000,
+  loadAverage: [0, 0, 0],
+  gpus: [{ name: "NVIDIA GeForce RTX 4070", vramMb: 12288, driverVersion: "555.42", vendor: "NVIDIA" }],
+  appVersion: "0.1.0",
 };
 
 describe("SystemInfo", () => {
@@ -87,8 +100,8 @@ describe("SystemInfo", () => {
         platformInfo={{
           ...mockPlatformInfo,
           os: "" as unknown as string,
-          os_version: "",
-          os_long_version: "",
+          osVersion: "",
+          osLongVersion: "",
         }}
       />,
     );

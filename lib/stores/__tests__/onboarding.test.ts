@@ -188,4 +188,52 @@ describe('useOnboardingStore', () => {
       expect(count).toBe(1);
     });
   });
+
+  describe('bubble hints', () => {
+    it('has hintsEnabled true by default', () => {
+      expect(useOnboardingStore.getState().hintsEnabled).toBe(true);
+    });
+
+    it('has empty dismissedHints by default', () => {
+      expect(useOnboardingStore.getState().dismissedHints).toEqual([]);
+    });
+
+    it('dismissHint adds hint ID to dismissedHints', () => {
+      useOnboardingStore.getState().dismissHint('test-hint');
+      expect(useOnboardingStore.getState().dismissedHints).toContain('test-hint');
+    });
+
+    it('dismissHint does not duplicate IDs', () => {
+      useOnboardingStore.getState().dismissHint('test-hint');
+      useOnboardingStore.getState().dismissHint('test-hint');
+      const count = useOnboardingStore.getState().dismissedHints.filter(
+        (id) => id === 'test-hint'
+      ).length;
+      expect(count).toBe(1);
+    });
+
+    it('dismissAllHints sets all provided IDs', () => {
+      useOnboardingStore.getState().dismissAllHints(['a', 'b', 'c']);
+      expect(useOnboardingStore.getState().dismissedHints).toEqual(['a', 'b', 'c']);
+    });
+
+    it('resetHints clears dismissedHints', () => {
+      useOnboardingStore.getState().dismissHint('test-hint');
+      useOnboardingStore.getState().resetHints();
+      expect(useOnboardingStore.getState().dismissedHints).toEqual([]);
+    });
+
+    it('setHintsEnabled toggles hintsEnabled', () => {
+      useOnboardingStore.getState().setHintsEnabled(false);
+      expect(useOnboardingStore.getState().hintsEnabled).toBe(false);
+      useOnboardingStore.getState().setHintsEnabled(true);
+      expect(useOnboardingStore.getState().hintsEnabled).toBe(true);
+    });
+
+    it('resetOnboarding does not clear dismissedHints', () => {
+      useOnboardingStore.getState().dismissHint('kept-hint');
+      useOnboardingStore.getState().resetOnboarding();
+      expect(useOnboardingStore.getState().dismissedHints).toContain('kept-hint');
+    });
+  });
 });

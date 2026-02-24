@@ -340,19 +340,64 @@ export interface CleanupHistorySummary {
 // Platform Types
 // ============================================================================
 
+export interface GpuInfo {
+  name: string;
+  vramMb: number | null;
+  driverVersion: string | null;
+  vendor: string | null;
+}
+
 export interface PlatformInfo {
   os: string;
   arch: string;
-  os_version: string;
-  os_long_version: string;
-  kernel_version: string;
+  osVersion: string;
+  osLongVersion: string;
+  kernelVersion: string;
   hostname: string;
-  cpu_model: string;
-  cpu_cores: number;
-  total_memory: number;
-  available_memory: number;
+  osName: string;
+  distributionId: string;
+  cpuArch: string;
+  cpuModel: string;
+  cpuVendorId: string;
+  cpuFrequency: number;
+  cpuCores: number;
+  physicalCoreCount: number | null;
+  globalCpuUsage: number;
+  totalMemory: number;
+  availableMemory: number;
+  usedMemory: number;
+  totalSwap: number;
+  usedSwap: number;
   uptime: number;
-  app_version: string;
+  bootTime: number;
+  loadAverage: [number, number, number];
+  gpus: GpuInfo[];
+  appVersion: string;
+}
+
+export interface DiskInfo {
+  name: string;
+  mountPoint: string;
+  totalSpace: number;
+  availableSpace: number;
+  usedSpace: number;
+  usagePercent: number;
+  fileSystem: string;
+  diskType: string;
+  isRemovable: boolean;
+  totalSpaceHuman: string;
+  availableSpaceHuman: string;
+  usedSpaceHuman: string;
+}
+
+export interface NetworkInterfaceInfo {
+  name: string;
+  macAddress: string;
+  ipAddresses: string[];
+  totalReceived: number;
+  totalTransmitted: number;
+  totalReceivedHuman: string;
+  totalTransmittedHuman: string;
 }
 
 // ============================================================================
@@ -1056,8 +1101,23 @@ export interface WslDistroStatus {
 /** WSL system-level status */
 export interface WslStatus {
   version: string;
+  kernelVersion?: string;
+  wslgVersion?: string;
+  defaultDistribution?: string;
+  defaultVersion?: string;
   statusInfo: string;
   runningDistros: string[];
+}
+
+/** Parsed component versions from `wsl --version` */
+export interface WslVersionInfo {
+  wslVersion?: string;
+  kernelVersion?: string;
+  wslgVersion?: string;
+  msrdcVersion?: string;
+  direct3dVersion?: string;
+  dxcoreVersion?: string;
+  windowsVersion?: string;
 }
 
 /** Options for importing a WSL distribution */
@@ -1097,6 +1157,176 @@ export interface WslMountOptions {
   partition?: number;
   mountName?: string;
   bare: boolean;
+}
+
+/** Detected environment info from inside a WSL distribution */
+export interface WslDistroEnvironment {
+  /** Lowercase distro identifier from os-release ID (e.g. "ubuntu", "arch") */
+  distroId: string;
+  /** Related distro families from os-release ID_LIKE */
+  distroIdLike: string[];
+  /** Human-readable name from os-release PRETTY_NAME */
+  prettyName: string;
+  /** Version number from os-release VERSION_ID */
+  versionId?: string;
+  /** Version codename from os-release VERSION_CODENAME */
+  versionCodename?: string;
+  /** CPU architecture (e.g. "x86_64", "aarch64") */
+  architecture: string;
+  /** Linux kernel version */
+  kernelVersion: string;
+  /** Detected package manager (e.g. "apt", "pacman", "dnf") */
+  packageManager: string;
+  /** Init system running as PID 1 (e.g. "systemd", "init") */
+  initSystem: string;
+  /** Default login shell for the current user */
+  defaultShell?: string;
+  /** Default (current) username */
+  defaultUser?: string;
+  /** System uptime in seconds */
+  uptimeSeconds?: number;
+  /** Hostname of the distro */
+  hostname?: string;
+  /** Number of installed packages */
+  installedPackages?: number;
+}
+
+// ============================================================================
+// Git Types
+// ============================================================================
+
+/** Git repository information */
+export interface GitRepoInfo {
+  rootPath: string;
+  currentBranch: string;
+  isDirty: boolean;
+  fileCountStaged: number;
+  fileCountModified: number;
+  fileCountUntracked: number;
+}
+
+/** Git commit log entry */
+export interface GitCommitEntry {
+  hash: string;
+  parents: string[];
+  authorName: string;
+  authorEmail: string;
+  date: string;
+  message: string;
+}
+
+/** Git branch information */
+export interface GitBranchInfo {
+  name: string;
+  shortHash: string;
+  upstream: string | null;
+  isCurrent: boolean;
+  isRemote: boolean;
+}
+
+/** Git remote information */
+export interface GitRemoteInfo {
+  name: string;
+  fetchUrl: string;
+  pushUrl: string;
+}
+
+/** Git tag information */
+export interface GitTagInfo {
+  name: string;
+  shortHash: string;
+  date: string | null;
+}
+
+/** Git stash entry */
+export interface GitStashEntry {
+  id: string;
+  message: string;
+  date: string;
+}
+
+/** Git contributor with commit count */
+export interface GitContributor {
+  name: string;
+  email: string;
+  commitCount: number;
+}
+
+/** Git blame entry for a single line */
+export interface GitBlameEntry {
+  commitHash: string;
+  author: string;
+  authorEmail: string;
+  timestamp: number;
+  summary: string;
+  lineNumber: number;
+  content: string;
+}
+
+/** Git diff file stats */
+export interface GitDiffFile {
+  path: string;
+  insertions: number;
+  deletions: number;
+}
+
+/** Git configuration entry */
+export interface GitConfigEntry {
+  key: string;
+  value: string;
+}
+
+/** Git file-level status entry */
+export interface GitStatusFile {
+  path: string;
+  indexStatus: string;
+  worktreeStatus: string;
+  oldPath: string | null;
+}
+
+/** Git commit detail with changed files */
+export interface GitCommitDetail {
+  hash: string;
+  parents: string[];
+  authorName: string;
+  authorEmail: string;
+  date: string;
+  message: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  files: GitDiffFile[];
+}
+
+/** Git graph entry for commit graph visualization */
+export interface GitGraphEntry {
+  hash: string;
+  parents: string[];
+  refs: string[];
+  authorName: string;
+  date: string;
+  message: string;
+}
+
+/** Git ahead/behind counts for a branch */
+export interface GitAheadBehind {
+  ahead: number;
+  behind: number;
+}
+
+/** Git daily activity for heatmap */
+export interface GitDayActivity {
+  date: string;
+  commitCount: number;
+}
+
+/** Git file stat entry for visual file history */
+export interface GitFileStatEntry {
+  hash: string;
+  authorName: string;
+  date: string;
+  additions: number;
+  deletions: number;
 }
 
 // ============================================================================

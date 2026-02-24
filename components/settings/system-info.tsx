@@ -20,10 +20,10 @@ interface SystemInfoProps {
 export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoProps) {
   const unknown = t("common.unknown");
 
-  const osDisplay = platformInfo?.os_long_version
-    ? platformInfo.os_long_version
-    : platformInfo?.os_version
-      ? `${platformInfo.os} ${platformInfo.os_version}`
+  const osDisplay = platformInfo?.osLongVersion
+    ? platformInfo.osLongVersion
+    : platformInfo?.osVersion
+      ? `${platformInfo.os} ${platformInfo.osVersion}`
       : platformInfo?.os;
 
   const rows: { label: string; value: string | undefined }[] = [
@@ -32,20 +32,20 @@ export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoPr
     { label: t("settings.hostname"), value: platformInfo?.hostname },
     {
       label: t("settings.cpu"),
-      value: platformInfo?.cpu_model
-        ? `${platformInfo.cpu_model} (${platformInfo.cpu_cores} cores)`
+      value: platformInfo?.cpuModel
+        ? `${platformInfo.cpuModel} (${platformInfo.cpuCores} cores)`
         : undefined,
     },
     {
       label: t("settings.memory"),
-      value: platformInfo?.total_memory
-        ? formatBytes(platformInfo.total_memory)
+      value: platformInfo?.totalMemory
+        ? formatBytes(platformInfo.totalMemory)
         : undefined,
     },
     {
       label: t("settings.appVersion"),
-      value: platformInfo?.app_version
-        ? `v${platformInfo.app_version}`
+      value: platformInfo?.appVersion
+        ? `v${platformInfo.appVersion}`
         : undefined,
     },
     { label: t("settings.dataDirectory"), value: cogniaDir || undefined },
@@ -53,6 +53,18 @@ export function SystemInfo({ loading, platformInfo, cogniaDir, t }: SystemInfoPr
       label: t("settings.uptime"),
       value: platformInfo?.uptime
         ? formatUptime(platformInfo.uptime)
+        : undefined,
+    },
+    {
+      label: t("settings.swap"),
+      value: platformInfo?.totalSwap
+        ? `${formatBytes(platformInfo.usedSwap)} / ${formatBytes(platformInfo.totalSwap)}`
+        : undefined,
+    },
+    {
+      label: t("settings.gpu"),
+      value: platformInfo?.gpus?.length
+        ? platformInfo.gpus.map((g) => g.name).join(", ")
         : undefined,
     },
   ];

@@ -120,20 +120,31 @@ pub async fn github_parse_url(url: String) -> Result<Option<ParsedRepo>, String>
     }))
 }
 
-/// Helper to create a GitHubProvider with an optional token
-fn make_github_provider(token: Option<String>) -> GitHubProvider {
-    GitHubProvider::new().with_token(token)
+/// Helper to create a GitHubProvider with an optional token.
+/// Falls back to loading token from settings if not provided by the frontend.
+async fn make_github_provider(token: Option<String>) -> GitHubProvider {
+    let effective_token = if token.as_ref().map_or(true, |t| t.is_empty()) {
+        // Fallback: try loading from settings, then env var (handled by GitHubProvider::new)
+        crate::config::Settings::load()
+            .await
+            .ok()
+            .and_then(|s| s.get_value("providers.github.token"))
+            .filter(|t| !t.is_empty())
+    } else {
+        token
+    };
+    GitHubProvider::new().with_token(effective_token)
 }
 
 #[tauri::command]
 pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result<bool, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     Ok(provider.validate_repo(&repo).await)
 }
 
 #[tauri::command]
 pub async fn github_list_branches(repo: String, token: Option<String>) -> Result<Vec<BranchInfo>, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     provider
         .list_branches(&repo)
         .await
@@ -143,7 +154,7 @@ pub async fn github_list_branches(repo: String, token: Option<String>) -> Result
 
 #[tauri::command]
 pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec<TagInfo>, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     provider
         .list_tags(&repo)
         .await
@@ -153,7 +164,7 @@ pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec
 
 #[tauri::command]
 pub async fn github_list_releases(repo: String, token: Option<String>) -> Result<Vec<ReleaseInfo>, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     provider
         .list_releases(&repo)
         .await
@@ -167,7 +178,7 @@ pub async fn github_get_release_assets(
     tag: String,
     token: Option<String>,
 ) -> Result<Vec<AssetInfo>, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     provider
         .get_release_by_tag(&repo, &tag)
         .await
@@ -185,7 +196,7 @@ pub async fn github_download_asset(
     token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     let dest_path = PathBuf::from(&destination);
     let full_path = dest_path.join(&asset_name);
 
@@ -215,7 +226,7 @@ pub async fn github_download_source(
     token: Option<String>,
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     let url = provider.get_source_archive_url(&repo, &ref_name, &format);
 
     let ext = if format == "tar.gz" { "tar.gz" } else { "zip" };
@@ -285,7 +296,7 @@ pub async fn github_get_repo_info(
     repo: String,
     token: Option<String>,
 ) -> Result<RepoInfoResponse, String> {
-    let provider = make_github_provider(token);
+    let provider = make_github_provider(token).await;
     let info = provider
         .get_repo_info(&repo)
         .await

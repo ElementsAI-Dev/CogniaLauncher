@@ -11,7 +11,7 @@
 | 功能 | 描述 |
 |------|------|
 | 🔧 **环境管理** | 管理 Node.js、Python、Rust、Java、Kotlin、Go、Ruby、PHP、Deno 等运行时版本 |
-| 📦 **包管理** | 搜索、安装、更新来自 51+ Provider 的软件包 |
+| 📦 **包管理** | 搜索、安装、更新来自 55 个 Provider 的软件包 |
 | 💾 **缓存管理** | SQLite + JSON 双后端缓存，支持清理、验证、修复 |
 | 📥 **下载管理** | 队列式下载，支持限速、并发控制、断点续传、历史记录 |
 | 🖥️ **WSL 管理** | Windows 子系统管理，支持导入/导出、磁盘挂载、配置编辑 |
@@ -45,7 +45,7 @@
 - **Tauri 2.9** — 原生桌面框架
 - **Rust** — 高性能后端逻辑
 - **SQLite** — 缓存与状态存储
-- **51+ Provider** — 可扩展的包源系统
+- **55 Provider** — 可扩展的包源系统
 
 ### 开发工具
 
@@ -75,7 +75,7 @@
 - **[架构设计](architecture/overview.md)** — 系统架构与设计思想
 - **[开发者指南](development/setup.md)** — 参与项目开发
 - **[API 参考](reference/commands.md)** — 完整的 API 和命令参考
-- **[Provider 列表](reference/providers-list.md)** — 51+ Provider 详细信息
+- **[Provider 列表](reference/providers-list.md)** — 55 个 Provider 详细信息
 
 ---
 
@@ -83,9 +83,9 @@
 
 | 指标 | 数值 |
 |------|------|
-| Provider 数量 | 51+ |
-| Tauri 命令 | 217+ |
-| React Hooks | 51 |
+| Provider 数量 | 55 |
+| Tauri 命令 | 288 |
+| React Hooks | 30 |
 | Zustand Stores | 9 |
 | i18n 键值 | 1640+ |
 | 支持语言 | 10+ 运行时环境 |

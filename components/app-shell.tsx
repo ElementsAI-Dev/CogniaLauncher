@@ -20,23 +20,20 @@ import { LogDrawer } from "@/components/log/log-drawer";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { SplashScreen } from "@/components/splash-screen";
-import { OnboardingWizard, TourOverlay } from "@/components/onboarding";
+import { OnboardingWizard, TourOverlay, BubbleHintLayer } from "@/components/onboarding";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
 import { useAppInit } from "@/hooks/use-app-init";
 import { useOnboarding } from "@/hooks/use-onboarding";
-import { isTauri } from "@/lib/tauri";
+import { isTauri, isWindows } from "@/lib/platform";
 import { ScrollText, Search } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 
 interface AppShellProps {
   children: ReactNode;
 }
-
-// Titlebar base height in desktop mode (matches Titlebar h-8 = 2rem = 32px)
-const TITLEBAR_HEIGHT = "2rem";
 
 // Windows frameless maximize padding (must match titlebar.tsx WIN_MAXIMIZE_PADDING)
 const WIN_MAXIMIZE_PADDING = 8;
@@ -61,16 +58,16 @@ export function AppShell({ children }: AppShellProps) {
   const isDesktopMode = isTauri();
 
   // Window state from shared Zustand store (set by Titlebar component)
-  const { isMaximized: windowMaximized, isWindows } = useWindowStateStore();
+  const { isMaximized: windowMaximized, titlebarHeight } = useWindowStateStore();
   const maximizePadding =
-    isDesktopMode && isWindows && windowMaximized ? WIN_MAXIMIZE_PADDING : 0;
+    isDesktopMode && isWindows() && windowMaximized ? WIN_MAXIMIZE_PADDING : 0;
 
   useAppearanceConfigSync(config);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isDesktopMode) return;
     fetchConfig();
-  }, [fetchConfig]);
+  }, [isDesktopMode, fetchConfig]);
 
   // Keyboard shortcut for opening log drawer (Ctrl+Shift+L)
   useEffect(() => {
@@ -121,10 +118,11 @@ export function AppShell({ children }: AppShellProps) {
           }
         >
           <SidebarProvider
+            className={isDesktopMode ? "min-h-0" : undefined}
             style={
               isDesktopMode
                 ? ({
-                    "--titlebar-height": TITLEBAR_HEIGHT,
+                    "--titlebar-height": titlebarHeight,
                   } as React.CSSProperties)
                 : undefined
             }
@@ -206,6 +204,9 @@ export function AppShell({ children }: AppShellProps) {
           onComplete={onboarding.completeTour}
           onStop={onboarding.stopTour}
         />
+
+        {/* Contextual bubble hints — non-blocking floating tips */}
+        <BubbleHintLayer />
       </div>
     </>
   );

@@ -449,7 +449,7 @@ impl SystemPackageProvider for BunProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let output = self.run_bun_raw(&["pm", "ls"]).await;
+        let output = self.run_bun_raw(&["pm", "ls", "-g"]).await;
         Ok(output.map(|s| s.contains(name)).unwrap_or(false))
     }
 

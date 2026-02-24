@@ -1,13 +1,10 @@
 import { renderHook } from '@testing-library/react';
 import { useKeyboardShortcuts, useEnvironmentShortcuts, formatShortcut } from './use-keyboard-shortcuts';
+import { _setCachedOS, _resetCachedOS } from '@/lib/platform';
 
 describe('formatShortcut', () => {
-  const originalPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
-
   afterEach(() => {
-    if (originalPlatform) {
-      Object.defineProperty(navigator, 'platform', originalPlatform);
-    }
+    _resetCachedOS();
   });
 
   it('should format simple key', () => {
@@ -15,34 +12,22 @@ describe('formatShortcut', () => {
   });
 
   it('should format with Ctrl modifier on Windows', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'Win32',
-      configurable: true,
-    });
+    _setCachedOS('windows');
     expect(formatShortcut({ key: 's', ctrlKey: true })).toBe('Ctrl+S');
   });
 
   it('should format with Cmd modifier on Mac', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'MacIntel',
-      configurable: true,
-    });
+    _setCachedOS('macos');
     expect(formatShortcut({ key: 's', ctrlKey: true })).toBe('⌘S');
   });
 
   it('should format with multiple modifiers', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'Win32',
-      configurable: true,
-    });
+    _setCachedOS('windows');
     expect(formatShortcut({ key: 'z', ctrlKey: true, shiftKey: true })).toBe('Ctrl+Shift+Z');
   });
 
   it('should format Alt key', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'Win32',
-      configurable: true,
-    });
+    _setCachedOS('windows');
     expect(formatShortcut({ key: 'f', altKey: true })).toBe('Alt+F');
   });
 
@@ -52,10 +37,7 @@ describe('formatShortcut', () => {
   });
 
   it('should format with metaKey', () => {
-    Object.defineProperty(navigator, 'platform', {
-      value: 'MacIntel',
-      configurable: true,
-    });
+    _setCachedOS('macos');
     expect(formatShortcut({ key: 'c', metaKey: true })).toBe('⌘C');
   });
 });

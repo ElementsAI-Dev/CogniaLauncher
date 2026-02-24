@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { writeClipboard } from '@/lib/clipboard';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -104,7 +105,7 @@ export function LogEntry({
   const handleCopy = useCallback(async () => {
     try {
       const text = `[${formatTimestamp(entry.timestamp)}][${entry.level.toUpperCase()}]${entry.target ? `[${entry.target}]` : ""} ${entry.message}`;
-      await navigator.clipboard.writeText(text);
+      await writeClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

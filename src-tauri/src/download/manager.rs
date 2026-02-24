@@ -140,24 +140,33 @@ pub struct DownloadManager {
 
 impl Default for DownloadManager {
     fn default() -> Self {
-        Self::new(DownloadManagerConfig::default())
+        Self::new(DownloadManagerConfig::default(), None)
     }
 }
 
 impl DownloadManager {
     /// Create a new download manager with the given configuration
-    pub fn new(config: DownloadManagerConfig) -> Self {
+    pub fn new(config: DownloadManagerConfig, proxy: Option<String>) -> Self {
         let speed_limiter = if config.speed_limit > 0 {
             SpeedLimiter::with_limit(config.speed_limit)
         } else {
             SpeedLimiter::new()
         };
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(config.default_task_config.timeout_secs))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .expect("Failed to create HTTP client");
+        let mut builder = Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(300))
+            .user_agent("CogniaLauncher/0.1.0");
+
+        if let Some(ref proxy_url) = proxy {
+            if !proxy_url.is_empty() {
+                if let Ok(p) = reqwest::Proxy::all(proxy_url) {
+                    builder = builder.proxy(p);
+                }
+            }
+        }
+
+        let client = builder.build().expect("Failed to create HTTP client");
 
         Self {
             queue: Arc::new(RwLock::new(DownloadQueue::new(config.max_concurrent))),
@@ -752,6 +761,32 @@ impl DownloadManager {
             message: e.to_string(),
         })?;
 
+        // Detect GitHub 403 rate limit → recoverable error with auto-retry
+        if response.status() == reqwest::StatusCode::FORBIDDEN {
+            let remaining = response
+                .headers()
+                .get("x-ratelimit-remaining")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            if remaining == Some(0) {
+                let retry_after = response
+                    .headers()
+                    .get("x-ratelimit-reset")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .map(|epoch| {
+                        epoch.saturating_sub(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs(),
+                        )
+                    })
+                    .unwrap_or(60);
+                return Err(DownloadError::RateLimited { retry_after });
+            }
+        }
+
         // Check status
         if !response.status().is_success() && response.status().as_u16() != 206 {
             return Err(DownloadError::HttpError {
@@ -894,13 +929,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_new() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         assert!(!manager.is_running());
     }
 
     #[tokio::test]
     async fn test_download_manager_add_task() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -919,7 +954,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_stats() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         manager
             .download(
@@ -944,7 +979,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_cancel() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -962,7 +997,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_remove() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -981,7 +1016,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_speed_limit() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         assert_eq!(manager.get_speed_limit().await, 0);
 
@@ -994,7 +1029,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_clear_finished() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1013,7 +1048,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_pause_resume() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1036,7 +1071,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_list_tasks() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         manager
             .download(
@@ -1059,7 +1094,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_set_max_concurrent() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         assert_eq!(manager.get_max_concurrent().await, 4);
 
@@ -1072,7 +1107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_start_stop() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         assert!(!manager.is_running());
 
@@ -1089,7 +1124,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_pause_all_resume_all() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         for i in 0..3 {
             manager
@@ -1114,7 +1149,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_cancel_all() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         for i in 0..3 {
             manager
@@ -1133,7 +1168,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_event_channel() {
-        let mut manager = DownloadManager::new(DownloadManagerConfig::default());
+        let mut manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let mut rx = manager.create_event_channel();
 
         manager
@@ -1157,7 +1192,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_retry_all_failed() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1177,7 +1212,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_shutdown() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         manager.start().await;
         assert!(manager.is_running());
 
@@ -1187,7 +1222,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_add_task_with_builder() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task = crate::download::DownloadTask::builder(
             "https://example.com/file.zip".to_string(),
@@ -1209,35 +1244,35 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_get_nonexistent_task() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let task = manager.get_task("nonexistent-id").await;
         assert!(task.is_none());
     }
 
     #[tokio::test]
     async fn test_download_manager_pause_nonexistent() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let result = manager.pause("nonexistent-id").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_download_manager_resume_nonexistent() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let result = manager.resume("nonexistent-id").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_download_manager_cancel_nonexistent() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let result = manager.cancel("nonexistent-id").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_download_manager_remove_nonexistent() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
         let removed = manager.remove("nonexistent-id").await;
         assert!(removed.is_none());
     }
@@ -1270,14 +1305,14 @@ mod tests {
             ..Default::default()
         };
 
-        let manager = DownloadManager::new(config);
+        let manager = DownloadManager::new(config, None);
         assert_eq!(manager.get_max_concurrent().await, 8);
         assert_eq!(manager.get_speed_limit().await, 1024 * 1024);
     }
 
     #[tokio::test]
     async fn test_download_manager_cancel_all_signals_controls() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1300,7 +1335,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_double_pause() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1319,7 +1354,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_resume_queued() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1336,7 +1371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_cancel_completed() {
-        let manager = DownloadManager::new(DownloadManagerConfig::default());
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 
         let task_id = manager
             .download(
@@ -1364,7 +1399,7 @@ mod tests {
         let manager = DownloadManager::new(DownloadManagerConfig {
             partials_dir: PathBuf::from("/nonexistent/partials/dir"),
             ..Default::default()
-        });
+        }, None);
 
         // Should return 0 if the directory doesn't exist
         let cleaned = manager

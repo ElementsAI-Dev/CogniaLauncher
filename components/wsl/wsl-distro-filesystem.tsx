@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,9 +142,9 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
     }
   };
 
-  const handleCopyPath = (name: string) => {
+  const handleCopyPath = async (name: string) => {
     const fullPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
-    navigator.clipboard.writeText(fullPath);
+    await writeClipboard(fullPath);
     toast.success(t('common.copied'));
   };
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download } from "lucide-react";
+import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import type { SelfUpdateInfo } from "@/lib/tauri";
 
 interface UpdateBannerProps {
@@ -58,8 +59,8 @@ export function UpdateBanner({
       <CardContent className="space-y-4">
         {updateInfo.release_notes && (
           <ScrollArea className="max-h-48" aria-label={t("about.releaseNotes")}>
-            <div className="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
-              {updateInfo.release_notes}
+            <div className="text-sm text-blue-800 dark:text-blue-200 bg-white/50 dark:bg-black/20 p-3 rounded-lg border border-blue-200 dark:border-blue-700">
+              <MarkdownRenderer content={updateInfo.release_notes} className="prose-sm" />
             </div>
           </ScrollArea>
         )}

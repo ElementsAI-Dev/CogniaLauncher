@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Dialog,
   DialogContent,
@@ -146,7 +147,7 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
       const json = await exportProfile(profile.id);
       if (json) {
         try {
-          await navigator.clipboard.writeText(json);
+          await writeClipboard(json);
           toast.success(t("environments.profiles.exported"));
         } catch {
           const blob = new Blob([json], { type: "application/json" });

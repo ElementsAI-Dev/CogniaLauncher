@@ -3,6 +3,46 @@ import AboutPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 import * as tauri from "@/lib/tauri";
 
+// Mock MarkdownRenderer (react-markdown is ESM-only)
+jest.mock("@/components/docs/markdown-renderer", () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => (
+    <div data-testid="markdown-renderer">{content}</div>
+  ),
+}));
+
+// Mock changelog hook
+jest.mock("@/hooks/use-changelog", () => ({
+  useChangelog: () => ({
+    entries: [
+      {
+        version: "0.1.0",
+        date: "2025-01-15",
+        source: "local",
+        changes: [{ type: "added", description: "Initial release" }],
+      },
+    ],
+    loading: false,
+    error: null,
+    hasRemote: false,
+    refresh: jest.fn(),
+  }),
+}));
+
+// Mock changelog store
+jest.mock("@/lib/stores/changelog", () => ({
+  useChangelogStore: () => ({
+    lastSeenVersion: "0.1.0",
+    whatsNewOpen: false,
+    setWhatsNewOpen: jest.fn(),
+    dismissWhatsNew: jest.fn(),
+  }),
+}));
+
+// Mock platform detection
+jest.mock("@/lib/platform", () => ({
+  isTauri: jest.fn().mockReturnValue(true),
+}));
+
 // Mock the Tauri API
 jest.mock("@/lib/tauri", () => ({
   isTauri: jest.fn().mockReturnValue(true),
@@ -18,16 +58,29 @@ jest.mock("@/lib/tauri", () => ({
   getPlatformInfo: jest.fn().mockResolvedValue({
     os: "windows",
     arch: "x86_64",
-    os_version: "10.0.22631",
-    os_long_version: "Windows 11 23H2",
-    kernel_version: "10.0.22631",
+    osVersion: "10.0.22631",
+    osLongVersion: "Windows 11 23H2",
+    kernelVersion: "10.0.22631",
     hostname: "TEST-PC",
-    cpu_model: "Intel Core i7-12700K",
-    cpu_cores: 12,
-    total_memory: 34359738368,
-    available_memory: 17179869184,
+    osName: "Windows",
+    distributionId: "",
+    cpuArch: "x86_64",
+    cpuModel: "Intel Core i7-12700K",
+    cpuVendorId: "GenuineIntel",
+    cpuFrequency: 3600,
+    cpuCores: 12,
+    physicalCoreCount: 6,
+    globalCpuUsage: 15,
+    totalMemory: 34359738368,
+    availableMemory: 17179869184,
+    usedMemory: 17179869184,
+    totalSwap: 0,
+    usedSwap: 0,
     uptime: 86400,
-    app_version: "0.1.0",
+    bootTime: 1700000000,
+    loadAverage: [0, 0, 0],
+    gpus: [],
+    appVersion: "0.1.0",
   }),
   getCogniaDir: jest.fn().mockResolvedValue("C:\\Users\\Test\\.cognia"),
   providerStatusAll: jest.fn().mockResolvedValue([

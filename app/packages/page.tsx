@@ -364,12 +364,14 @@ export default function PackagesPage() {
         bookmarkedCount={bookmarkedPackages.length}
       />
 
-      <SearchBar
-        providers={providers}
-        onSearch={handleAdvancedSearch}
-        onGetSuggestions={getSuggestions}
-        loading={loading}
-      />
+      <div data-hint="packages-search">
+        <SearchBar
+          providers={providers}
+          onSearch={handleAdvancedSearch}
+          onGetSuggestions={getSuggestions}
+          loading={loading}
+        />
+      </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="h-auto bg-transparent border-b border-border rounded-none p-0 gap-0">

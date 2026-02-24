@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,7 @@ import {
   Cpu,
   HardDrive,
   Server,
+  Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -101,17 +103,47 @@ export function SystemInfoCard({
 
   const memoryDisplay = useMemo(() => {
     if (!systemInfo || systemInfo.totalMemory === 0) return undefined;
-    const used = systemInfo.totalMemory - systemInfo.availableMemory;
-    return `${formatBytes(used)} / ${formatBytes(systemInfo.totalMemory)}`;
+    return `${formatBytes(systemInfo.usedMemory)} / ${formatBytes(systemInfo.totalMemory)}`;
   }, [systemInfo]);
 
   const memoryPercent = useMemo(() => {
     if (!systemInfo || systemInfo.totalMemory === 0) return 0;
     return Math.round(
-      ((systemInfo.totalMemory - systemInfo.availableMemory) /
-        systemInfo.totalMemory) *
-        100
+      (systemInfo.usedMemory / systemInfo.totalMemory) * 100
     );
+  }, [systemInfo]);
+
+  const swapDisplay = useMemo(() => {
+    if (!systemInfo || systemInfo.totalSwap === 0) return undefined;
+    return `${formatBytes(systemInfo.usedSwap)} / ${formatBytes(systemInfo.totalSwap)}`;
+  }, [systemInfo]);
+
+  const swapPercent = useMemo(() => {
+    if (!systemInfo || systemInfo.totalSwap === 0) return 0;
+    return Math.round(
+      (systemInfo.usedSwap / systemInfo.totalSwap) * 100
+    );
+  }, [systemInfo]);
+
+  const cpuCoresDisplay = useMemo(() => {
+    if (!systemInfo || !systemInfo.cpuCores) return undefined;
+    const logical = systemInfo.cpuCores;
+    const physical = systemInfo.physicalCoreCount;
+    if (physical && physical !== logical) {
+      return `${physical}P / ${logical}L`;
+    }
+    return `${logical}`;
+  }, [systemInfo]);
+
+  const gpuDisplay = useMemo(() => {
+    if (!systemInfo?.gpus?.length) return undefined;
+    return systemInfo.gpus
+      .map((g) => {
+        let s = g.name;
+        if (g.vramMb) s += ` (${g.vramMb >= 1024 ? `${(g.vramMb / 1024).toFixed(1)} GB` : `${g.vramMb} MB`})`;
+        return s;
+      })
+      .join(", ");
   }, [systemInfo]);
 
   const copySystemInfo = async () => {
@@ -120,18 +152,21 @@ export function SystemInfoCard({
       "================================",
       `${t("about.version")}: v${updateInfo?.current_version || systemInfo?.appVersion || APP_VERSION}`,
       `${t("about.operatingSystem")}: ${osDisplayName || unknownText}`,
-      `${t("about.architecture")}: ${systemInfo?.arch || unknownText}`,
+      `${t("about.architecture")}: ${systemInfo?.cpuArch || systemInfo?.arch || unknownText}`,
       `${t("about.kernelVersion")}: ${systemInfo?.kernelVersion || unknownText}`,
       `${t("about.hostname")}: ${systemInfo?.hostname || unknownText}`,
-      `${t("about.cpu")}: ${systemInfo?.cpuModel || unknownText} (${systemInfo?.cpuCores || 0} ${t("about.cores")})`,
+      `${t("about.cpu")}: ${systemInfo?.cpuModel || unknownText} (${cpuCoresDisplay || 0} ${t("about.cores")})`,
+      `${t("about.cpuFrequency")}: ${systemInfo?.cpuFrequency ? `${systemInfo.cpuFrequency} MHz` : unknownText}`,
       `${t("about.memory")}: ${memoryDisplay || unknownText}`,
+      `${t("about.swap")}: ${swapDisplay || unknownText}`,
+      `${t("about.gpu")}: ${gpuDisplay || unknownText}`,
       `${t("about.uptime")}: ${systemInfo?.uptime ? formatUptime(systemInfo.uptime) : unknownText}`,
       `${t("about.homeDirectory")}: ${systemInfo?.homeDir || "~/.cognia"}`,
       `${t("about.locale")}: ${systemInfo?.locale || "en-US"}`,
     ];
 
     try {
-      await navigator.clipboard.writeText(lines.join("\n"));
+      await writeClipboard(lines.join("\n"));
       setCopied(true);
       toast.success(t("about.copiedToClipboard"));
       setTimeout(() => setCopied(false), 2000);
@@ -273,10 +308,26 @@ export function SystemInfoCard({
             <InfoRow
               label={t("about.cpuCores")}
               value={
-                systemInfo?.cpuCores
-                  ? `${systemInfo.cpuCores} ${t("about.cores")}`
+                cpuCoresDisplay
+                  ? `${cpuCoresDisplay} ${t("about.cores")}`
                   : undefined
               }
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.cpuFrequency")}
+              value={
+                systemInfo?.cpuFrequency
+                  ? `${systemInfo.cpuFrequency} MHz`
+                  : undefined
+              }
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.cpuVendor")}
+              value={systemInfo?.cpuVendorId || undefined}
               isLoading={systemLoading}
               unknownText={unknownText}
             />
@@ -306,18 +357,82 @@ export function SystemInfoCard({
                 </div>
               )}
             </div>
-            <InfoRow
-              label={t("about.totalMemory")}
-              value={
-                systemInfo?.totalMemory
-                  ? formatBytes(systemInfo.totalMemory)
-                  : undefined
-              }
-              isLoading={systemLoading}
-              unknownText={unknownText}
-            />
+            {systemInfo && systemInfo.totalSwap > 0 && (
+              <div className="space-y-1">
+                <InfoRow
+                  label={t("about.swap")}
+                  value={swapDisplay}
+                  isLoading={systemLoading}
+                  unknownText={unknownText}
+                />
+                {!systemLoading && (
+                  <div className="flex items-center gap-2">
+                    <Progress
+                      value={swapPercent}
+                      className={`h-1.5 flex-1 ${
+                        swapPercent > 90
+                          ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                          : swapPercent > 70
+                            ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                            : "[&>[data-slot=progress-indicator]]:bg-blue-500"
+                      }`}
+                      aria-label={`${t("about.swap")} ${swapPercent}%`}
+                    />
+                    <span className="text-[11px] text-muted-foreground w-8 text-right">
+                      {swapPercent}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* GPU Section - only shown if GPUs detected */}
+        {systemInfo?.gpus && systemInfo.gpus.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Gauge className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+                  {t("about.gpuInfo")}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                {systemInfo.gpus.map((gpu, idx) => (
+                  <InfoRow
+                    key={idx}
+                    label={systemInfo.gpus.length > 1 ? `GPU ${idx + 1}` : t("about.gpu")}
+                    value={gpu.name}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                ))}
+                {systemInfo.gpus[0]?.vramMb && (
+                  <InfoRow
+                    label={t("about.gpuVram")}
+                    value={
+                      systemInfo.gpus[0].vramMb >= 1024
+                        ? `${(systemInfo.gpus[0].vramMb / 1024).toFixed(1)} GB`
+                        : `${systemInfo.gpus[0].vramMb} MB`
+                    }
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                )}
+                {systemInfo.gpus[0]?.driverVersion && (
+                  <InfoRow
+                    label={t("about.gpuDriver")}
+                    value={systemInfo.gpus[0].driverVersion}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                )}
+              </div>
+            </div>
+          </>
+        )}
 
         <Separator />
 

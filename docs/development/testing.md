@@ -152,3 +152,63 @@ pnpm test:coverage
 - 测试结果和覆盖率报告上传为 Artifact
 
 详见 [CI/CD](ci-cd.md)。
+
+---
+
+## E2E 测试
+
+### 测试栈
+
+| 工具 | 用途 |
+|------|------|
+| Playwright 1.58+ | E2E 测试框架 |
+| Chromium | 默认浏览器 |
+
+### 运行测试
+
+```bash
+# 运行所有 E2E 测试
+pnpm test:e2e
+
+# 使用 Playwright UI 运行
+pnpm test:e2e:ui
+
+# 有头模式运行（可观察浏览器）
+pnpm test:e2e:headed
+
+# 仅运行特定文件
+pnpm test:e2e -- e2e/navigation.spec.ts
+```
+
+### 文件组织
+
+E2E 测试文件位于 `e2e/` 目录：
+
+```text
+e2e/
+├── fixtures/
+│   └── app-fixture.ts      # 共享 fixture（等待应用就绪、选择器）
+├── navigation.spec.ts      # 侧边栏导航、面包屑、路由
+├── dashboard.spec.ts       # 仪表板页面
+├── environments.spec.ts    # 环境管理页面
+├── packages.spec.ts        # 包管理页面
+├── providers.spec.ts       # 提供商页面
+├── cache.spec.ts           # 缓存页面（概览 + 子路由）
+├── downloads.spec.ts       # 下载管理页面
+├── git.spec.ts             # Git 页面（Web 回退）
+├── wsl.spec.ts             # WSL 页面（Web 回退）
+├── logs.spec.ts            # 日志页面
+├── settings.spec.ts        # 设置页面
+├── about.spec.ts           # 关于页面
+├── docs.spec.ts            # 文档查看器
+├── theme-locale.spec.ts    # 主题/语言切换
+├── keyboard.spec.ts        # 快捷键和命令面板
+├── responsive.spec.ts      # 响应式布局
+└── error-handling.spec.ts  # 错误/404 页面
+```
+
+### 注意事项
+
+- E2E 测试运行于 Web 模式（`pnpm dev`），不依赖 Tauri 桌面端
+- 桌面端专属功能（WSL、Git 管理等）在 Web 模式下测试其回退状态
+- 配置文件：`playwright.config.ts`（项目根目录）

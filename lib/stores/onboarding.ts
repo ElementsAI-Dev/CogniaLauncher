@@ -39,6 +39,10 @@ export interface OnboardingState {
   tourStep: number;
   /** Store version for migrations */
   version: number;
+  /** IDs of bubble hints the user has dismissed */
+  dismissedHints: string[];
+  /** Whether contextual bubble hints are enabled */
+  hintsEnabled: boolean;
 
   // Actions
   setWizardOpen: (open: boolean) => void;
@@ -54,6 +58,10 @@ export interface OnboardingState {
   prevTourStep: () => void;
   completeTour: () => void;
   stopTour: () => void;
+  dismissHint: (hintId: string) => void;
+  dismissAllHints: (allHintIds?: string[]) => void;
+  resetHints: () => void;
+  setHintsEnabled: (enabled: boolean) => void;
 }
 
 export const useOnboardingStore = create<OnboardingState>()(
@@ -67,7 +75,9 @@ export const useOnboardingStore = create<OnboardingState>()(
       tourCompleted: false,
       tourActive: false,
       tourStep: 0,
-      version: 1,
+      version: 2,
+      dismissedHints: [],
+      hintsEnabled: true,
 
       setWizardOpen: (wizardOpen) => set({ wizardOpen }),
 
@@ -154,11 +164,29 @@ export const useOnboardingStore = create<OnboardingState>()(
           tourActive: false,
           tourStep: 0,
         }),
+
+      dismissHint: (hintId) =>
+        set((state) => ({
+          dismissedHints: state.dismissedHints.includes(hintId)
+            ? state.dismissedHints
+            : [...state.dismissedHints, hintId],
+        })),
+
+      dismissAllHints: (allHintIds?: string[]) =>
+        set((state) => ({
+          dismissedHints: allHintIds ?? state.dismissedHints,
+        })),
+
+      resetHints: () =>
+        set({ dismissedHints: [] }),
+
+      setHintsEnabled: (hintsEnabled) =>
+        set({ hintsEnabled }),
     }),
     {
       name: 'cognia-onboarding',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       migrate: (persistedState, version) => {
         const state = persistedState as Record<string, unknown>;
         if (version < 1) {
@@ -166,6 +194,12 @@ export const useOnboardingStore = create<OnboardingState>()(
           if (!('tourCompleted' in state)) state.tourCompleted = false;
           if (!('visitedSteps' in state)) state.visitedSteps = [];
           if (!('version' in state)) state.version = 1;
+        }
+        if (version < 2) {
+          // v1 → v2: add bubble hint fields
+          if (!('dismissedHints' in state)) state.dismissedHints = [];
+          if (!('hintsEnabled' in state)) state.hintsEnabled = true;
+          state.version = 2;
         }
         return state as unknown as OnboardingState;
       },
@@ -175,6 +209,8 @@ export const useOnboardingStore = create<OnboardingState>()(
         currentStep: state.currentStep,
         visitedSteps: state.visitedSteps,
         tourCompleted: state.tourCompleted,
+        dismissedHints: state.dismissedHints,
+        hintsEnabled: state.hintsEnabled,
         version: state.version,
       }),
     },

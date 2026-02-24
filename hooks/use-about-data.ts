@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import * as tauri from '@/lib/tauri';
+import { isTauri } from '@/lib/platform';
 import { APP_VERSION } from '@/lib/app-version';
 import { toast } from 'sonner';
 
@@ -12,11 +13,24 @@ export interface SystemInfo {
   osLongVersion: string;
   kernelVersion: string;
   hostname: string;
+  osName: string;
+  distributionId: string;
+  cpuArch: string;
   cpuModel: string;
+  cpuVendorId: string;
+  cpuFrequency: number;
   cpuCores: number;
+  physicalCoreCount: number | null;
+  globalCpuUsage: number;
   totalMemory: number;
   availableMemory: number;
+  usedMemory: number;
+  totalSwap: number;
+  usedSwap: number;
   uptime: number;
+  bootTime: number;
+  loadAverage: [number, number, number];
+  gpus: tauri.GpuInfo[];
   appVersion: string;
   homeDir: string;
   locale: string;
@@ -50,7 +64,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   const [systemError, setSystemError] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemLoading, setSystemLoading] = useState(true);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const isDesktop = isTauri();
 
   const checkForUpdate = useCallback(async () => {
     if (!tauri.isTauri()) {
@@ -103,11 +117,24 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         osLongVersion: '',
         kernelVersion: '',
         hostname: '',
+        osName: '',
+        distributionId: '',
+        cpuArch: '',
         cpuModel: '',
+        cpuVendorId: '',
+        cpuFrequency: 0,
         cpuCores: 0,
+        physicalCoreCount: null,
+        globalCpuUsage: 0,
         totalMemory: 0,
         availableMemory: 0,
+        usedMemory: 0,
+        totalSwap: 0,
+        usedSwap: 0,
         uptime: 0,
+        bootTime: 0,
+        loadAverage: [0, 0, 0],
+        gpus: [],
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
@@ -125,16 +152,29 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       setSystemInfo({
         os: platformInfo.os,
         arch: platformInfo.arch,
-        osVersion: platformInfo.os_version,
-        osLongVersion: platformInfo.os_long_version,
-        kernelVersion: platformInfo.kernel_version,
+        osVersion: platformInfo.osVersion,
+        osLongVersion: platformInfo.osLongVersion,
+        kernelVersion: platformInfo.kernelVersion,
         hostname: platformInfo.hostname,
-        cpuModel: platformInfo.cpu_model,
-        cpuCores: platformInfo.cpu_cores,
-        totalMemory: platformInfo.total_memory,
-        availableMemory: platformInfo.available_memory,
+        osName: platformInfo.osName,
+        distributionId: platformInfo.distributionId,
+        cpuArch: platformInfo.cpuArch,
+        cpuModel: platformInfo.cpuModel,
+        cpuVendorId: platformInfo.cpuVendorId,
+        cpuFrequency: platformInfo.cpuFrequency,
+        cpuCores: platformInfo.cpuCores,
+        physicalCoreCount: platformInfo.physicalCoreCount,
+        globalCpuUsage: platformInfo.globalCpuUsage,
+        totalMemory: platformInfo.totalMemory,
+        availableMemory: platformInfo.availableMemory,
+        usedMemory: platformInfo.usedMemory,
+        totalSwap: platformInfo.totalSwap,
+        usedSwap: platformInfo.usedSwap,
         uptime: platformInfo.uptime,
-        appVersion: platformInfo.app_version || APP_VERSION,
+        bootTime: platformInfo.bootTime,
+        loadAverage: platformInfo.loadAverage,
+        gpus: platformInfo.gpus,
+        appVersion: platformInfo.appVersion || APP_VERSION,
         homeDir: cogniaDir,
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
       });
@@ -148,11 +188,24 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         osLongVersion: '',
         kernelVersion: '',
         hostname: '',
+        osName: '',
+        distributionId: '',
+        cpuArch: '',
         cpuModel: '',
+        cpuVendorId: '',
+        cpuFrequency: 0,
         cpuCores: 0,
+        physicalCoreCount: null,
+        globalCpuUsage: 0,
         totalMemory: 0,
         availableMemory: 0,
+        usedMemory: 0,
+        totalSwap: 0,
+        usedSwap: 0,
         uptime: 0,
+        bootTime: 0,
+        loadAverage: [0, 0, 0],
+        gpus: [],
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
@@ -164,8 +217,6 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
   // Check for updates only once on mount (not affected by locale changes)
   useEffect(() => {
-    const desktop = tauri.isTauri();
-    setIsDesktop(desktop);
     checkForUpdate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -243,6 +294,11 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         tauri.logGetTotalSize(),
       ]);
 
+      const formatMem = (bytes: number) => bytes > 0 ? `${Math.round(bytes / (1024 * 1024 * 1024))} GB` : 'N/A';
+      const coresStr = systemInfo?.physicalCoreCount && systemInfo.physicalCoreCount !== systemInfo.cpuCores
+        ? `${systemInfo.physicalCoreCount}P/${systemInfo.cpuCores}L`
+        : `${systemInfo?.cpuCores || 0}`;
+
       const lines: string[] = [
         'CogniaLauncher Diagnostic Report',
         '================================',
@@ -251,11 +307,15 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         '--- System Info ---',
         `App Version: v${updateInfo?.current_version || systemInfo?.appVersion || APP_VERSION}`,
         `OS: ${systemInfo?.osLongVersion || systemInfo?.os || 'Unknown'}`,
-        `Arch: ${systemInfo?.arch || 'Unknown'}`,
+        `OS Name: ${systemInfo?.osName || 'Unknown'}`,
+        `Arch: ${systemInfo?.cpuArch || systemInfo?.arch || 'Unknown'}`,
         `Kernel: ${systemInfo?.kernelVersion || 'Unknown'}`,
         `Hostname: ${systemInfo?.hostname || 'Unknown'}`,
-        `CPU: ${systemInfo?.cpuModel || 'Unknown'} (${systemInfo?.cpuCores || 0} cores)`,
-        `Memory: ${systemInfo?.totalMemory ? `${Math.round(systemInfo.totalMemory / (1024 * 1024 * 1024))} GB` : 'Unknown'}`,
+        `CPU: ${systemInfo?.cpuModel || 'Unknown'} (${coresStr} cores, ${systemInfo?.cpuFrequency || 0} MHz)`,
+        `CPU Vendor: ${systemInfo?.cpuVendorId || 'Unknown'}`,
+        `Memory: ${systemInfo?.totalMemory ? formatMem(systemInfo.totalMemory) : 'Unknown'} (Used: ${systemInfo?.usedMemory ? formatMem(systemInfo.usedMemory) : 'N/A'})`,
+        `Swap: ${systemInfo?.totalSwap ? `${formatMem(systemInfo.totalSwap)} (Used: ${formatMem(systemInfo.usedSwap)})` : 'None'}`,
+        `GPU: ${systemInfo?.gpus?.length ? systemInfo.gpus.map(g => `${g.name}${g.vramMb ? ` (${g.vramMb} MB)` : ''}`).join(', ') : 'Unknown'}`,
         `Data Dir: ${systemInfo?.homeDir || 'Unknown'}`,
         `Locale: ${systemInfo?.locale || 'Unknown'}`,
       ];

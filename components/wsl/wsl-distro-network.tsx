@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -183,8 +184,8 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
     }
   }, [isRunning, loaded, refresh]);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string) => {
+    await writeClipboard(text);
     toast.success(t('common.copied'));
   };
 

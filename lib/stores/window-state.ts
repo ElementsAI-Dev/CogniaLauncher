@@ -3,25 +3,21 @@ import { create } from "zustand";
 interface WindowStateStore {
   isMaximized: boolean;
   isFullscreen: boolean;
-  isDesktopMode: boolean;
   isFocused: boolean;
-  isWindows: boolean;
+  titlebarHeight: string;
   setMaximized: (value: boolean) => void;
   setFullscreen: (value: boolean) => void;
-  setDesktopMode: (value: boolean) => void;
   setFocused: (value: boolean) => void;
-  setWindows: (value: boolean) => void;
+  setTitlebarHeight: (value: string) => void;
 }
 
 export const useWindowStateStore = create<WindowStateStore>((set) => ({
   isMaximized: false,
   isFullscreen: false,
-  isDesktopMode: false,
   isFocused: true,
-  isWindows: false,
+  titlebarHeight: "2rem",
   setMaximized: (value) => set({ isMaximized: value }),
   setFullscreen: (value) => set({ isFullscreen: value }),
-  setDesktopMode: (value) => set({ isDesktopMode: value }),
   setFocused: (value) => set({ isFocused: value }),
-  setWindows: (value) => set({ isWindows: value }),
+  setTitlebarHeight: (value) => set({ titlebarHeight: value }),
 }));

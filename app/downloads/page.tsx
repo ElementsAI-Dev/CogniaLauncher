@@ -277,7 +277,7 @@ export default function DownloadsPage() {
   }, [historyStats, t]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6" data-hint="downloads-concurrent">
       <PageHeader
         title={t('downloads.title')}
         description={t('downloads.description')}

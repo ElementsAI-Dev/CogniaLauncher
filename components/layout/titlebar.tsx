@@ -12,7 +12,7 @@ import {
   MonitorUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isTauri } from "@/lib/tauri";
+import { isTauri, isWindows as isWindowsOS } from "@/lib/platform";
 import { useSettingsStore } from "@/lib/stores/settings";
 import { useWindowStateStore } from "@/lib/stores/window-state";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -51,9 +51,7 @@ export function Titlebar() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
-  const [isDesktopMode, setIsDesktopMode] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
-  const [isWindows, setIsWindows] = useState(false);
   const windowStateStore = useWindowStateStore();
 
   const unlistenResizeRef = useRef<(() => void) | null>(null);
@@ -81,16 +79,6 @@ export function Titlebar() {
         if (!active) return;
 
         setAppWindow(win);
-        setIsDesktopMode(true);
-        windowStateStore.setDesktopMode(true);
-
-        // Detect Windows for maximize padding compensation
-        // Use navigator.platform/userAgent which is reliable in Tauri webview
-        const detectedWindows =
-          navigator.userAgent.includes("Windows") ||
-          navigator.platform?.startsWith("Win");
-        setIsWindows(detectedWindows);
-        windowStateStore.setWindows(detectedWindows);
 
         const [maximized, fullscreen, alwaysOnTop] = await Promise.all([
           win.isMaximized(),
@@ -221,18 +209,33 @@ export function Titlebar() {
     [handleMaximize],
   );
 
+  // Synchronous Tauri and Windows detection (available immediately after mount)
+  const isTauriEnv = mounted && isTauri();
+  const isWindows = mounted && isWindowsOS();
+
   // Maximize padding: on Windows frameless, maximized windows need padding
   // to prevent content clipping by the invisible thick-frame border
   const maximizePadding =
-    isDesktopMode && isWindows && isMaximized ? WIN_MAXIMIZE_PADDING : 0;
+    isTauriEnv && isWindows && isMaximized ? WIN_MAXIMIZE_PADDING : 0;
+
+  // Sync titlebar height to shared store for sidebar positioning
+  const titlebarHeight = maximizePadding > 0
+    ? `calc(2rem + ${maximizePadding}px)`
+    : "2rem";
+
+  useEffect(() => {
+    if (isTauriEnv) {
+      windowStateStore.setTitlebarHeight(titlebarHeight);
+    }
+  }, [isTauriEnv, titlebarHeight, windowStateStore]);
 
   // Don't render on server or before hydration
   if (!mounted) {
     return null;
   }
 
-  // Don't render if not in desktop (Tauri) mode
-  if (!isDesktopMode) {
+  // Don't render if not in Tauri environment (synchronous check)
+  if (!isTauriEnv) {
     return null;
   }
 
@@ -291,10 +294,12 @@ export function Titlebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={handleToggleAlwaysOnTop}
+                  disabled={!appWindow}
                   className={cn(
                     "inline-flex h-full w-11 items-center justify-center",
                     "text-muted-foreground transition-colors",
                     "hover:bg-muted hover:text-foreground",
+                    "disabled:opacity-30 disabled:pointer-events-none",
                     isAlwaysOnTop && "text-primary",
                   )}
                   aria-label={
@@ -319,10 +324,12 @@ export function Titlebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={handleMinimize}
+                  disabled={!appWindow}
                   className={cn(
                     "inline-flex h-full w-11 items-center justify-center",
                     "text-muted-foreground transition-colors",
                     "hover:bg-muted hover:text-foreground",
+                    "disabled:opacity-30 disabled:pointer-events-none",
                   )}
                   aria-label={t("titlebar.minimize")}
                 >
@@ -338,10 +345,12 @@ export function Titlebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={handleMaximize}
+                  disabled={!appWindow}
                   className={cn(
                     "inline-flex h-full w-11 items-center justify-center",
                     "text-muted-foreground transition-colors",
                     "hover:bg-muted hover:text-foreground",
+                    "disabled:opacity-30 disabled:pointer-events-none",
                   )}
                   aria-label={
                     isMaximized ? t("titlebar.restore") : t("titlebar.maximize")
@@ -363,10 +372,12 @@ export function Titlebar() {
               <TooltipTrigger asChild>
                 <button
                   onClick={handleClose}
+                  disabled={!appWindow}
                   className={cn(
                     "inline-flex h-full w-11 items-center justify-center",
                     "text-muted-foreground transition-colors",
                     "hover:bg-destructive hover:text-destructive-foreground",
+                    "disabled:opacity-30 disabled:pointer-events-none",
                   )}
                   aria-label={t("titlebar.close")}
                 >

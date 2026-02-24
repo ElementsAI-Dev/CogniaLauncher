@@ -37,8 +37,9 @@ jest.mock("@/hooks/use-appearance-config-sync", () => ({
   useAppearanceConfigSync: jest.fn(),
 }));
 
-jest.mock("@/lib/tauri", () => ({
+jest.mock("@/lib/platform", () => ({
   isTauri: () => false,
+  isWindows: () => false,
 }));
 
 jest.mock("@/components/ui/sidebar", () => ({
@@ -63,14 +64,12 @@ jest.mock("@/lib/stores/window-state", () => ({
   useWindowStateStore: () => ({
     isMaximized: false,
     isFullscreen: false,
-    isDesktopMode: false,
     isFocused: true,
-    isWindows: false,
+    titlebarHeight: "2rem",
     setMaximized: jest.fn(),
     setFullscreen: jest.fn(),
-    setDesktopMode: jest.fn(),
     setFocused: jest.fn(),
-    setWindows: jest.fn(),
+    setTitlebarHeight: jest.fn(),
   }),
 }));
 

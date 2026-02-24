@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { PageHeader } from '@/components/layout/page-header';
 import { useAboutData } from '@/hooks/use-about-data';
-import { getChangelog } from '@/lib/constants/about';
+import { useChangelog } from '@/hooks/use-changelog';
+import { useChangelogStore } from '@/lib/stores/changelog';
+import { compareSemver } from '@/lib/constants/changelog-utils';
+import { APP_VERSION } from '@/lib/app-version';
 import {
   VersionCards,
   UpdateBanner,
@@ -14,6 +17,7 @@ import {
   ActionsCard,
   ErrorAlert,
   ChangelogDialog,
+  WhatsNewDialog,
 } from '@/components/about';
 
 export default function AboutPage() {
@@ -38,7 +42,26 @@ export default function AboutPage() {
     exportDiagnostics,
   } = useAboutData(locale);
 
-  const changelogEntries = getChangelog(locale);
+  const changelog = useChangelog(locale);
+
+  const { lastSeenVersion, whatsNewOpen, setWhatsNewOpen, dismissWhatsNew } =
+    useChangelogStore();
+
+  // Auto-show "What's New" if the user hasn't seen this version yet
+  useEffect(() => {
+    if (!lastSeenVersion) {
+      // First-time user: seed with current version so future upgrades are detected
+      dismissWhatsNew(APP_VERSION);
+    } else if (lastSeenVersion !== APP_VERSION) {
+      setWhatsNewOpen(true);
+    }
+  }, [lastSeenVersion, setWhatsNewOpen, dismissWhatsNew]);
+
+  // Filter entries newer than lastSeenVersion for "What's New"
+  const whatsNewEntries = changelog.entries.filter((entry) => {
+    if (!lastSeenVersion) return false;
+    return compareSemver(entry.version, lastSeenVersion) > 0;
+  });
 
   return (
     <main className="p-6 space-y-6" aria-labelledby="about-page-title">
@@ -109,7 +132,30 @@ export default function AboutPage() {
       <ChangelogDialog
         open={changelogOpen}
         onOpenChange={setChangelogOpen}
-        entries={changelogEntries}
+        entries={changelog.entries}
+        loading={changelog.loading}
+        error={changelog.error}
+        onRetry={changelog.refresh}
+        t={t}
+      />
+
+      {/* What's New Dialog */}
+      <WhatsNewDialog
+        open={whatsNewOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            dismissWhatsNew(APP_VERSION);
+          } else {
+            setWhatsNewOpen(open);
+          }
+        }}
+        entries={whatsNewEntries}
+        loading={changelog.loading}
+        onDismiss={() => dismissWhatsNew(APP_VERSION)}
+        onShowFullChangelog={() => {
+          dismissWhatsNew(APP_VERSION);
+          setChangelogOpen(true);
+        }}
         t={t}
       />
     </main>

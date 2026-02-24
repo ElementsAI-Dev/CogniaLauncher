@@ -3,7 +3,7 @@ use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider, SystemPackageProvider};
 use super::{
     apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno, dnf,
-    docker, dotnet, flatpak, fnm, fvm, gem, github, gitlab, goenv, luarocks, macports, mise, msvc,
+    docker, dotnet, flatpak, fnm, fvm, gem, git, github, gitlab, goenv, luarocks, macports, mise, msvc,
     msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery, pub_dev, pyenv,
     rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zig, zypper,
 };
@@ -267,6 +267,12 @@ impl ProviderRegistry {
         registry.register_environment_provider(Arc::new(SystemEnvironmentProvider::new(
             SystemEnvironmentType::Fortran,
         )));
+
+        // Git provider (cross-platform, version control tool management)
+        let git_provider = Arc::new(git::GitProvider::new());
+        if git_provider.supported_platforms().contains(&platform) {
+            registry.register_system_provider(git_provider);
+        }
 
         // GitHub provider with optional token from settings
         let github_token = settings

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, type ComponentPropsWithoutRef } from 'react';
+import { useCallback, type ComponentPropsWithoutRef, type MouseEvent } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -17,12 +18,24 @@ interface MarkdownRendererProps {
   basePath?: string;
 }
 
+function handleAnchorClick(e: MouseEvent<HTMLAnchorElement>) {
+  const href = e.currentTarget.getAttribute('href');
+  if (!href?.startsWith('#')) return;
+  e.preventDefault();
+  const id = href.slice(1);
+  const target = document.getElementById(id);
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    history.replaceState(null, '', href);
+  }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboard(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -66,7 +79,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             <h1 id={id} className="group/heading" {...props}>
               {children}
               {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true">
+                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
                   #
                 </a>
               )}
@@ -76,7 +89,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             <h2 id={id} className="group/heading" {...props}>
               {children}
               {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true">
+                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
                   #
                 </a>
               )}
@@ -86,7 +99,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             <h3 id={id} className="group/heading" {...props}>
               {children}
               {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true">
+                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
                   #
                 </a>
               )}
@@ -96,7 +109,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             <h4 id={id} className="group/heading" {...props}>
               {children}
               {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true">
+                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
                   #
                 </a>
               )}
@@ -104,18 +117,27 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
           ),
           pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
             let textContent = '';
+            let language = '';
             if (
               children &&
               typeof children === 'object' &&
               'props' in (children as React.ReactElement)
             ) {
-              const codeEl = children as React.ReactElement<{ children?: React.ReactNode }>;
+              const codeEl = children as React.ReactElement<{ children?: React.ReactNode; className?: string }>;
               if (typeof codeEl.props.children === 'string') {
                 textContent = codeEl.props.children;
+              }
+              const cls = codeEl.props.className ?? '';
+              const langMatch = cls.match(/(?:language-|hljs language-)([\w-]+)/);
+              if (langMatch) {
+                language = langMatch[1];
               }
             }
             return (
               <div className="group/code relative">
+                {language && (
+                  <span className="docs-code-lang">{language}</span>
+                )}
                 <pre {...props}>{children}</pre>
                 {textContent && <CopyButton text={textContent} />}
               </div>
@@ -132,7 +154,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             }
             if (href.startsWith('#')) {
               return (
-                <a href={href} {...props}>
+                <a href={href} onClick={handleAnchorClick} {...props}>
                   {children}
                 </a>
               );

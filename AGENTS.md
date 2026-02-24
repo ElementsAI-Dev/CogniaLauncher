@@ -34,6 +34,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - `pnpm build` — Create a production build.
 - `pnpm start` — Serve the production build.
 - `pnpm lint` — Run ESLint. Use `--fix` to auto-fix.
+- `pnpm test:e2e` — Run Playwright E2E tests.
+- `pnpm test:e2e:ui` — Run E2E tests with Playwright UI.
 - `pnpm tauri dev` — Launch desktop app (requires Rust toolchain).
 - `pnpm tauri build` — Build desktop binaries.
 
@@ -50,7 +52,8 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 - **Test Runner**: Jest 30 with jest-environment-jsdom and @testing-library/react.
 - Name tests `*.test.ts`/`*.test.tsx`; co-locate next to source or in `tests/`.
-- Run: pnpm test (all), pnpm test:watch (watch), pnpm test:coverage (coverage).
+- Run: pnpm test (all), pnpm test:watch (watch), pnpm test:coverage (coverage).
+
 - Coverage thresholds: branches 60%, functions 60%, lines 70%, statements 70%.
 - **Rust tests**: cargo test in src-tauri/ (270+ provider unit tests).
 - See docs/development/testing.md for detailed testing guide and best practices.

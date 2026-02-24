@@ -6,3 +6,4 @@ export { LicenseCard } from "./license-card";
 export { ActionsCard } from "./actions-card";
 export { ErrorAlert } from "./error-alert";
 export { ChangelogDialog } from "./changelog-dialog";
+export { WhatsNewDialog } from "./whats-new-dialog";

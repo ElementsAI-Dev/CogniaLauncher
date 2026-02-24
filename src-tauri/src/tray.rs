@@ -240,7 +240,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         }
         "open_logs" => {
             if let Ok(log_dir) = app.path().app_log_dir() {
-                let _ = open::that(log_dir);
+                let _ = tauri_plugin_opener::open_path(log_dir, None::<&str>);
             }
         }
         "toggle_autostart" => {

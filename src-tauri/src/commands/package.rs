@@ -140,7 +140,7 @@ pub async fn package_list(
     for provider_id in providers {
         if let Some(p) = reg.get(provider_id) {
             if p.is_available().await {
-                if let Ok(mut packages) = p.list_installed(InstalledFilter::default()).await {
+                if let Ok(mut packages) = p.list_installed(InstalledFilter { global_only: true, ..Default::default() }).await {
                     all_packages.append(&mut packages);
                 }
             }
@@ -230,7 +230,7 @@ pub async fn package_check_installed(
     if let Some(provider_id) = provider {
         if let Some(p) = reg.get(&provider_id) {
             let installed = p
-                .list_installed(InstalledFilter::default())
+                .list_installed(InstalledFilter { global_only: true, ..Default::default() })
                 .await
                 .map(|packages| {
                     packages
@@ -246,7 +246,7 @@ pub async fn package_check_installed(
     for provider_id in reg.list() {
         if let Some(p) = reg.get(provider_id) {
             if p.is_available().await {
-                if let Ok(packages) = p.list_installed(InstalledFilter::default()).await {
+                if let Ok(packages) = p.list_installed(InstalledFilter { global_only: true, ..Default::default() }).await {
                     if packages
                         .iter()
                         .any(|pkg| pkg.name.to_lowercase() == name.to_lowercase())

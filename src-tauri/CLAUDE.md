@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-02-23 | v1.4.0
+> Last Updated: 2026-02-24 | v1.5.0
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -11,9 +11,9 @@
 
 This module contains the **Rust backend** for CogniaLauncher, running as a native desktop application via Tauri. It provides:
 
-- **IPC Commands**: Exposed to frontend via Tauri's invoke system (260+ commands across 20 modules)
+- **IPC Commands**: Exposed to frontend via Tauri's invoke system (300+ commands across 21 modules)
 - **Core Logic**: Environment and package management operations (12 modules including profiles, health_check, custom_detection, eol, history, project_env_detect)
-- **Provider System**: Extensible provider registry for package sources (48 providers)
+- **Provider System**: Extensible provider registry for package sources (55 providers, 28 SystemEnvironmentTypes)
 - **Cache Management**: Download and metadata caching with SQLite
 - **Platform Abstraction**: Cross-platform file system, process, and network operations
 - **Dependency Resolution**: Version constraint resolution using PubGrub
@@ -281,6 +281,28 @@ All commands are registered in `src/lib.rs` and organized by module.
 | `gitlab_search_projects` | Search GitLab projects |
 | + 10 more | Instance management, authentication, etc. |
 
+### Git Commands (`commands::git`)
+
+| Command | Purpose |
+|---------|---------|
+| `git_is_available` | Check if git is installed |
+| `git_get_version` | Get git version string |
+| `git_get_executable_path` | Get git executable path |
+| `git_install` | Install git via system package manager |
+| `git_update` | Update git to latest version |
+| `git_get_config` | Get global git config entries |
+| `git_set_config` | Set a global git config value |
+| `git_remove_config` | Remove a global git config key |
+| `git_get_repo_info` | Get repository info (branch, dirty, head) |
+| `git_get_log` | Get commit log with filters |
+| `git_get_branches` | Get branch list |
+| `git_get_remotes` | Get remote list |
+| `git_get_tags` | Get tag list |
+| `git_get_stashes` | Get stash list |
+| `git_get_contributors` | Get contributor list |
+| `git_get_file_history` | Get file modification history |
+| `git_get_blame` | Get blame info for a file |
+
 ### Health Check Commands (`commands::health_check`)
 
 | Command | Purpose |
@@ -335,13 +357,13 @@ All commands are registered in `src/lib.rs` and organized by module.
 | Command | Purpose |
 |---------|---------|
 | `manifest_read` | Read project manifest (package.json, Cargo.toml, etc.) |
-| `manifest_detect` | Detect project type and manifest file |
+| `manifest_init` | Initialize a new cognia.toml manifest file |
 
 ### FS Utils Commands (`commands::fs_utils`)
 
 | Command | Purpose |
 |---------|---------|
-| `fs_read_text_file` | Read a text file safely |
+| `validate_path` | Validate and inspect a file path (security, permissions, disk space) |
 
 ---
 
@@ -391,7 +413,7 @@ pub async fn package_search(
 
 **Purpose:** Implementations of package and environment providers
 
-**Available Providers (48 total):**
+**Available Providers (55 total):**
 
 **Environment Managers (version switching):**
 
@@ -455,6 +477,32 @@ pub async fn package_search(
 | `conan` | Cross | Conan 2.x C/C++ package manager |
 | `xmake` | Cross | Xmake/Xrepo C/C++ package manager |
 
+**Dart/Flutter:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `fvm` | Cross | Flutter Version Manager (Dart/Flutter SDK) |
+| `pub_dev` | Cross | Dart Pub packages (pub.dev API) |
+
+**Lua:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `luarocks` | Cross | LuaRocks Lua module manager |
+
+**Zig:**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `zig` | Cross | Zig version manager (ziglang.org) |
+
+**C/C++ Toolchains (additional):**
+
+| Provider | Platform | Description |
+|----------|----------|-------------|
+| `msvc` | Windows | MSVC / Visual Studio Build Tools detection (vswhere) |
+| `msys2` | Windows | MSYS2 pacman package manager |
+
 **Other Providers:**
 
 | Provider | Platform | Description |
@@ -465,7 +513,8 @@ pub async fn package_search(
 | `gitlab` | Cross | GitLab Releases |
 | `psgallery` | Windows | PowerShell Gallery |
 | `wsl` | Windows | Windows Subsystem for Linux |
-| `system` | Cross | System-installed runtime detection |
+| `git` | Cross | Git version management and repository inspection |
+| `system` | Cross | System-installed runtime detection (27 types) |
 
 **Provider Traits:**
 
@@ -756,12 +805,12 @@ impl Provider for MyProvider {
 src-tauri/
 ├── src/
 │   ├── main.rs              # Entry point
-│   ├── lib.rs               # Tauri builder, command registration (260+ commands)
+│   ├── lib.rs               # Tauri builder, command registration (288 commands)
 │   ├── error.rs             # Error types (CogniaError)
 │   ├── tray.rs              # System tray (multi-language, notifications, autostart)
-│   ├── commands/            # Tauri command handlers (20 modules)
+│   ├── commands/            # Tauri command handlers (21 modules)
 │   │   ├── mod.rs
-│   │   ├── environment.rs   # 36 env commands (install, detect, alias, etc.)
+│   │   ├── environment.rs   # 48 env commands (install, detect, alias, rustup, etc.)
 │   │   ├── package.rs       # 13 package commands
 │   │   ├── config.rs        # 9 config commands
 │   │   ├── cache.rs         # 32 cache commands
@@ -770,7 +819,8 @@ src-tauri/
 │   │   ├── wsl.rs           # 26 WSL commands (Windows only)
 │   │   ├── custom_detection.rs # 16 custom detection commands
 │   │   ├── gitlab.rs        # 15 GitLab commands
-│   │   ├── github.rs        # 12 GitHub commands
+│   │   ├── git.rs           # 17 git commands
+│   │   ├── github.rs        # 13 GitHub commands
 │   │   ├── shim.rs          # 10 shim/PATH commands
 │   │   ├── profiles.rs      # 9 profile commands
 │   │   ├── launch.rs        # 6 launch/exec commands
@@ -779,7 +829,7 @@ src-tauri/
 │   │   ├── search.rs        # 3 search commands
 │   │   ├── updater.rs       # 2 self-update commands
 │   │   ├── manifest.rs      # 2 manifest commands
-│   │   └── fs_utils.rs      # 1 fs utility command
+│   │   └── fs_utils.rs      # 1 fs utility command (validate_path)
 │   ├── core/                # Core business logic (12 modules)
 │   │   ├── mod.rs
 │   │   ├── environment.rs   # Environment version management
@@ -793,14 +843,14 @@ src-tauri/
 │   │   ├── history.rs       # Installation history tracking
 │   │   ├── eol.rs           # End-of-life version tracking
 │   │   └── project_env_detect.rs # Project-level environment detection
-│   ├── provider/            # Provider implementations (48 + 6 infra)
+│   ├── provider/            # Provider implementations (55 + 6 infra)
 │   │   ├── mod.rs           # Module exports
 │   │   ├── traits.rs        # Provider/EnvironmentProvider/SystemPackageProvider traits
 │   │   ├── api.rs           # PackageApiClient (PyPI/npm/crates.io mirrors)
 │   │   ├── registry.rs      # Platform-aware provider registration
 │   │   ├── node_base.rs     # Shared Node.js utilities + split_name_version
-│   │   ├── system.rs        # System runtime detection (11 types)
-│   │   └── ... (48 provider .rs files)
+│   │   ├── system.rs        # System runtime detection (27 types)
+│   │   └── ... (55 provider .rs files)
 │   ├── cache/               # Cache management (10 modules)
 │   │   ├── mod.rs
 │   │   ├── db.rs            # Legacy database

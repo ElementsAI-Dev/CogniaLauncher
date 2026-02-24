@@ -32,8 +32,8 @@ export function SystemInfoWidget({ platformInfo, cogniaDir, className }: SystemI
     );
   }
 
-  const osDisplay = platformInfo.os_long_version
-    || (platformInfo.os_version ? `${platformInfo.os} ${platformInfo.os_version}` : platformInfo.os);
+  const osDisplay = platformInfo.osLongVersion
+    || (platformInfo.osVersion ? `${platformInfo.os} ${platformInfo.osVersion}` : platformInfo.os);
 
   const infoItems = [
     {
@@ -44,15 +44,15 @@ export function SystemInfoWidget({ platformInfo, cogniaDir, className }: SystemI
     {
       icon: <Cpu className="h-4 w-4" />,
       label: t("dashboard.widgets.cpu"),
-      value: platformInfo.cpu_model
-        ? `${platformInfo.cpu_model} (${platformInfo.cpu_cores} cores)`
+      value: platformInfo.cpuModel
+        ? `${platformInfo.cpuModel} (${platformInfo.cpuCores} cores)`
         : platformInfo.arch,
     },
     {
       icon: <MemoryStick className="h-4 w-4" />,
       label: t("dashboard.widgets.memory"),
-      value: platformInfo.total_memory
-        ? formatBytes(platformInfo.total_memory)
+      value: platformInfo.totalMemory
+        ? formatBytes(platformInfo.totalMemory)
         : t("common.unknown"),
     },
     {

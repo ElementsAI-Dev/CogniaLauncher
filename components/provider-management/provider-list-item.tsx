@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -173,7 +174,7 @@ export function ProviderListItem({
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
-                navigator.clipboard.writeText(provider.id);
+                writeClipboard(provider.id);
                 toast.success(t("providers.idCopied"));
               }}
             >

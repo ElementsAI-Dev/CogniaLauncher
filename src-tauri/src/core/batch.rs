@@ -443,7 +443,7 @@ impl BatchManager {
                 if let Some(p) = registry.get(provider_id) {
                     if p.is_available().await {
                         if let Ok(installed) = p
-                            .list_installed(crate::provider::InstalledFilter::default())
+                            .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
                             .await
                         {
                             all_installed.extend(installed.into_iter().map(|i| PackageSpec {
@@ -727,8 +727,8 @@ impl BatchManager {
 
         let installed_version = provider
             .list_installed(InstalledFilter {
+                global_only: true,
                 name_filter: Some(spec.name.clone()),
-                ..Default::default()
             })
             .await
             .ok()

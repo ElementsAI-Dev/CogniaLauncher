@@ -225,6 +225,7 @@ const config: Config = {
     "/.next/",
     "/out/",
     "/src-tauri/",
+    "/e2e/",
   ],
 
   // The regexp pattern or array of patterns that Jest uses to detect test files
@@ -240,10 +241,9 @@ const config: Config = {
   // transform: undefined,
 
   // An array of regexp pattern strings that are matched against all source file paths, matched files will skip transformation
-  // transformIgnorePatterns: [
-  //   "\\\\node_modules\\\\",
-  //   "\\.pnp\\.[^\\\\]+$"
-  // ],
+  // Note: github-slugger (ESM-only) is mocked in test files rather than transformed here,
+  // because next/jest overrides transformIgnorePatterns internally.
+  // transformIgnorePatterns: undefined,
 
   // An array of regexp pattern strings that are matched against all modules before the module loader will automatically return a mock for them
   // unmockedModulePathPatterns: undefined,

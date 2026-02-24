@@ -160,6 +160,66 @@ pub struct WslDistroInfo {
     pub is_default: bool,
 }
 
+/// Parsed component versions from `wsl --version` output.
+///
+/// Example output:
+/// ```text
+/// WSL version: 2.6.1.0
+/// Kernel version: 6.6.87.2-1
+/// WSLg version: 1.0.66
+/// MSRDC version: 1.2.6353
+/// Direct3D version: 1.611.1-81528511
+/// DXCore version: 10.0.26100.1-240331-1435.ge-release
+/// Windows version: 10.0.26100.6584
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct WslVersionInfo {
+    pub wsl_version: Option<String>,
+    pub kernel_version: Option<String>,
+    pub wslg_version: Option<String>,
+    pub msrdc_version: Option<String>,
+    pub direct3d_version: Option<String>,
+    pub dxcore_version: Option<String>,
+    pub windows_version: Option<String>,
+}
+
+/// Detected environment information from inside a WSL distribution.
+///
+/// Populated by parsing `/etc/os-release`, probing binaries, and reading
+/// system files inside the running distro via `wsl -d <distro> --exec`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistroEnvironment {
+    /// Lowercase distro identifier from os-release `ID` (e.g. "ubuntu", "arch", "fedora")
+    pub distro_id: String,
+    /// Related distro families from os-release `ID_LIKE` (e.g. ["debian"], ["rhel","centos","fedora"])
+    pub distro_id_like: Vec<String>,
+    /// Human-readable name from os-release `PRETTY_NAME` (e.g. "Ubuntu 24.04.1 LTS")
+    pub pretty_name: String,
+    /// Version number from os-release `VERSION_ID` (e.g. "24.04")
+    pub version_id: Option<String>,
+    /// Version codename from os-release `VERSION_CODENAME` (e.g. "noble")
+    pub version_codename: Option<String>,
+    /// CPU architecture (e.g. "x86_64", "aarch64")
+    pub architecture: String,
+    /// Linux kernel version (e.g. "5.15.167.4-1-microsoft-standard-WSL2")
+    pub kernel_version: String,
+    /// Detected package manager binary name (e.g. "apt", "pacman", "dnf", "zypper", "apk")
+    pub package_manager: String,
+    /// Init system running as PID 1 (e.g. "systemd", "init", "openrc")
+    pub init_system: String,
+    /// Default login shell for the current user
+    pub default_shell: Option<String>,
+    /// Default (current) username
+    pub default_user: Option<String>,
+    /// System uptime in seconds (from /proc/uptime)
+    pub uptime_seconds: Option<u64>,
+    /// Hostname of the distro
+    pub hostname: Option<String>,
+    /// Number of installed packages (via the detected package manager)
+    pub installed_packages: Option<u64>,
+}
+
 impl WslProvider {
     pub fn new() -> Self {
         Self
@@ -438,13 +498,133 @@ impl WslProvider {
         self.run_wsl_lenient(&["--status"]).await
     }
 
+    /// Parse `wsl --version` output into structured version info.
+    /// Handles both English and Chinese (and other locale) output.
+    pub fn parse_version_output(output: &str) -> WslVersionInfo {
+        let mut info = WslVersionInfo::default();
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // Split on first ':' to get key and value
+            if let Some(colon_pos) = trimmed.find(':') {
+                let key = trimmed[..colon_pos].trim().to_lowercase();
+                let value = trimmed[colon_pos + 1..].trim().to_string();
+                if value.is_empty() {
+                    continue;
+                }
+
+                // Match keys: support English + Chinese (版本 = version)
+                if (key.contains("wsl") && !key.contains("wslg"))
+                    && (key.contains("version") || key.contains("版本"))
+                {
+                    info.wsl_version = Some(value);
+                } else if key.contains("kernel") || (key.contains("内核") && key.contains("版本")) {
+                    info.kernel_version = Some(value);
+                } else if key.contains("wslg") {
+                    info.wslg_version = Some(value);
+                } else if key.contains("msrdc") {
+                    info.msrdc_version = Some(value);
+                } else if key.contains("direct3d") || key.contains("d3d") {
+                    info.direct3d_version = Some(value);
+                } else if key.contains("dxcore") {
+                    info.dxcore_version = Some(value);
+                } else if key.contains("windows") && (key.contains("version") || key.contains("版本"))
+                {
+                    info.windows_version = Some(value);
+                }
+            }
+        }
+        info
+    }
+
+    /// Get full version info from `wsl --version`, parsed into structured fields.
+    pub async fn get_full_version_info(&self) -> CogniaResult<WslVersionInfo> {
+        let out = self.run_wsl_lenient(&["--version"]).await?;
+        Ok(Self::parse_version_output(&out))
+    }
+
+    /// Parse `wsl --status` output into key-value pairs.
+    /// Returns default distribution name and default WSL version if found.
+    pub fn parse_status_output(output: &str) -> (Option<String>, Option<String>) {
+        let mut default_distro: Option<String> = None;
+        let mut default_version: Option<String> = None;
+
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if let Some(colon_pos) = trimmed.find(':') {
+                let key = trimmed[..colon_pos].trim().to_lowercase();
+                let value = trimmed[colon_pos + 1..].trim().to_string();
+                if value.is_empty() {
+                    continue;
+                }
+
+                // Default distribution
+                if (key.contains("default") && key.contains("distribution"))
+                    || (key.contains("默认") && key.contains("分发"))
+                {
+                    default_distro = Some(value);
+                }
+                // Default version
+                else if (key.contains("default") && key.contains("version"))
+                    || (key.contains("默认") && key.contains("版本"))
+                {
+                    default_version = Some(value);
+                }
+            }
+        }
+
+        (default_distro, default_version)
+    }
+
+    /// Set sparse VHD mode for a WSL distribution.
+    /// When enabled, the virtual disk will automatically reclaim unused space.
+    /// Requires WSL 2.0.0+ (Store version).
+    pub async fn set_sparse_vhd(&self, distro: &str, enabled: bool) -> CogniaResult<()> {
+        let flag = if enabled { "true" } else { "false" };
+        self.run_wsl(&["--manage", distro, "--set-sparse", flag]).await?;
+        Ok(())
+    }
+
+    /// Install WSL engine only, without installing a default distribution.
+    /// Uses `wsl --install --no-distribution`.
+    /// Requires elevation (admin privileges).
+    pub async fn install_wsl_only(&self) -> CogniaResult<String> {
+        self.run_wsl_long(&["--install", "--no-distribution"]).await
+    }
+
+    /// Install a distribution to a custom location.
+    /// Uses `wsl --install -d <name> --location <path>`.
+    pub async fn install_with_location(
+        &self,
+        name: &str,
+        location: &str,
+    ) -> CogniaResult<String> {
+        self.run_wsl_long(&[
+            "--install", "-d", name, "--no-launch", "--web-download",
+            "--location", location,
+        ]).await
+    }
+
     /// List currently running WSL distributions.
     /// Parses `wsl --list --running` output to get distribution names.
     pub async fn list_running(&self) -> CogniaResult<Vec<String>> {
         let out = self.run_wsl_lenient(&["--list", "--running"]).await?;
         let distros: Vec<String> = out
             .lines()
-            .skip(1) // Skip header "Windows Subsystem for Linux Distributions:"
+            .filter(|l| {
+                let trimmed = l.trim();
+                // Skip empty lines and header lines (locale-aware)
+                !trimmed.is_empty()
+                    && !trimmed.contains("Windows Subsystem")
+                    && !trimmed.contains("适用于 Linux 的 Windows 子系统") // Chinese
+                    && !trimmed.contains("Linux 用 Windows サブシステム") // Japanese
+            })
             .map(|l| l.trim().trim_end_matches(" (Default)").trim().to_string())
             .filter(|l| !l.is_empty())
             .collect();
@@ -489,7 +669,7 @@ impl WslProvider {
         if as_vhd {
             args.push("--vhd");
         }
-        self.run_wsl(&args).await?;
+        self.run_wsl_long(&args).await?;
         Ok(())
     }
 
@@ -990,6 +1170,272 @@ impl WslProvider {
         }
         Ok(removed)
     }
+
+    // ========================================================================
+    // Distro environment detection
+    // ========================================================================
+
+    /// Parse `/etc/os-release` content into a key-value map.
+    ///
+    /// The file format is `KEY=VALUE` or `KEY="VALUE"` per line.
+    /// Lines starting with `#` are comments. Blank lines are ignored.
+    pub fn parse_os_release(content: &str) -> std::collections::HashMap<String, String> {
+        let mut map = std::collections::HashMap::new();
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some(eq_pos) = trimmed.find('=') {
+                let key = trimmed[..eq_pos].trim().to_string();
+                let raw_value = trimmed[eq_pos + 1..].trim();
+                // Strip surrounding quotes (single or double)
+                let value = if (raw_value.starts_with('"') && raw_value.ends_with('"'))
+                    || (raw_value.starts_with('\'') && raw_value.ends_with('\''))
+                {
+                    raw_value[1..raw_value.len() - 1].to_string()
+                } else {
+                    raw_value.to_string()
+                };
+                map.insert(key, value);
+            }
+        }
+        map
+    }
+
+    /// Detect the package manager from the distro `ID` and `ID_LIKE` fields.
+    ///
+    /// Returns `None` if no known mapping exists (caller should fall back to
+    /// binary probing).
+    pub fn detect_package_manager_from_id(id: &str, id_like: &[String]) -> Option<&'static str> {
+        // Check exact ID first
+        let pm = match id {
+            "ubuntu" | "debian" | "linuxmint" | "pop" | "elementary" | "zorin"
+            | "kali" | "parrot" | "raspbian" | "elxr" | "pengwin" | "wlinux"
+            | "deepin" | "mx" => Some("apt"),
+
+            "arch" | "manjaro" | "endeavouros" | "garuda" | "artix" => Some("pacman"),
+
+            "fedora" | "rhel" | "centos" | "rocky" | "almalinux" | "nobara"
+            | "amazon" => Some("dnf"),
+
+            "opensuse-tumbleweed" | "opensuse-leap" | "opensuse" | "sles" | "sled"
+            | "suse" => Some("zypper"),
+
+            "alpine" => Some("apk"),
+            "void" => Some("xbps-install"),
+            "gentoo" | "funtoo" => Some("emerge"),
+            "nixos" => Some("nix"),
+            "clear-linux-os" | "clearlinux" => Some("swupd"),
+            "solus" => Some("eopkg"),
+
+            // Oracle Linux: 7.x uses yum, 8+ uses dnf — prefer dnf
+            "ol" | "oraclelinux" => Some("dnf"),
+
+            _ => None,
+        };
+
+        if pm.is_some() {
+            return pm;
+        }
+
+        // Fall back to ID_LIKE families
+        for like in id_like {
+            match like.as_str() {
+                "debian" | "ubuntu" => return Some("apt"),
+                "arch" => return Some("pacman"),
+                "fedora" | "rhel" | "centos" => return Some("dnf"),
+                "suse" | "opensuse" => return Some("zypper"),
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    /// Return the shell command to count installed packages for a given package manager.
+    pub fn get_package_count_command(pm: &str) -> Option<&'static str> {
+        match pm {
+            "apt" => Some("dpkg --list 2>/dev/null | grep -c '^ii'"),
+            "pacman" => Some("pacman -Q 2>/dev/null | wc -l"),
+            "dnf" | "yum" => Some("rpm -qa 2>/dev/null | wc -l"),
+            "zypper" => Some("rpm -qa 2>/dev/null | wc -l"),
+            "apk" => Some("apk list --installed 2>/dev/null | wc -l"),
+            "xbps-install" => Some("xbps-query -l 2>/dev/null | wc -l"),
+            "emerge" => Some("qlist -I 2>/dev/null | wc -l || ls /var/db/pkg/*/* -d 2>/dev/null | wc -l"),
+            "nix" => Some("nix-env -q 2>/dev/null | wc -l"),
+            _ => None,
+        }
+    }
+
+    /// Return the package update and upgrade commands for a given package manager.
+    pub fn get_distro_update_command(pm: &str) -> Option<(&'static str, &'static str)> {
+        match pm {
+            "apt" => Some(("apt update", "apt upgrade -y")),
+            "pacman" => Some(("pacman -Sy", "pacman -Syu --noconfirm")),
+            "dnf" => Some(("dnf check-update", "dnf upgrade -y")),
+            "yum" => Some(("yum check-update", "yum upgrade -y")),
+            "zypper" => Some(("zypper refresh", "zypper update -y")),
+            "apk" => Some(("apk update", "apk upgrade")),
+            "xbps-install" => Some(("xbps-install -S", "xbps-install -Su")),
+            "emerge" => Some(("emerge --sync", "emerge -uDN @world")),
+            "nix" => Some(("nix-channel --update", "nix-env -u")),
+            "swupd" => Some(("swupd check-update", "swupd update")),
+            _ => None,
+        }
+    }
+
+    /// Detect the full environment inside a WSL distribution.
+    ///
+    /// The distro must be in a running or startable state. This method executes
+    /// a series of lightweight commands inside the distro to gather metadata.
+    pub async fn detect_distro_environment(
+        &self,
+        distro: &str,
+    ) -> CogniaResult<WslDistroEnvironment> {
+        // Run all detection commands in a single shell invocation for efficiency.
+        // Each result is separated by a unique delimiter.
+        let delim = "---COGNIA_DELIM---";
+        let script = format!(
+            concat!(
+                "cat /etc/os-release 2>/dev/null || echo 'ID=unknown'",
+                "; echo '{d}'",
+                "; uname -m 2>/dev/null || echo 'unknown'",
+                "; echo '{d}'",
+                "; uname -r 2>/dev/null || echo 'unknown'",
+                "; echo '{d}'",
+                "; cat /proc/1/comm 2>/dev/null || echo 'unknown'",
+                "; echo '{d}'",
+                // Probe for package managers — print the first found
+                "; for pm in apt pacman dnf yum zypper apk xbps-install nix emerge swupd eopkg; do",
+                "   if command -v $pm >/dev/null 2>&1; then echo $pm; break; fi;",
+                " done; echo ''",
+                "; echo '{d}'",
+                "; whoami 2>/dev/null || echo 'unknown'",
+                "; echo '{d}'",
+                // Get default shell from /etc/passwd for current user
+                "; getent passwd $(whoami) 2>/dev/null | cut -d: -f7 || echo ''",
+                "; echo '{d}'",
+                "; hostname 2>/dev/null || echo ''",
+                "; echo '{d}'",
+                "; cat /proc/uptime 2>/dev/null | cut -d' ' -f1 || echo ''"
+            ),
+            d = delim
+        );
+
+        let (stdout, stderr, code) = self.exec_command(distro, &script, None).await?;
+        if code != 0 && stdout.trim().is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "Failed to detect environment in '{}': {}",
+                distro,
+                stderr.trim()
+            )));
+        }
+
+        let parts: Vec<&str> = stdout.split(delim).collect();
+        if parts.len() < 9 {
+            return Err(CogniaError::Provider(format!(
+                "Unexpected detection output from '{}': got {} sections, expected 9",
+                distro,
+                parts.len()
+            )));
+        }
+
+        // 1. Parse /etc/os-release
+        let os_release = Self::parse_os_release(parts[0].trim());
+        let distro_id = os_release
+            .get("ID")
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        let id_like_str = os_release.get("ID_LIKE").cloned().unwrap_or_default();
+        let distro_id_like: Vec<String> = id_like_str
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        let pretty_name = os_release
+            .get("PRETTY_NAME")
+            .cloned()
+            .unwrap_or_else(|| distro_id.clone());
+        let version_id = os_release.get("VERSION_ID").cloned();
+        let version_codename = os_release.get("VERSION_CODENAME").cloned();
+
+        // 2. Architecture
+        let architecture = parts[1].trim().to_string();
+
+        // 3. Kernel version
+        let kernel_version = parts[2].trim().to_string();
+
+        // 4. Init system
+        let init_system = parts[3].trim().to_string();
+
+        // 5. Package manager — prefer ID-based detection, fall back to binary probe
+        let probed_pm = parts[4].trim().lines().next().unwrap_or("").trim().to_string();
+        let package_manager = Self::detect_package_manager_from_id(&distro_id, &distro_id_like)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                if probed_pm.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    probed_pm.clone()
+                }
+            });
+
+        // 6. Default user
+        let default_user = {
+            let u = parts[5].trim().to_string();
+            if u.is_empty() || u == "unknown" {
+                None
+            } else {
+                Some(u)
+            }
+        };
+
+        // 7. Default shell
+        let default_shell = {
+            let s = parts[6].trim().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        };
+
+        // 8. Hostname
+        let hostname = {
+            let h = parts[7].trim().to_string();
+            if h.is_empty() { None } else { Some(h) }
+        };
+
+        // 9. Uptime
+        let uptime_seconds = parts[8]
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .map(|f| f as u64);
+
+        // 10. Get installed package count using the detected package manager
+        let installed_packages = if let Some(cmd) = Self::get_package_count_command(&package_manager) {
+            match self.exec_command(distro, cmd, None).await {
+                Ok((out, _, 0)) => out.trim().parse::<u64>().ok(),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        Ok(WslDistroEnvironment {
+            distro_id,
+            distro_id_like,
+            pretty_name,
+            version_id,
+            version_codename,
+            architecture,
+            kernel_version,
+            package_manager,
+            init_system,
+            default_shell,
+            default_user,
+            uptime_seconds,
+            hostname,
+            installed_packages,
+        })
+    }
 }
 
 impl Default for WslProvider {
@@ -1027,38 +1473,133 @@ impl Provider for WslProvider {
     }
 
     async fn is_available(&self) -> bool {
-        // Check if wsl.exe exists and can respond.
-        // Uses execute_wsl for proper UTF-16LE decoding on Windows.
-        // Uses a short timeout — availability check should be fast.
+        // Multi-step detection strategy, ordered by reliability:
+        // 1. `wsl --version` — most reliable, available on Store-installed WSL 2.x
+        // 2. `wsl --status` — available on modern WSL (may be missing on inbox/legacy)
+        // 3. `wsl --help` — universally available if wsl.exe exists at all
+        //
+        // Uses positive pattern matching (look for version-like output) instead of
+        // fragile negative matching against localized error strings.
 
-        // Try `wsl --status` first (supported on modern WSL)
+        // Step 1: Try `wsl --version` (best indicator of a working WSL installation)
+        log::debug!("[WSL] is_available: Step 1 — trying wsl --version");
+        match execute_wsl(&["--version"], WSL_AVAIL_TIMEOUT).await {
+            Ok(out) => {
+                let combined = format!("{} {}", out.stdout, out.stderr);
+                log::debug!(
+                    "[WSL] --version exit_code={}, success={}, stdout_len={}, stderr_len={}, combined_first_200='{}'",
+                    out.exit_code,
+                    out.success,
+                    out.stdout.len(),
+                    out.stderr.len(),
+                    &combined.chars().take(200).collect::<String>()
+                );
+                let has_digit = combined.chars().any(|c| c.is_ascii_digit());
+                let has_marker = combined.contains('.')
+                    || combined.contains("WSL")
+                    || combined.contains("wsl");
+                if has_digit && has_marker {
+                    log::debug!("[WSL] is_available: Step 1 PASSED (has_digit={}, has_marker={})", has_digit, has_marker);
+                    return true;
+                }
+                log::debug!("[WSL] is_available: Step 1 failed positive check (has_digit={}, has_marker={})", has_digit, has_marker);
+            }
+            Err(e) => {
+                log::debug!("[WSL] is_available: Step 1 execute_wsl error: {}", e);
+            }
+        }
+
+        // Step 2: Try `wsl --status` (modern WSL, may not exist on older inbox versions)
+        log::debug!("[WSL] is_available: Step 2 — trying wsl --status");
         match execute_wsl(&["--status"], WSL_AVAIL_TIMEOUT).await {
             Ok(out) => {
                 let combined = format!("{} {}", out.stdout, out.stderr);
-                let lower = combined.to_lowercase();
-                // Check for explicit failure indicators (English + Chinese + other locales)
-                let not_available = lower.contains("not recognized")
-                    || lower.contains("is not recognized")
-                    || lower.contains("enable the virtual machine")
-                    || lower.contains("无法识别")    // Chinese: not recognized
-                    || lower.contains("未安装")      // Chinese: not installed
-                    || lower.contains("未找到")      // Chinese: not found
-                    || lower.contains("nicht erkannt") // German: not recognized
-                    || lower.contains("no se reconoce"); // Spanish: not recognized
-                !not_available
-            }
-            Err(_) => {
-                // Fallback: try `wsl --help` which is universally supported
-                match execute_wsl(&["--help"], WSL_AVAIL_TIMEOUT).await {
-                    Ok(out) => {
-                        // If we got any output from --help, WSL is installed
-                        let combined = format!("{}{}", out.stdout, out.stderr);
-                        !combined.trim().is_empty()
+                let trimmed = combined.trim();
+                log::debug!(
+                    "[WSL] --status exit_code={}, trimmed_len={}, first_200='{}'",
+                    out.exit_code,
+                    trimmed.len(),
+                    &trimmed.chars().take(200).collect::<String>()
+                );
+                if !trimmed.is_empty() && trimmed.len() > 10 {
+                    let lower = trimmed.to_lowercase();
+                    let is_error = lower.contains("not recognized")
+                        || lower.contains("enable the virtual machine")
+                        || lower.contains("not installed");
+                    if !is_error {
+                        log::debug!("[WSL] is_available: Step 2 PASSED");
+                        return true;
                     }
-                    Err(_) => false,
+                    log::debug!("[WSL] is_available: Step 2 failed — error indicator found");
+                } else {
+                    log::debug!("[WSL] is_available: Step 2 failed — output too short or empty");
+                }
+            }
+            Err(e) => {
+                log::debug!("[WSL] is_available: Step 2 execute_wsl error: {}", e);
+            }
+        }
+
+        // Step 3: Try `wsl --help` (universally supported if wsl.exe exists)
+        log::debug!("[WSL] is_available: Step 3 — trying wsl --help");
+        match execute_wsl(&["--help"], WSL_AVAIL_TIMEOUT).await {
+            Ok(out) => {
+                let combined = format!("{}{}", out.stdout, out.stderr);
+                log::debug!(
+                    "[WSL] --help exit_code={}, combined_len={}, non_empty={}",
+                    out.exit_code,
+                    combined.len(),
+                    !combined.trim().is_empty()
+                );
+                if !combined.trim().is_empty() {
+                    log::debug!("[WSL] is_available: Step 3 PASSED");
+                    return true;
+                }
+            }
+            Err(e) => {
+                log::debug!("[WSL] is_available: Step 3 execute_wsl error: {}", e);
+            }
+        }
+
+        // Step 4: Absolute path fallback — try C:\Windows\System32\wsl.exe directly
+        #[cfg(windows)]
+        {
+            let abs_path = "C:\\Windows\\System32\\wsl.exe";
+            let exists = std::path::Path::new(abs_path).exists();
+            log::debug!("[WSL] is_available: Step 4 — absolute path fallback, exists={}", exists);
+            if exists {
+                match TokioCommand::new(abs_path)
+                    .arg("--help")
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                    .output()
+                    .await
+                {
+                    Ok(output) => {
+                        let stdout = decode_wsl_bytes(&output.stdout);
+                        let stderr = decode_wsl_bytes(&output.stderr);
+                        let combined = format!("{}{}", stdout, stderr);
+                        log::debug!(
+                            "[WSL] abs_path --help: status={:?}, combined_len={}, non_empty={}",
+                            output.status.code(),
+                            combined.len(),
+                            !combined.trim().is_empty()
+                        );
+                        if !combined.trim().is_empty() {
+                            log::debug!("[WSL] is_available: Step 4 PASSED");
+                            return true;
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("[WSL] is_available: Step 4 spawn error: {}", e);
+                    }
                 }
             }
         }
+
+        log::debug!("[WSL] is_available: ALL STEPS FAILED — returning false");
+        false
     }
 
     /// Search for available WSL distributions.
@@ -1274,42 +1815,61 @@ impl Provider for WslProvider {
             .collect())
     }
 
-    /// Check for WSL kernel updates.
-    /// Uses `wsl --update --check` which is a non-destructive check (available in newer WSL).
-    /// Falls back to `wsl --version` to report current version without triggering an actual update.
+    /// Check for WSL updates non-destructively.
+    /// Uses `winget list Microsoft.WSL` to compare installed vs available version.
+    /// Does NOT use `wsl --update` which would actually perform an update.
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let mut updates = Vec::new();
 
-        // Try `wsl --update --check` first (non-destructive, available in WSL 2.x on Win11)
-        let check_result = execute_wsl(&["--update", "--check"], WSL_TIMEOUT).await;
+        // Get current WSL version
+        let current_version = match self.get_wsl_version_string().await {
+            Ok(v) => v,
+            Err(_) => return Ok(updates),
+        };
 
-        if let Ok(out) = check_result {
-            let combined = format!("{}{}", out.stdout, out.stderr);
-            let lower = combined.to_lowercase();
-            // If the output indicates an update is available (not "no update" or "already up to date")
-            // Also check Chinese locale equivalents
-            let has_update_indicator = lower.contains("update")
-                || lower.contains("version")
-                || lower.contains("更新")     // Chinese: update
-                || lower.contains("版本");    // Chinese: version
-            let is_up_to_date = lower.contains("no update")
-                || lower.contains("already")
-                || lower.contains("up to date")
-                || lower.contains("not recognized")
-                || lower.contains("已是最新")  // Chinese: already up to date
-                || lower.contains("无需更新"); // Chinese: no update needed
-            if has_update_indicator && !is_up_to_date {
-                if let Ok(version) = self.get_wsl_version_string().await {
-                    updates.push(UpdateInfo {
-                        name: "wsl-kernel".into(),
-                        current_version: version,
-                        latest_version: "newer version available".into(),
-                        provider: self.id().into(),
-                    });
+        // Use winget to check for available updates (non-destructive)
+        let winget_result = process::execute(
+            "winget",
+            &["list", "Microsoft.WSL", "--accept-source-agreements", "--disable-interactivity"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_secs(30))),
+        )
+        .await;
+
+        if let Ok(out) = winget_result {
+            // winget list output is fixed-width columns:
+            // Name                        Id            Version Available Source
+            // Windows Subsystem for Linux  Microsoft.WSL 2.6.1.0 2.6.3     winget
+            let stdout = &out.stdout;
+            for line in stdout.lines() {
+                if !line.contains("Microsoft.WSL") {
+                    continue;
+                }
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                // Find version fields: look for two adjacent version-like strings
+                // where the second (Available) differs from the first (Installed)
+                let mut found_installed = false;
+                for (i, part) in parts.iter().enumerate() {
+                    if part.contains('.') && part.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                        if !found_installed {
+                            found_installed = true;
+                        } else {
+                            // This is the "Available" column
+                            let available = *part;
+                            if available != current_version && available != parts[i - 1] {
+                                updates.push(UpdateInfo {
+                                    name: "wsl".into(),
+                                    current_version: current_version.clone(),
+                                    latest_version: available.to_string(),
+                                    provider: self.id().into(),
+                                });
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }
-        // If --check flag is not supported, we simply return empty (no false positive update)
+        // If winget is not available, return empty (no false positive)
 
         Ok(updates)
     }
@@ -1649,5 +2209,411 @@ mod tests {
         let input = "line1  \nline2  \n  line3  ";
         let result = WslProvider::trim_output(input);
         assert_eq!(result, "line1\nline2\n  line3");
+    }
+
+    // ========================================================================
+    // parse_version_output tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_version_output_english() {
+        let output = "\
+WSL version: 2.6.1.0
+Kernel version: 6.6.87.2-1
+WSLg version: 1.0.66
+MSRDC version: 1.2.6353
+Direct3D version: 1.611.1-81528511
+DXCore version: 10.0.26100.1-240331-1435.ge-release
+Windows version: 10.0.26100.6584";
+        let info = WslProvider::parse_version_output(output);
+
+        assert_eq!(info.wsl_version.as_deref(), Some("2.6.1.0"));
+        assert_eq!(info.kernel_version.as_deref(), Some("6.6.87.2-1"));
+        assert_eq!(info.wslg_version.as_deref(), Some("1.0.66"));
+        assert_eq!(info.msrdc_version.as_deref(), Some("1.2.6353"));
+        assert_eq!(info.direct3d_version.as_deref(), Some("1.611.1-81528511"));
+        assert_eq!(
+            info.dxcore_version.as_deref(),
+            Some("10.0.26100.1-240331-1435.ge-release")
+        );
+        assert_eq!(info.windows_version.as_deref(), Some("10.0.26100.6584"));
+    }
+
+    #[test]
+    fn test_parse_version_output_chinese() {
+        let output = "\
+WSL 版本: 2.4.12.0
+内核版本: 5.15.167.4-1
+WSLg 版本: 1.0.65
+MSRDC 版本: 1.2.5716
+Direct3D 版本: 1.611.1-81528511
+DXCore 版本: 10.0.26100.1-240331-1435.ge-release
+Windows 版本: 10.0.22635.4805";
+        let info = WslProvider::parse_version_output(output);
+
+        assert_eq!(info.wsl_version.as_deref(), Some("2.4.12.0"));
+        assert_eq!(info.kernel_version.as_deref(), Some("5.15.167.4-1"));
+        assert_eq!(info.wslg_version.as_deref(), Some("1.0.65"));
+        assert_eq!(info.windows_version.as_deref(), Some("10.0.22635.4805"));
+    }
+
+    #[test]
+    fn test_parse_version_output_empty() {
+        let info = WslProvider::parse_version_output("");
+        assert!(info.wsl_version.is_none());
+        assert!(info.kernel_version.is_none());
+    }
+
+    #[test]
+    fn test_parse_version_output_partial() {
+        let output = "WSL version: 2.0.0\nSome random line\n";
+        let info = WslProvider::parse_version_output(output);
+        assert_eq!(info.wsl_version.as_deref(), Some("2.0.0"));
+        assert!(info.kernel_version.is_none());
+    }
+
+    // ========================================================================
+    // parse_status_output tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_status_output_english() {
+        let output = "\
+Default Distribution: Ubuntu
+Default Version: 2
+";
+        let (distro, version) = WslProvider::parse_status_output(output);
+        assert_eq!(distro.as_deref(), Some("Ubuntu"));
+        assert_eq!(version.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn test_parse_status_output_empty() {
+        let (distro, version) = WslProvider::parse_status_output("");
+        assert!(distro.is_none());
+        assert!(version.is_none());
+    }
+
+    // ========================================================================
+    // os-release parsing tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_os_release_ubuntu() {
+        let content = r#"NAME="Ubuntu"
+VERSION="24.04.1 LTS (Noble Numbat)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 24.04.1 LTS"
+VERSION_ID="24.04"
+VERSION_CODENAME=noble
+UBUNTU_CODENAME=noble
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ubuntu");
+        assert_eq!(map.get("ID_LIKE").unwrap(), "debian");
+        assert_eq!(map.get("PRETTY_NAME").unwrap(), "Ubuntu 24.04.1 LTS");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "24.04");
+        assert_eq!(map.get("VERSION_CODENAME").unwrap(), "noble");
+        assert_eq!(map.get("NAME").unwrap(), "Ubuntu");
+    }
+
+    #[test]
+    fn test_parse_os_release_arch() {
+        let content = r#"NAME="Arch Linux"
+PRETTY_NAME="Arch Linux"
+ID=arch
+BUILD_ID=rolling
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://archlinux.org/"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "arch");
+        assert_eq!(map.get("PRETTY_NAME").unwrap(), "Arch Linux");
+        assert!(map.get("ID_LIKE").is_none());
+        assert!(map.get("VERSION_ID").is_none());
+    }
+
+    #[test]
+    fn test_parse_os_release_fedora() {
+        let content = r#"NAME="Fedora Linux"
+VERSION="42 (Container Image)"
+ID=fedora
+VERSION_ID=42
+PRETTY_NAME="Fedora Linux 42 (Container Image)"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "fedora");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_parse_os_release_opensuse() {
+        let content = r#"NAME="openSUSE Tumbleweed"
+ID="opensuse-tumbleweed"
+ID_LIKE="opensuse suse"
+PRETTY_NAME="openSUSE Tumbleweed"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "opensuse-tumbleweed");
+        assert_eq!(map.get("ID_LIKE").unwrap(), "opensuse suse");
+    }
+
+    #[test]
+    fn test_parse_os_release_alpine() {
+        let content = r#"NAME="Alpine Linux"
+ID=alpine
+VERSION_ID=3.20.0
+PRETTY_NAME="Alpine Linux v3.20"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "alpine");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "3.20.0");
+    }
+
+    #[test]
+    fn test_parse_os_release_debian() {
+        let content = r#"PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "debian");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "12");
+        assert_eq!(map.get("VERSION_CODENAME").unwrap(), "bookworm");
+    }
+
+    #[test]
+    fn test_parse_os_release_almalinux() {
+        let content = r#"NAME="AlmaLinux"
+VERSION="9.4 (Seafoam Ocelot)"
+ID="almalinux"
+ID_LIKE="rhel centos fedora"
+VERSION_ID="9.4"
+PRETTY_NAME="AlmaLinux 9.4 (Seafoam Ocelot)"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "almalinux");
+        assert_eq!(map.get("ID_LIKE").unwrap(), "rhel centos fedora");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "9.4");
+    }
+
+    #[test]
+    fn test_parse_os_release_kali() {
+        let content = r#"PRETTY_NAME="Kali GNU/Linux Rolling"
+NAME="Kali GNU/Linux"
+VERSION_ID="2024.3"
+ID=kali
+ID_LIKE=debian
+VERSION_CODENAME=kali-rolling
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "kali");
+        assert_eq!(map.get("ID_LIKE").unwrap(), "debian");
+        assert_eq!(map.get("VERSION_CODENAME").unwrap(), "kali-rolling");
+    }
+
+    #[test]
+    fn test_parse_os_release_oracle() {
+        let content = r#"NAME="Oracle Linux Server"
+VERSION="9.5"
+ID="ol"
+ID_LIKE="fedora"
+PRETTY_NAME="Oracle Linux Server 9.5"
+VERSION_ID="9.5"
+"#;
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ol");
+        assert_eq!(map.get("ID_LIKE").unwrap(), "fedora");
+    }
+
+    #[test]
+    fn test_parse_os_release_with_comments() {
+        let content = "# This is a comment\nID=ubuntu\n# Another comment\nVERSION_ID=\"22.04\"\n";
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ubuntu");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "22.04");
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_os_release_empty() {
+        let map = WslProvider::parse_os_release("");
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_parse_os_release_single_quotes() {
+        let content = "ID='ubuntu'\nPRETTY_NAME='Ubuntu 22.04'\n";
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ubuntu");
+        assert_eq!(map.get("PRETTY_NAME").unwrap(), "Ubuntu 22.04");
+    }
+
+    // ========================================================================
+    // Package manager detection tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_pm_ubuntu() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("ubuntu", &[]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_debian() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("debian", &[]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_kali() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("kali", &["debian".into()]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_arch() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("arch", &[]),
+            Some("pacman")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_manjaro() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("manjaro", &["arch".into()]),
+            Some("pacman")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_fedora() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("fedora", &[]),
+            Some("dnf")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_almalinux() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id(
+                "almalinux",
+                &["rhel".into(), "centos".into(), "fedora".into()]
+            ),
+            Some("dnf")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_opensuse() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id(
+                "opensuse-tumbleweed",
+                &["opensuse".into(), "suse".into()]
+            ),
+            Some("zypper")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_alpine() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("alpine", &[]),
+            Some("apk")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_oracle() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("ol", &["fedora".into()]),
+            Some("dnf")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_void() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("void", &[]),
+            Some("xbps-install")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_nixos() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("nixos", &[]),
+            Some("nix")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_unknown_with_id_like_debian() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("custom-distro", &["debian".into()]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_unknown_no_id_like() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("custom-distro", &[]),
+            None
+        );
+    }
+
+    // ========================================================================
+    // Package count command tests
+    // ========================================================================
+
+    #[test]
+    fn test_package_count_command_apt() {
+        assert!(WslProvider::get_package_count_command("apt").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_pacman() {
+        assert!(WslProvider::get_package_count_command("pacman").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_unknown() {
+        assert!(WslProvider::get_package_count_command("unknown").is_none());
+    }
+
+    // ========================================================================
+    // Update command tests
+    // ========================================================================
+
+    #[test]
+    fn test_update_command_apt() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("apt").unwrap();
+        assert!(update.contains("apt update"));
+        assert!(upgrade.contains("apt upgrade"));
+    }
+
+    #[test]
+    fn test_update_command_pacman() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("pacman").unwrap();
+        assert!(update.contains("pacman"));
+        assert!(upgrade.contains("pacman"));
+    }
+
+    #[test]
+    fn test_update_command_unknown() {
+        assert!(WslProvider::get_distro_update_command("unknown").is_none());
     }
 }

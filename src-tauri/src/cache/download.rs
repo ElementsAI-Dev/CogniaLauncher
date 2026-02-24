@@ -1,6 +1,7 @@
 use super::{CacheEntry, CacheEntryType, SqliteCacheDb, sqlite_db::CacheAccessStats};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
+    disk::format_size,
     fs,
     network::{DownloadProgress, HttpClient},
 };
@@ -341,19 +342,7 @@ pub struct DownloadCacheStats {
 
 impl DownloadCacheStats {
     pub fn size_human(&self) -> String {
-        const KB: u64 = 1024;
-        const MB: u64 = KB * 1024;
-        const GB: u64 = MB * 1024;
-
-        if self.total_size >= GB {
-            format!("{:.2} GB", self.total_size as f64 / GB as f64)
-        } else if self.total_size >= MB {
-            format!("{:.2} MB", self.total_size as f64 / MB as f64)
-        } else if self.total_size >= KB {
-            format!("{:.2} KB", self.total_size as f64 / KB as f64)
-        } else {
-            format!("{} B", self.total_size)
-        }
+        format_size(self.total_size)
     }
 }
 

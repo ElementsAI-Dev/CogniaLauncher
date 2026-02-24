@@ -136,7 +136,7 @@ export function WidgetGrid({
               />
               <StatsCard
                 title={t("dashboard.platform")}
-                value={platformInfo?.os_long_version || (platformInfo?.os_version ? `${platformInfo.os} ${platformInfo.os_version}` : platformInfo?.os) || t("common.unknown")}
+                value={platformInfo?.osLongVersion || (platformInfo?.osVersion ? `${platformInfo.os} ${platformInfo.osVersion}` : platformInfo?.os) || t("common.unknown")}
                 description={platformInfo?.arch || ""}
                 icon={<Activity className="h-4 w-4" />}
                 href="/settings"
@@ -209,7 +209,7 @@ export function WidgetGrid({
       onDragEnd={handleDragEnd}
     >
       <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
-        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2" data-tour="dashboard-widgets">
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2" data-tour="dashboard-widgets" data-hint="dashboard-drag">
           {widgets.map((widget) => (
             <WidgetWrapper
               key={widget.id}

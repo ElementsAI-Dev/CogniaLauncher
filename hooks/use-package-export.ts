@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { usePackageStore } from '@/lib/stores/packages';
 import { toast } from 'sonner';
 
@@ -69,7 +70,7 @@ export function usePackageExport() {
     const packageNames = installedPackages.map(pkg => pkg.name).join('\n');
     
     try {
-      await navigator.clipboard.writeText(packageNames);
+      await writeClipboard(packageNames);
       toast.success('Package names copied to clipboard');
     } catch {
       toast.error('Failed to copy to clipboard');

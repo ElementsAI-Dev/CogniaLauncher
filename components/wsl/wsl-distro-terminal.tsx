@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,8 +94,8 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
     [executing, handleExec, commandHistory, historyIndex]
   );
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string) => {
+    await writeClipboard(text);
     toast.success(t('common.copied'));
   };
 

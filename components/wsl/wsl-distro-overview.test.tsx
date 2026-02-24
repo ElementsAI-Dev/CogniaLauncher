@@ -19,6 +19,7 @@ describe("WslDistroOverview", () => {
         getIpAddress={jest.fn(() => Promise.resolve(""))}
         getDistroConfig={jest.fn(() => Promise.resolve(null))}
         setDistroConfigValue={jest.fn(() => Promise.resolve())}
+        detectDistroEnv={jest.fn(() => Promise.resolve(null))}
         t={(key: string) => key}
       />,
     );

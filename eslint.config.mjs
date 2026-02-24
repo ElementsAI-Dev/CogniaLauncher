@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Tauri build output:
     "src-tauri/target/**",
+    // Playwright E2E tests (not React code):
+    "e2e/**",
   ]),
 ]);
 

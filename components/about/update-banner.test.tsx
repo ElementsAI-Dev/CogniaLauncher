@@ -1,5 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+// Mock MarkdownRenderer (react-markdown is ESM-only)
+jest.mock("@/components/docs/markdown-renderer", () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => (
+    <div data-testid="markdown-renderer">{content}</div>
+  ),
+}));
+
 import { UpdateBanner } from "./update-banner";
 
 const mockT = (key: string) => {

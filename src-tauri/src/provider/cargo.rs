@@ -620,18 +620,7 @@ impl SystemPackageProvider for CargoProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_cargo(&["install", "--list"]).await;
         Ok(out
-            .map(|s| {
-                s.lines().any(|l| {
-                    // Match exact crate name: "crate_name v0.1.0:"
-                    // Must not match partial names (e.g., "serde" should not match "serde_json")
-                    if l.starts_with(' ') || l.is_empty() {
-                        return false;
-                    }
-                    l.split_whitespace()
-                        .next()
-                        .map_or(false, |crate_name| crate_name == name)
-                })
-            })
+            .map(|s| is_crate_in_installed_output(&s, name))
             .unwrap_or(false))
     }
 }

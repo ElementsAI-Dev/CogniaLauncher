@@ -106,7 +106,8 @@ pub async fn self_update(app: AppHandle) -> Result<(), String> {
     match result {
         Ok(_) => {
             emit_update_progress(&app, "done", Some(100));
-            Ok(())
+            log::info!("Update installed successfully, restarting application...");
+            app.restart();
         }
         Err(e) => {
             emit_update_progress(&app, "error", None);

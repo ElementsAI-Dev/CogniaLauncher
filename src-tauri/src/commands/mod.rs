@@ -5,6 +5,7 @@ pub mod custom_detection;
 pub mod download;
 pub mod environment;
 pub mod fs_utils;
+pub mod git;
 pub mod github;
 pub mod gitlab;
 pub mod health_check;
@@ -24,16 +25,19 @@ pub use batch::{
     package_unpin, resolve_dependencies,
 };
 pub use cache::{
-    cache_clean, cache_force_clean, cache_force_clean_external, cache_info, cache_migrate,
-    cache_migration_validate, cache_repair, cache_size_monitor, cache_verify,
-    clean_all_external_caches, clean_external_cache, discover_external_caches, get_cache_path_info,
-    get_cache_settings, get_combined_cache_stats, get_enhanced_cache_settings,
-    get_external_cache_paths, reset_cache_path, set_cache_path, set_cache_settings,
+    cache_clean, cache_clean_enhanced, cache_clean_preview, cache_force_clean,
+    cache_force_clean_external, cache_info, cache_migrate, cache_migration_validate, cache_repair,
+    cache_size_monitor, cache_verify, clean_all_external_caches, clean_external_cache,
+    clear_cleanup_history, delete_cache_entries, delete_cache_entry, discover_external_caches,
+    get_cache_access_stats, get_cache_path_info, get_cache_settings, get_cleanup_history,
+    get_cleanup_summary, get_combined_cache_stats, get_enhanced_cache_settings,
+    get_external_cache_paths, get_top_accessed_entries, list_cache_entries,
+    reset_cache_access_stats, reset_cache_path, set_cache_path, set_cache_settings,
     set_enhanced_cache_settings,
 };
 pub use config::{
     app_check_init, config_export, config_get, config_import, config_list, config_reset,
-    config_set, get_cognia_dir, get_platform_info,
+    config_set, get_cognia_dir, get_disk_info, get_network_interfaces, get_platform_info,
 };
 pub use custom_detection::{
     create_shared_custom_detection_manager, custom_rule_add, custom_rule_delete,
@@ -61,6 +65,15 @@ pub use environment::{
     rustup_override_unset, rustup_remove_component, rustup_remove_target, rustup_run,
     rustup_self_update, rustup_set_profile, rustup_show, rustup_update_all, rustup_which,
     go_env_info, go_mod_tidy, go_mod_download, go_clean_cache, go_cache_info,
+};
+pub use git::{
+    git_checkout_branch, git_create_branch, git_create_tag, git_delete_branch, git_delete_tag,
+    git_get_activity, git_get_ahead_behind, git_get_blame, git_get_branches, git_get_commit_detail,
+    git_get_config, git_get_contributors, git_get_executable_path, git_get_file_history,
+    git_get_file_stats, git_get_graph_log, git_get_log, git_get_remotes, git_get_repo_info,
+    git_get_stashes, git_get_status, git_get_tags, git_get_version, git_install, git_is_available,
+    git_remove_config, git_search_commits, git_set_config, git_stash_apply, git_stash_drop,
+    git_stash_pop, git_stash_save, git_update,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
@@ -100,9 +113,11 @@ pub use shim::{
 };
 pub use updater::{self_check_update, self_update};
 pub use wsl::{
-    wsl_change_default_user, wsl_convert_path, wsl_disk_usage, wsl_exec, wsl_export,
-    wsl_get_config, wsl_get_distro_config, wsl_get_ip, wsl_import, wsl_import_in_place,
+    wsl_change_default_user, wsl_convert_path, wsl_debug_detection, wsl_disk_usage, wsl_exec,
+    wsl_export, wsl_get_config, wsl_get_distro_config, wsl_get_ip, wsl_get_version_info,
+    wsl_import, wsl_import_in_place, wsl_install_wsl_only, wsl_install_with_location,
     wsl_is_available, wsl_launch, wsl_list_distros, wsl_list_online, wsl_list_running, wsl_mount,
     wsl_set_config, wsl_set_default, wsl_set_default_version, wsl_set_distro_config,
-    wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_unmount, wsl_update,
+    wsl_set_sparse, wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_unmount,
+    wsl_update,
 };

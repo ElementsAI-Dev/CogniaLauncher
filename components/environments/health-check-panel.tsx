@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import { useLocale } from "@/components/providers/locale-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,7 +72,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+    writeClipboard(text);
   };
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
   CardContent,
@@ -95,7 +96,7 @@ function IssueCard({
   t: (key: string) => string;
 }) {
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+    writeClipboard(text);
   };
 
   return (
@@ -153,7 +154,7 @@ export function ProviderHealthTab({
           `  ${idx + 1}. [${i.severity}] ${i.message}${i.fix_command ? ` (fix: ${i.fix_command})` : ""}`,
       ),
     ];
-    navigator.clipboard.writeText(lines.join("\n"));
+    writeClipboard(lines.join("\n"));
     toast.success(t("providerDetail.diagnosticsCopied"));
   }, [healthResult, t]);
 
@@ -163,7 +164,7 @@ export function ProviderHealthTab({
       .filter((i) => i.fix_command)
       .map((i) => i.fix_command!);
     if (commands.length === 0) return;
-    navigator.clipboard.writeText(commands.join("\n"));
+    writeClipboard(commands.join("\n"));
     toast.success(t("providerDetail.fixCommandsCopied", { count: commands.length }));
   }, [healthResult, t]);
 

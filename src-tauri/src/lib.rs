@@ -14,7 +14,7 @@ use commands::custom_detection::SharedCustomDetectionManager;
 use commands::download::init_download_manager;
 use config::Settings;
 use core::custom_detection::CustomDetectionManager;
-use log::info;
+use log::{debug, info};
 use provider::ProviderRegistry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,7 +39,23 @@ pub fn is_initialized() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance must be the first plugin registered (Tauri docs requirement)
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            |app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            },
+        ));
+    }
+
+    builder
         .setup(|app| {
             // Setup logging with enhanced configuration
             // - Stdout: Console output for development
@@ -246,6 +262,8 @@ pub fn run() {
             commands::config::config_import,
             commands::config::get_cognia_dir,
             commands::config::get_platform_info,
+            commands::config::get_disk_info,
+            commands::config::get_network_interfaces,
             commands::config::app_check_init,
             // Cache commands
             commands::cache::cache_info,
@@ -476,12 +494,54 @@ pub fn run() {
             commands::wsl::wsl_change_default_user,
             commands::wsl::wsl_get_distro_config,
             commands::wsl::wsl_set_distro_config,
+            commands::wsl::wsl_get_version_info,
+            commands::wsl::wsl_set_sparse,
+            commands::wsl::wsl_install_wsl_only,
+            commands::wsl::wsl_install_with_location,
+            commands::wsl::wsl_debug_detection,
+            commands::wsl::wsl_detect_distro_env,
+            // Git commands
+            commands::git::git_is_available,
+            commands::git::git_get_version,
+            commands::git::git_get_executable_path,
+            commands::git::git_install,
+            commands::git::git_update,
+            commands::git::git_get_config,
+            commands::git::git_set_config,
+            commands::git::git_remove_config,
+            commands::git::git_get_repo_info,
+            commands::git::git_get_log,
+            commands::git::git_get_branches,
+            commands::git::git_get_remotes,
+            commands::git::git_get_tags,
+            commands::git::git_get_stashes,
+            commands::git::git_get_contributors,
+            commands::git::git_get_file_history,
+            commands::git::git_get_blame,
+            commands::git::git_get_commit_detail,
+            commands::git::git_get_status,
+            commands::git::git_get_graph_log,
+            commands::git::git_get_ahead_behind,
+            commands::git::git_checkout_branch,
+            commands::git::git_create_branch,
+            commands::git::git_delete_branch,
+            commands::git::git_stash_apply,
+            commands::git::git_stash_pop,
+            commands::git::git_stash_drop,
+            commands::git::git_stash_save,
+            commands::git::git_create_tag,
+            commands::git::git_delete_tag,
+            commands::git::git_get_activity,
+            commands::git::git_get_file_stats,
+            commands::git::git_search_commits,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_window_state::Builder::new()
@@ -526,16 +586,24 @@ async fn cache_cleanup_task(settings: SharedSettings) {
         tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
 
         let s = settings.read().await;
-        if !s.general.auto_clean_cache {
-            continue;
-        }
-
         let cache_dir = s.get_cache_dir();
+        let auto_clean = s.general.auto_clean_cache;
         let max_size = s.general.cache_max_size;
         let max_age_days = s.general.cache_max_age_days;
         let metadata_cache_ttl = s.general.metadata_cache_ttl as i64;
         let threshold = s.general.cache_auto_clean_threshold;
         drop(s);
+
+        // Persist cache access stats every cycle (even when auto_clean is off)
+        if let Ok(download_cache) = DownloadCache::open(&cache_dir).await {
+            if let Err(e) = download_cache.persist_access_stats().await {
+                debug!("Failed to persist cache access stats: {}", e);
+            }
+        }
+
+        if !auto_clean {
+            continue;
+        }
 
         // Clean expired metadata entries
         if let Ok(mut metadata_cache) =
@@ -543,7 +611,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
         {
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
-                    info!("Auto-cleanup: removed {} expired metadata entries", count);
+                    debug!("Auto-cleanup: removed {} expired metadata entries", count);
                 }
                 Err(e) => {
                     info!("Auto-cleanup metadata error: {}", e);
@@ -557,7 +625,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             let max_age = Duration::from_secs(max_age_days as u64 * 86400);
             match download_cache.clean_expired(max_age).await {
                 Ok(freed) if freed > 0 => {
-                    info!("Auto-cleanup: removed {} bytes of expired downloads", freed);
+                    debug!("Auto-cleanup: removed {} bytes of expired downloads", freed);
                 }
                 Err(e) => {
                     info!("Auto-cleanup download expiry error: {}", e);
@@ -586,7 +654,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
                     if evict_target > 0 {
                         match download_cache.evict_to_size(evict_target).await {
                             Ok(count) if count > 0 => {
-                                info!(
+                                debug!(
                                     "Auto-cleanup: evicted {} download entries (usage: {}, target: {})",
                                     count, stats.total_size, evict_target
                                 );
@@ -608,7 +676,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             let max_age = Duration::from_secs(max_age_days as u64 * 86400);
             match resumer.clean_stale(max_age).await {
                 Ok(count) if count > 0 => {
-                    info!("Auto-cleanup: removed {} stale partial downloads", count);
+                    debug!("Auto-cleanup: removed {} stale partial downloads", count);
                 }
                 Err(e) => {
                     info!("Auto-cleanup partial download error: {}", e);

@@ -17,8 +17,25 @@ pub struct WslDistroStatus {
 #[serde(rename_all = "camelCase")]
 pub struct WslStatus {
     pub version: String,
+    pub kernel_version: Option<String>,
+    pub wslg_version: Option<String>,
+    pub default_distribution: Option<String>,
+    pub default_version: Option<String>,
     pub status_info: String,
     pub running_distros: Vec<String>,
+}
+
+/// Parsed component versions from `wsl --version`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslVersionInfoDto {
+    pub wsl_version: Option<String>,
+    pub kernel_version: Option<String>,
+    pub wslg_version: Option<String>,
+    pub msrdc_version: Option<String>,
+    pub direct3d_version: Option<String>,
+    pub dxcore_version: Option<String>,
+    pub windows_version: Option<String>,
 }
 
 /// Options for WSL import operation
@@ -52,6 +69,107 @@ pub struct WslDiskUsage {
 
 fn get_provider() -> WslProvider {
     WslProvider::new()
+}
+
+/// Diagnostic command: returns step-by-step WSL detection info for debugging.
+/// This helps identify exactly where detection fails on a given system.
+#[tauri::command]
+pub async fn wsl_debug_detection() -> Result<serde_json::Value, String> {
+    use serde_json::json;
+
+    let mut steps = Vec::new();
+
+    // Helper to run wsl.exe and capture raw + decoded output
+    async fn try_wsl(args: &[&str]) -> serde_json::Value {
+        use serde_json::json;
+        use std::process::Stdio;
+        use tokio::process::Command as TokioCommand;
+
+        let mut cmd = TokioCommand::new("wsl.exe");
+        cmd.args(args);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+
+        match cmd.output().await {
+            Ok(output) => {
+                let raw_stdout_len = output.stdout.len();
+                let raw_stderr_len = output.stderr.len();
+                let raw_stdout_hex: String = output.stdout.iter().take(40)
+                    .map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+
+                // Try to decode
+                let stdout_decoded = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr_decoded = String::from_utf8_lossy(&output.stderr).to_string();
+
+                json!({
+                    "success": true,
+                    "exit_code": output.status.code(),
+                    "raw_stdout_len": raw_stdout_len,
+                    "raw_stderr_len": raw_stderr_len,
+                    "raw_stdout_hex_first_40": raw_stdout_hex,
+                    "stdout_lossy_first_200": stdout_decoded.chars().take(200).collect::<String>(),
+                    "stderr_lossy_first_200": stderr_decoded.chars().take(200).collect::<String>(),
+                })
+            }
+            Err(e) => {
+                json!({
+                    "success": false,
+                    "error": format!("{}", e),
+                    "error_kind": format!("{:?}", e.kind()),
+                })
+            }
+        }
+    }
+
+    // Step 1: wsl --version
+    steps.push(json!({
+        "step": "wsl --version",
+        "result": try_wsl(&["--version"]).await,
+    }));
+
+    // Step 2: wsl --status
+    steps.push(json!({
+        "step": "wsl --status",
+        "result": try_wsl(&["--status"]).await,
+    }));
+
+    // Step 3: wsl --help
+    steps.push(json!({
+        "step": "wsl --help",
+        "result": try_wsl(&["--help"]).await,
+    }));
+
+    // Step 4: Check absolute path
+    #[cfg(windows)]
+    {
+        let abs_path = "C:\\Windows\\System32\\wsl.exe";
+        let exists = std::path::Path::new(abs_path).exists();
+        steps.push(json!({
+            "step": "absolute_path_check",
+            "path": abs_path,
+            "exists": exists,
+        }));
+    }
+
+    // Step 5: Run is_available() and report result
+    let provider = get_provider();
+    use crate::provider::traits::Provider;
+    let is_avail = provider.is_available().await;
+
+    // Step 6: Check platform
+    let platform = format!("{:?}", crate::platform::env::current_platform());
+
+    Ok(json!({
+        "platform": platform,
+        "is_available_result": is_avail,
+        "steps": steps,
+    }))
 }
 
 /// List all installed WSL distributions with verbose info (state, version, default)
@@ -98,10 +216,17 @@ pub async fn wsl_status() -> Result<WslStatus, String> {
         .await
         .unwrap_or_else(|_| "Unknown".into());
 
+    // Get full version info for kernel/WSLg versions
+    let version_info = provider.get_full_version_info().await.ok();
+
     let status_info = provider
         .get_wsl_status()
         .await
         .unwrap_or_else(|_| "WSL status unavailable".into());
+
+    // Parse status output for default distribution and version
+    let (default_distribution, default_version) =
+        WslProvider::parse_status_output(&status_info);
 
     let running = provider
         .list_running()
@@ -110,8 +235,31 @@ pub async fn wsl_status() -> Result<WslStatus, String> {
 
     Ok(WslStatus {
         version,
+        kernel_version: version_info.as_ref().and_then(|v| v.kernel_version.clone()),
+        wslg_version: version_info.as_ref().and_then(|v| v.wslg_version.clone()),
+        default_distribution,
+        default_version,
         status_info,
         running_distros: running,
+    })
+}
+
+/// Get full WSL version info (all component versions)
+#[tauri::command]
+pub async fn wsl_get_version_info() -> Result<WslVersionInfoDto, String> {
+    let provider = get_provider();
+    let info = provider
+        .get_full_version_info()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(WslVersionInfoDto {
+        wsl_version: info.wsl_version,
+        kernel_version: info.kernel_version,
+        wslg_version: info.wslg_version,
+        msrdc_version: info.msrdc_version,
+        direct3d_version: info.direct3d_version,
+        dxcore_version: info.dxcore_version,
+        windows_version: info.windows_version,
     })
 }
 
@@ -368,6 +516,36 @@ pub async fn wsl_get_distro_config(
         .map_err(|e| e.to_string())
 }
 
+/// Set sparse VHD mode for a WSL distribution
+#[tauri::command]
+pub async fn wsl_set_sparse(distro: String, enabled: bool) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .set_sparse_vhd(&distro, enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Install WSL engine only, without a default distribution
+#[tauri::command]
+pub async fn wsl_install_wsl_only() -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .install_wsl_only()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Install a distribution to a custom location
+#[tauri::command]
+pub async fn wsl_install_with_location(name: String, location: String) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .install_with_location(&name, &location)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Write a setting to the per-distro /etc/wsl.conf file
 #[tauri::command]
 pub async fn wsl_set_distro_config(
@@ -389,4 +567,22 @@ pub async fn wsl_set_distro_config(
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
+}
+
+/// Detect the environment inside a WSL distribution.
+///
+/// Parses `/etc/os-release`, detects the package manager, architecture,
+/// kernel version, init system, default shell/user, hostname, uptime,
+/// and installed package count.
+///
+/// The distro must be running or startable (will be launched if stopped).
+#[tauri::command]
+pub async fn wsl_detect_distro_env(
+    distro: String,
+) -> Result<crate::provider::wsl::WslDistroEnvironment, String> {
+    let provider = get_provider();
+    provider
+        .detect_distro_environment(&distro)
+        .await
+        .map_err(|e| e.to_string())
 }

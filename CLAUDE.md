@@ -1,11 +1,29 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-02-23 | v1.4.0
+> Last Updated: 2026-02-24 | v1.5.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-02-24 (v1.5.0)
+- **NEW: Git Integration**: Full Git management with 17 commands (repo info, branches, tags, log, blame, stash, contributors)
+- **NEW: Dart/Flutter Support**: FVM (Flutter Version Manager) + pub.dev package provider
+- **NEW: Zig Support**: Zig version management via ziglang.org download index
+- **NEW: Lua Support**: LuaRocks package manager for Lua modules
+- **NEW: MSVC Detection**: Visual Studio Build Tools detection via vswhere.exe (Windows)
+- **NEW: MSYS2 Support**: MSYS2 pacman package manager for Windows
+- **NEW: Manifest System**: cognia.toml project manifest (read/init)
+- **NEW Providers**: git, fvm, pub_dev, luarocks, msvc, msys2, zig (7 new)
+- **Updated provider count**: 55 providers (previously 48)
+- **NEW: Git Page**: Dedicated Git repository management UI at `/git`
+- **Updated command count**: 300+ Tauri commands across 21 modules (previously 260+)
+- **Updated language support**: 31 languages/environments (previously 11)
+- **Updated system detection**: 28 SystemEnvironmentType variants (previously 11)
+- **Updated hooks**: 32 hooks (new: use-git, use-network)
+- **Updated stores**: 10 Zustand stores (added changelog)
+- **Updated routes**: 17 pages (added git)
 
 ### 2026-02-23 (v1.4.0)
 - **NEW: WSL Management**: Full Windows Subsystem for Linux management (install, export/import, config, terminal, networking, filesystem)
@@ -68,8 +86,11 @@ CogniaLauncher is a **cross-platform environment and package manager** with a mo
 
 The project provides unified management for:
 - **Development Environments**: Node.js (nvm/fnm/volta/bun), Python (pyenv/conda/mise), Rust (rustup), Go (goenv), Ruby (rbenv), Java/Kotlin (SDKMAN), PHP (phpbrew), Deno, .NET, plus polyglot managers (asdf, mise)
-- **Package Providers**: npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo, gem, bundler, composer, dotnet, conda, Chocolatey, Scoop, winget, Homebrew, MacPorts, apt, dnf, pacman, zypper, apk, snap, flatpak, Nix, vcpkg, Conan, Xmake, Docker, Podman, PSGallery, GitHub Releases, GitLab Releases (48 providers)
-- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection, health checks, profiles, WSL management, onboarding, built-in docs viewer, launch/shim/PATH management
+- **Package Providers**: npm, pnpm, yarn, bun, pip, uv, poetry, pipx, cargo, gem, bundler, composer, dotnet, conda, Chocolatey, Scoop, winget, Homebrew, MacPorts, apt, dnf, pacman, zypper, apk, snap, flatpak, Nix, vcpkg, Conan, Xmake, Docker, Podman, PSGallery, GitHub Releases, GitLab Releases, LuaRocks, MSVC, MSYS2 (55 providers)
+- **Dart/Flutter**: FVM (version management), pub.dev (package management)
+- **Zig**: Direct version management via ziglang.org
+- **Git**: Repository inspection (branches, tags, log, blame, stash, contributors)
+- **Core Features**: Cache management, dependency resolution, update checking, batch operations, download management, system tray, custom version detection, health checks, profiles, WSL management, onboarding, built-in docs viewer, launch/shim/PATH management, project manifest
 
 ---
 
@@ -177,7 +198,7 @@ cargo clippy          # Run Rust linter
 
 ### Frontend Structure
 
-- `app/` - Next.js App Router (layout.tsx, page.tsx, globals.css) — 16 pages
+- `app/` - Next.js App Router (layout.tsx, page.tsx, globals.css) — 17 pages
   - `page.tsx` - Dashboard overview
   - `environments/` - Environment management UI (list + `[envType]` detail)
   - `packages/` - Package management UI (list + `detail/` page)
@@ -187,6 +208,7 @@ cargo clippy          # Run Rust linter
   - `downloads/` - Download management UI
   - `logs/` - Log viewer UI
   - `wsl/` - WSL distribution management (list + `distro/` detail)
+  - `git/` - Git repository management UI
   - `docs/` - Built-in documentation viewer (`[[...slug]]` catch-all)
   - `about/` - About page with system info
 - `components/ui/` - shadcn/ui components using Radix UI + class-variance-authority
@@ -195,14 +217,16 @@ cargo clippy          # Run Rust linter
 - `components/providers/` - Context providers
   - `theme-provider.tsx`, `locale-provider.tsx`, `log-provider.tsx`, `tray-provider.tsx`
 - `lib/utils.ts` - `cn()` utility (clsx + tailwind-merge)
-- `lib/stores/` - Zustand state stores (8 stores)
-  - `packages.ts`, `environment.ts`, `settings.ts`, `appearance.ts`, `download.ts`, `log.ts`, `dashboard.ts`, `onboarding.ts`, `window-state.ts`
+- `lib/stores/` - Zustand state stores (10 stores)
+  - `packages.ts`, `environment.ts`, `settings.ts`, `appearance.ts`, `download.ts`, `log.ts`, `dashboard.ts`, `onboarding.ts`, `window-state.ts`, `changelog.ts`
 - `lib/docs/` - Documentation content and navigation utilities
-- `hooks/` - Custom React hooks (35+ hooks)
+- `hooks/` - Custom React hooks (32 hooks)
   - Core: `use-packages.ts`, `use-environments.ts`, `use-settings.ts`, `use-downloads.ts`, `use-logs.ts`
-  - Features: `use-wsl.ts`, `use-launch.ts`, `use-shim.ts`, `use-profiles.ts`, `use-health-check.ts`, `use-onboarding.ts`
-  - UI: `use-tray-sync.ts`, `use-keyboard-shortcuts.ts`, `use-settings-shortcuts.ts`, `use-mobile.ts`
-  - Data: `use-about-data.ts`, `use-auto-version.ts`, `use-version-cache.ts`, `use-provider-detail.ts`, `use-github-downloads.ts`, `use-gitlab-downloads.ts`
+  - Features: `use-wsl.ts`, `use-launch.ts`, `use-shim.ts`, `use-profiles.ts`, `use-health-check.ts`, `use-onboarding.ts`, `use-git.ts`, `use-rustup.ts`
+  - UI: `use-tray-sync.ts`, `use-keyboard-shortcuts.ts`, `use-settings-shortcuts.ts`, `use-mobile.ts`, `use-network.ts`
+  - Data: `use-about-data.ts`, `use-auto-version.ts`, `use-version-cache.ts`, `use-provider-detail.ts`, `use-github-downloads.ts`, `use-gitlab-downloads.ts`, `use-changelog.ts`, `use-package-export.ts`
+  - Settings: `use-appearance-config-sync.ts`, `use-settings-search.ts`, `use-settings-shortcuts.ts`, `use-unsaved-changes.ts`
+  - Init: `use-app-init.ts`, `use-auto-update.ts`, `use-asset-matcher.ts`
 - `i18n/`, `messages/` - Internationalization (en.json + zh.json, 1700+ keys each)
 
 ### Tauri Integration
@@ -212,9 +236,9 @@ cargo clippy          # Run Rust linter
   - `beforeDevCommand`: runs `pnpm dev`
   - `beforeBuildCommand`: runs `pnpm build`
   - `src/` - Rust source code
-    - `commands/` - Tauri command handlers (20 modules, 260+ commands)
-    - `core/` - Core business logic (12 modules: batch, custom_detection, environment, eol, health_check, history, installer, orchestrator, profiles, project_env_detect, shim)
-    - `provider/` - Provider implementations (48 providers + 6 infra files)
+    - `commands/` - Tauri command handlers (21 modules, 300+ commands)
+    - `core/` - Core business logic (11 modules: batch, custom_detection, environment, eol, health_check, history, installer, orchestrator, profiles, project_env_detect, shim)
+    - `provider/` - Provider implementations (55 providers + 6 infra files)
     - `cache/` - Cache management (SQLite + JSON)
     - `download/` - Download manager with queue and throttling
     - `config/` - Configuration
@@ -256,8 +280,8 @@ cn("base-classes", condition && "conditional", className)
 
 | Module | Path | Description | Documentation |
 |--------|------|-------------|---------------|
-| Frontend | `app/`, `components/`, `lib/` | Next.js 16 + React 19 UI (16 pages) | Below |
-| Tauri Backend | `src-tauri/` | Rust backend with 48 providers, 260+ commands | [View](./src-tauri/CLAUDE.md) |
+| Frontend | `app/`, `components/`, `lib/` | Next.js 16 + React 19 UI (17 pages) | Below |
+| Tauri Backend | `src-tauri/` | Rust backend with 55 providers, 300+ commands | [View](./src-tauri/CLAUDE.md) |
 | OpenSpec | `openspec/` | Feature specifications | [AGENTS.md](./openspec/AGENTS.md) |
 | LLMDoc | `llmdoc/` | Documentation system | [index.md](./llmdoc/index.md) |
 
@@ -280,6 +304,7 @@ cn("base-classes", condition && "conditional", className)
 | WSL Distro Detail | `app/wsl/distro/page.tsx` | WSL distro detail (filesystem, network, services, terminal) |
 | Logs | `app/logs/page.tsx` | Log viewer |
 | Docs | `app/docs/[[...slug]]/page.tsx` | Built-in documentation viewer |
+| Git | `app/git/page.tsx` | Git repository management |
 | About | `app/about/page.tsx` | System info and updates |
 
 ### Key Components
@@ -314,6 +339,7 @@ cn("base-classes", condition && "conditional", className)
 | useDashboardStore | `lib/stores/dashboard.ts` | Dashboard widget layout and customization |
 | useOnboardingStore | `lib/stores/onboarding.ts` | Onboarding wizard progress |
 | useWindowStateStore | `lib/stores/window-state.ts` | Window state (maximized, fullscreen, focused) |
+| useChangelogStore | `lib/stores/changelog.ts` | Changelog data and display state |
 
 ---
 
@@ -523,7 +549,7 @@ cn("base-classes", condition && "conditional", className)
 | Frontend Unit Tests | ✅ Active | Jest 30 + Testing Library, 100+ test files |
 | Rust Unit Tests | ✅ Active | 270+ provider tests, parsing tests across providers |
 | CI/CD | ✅ Active | GitHub Actions workflow (`.github/workflows/ci.yml`) |
-| E2E Tests | ❌ Missing | Consider Playwright |
+| E2E Tests | ✅ Active | Playwright 1.58+, 64 tests across 17 spec files |
 
 ---
 

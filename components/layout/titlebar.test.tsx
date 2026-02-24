@@ -3,22 +3,21 @@ import { Titlebar } from "./titlebar";
 
 let mockIsTauri = true;
 
-jest.mock("@/lib/tauri", () => ({
+jest.mock("@/lib/platform", () => ({
   isTauri: () => mockIsTauri,
+  isWindows: () => false,
 }));
 
 jest.mock("@/lib/stores/window-state", () => ({
   useWindowStateStore: () => ({
     isMaximized: false,
     isFullscreen: false,
-    isDesktopMode: false,
     isFocused: true,
-    isWindows: false,
+    titlebarHeight: "2rem",
     setMaximized: jest.fn(),
     setFullscreen: jest.fn(),
-    setDesktopMode: jest.fn(),
     setFocused: jest.fn(),
-    setWindows: jest.fn(),
+    setTitlebarHeight: jest.fn(),
   }),
 }));
 
@@ -84,7 +83,7 @@ describe("Titlebar", () => {
   it("renders titlebar when in Tauri environment", async () => {
     const { container, getByLabelText } = render(<Titlebar />);
 
-    // Wait for Tauri initialization - buttons now use Tooltip instead of title, use aria-label
+    // Titlebar now renders synchronously after mount via isTauri()
     await waitFor(() => {
       expect(getByLabelText("Minimize")).toBeInTheDocument();
     });
@@ -104,5 +103,24 @@ describe("Titlebar", () => {
     expect(getByLabelText("Minimize")).toBeInTheDocument();
     expect(getByLabelText("Maximize")).toBeInTheDocument();
     expect(getByLabelText("Close")).toBeInTheDocument();
+  });
+
+  it("has buttons disabled before appWindow loads", async () => {
+    // Temporarily make the dynamic import hang so appWindow stays null
+    jest.doMock("@tauri-apps/api/window", () => ({
+      getCurrentWindow: () => new Promise(() => {}), // never resolves
+    }));
+
+    const { getByLabelText } = render(<Titlebar />);
+
+    // Titlebar renders synchronously, buttons exist but are disabled
+    await waitFor(() => {
+      const minimizeBtn = getByLabelText("Minimize");
+      expect(minimizeBtn).toBeInTheDocument();
+      expect(minimizeBtn).toBeDisabled();
+    });
+
+    // Restore original mock
+    jest.dontMock("@tauri-apps/api/window");
   });
 });

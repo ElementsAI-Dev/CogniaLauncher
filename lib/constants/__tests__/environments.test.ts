@@ -165,13 +165,90 @@ describe('Environment Constants', () => {
       expect(scalaFiles).toContain('.tool-versions');
     });
 
-    it('most languages support .tool-versions', () => {
-      const exceptions = ['c', 'cpp'];
-      Object.entries(DEFAULT_DETECTION_FILES).forEach(([id, files]) => {
-        if (!exceptions.includes(id)) {
-          expect(files).toContain('.tool-versions');
-        }
+    it('all languages support .tool-versions', () => {
+      Object.values(DEFAULT_DETECTION_FILES).forEach((files) => {
+        expect(files).toContain('.tool-versions');
       });
+    });
+
+    it('all languages support mise.toml', () => {
+      Object.values(DEFAULT_DETECTION_FILES).forEach((files) => {
+        expect(files).toContain('mise.toml');
+      });
+    });
+
+    it('rust has Cargo.toml (rust-version) detection file', () => {
+      const rustFiles = DEFAULT_DETECTION_FILES.rust;
+      expect(rustFiles).toContain('Cargo.toml (rust-version)');
+    });
+
+    it('erlang has rebar.config (minimum_otp_vsn) detection file', () => {
+      const erlangFiles = DEFAULT_DETECTION_FILES.erlang;
+      expect(erlangFiles).toContain('.erlang-version');
+      expect(erlangFiles).toContain('rebar.config (minimum_otp_vsn)');
+    });
+
+    it('haskell has stack.yaml (resolver) and cabal.project detection files', () => {
+      const haskellFiles = DEFAULT_DETECTION_FILES.haskell;
+      expect(haskellFiles).toContain('stack.yaml (resolver)');
+      expect(haskellFiles).toContain('cabal.project');
+    });
+
+    it('perl has cpanfile (perl) detection file', () => {
+      const perlFiles = DEFAULT_DETECTION_FILES.perl;
+      expect(perlFiles).toContain('.perl-version');
+      expect(perlFiles).toContain('cpanfile (perl)');
+    });
+
+    it('r has DESCRIPTION (R) detection file', () => {
+      const rFiles = DEFAULT_DETECTION_FILES.r;
+      expect(rFiles).toContain('.Rversion');
+      expect(rFiles).toContain('DESCRIPTION (R)');
+    });
+
+    it('nim has nimble (nim) detection file', () => {
+      const nimFiles = DEFAULT_DETECTION_FILES.nim;
+      expect(nimFiles).toContain('.nim-version');
+      expect(nimFiles).toContain('nimble (nim)');
+    });
+
+    it('elixir has correct detection file labels', () => {
+      const elixirFiles = DEFAULT_DETECTION_FILES.elixir;
+      expect(elixirFiles).toContain('.elixir-version');
+      expect(elixirFiles).toContain('mix.exs (elixir)');
+    });
+
+    it('swift has Package.swift (swift-tools-version) detection file', () => {
+      const swiftFiles = DEFAULT_DETECTION_FILES.swift;
+      expect(swiftFiles).toContain('.swift-version');
+      expect(swiftFiles).toContain('Package.swift (swift-tools-version)');
+    });
+
+    it('julia has Project.toml (compat.julia) detection file', () => {
+      const juliaFiles = DEFAULT_DETECTION_FILES.julia;
+      expect(juliaFiles).toContain('.julia-version');
+      expect(juliaFiles).toContain('Project.toml (compat.julia)');
+    });
+
+    it('crystal has shard.yml (crystal) detection file', () => {
+      const crystalFiles = DEFAULT_DETECTION_FILES.crystal;
+      expect(crystalFiles).toContain('.crystal-version');
+      expect(crystalFiles).toContain('shard.yml (crystal)');
+    });
+
+    it('c has CMakeLists.txt (CMAKE_C_STANDARD) detection file', () => {
+      const cFiles = DEFAULT_DETECTION_FILES.c;
+      expect(cFiles).toContain('CMakeLists.txt (CMAKE_C_STANDARD)');
+    });
+
+    it('cpp has CMakeLists.txt (CMAKE_CXX_STANDARD) detection file', () => {
+      const cppFiles = DEFAULT_DETECTION_FILES.cpp;
+      expect(cppFiles).toContain('CMakeLists.txt (CMAKE_CXX_STANDARD)');
+    });
+
+    it('typescript has tsconfig.json (compilerOptions.target) detection file', () => {
+      const tsFiles = DEFAULT_DETECTION_FILES.typescript;
+      expect(tsFiles).toContain('tsconfig.json (compilerOptions.target)');
     });
   });
 

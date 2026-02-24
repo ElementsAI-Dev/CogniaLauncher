@@ -27,6 +27,7 @@ interface UseGitHubDownloadsReturn {
   releases: GitHubReleaseInfo[];
   loading: boolean;
   error: string | null;
+  tokenLoading: boolean;
   validateAndFetch: () => Promise<void>;
   downloadAsset: (asset: GitHubAssetInfo, destination: string) => Promise<string>;
   downloadSource: (refName: string, format: GitHubArchiveFormat, destination: string) => Promise<string>;
@@ -48,6 +49,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
   const [releases, setReleases] = useState<GitHubReleaseInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tokenLoading, setTokenLoading] = useState(true);
 
   const reset = useCallback(() => {
     setRepoInput('');
@@ -64,10 +66,13 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
 
   // Load saved token on mount
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      setTokenLoading(false);
+      return;
+    }
     import('@/lib/tauri').then(t => t.githubGetToken()).then(saved => {
       if (saved) setToken(saved);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setTokenLoading(false));
   }, []);
 
   const validateAndFetch = useCallback(async () => {
@@ -197,6 +202,7 @@ export function useGitHubDownloads(): UseGitHubDownloadsReturn {
     releases,
     loading,
     error,
+    tokenLoading,
     validateAndFetch,
     downloadAsset,
     downloadSource,

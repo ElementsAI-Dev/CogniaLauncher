@@ -13,8 +13,28 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
+
+/// Event payload for cache state changes
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheChangedEvent {
+    action: String,
+    freed_bytes: u64,
+    freed_human: String,
+}
+
+fn emit_cache_changed(app: &AppHandle, action: &str, freed_bytes: u64) {
+    let _ = app.emit(
+        "cache-changed",
+        CacheChangedEvent {
+            action: action.to_string(),
+            freed_bytes,
+            freed_human: format_size(freed_bytes),
+        },
+    );
+}
 
 pub type SharedSettings = Arc<RwLock<Settings>>;
 
@@ -83,6 +103,7 @@ pub async fn cache_info(settings: State<'_, SharedSettings>) -> Result<CacheInfo
 #[tauri::command]
 pub async fn cache_clean(
     clean_type: Option<String>,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<CleanResult, String> {
     let s = settings.read().await;
@@ -164,6 +185,8 @@ pub async fn cache_clean(
             let _ = history.add(record).await;
         }
     }
+
+    emit_cache_changed(&app, "clean", total_freed);
 
     Ok(CleanResult {
         freed_bytes: total_freed,
@@ -316,6 +339,7 @@ pub struct CacheRepairResult {
 
 #[tauri::command]
 pub async fn cache_repair(
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<CacheRepairResult, String> {
     let s = settings.read().await;
@@ -404,6 +428,8 @@ pub async fn cache_repair(
             removed_entries += 1;
         }
     }
+
+    emit_cache_changed(&app, "repair", freed_bytes);
 
     Ok(CacheRepairResult {
         removed_entries,
@@ -807,6 +833,7 @@ pub struct EnhancedCleanResult {
 pub async fn cache_clean_enhanced(
     clean_type: Option<String>,
     use_trash: Option<bool>,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<EnhancedCleanResult, String> {
     let s = settings.read().await;
@@ -895,6 +922,8 @@ pub async fn cache_clean_enhanced(
         .await
         .map_err(|e| e.to_string())?;
     history.add(record).await.map_err(|e| e.to_string())?;
+
+    emit_cache_changed(&app, "clean_enhanced", total_freed);
 
     Ok(EnhancedCleanResult {
         freed_bytes: total_freed,
@@ -1521,6 +1550,7 @@ pub async fn cache_migration_validate(
 pub async fn cache_migrate(
     destination: String,
     mode: String,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<MigrationResult, String> {
     let s = settings.read().await;
@@ -1549,6 +1579,10 @@ pub async fn cache_migrate(
     }
     // For MoveAndLink mode, the old path still works via symlink, no config change needed
 
+    if result.success {
+        emit_cache_changed(&app, "migrate", result.bytes_migrated);
+    }
+
     Ok(result)
 }
 
@@ -1560,6 +1594,7 @@ pub async fn cache_migrate(
 #[tauri::command]
 pub async fn cache_force_clean(
     use_trash: Option<bool>,
+    app: AppHandle,
     settings: State<'_, SharedSettings>,
 ) -> Result<EnhancedCleanResult, String> {
     let s = settings.read().await;
@@ -1616,6 +1651,8 @@ pub async fn cache_force_clean(
         .await
         .map_err(|e| e.to_string())?;
     history.add(record).await.map_err(|e| e.to_string())?;
+
+    emit_cache_changed(&app, "force_clean", total_freed);
 
     Ok(EnhancedCleanResult {
         freed_bytes: total_freed,

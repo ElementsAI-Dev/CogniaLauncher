@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
   CardContent,
@@ -129,7 +130,7 @@ export function EnvDetailShims({ envType, t }: EnvDetailShimsProps) {
     const cmd = await getAddCommand();
     if (cmd) {
       try {
-        await navigator.clipboard.writeText(cmd);
+        await writeClipboard(cmd);
         toast.success(t("common.copied"));
       } catch {
         toast.error(t("common.copyFailed"));

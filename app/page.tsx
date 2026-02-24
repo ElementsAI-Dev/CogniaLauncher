@@ -114,6 +114,7 @@ export default function DashboardPage() {
               size="sm"
               onClick={() => setIsCustomizing(true)}
               className="gap-2"
+              data-hint="dashboard-customize"
             >
               <Settings2 className="h-4 w-4" />
               <span className="hidden sm:inline">{t('dashboard.widgets.customize')}</span>

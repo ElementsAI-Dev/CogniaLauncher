@@ -83,6 +83,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     changeDefaultUser,
     getDistroConfig,
     setDistroConfigValue,
+    detectDistroEnv,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -412,6 +413,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             getIpAddress={getIpAddress}
             getDistroConfig={getDistroConfig}
             setDistroConfigValue={setDistroConfigValue}
+            detectDistroEnv={detectDistroEnv}
             t={t}
           />
         </TabsContent>

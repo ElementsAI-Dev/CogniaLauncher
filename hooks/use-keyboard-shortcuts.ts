@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
+import { isMac } from '@/lib/platform';
 
 interface ShortcutAction {
   key: string;
@@ -133,21 +134,21 @@ export function useEnvironmentShortcuts(callbacks: {
  * Get formatted shortcut display string
  */
 export function formatShortcut(shortcut: Partial<ShortcutAction>): string {
-  const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+  const mac = isMac();
   const parts: string[] = [];
 
   if (shortcut.ctrlKey || shortcut.metaKey) {
-    parts.push(isMac ? '⌘' : 'Ctrl');
+    parts.push(mac ? '⌘' : 'Ctrl');
   }
   if (shortcut.shiftKey) {
-    parts.push(isMac ? '⇧' : 'Shift');
+    parts.push(mac ? '⇧' : 'Shift');
   }
   if (shortcut.altKey) {
-    parts.push(isMac ? '⌥' : 'Alt');
+    parts.push(mac ? '⌥' : 'Alt');
   }
   if (shortcut.key) {
     parts.push(shortcut.key.toUpperCase());
   }
 
-  return parts.join(isMac ? '' : '+');
+  return parts.join(mac ? '' : '+');
 }

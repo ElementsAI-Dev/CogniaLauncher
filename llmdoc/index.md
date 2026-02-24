@@ -1,6 +1,6 @@
 # CogniaLauncher 文档索引
 
-> Last Updated: 2026-02-23 | v1.4.0
+> Last Updated: 2026-02-24 | v1.5.0
 
 本文档提供 CogniaLauncher 项目的 AI 上下文文档导航索引。
 
@@ -15,8 +15,9 @@
 | 功能 | 启动/Shim/PATH 管理系统 |
 | 功能 | 无边框窗口和自定义标题栏 |
 | 功能 | Kotlin 语言支持 (SDKMAN) |
-| 增强 | 48 个 Provider (新增 14 个：asdf, bun, conan, conda, gem, gitlab, macports, mise, nix, pipx, podman, volta, wsl, xmake) |
-| 增强 | 260+ Tauri 命令 (跨 20 个模块) |
+| 增强 | 55 个 Provider (新增 7 个：git, fvm, pub_dev, luarocks, msvc, msys2, zig) |
+| 增强 | 300+ Tauri 命令 (跨 21 个模块) |
+| 增强 | 31 种语言/环境类型，28 种 SystemEnvironmentType |
 | 增强 | 100+ 测试文件 (55+ 组件测试, 270+ Rust 单元测试) |
 
 ---
@@ -36,10 +37,12 @@
 - `asdf`, `bun`, `conan`, `conda`, `gem`, `gitlab`, `macports`, `mise`, `nix`, `pipx`, `podman`, `volta`, `wsl`, `xmake`
 
 ### 架构增强
-- **Provider 系统**: 完整审计和修复，48 个 Provider 全部经过 bug 修复
-- **核心模块**: 新增 eol, history, project_env_detect (共 12 个)
-- **Zustand Stores**: 新增 dashboard, onboarding, window-state (共 8 个)
-- **路由**: 新增 docs, package detail, provider detail, wsl distro detail (共 16 页)
+- **Provider 系统**: 55 个 Provider，新增 git, fvm, pub_dev, luarocks, msvc, msys2, zig
+- **命令模块**: 21 个模块，300+ 条命令（新增 git.rs 33 条）
+- **语言支持**: 31 种语言/环境类型，28 种 SystemEnvironmentType
+- **Zustand Stores**: 10 个 (appearance, changelog, dashboard, download, environment, log, onboarding, packages, settings, window-state)
+- **路由**: 17 页 (新增 git)
+- **Hooks**: 32 个
 - **测试**: 100+ 测试文件 (Frontend), 270+ Rust 单元测试
 
 ### v1.3.0 更新 (2026-02-05)
@@ -74,6 +77,9 @@
 | `settings-and-theme-system.md` | 设置和主题系统概览 |
 | `system-tray.md` | 系统托盘概览 |
 | `testing-infrastructure.md` | Jest 30 测试框架概览 |
+| `git-system.md` | Git 集成系统概览 |
+| `dart-flutter-system.md` | Dart/Flutter 生态系统概览 |
+| `manifest-system.md` | 项目清单系统概览 |
 
 #### 指南 (guides/)
 | 文档 | 描述 |
@@ -99,13 +105,18 @@
 | `downloads-system.md` | 下载管理器架构 |
 | `environment-installation-progress.md` | 环境安装进度架构 |
 | `log-panel-system.md` | 日志面板系统架构 |
-| `provider-system.md` | Provider 系统架构 (40+ providers, system detection) |
+| `provider-system.md` | Provider 系统架构 (55 providers, 28 SystemEnvironmentTypes) |
+| `project-env-detect.md` | 项目环境检测架构 (31 种语言, 80+ 单元测试) |
 | `self-update-system.md` | 自更新系统架构 |
 | `settings-system.md` | 设置系统架构 |
 | `settings-ui-components.md` | 设置 UI 组件架构 |
 | `ssr-internationalization.md` | SSR 安全的国际化架构 (useSyncExternalStore) |
 | `testing-architecture.md` | 测试框架架构 |
 | `system-tray.md` | 系统托盘架构 |
+| `environment-detection-improvement-plan.md` | 环境检测改进计划 |
+| `external-cache-system.md` | 外部缓存系统架构 |
+| `health-check-system.md` | 健康检查系统架构 |
+| `profiles-system.md` | 环境配置文件系统架构 |
 
 #### 参考 (reference/)
 | 文档 | 描述 |
@@ -151,14 +162,14 @@
 - **后端**: `src-tauri/src/commands/package.rs` - 包命令
 
 #### Provider 系统 (v1.4.0 增强)
-- **后端**: `src-tauri/src/provider/` - 48 provider 实现 + 6 基础设施文件
+- **后端**: `src-tauri/src/provider/` - 55 provider 实现 + 6 基础设施文件
 - **注册表**: `src-tauri/src/provider/registry.rs` - Provider 注册和发现
 - **Traits**: `src-tauri/src/provider/traits.rs` - Provider trait 定义和系统检测
-- **系统检测**: `src-tauri/src/provider/system.rs` - 系统安装的运行时检测 (11 种类型)
+- **系统检测**: `src-tauri/src/provider/system.rs` - 系统安装的运行时检测 (28 种类型)
 - **前端**: `app/providers/page.tsx` - Provider 管理 UI
 - **详情页**: `app/providers/[id]/page.tsx` - 单个 Provider 配置详情
 - **组件**: `components/provider-management/` - Provider 卡片、列表、工具栏
-- **常量**: `lib/constants/environments.ts` - 11 种语言环境定义
+- **常量**: `lib/constants/environments.ts` - 31 种语言环境定义
 - **架构**: `llmdoc/architecture/provider-system.md` - Provider 系统架构
 - **版本检测 API**: `llmdoc/reference/provider-version-detection.md` - 增强版本元数据 API
 - **环境管理器**: nvm, fnm, volta, pyenv, rustup, rbenv, sdkman, goenv, phpbrew, deno, asdf, mise
@@ -327,6 +338,24 @@
 - **Hook**: `hooks/use-launch.ts` - 启动操作 Hook
 - **Hook**: `hooks/use-shim.ts` - Shim/PATH 管理 Hook
 
+#### Git 管理系统
+- **后端**: `src-tauri/src/provider/git.rs` - Git Provider (1365 行)
+- **命令**: `src-tauri/src/commands/git.rs` - 17 条 Git 命令
+- **功能**: 版本检测、全局配置、仓库检查 (branches, tags, log, blame, stash, contributors)
+
+#### Dart/Flutter 生态
+- **后端**: `src-tauri/src/provider/fvm.rs` - FVM (Flutter Version Manager)
+- **后端**: `src-tauri/src/provider/pub_dev.rs` - Dart Pub (pub.dev API)
+- **功能**: Flutter SDK 版本管理、Dart 包搜索/安装
+
+#### Zig 生态
+- **后端**: `src-tauri/src/provider/zig.rs` - Zig 版本管理 (ziglang.org)
+- **功能**: 版本下载、安装、切换
+
+#### Lua 生态
+- **后端**: `src-tauri/src/provider/luarocks.rs` - LuaRocks 包管理器
+- **功能**: Lua 模块搜索、安装、卸载
+
 #### 测试基础设施
 - **配置**: `jest.config.ts` - Jest 30 配置和覆盖率阈值
 - **总览**: `llmdoc/overview/testing-infrastructure.md` - 测试框架概览
@@ -338,16 +367,16 @@
 
 #### TypeScript/React
 - 类型定义: `lib/tauri.ts`, `types/tauri.ts`
-- Hooks: `hooks/` (35+ hooks)
+- Hooks: `hooks/` (30 hooks)
 - UI 组件: `components/ui/` (26+ shadcn/ui 组件)
 - 功能组件: `components/` (15 个功能目录)
-- 状态: `lib/stores/` (8 Zustand stores)
+- 状态: `lib/stores/` (9 Zustand stores)
 - 文档: `lib/docs/` (内容和导航)
 
 #### Rust
-- 命令: `src-tauri/src/commands/` - 20 个模块, 260+ 命令
+- 命令: `src-tauri/src/commands/` - 21 个模块, 288 命令
 - 核心逻辑: `src-tauri/src/core/` (12 模块: batch, custom_detection, environment, eol, health_check, history, installer, orchestrator, profiles, project_env_detect, shim)
-- Provider: `src-tauri/src/provider/` - 48 提供商 + 6 基础设施文件
+- Provider: `src-tauri/src/provider/` - 55 提供商 + 6 基础设施文件
 - 平台抽象: `src-tauri/src/platform/`
 - 缓存系统: `src-tauri/src/cache/`
 - 下载管理: `src-tauri/src/download/`
@@ -381,16 +410,16 @@
 
 ## 文档维护
 
-- **当前版本:** v1.4.0 (2026-02-23)
-- **覆盖范围:** 95% (380/400+ files)
-- **文档总数:** 49 (概述: 9, 指南: 9, 架构: 17, 参考: 14)
-- **Provider 数量:** 48
-- **Tauri 命令:** 260+
-- **命令模块:** 20
+- **当前版本:** v1.5.0 (2026-02-24)
+- **覆盖范围:** 95% (430/450+ files)
+- **文档总数:** 57 (概述: 12, 指南: 10, 架构: 21, 参考: 14)
+- **Provider 数量:** 55
+- **Tauri 命令:** 300+
+- **命令模块:** 21
 - **核心模块:** 12
-- **Hooks:** 35+
-- **Zustand Stores:** 8
-- **前端路由:** 16 页
+- **Hooks:** 32
+- **Zustand Stores:** 10
+- **前端路由:** 17 页
 - **测试文件:** 100+ (前端) + 270+ (Rust)
 - **更新频率:** 每次重大功能变更后
 - **责任:** 开发团队

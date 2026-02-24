@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
   CardContent,
@@ -109,7 +110,7 @@ export function EnvDetailShell({
 
   const handleCopy = useCallback(async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await writeClipboard(text);
       toast.success(t("common.copied"));
     } catch {
       toast.error(t("common.copyFailed"));

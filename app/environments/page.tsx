@@ -238,6 +238,7 @@ export default function EnvironmentsPage() {
           )}
         />
 
+        <div data-hint="env-version-switcher">
         <EnvironmentToolbar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -255,6 +256,7 @@ export default function EnvironmentsPage() {
           onViewModeChange={setViewMode}
           t={t}
         />
+        </div>
 
         <EnvUpdatesSummary
           results={updateCheckResults}

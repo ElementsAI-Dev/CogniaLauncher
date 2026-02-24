@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import Link from 'next/link';
 import { useLocale } from '@/components/providers/locale-provider';
 import { PageHeader } from '@/components/layout/page-header';
@@ -297,7 +298,7 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
   };
 
   const handleCopyChecksum = (checksum: string) => {
-    navigator.clipboard.writeText(checksum);
+    writeClipboard(checksum);
     toast.success(t('cache.detail.checksumCopied'));
   };
 

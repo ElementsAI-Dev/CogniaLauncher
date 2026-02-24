@@ -14,6 +14,7 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             ".tool-versions",
             "package.json (volta.node)",
             "package.json (engines.node)",
+            "mise.toml",
         ],
         "python" => &[
             ".python-version",
@@ -23,54 +24,62 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             "Pipfile (requires.python_version)",
             "runtime.txt",
             ".tool-versions",
+            "mise.toml",
         ],
         "go" => &[
             "go.mod (toolchain)",
             "go.mod (go)",
             ".go-version",
             ".tool-versions",
+            "mise.toml",
         ],
         // rustup precedence: rust-toolchain wins if both files exist.
-        "rust" => &["rust-toolchain", "rust-toolchain.toml", ".tool-versions"],
-        "ruby" => &[".ruby-version", "Gemfile", ".tool-versions"],
+        "rust" => &["rust-toolchain", "rust-toolchain.toml", "Cargo.toml (rust-version)", ".tool-versions", "mise.toml"],
+        "ruby" => &[".ruby-version", "Gemfile", ".tool-versions", "mise.toml"],
         "java" => &[
             ".java-version",
             ".sdkmanrc",
             ".tool-versions",
             "pom.xml (java.version)",
             "build.gradle (sourceCompatibility)",
+            "mise.toml",
         ],
-        "kotlin" => &[".kotlin-version", ".sdkmanrc", ".tool-versions"],
-        "scala" => &["build.sbt", ".scala-version", ".sdkmanrc", ".tool-versions"],
+        "kotlin" => &[".kotlin-version", ".sdkmanrc", ".tool-versions", "mise.toml"],
+        "scala" => &["build.sbt", ".scala-version", ".sdkmanrc", ".tool-versions", "mise.toml"],
         "php" => &[
             ".php-version",
             "composer.json (require.php)",
             ".tool-versions",
+            "mise.toml",
         ],
-        "dotnet" => &["global.json (sdk.version)", ".tool-versions"],
-        "deno" => &[".deno-version", ".dvmrc", ".tool-versions"],
+        "dotnet" => &["global.json (sdk.version)", ".tool-versions", "mise.toml"],
+        "deno" => &[".deno-version", ".dvmrc", ".tool-versions", "mise.toml"],
         // `.bun-version` is an ecosystem convention used by version managers; keep engines.bun optional.
         "bun" => &[
             ".bun-version",
             ".tool-versions",
             "package.json (engines.bun)",
+            "mise.toml",
         ],
-        "zig" => &[".zig-version", "build.zig.zon (minimum_zig_version)", ".tool-versions"],
-        "dart" => &["pubspec.yaml (environment.sdk)", ".fvmrc", ".dart-version", ".tool-versions"],
-        "lua" => &[".lua-version", ".tool-versions"],
-        "groovy" => &[".sdkmanrc", ".tool-versions"],
-        "elixir" => &[".elixir-version", "mix.exs (elixir)", ".tool-versions"],
-        "erlang" => &[".erlang-version", ".tool-versions"],
-        "swift" => &[".swift-version", "Package.swift (swift-tools-version)", ".tool-versions"],
-        "julia" => &[".julia-version", "Project.toml (compat.julia)", ".tool-versions"],
-        "perl" => &[".perl-version", ".tool-versions"],
-        "r" => &[".Rversion", ".tool-versions"],
-        "haskell" => &[".tool-versions"],
-        "clojure" => &[".tool-versions"],
-        "crystal" => &[".crystal-version", "shard.yml (crystal)", ".tool-versions"],
-        "nim" => &[".nim-version", ".tool-versions"],
-        "ocaml" => &[".ocaml-version", ".tool-versions"],
-        "fortran" => &[".tool-versions"],
+        "zig" => &[".zig-version", "build.zig.zon (minimum_zig_version)", ".tool-versions", "mise.toml"],
+        "dart" => &["pubspec.yaml (environment.sdk)", ".fvmrc", ".dart-version", ".tool-versions", "mise.toml"],
+        "lua" => &[".lua-version", ".tool-versions", "mise.toml"],
+        "groovy" => &[".sdkmanrc", ".tool-versions", "mise.toml"],
+        "elixir" => &[".elixir-version", "mix.exs (elixir)", ".tool-versions", "mise.toml"],
+        "erlang" => &[".erlang-version", "rebar.config (minimum_otp_vsn)", ".tool-versions", "mise.toml"],
+        "swift" => &[".swift-version", "Package.swift (swift-tools-version)", ".tool-versions", "mise.toml"],
+        "julia" => &[".julia-version", "Project.toml (compat.julia)", ".tool-versions", "mise.toml"],
+        "perl" => &[".perl-version", "cpanfile (perl)", ".tool-versions", "mise.toml"],
+        "r" => &[".Rversion", "DESCRIPTION (R)", ".tool-versions", "mise.toml"],
+        "haskell" => &["stack.yaml (resolver)", "cabal.project", ".tool-versions", "mise.toml"],
+        "c" => &["CMakeLists.txt (CMAKE_C_STANDARD)", ".tool-versions", "mise.toml"],
+        "cpp" => &["CMakeLists.txt (CMAKE_CXX_STANDARD)", ".tool-versions", "mise.toml"],
+        "typescript" => &["tsconfig.json (compilerOptions.target)", ".tool-versions", "mise.toml"],
+        "clojure" => &[".tool-versions", "mise.toml"],
+        "crystal" => &[".crystal-version", "shard.yml (crystal)", ".tool-versions", "mise.toml"],
+        "nim" => &[".nim-version", "nimble (nim)", ".tool-versions", "mise.toml"],
+        "ocaml" => &[".ocaml-version", ".tool-versions", "mise.toml"],
+        "fortran" => &[".tool-versions", "mise.toml"],
         _ => &[],
     }
 }
@@ -170,6 +179,9 @@ async fn detect_from_source(
         "nim" => detect_nim(dir, source).await,
         "ocaml" => detect_ocaml(dir, source).await,
         "fortran" => detect_fortran(dir, source).await,
+        "c" => detect_c(dir, source).await,
+        "cpp" => detect_cpp(dir, source).await,
+        "typescript" => detect_typescript(dir, source).await,
         _ => Ok(None),
     }
 }
@@ -192,6 +204,7 @@ async fn detect_node(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         "package.json (engines.node)" => {
             read_package_json_field(dir.join("package.json"), &["engines", "node"], source).await
         }
+        "mise.toml" => read_mise_toml(dir, &["node", "nodejs"], source).await,
         _ => Ok(None),
     }
 }
@@ -218,6 +231,7 @@ async fn detect_python(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["python"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["python"], source).await,
         _ => Ok(None),
     }
 }
@@ -237,6 +251,7 @@ async fn detect_go(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValu
             )
             .await
         }
+        "mise.toml" => read_mise_toml(dir, &["go", "golang"], source).await,
         _ => Ok(None),
     }
 }
@@ -246,9 +261,13 @@ async fn detect_rust(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         // rustup precedence: rust-toolchain wins over rust-toolchain.toml if both exist.
         "rust-toolchain" => read_rust_toolchain(dir.join("rust-toolchain")).await,
         "rust-toolchain.toml" => read_rust_toolchain_toml(dir.join("rust-toolchain.toml")).await,
+        "Cargo.toml (rust-version)" => {
+            read_cargo_toml_rust_version(dir.join("Cargo.toml")).await
+        }
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["rust"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["rust"], source).await,
         _ => Ok(None),
     }
 }
@@ -260,6 +279,7 @@ async fn detect_ruby(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["ruby"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["ruby"], source).await,
         _ => Ok(None),
     }
 }
@@ -304,6 +324,7 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
             }
             Ok(None)
         }
+        "mise.toml" => read_mise_toml(dir, &["java"], source).await,
         _ => Ok(None),
     }
 }
@@ -318,6 +339,7 @@ async fn detect_scala(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["scala"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["scala"], source).await,
         _ => Ok(None),
     }
 }
@@ -364,6 +386,7 @@ async fn detect_kotlin(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["kotlin"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["kotlin"], source).await,
         _ => Ok(None),
     }
 }
@@ -375,6 +398,7 @@ async fn detect_php(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["php"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["php"], source).await,
         _ => Ok(None),
     }
 }
@@ -393,6 +417,7 @@ async fn detect_dotnet(dir: &Path, source: &str) -> CogniaResult<Option<Detected
             )
             .await
         }
+        "mise.toml" => read_mise_toml(dir, &["dotnet", "dotnet-core"], source).await,
         _ => Ok(None),
     }
 }
@@ -404,6 +429,7 @@ async fn detect_deno(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["deno"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["deno"], source).await,
         // Intentionally unsupported: `deno.json`'s `"version"` is package publishing metadata,
         // not a runtime pin. If this label appears in old settings, return None.
         "deno.json" | "deno.jsonc" => Ok(None),
@@ -420,6 +446,7 @@ async fn detect_bun(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         "package.json (engines.bun)" => {
             read_package_json_field(dir.join("package.json"), &["engines", "bun"], source).await
         }
+        "mise.toml" => read_mise_toml(dir, &["bun"], source).await,
         // Intentionally unsupported: bunfig.toml is behavior config, not runtime pinning.
         "bunfig.toml" => Ok(None),
         _ => Ok(None),
@@ -435,6 +462,7 @@ async fn detect_zig(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["zig"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["zig"], source).await,
         _ => Ok(None),
     }
 }
@@ -477,6 +505,7 @@ async fn detect_lua(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["lua"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["lua"], source).await,
         _ => Ok(None),
     }
 }
@@ -494,6 +523,7 @@ async fn detect_dart(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
             )
             .await
         }
+        "mise.toml" => read_mise_toml(dir, &["dart", "flutter"], source).await,
         _ => Ok(None),
     }
 }
@@ -1243,6 +1273,75 @@ async fn read_uv_toml_requires_python(path: PathBuf) -> CogniaResult<Option<Dete
     Ok(None)
 }
 
+// ── mise.toml parser ──
+
+/// Read version from mise.toml or .mise.toml `[tools]` section.
+/// Format: `[tools]\nnode = "20.11.0"` or `python = "3.12"` (TOML)
+async fn read_mise_toml(
+    dir: &Path,
+    keys: &[&str],
+    source_label: &str,
+) -> CogniaResult<Option<DetectedValue>> {
+    // mise supports both `.mise.toml` (preferred) and `mise.toml`
+    for name in &[".mise.toml", "mise.toml"] {
+        let path = dir.join(name);
+        if !path.is_file() {
+            continue;
+        }
+
+        let content = match crate::platform::fs::read_file_string(&path).await {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let doc: toml::Value = match toml::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let tools = match doc.get("tools") {
+            Some(t) => t,
+            None => continue,
+        };
+
+        for key in keys {
+            if let Some(version) = tools.get(*key) {
+                // mise supports string or array or table formats
+                let ver_str = match version {
+                    toml::Value::String(s) => s.trim().to_string(),
+                    toml::Value::Array(arr) => {
+                        // First element as string
+                        arr.first()
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    }
+                    toml::Value::Table(t) => {
+                        // `node = { version = "20" }` format
+                        t.get("version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    }
+                    _ => continue,
+                };
+
+                if !ver_str.is_empty() {
+                    return Ok(Some(DetectedValue {
+                        value: ver_str,
+                        source: source_label.to_string(),
+                        path,
+                    }));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 // ── New language detect functions ──
 
 async fn detect_groovy(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
@@ -1251,6 +1350,7 @@ async fn detect_groovy(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["groovy"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["groovy"], source).await,
         _ => Ok(None),
     }
 }
@@ -1264,6 +1364,7 @@ async fn detect_elixir(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["elixir"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["elixir"], source).await,
         _ => Ok(None),
     }
 }
@@ -1273,9 +1374,13 @@ async fn detect_erlang(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         ".erlang-version" => {
             read_version_file(dir.join(".erlang-version"), ".erlang-version").await
         }
+        "rebar.config (minimum_otp_vsn)" => {
+            read_rebar_config_min_otp(dir.join("rebar.config")).await
+        }
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["erlang"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["erlang"], source).await,
         _ => Ok(None),
     }
 }
@@ -1291,6 +1396,7 @@ async fn detect_swift(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["swift"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["swift"], source).await,
         _ => Ok(None),
     }
 }
@@ -1306,6 +1412,7 @@ async fn detect_julia(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["julia"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["julia"], source).await,
         _ => Ok(None),
     }
 }
@@ -1315,9 +1422,11 @@ async fn detect_perl(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         ".perl-version" => {
             read_version_file(dir.join(".perl-version"), ".perl-version").await
         }
+        "cpanfile (perl)" => read_cpanfile_perl_version(dir.join("cpanfile")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["perl"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["perl"], source).await,
         _ => Ok(None),
     }
 }
@@ -1325,15 +1434,23 @@ async fn detect_perl(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
 async fn detect_r(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
         ".Rversion" => read_version_file(dir.join(".Rversion"), ".Rversion").await,
+        "DESCRIPTION (R)" => read_description_r_version(dir.join("DESCRIPTION")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["R"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["r", "R"], source).await,
         _ => Ok(None),
     }
 }
 
 async fn detect_haskell(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
+        "stack.yaml (resolver)" => {
+            read_stack_yaml_resolver(dir.join("stack.yaml")).await
+        }
+        "cabal.project" => {
+            read_cabal_project_with(dir.join("cabal.project")).await
+        }
         ".tool-versions" => {
             read_tool_versions(
                 dir.join(".tool-versions"),
@@ -1342,6 +1459,7 @@ async fn detect_haskell(dir: &Path, source: &str) -> CogniaResult<Option<Detecte
             )
             .await
         }
+        "mise.toml" => read_mise_toml(dir, &["haskell", "ghc"], source).await,
         _ => Ok(None),
     }
 }
@@ -1351,6 +1469,7 @@ async fn detect_clojure(dir: &Path, source: &str) -> CogniaResult<Option<Detecte
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["clojure"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["clojure"], source).await,
         _ => Ok(None),
     }
 }
@@ -1364,6 +1483,7 @@ async fn detect_crystal(dir: &Path, source: &str) -> CogniaResult<Option<Detecte
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["crystal"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["crystal"], source).await,
         _ => Ok(None),
     }
 }
@@ -1371,9 +1491,11 @@ async fn detect_crystal(dir: &Path, source: &str) -> CogniaResult<Option<Detecte
 async fn detect_nim(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
         ".nim-version" => read_version_file(dir.join(".nim-version"), ".nim-version").await,
+        "nimble (nim)" => read_nimble_nim_version(dir).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["nim"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["nim"], source).await,
         _ => Ok(None),
     }
 }
@@ -1386,6 +1508,7 @@ async fn detect_ocaml(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["ocaml"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["ocaml"], source).await,
         _ => Ok(None),
     }
 }
@@ -1395,6 +1518,7 @@ async fn detect_fortran(dir: &Path, source: &str) -> CogniaResult<Option<Detecte
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["fortran"], ".tool-versions").await
         }
+        "mise.toml" => read_mise_toml(dir, &["fortran"], source).await,
         _ => Ok(None),
     }
 }
@@ -1526,6 +1650,378 @@ async fn read_shard_yml_crystal(path: PathBuf) -> CogniaResult<Option<DetectedVa
         source: "shard.yml (crystal)".to_string(),
         path,
     }))
+}
+
+// ── Phase 2: New version parsers ──
+
+/// Cargo.toml `[package] rust-version = "1.70"` (MSRV)
+async fn read_cargo_toml_rust_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let doc: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    let rust_version = doc
+        .get("package")
+        .and_then(|v| v.get("rust-version"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("");
+
+    if rust_version.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(DetectedValue {
+        value: rust_version.to_string(),
+        source: "Cargo.toml (rust-version)".to_string(),
+        path,
+    }))
+}
+
+/// rebar.config `{minimum_otp_vsn, "25"}.` (Erlang term format)
+async fn read_rebar_config_min_otp(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let re = match regex::Regex::new(r#"\{\s*minimum_otp_vsn\s*,\s*"([^"]+)"\s*\}"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "rebar.config (minimum_otp_vsn)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// stack.yaml `resolver: lts-22.6` or `snapshot: lts-22.6` (Haskell Stack)
+async fn read_stack_yaml_resolver(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    let doc: serde_json::Value = match serde_yaml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    // Prefer `snapshot` (modern) over `resolver` (legacy, deprecated since Stack 3.1.1)
+    let value = doc
+        .get("snapshot")
+        .and_then(|v| v.as_str())
+        .or_else(|| doc.get("resolver").and_then(|v| v.as_str()))
+        .map(str::trim)
+        .unwrap_or("");
+
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(DetectedValue {
+        value: value.to_string(),
+        source: "stack.yaml (resolver)".to_string(),
+        path,
+    }))
+}
+
+/// cabal.project `with-compiler: ghc-9.6.3` (Haskell Cabal)
+async fn read_cabal_project_with(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Look for `with-compiler: ghc-X.Y.Z` pattern
+    let re = match regex::Regex::new(r"with-compiler:\s*ghc-(\d+\.\d+(?:\.\d+)?)") {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("ghc-{}", version),
+                    source: "cabal.project".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// cpanfile `requires 'perl', '>= 5.026';` (Perl)
+async fn read_cpanfile_perl_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match: requires 'perl', '>= 5.026'; or requires "perl", "5.026";
+    let re = match regex::Regex::new(r#"requires\s+['"]perl['"]\s*,\s*['"]([^'"]+)['"]"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "cpanfile (perl)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// R DESCRIPTION file `Depends: R (>= 4.0.0)` (DCF format)
+async fn read_description_r_version(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match R version constraint in Depends field (may span multiple lines)
+    // Common forms: "Depends: R (>= 4.0.0)" or "Depends:\n    R (>= 3.5.0),"
+    let re = match regex::Regex::new(r"R\s*\(\s*>=?\s*([\d.]+)\s*\)") {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!(">= {}", version),
+                    source: "DESCRIPTION (R)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Nim `.nimble` file: `requires "nim >= 2.0.0"` — scans for *.nimble in dir
+async fn read_nimble_nim_version(dir: &Path) -> CogniaResult<Option<DetectedValue>> {
+    // Find the first *.nimble file in the directory
+    let nimble_path = match find_nimble_file(dir) {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    let content = match crate::platform::fs::read_file_string(&nimble_path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match: requires "nim >= 2.0.0" or requires "nim >= 1.6.0"
+    let re = match regex::Regex::new(r#"requires\s+"nim\s+([^"]+)""#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(version) = caps.get(1) {
+            let version = version.as_str().trim();
+            if !version.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: version.to_string(),
+                    source: "nimble (nim)".to_string(),
+                    path: nimble_path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn find_nimble_file(dir: &Path) -> Option<PathBuf> {
+    let read_dir = std::fs::read_dir(dir).ok()?;
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "nimble" {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+// ── Phase 3: C/C++/TypeScript detection ──
+
+/// CMakeLists.txt `set(CMAKE_C_STANDARD 17)` or `set(CMAKE_C_STANDARD "17")`
+async fn detect_c(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        "CMakeLists.txt (CMAKE_C_STANDARD)" => {
+            read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_C_STANDARD", source).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["c"], ".tool-versions").await
+        }
+        "mise.toml" => read_mise_toml(dir, &["c"], source).await,
+        _ => Ok(None),
+    }
+}
+
+/// CMakeLists.txt `set(CMAKE_CXX_STANDARD 20)` or `set(CMAKE_CXX_STANDARD "20")`
+async fn detect_cpp(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        "CMakeLists.txt (CMAKE_CXX_STANDARD)" => {
+            read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_CXX_STANDARD", source).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(dir.join(".tool-versions"), &["cpp", "c++"], ".tool-versions").await
+        }
+        "mise.toml" => read_mise_toml(dir, &["cpp", "c++"], source).await,
+        _ => Ok(None),
+    }
+}
+
+/// Shared CMake standard parser for C and C++
+async fn read_cmake_standard(
+    path: PathBuf,
+    variable: &str,
+    source_label: &str,
+) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match: set(CMAKE_C_STANDARD 17), set(CMAKE_CXX_STANDARD "20"), set(CMAKE_CXX_STANDARD 23)
+    let pattern = format!(r#"set\s*\(\s*{}\s+"?(\d+)"?\s*\)"#, regex::escape(variable));
+    let re = match regex::Regex::new(&pattern) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(standard) = caps.get(1) {
+            let standard = standard.as_str().trim();
+            if !standard.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("C{}", standard),
+                    source: source_label.to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// tsconfig.json `compilerOptions.target` (TypeScript)
+async fn detect_typescript(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
+    match source {
+        "tsconfig.json (compilerOptions.target)" => {
+            read_tsconfig_target(dir.join("tsconfig.json")).await
+        }
+        ".tool-versions" => {
+            read_tool_versions(
+                dir.join(".tool-versions"),
+                &["typescript"],
+                ".tool-versions",
+            )
+            .await
+        }
+        "mise.toml" => read_mise_toml(dir, &["typescript"], source).await,
+        _ => Ok(None),
+    }
+}
+
+async fn read_tsconfig_target(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // tsconfig.json may contain comments (JSONC), so use regex instead of strict JSON parsing
+    let re = match regex::Regex::new(r#""target"\s*:\s*"([^"]+)""#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(target) = caps.get(1) {
+            let target = target.as_str().trim();
+            if !target.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: target.to_string(),
+                    source: "tsconfig.json (compilerOptions.target)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -2200,5 +2696,1067 @@ java {
             .unwrap();
         assert_eq!(detected.version, "3.19.0");
         assert_eq!(detected.source, ".fvmrc");
+    }
+
+    // ── Rust Cargo.toml (rust-version) tests ──
+
+    #[tokio::test]
+    async fn rust_detects_cargo_toml_rust_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("Cargo.toml"),
+            r#"[package]
+name = "my-crate"
+version = "0.1.0"
+rust-version = "1.70"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["Cargo.toml (rust-version)".to_string()];
+        let detected = detect_env_version("rust", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "rust");
+        assert_eq!(detected.version, "1.70");
+        assert_eq!(detected.source, "Cargo.toml (rust-version)");
+    }
+
+    #[tokio::test]
+    async fn rust_cargo_toml_missing_rust_version_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("Cargo.toml"),
+            r#"[package]
+name = "my-crate"
+version = "0.1.0"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["Cargo.toml (rust-version)".to_string()];
+        let detected = detect_env_version("rust", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn rust_toolchain_wins_over_cargo_toml() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join("rust-toolchain"), "nightly")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("Cargo.toml"),
+            r#"[package]
+name = "x"
+version = "0.1.0"
+rust-version = "1.70"
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![
+            "rust-toolchain".to_string(),
+            "Cargo.toml (rust-version)".to_string(),
+        ];
+        let detected = detect_env_version("rust", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "nightly");
+        assert_eq!(detected.source, "rust-toolchain");
+    }
+
+    // ── Erlang rebar.config tests ──
+
+    #[tokio::test]
+    async fn erlang_detects_rebar_config_min_otp() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("rebar.config"),
+            r#"%% -*- mode: erlang -*-
+{minimum_otp_vsn, "25"}.
+{erl_opts, [debug_info]}.
+"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["rebar.config (minimum_otp_vsn)".to_string()];
+        let detected = detect_env_version("erlang", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "erlang");
+        assert_eq!(detected.version, "25");
+        assert_eq!(detected.source, "rebar.config (minimum_otp_vsn)");
+    }
+
+    #[tokio::test]
+    async fn erlang_rebar_config_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("rebar.config"),
+            "{erl_opts, [debug_info]}.\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["rebar.config (minimum_otp_vsn)".to_string()];
+        let detected = detect_env_version("erlang", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── Haskell stack.yaml tests ──
+
+    #[tokio::test]
+    async fn haskell_detects_stack_yaml_resolver() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("stack.yaml"),
+            "resolver: lts-22.6\npackages:\n- .\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["stack.yaml (resolver)".to_string()];
+        let detected = detect_env_version("haskell", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "haskell");
+        assert_eq!(detected.version, "lts-22.6");
+        assert_eq!(detected.source, "stack.yaml (resolver)");
+    }
+
+    #[tokio::test]
+    async fn haskell_prefers_snapshot_over_resolver() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("stack.yaml"),
+            "snapshot: lts-22.7\nresolver: lts-22.6\npackages:\n- .\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["stack.yaml (resolver)".to_string()];
+        let detected = detect_env_version("haskell", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "lts-22.7");
+    }
+
+    #[tokio::test]
+    async fn haskell_cabal_project_with_compiler() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("cabal.project"),
+            "packages: .\nwith-compiler: ghc-9.6.3\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["cabal.project".to_string()];
+        let detected = detect_env_version("haskell", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "ghc-9.6.3");
+        assert_eq!(detected.source, "cabal.project");
+    }
+
+    #[tokio::test]
+    async fn haskell_stack_yaml_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["stack.yaml (resolver)".to_string()];
+        let detected = detect_env_version("haskell", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── Perl cpanfile tests ──
+
+    #[tokio::test]
+    async fn perl_detects_cpanfile_perl_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("cpanfile"),
+            "requires 'perl', '>= 5.026';\nrequires 'Plack', '1.0';\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["cpanfile (perl)".to_string()];
+        let detected = detect_env_version("perl", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "perl");
+        assert_eq!(detected.version, ">= 5.026");
+        assert_eq!(detected.source, "cpanfile (perl)");
+    }
+
+    #[tokio::test]
+    async fn perl_cpanfile_no_perl_req_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("cpanfile"),
+            "requires 'Plack', '1.0';\nrequires 'JSON', '>= 2.00';\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["cpanfile (perl)".to_string()];
+        let detected = detect_env_version("perl", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn perl_cpanfile_double_quotes() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("cpanfile"),
+            "requires \"perl\", \"5.026\";\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["cpanfile (perl)".to_string()];
+        let detected = detect_env_version("perl", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "5.026");
+    }
+
+    // ── R DESCRIPTION tests ──
+
+    #[tokio::test]
+    async fn r_detects_description_r_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("DESCRIPTION"),
+            "Package: mypackage\nVersion: 1.0.0\nDepends: R (>= 4.0.0)\nLicense: MIT\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["DESCRIPTION (R)".to_string()];
+        let detected = detect_env_version("r", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "r");
+        assert_eq!(detected.version, ">= 4.0.0");
+        assert_eq!(detected.source, "DESCRIPTION (R)");
+    }
+
+    #[tokio::test]
+    async fn r_description_multiline_depends() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("DESCRIPTION"),
+            "Package: mypackage\nDepends:\n    R (>= 3.5.0),\n    stats\nLicense: MIT\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["DESCRIPTION (R)".to_string()];
+        let detected = detect_env_version("r", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, ">= 3.5.0");
+    }
+
+    #[tokio::test]
+    async fn r_description_no_r_dep_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("DESCRIPTION"),
+            "Package: mypackage\nDepends: stats, utils\nLicense: MIT\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["DESCRIPTION (R)".to_string()];
+        let detected = detect_env_version("r", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── Nim nimble tests ──
+
+    #[tokio::test]
+    async fn nim_detects_nimble_nim_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("mypackage.nimble"),
+            "version = \"0.1.0\"\nauthor = \"Test\"\nrequires \"nim >= 2.0.0\"\nrequires \"jester\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["nimble (nim)".to_string()];
+        let detected = detect_env_version("nim", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "nim");
+        assert_eq!(detected.version, ">= 2.0.0");
+        assert_eq!(detected.source, "nimble (nim)");
+    }
+
+    #[tokio::test]
+    async fn nim_nimble_no_nim_req_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("mypackage.nimble"),
+            "version = \"0.1.0\"\nauthor = \"Test\"\nrequires \"jester\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["nimble (nim)".to_string()];
+        let detected = detect_env_version("nim", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn nim_no_nimble_file_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["nimble (nim)".to_string()];
+        let detected = detect_env_version("nim", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── TypeScript tsconfig.json tests ──
+
+    #[tokio::test]
+    async fn typescript_detects_tsconfig_target() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("tsconfig.json"),
+            r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs"
+  }
+}"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
+        let detected = detect_env_version("typescript", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "typescript");
+        assert_eq!(detected.version, "ES2022");
+        assert_eq!(detected.source, "tsconfig.json (compilerOptions.target)");
+    }
+
+    #[tokio::test]
+    async fn typescript_tsconfig_no_target_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("tsconfig.json"),
+            r#"{ "compilerOptions": { "module": "commonjs" } }"#,
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
+        let detected = detect_env_version("typescript", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn typescript_tsconfig_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
+        let detected = detect_env_version("typescript", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── C CMakeLists.txt tests ──
+
+    #[tokio::test]
+    async fn c_detects_cmake_c_standard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.20)\nproject(mylib C)\nset(CMAKE_C_STANDARD 17)\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["CMakeLists.txt (CMAKE_C_STANDARD)".to_string()];
+        let detected = detect_env_version("c", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "c");
+        assert_eq!(detected.version, "C17");
+        assert_eq!(detected.source, "CMakeLists.txt (CMAKE_C_STANDARD)");
+    }
+
+    #[tokio::test]
+    async fn c_cmake_no_standard_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.20)\nproject(mylib C)\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["CMakeLists.txt (CMAKE_C_STANDARD)".to_string()];
+        let detected = detect_env_version("c", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── C++ CMakeLists.txt tests ──
+
+    #[tokio::test]
+    async fn cpp_detects_cmake_cxx_standard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("CMakeLists.txt"),
+            "cmake_minimum_required(VERSION 3.20)\nproject(mylib CXX)\nset(CMAKE_CXX_STANDARD 20)\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["CMakeLists.txt (CMAKE_CXX_STANDARD)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "cpp");
+        assert_eq!(detected.version, "C20");
+        assert_eq!(detected.source, "CMakeLists.txt (CMAKE_CXX_STANDARD)");
+    }
+
+    #[tokio::test]
+    async fn cpp_cmake_quoted_standard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("CMakeLists.txt"),
+            "set(CMAKE_CXX_STANDARD \"23\")\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["CMakeLists.txt (CMAKE_CXX_STANDARD)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C23");
+    }
+
+    #[tokio::test]
+    async fn cpp_cmake_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["CMakeLists.txt (CMAKE_CXX_STANDARD)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── mise.toml detection tests ──
+
+    #[tokio::test]
+    async fn mise_toml_detects_node_string_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nnode = \"20.11.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("node", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "node");
+        assert_eq!(detected.version, "20.11.0");
+        assert_eq!(detected.source, "mise.toml");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_detects_python_version() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\npython = \"3.12.0\"\nnode = \"20\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("python", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.12.0");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_array_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\ngo = [\"1.22.1\", \"1.21.0\"]\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("go", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "1.22.1");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_table_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools.ruby]\nversion = \"3.3.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("ruby", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.3.0");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_fallback_to_non_dotted() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Only `mise.toml` (not `.mise.toml`) exists
+        crate::platform::fs::write_file_string(
+            root.join("mise.toml"),
+            "[tools]\nrust = \"1.80.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("rust", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "1.80.0");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_dotted_preferred_over_non_dotted() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\njava = \"21\"\n",
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join("mise.toml"),
+            "[tools]\njava = \"17\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("java", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // .mise.toml is checked first
+        assert_eq!(detected.version, "21");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_missing_tool_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nnode = \"20\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("python", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn mise_toml_no_tools_section_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[settings]\nexperimental = true\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("node", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn mise_toml_missing_file_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("node", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn mise_toml_works_for_diverse_languages() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nzig = \"0.13.0\"\ndeno = \"1.45.0\"\nelixir = \"1.17.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+
+        let zig = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        assert_eq!(zig.version, "0.13.0");
+
+        let deno = detect_env_version("deno", root, &sources).await.unwrap().unwrap();
+        assert_eq!(deno.version, "1.45.0");
+
+        let elixir = detect_env_version("elixir", root, &sources).await.unwrap().unwrap();
+        assert_eq!(elixir.version, "1.17.0");
+    }
+
+    // ── Edge case tests ──
+
+    #[tokio::test]
+    async fn version_file_with_leading_v_prefix() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        // Some users write `v20.11.0` in .nvmrc — we should preserve it as-is
+        crate::platform::fs::write_file_string(root.join(".nvmrc"), "v20.11.0\n")
+            .await
+            .unwrap();
+
+        let sources = vec![".nvmrc".to_string()];
+        let detected = detect_env_version("node", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "v20.11.0");
+    }
+
+    #[tokio::test]
+    async fn version_file_with_comments_and_blank_lines() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".python-version"),
+            "# This is the Python version\n\n3.12.1\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".python-version".to_string()];
+        let detected = detect_env_version("python", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.12.1");
+    }
+
+    #[tokio::test]
+    async fn version_file_with_trailing_whitespace() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".ruby-version"), "  3.2.2  \n")
+            .await
+            .unwrap();
+
+        let sources = vec![".ruby-version".to_string()];
+        let detected = detect_env_version("ruby", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "3.2.2");
+    }
+
+    #[tokio::test]
+    async fn empty_version_file_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".node-version"), "\n  \n")
+            .await
+            .unwrap();
+
+        let sources = vec![".node-version".to_string()];
+        let detected = detect_env_version("node", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn tool_versions_with_inline_comments() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".tool-versions"),
+            "node 20.11.0 # LTS version\npython 3.12.0\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".tool-versions".to_string()];
+        let detected = detect_env_version("node", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // Strip comment; only first version field should be extracted
+        assert_eq!(detected.version, "20.11.0");
+    }
+
+    #[tokio::test]
+    async fn cargo_toml_rust_version_three_component() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"x\"\nversion = \"0.1.0\"\nrust-version = \"1.70.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["Cargo.toml (rust-version)".to_string()];
+        let detected = detect_env_version("rust", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "1.70.0");
+    }
+
+    #[tokio::test]
+    async fn rebar_config_with_whitespace_variants() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("rebar.config"),
+            "{ minimum_otp_vsn , \"26\" }.\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["rebar.config (minimum_otp_vsn)".to_string()];
+        let detected = detect_env_version("erlang", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "26");
+    }
+
+    #[tokio::test]
+    async fn cabal_project_no_with_compiler_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("cabal.project"),
+            "packages: .\noptimization: 2\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["cabal.project".to_string()];
+        let detected = detect_env_version("haskell", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn r_description_exact_version_constraint() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("DESCRIPTION"),
+            "Package: test\nDepends: R (>= 4.1)\nLicense: MIT\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["DESCRIPTION (R)".to_string()];
+        let detected = detect_env_version("r", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, ">= 4.1");
+    }
+
+    #[tokio::test]
+    async fn tsconfig_with_jsonc_comments() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("tsconfig.json"),
+            "{\n  // Output target\n  \"compilerOptions\": {\n    \"target\": \"ES2020\"\n  }\n}\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
+        let detected = detect_env_version("typescript", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "ES2020");
+    }
+
+    // ── Integration / priority tests ──
+
+    #[tokio::test]
+    async fn version_file_takes_priority_over_mise_toml() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(root.join(".nvmrc"), "18.19.0")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nnode = \"20.11.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![".nvmrc".to_string(), "mise.toml".to_string()];
+        let detected = detect_env_version("node", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // .nvmrc is listed first, so it wins
+        assert_eq!(detected.version, "18.19.0");
+        assert_eq!(detected.source, ".nvmrc");
+    }
+
+    #[tokio::test]
+    async fn mise_toml_used_when_version_file_missing() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\npython = \"3.11.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec![
+            ".python-version".to_string(),
+            "mise.toml".to_string(),
+        ];
+        let detected = detect_env_version("python", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // .python-version doesn't exist, falls back to mise.toml
+        assert_eq!(detected.version, "3.11.0");
+        assert_eq!(detected.source, "mise.toml");
+    }
+
+    #[tokio::test]
+    async fn child_dir_version_wins_over_parent_mise_toml() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let child = root.join("subproject");
+        tokio::fs::create_dir_all(&child).await.unwrap();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\ngo = \"1.21.0\"\n",
+        )
+        .await
+        .unwrap();
+        crate::platform::fs::write_file_string(child.join(".go-version"), "1.22.1")
+            .await
+            .unwrap();
+
+        let sources = vec![
+            ".go-version".to_string(),
+            "mise.toml".to_string(),
+        ];
+        let detected = detect_env_version("go", &child, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        // .go-version in child wins over .mise.toml in parent
+        assert_eq!(detected.version, "1.22.1");
+        assert_eq!(detected.source, ".go-version");
+    }
+
+    #[tokio::test]
+    async fn parent_mise_toml_found_via_directory_traversal() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let child = root.join("packages").join("api");
+        tokio::fs::create_dir_all(&child).await.unwrap();
+
+        crate::platform::fs::write_file_string(
+            root.join(".mise.toml"),
+            "[tools]\nnode = \"22.0.0\"\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["mise.toml".to_string()];
+        let detected = detect_env_version("node", &child, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "22.0.0");
+    }
+
+    #[tokio::test]
+    async fn unknown_env_type_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec![".tool-versions".to_string()];
+        let detected = detect_env_version("unknown_lang", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    #[tokio::test]
+    async fn default_detection_sources_returns_non_empty_for_known_types() {
+        for env_type in &[
+            "node", "python", "go", "rust", "ruby", "java", "kotlin", "scala",
+            "php", "dotnet", "deno", "bun", "zig", "dart", "lua", "groovy",
+            "elixir", "erlang", "swift", "julia", "perl", "r", "haskell",
+            "c", "cpp", "typescript", "clojure", "crystal", "nim", "ocaml", "fortran",
+        ] {
+            let sources = default_detection_sources(env_type);
+            assert!(
+                !sources.is_empty(),
+                "default_detection_sources(\"{}\") returned empty",
+                env_type
+            );
+            // All sources should include mise.toml as last entry
+            assert_eq!(
+                *sources.last().unwrap(),
+                "mise.toml",
+                "mise.toml should be the last source for {}",
+                env_type
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn default_detection_sources_unknown_type_returns_empty() {
+        assert!(default_detection_sources("nonexistent").is_empty());
+    }
+
+    #[tokio::test]
+    async fn default_enabled_returns_first_two() {
+        let enabled = default_enabled_detection_sources("node");
+        assert_eq!(enabled.len(), 2);
+        assert_eq!(enabled[0], ".nvmrc");
+        assert_eq!(enabled[1], ".node-version");
     }
 }

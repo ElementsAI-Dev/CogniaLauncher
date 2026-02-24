@@ -54,8 +54,29 @@ const PROVIDER_MAP = {
   wsl: { slug: "linux", darkColor: "FCC624" },
   macports: { slug: "macports", darkColor: "FFFFFF" },
   vcpkg: { slug: "cplusplus", darkColor: "00599C" },
+  git: { slug: "git", darkColor: "F05032" },
+  fvm: { slug: "flutter", darkColor: "02569B" },
+  pub: { slug: "dart", darkColor: "0175C2" },
+  zig: { slug: "zig", darkColor: "F7A41D" },
+  "sdkman-scala": { slug: "scala", darkColor: "DC322F" },
+  "sdkman-groovy": { slug: "apachegroovy", darkColor: "4298B8" },
+  "sdkman-gradle": { slug: "gradle", darkColor: "02303A" },
+  "sdkman-maven": { slug: "apachemaven", darkColor: "C71A36" },
+  // Language-based provider icons for system-* environment providers
+  elixir: { slug: "elixir", darkColor: "4B275F" },
+  erlang: { slug: "erlang", darkColor: "A90533" },
+  swift: { slug: "swift", darkColor: "F05138" },
+  julia: { slug: "julia", darkColor: "9558B2" },
+  perl: { slug: "perl", darkColor: "39457E" },
+  r: { slug: "r", darkColor: "276DC3" },
+  haskell: { slug: "haskell", darkColor: "5D4F85" },
+  clojure: { slug: "clojure", darkColor: "5881D8" },
+  crystal: { slug: "crystal", darkColor: "000000" },
+  nim: { slug: "nim", darkColor: "FFE953" },
+  ocaml: { slug: "ocaml", darkColor: "EC6813" },
+  fortran: { slug: "fortran", darkColor: "734F96" },
   // The following use custom SVGs managed by fix-missing-icons.mjs:
-  // xmake, volta, psgallery, asdf, mise, scoop, winget
+  // xmake, volta, psgallery, asdf, mise, scoop, winget, luarocks, msys2, msvc
 };
 
 const PLATFORM_MAP = {

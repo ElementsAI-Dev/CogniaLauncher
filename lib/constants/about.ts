@@ -52,19 +52,40 @@ export const BUILD_DEPENDENCIES: BuildDependency[] = [
   },
 ];
 
+export type ChangelogChangeType =
+  | 'added'
+  | 'changed'
+  | 'fixed'
+  | 'removed'
+  | 'deprecated'
+  | 'security'
+  | 'performance'
+  | 'breaking';
+
+export interface ChangelogChange {
+  type: ChangelogChangeType;
+  description: string;
+}
+
 export interface ChangelogEntry {
   version: string;
   date: string;
-  changes: {
-    type: 'added' | 'changed' | 'fixed' | 'removed';
-    description: string;
-  }[];
+  changes: ChangelogChange[];
+  /** Raw markdown body from GitHub release (if fetched remotely) */
+  markdownBody?: string;
+  /** Whether this is a pre-release version */
+  prerelease?: boolean;
+  /** URL to the GitHub release page */
+  url?: string;
+  /** Source of this entry: 'local' (hardcoded) or 'remote' (GitHub) */
+  source?: 'local' | 'remote';
 }
 
 const CHANGELOG_EN: ChangelogEntry[] = [
   {
     version: '0.1.0',
     date: '2025-01-15',
+    source: 'local',
     changes: [
       { type: 'added', description: 'Initial release of CogniaLauncher' },
       { type: 'added', description: 'Environment management for 15+ languages: Python, Node.js, Rust, Go, Java, Kotlin, Ruby, PHP, .NET, Deno, and more' },
@@ -88,6 +109,7 @@ const CHANGELOG_ZH: ChangelogEntry[] = [
   {
     version: '0.1.0',
     date: '2025-01-15',
+    source: 'local',
     changes: [
       { type: 'added', description: 'CogniaLauncher 首次发布' },
       { type: 'added', description: '支持 15+ 语言的环境管理：Python、Node.js、Rust、Go、Java、Kotlin、Ruby、PHP、.NET、Deno 等' },

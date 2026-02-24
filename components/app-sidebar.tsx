@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LanguageIcon } from "@/components/provider-management/provider-icon";
@@ -16,6 +17,7 @@ import {
   Terminal,
   ChevronRight,
   BookOpen,
+  GitBranch,
 } from "lucide-react";
 import {
   Sidebar,
@@ -52,6 +54,7 @@ const navItems = [
   { href: "/providers", labelKey: "nav.providers", icon: Server, tourId: undefined },
   { href: "/cache", labelKey: "nav.cache", icon: HardDrive, tourId: undefined },
   { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine, tourId: undefined },
+  { href: "/git", labelKey: "nav.git", icon: GitBranch, tourId: undefined },
   { href: "/wsl", labelKey: "nav.wsl", icon: Terminal, tourId: undefined },
   { href: "/logs", labelKey: "nav.logs", icon: ScrollText, tourId: undefined },
   { href: "/docs", labelKey: "nav.docs", icon: BookOpen, tourId: undefined },
@@ -63,7 +66,16 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { t } = useLocale();
   const isDesktop = isTauri();
-  const { distros } = useWsl();
+  const { distros, checkAvailability, refreshDistros } = useWsl();
+
+  const wslInitRef = useRef(false);
+  useEffect(() => {
+    if (!isDesktop || wslInitRef.current) return;
+    wslInitRef.current = true;
+    checkAvailability().then((ok) => {
+      if (ok) refreshDistros();
+    });
+  }, [isDesktop, checkAvailability, refreshDistros]);
 
   return (
     <Sidebar collapsible="icon" data-tour="sidebar">
@@ -242,8 +254,8 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
-              {/* Downloads */}
-              {navItems.slice(5, 6).map((item) => {
+              {/* Downloads & Git */}
+              {navItems.slice(5, 7).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -333,7 +345,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.settings")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(7).map((item) => {
+              {navItems.slice(8).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (

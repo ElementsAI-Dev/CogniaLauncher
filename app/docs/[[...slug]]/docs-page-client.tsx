@@ -29,13 +29,14 @@ export function DocsPageClient({ content, slug, basePath }: DocsPageClientProps)
             title={title}
             description={t('docs.description')}
           />
+          <DocsToc content={content} mode="mobile" />
           <div className="mt-6">
             <MarkdownRenderer content={content} basePath={basePath} />
           </div>
           <DocsNavFooter prev={prev} next={next} />
         </main>
       </ScrollArea>
-      <DocsToc content={content} className="border-l border-border pr-4 pt-6" />
+      <DocsToc content={content} mode="desktop" className="border-l border-border pr-4 pt-6" />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { isTauri } from '@/lib/platform';
 
 // Re-export all types from types/tauri.ts
 export type {
@@ -48,7 +49,10 @@ export type {
   CleanedFileInfo,
   CleanupRecord,
   CleanupHistorySummary,
+  GpuInfo,
   PlatformInfo,
+  DiskInfo,
+  NetworkInterfaceInfo,
   BatchInstallOptions,
   BatchProgress,
   BatchResult,
@@ -121,12 +125,29 @@ export type {
   PathValidationResult,
   WslDistroStatus,
   WslStatus,
+  WslVersionInfo,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
   WslConfig,
   WslDistroConfig,
   WslMountOptions,
+  WslDistroEnvironment,
+  GitRepoInfo,
+  GitCommitEntry,
+  GitBranchInfo,
+  GitRemoteInfo,
+  GitTagInfo,
+  GitStashEntry,
+  GitContributor,
+  GitBlameEntry,
+  GitConfigEntry,
+  GitStatusFile,
+  GitCommitDetail,
+  GitGraphEntry,
+  GitAheadBehind,
+  GitDayActivity,
+  GitFileStatEntry,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -176,6 +197,8 @@ import type {
   CleanupRecord,
   CleanupHistorySummary,
   PlatformInfo,
+  DiskInfo,
+  NetworkInterfaceInfo,
   BatchProgress,
   BatchResult,
   BatchInstallOptions,
@@ -223,12 +246,29 @@ import type {
   PathValidationResult,
   WslDistroStatus,
   WslStatus,
+  WslVersionInfo,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
   WslConfig,
   WslDistroConfig,
   WslMountOptions,
+  WslDistroEnvironment,
+  GitRepoInfo,
+  GitCommitEntry,
+  GitBranchInfo,
+  GitRemoteInfo,
+  GitTagInfo,
+  GitStashEntry,
+  GitContributor,
+  GitBlameEntry,
+  GitConfigEntry,
+  GitStatusFile,
+  GitCommitDetail,
+  GitGraphEntry,
+  GitAheadBehind,
+  GitDayActivity,
+  GitFileStatEntry,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -237,10 +277,8 @@ import type {
   PathStatusInfo,
 } from '@/types/tauri';
 
-// Check if running in Tauri environment
-export function isTauri(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window;
-}
+// Re-export so existing `import { isTauri } from '@/lib/tauri'` call-sites keep working.
+export { isTauri };
 
 export async function getAppVersion(): Promise<string | null> {
   if (typeof window === 'undefined' || !isTauri()) {
@@ -460,6 +498,8 @@ export const configExport = () => invoke<string>('config_export');
 export const configImport = (tomlContent: string) => invoke<void>('config_import', { tomlContent });
 export const getCogniaDir = () => invoke<string>('get_cognia_dir');
 export const getPlatformInfo = () => invoke<PlatformInfo>('get_platform_info');
+export const getDiskInfo = () => invoke<DiskInfo[]>('get_disk_info');
+export const getNetworkInterfaces = () => invoke<NetworkInterfaceInfo[]>('get_network_interfaces');
 
 // Cache commands
 export const cacheInfo = () => invoke<CacheInfo>('cache_info');
@@ -656,6 +696,21 @@ export const getEnhancedCacheSettings = () =>
   invoke<EnhancedCacheSettings>('get_enhanced_cache_settings');
 export const setEnhancedCacheSettings = (newSettings: EnhancedCacheSettings) =>
   invoke<void>('set_enhanced_cache_settings', { newSettings });
+
+// Cache change events
+export interface CacheChangedEvent {
+  action: string;
+  freedBytes: number;
+  freedHuman: string;
+}
+
+export async function listenCacheChanged(
+  callback: (event: CacheChangedEvent) => void
+): Promise<UnlistenFn> {
+  return listen<CacheChangedEvent>('cache-changed', (event) => {
+    callback(event.payload);
+  });
+}
 
 // Provider management commands
 export const providerEnable = (providerId: string) => invoke<void>('provider_enable', { providerId });
@@ -1449,6 +1504,30 @@ export const wslGetDistroConfig = (distro: string) =>
 export const wslSetDistroConfig = (distro: string, section: string, key: string, value?: string) =>
   invoke<void>('wsl_set_distro_config', { distro, section, key, value });
 
+/** Get full WSL version info (all component versions) */
+export const wslGetVersionInfo = () =>
+  invoke<WslVersionInfo>('wsl_get_version_info');
+
+/** Set sparse VHD mode for a WSL distribution */
+export const wslSetSparse = (distro: string, enabled: boolean) =>
+  invoke<void>('wsl_set_sparse', { distro, enabled });
+
+/** Install WSL engine only, without a default distribution */
+export const wslInstallWslOnly = () =>
+  invoke<string>('wsl_install_wsl_only');
+
+/** Install a distribution to a custom location */
+export const wslInstallWithLocation = (name: string, location: string) =>
+  invoke<string>('wsl_install_with_location', { name, location });
+
+/** Diagnostic: returns step-by-step WSL detection info for debugging */
+export const wslDebugDetection = () =>
+  invoke<Record<string, unknown>>('wsl_debug_detection');
+
+/** Detect the environment inside a WSL distribution (os-release, package manager, etc.) */
+export const wslDetectDistroEnv = (distro: string) =>
+  invoke<WslDistroEnvironment>('wsl_detect_distro_env', { distro });
+
 // ============================================================================
 // Launch Commands
 // ============================================================================
@@ -1544,3 +1623,146 @@ export const pathCheck = () =>
 /** Get the command to manually add shim directory to PATH */
 export const pathGetAddCommand = () =>
   invoke<string>('path_get_add_command');
+
+// ============================================================================
+// Git Commands
+// ============================================================================
+
+/** Check if git is installed and available */
+export const gitIsAvailable = () =>
+  invoke<boolean>('git_is_available');
+
+/** Get the installed git version string */
+export const gitGetVersion = () =>
+  invoke<string | null>('git_get_version');
+
+/** Get the git executable path */
+export const gitGetExecutablePath = () =>
+  invoke<string | null>('git_get_executable_path');
+
+/** Install git via system package manager */
+export const gitInstall = () =>
+  invoke<string>('git_install');
+
+/** Update git to the latest version */
+export const gitUpdate = () =>
+  invoke<string>('git_update');
+
+/** Get all global git configuration entries */
+export const gitGetConfig = () =>
+  invoke<GitConfigEntry[]>('git_get_config');
+
+/** Set a global git config value */
+export const gitSetConfig = (key: string, value: string) =>
+  invoke<void>('git_set_config', { key, value });
+
+/** Remove a global git config key */
+export const gitRemoveConfig = (key: string) =>
+  invoke<void>('git_remove_config', { key });
+
+/** Get repository information for a given path */
+export const gitGetRepoInfo = (path: string) =>
+  invoke<GitRepoInfo>('git_get_repo_info', { path });
+
+/** Get commit log for a repository */
+export const gitGetLog = (
+  path: string,
+  limit?: number,
+  author?: string,
+  since?: string,
+  until?: string,
+  file?: string,
+) =>
+  invoke<GitCommitEntry[]>('git_get_log', { path, limit, author, since, until, file });
+
+/** Get branches for a repository */
+export const gitGetBranches = (path: string) =>
+  invoke<GitBranchInfo[]>('git_get_branches', { path });
+
+/** Get remotes for a repository */
+export const gitGetRemotes = (path: string) =>
+  invoke<GitRemoteInfo[]>('git_get_remotes', { path });
+
+/** Get tags for a repository */
+export const gitGetTags = (path: string) =>
+  invoke<GitTagInfo[]>('git_get_tags', { path });
+
+/** Get stashes for a repository */
+export const gitGetStashes = (path: string) =>
+  invoke<GitStashEntry[]>('git_get_stashes', { path });
+
+/** Get contributors for a repository */
+export const gitGetContributors = (path: string) =>
+  invoke<GitContributor[]>('git_get_contributors', { path });
+
+/** Get file history (commits that modified a specific file) */
+export const gitGetFileHistory = (path: string, file: string, limit?: number) =>
+  invoke<GitCommitEntry[]>('git_get_file_history', { path, file, limit });
+
+/** Get blame information for a file */
+export const gitGetBlame = (path: string, file: string) =>
+  invoke<GitBlameEntry[]>('git_get_blame', { path, file });
+
+/** Get detailed information about a specific commit */
+export const gitGetCommitDetail = (path: string, hash: string) =>
+  invoke<GitCommitDetail>('git_get_commit_detail', { path, hash });
+
+/** Get file-level status (full paths) */
+export const gitGetStatus = (path: string) =>
+  invoke<GitStatusFile[]>('git_get_status', { path });
+
+/** Get graph log for commit graph visualization */
+export const gitGetGraphLog = (path: string, limit?: number, allBranches?: boolean) =>
+  invoke<GitGraphEntry[]>('git_get_graph_log', { path, limit, allBranches });
+
+/** Get ahead/behind counts for a branch */
+export const gitGetAheadBehind = (path: string, branch: string, upstream?: string) =>
+  invoke<GitAheadBehind>('git_get_ahead_behind', { path, branch, upstream });
+
+/** Checkout (switch to) a branch */
+export const gitCheckoutBranch = (path: string, name: string) =>
+  invoke<string>('git_checkout_branch', { path, name });
+
+/** Create a new branch */
+export const gitCreateBranch = (path: string, name: string, startPoint?: string) =>
+  invoke<string>('git_create_branch', { path, name, startPoint });
+
+/** Delete a branch */
+export const gitDeleteBranch = (path: string, name: string, force?: boolean) =>
+  invoke<string>('git_delete_branch', { path, name, force });
+
+/** Apply a stash */
+export const gitStashApply = (path: string, stashId?: string) =>
+  invoke<string>('git_stash_apply', { path, stashId });
+
+/** Pop a stash */
+export const gitStashPop = (path: string, stashId?: string) =>
+  invoke<string>('git_stash_pop', { path, stashId });
+
+/** Drop a stash */
+export const gitStashDrop = (path: string, stashId?: string) =>
+  invoke<string>('git_stash_drop', { path, stashId });
+
+/** Save (create) a stash */
+export const gitStashSave = (path: string, message?: string, includeUntracked?: boolean) =>
+  invoke<string>('git_stash_save', { path, message, includeUntracked });
+
+/** Create a tag */
+export const gitCreateTag = (path: string, name: string, targetRef?: string, message?: string) =>
+  invoke<string>('git_create_tag', { path, name, targetRef, message });
+
+/** Delete a tag */
+export const gitDeleteTag = (path: string, name: string) =>
+  invoke<string>('git_delete_tag', { path, name });
+
+/** Get activity data for heatmap */
+export const gitGetActivity = (path: string, days?: number) =>
+  invoke<GitDayActivity[]>('git_get_activity', { path, days });
+
+/** Get file stats for visual file history */
+export const gitGetFileStats = (path: string, file: string, limit?: number) =>
+  invoke<GitFileStatEntry[]>('git_get_file_stats', { path, file, limit });
+
+/** Search commits by message, author, or diff content */
+export const gitSearchCommits = (path: string, query: string, searchType?: string, limit?: number) =>
+  invoke<GitCommitEntry[]>('git_search_commits', { path, query, searchType, limit });

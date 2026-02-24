@@ -50,8 +50,11 @@ import { SettingsSearch } from '@/components/settings/settings-search';
 import { SettingsNav } from '@/components/settings/settings-nav';
 import { CollapsibleSection } from '@/components/settings/collapsible-section';
 import { PageHeader } from '@/components/layout/page-header';
+import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
+import { BUBBLE_HINTS } from '@/components/onboarding/bubble-hints';
 import { toast } from 'sonner';
 import { type SettingsSection } from '@/lib/constants/settings-registry';
 
@@ -843,11 +846,22 @@ export default function SettingsPage() {
 }
 
 function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
-  const { completed, skipped, tourCompleted, resetOnboarding, startTour } = useOnboardingStore();
+  const {
+    completed,
+    skipped,
+    tourCompleted,
+    dismissedHints,
+    hintsEnabled,
+    resetOnboarding,
+    startTour,
+    resetHints,
+    setHintsEnabled,
+    dismissAllHints,
+  } = useOnboardingStore();
   const hasBeenThrough = completed || skipped;
 
   return (
-    <Card>
+    <Card data-hint="settings-mirrors">
       <CardHeader>
         <CardTitle className="text-lg">{t('settings.onboardingTitle')}</CardTitle>
         <CardDescription>{t('settings.onboardingDesc')}</CardDescription>
@@ -882,6 +896,52 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
             {tourCompleted ? ` · ${t('settings.onboardingTourDone')}` : ''}
           </p>
         )}
+
+        <Separator />
+
+        {/* Bubble Hints Controls */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">{t('settings.hintsTitle')}</p>
+              <p className="text-xs text-muted-foreground">{t('settings.hintsDesc')}</p>
+            </div>
+            <Switch
+              checked={hintsEnabled}
+              onCheckedChange={setHintsEnabled}
+            />
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                resetHints();
+                toast.success(t('settings.hintsResetSuccess'));
+              }}
+              disabled={dismissedHints.length === 0}
+            >
+              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+              {t('settings.hintsReset')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                dismissAllHints(BUBBLE_HINTS.map((h) => h.id));
+                toast.success(t('settings.hintsDismissAllSuccess'));
+              }}
+              disabled={dismissedHints.length >= BUBBLE_HINTS.length}
+            >
+              {t('settings.hintsDismissAll')}
+            </Button>
+          </div>
+          {dismissedHints.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t('settings.hintsDismissedCount').replace('{count}', String(dismissedHints.length))}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

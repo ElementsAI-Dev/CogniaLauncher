@@ -1,5 +1,6 @@
 "use client";
 
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
   CardContent,
@@ -308,7 +309,7 @@ export function EnvDetailOverview({
                   key={idx}
                   issue={issue}
                   onCopy={(text) => {
-                    navigator.clipboard.writeText(text).then(
+                    writeClipboard(text).then(
                       () => toast.success(t("common.copied")),
                       () => toast.error(t("common.copyFailed")),
                     );

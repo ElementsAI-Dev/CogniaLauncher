@@ -63,6 +63,9 @@
     "dialog:default",
     "fs:default",
     "notification:default",
-    "autostart:default"
+    "autostart:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "process:default"
   ]
 }

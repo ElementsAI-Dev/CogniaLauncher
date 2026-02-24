@@ -1,6 +1,6 @@
 # Provider 完整列表
 
-CogniaLauncher 集成 51+ Provider，覆盖主流操作系统和编程语言生态。
+CogniaLauncher 集成 55 个 Provider，覆盖主流操作系统和编程语言生态。
 
 ---
 
@@ -43,6 +43,7 @@ CogniaLauncher 集成 51+ Provider，覆盖主流操作系统和编程语言生�
 | `poetry` | Poetry | 项目管理器 | Install, Uninstall, List |
 | `pipx` | pipx | CLI 工具管理 | Install, Uninstall, List |
 | `pyenv` | pyenv | 版本管理器 | Install, Uninstall, List, VersionSwitch, MultiVersion |
+| `conda` | Conda/Mamba | 环境管理器 | Install, Uninstall, Search, List, Update |
 
 ## Rust 生态
 
@@ -92,6 +93,25 @@ CogniaLauncher 集成 51+ Provider，覆盖主流操作系统和编程语言生�
 |----|------|------|------|
 | `deno` | Deno | 运行时 | Install, Uninstall, List, VersionSwitch |
 
+## Dart/Flutter 生态
+
+| ID | 名称 | 类型 | 能力 |
+|----|------|------|------|
+| `fvm` | FVM | 版本管理器 | Install, Uninstall, List, VersionSwitch, MultiVersion |
+| `pub_dev` | Dart Pub | 包管理器 | Install, Uninstall, Search, List |
+
+## Lua 生态
+
+| ID | 名称 | 类型 | 能力 |
+|----|------|------|------|
+| `luarocks` | LuaRocks | 包管理器 | Install, Uninstall, Search, List |
+
+## Zig 生态
+
+| ID | 名称 | 类型 | 能力 |
+|----|------|------|------|
+| `zig` | Zig | 版本管理器 | Install, Uninstall, List, VersionSwitch |
+
 ## C/C++ 生态
 
 | ID | 名称 | 类型 | 能力 |
@@ -99,6 +119,8 @@ CogniaLauncher 集成 51+ Provider，覆盖主流操作系统和编程语言生�
 | `vcpkg` | vcpkg | 包管理器 | Install, Uninstall, Search, List |
 | `conan` | Conan | 包管理器 | Install, Uninstall, Search, List |
 | `xmake` | Xmake/Xrepo | 包管理器 | Install, Uninstall, Search, List, Update |
+| `msvc` | MSVC | 检测 | List（vswhere.exe 检测 Visual Studio Build Tools） |
+| `msys2` | MSYS2 | 包管理器 | Install, Uninstall, Search, List, Update |
 
 ## 容器与虚拟化
 
@@ -117,7 +139,8 @@ CogniaLauncher 集成 51+ Provider，覆盖主流操作系统和编程语言生�
 | `psgallery` | PowerShell Gallery | PowerShell 模块 | Install, Uninstall, Search, List |
 | `asdf` | asdf | 多语言版本管理器 | Install, Uninstall, List, VersionSwitch |
 | `mise` | mise | 多语言版本管理器 | Install, Uninstall, List, VersionSwitch |
-| `system` | System Detection | 系统运行时检测（10 种） | List |
+| `git` | Git | Git 版本管理和仓库检查 | List |
+| `system` | System Detection | 系统运行时检测（27 种） | List |
 
 ---
 

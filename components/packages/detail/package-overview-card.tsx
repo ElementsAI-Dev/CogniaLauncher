@@ -1,5 +1,6 @@
 'use client';
 
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -76,7 +77,7 @@ export function PackageOverviewCard({
 
   const handleCopyName = () => {
     if (packageInfo?.name) {
-      navigator.clipboard.writeText(packageInfo.name);
+      writeClipboard(packageInfo.name);
       toast.success(t('packages.detail.copiedToClipboard'));
     }
   };

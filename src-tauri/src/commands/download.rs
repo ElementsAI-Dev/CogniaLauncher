@@ -122,7 +122,8 @@ pub async fn init_download_manager(
 
     let cache_dir = settings.get_cache_dir();
 
-    let mut manager = DownloadManager::new(config);
+    let proxy = settings.network.proxy.clone();
+    let mut manager = DownloadManager::new(config, proxy);
     let mut rx = manager.create_event_channel();
 
     // Clean up stale partial downloads on startup (older than 7 days)
@@ -634,43 +635,15 @@ pub struct VerifyResult {
 /// Open a downloaded file with the system default application
 #[tauri::command]
 pub async fn download_open_file(path: String) -> Result<(), String> {
-    open::that(&path).map_err(|e| format!("Failed to open file: {}", e))
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|e| format!("Failed to open file: {}", e))
 }
 
 /// Reveal a downloaded file in the system file manager
 #[tauri::command]
 pub async fn download_reveal_file(path: String) -> Result<(), String> {
-    let file_path = PathBuf::from(&path);
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .args(["/select,", &path])
-            .spawn()
-            .map_err(|e| format!("Failed to reveal file: {}", e))?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .args(["-R", &path])
-            .spawn()
-            .map_err(|e| format!("Failed to reveal file: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        // Try xdg-open on the parent directory
-        if let Some(parent) = file_path.parent() {
-            std::process::Command::new("xdg-open")
-                .arg(parent)
-                .spawn()
-                .map_err(|e| format!("Failed to reveal file: {}", e))?;
-        }
-    }
-
-    let _ = file_path; // suppress unused warning on non-targeted platforms
-    Ok(())
+    tauri_plugin_opener::reveal_item_in_dir(path)
+        .map_err(|e| format!("Failed to reveal file: {}", e))
 }
 
 /// Batch pause selected downloads

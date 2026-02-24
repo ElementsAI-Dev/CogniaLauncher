@@ -223,7 +223,7 @@ export default function ProvidersPage() {
   const hasFilters = searchQuery !== '' || categoryFilter !== 'all' || statusFilter !== 'all';
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6" data-hint="providers-status">
       <PageHeader title={t('providers.title')} description={t('providers.description')} />
 
       <ProviderToolbar

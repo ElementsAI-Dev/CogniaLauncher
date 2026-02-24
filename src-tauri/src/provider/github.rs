@@ -96,14 +96,10 @@ impl GitHubProvider {
     }
 
     pub fn get_source_archive_url(&self, repo: &str, ref_name: &str, format: &str) -> String {
-        if self.token.is_some() {
-            // For private repos, use the API endpoint which handles auth
-            let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
-            format!("{}/repos/{}/{}/{}", GITHUB_API, repo, ext, ref_name)
-        } else {
-            let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
-            format!("https://github.com/{}/{}/{}", repo, ext, ref_name)
-        }
+        // Always use API URL — works for both public and private repos.
+        // Public repos get a 302 redirect to a public URL; private repos need auth headers.
+        let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
+        format!("{}/repos/{}/{}/{}", GITHUB_API, repo, ext, ref_name)
     }
 
     /// Get the API URL for downloading a release asset (required for private repos)

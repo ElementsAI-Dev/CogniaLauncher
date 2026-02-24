@@ -3,12 +3,14 @@ import * as tauri from '@/lib/tauri';
 import type {
   WslDistroStatus,
   WslStatus,
+  WslVersionInfo,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
   WslConfig,
   WslDistroConfig,
   WslMountOptions,
+  WslDistroEnvironment,
 } from '@/types/tauri';
 
 export interface UseWslReturn {
@@ -50,6 +52,11 @@ export interface UseWslReturn {
   changeDefaultUser: (distro: string, username: string) => Promise<void>;
   getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
   setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
+  getVersionInfo: () => Promise<WslVersionInfo | null>;
+  setSparse: (distro: string, enabled: boolean) => Promise<void>;
+  installWslOnly: () => Promise<string>;
+  installWithLocation: (name: string, location: string) => Promise<string>;
+  detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
 }
 
 /**
@@ -410,6 +417,57 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const getVersionInfo = useCallback(async (): Promise<WslVersionInfo | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslGetVersionInfo();
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const setSparse = useCallback(async (distro: string, enabled: boolean) => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.wslSetSparse(distro, enabled);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const installWslOnly = useCallback(async (): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      setError(null);
+      return await tauri.wslInstallWslOnly();
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const installWithLocation = useCallback(async (name: string, location: string): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      setError(null);
+      return await tauri.wslInstallWithLocation(name, location);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, []);
+
+  const detectDistroEnv = useCallback(async (distro: string): Promise<WslDistroEnvironment | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslDetectDistroEnv(distro);
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     available,
     distros,
@@ -446,5 +504,10 @@ export function useWsl(): UseWslReturn {
     changeDefaultUser,
     getDistroConfig,
     setDistroConfigValue,
+    getVersionInfo,
+    setSparse,
+    installWslOnly,
+    installWithLocation,
+    detectDistroEnv,
   };
 }

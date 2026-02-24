@@ -83,9 +83,32 @@ export function WslStatusCard({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{t('wsl.kernelVersion')}</span>
+          <span className="text-sm text-muted-foreground">{t('wsl.wslVersion')}</span>
           <span className="text-sm font-mono">{status?.version ?? '—'}</span>
         </div>
+
+        {status?.kernelVersion && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{t('wsl.kernelVersion')}</span>
+            <span className="text-sm font-mono">{status.kernelVersion}</span>
+          </div>
+        )}
+
+        {status?.wslgVersion && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{t('wsl.wslgVersion')}</span>
+            <span className="text-sm font-mono">{status.wslgVersion}</span>
+          </div>
+        )}
+
+        {status?.defaultDistribution && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">{t('wsl.defaultDistribution')}</span>
+            <Badge variant="outline" className="text-xs font-mono">
+              {status.defaultDistribution}
+            </Badge>
+          </div>
+        )}
 
         {ipToShow && (
           <div className="flex items-center justify-between">

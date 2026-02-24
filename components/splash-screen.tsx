@@ -43,6 +43,7 @@ export function SplashScreen({
 
   return (
     <div
+      data-tauri-drag-region
       className={cn(
         "splash-screen fixed inset-0 z-[9999] flex flex-col items-center justify-center",
         "bg-background transition-all duration-500 ease-out",

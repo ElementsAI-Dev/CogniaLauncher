@@ -97,6 +97,23 @@ impl HttpClient {
         self
     }
 
+    pub fn with_proxy(self, proxy_url: Option<&str>) -> Self {
+        if let Some(url) = proxy_url {
+            if !url.is_empty() {
+                if let Ok(proxy) = reqwest::Proxy::all(url) {
+                    let client = Client::builder()
+                        .proxy(proxy)
+                        .timeout(Duration::from_secs(30))
+                        .user_agent("CogniaLauncher/0.1.0")
+                        .build()
+                        .unwrap_or(self.client.clone());
+                    return Self { client, ..self };
+                }
+            }
+        }
+        self
+    }
+
     pub async fn get(&self, url: &str) -> NetworkResult<Response> {
         self.get_with_options(url, None).await
     }
@@ -134,6 +151,32 @@ impl HttpClient {
                             .and_then(|v| v.parse().ok())
                             .unwrap_or(60);
                         return Err(NetworkError::RateLimited(retry_after));
+                    }
+
+                    // GitHub returns 403 (not 429) for rate limiting with x-ratelimit-remaining: 0
+                    if response.status() == StatusCode::FORBIDDEN {
+                        let remaining = response
+                            .headers()
+                            .get("x-ratelimit-remaining")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| v.parse::<u64>().ok());
+                        if remaining == Some(0) {
+                            let retry_after = response
+                                .headers()
+                                .get("x-ratelimit-reset")
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(|v| v.parse::<u64>().ok())
+                                .map(|epoch| {
+                                    epoch.saturating_sub(
+                                        std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_secs(),
+                                    )
+                                })
+                                .unwrap_or(60);
+                            return Err(NetworkError::RateLimited(retry_after));
+                        }
                     }
 
                     if response.status().is_server_error() && attempts < options.max_retries {
@@ -224,6 +267,11 @@ impl HttpClient {
         }
 
         let mut request = self.client.get(url);
+
+        // Apply default headers (e.g. auth tokens for private repos)
+        for (key, value) in &self.default_options.headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
 
         let (mut file, start_pos) = if let Some(pos) = resume_from {
             request = request.header("Range", format!("bytes={}-", pos));

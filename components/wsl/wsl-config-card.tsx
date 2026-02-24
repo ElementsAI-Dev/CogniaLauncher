@@ -36,6 +36,10 @@ const COMMON_WSL2_SETTINGS = [
   { key: 'nestedVirtualization', label: 'Nested Virtualization', placeholder: 'true', description: 'wsl.config.nestedVirtualizationDesc' },
   { key: 'guiApplications', label: 'GUI Applications', placeholder: 'true', description: 'wsl.config.guiApplicationsDesc' },
   { key: 'networkingMode', label: 'Networking Mode', placeholder: 'NAT', description: 'wsl.config.networkingModeDesc' },
+  { key: 'autoMemoryReclaim', label: 'Auto Memory Reclaim', placeholder: 'dropCache', description: 'wsl.config.autoMemoryReclaimDesc' },
+  { key: 'sparseVhd', label: 'Sparse VHD', placeholder: 'true', description: 'wsl.config.sparseVhdDesc' },
+  { key: 'dnsTunneling', label: 'DNS Tunneling', placeholder: 'true', description: 'wsl.config.dnsTunnelingDesc' },
+  { key: 'firewall', label: 'Firewall', placeholder: 'true', description: 'wsl.config.firewallDesc' },
 ] as const;
 
 export function WslConfigCard({

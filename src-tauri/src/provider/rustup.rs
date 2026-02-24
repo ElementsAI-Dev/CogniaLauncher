@@ -65,24 +65,12 @@ impl RustupProvider {
         }
 
         let output = self.run_rustup(&args).await?;
-        let components = output
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(|line| {
-                let line = line.trim();
-                let installed = line.contains("(installed)");
-                let default = line.contains("(default)");
-                let name = line
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or(line)
-                    .to_string();
-
-                RustComponent {
-                    name,
-                    installed,
-                    default,
-                }
+        let components = parse_component_list_output(&output)
+            .into_iter()
+            .map(|(name, installed, default)| RustComponent {
+                name,
+                installed,
+                default,
             })
             .collect();
 
@@ -277,27 +265,15 @@ impl RustupProvider {
     /// List all directory overrides
     pub async fn override_list(&self) -> CogniaResult<Vec<RustupOverride>> {
         let output = self.run_rustup(&["override", "list"]).await?;
-        let mut overrides = Vec::new();
+        let parsed = parse_override_list_output(&output);
 
-        for line in output.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.contains("no overrides") {
-                continue;
-            }
-            // Format: "/path/to/project    toolchain-name"
-            // Split on whitespace, but path may contain spaces on Windows
-            // The toolchain is always the last whitespace-separated token
-            if let Some(last_space) = line.rfind(char::is_whitespace) {
-                let path = line[..last_space].trim();
-                let toolchain = line[last_space..].trim();
-                if !path.is_empty() && !toolchain.is_empty() {
-                    overrides.push(RustupOverride {
-                        path: PathBuf::from(path),
-                        toolchain: toolchain.to_string(),
-                    });
-                }
-            }
-        }
+        let overrides = parsed
+            .into_iter()
+            .map(|(path, toolchain)| RustupOverride {
+                path: PathBuf::from(path),
+                toolchain,
+            })
+            .collect();
 
         Ok(overrides)
     }
@@ -546,54 +522,22 @@ impl Provider for RustupProvider {
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let output = self.run_rustup(&["check"]).await?;
+        let parsed = parse_check_updates_output(&output);
+        let provider_id = self.id().to_string();
 
-        // `rustup check` output format:
-        // stable-x86_64-unknown-linux-gnu - Up to date : 1.75.0 (82e1608df 2023-12-21)
-        // stable-x86_64-unknown-linux-gnu - Update available : 1.74.0 (79e9716c9 2023-11-13) -> 1.75.0 (82e1608df 2023-12-21)
-        let mut updates = Vec::new();
-
-        for line in output.lines() {
-            let line = line.trim();
-            if line.contains("Update available") || line.contains("update available") {
-                // Parse: toolchain - Update available : current -> latest
-                // Use " - " (space-dash-space) as separator to avoid splitting
-                // inside toolchain names like "stable-x86_64-unknown-linux-gnu"
-                let parts: Vec<&str> = line.splitn(2, " - ").collect();
-                let toolchain = parts.first().map(|s| s.trim()).unwrap_or("");
-
-                if let Some(versions_part) = line.split(':').last() {
-                    let versions: Vec<&str> = versions_part.split("->").collect();
-                    if versions.len() == 2 {
-                        // Extract version numbers (e.g., "1.74.0 (hash date)" -> "1.74.0")
-                        let current = versions[0]
-                            .trim()
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or("")
-                            .to_string();
-                        let latest = versions[1]
-                            .trim()
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or("")
-                            .to_string();
-
-                        if !current.is_empty() && !latest.is_empty() {
-                            updates.push(UpdateInfo {
-                                name: if toolchain.is_empty() {
-                                    "rust".to_string()
-                                } else {
-                                    format!("rust@{}", toolchain)
-                                },
-                                current_version: current,
-                                latest_version: latest,
-                                provider: self.id().to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        let updates = parsed
+            .into_iter()
+            .map(|(toolchain, current, latest)| UpdateInfo {
+                name: if toolchain.is_empty() {
+                    "rust".to_string()
+                } else {
+                    format!("rust@{}", toolchain)
+                },
+                current_version: current,
+                latest_version: latest,
+                provider: provider_id.clone(),
+            })
+            .collect();
 
         Ok(updates)
     }
@@ -729,12 +673,26 @@ impl EnvironmentProvider for RustupProvider {
                 }
             }
 
+            // 4. Check Cargo.toml for rust-version (MSRV) field
+            let cargo_toml = current.join("Cargo.toml");
+            if cargo_toml.exists() {
+                if let Ok(content) = crate::platform::fs::read_file_string(&cargo_toml).await {
+                    if let Some(version) = parse_cargo_toml_rust_version(&content) {
+                        return Ok(Some(VersionDetection {
+                            version,
+                            source: VersionSource::Manifest,
+                            source_path: Some(cargo_toml),
+                        }));
+                    }
+                }
+            }
+
             if !current.pop() {
                 break;
             }
         }
 
-        // 4. Fall back to current rustup default
+        // 5. Fall back to current rustup default
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,
@@ -802,7 +760,11 @@ impl SystemPackageProvider for RustupProvider {
     }
 
     fn get_install_instructions(&self) -> Option<String> {
-        Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".to_string())
+        if cfg!(windows) {
+            Some("winget install Rustlang.Rustup".to_string())
+        } else {
+            Some("curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".to_string())
+        }
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
@@ -871,6 +833,40 @@ pub struct RustupOverride {
 }
 
 // ── Pure parsing helpers (extracted for testability) ──
+
+/// Parse `rust-version` field from Cargo.toml content.
+/// Matches `rust-version = "X.Y"` or `rust-version = "X.Y.Z"` anywhere in the file.
+/// The `rust-version` key is unique in the TOML namespace so no section-awareness is needed.
+pub(crate) fn parse_cargo_toml_rust_version(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("rust-version") {
+            if let Some(value) = line.split('=').nth(1) {
+                let version = value
+                    .trim()
+                    .split('#') // Remove inline comments first
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .trim();
+                if !version.is_empty()
+                    && version
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_digit())
+                {
+                    return Some(version.to_string());
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Parse `rustup check` output into (toolchain, current_version, latest_version) tuples
 pub(crate) fn parse_check_updates_output(output: &str) -> Vec<(String, String, String)> {
@@ -1055,5 +1051,82 @@ rustfmt-x86_64-unknown-linux-gnu (installed)";
     fn test_version_file_name() {
         let provider = RustupProvider::new();
         assert_eq!(provider.version_file_name(), "rust-toolchain.toml");
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_basic() {
+        let content = r#"
+[package]
+name = "my-crate"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+"#;
+        assert_eq!(
+            parse_cargo_toml_rust_version(content),
+            Some("1.70".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_three_part() {
+        let content = r#"
+[package]
+name = "my-crate"
+rust-version = "1.56.0"
+"#;
+        assert_eq!(
+            parse_cargo_toml_rust_version(content),
+            Some("1.56.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_with_inline_comment() {
+        let content = r#"
+[package]
+name = "my-crate"
+rust-version = "1.65" # minimum supported version
+"#;
+        assert_eq!(
+            parse_cargo_toml_rust_version(content),
+            Some("1.65".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_missing() {
+        let content = r#"
+[package]
+name = "my-crate"
+version = "0.1.0"
+edition = "2021"
+"#;
+        assert_eq!(parse_cargo_toml_rust_version(content), None);
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_commented_out() {
+        let content = r#"
+[package]
+name = "my-crate"
+# rust-version = "1.70"
+"#;
+        assert_eq!(parse_cargo_toml_rust_version(content), None);
+    }
+
+    #[test]
+    fn test_parse_cargo_toml_rust_version_workspace() {
+        let content = r#"
+[workspace]
+members = ["crate-a", "crate-b"]
+
+[workspace.package]
+rust-version = "1.72"
+"#;
+        assert_eq!(
+            parse_cargo_toml_rust_version(content),
+            Some("1.72".to_string())
+        );
     }
 }

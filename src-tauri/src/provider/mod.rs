@@ -19,6 +19,7 @@ pub mod dotnet;
 pub mod flatpak;
 pub mod fnm;
 pub mod gem;
+pub mod git;
 pub mod github;
 pub mod gitlab;
 pub mod goenv;

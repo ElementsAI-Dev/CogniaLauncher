@@ -74,7 +74,7 @@ impl Orchestrator {
             if let Some(provider) = registry.get(provider_id) {
                 if provider.is_available().await {
                     if let Ok(installed) = provider
-                        .list_installed(crate::provider::InstalledFilter::default())
+                        .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
                         .await
                     {
                         for pkg in installed {
@@ -410,8 +410,8 @@ impl Orchestrator {
     ) -> CogniaResult<String> {
         let installed = provider
             .list_installed(InstalledFilter {
+                global_only: true,
                 name_filter: Some(package_name.to_string()),
-                ..Default::default()
             })
             .await?;
 

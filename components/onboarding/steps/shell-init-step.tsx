@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Terminal, Copy, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
+import { isWindows as isWindowsOS } from '@/lib/platform';
 
 interface ShellInitStepProps {
   t: (key: string) => string;
@@ -49,15 +51,14 @@ const SHELL_OPTIONS: ShellOption[] = [
 ];
 
 export function ShellInitStep({ t }: ShellInitStepProps) {
-  const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
-  const [selectedShell, setSelectedShell] = useState<ShellType>(isWindows ? 'powershell' : 'bash');
+  const [selectedShell, setSelectedShell] = useState<ShellType>(isWindowsOS() ? 'powershell' : 'bash');
   const [copied, setCopied] = useState(false);
 
   const currentShell = SHELL_OPTIONS.find((s) => s.value === selectedShell)!;
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(currentShell.command);
+      await writeClipboard(currentShell.command);
       setCopied(true);
       toast.success(t('onboarding.shellCopied'));
       setTimeout(() => setCopied(false), 2000);

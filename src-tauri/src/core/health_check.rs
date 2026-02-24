@@ -416,7 +416,7 @@ impl HealthCheckManager {
 
         // Check 3: Verify the provider can list packages (functional check)
         match provider
-            .list_installed(crate::provider::InstalledFilter::default())
+            .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
             .await
         {
             Ok(_) => {
@@ -886,6 +886,15 @@ impl HealthCheckManager {
             }
             "zig" => "Download from https://ziglang.org/download/".to_string(),
             "fvm" => "dart pub global activate fvm".to_string(),
+            "git" => {
+                if cfg!(windows) {
+                    "winget install Git.Git".to_string()
+                } else if cfg!(target_os = "macos") {
+                    "brew install git".to_string()
+                } else {
+                    "sudo apt-get install git".to_string()
+                }
+            }
             "system-lua" => {
                 if cfg!(windows) {
                     "Download from https://www.lua.org/download.html or install via scoop: scoop install lua".to_string()
