@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 /// pip - Python package installer (direct, not via uv)
-/// 
+///
 /// Supports custom PyPI mirror configuration via `--index-url` and `--extra-index-url` flags.
 pub struct PipProvider {
     /// Primary index URL (replaces default PyPI)
@@ -64,29 +64,29 @@ impl PipProvider {
     /// Build pip arguments with mirror configuration
     fn build_pip_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
         let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
-        
+
         if let Some(ref url) = self.index_url {
             args.push("-i".to_string());
             args.push(url.clone());
         }
-        
+
         for url in &self.extra_index_urls {
             args.push("--extra-index-url".to_string());
             args.push(url.clone());
         }
-        
+
         for host in &self.trusted_hosts {
             args.push("--trusted-host".to_string());
             args.push(host.clone());
         }
-        
+
         args
     }
 
     async fn run_pip(&self, args: &[&str]) -> CogniaResult<String> {
         let full_args = self.build_pip_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let output = process::execute("pip", &args_refs, Some(opts)).await?;
         if output.success {
@@ -110,10 +110,10 @@ impl PipProvider {
     /// Get the installed version and location of a package using pip show
     async fn get_package_info_raw(&self, name: &str) -> CogniaResult<(String, PathBuf)> {
         let output = self.run_pip_raw(&["show", name]).await?;
-        
+
         let mut version = String::new();
         let mut location = PathBuf::new();
-        
+
         for line in output.lines() {
             if let Some(v) = line.strip_prefix("Version:") {
                 version = v.trim().to_string();
@@ -121,11 +121,11 @@ impl PipProvider {
                 location = PathBuf::from(loc.trim());
             }
         }
-        
+
         if version.is_empty() {
             return Err(CogniaError::Provider(format!("Package {} not found", name)));
         }
-        
+
         Ok((version, location))
     }
 
@@ -517,7 +517,12 @@ impl SystemPackageProvider for PipProvider {
     async fn get_version(&self) -> CogniaResult<String> {
         let out = self.run_pip_raw(&["--version"]).await?;
         // Output: "pip 24.3.1 from /path/site-packages/pip (python 3.12)"
-        Ok(out.trim().split_whitespace().nth(1).unwrap_or("unknown").to_string())
+        Ok(out
+            .trim()
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("unknown")
+            .to_string())
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
@@ -548,8 +553,11 @@ mod tests {
             .with_index_url("https://pypi.tuna.tsinghua.edu.cn/simple")
             .with_extra_index_url("https://pypi.org/simple")
             .with_trusted_host("pypi.tuna.tsinghua.edu.cn");
-        
-        assert_eq!(provider.index_url, Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string()));
+
+        assert_eq!(
+            provider.index_url,
+            Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string())
+        );
         assert_eq!(provider.extra_index_urls.len(), 1);
         assert_eq!(provider.trusted_hosts.len(), 1);
     }
@@ -559,9 +567,9 @@ mod tests {
         let provider = PipProvider::new()
             .with_index_url("https://mirror.example.com/simple")
             .with_trusted_host("mirror.example.com");
-        
+
         let args = provider.build_pip_args(&["install", "requests"]);
-        
+
         assert!(args.contains(&"install".to_string()));
         assert!(args.contains(&"requests".to_string()));
         assert!(args.contains(&"-i".to_string()));
@@ -574,7 +582,7 @@ mod tests {
     fn test_pip_provider_no_mirror() {
         let provider = PipProvider::new();
         let args = provider.build_pip_args(&["install", "requests"]);
-        
+
         assert_eq!(args, vec!["install".to_string(), "requests".to_string()]);
     }
 }

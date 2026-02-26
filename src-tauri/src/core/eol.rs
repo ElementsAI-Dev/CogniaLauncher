@@ -197,7 +197,9 @@ async fn fetch_eol_from_api(product: &str) -> CogniaResult<Vec<EolCycleInfo>> {
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| CogniaError::Provider(format!("Failed to fetch EOL data from {}: {}", url, e)))?;
+        .map_err(|e| {
+            CogniaError::Provider(format!("Failed to fetch EOL data from {}: {}", url, e))
+        })?;
 
     if !response.status().is_success() {
         return Err(CogniaError::Provider(format!(

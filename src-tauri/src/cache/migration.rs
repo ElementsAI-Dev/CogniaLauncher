@@ -134,10 +134,9 @@ fn is_same_drive(a: &Path, b: &Path) -> bool {
         let a_prefix = a.components().next();
         let b_prefix = b.components().next();
         match (a_prefix, b_prefix) {
-            (
-                Some(std::path::Component::Prefix(a_p)),
-                Some(std::path::Component::Prefix(b_p)),
-            ) => a_p.as_os_str() == b_p.as_os_str(),
+            (Some(std::path::Component::Prefix(a_p)), Some(std::path::Component::Prefix(b_p))) => {
+                a_p.as_os_str() == b_p.as_os_str()
+            }
             _ => false,
         }
     }
@@ -146,7 +145,9 @@ fn is_same_drive(a: &Path, b: &Path) -> bool {
         // On Unix, compare mount points by checking if stat().st_dev matches
         use std::os::unix::fs::MetadataExt;
         let a_dev = std::fs::metadata(a).map(|m| m.dev()).ok();
-        let b_parent = b.parent().and_then(|p| std::fs::metadata(p).map(|m| m.dev()).ok());
+        let b_parent = b
+            .parent()
+            .and_then(|p| std::fs::metadata(p).map(|m| m.dev()).ok());
         match (a_dev, b_parent) {
             (Some(a), Some(b)) => a == b,
             _ => false,
@@ -274,7 +275,8 @@ pub async fn validate_migration(
     }
 
     if same_drive {
-        warnings.push("Source and destination are on the same drive - move will be faster".to_string());
+        warnings
+            .push("Source and destination are on the same drive - move will be faster".to_string());
     }
 
     let is_valid = errors.is_empty();
@@ -310,18 +312,11 @@ fn copy_dir_recursive<'a>(
             .await
             .map_err(|e| CogniaError::Io(e))?;
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| CogniaError::Io(e))?
-        {
+        while let Some(entry) = entries.next_entry().await.map_err(|e| CogniaError::Io(e))? {
             let src_path = entry.path();
             let dst_path = dst.join(entry.file_name());
 
-            let file_type = entry
-                .file_type()
-                .await
-                .map_err(|e| CogniaError::Io(e))?;
+            let file_type = entry.file_type().await.map_err(|e| CogniaError::Io(e))?;
 
             if file_type.is_dir() {
                 copy_dir_recursive(&src_path, &dst_path, bytes_copied, files_count).await?;
@@ -375,7 +370,9 @@ pub async fn migrate_cache(
     let mut bytes_copied = 0u64;
     let mut files_count = 0usize;
 
-    if let Err(e) = copy_dir_recursive(source, destination, &mut bytes_copied, &mut files_count).await {
+    if let Err(e) =
+        copy_dir_recursive(source, destination, &mut bytes_copied, &mut files_count).await
+    {
         // Cleanup on failure
         let _ = fs::remove_dir_all(destination).await;
         return Ok(MigrationResult {
@@ -508,10 +505,16 @@ mod tests {
 
         // Create source with test files
         tokio::fs::create_dir_all(&src).await.unwrap();
-        tokio::fs::write(src.join("file1.txt"), b"hello").await.unwrap();
-        tokio::fs::write(src.join("file2.txt"), b"world").await.unwrap();
+        tokio::fs::write(src.join("file1.txt"), b"hello")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("file2.txt"), b"world")
+            .await
+            .unwrap();
 
-        let result = migrate_cache(&src, &dst, MigrationMode::Move).await.unwrap();
+        let result = migrate_cache(&src, &dst, MigrationMode::Move)
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.files_count, 2);
         assert!(!result.symlink_created);
@@ -527,9 +530,13 @@ mod tests {
         let dst = dir.path().join("cache_dst");
 
         tokio::fs::create_dir_all(&src).await.unwrap();
-        tokio::fs::write(src.join("test.dat"), b"data").await.unwrap();
+        tokio::fs::write(src.join("test.dat"), b"data")
+            .await
+            .unwrap();
 
-        let result = migrate_cache(&src, &dst, MigrationMode::MoveAndLink).await.unwrap();
+        let result = migrate_cache(&src, &dst, MigrationMode::MoveAndLink)
+            .await
+            .unwrap();
         assert!(result.success);
         assert!(result.symlink_created);
         // Source should now be a symlink pointing to destination

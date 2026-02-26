@@ -1,0 +1,198 @@
+'use client';
+
+import { useState, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { EnvVarScope, PathEntryInfo } from '@/types/tauri';
+
+interface EnvVarPathEditorProps {
+  pathEntries: PathEntryInfo[];
+  pathScope: EnvVarScope;
+  onPathScopeChange: (scope: EnvVarScope) => void;
+  onAdd: (path: string, position?: number) => Promise<boolean>;
+  onRemove: (path: string) => Promise<boolean>;
+  onReorder: (entries: string[]) => Promise<boolean>;
+  onRefresh: () => void;
+  loading: boolean;
+  t: (key: string) => string;
+}
+
+export function EnvVarPathEditor({
+  pathEntries,
+  pathScope,
+  onPathScopeChange,
+  onAdd,
+  onRemove,
+  onReorder,
+  onRefresh,
+  loading,
+  t,
+}: EnvVarPathEditorProps) {
+  const [newPath, setNewPath] = useState('');
+
+  const handleAdd = useCallback(async () => {
+    const trimmed = newPath.trim();
+    if (!trimmed) return;
+    const success = await onAdd(trimmed);
+    if (success) {
+      setNewPath('');
+      onRefresh();
+    }
+  }, [newPath, onAdd, onRefresh]);
+
+  const handleRemove = useCallback(async (path: string) => {
+    const success = await onRemove(path);
+    if (success) {
+      onRefresh();
+    }
+  }, [onRemove, onRefresh]);
+
+  const handleMove = useCallback(async (index: number, direction: 'up' | 'down') => {
+    const entries = pathEntries.map((e) => e.path);
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= entries.length) return;
+
+    [entries[index], entries[newIndex]] = [entries[newIndex], entries[index]];
+    const success = await onReorder(entries);
+    if (success) {
+      onRefresh();
+    }
+  }, [pathEntries, onReorder, onRefresh]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Select value={pathScope} onValueChange={(v) => onPathScopeChange(v as EnvVarScope)}>
+          <SelectTrigger className="w-[140px] h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
+            <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
+            <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">
+          {pathEntries.length} {t('envvar.pathEditor.title').toLowerCase()}
+        </span>
+      </div>
+
+      {/* Add new entry */}
+      <div className="flex gap-2">
+        <Input
+          value={newPath}
+          onChange={(e) => setNewPath(e.target.value)}
+          placeholder={t('envvar.pathEditor.addPlaceholder')}
+          className="h-9"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleAdd();
+          }}
+        />
+        <Button size="sm" onClick={handleAdd} disabled={!newPath.trim() || loading} className="gap-1.5 shrink-0">
+          <Plus className="h-3.5 w-3.5" />
+          {t('envvar.pathEditor.add')}
+        </Button>
+      </div>
+
+      {/* Entries list */}
+      {pathEntries.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          {t('envvar.pathEditor.empty')}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {pathEntries.map((entry, index) => (
+            <div
+              key={`${entry.path}-${index}`}
+              className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 group hover:bg-muted"
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
+
+              <span className="font-mono text-xs flex-1 break-all min-w-0">{entry.path}</span>
+
+              <Badge
+                variant="outline"
+                className={cn(
+                  'shrink-0 text-[10px]',
+                  entry.exists && entry.isDirectory
+                    ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
+                    : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
+                )}
+              >
+                {entry.exists && entry.isDirectory ? (
+                  <><CheckCircle2 className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.exists')}</>
+                ) : (
+                  <><XCircle className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.missing')}</>
+                )}
+              </Badge>
+
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={index === 0}
+                  onClick={() => handleMove(index, 'up')}
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={index === pathEntries.length - 1}
+                  onClick={() => handleMove(index, 'down')}
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive">
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t('envvar.confirm.pathChangeTitle')}</AlertDialogTitle>
+                      <AlertDialogDescription>{t('envvar.confirm.pathChangeDesc')}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleRemove(entry.path)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t('envvar.actions.delete')}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

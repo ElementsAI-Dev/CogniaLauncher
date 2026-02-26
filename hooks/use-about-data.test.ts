@@ -23,6 +23,10 @@ const mockSelfUpdate = jest.fn();
 const mockGetPlatformInfo = jest.fn();
 const mockGetCogniaDir = jest.fn();
 const mockListenSelfUpdateProgress = jest.fn();
+const mockGetComponentsInfo = jest.fn();
+const mockGetBatteryInfo = jest.fn();
+const mockGetDiskInfo = jest.fn();
+const mockGetNetworkInterfaces = jest.fn();
 
 jest.mock('@/lib/platform', () => ({
   isTauri: () => mockIsTauri(),
@@ -35,6 +39,10 @@ jest.mock('@/lib/tauri', () => ({
   getPlatformInfo: (...args: unknown[]) => mockGetPlatformInfo(...args),
   getCogniaDir: (...args: unknown[]) => mockGetCogniaDir(...args),
   listenSelfUpdateProgress: (...args: unknown[]) => mockListenSelfUpdateProgress(...args),
+  getComponentsInfo: (...args: unknown[]) => mockGetComponentsInfo(...args),
+  getBatteryInfo: (...args: unknown[]) => mockGetBatteryInfo(...args),
+  getDiskInfo: (...args: unknown[]) => mockGetDiskInfo(...args),
+  getNetworkInterfaces: (...args: unknown[]) => mockGetNetworkInterfaces(...args),
   providerStatusAll: jest.fn().mockResolvedValue([]),
   getCombinedCacheStats: jest.fn().mockResolvedValue({ internalSizeHuman: '0 B', externalSizeHuman: '0 B', totalSizeHuman: '0 B' }),
   logGetTotalSize: jest.fn().mockResolvedValue(0),
@@ -104,6 +112,10 @@ describe('useAboutData', () => {
     beforeEach(() => {
       mockIsTauri.mockReturnValue(true);
       mockListenSelfUpdateProgress.mockResolvedValue(jest.fn());
+      mockGetComponentsInfo.mockResolvedValue([]);
+      mockGetBatteryInfo.mockResolvedValue(null);
+      mockGetDiskInfo.mockResolvedValue([]);
+      mockGetNetworkInterfaces.mockResolvedValue([]);
     });
 
     it('should set isDesktop to true', async () => {
@@ -262,6 +274,44 @@ describe('useAboutData', () => {
       expect(result.current.systemInfo?.os).toBe('windows');
       expect(result.current.systemInfo?.cpuCores).toBe(16);
       expect(result.current.systemInfo?.homeDir).toBe('C:\\Users\\test\\.cognia');
+      expect(result.current.systemInfo?.components).toEqual([]);
+      expect(result.current.systemInfo?.battery).toBeNull();
+      expect(result.current.systemInfo?.disks).toEqual([]);
+      expect(result.current.systemInfo?.networks).toEqual([]);
+    });
+
+    it('should load components and battery info from backend', async () => {
+      mockSelfCheckUpdate.mockResolvedValue({
+        current_version: '1.0.0', latest_version: '1.0.0',
+        update_available: false, release_notes: null,
+      });
+      mockGetPlatformInfo.mockResolvedValue({
+        os: 'windows', arch: 'x86_64', osVersion: '', osLongVersion: '',
+        kernelVersion: '', hostname: '', osName: '', distributionId: '',
+        cpuArch: '', cpuModel: '', cpuVendorId: '', cpuFrequency: 0,
+        cpuCores: 0, physicalCoreCount: null, globalCpuUsage: 0,
+        totalMemory: 0, availableMemory: 0, usedMemory: 0,
+        totalSwap: 0, usedSwap: 0, uptime: 0, bootTime: 0,
+        loadAverage: [0, 0, 0], gpus: [], appVersion: '1.0.0',
+      });
+      mockGetCogniaDir.mockResolvedValue('/tmp');
+      mockGetComponentsInfo.mockResolvedValue([
+        { label: 'CPU', temperature: 55.0, max: 80.0, critical: 100.0 },
+      ]);
+      mockGetBatteryInfo.mockResolvedValue({
+        percent: 85, isCharging: true, isPluggedIn: true,
+        healthPercent: 92, cycleCount: 100, designCapacityMwh: 50000,
+        fullCapacityMwh: 46000, voltageMv: 12000, powerSource: 'ac',
+        timeToEmptyMins: null, timeToFullMins: 30, technology: 'Li-ion',
+      });
+
+      const { result } = renderHook(() => useAboutData('en'));
+      await act(async () => {});
+
+      expect(result.current.systemInfo?.components).toHaveLength(1);
+      expect(result.current.systemInfo?.components[0].label).toBe('CPU');
+      expect(result.current.systemInfo?.battery?.percent).toBe(85);
+      expect(result.current.systemInfo?.battery?.isCharging).toBe(true);
     });
 
     it('should handle system info load failure', async () => {

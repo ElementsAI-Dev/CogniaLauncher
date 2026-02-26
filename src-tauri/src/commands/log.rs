@@ -16,7 +16,10 @@ pub struct LogFileInfo {
 }
 
 #[tauri::command]
-pub async fn log_export(app: AppHandle, options: LogExportOptions) -> Result<LogExportResult, String> {
+pub async fn log_export(
+    app: AppHandle,
+    options: LogExportOptions,
+) -> Result<LogExportResult, String> {
     let log_path = resolve_log_path(&app, &options.file_name).await?;
 
     if !log_path.exists() {
@@ -42,7 +45,10 @@ pub async fn log_export(app: AppHandle, options: LogExportOptions) -> Result<Log
         limit: None,
         offset: None,
     };
-    let regex = build_search_regex(&query_options.search, query_options.use_regex.unwrap_or(false));
+    let regex = build_search_regex(
+        &query_options.search,
+        query_options.use_regex.unwrap_or(false),
+    );
 
     while let Some(line) = lines
         .next_line()
@@ -266,61 +272,61 @@ fn matches_filters(entry: &LogEntry, options: &LogQueryOptions, regex: Option<&R
 }
 
 fn parse_log_line(line: &str, line_number: usize) -> Option<LogEntry> {
-    // Parse log line format: [TIMESTAMP][LEVEL][TARGET] MESSAGE
-    // Example: [2026-02-02][12:30:45][INFO][cognia_launcher] Application started
-    
+    // Parse structured log formats:
+    // 1) [TIMESTAMP][LEVEL][TARGET] MESSAGE
+    // 2) [DATE][TIME][TARGET][LEVEL] MESSAGE (legacy)
+    //
+    // Fallback for unknown lines: treat entire line as INFO message.
     let line = line.trim();
     if line.is_empty() {
         return None;
     }
 
-    // Try to parse structured log format
-    if line.starts_with('[') {
-        let mut parts = Vec::new();
-        let mut current = String::new();
-        let mut in_bracket = false;
-        
-        for ch in line.chars() {
-            match ch {
-                '[' => {
-                    in_bracket = true;
-                    current.clear();
-                }
-                ']' => {
-                    in_bracket = false;
-                    parts.push(current.clone());
-                }
-                _ if in_bracket => {
-                    current.push(ch);
-                }
-                _ => {}
-            }
-            
-            if parts.len() >= 3 {
-                break;
-            }
+    let mut parts: Vec<String> = Vec::new();
+    let mut cursor = 0usize;
+
+    while cursor < line.len() && line.as_bytes()[cursor] == b'[' {
+        let remain = &line[cursor + 1..];
+        let Some(close_rel) = remain.find(']') else {
+            break;
+        };
+        let close_abs = cursor + 1 + close_rel;
+        parts.push(line[cursor + 1..close_abs].to_string());
+        cursor = close_abs + 1;
+    }
+
+    if parts.len() >= 3 {
+        let message = line[cursor..].trim().to_string();
+
+        // Format 1: [timestamp][level][target] message
+        if is_known_level(&parts[1]) {
+            return Some(LogEntry {
+                timestamp: parts[0].clone(),
+                level: normalize_level(&parts[1]),
+                target: parts[2].clone(),
+                message,
+                line_number,
+            });
         }
 
-        if parts.len() >= 3 {
-            // Find the message part (after the last ])
-            let bracket_count = line.matches('[').count().min(3);
-            let mut idx = 0;
-            let mut count = 0;
-            for (i, ch) in line.char_indices() {
-                if ch == ']' {
-                    count += 1;
-                    if count == bracket_count {
-                        idx = i + 1;
-                        break;
-                    }
-                }
-            }
-            let message = line[idx..].trim().to_string();
-
+        // Format 2: [date][time][target][level] message (legacy plugin format)
+        if parts.len() >= 4 && is_known_level(&parts[3]) {
+            let timestamp = format!("{} {}", parts[0], parts[1]);
             return Some(LogEntry {
-                timestamp: parts.first().cloned().unwrap_or_default(),
-                level: parts.get(1).cloned().unwrap_or_else(|| "INFO".to_string()),
-                target: parts.get(2).cloned().unwrap_or_default(),
+                timestamp,
+                level: normalize_level(&parts[3]),
+                target: parts[2].clone(),
+                message,
+                line_number,
+            });
+        }
+
+        // Additional compatibility: [timestamp][target][level] message
+        if parts.len() >= 3 && is_known_level(&parts[2]) {
+            return Some(LogEntry {
+                timestamp: parts[0].clone(),
+                level: normalize_level(&parts[2]),
+                target: parts[1].clone(),
                 message,
                 line_number,
             });
@@ -337,10 +343,21 @@ fn parse_log_line(line: &str, line_number: usize) -> Option<LogEntry> {
     })
 }
 
+fn is_known_level(value: &str) -> bool {
+    matches!(
+        value.to_uppercase().as_str(),
+        "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR"
+    )
+}
+
+fn normalize_level(value: &str) -> String {
+    value.to_uppercase()
+}
+
 #[tauri::command]
 pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> {
     let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
-    
+
     if !log_dir.exists() {
         return Ok(Vec::new());
     }
@@ -366,7 +383,11 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
                     .unwrap_or(0);
 
                 files.push(LogFileInfo {
-                    name: path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+                    name: path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
                     path: path.to_string_lossy().to_string(),
                     size: metadata.len(),
                     modified,
@@ -382,10 +403,7 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
 }
 
 #[tauri::command]
-pub async fn log_query(
-    app: AppHandle,
-    options: LogQueryOptions,
-) -> Result<LogQueryResult, String> {
+pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQueryResult, String> {
     let log_path = match resolve_log_path(&app, &options.file_name).await {
         Ok(path) => path,
         Err(_) => {
@@ -409,7 +427,7 @@ pub async fn log_query(
     let file = fs::File::open(&log_path)
         .await
         .map_err(|e| format!("Failed to open log file: {}", e))?;
-    
+
     let reader = tokio::io::BufReader::new(file);
     let mut lines = reader.lines();
     let mut all_entries = Vec::new();
@@ -423,7 +441,7 @@ pub async fn log_query(
         .map_err(|e| format!("Failed to read line: {}", e))?
     {
         line_number += 1;
-        
+
         if let Some(entry) = parse_log_line(&line, line_number) {
             if matches_filters(&entry, &options, regex.as_ref()) {
                 all_entries.push(entry);
@@ -447,7 +465,7 @@ pub async fn log_query(
             has_more: false,
         });
     };
-    
+
     let end = total_count.saturating_sub(offset);
 
     let entries: Vec<LogEntry> = all_entries[start..end].to_vec();
@@ -498,4 +516,70 @@ pub fn log_get_dir(app: AppHandle) -> Result<String, String> {
 pub async fn log_get_total_size(app: AppHandle) -> Result<u64, String> {
     let files = log_list_files(app).await?;
     Ok(files.iter().map(|f| f.size).sum())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_new_structured_log_line() {
+        let line = "[2026-02-25 20:33:49.472][DEBUG][sqlx::query] query finished";
+        let parsed = parse_log_line(line, 42).expect("expected parsed log line");
+
+        assert_eq!(parsed.timestamp, "2026-02-25 20:33:49.472");
+        assert_eq!(parsed.level, "DEBUG");
+        assert_eq!(parsed.target, "sqlx::query");
+        assert_eq!(parsed.message, "query finished");
+        assert_eq!(parsed.line_number, 42);
+    }
+
+    #[test]
+    fn parse_legacy_structured_log_line() {
+        let line = "[2026-01-12][16:35:12][app_lib][INFO] Settings loaded successfully";
+        let parsed = parse_log_line(line, 8).expect("expected parsed log line");
+
+        assert_eq!(parsed.timestamp, "2026-01-12 16:35:12");
+        assert_eq!(parsed.level, "INFO");
+        assert_eq!(parsed.target, "app_lib");
+        assert_eq!(parsed.message, "Settings loaded successfully");
+    }
+
+    #[test]
+    fn legacy_timestamp_is_time_filterable() {
+        let line = "[2026-01-12][16:35:12][app_lib][INFO] Settings loaded successfully";
+        let entry = parse_log_line(line, 1).expect("expected parsed log line");
+        let ts = parse_timestamp_ms(&entry.timestamp);
+        assert!(ts.is_some(), "legacy timestamp should be parseable");
+
+        let start = parse_timestamp_ms("2026-01-12 16:35:11").expect("start parse");
+        let end = parse_timestamp_ms("2026-01-12 16:35:13").expect("end parse");
+
+        let options = LogQueryOptions {
+            file_name: None,
+            level_filter: Some(vec!["INFO".to_string()]),
+            search: None,
+            use_regex: Some(false),
+            start_time: Some(start),
+            end_time: Some(end),
+            limit: None,
+            offset: None,
+        };
+
+        assert!(
+            matches_filters(&entry, &options, None),
+            "entry should match time and level filters"
+        );
+    }
+
+    #[test]
+    fn fallback_parse_for_unstructured_line() {
+        let line = "plain message without brackets";
+        let parsed = parse_log_line(line, 3).expect("expected fallback parsed line");
+
+        assert_eq!(parsed.timestamp, "");
+        assert_eq!(parsed.level, "INFO");
+        assert_eq!(parsed.target, "");
+        assert_eq!(parsed.message, line);
+    }
 }

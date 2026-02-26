@@ -98,6 +98,17 @@ jest.mock("@/lib/tauri", () => ({
   isTauri: () => true,
 }));
 
+const mockEnvironments = [
+  { env_type: "node", provider_id: "fnm", provider: "fnm", current_version: "20.0.0", installed_versions: [], available: true },
+  { env_type: "python", provider_id: "pyenv", provider: "pyenv", current_version: "3.12.0", installed_versions: [], available: true },
+  { env_type: "rust", provider_id: "rustup", provider: "rustup", current_version: null, installed_versions: [], available: false },
+];
+
+jest.mock("@/lib/stores/environment", () => ({
+  useEnvironmentStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({ environments: mockEnvironments }),
+}));
+
 jest.mock("@/hooks/use-wsl", () => ({
   useWsl: () => ({
     distros: [
@@ -110,7 +121,7 @@ jest.mock("@/hooks/use-wsl", () => ({
     onlineDistros: [],
     status: null,
     config: null,
-    checkAvailability: jest.fn(),
+    checkAvailability: jest.fn().mockResolvedValue(true),
     refreshDistros: jest.fn(),
     refreshOnlineDistros: jest.fn(),
     refreshStatus: jest.fn(),
@@ -140,13 +151,6 @@ jest.mock("@/hooks/use-wsl", () => ({
   }),
 }));
 
-jest.mock("@/components/theme-toggle", () => ({
-  ThemeToggle: () => <button data-testid="theme-toggle">Theme</button>,
-}));
-
-jest.mock("@/components/language-toggle", () => ({
-  LanguageToggle: () => <button data-testid="language-toggle">Language</button>,
-}));
 
 describe("AppSidebar", () => {
   beforeEach(() => {
@@ -174,12 +178,11 @@ describe("AppSidebar", () => {
     expect(screen.getAllByText("About").length).toBeGreaterThan(0);
   });
 
-  it("renders theme and language toggles in footer", () => {
+  it("renders version in footer", () => {
     render(<AppSidebar />);
 
     expect(screen.getByTestId("sidebar-footer")).toBeInTheDocument();
-    expect(screen.getByTestId("theme-toggle")).toBeInTheDocument();
-    expect(screen.getByTestId("language-toggle")).toBeInTheDocument();
+    expect(screen.getByText("v0.1.0")).toBeInTheDocument();
   });
 
   it("highlights active navigation item based on pathname", () => {
@@ -203,5 +206,18 @@ describe("AppSidebar", () => {
 
     expect(dashboardLink).toBeInTheDocument();
     expect(packagesLink).toBeInTheDocument();
+  });
+
+  it("only shows detected (available) environments in sidebar", () => {
+    render(<AppSidebar />);
+
+    const links = screen.getAllByRole("link");
+    // node and python are available, so their detail pages should appear
+    expect(links.some((l) => l.getAttribute("href") === "/environments/node")).toBe(true);
+    expect(links.some((l) => l.getAttribute("href") === "/environments/python")).toBe(true);
+    // rust is not available, should NOT appear
+    expect(links.some((l) => l.getAttribute("href") === "/environments/rust")).toBe(false);
+    // go is not in mock environments at all, should NOT appear
+    expect(links.some((l) => l.getAttribute("href") === "/environments/go")).toBe(false);
   });
 });

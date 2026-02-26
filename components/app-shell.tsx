@@ -12,31 +12,31 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { Titlebar } from "@/components/layout/titlebar";
+import { WindowControls } from "@/components/layout/window-controls";
+import { useWindowControls } from "@/hooks/use-window-controls";
 import { BackgroundImage } from "@/components/layout/background-image";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
-import { useWindowStateStore } from "@/lib/stores/window-state";
 import { LogDrawer } from "@/components/log/log-drawer";
+import { CrashRecoveryDialog } from "@/components/crash-recovery-dialog";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { SplashScreen } from "@/components/splash-screen";
 import { OnboardingWizard, TourOverlay, BubbleHintLayer } from "@/components/onboarding";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
 import { useAppInit } from "@/hooks/use-app-init";
 import { useOnboarding } from "@/hooks/use-onboarding";
-import { isTauri, isWindows } from "@/lib/platform";
+import { isTauri } from "@/lib/platform";
 import { ScrollText, Search } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 
 interface AppShellProps {
   children: ReactNode;
 }
-
-// Windows frameless maximize padding (must match titlebar.tsx WIN_MAXIMIZE_PADDING)
-const WIN_MAXIMIZE_PADDING = 8;
 
 export function AppShell({ children }: AppShellProps) {
   const { toggleDrawer, getLogStats } = useLogStore();
@@ -57,10 +57,9 @@ export function AppShell({ children }: AppShellProps) {
   // Check desktop mode - safe to call during render as it's synchronous
   const isDesktopMode = isTauri();
 
-  // Window state from shared Zustand store (set by Titlebar component)
-  const { isMaximized: windowMaximized, titlebarHeight } = useWindowStateStore();
-  const maximizePadding =
-    isDesktopMode && isWindows() && windowMaximized ? WIN_MAXIMIZE_PADDING : 0;
+  // Window controls (Tauri window management, maximize padding, etc.)
+  const windowControls = useWindowControls();
+  const { maximizePadding, isTauriEnv, isFullscreen } = windowControls;
 
   useAppearanceConfigSync(config);
 
@@ -104,12 +103,12 @@ export function AppShell({ children }: AppShellProps) {
         style={{ visibility: showSplash && !isReady ? "hidden" : "visible" }}
       >
         <BackgroundImage />
-        <Titlebar />
         <div
           className="flex flex-1 overflow-hidden"
           style={
             maximizePadding > 0
               ? {
+                  paddingTop: maximizePadding,
                   paddingLeft: maximizePadding,
                   paddingRight: maximizePadding,
                   paddingBottom: maximizePadding,
@@ -119,24 +118,20 @@ export function AppShell({ children }: AppShellProps) {
         >
           <SidebarProvider
             className={isDesktopMode ? "min-h-0" : undefined}
-            style={
-              isDesktopMode
-                ? ({
-                    "--titlebar-height": titlebarHeight,
-                  } as React.CSSProperties)
-                : undefined
-            }
           >
             <AppSidebar />
             <SidebarInset>
               <header
                 data-tauri-drag-region
-                className="flex h-14 shrink-0 items-center gap-2 border-b px-4 md:px-6"
+                onDoubleClick={isTauriEnv ? windowControls.handleDoubleClick : undefined}
+                className="flex h-12 shrink-0 items-center gap-2 border-b px-4 md:px-6"
               >
                 <SidebarTrigger className="-ml-1" />
                 <Separator orientation="vertical" className="mr-2 h-4" />
                 <Breadcrumb />
                 <div className="flex-1" />
+                <ThemeToggle />
+                <LanguageToggle />
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -169,6 +164,12 @@ export function AppShell({ children }: AppShellProps) {
                   </TooltipTrigger>
                   <TooltipContent>Toggle logs (Ctrl+Shift+L)</TooltipContent>
                 </Tooltip>
+                {isTauriEnv && !isFullscreen && (
+                  <>
+                    <Separator orientation="vertical" className="mx-1 h-4" />
+                    <WindowControls controls={windowControls} />
+                  </>
+                )}
               </header>
               <main className="flex-1 overflow-auto">{children}</main>
             </SidebarInset>
@@ -176,6 +177,7 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
         <LogDrawer />
+        <CrashRecoveryDialog t={t} />
 
         {/* Onboarding wizard - shown on first run or when re-triggered from settings */}
         <OnboardingWizard

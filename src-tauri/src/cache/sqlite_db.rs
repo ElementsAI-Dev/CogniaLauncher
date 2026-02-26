@@ -154,30 +154,29 @@ impl SqliteCacheDb {
             hits: i64,
             misses: i64,
         }
-        
-        let row: Option<StatsRow> = sqlx::query_as(
-            "SELECT hits, misses FROM cache_access_stats WHERE id = 1"
-        )
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
-        Ok(row.map(|r| (r.hits as u64, r.misses as u64)).unwrap_or((0, 0)))
+        let row: Option<StatsRow> =
+            sqlx::query_as("SELECT hits, misses FROM cache_access_stats WHERE id = 1")
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(row
+            .map(|r| (r.hits as u64, r.misses as u64))
+            .unwrap_or((0, 0)))
     }
 
     /// Persist current stats to database
     pub async fn persist_stats(&self) -> CogniaResult<()> {
         let hits = self.stats_hits.load(Ordering::Relaxed);
         let misses = self.stats_misses.load(Ordering::Relaxed);
-        
-        sqlx::query(
-            "UPDATE cache_access_stats SET hits = ?, misses = ? WHERE id = 1"
-        )
-        .bind(hits as i64)
-        .bind(misses as i64)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        sqlx::query("UPDATE cache_access_stats SET hits = ?, misses = ? WHERE id = 1")
+            .bind(hits as i64)
+            .bind(misses as i64)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(())
     }
@@ -206,9 +205,9 @@ impl SqliteCacheDb {
     pub async fn reset_access_stats(&self) -> CogniaResult<()> {
         self.stats_hits.store(0, Ordering::Relaxed);
         self.stats_misses.store(0, Ordering::Relaxed);
-        
+
         sqlx::query(
-            "UPDATE cache_access_stats SET hits = 0, misses = 0, last_reset = ? WHERE id = 1"
+            "UPDATE cache_access_stats SET hits = 0, misses = 0, last_reset = ? WHERE id = 1",
         )
         .bind(Utc::now().to_rfc3339())
         .execute(&self.pool)
@@ -254,13 +253,12 @@ impl SqliteCacheDb {
 
     /// Get a cache entry by key (tracks hit/miss statistics)
     pub async fn get(&self, key: &str) -> CogniaResult<Option<CacheEntry>> {
-        let row: Option<CacheEntryRow> = sqlx::query_as(
-            "SELECT * FROM cache_entries WHERE key = ?",
-        )
-        .bind(key)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+        let row: Option<CacheEntryRow> =
+            sqlx::query_as("SELECT * FROM cache_entries WHERE key = ?")
+                .bind(key)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         if row.is_some() {
             self.record_hit();
@@ -273,13 +271,12 @@ impl SqliteCacheDb {
 
     /// Get a cache entry by checksum (tracks hit/miss statistics)
     pub async fn get_by_checksum(&self, checksum: &str) -> CogniaResult<Option<CacheEntry>> {
-        let row: Option<CacheEntryRow> = sqlx::query_as(
-            "SELECT * FROM cache_entries WHERE checksum = ?",
-        )
-        .bind(checksum)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+        let row: Option<CacheEntryRow> =
+            sqlx::query_as("SELECT * FROM cache_entries WHERE checksum = ?")
+                .bind(checksum)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         if row.is_some() {
             self.record_hit();
@@ -515,9 +512,12 @@ impl SqliteCacheDb {
         };
 
         // Get total count
-        let count_query = format!("SELECT COUNT(*) as count FROM cache_entries {}", where_clause);
+        let count_query = format!(
+            "SELECT COUNT(*) as count FROM cache_entries {}",
+            where_clause
+        );
         let mut count_builder = sqlx::query_scalar::<_, i64>(&count_query);
-        
+
         if let Some(et) = &entry_type {
             count_builder = count_builder.bind(Self::entry_type_to_str(*et));
         }
@@ -536,9 +536,9 @@ impl SqliteCacheDb {
             "SELECT * FROM cache_entries {} {} LIMIT ? OFFSET ?",
             where_clause, order_clause
         );
-        
+
         let mut builder = sqlx::query_as::<_, CacheEntryRow>(&query);
-        
+
         if let Some(et) = &entry_type {
             builder = builder.bind(Self::entry_type_to_str(*et));
         }
@@ -553,7 +553,10 @@ impl SqliteCacheDb {
             .await
             .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
-        Ok((rows.into_iter().map(Self::row_to_entry).collect(), total_count as usize))
+        Ok((
+            rows.into_iter().map(Self::row_to_entry).collect(),
+            total_count as usize,
+        ))
     }
 
     /// Get top accessed entries (hot files)
@@ -571,13 +574,12 @@ impl SqliteCacheDb {
 
     /// Get entries by type
     pub async fn list_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<Vec<CacheEntry>> {
-        let rows: Vec<CacheEntryRow> = sqlx::query_as(
-            "SELECT * FROM cache_entries WHERE entry_type = ?",
-        )
-        .bind(Self::entry_type_to_str(entry_type))
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+        let rows: Vec<CacheEntryRow> =
+            sqlx::query_as("SELECT * FROM cache_entries WHERE entry_type = ?")
+                .bind(Self::entry_type_to_str(entry_type))
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
@@ -746,9 +748,33 @@ mod tests {
         assert_eq!(stats.total_size, 0);
 
         // Add entries
-        db.insert(CacheEntry::new("d1", dir.path().join("d1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("d2", dir.path().join("d2"), 200, "c2", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("m1", dir.path().join("m1"), 50, "c3", CacheEntryType::Metadata)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "d1",
+            dir.path().join("d1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "d2",
+            dir.path().join("d2"),
+            200,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "m1",
+            dir.path().join("m1"),
+            50,
+            "c3",
+            CacheEntryType::Metadata,
+        ))
+        .await
+        .unwrap();
 
         let stats = db.stats().await.unwrap();
         assert_eq!(stats.entry_count, 3);
@@ -762,8 +788,24 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
-        db.insert(CacheEntry::new("list1", dir.path().join("l1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("list2", dir.path().join("l2"), 200, "c2", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "list1",
+            dir.path().join("l1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "list2",
+            dir.path().join("l2"),
+            200,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
 
         let entries = db.list().await.unwrap();
         assert_eq!(entries.len(), 2);
@@ -774,8 +816,24 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
-        db.insert(CacheEntry::new("clear1", dir.path().join("c1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("clear2", dir.path().join("c2"), 200, "c2", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "clear1",
+            dir.path().join("c1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "clear2",
+            dir.path().join("c2"),
+            200,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
 
         let stats = db.stats().await.unwrap();
         assert_eq!(stats.entry_count, 2);
@@ -792,9 +850,33 @@ mod tests {
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
         // Insert entries and touch some to update last_accessed
-        db.insert(CacheEntry::new("lru1", dir.path().join("lru1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("lru2", dir.path().join("lru2"), 100, "c2", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("lru3", dir.path().join("lru3"), 100, "c3", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "lru1",
+            dir.path().join("lru1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "lru2",
+            dir.path().join("lru2"),
+            100,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "lru3",
+            dir.path().join("lru3"),
+            100,
+            "c3",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
 
         // Touch lru2 and lru3 to make them more recently used
         db.touch("lru2").await.unwrap();
@@ -808,16 +890,43 @@ mod tests {
 
     #[test]
     fn test_entry_type_conversion() {
-        assert_eq!(SqliteCacheDb::entry_type_to_str(CacheEntryType::Download), "download");
-        assert_eq!(SqliteCacheDb::entry_type_to_str(CacheEntryType::Metadata), "metadata");
-        assert_eq!(SqliteCacheDb::entry_type_to_str(CacheEntryType::Index), "index");
-        assert_eq!(SqliteCacheDb::entry_type_to_str(CacheEntryType::Partial), "partial");
+        assert_eq!(
+            SqliteCacheDb::entry_type_to_str(CacheEntryType::Download),
+            "download"
+        );
+        assert_eq!(
+            SqliteCacheDb::entry_type_to_str(CacheEntryType::Metadata),
+            "metadata"
+        );
+        assert_eq!(
+            SqliteCacheDb::entry_type_to_str(CacheEntryType::Index),
+            "index"
+        );
+        assert_eq!(
+            SqliteCacheDb::entry_type_to_str(CacheEntryType::Partial),
+            "partial"
+        );
 
-        assert!(matches!(SqliteCacheDb::str_to_entry_type("download"), CacheEntryType::Download));
-        assert!(matches!(SqliteCacheDb::str_to_entry_type("metadata"), CacheEntryType::Metadata));
-        assert!(matches!(SqliteCacheDb::str_to_entry_type("index"), CacheEntryType::Index));
-        assert!(matches!(SqliteCacheDb::str_to_entry_type("partial"), CacheEntryType::Partial));
-        assert!(matches!(SqliteCacheDb::str_to_entry_type("unknown"), CacheEntryType::Download));
+        assert!(matches!(
+            SqliteCacheDb::str_to_entry_type("download"),
+            CacheEntryType::Download
+        ));
+        assert!(matches!(
+            SqliteCacheDb::str_to_entry_type("metadata"),
+            CacheEntryType::Metadata
+        ));
+        assert!(matches!(
+            SqliteCacheDb::str_to_entry_type("index"),
+            CacheEntryType::Index
+        ));
+        assert!(matches!(
+            SqliteCacheDb::str_to_entry_type("partial"),
+            CacheEntryType::Partial
+        ));
+        assert!(matches!(
+            SqliteCacheDb::str_to_entry_type("unknown"),
+            CacheEntryType::Download
+        ));
     }
 
     #[tokio::test]
@@ -831,7 +940,15 @@ mod tests {
         assert_eq!(stats.misses, 0);
 
         // Insert an entry
-        db.insert(CacheEntry::new("stats-key", dir.path().join("f"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "stats-key",
+            dir.path().join("f"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
 
         // Hit: get existing key
         let _ = db.get("stats-key").await.unwrap();
@@ -858,16 +975,24 @@ mod tests {
     #[tokio::test]
     async fn test_sqlite_cache_persist_stats() {
         let dir = tempdir().unwrap();
-        
+
         // Open db and generate some stats
         {
             let db = SqliteCacheDb::open(dir.path()).await.unwrap();
-            db.insert(CacheEntry::new("persist-key", dir.path().join("f"), 100, "c1", CacheEntryType::Download)).await.unwrap();
+            db.insert(CacheEntry::new(
+                "persist-key",
+                dir.path().join("f"),
+                100,
+                "c1",
+                CacheEntryType::Download,
+            ))
+            .await
+            .unwrap();
             let _ = db.get("persist-key").await.unwrap(); // hit
             let _ = db.get("miss-key").await.unwrap(); // miss
             db.persist_stats().await.unwrap();
         }
-        
+
         // Reopen db and verify stats are loaded
         {
             let db = SqliteCacheDb::open(dir.path()).await.unwrap();
@@ -883,17 +1008,47 @@ mod tests {
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
         // Insert entries of different types
-        db.insert(CacheEntry::new("download1", dir.path().join("d1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("download2", dir.path().join("d2"), 200, "c2", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("metadata1", dir.path().join("m1"), 50, "c3", CacheEntryType::Metadata)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "download1",
+            dir.path().join("d1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "download2",
+            dir.path().join("d2"),
+            200,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "metadata1",
+            dir.path().join("m1"),
+            50,
+            "c3",
+            CacheEntryType::Metadata,
+        ))
+        .await
+        .unwrap();
 
         // Filter by type
-        let (entries, total) = db.list_filtered(Some(CacheEntryType::Download), None, None, 10, 0).await.unwrap();
+        let (entries, total) = db
+            .list_filtered(Some(CacheEntryType::Download), None, None, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(total, 2);
 
         // Search by key
-        let (entries, total) = db.list_filtered(None, Some("download"), None, 10, 0).await.unwrap();
+        let (entries, total) = db
+            .list_filtered(None, Some("download"), None, 10, 0)
+            .await
+            .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(total, 2);
 
@@ -911,9 +1066,33 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
-        db.insert(CacheEntry::new("hot1", dir.path().join("h1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("hot2", dir.path().join("h2"), 100, "c2", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("cold", dir.path().join("cold"), 100, "c3", CacheEntryType::Download)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "hot1",
+            dir.path().join("h1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "hot2",
+            dir.path().join("h2"),
+            100,
+            "c2",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "cold",
+            dir.path().join("cold"),
+            100,
+            "c3",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
 
         // Touch hot1 multiple times
         db.touch("hot1").await.unwrap();
@@ -935,9 +1114,33 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
-        db.insert(CacheEntry::new("d1", dir.path().join("d1"), 100, "c1", CacheEntryType::Download)).await.unwrap();
-        db.insert(CacheEntry::new("m1", dir.path().join("m1"), 50, "c2", CacheEntryType::Metadata)).await.unwrap();
-        db.insert(CacheEntry::new("m2", dir.path().join("m2"), 50, "c3", CacheEntryType::Metadata)).await.unwrap();
+        db.insert(CacheEntry::new(
+            "d1",
+            dir.path().join("d1"),
+            100,
+            "c1",
+            CacheEntryType::Download,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "m1",
+            dir.path().join("m1"),
+            50,
+            "c2",
+            CacheEntryType::Metadata,
+        ))
+        .await
+        .unwrap();
+        db.insert(CacheEntry::new(
+            "m2",
+            dir.path().join("m2"),
+            50,
+            "c3",
+            CacheEntryType::Metadata,
+        ))
+        .await
+        .unwrap();
 
         let downloads = db.list_by_type(CacheEntryType::Download).await.unwrap();
         assert_eq!(downloads.len(), 1);

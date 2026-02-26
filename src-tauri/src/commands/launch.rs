@@ -298,6 +298,7 @@ pub async fn env_activate(
         Some("zsh") => ShellType::Zsh,
         Some("fish") => ShellType::Fish,
         Some("powershell") | Some("pwsh") => ShellType::PowerShell,
+        Some("cmd") => ShellType::Cmd,
         _ => ShellType::detect(),
     };
 

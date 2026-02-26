@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { captureFrontendCrash } from "@/lib/crash-reporter";
 
 export default function GlobalError({
   error,
@@ -11,6 +12,15 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("Global error:", error);
+    void captureFrontendCrash({
+      source: "next.global-error-boundary",
+      error,
+      includeConfig: true,
+      extra: {
+        digest: error.digest,
+        boundary: "app/global-error.tsx",
+      },
+    });
   }, [error]);
 
   return (

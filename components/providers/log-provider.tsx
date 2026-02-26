@@ -17,8 +17,10 @@ import {
   listenSelfUpdateProgress,
   listenUpdateCheckProgress,
 } from "@/lib/tauri";
+import { captureFrontendCrash } from "@/lib/crash-reporter";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useLocale } from "@/components/providers/locale-provider";
+import { toast } from "sonner";
 
 // Store original console methods to prevent infinite loops
 const originalConsole = {
@@ -35,6 +37,34 @@ let consoleIntercepted = false;
 
 interface LogProviderProps {
   children: ReactNode;
+}
+
+function toRuntimeMessage(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message || value.name || "Unknown runtime error";
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    const candidate = value as { message?: unknown };
+    if (
+      typeof candidate.message === "string" &&
+      candidate.message.trim().length > 0
+    ) {
+      return candidate.message;
+    }
+
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return value === undefined ? "Unknown runtime error" : String(value);
 }
 
 export function LogProvider({ children }: LogProviderProps) {
@@ -115,6 +145,80 @@ export function LogProvider({ children }: LogProviderProps) {
       consoleIntercepted = false;
     };
   }, [addLog]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !isTauri()) return;
+
+    const reportRuntimeCrash = async (
+      source: "window.error" | "window.unhandledrejection",
+      error: unknown,
+      message: string,
+      extra?: Record<string, unknown>,
+    ) => {
+      addLog({
+        timestamp: Date.now(),
+        level: "error",
+        message,
+        target: "runtime",
+      });
+
+      const result = await captureFrontendCrash({
+        source,
+        error,
+        includeConfig: true,
+        extra,
+      });
+
+      if (result.captured) {
+        toast.warning(t("diagnostic.autoCaptureToastTitle"), {
+          description: t("diagnostic.autoCaptureToastDescription"),
+        });
+      } else if (result.reason === "capture-failed") {
+        addLog({
+          timestamp: Date.now(),
+          level: "warn",
+          message: "Automatic frontend crash diagnostic capture failed",
+          target: "runtime",
+        });
+      }
+    };
+
+    const handleWindowError = (event: ErrorEvent) => {
+      const reason = event.error ?? event.message;
+      const reasonMessage = toRuntimeMessage(reason);
+      const location = event.filename
+        ? ` (${event.filename}:${event.lineno ?? 0}:${event.colno ?? 0})`
+        : "";
+
+      void reportRuntimeCrash(
+        "window.error",
+        reason,
+        `Unhandled runtime error: ${reasonMessage}${location}`,
+        {
+          filename: event.filename,
+          line: event.lineno,
+          column: event.colno,
+        },
+      );
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reasonMessage = toRuntimeMessage(event.reason);
+      void reportRuntimeCrash(
+        "window.unhandledrejection",
+        event.reason,
+        `Unhandled promise rejection: ${reasonMessage}`,
+      );
+    };
+
+    window.addEventListener("error", handleWindowError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener("error", handleWindowError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, [addLog, t]);
 
   // Setup all event listeners for logging at app level
   useEffect(() => {

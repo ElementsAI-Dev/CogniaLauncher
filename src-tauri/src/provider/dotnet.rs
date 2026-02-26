@@ -98,10 +98,14 @@ impl DotnetProvider {
                 project_url: p.project_url,
                 license_url: p.license_url,
                 total_downloads: p.total_downloads,
-                versions: p.versions.into_iter().map(|v| NuGetPackageVersion {
-                    version: v.version,
-                    downloads: v.downloads,
-                }).collect(),
+                versions: p
+                    .versions
+                    .into_iter()
+                    .map(|v| NuGetPackageVersion {
+                        version: v.version,
+                        downloads: v.downloads,
+                    })
+                    .collect(),
             })
             .collect();
 
@@ -197,8 +201,9 @@ impl DotnetProvider {
             }),
         };
 
-        let json = serde_json::to_string_pretty(&content)
-            .map_err(|e| CogniaError::Provider(format!("Failed to serialize global.json: {}", e)))?;
+        let json = serde_json::to_string_pretty(&content).map_err(|e| {
+            CogniaError::Provider(format!("Failed to serialize global.json: {}", e))
+        })?;
 
         fs::write_file(&global_json_path, json.as_bytes()).await?;
         Ok(())
@@ -207,7 +212,7 @@ impl DotnetProvider {
     /// Get the installed version of a NuGet package from dotnet list package output
     async fn get_package_version(&self, name: &str) -> CogniaResult<String> {
         let output = self.run_dotnet(&["list", "package"]).await?;
-        
+
         for line in output.lines() {
             let line = line.trim();
             if line.starts_with('>') && line.to_lowercase().contains(&name.to_lowercase()) {
@@ -218,7 +223,7 @@ impl DotnetProvider {
                 }
             }
         }
-        
+
         Err(CogniaError::Provider(format!("Package {} not found", name)))
     }
 }
@@ -358,7 +363,11 @@ impl Provider for DotnetProvider {
         let limit = options.limit.unwrap_or(20);
         let results = self.search_nuget(query, limit).await?;
 
-        tracing::debug!("NuGet search returned {} of {} total hits", results.packages.len(), results.total_hits);
+        tracing::debug!(
+            "NuGet search returned {} of {} total hits",
+            results.packages.len(),
+            results.total_hits
+        );
 
         Ok(results
             .packages
@@ -444,20 +453,26 @@ impl Provider for DotnetProvider {
                                 // Find matching version or last entry
                                 let entry = if target_version != "index" {
                                     page_items.iter().find(|e| {
-                                        e["catalogEntry"]["version"].as_str() == Some(target_version)
+                                        e["catalogEntry"]["version"].as_str()
+                                            == Some(target_version)
                                     })
                                 } else {
                                     page_items.last()
                                 };
 
                                 if let Some(entry) = entry {
-                                    if let Some(dep_groups) = entry["catalogEntry"]["dependencyGroups"].as_array() {
+                                    if let Some(dep_groups) =
+                                        entry["catalogEntry"]["dependencyGroups"].as_array()
+                                    {
                                         let mut deps = Vec::new();
                                         for group in dep_groups {
-                                            if let Some(group_deps) = group["dependencies"].as_array() {
+                                            if let Some(group_deps) =
+                                                group["dependencies"].as_array()
+                                            {
                                                 for d in group_deps {
                                                     if let Some(dep_name) = d["id"].as_str() {
-                                                        let range = d["range"].as_str().unwrap_or("*");
+                                                        let range =
+                                                            d["range"].as_str().unwrap_or("*");
                                                         let constraint = range
                                                             .parse::<VersionConstraint>()
                                                             .unwrap_or(VersionConstraint::Any);
@@ -637,18 +652,11 @@ impl EnvironmentProvider for DotnetProvider {
         ))
     }
 
-    async fn set_local_version(
-        &self,
-        project_path: &Path,
-        version: &str,
-    ) -> CogniaResult<()> {
+    async fn set_local_version(&self, project_path: &Path, version: &str) -> CogniaResult<()> {
         Self::write_global_json(project_path, version).await
     }
 
-    async fn detect_version(
-        &self,
-        start_path: &Path,
-    ) -> CogniaResult<Option<VersionDetection>> {
+    async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
         // Check global.json in current and parent directories
         let mut current = start_path.to_path_buf();
 
@@ -683,7 +691,10 @@ impl EnvironmentProvider for DotnetProvider {
             .ok_or_else(|| CogniaError::Provider("DOTNET_ROOT not found".into()))?;
 
         let mut set_variables = std::collections::HashMap::new();
-        set_variables.insert("DOTNET_ROOT".to_string(), dotnet_root.to_string_lossy().into_owned());
+        set_variables.insert(
+            "DOTNET_ROOT".to_string(),
+            dotnet_root.to_string_lossy().into_owned(),
+        );
 
         Ok(EnvModifications {
             path_prepend: vec![dotnet_root],

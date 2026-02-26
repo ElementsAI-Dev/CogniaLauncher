@@ -1,6 +1,6 @@
 use crate::error::CogniaResult;
-use crate::resolver::Dependency;
 use crate::platform::env::{Architecture, EnvModifications, Platform};
+use crate::resolver::Dependency;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -166,7 +166,15 @@ impl InstallProgressEvent {
     }
 
     pub fn downloading(package: &str, downloaded: u64, total: Option<u64>, speed: f64) -> Self {
-        let progress = total.map(|t| if t > 0 { (downloaded as f64 / t as f64 * 100.0) as f32 } else { 0.0 }).unwrap_or(0.0);
+        let progress = total
+            .map(|t| {
+                if t > 0 {
+                    (downloaded as f64 / t as f64 * 100.0) as f32
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
         Self {
             stage: InstallStage::Downloading,
             package: package.to_string(),
@@ -279,21 +287,25 @@ pub trait Provider: Send + Sync {
         if let Some(ref tx) = progress {
             let _ = tx.send(InstallProgressEvent::fetching(&request.name)).await;
         }
-        
+
         let result = self.install(request.clone()).await;
-        
+
         // Send completion or failure progress
         if let Some(ref tx) = progress {
             match &result {
                 Ok(receipt) => {
-                    let _ = tx.send(InstallProgressEvent::done(&receipt.name, &receipt.version)).await;
+                    let _ = tx
+                        .send(InstallProgressEvent::done(&receipt.name, &receipt.version))
+                        .await;
                 }
                 Err(e) => {
-                    let _ = tx.send(InstallProgressEvent::failed(&request.name, &e.to_string())).await;
+                    let _ = tx
+                        .send(InstallProgressEvent::failed(&request.name, &e.to_string()))
+                        .await;
                 }
             }
         }
-        
+
         result
     }
 
@@ -302,7 +314,8 @@ pub trait Provider: Send + Sync {
     async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
         // Default: search in installed packages
         let installed = self.list_installed(InstalledFilter::default()).await?;
-        Ok(installed.into_iter()
+        Ok(installed
+            .into_iter()
             .find(|p| p.name.eq_ignore_ascii_case(name))
             .map(|p| p.version))
     }

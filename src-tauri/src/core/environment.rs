@@ -458,12 +458,8 @@ impl EnvironmentManager {
     }
 
     /// Check whether a newer version is available for a specific environment.
-    pub async fn check_env_updates(
-        &self,
-        env_type: &str,
-    ) -> CogniaResult<EnvUpdateCheckResult> {
-        let (logical, provider_id, provider) =
-            self.resolve_provider(env_type, None, None).await?;
+    pub async fn check_env_updates(&self, env_type: &str) -> CogniaResult<EnvUpdateCheckResult> {
+        let (logical, provider_id, provider) = self.resolve_provider(env_type, None, None).await?;
 
         let available = provider.is_available().await;
         if !available {
@@ -554,8 +550,7 @@ impl EnvironmentManager {
         env_type: &str,
         versions_to_remove: &[String],
     ) -> CogniaResult<EnvCleanupResult> {
-        let (logical, _provider_id, provider) =
-            self.resolve_provider(env_type, None, None).await?;
+        let (logical, _provider_id, provider) = self.resolve_provider(env_type, None, None).await?;
 
         // Safety: refuse to remove the current version
         let current = provider.get_current_version().await.ok().flatten();
@@ -567,10 +562,7 @@ impl EnvironmentManager {
 
         for version in versions_to_remove {
             if current.as_deref() == Some(version.as_str()) {
-                errors.push(format!(
-                    "Skipped {}: currently active version",
-                    version
-                ));
+                errors.push(format!("Skipped {}: currently active version", version));
                 continue;
             }
 
@@ -895,8 +887,14 @@ mod tests {
     fn env_cleanup_result_serde() {
         let result = EnvCleanupResult {
             removed: vec![
-                CleanedVersion { version: "18.0.0".into(), size: 1024 },
-                CleanedVersion { version: "16.0.0".into(), size: 2048 },
+                CleanedVersion {
+                    version: "18.0.0".into(),
+                    size: 1024,
+                },
+                CleanedVersion {
+                    version: "16.0.0".into(),
+                    size: 2048,
+                },
             ],
             freed_bytes: 3072,
             errors: vec![],
@@ -921,8 +919,14 @@ mod tests {
     #[test]
     fn candidate_provider_ids_dart() {
         let candidates = candidate_provider_ids("dart");
-        assert!(candidates.contains(&"fvm"), "fvm should be a candidate for dart");
-        assert!(candidates.contains(&"system-dart"), "system-dart should be a candidate for dart");
+        assert!(
+            candidates.contains(&"fvm"),
+            "fvm should be a candidate for dart"
+        );
+        assert!(
+            candidates.contains(&"system-dart"),
+            "system-dart should be a candidate for dart"
+        );
         // fvm should come before system-dart (dedicated manager first)
         let fvm_pos = candidates.iter().position(|&x| x == "fvm").unwrap();
         let sys_pos = candidates.iter().position(|&x| x == "system-dart").unwrap();

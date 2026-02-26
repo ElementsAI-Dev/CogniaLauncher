@@ -1,0 +1,8 @@
+export { TerminalDetectedShells } from './terminal-detected-shells';
+export { TerminalProfileList } from './terminal-profile-list';
+export { TerminalProfileDialog } from './terminal-profile-dialog';
+export { TerminalPsManagement } from './terminal-ps-management';
+export { TerminalPsModulesTable } from './terminal-ps-modules-table';
+export { TerminalShellConfig } from './terminal-shell-config';
+export { TerminalShellFramework } from './terminal-shell-framework';
+export { TerminalProxySettings } from './terminal-proxy-settings';

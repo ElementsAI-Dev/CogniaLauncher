@@ -56,21 +56,47 @@ jest.mock("@/components/app-sidebar", () => ({
   AppSidebar: () => <div data-testid="app-sidebar">Sidebar</div>,
 }));
 
-jest.mock("@/components/layout/titlebar", () => ({
-  Titlebar: () => null,
+jest.mock("@/components/layout/window-controls", () => ({
+  WindowControls: () => <div data-testid="window-controls">WindowControls</div>,
 }));
 
+const mockWindowControls = {
+  mounted: true,
+  isTauriEnv: false,
+  isWindows: false,
+  appWindow: null,
+  isMaximized: false,
+  isFullscreen: false,
+  isFocused: true,
+  isAlwaysOnTop: false,
+  maximizePadding: 0,
+  handleMinimize: jest.fn(),
+  handleMaximize: jest.fn(),
+  handleToggleFullscreen: jest.fn(),
+  handleCenter: jest.fn(),
+  handleToggleAlwaysOnTop: jest.fn(),
+  handleClose: jest.fn(),
+  handleDoubleClick: jest.fn(),
+};
+
+jest.mock("@/hooks/use-window-controls", () => ({
+  useWindowControls: () => mockWindowControls,
+}));
+
+const mockWindowState = {
+  isMaximized: false,
+  isFullscreen: false,
+  isFocused: true,
+  titlebarHeight: "2rem",
+  setMaximized: jest.fn(),
+  setFullscreen: jest.fn(),
+  setFocused: jest.fn(),
+  setTitlebarHeight: jest.fn(),
+};
+
 jest.mock("@/lib/stores/window-state", () => ({
-  useWindowStateStore: () => ({
-    isMaximized: false,
-    isFullscreen: false,
-    isFocused: true,
-    titlebarHeight: "2rem",
-    setMaximized: jest.fn(),
-    setFullscreen: jest.fn(),
-    setFocused: jest.fn(),
-    setTitlebarHeight: jest.fn(),
-  }),
+  useWindowStateStore: (selector?: (s: typeof mockWindowState) => unknown) =>
+    selector ? selector(mockWindowState) : mockWindowState,
 }));
 
 jest.mock("@/components/log/log-drawer", () => ({
@@ -92,6 +118,14 @@ jest.mock("@/components/layout/breadcrumb", () => ({
 jest.mock("@/components/command-palette", () => ({
   CommandPalette: ({ open }: { open: boolean }) =>
     open ? <div data-testid="command-palette">Command Palette</div> : null,
+}));
+
+jest.mock("@/components/theme-toggle", () => ({
+  ThemeToggle: () => <button data-testid="theme-toggle">Theme</button>,
+}));
+
+jest.mock("@/components/language-toggle", () => ({
+  LanguageToggle: () => <button data-testid="language-toggle">Language</button>,
 }));
 
 describe("AppShell", () => {

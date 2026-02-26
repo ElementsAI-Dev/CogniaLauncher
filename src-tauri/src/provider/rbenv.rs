@@ -230,8 +230,14 @@ impl Provider for RbenvProvider {
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         // Compare installed rbenv versions with latest available
-        let installed = self.run_rbenv(&["versions", "--bare"]).await.unwrap_or_default();
-        let available = self.run_rbenv(&["install", "--list"]).await.unwrap_or_default();
+        let installed = self
+            .run_rbenv(&["versions", "--bare"])
+            .await
+            .unwrap_or_default();
+        let available = self
+            .run_rbenv(&["install", "--list"])
+            .await
+            .unwrap_or_default();
 
         // Find latest stable MRI Ruby version
         let latest = available
@@ -388,7 +394,13 @@ impl EnvironmentProvider for RbenvProvider {
                             .next()
                             .unwrap_or("")
                             .trim();
-                        if !version.is_empty() && version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                        if !version.is_empty()
+                            && version
+                                .chars()
+                                .next()
+                                .map(|c| c.is_ascii_digit())
+                                .unwrap_or(false)
+                        {
                             return Ok(Some(VersionDetection {
                                 version: version.to_string(),
                                 source: VersionSource::Manifest,

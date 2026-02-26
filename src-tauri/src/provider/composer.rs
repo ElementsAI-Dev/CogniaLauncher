@@ -51,30 +51,39 @@ impl ComposerProvider {
         };
         let out = self.run_composer(&args).await?;
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
-            if let Some(version) = json["versions"].as_array().and_then(|v| v.first()).and_then(|v| v.as_str()) {
+            if let Some(version) = json["versions"]
+                .as_array()
+                .and_then(|v| v.first())
+                .and_then(|v| v.as_str())
+            {
                 return Ok(version.to_string());
             }
             if let Some(version) = json["version"].as_str() {
                 return Ok(version.to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 
     /// Search Packagist API
-    async fn search_packagist(&self, query: &str, limit: usize) -> CogniaResult<PackagistSearchResult> {
+    async fn search_packagist(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> CogniaResult<PackagistSearchResult> {
         let url = format!(
             "https://packagist.org/search.json?q={}&per_page={}",
             urlencoding::encode(query),
             limit
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Packagist API request failed: {}", e)))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                CogniaError::Provider(format!("Packagist API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(CogniaError::Provider(format!(
@@ -83,10 +92,9 @@ impl ComposerProvider {
             )));
         }
 
-        let data: PackagistSearchResponse = response
-            .json()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Failed to parse Packagist response: {}", e)))?;
+        let data: PackagistSearchResponse = response.json().await.map_err(|e| {
+            CogniaError::Provider(format!("Failed to parse Packagist response: {}", e))
+        })?;
 
         let packages = data
             .results
@@ -111,38 +119,27 @@ impl ComposerProvider {
     async fn get_packagist_package(&self, name: &str) -> CogniaResult<PackagistPackageInfo> {
         let url = format!("https://repo.packagist.org/p2/{}.json", name);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Packagist API request failed: {}", e)))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                CogniaError::Provider(format!("Packagist API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(CogniaError::PackageNotFound(name.to_string()));
         }
 
-        let data: PackagistPackageResponse = response
-            .json()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Failed to parse Packagist response: {}", e)))?;
+        let data: PackagistPackageResponse = response.json().await.map_err(|e| {
+            CogniaError::Provider(format!("Failed to parse Packagist response: {}", e))
+        })?;
 
         // Get versions from the packages map
         let versions: Vec<String> = data
             .packages
             .get(name)
-            .map(|versions| {
-                versions
-                    .iter()
-                    .map(|v| v.version.clone())
-                    .collect()
-            })
+            .map(|versions| versions.iter().map(|v| v.version.clone()).collect())
             .unwrap_or_default();
 
-        let first_version = data
-            .packages
-            .get(name)
-            .and_then(|v| v.first());
+        let first_version = data.packages.get(name).and_then(|v| v.first());
 
         Ok(PackagistPackageInfo {
             name: name.to_string(),
@@ -318,9 +315,15 @@ impl Provider for ComposerProvider {
         let result = self.search_packagist(query, limit).await?;
 
         // Log total available results for debugging
-        tracing::debug!("Packagist search for '{}': {} results available, returning {}", query, result.total, result.packages.len());
+        tracing::debug!(
+            "Packagist search for '{}': {} results available, returning {}",
+            query,
+            result.total,
+            result.packages.len()
+        );
 
-        Ok(result.packages
+        Ok(result
+            .packages
             .into_iter()
             .map(|p| PackageSummary {
                 name: p.name,
@@ -582,10 +585,7 @@ impl SystemPackageProvider for ComposerProvider {
     async fn get_version(&self) -> CogniaResult<String> {
         let output = self.run_composer(&["--version"]).await?;
         // Output: "Composer version x.x.x ..."
-        let version = output
-            .split_whitespace()
-            .nth(2)
-            .unwrap_or(output.trim());
+        let version = output.split_whitespace().nth(2).unwrap_or(output.trim());
         Ok(version.to_string())
     }
 

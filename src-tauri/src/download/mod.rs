@@ -16,9 +16,11 @@ mod state;
 mod task;
 mod throttle;
 
-pub use asset_picker::{AssetLike, AssetMatch, AssetPicker, LibcType, detect_arch, detect_platform};
-pub use manager::{DownloadManager, DownloadManagerConfig, DownloadEvent};
+pub use asset_picker::{
+    detect_arch, detect_platform, AssetLike, AssetMatch, AssetPicker, LibcType,
+};
+pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig};
 pub use queue::DownloadQueue;
-pub use state::{DownloadState, DownloadError};
-pub use task::{DownloadTask, DownloadProgress, DownloadConfig};
+pub use state::{DownloadError, DownloadState};
+pub use task::{DownloadConfig, DownloadProgress, DownloadTask};
 pub use throttle::SpeedLimiter;

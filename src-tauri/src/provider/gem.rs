@@ -33,17 +33,20 @@ impl GemProvider {
 
     /// Get GEM_HOME or default gem directory
     fn get_gem_home() -> Option<PathBuf> {
-        std::env::var("GEM_HOME").ok().map(PathBuf::from).or_else(|| {
-            if cfg!(windows) {
-                std::env::var("USERPROFILE")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".gem"))
-            } else {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".gem"))
-            }
-        })
+        std::env::var("GEM_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                if cfg!(windows) {
+                    std::env::var("USERPROFILE")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".gem"))
+                } else {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".gem"))
+                }
+            })
     }
 
     /// Get the installed version of a gem
@@ -322,7 +325,9 @@ impl Provider for GemProvider {
         }
 
         // Fallback: gem list --remote --all
-        let out = self.run_gem(&["list", "--remote", "--all", "--exact", name]).await?;
+        let out = self
+            .run_gem(&["list", "--remote", "--all", "--exact", name])
+            .await?;
         for line in out.lines() {
             if line.starts_with(name) {
                 if let Some(start) = line.find('(') {
@@ -385,7 +390,10 @@ impl Provider for GemProvider {
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
         let install_path = Self::get_gem_home()
-            .map(|p| p.join("gems").join(format!("{}-{}", req.name, actual_version)))
+            .map(|p| {
+                p.join("gems")
+                    .join(format!("{}-{}", req.name, actual_version))
+            })
             .unwrap_or_default();
 
         Ok(InstallReceipt {
@@ -475,9 +483,9 @@ impl Provider for GemProvider {
                         return None;
                     }
 
-                    let versions_part = line.find('(').and_then(|start| {
-                        line.find(')').map(|end| &line[start + 1..end])
-                    })?;
+                    let versions_part = line
+                        .find('(')
+                        .and_then(|start| line.find(')').map(|end| &line[start + 1..end]))?;
 
                     let parts: Vec<&str> = versions_part.split('<').collect();
                     if parts.len() >= 2 {

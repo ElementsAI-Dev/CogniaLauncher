@@ -78,9 +78,7 @@ impl CondaProvider {
             }
         }
         // Fallback: check CONDA_PREFIX env var
-        std::env::var("CONDA_PREFIX")
-            .ok()
-            .map(PathBuf::from)
+        std::env::var("CONDA_PREFIX").ok().map(PathBuf::from)
     }
 
     /// Get installed version of a package in the current environment
@@ -151,7 +149,11 @@ impl Provider for CondaProvider {
         let args = vec!["search", "--json", query];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
-        let all_args: Vec<&str> = args.iter().copied().chain(channel_refs.iter().copied()).collect();
+        let all_args: Vec<&str> = args
+            .iter()
+            .copied()
+            .chain(channel_refs.iter().copied())
+            .collect();
 
         let out = self.run_conda(&all_args).await?;
 
@@ -187,7 +189,11 @@ impl Provider for CondaProvider {
         let args = vec!["search", "--json", name];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
-        let all_args: Vec<&str> = args.iter().copied().chain(channel_refs.iter().copied()).collect();
+        let all_args: Vec<&str> = args
+            .iter()
+            .copied()
+            .chain(channel_refs.iter().copied())
+            .collect();
 
         let out = self.run_conda(&all_args).await?;
 
@@ -202,13 +208,11 @@ impl Provider for CondaProvider {
                         if let Some(ver) = v["version"].as_str() {
                             versions.push(VersionInfo {
                                 version: ver.to_string(),
-                                release_date: v["timestamp"]
-                                    .as_i64()
-                                    .map(|t| {
-                                        chrono::DateTime::from_timestamp(t / 1000, 0)
-                                            .map(|dt| dt.to_rfc3339())
-                                            .unwrap_or_default()
-                                    }),
+                                release_date: v["timestamp"].as_i64().map(|t| {
+                                    chrono::DateTime::from_timestamp(t / 1000, 0)
+                                        .map(|dt| dt.to_rfc3339())
+                                        .unwrap_or_default()
+                                }),
                                 deprecated: false,
                                 yanked: false,
                             });
@@ -267,8 +271,7 @@ impl Provider for CondaProvider {
                                     .filter_map(|d| {
                                         let dep_str = d.as_str()?;
                                         // Format: "package_name >=1.0,<2.0" or "package_name"
-                                        let parts: Vec<&str> =
-                                            dep_str.splitn(2, ' ').collect();
+                                        let parts: Vec<&str> = dep_str.splitn(2, ' ').collect();
                                         let dep_name = parts[0].to_string();
                                         let constraint = if parts.len() > 1 {
                                             parts[1]
@@ -303,7 +306,11 @@ impl Provider for CondaProvider {
         let args = vec!["install", "-y", &pkg];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
-        let all_args: Vec<&str> = args.iter().copied().chain(channel_refs.iter().copied()).collect();
+        let all_args: Vec<&str> = args
+            .iter()
+            .copied()
+            .chain(channel_refs.iter().copied())
+            .collect();
 
         self.run_conda(&all_args).await?;
 
@@ -380,16 +387,19 @@ impl Provider for CondaProvider {
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         // conda update --all --dry-run --json shows available updates
-        let out = self.run_conda(&["update", "--all", "--dry-run", "--json"]).await;
+        let out = self
+            .run_conda(&["update", "--all", "--dry-run", "--json"])
+            .await;
 
         if let Ok(output) = out {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&output) {
                 if let Some(actions) = json["actions"]["LINK"].as_array() {
-                    let installed = self.list_installed(InstalledFilter::default()).await.unwrap_or_default();
-                    let installed_map: std::collections::HashMap<String, String> = installed
-                        .into_iter()
-                        .map(|p| (p.name, p.version))
-                        .collect();
+                    let installed = self
+                        .list_installed(InstalledFilter::default())
+                        .await
+                        .unwrap_or_default();
+                    let installed_map: std::collections::HashMap<String, String> =
+                        installed.into_iter().map(|p| (p.name, p.version)).collect();
 
                     let updates: Vec<UpdateInfo> = actions
                         .iter()
@@ -437,7 +447,12 @@ impl SystemPackageProvider for CondaProvider {
     async fn get_version(&self) -> CogniaResult<String> {
         let out = self.run_conda(&["--version"]).await?;
         // Output: "conda 24.11.1"
-        Ok(out.trim().split_whitespace().last().unwrap_or("unknown").to_string())
+        Ok(out
+            .trim()
+            .split_whitespace()
+            .last()
+            .unwrap_or("unknown")
+            .to_string())
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
@@ -464,7 +479,10 @@ mod tests {
     fn test_provider_metadata() {
         let provider = CondaProvider::new();
         assert_eq!(provider.id(), "conda");
-        assert_eq!(provider.display_name(), "Conda (Package & Environment Manager)");
+        assert_eq!(
+            provider.display_name(),
+            "Conda (Package & Environment Manager)"
+        );
         assert_eq!(provider.priority(), 80);
 
         let platforms = provider.supported_platforms();
@@ -503,8 +521,7 @@ mod tests {
 
     #[test]
     fn test_build_channel_args() {
-        let provider = CondaProvider::new()
-            .with_channel("conda-forge");
+        let provider = CondaProvider::new().with_channel("conda-forge");
         let args = provider.build_channel_args();
         assert_eq!(args, vec!["-c", "conda-forge"]);
     }

@@ -231,12 +231,7 @@ impl DownloadManager {
     }
 
     /// Create and add a simple download task
-    pub async fn download(
-        &self,
-        url: String,
-        destination: PathBuf,
-        name: String,
-    ) -> String {
+    pub async fn download(&self, url: String, destination: PathBuf, name: String) -> String {
         let task = DownloadTask::new(url, destination, name);
         self.add_task(task).await
     }
@@ -404,7 +399,8 @@ impl DownloadManager {
         // Clear paused flag on all task controls so workers resume
         let paused_ids: Vec<String> = {
             let queue = self.queue.read().await;
-            queue.list_all()
+            queue
+                .list_all()
                 .iter()
                 .filter(|t| t.state == crate::download::DownloadState::Paused)
                 .map(|t| t.id.clone())
@@ -431,7 +427,8 @@ impl DownloadManager {
         // Signal all non-terminal task controls to cancel
         let non_terminal_ids: Vec<String> = {
             let queue = self.queue.read().await;
-            queue.list_all()
+            queue
+                .list_all()
                 .iter()
                 .filter(|t| !t.state.is_terminal())
                 .map(|t| t.id.clone())
@@ -688,7 +685,10 @@ impl DownloadManager {
                     drop(q); // Release lock during sleep
                     log::info!(
                         "Download {} failed (attempt {}), retrying in {}s: {}",
-                        task_id, retry_count + 1, backoff_secs, err
+                        task_id,
+                        retry_count + 1,
+                        backoff_secs,
+                        err
                     );
                     tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
                 } else {
@@ -796,9 +796,9 @@ impl DownloadManager {
         }
 
         // Get total size
-        let total_size = response.content_length().map(|len| {
-            len + resume_from.unwrap_or(0)
-        });
+        let total_size = response
+            .content_length()
+            .map(|len| len + resume_from.unwrap_or(0));
 
         // Open file
         let mut file = if resume_from.is_some() {
@@ -892,20 +892,19 @@ impl DownloadManager {
         }
 
         // Flush file
-        file.flush()
-            .await
-            .map_err(|e| DownloadError::FileSystem {
-                message: e.to_string(),
-            })?;
+        file.flush().await.map_err(|e| DownloadError::FileSystem {
+            message: e.to_string(),
+        })?;
 
         // Verify checksum if provided
         if task.config.verify_checksum {
             if let Some(ref expected) = task.expected_checksum {
-                let actual = fs::calculate_sha256(dest).await.map_err(|e| {
-                    DownloadError::FileSystem {
-                        message: e.to_string(),
-                    }
-                })?;
+                let actual =
+                    fs::calculate_sha256(dest)
+                        .await
+                        .map_err(|e| DownloadError::FileSystem {
+                            message: e.to_string(),
+                        })?;
 
                 if &actual != expected {
                     // Remove corrupted file
@@ -1180,11 +1179,7 @@ mod tests {
             .await;
 
         // Should receive TaskAdded event
-        let event = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            rx.recv(),
-        )
-        .await;
+        let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
         assert!(event.is_ok());
         let event = event.unwrap().unwrap();
         matches!(event, DownloadEvent::TaskAdded { .. });
@@ -1237,7 +1232,10 @@ mod tests {
         let task_id = manager.add_task(task).await;
         let retrieved = manager.get_task(&task_id).await.unwrap();
 
-        assert_eq!(retrieved.expected_checksum, Some("abc123def456".to_string()));
+        assert_eq!(
+            retrieved.expected_checksum,
+            Some("abc123def456".to_string())
+        );
         assert_eq!(retrieved.priority, 10);
         assert_eq!(retrieved.provider, Some("github:user/repo".to_string()));
     }
@@ -1396,10 +1394,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_manager_cleanup_stale_partials_no_dir() {
-        let manager = DownloadManager::new(DownloadManagerConfig {
-            partials_dir: PathBuf::from("/nonexistent/partials/dir"),
-            ..Default::default()
-        }, None);
+        let manager = DownloadManager::new(
+            DownloadManagerConfig {
+                partials_dir: PathBuf::from("/nonexistent/partials/dir"),
+                ..Default::default()
+            },
+            None,
+        );
 
         // Should return 0 if the directory doesn't exist
         let cleaned = manager

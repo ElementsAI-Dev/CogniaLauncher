@@ -15,6 +15,7 @@ pub struct Settings {
     pub security: SecuritySettings,
     pub provider_settings: GlobalProviderSettings,
     pub appearance: AppearanceSettings,
+    pub terminal: TerminalSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +40,30 @@ impl Default for AppearanceSettings {
             interface_density: "comfortable".into(),
             language: "en".into(),
             reduced_motion: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalSettings {
+    pub default_shell: String,
+    pub default_profile_id: Option<String>,
+    pub shell_integration: bool,
+    pub proxy_mode: String,
+    pub custom_proxy: Option<String>,
+    pub no_proxy: Option<String>,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            default_shell: "auto".into(),
+            default_profile_id: None,
+            shell_integration: true,
+            proxy_mode: "global".into(),
+            custom_proxy: None,
+            no_proxy: None,
         }
     }
 }
@@ -274,14 +299,15 @@ impl Settings {
 
         match parts.as_slice() {
             ["general", "parallel_downloads"] => Some(self.general.parallel_downloads.to_string()),
-            ["general", "resolve_strategy"] => {
-                Some(match self.general.resolve_strategy {
+            ["general", "resolve_strategy"] => Some(
+                match self.general.resolve_strategy {
                     ResolveStrategy::Latest => "latest",
                     ResolveStrategy::Minimal => "minimal",
                     ResolveStrategy::Locked => "locked",
                     ResolveStrategy::PreferLocked => "prefer-locked",
-                }.to_string())
-            }
+                }
+                .to_string(),
+            ),
             ["general", "auto_update_metadata"] => {
                 Some(self.general.auto_update_metadata.to_string())
             }
@@ -311,9 +337,7 @@ impl Settings {
             ["security", "verify_certificates"] => {
                 Some(self.security.verify_certificates.to_string())
             }
-            ["security", "allow_self_signed"] => {
-                Some(self.security.allow_self_signed.to_string())
-            }
+            ["security", "allow_self_signed"] => Some(self.security.allow_self_signed.to_string()),
             ["paths", "root"] => Some(
                 self.paths
                     .root
@@ -342,34 +366,53 @@ impl Settings {
             ["appearance", "theme"] => Some(self.appearance.theme.clone()),
             ["appearance", "accent_color"] => Some(self.appearance.accent_color.clone()),
             ["appearance", "chart_color_theme"] => Some(self.appearance.chart_color_theme.clone()),
-            ["appearance", "interface_radius"] => Some(self.appearance.interface_radius.to_string()),
+            ["appearance", "interface_radius"] => {
+                Some(self.appearance.interface_radius.to_string())
+            }
             ["appearance", "interface_density"] => Some(self.appearance.interface_density.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
-            ["providers", provider, "token"] => {
-                self.providers.get(*provider)
-                    .and_then(|ps| ps.extra.get("token"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            }
-            ["providers", provider, "url"] => {
-                self.providers.get(*provider)
-                    .and_then(|ps| ps.extra.get("url"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-            }
-            ["mirrors", provider] => {
-                self.mirrors.get(*provider).map(|m| m.url.clone())
-            }
+            ["terminal", "default_shell"] => Some(self.terminal.default_shell.clone()),
+            ["terminal", "default_profile_id"] => self
+                .terminal
+                .default_profile_id
+                .clone()
+                .or_else(|| Some(String::new())),
+            ["terminal", "shell_integration"] => Some(self.terminal.shell_integration.to_string()),
+            ["terminal", "proxy_mode"] => Some(self.terminal.proxy_mode.clone()),
+            ["terminal", "custom_proxy"] => self
+                .terminal
+                .custom_proxy
+                .clone()
+                .or_else(|| Some(String::new())),
+            ["terminal", "no_proxy"] => self
+                .terminal
+                .no_proxy
+                .clone()
+                .or_else(|| Some(String::new())),
+            ["providers", provider, "token"] => self
+                .providers
+                .get(*provider)
+                .and_then(|ps| ps.extra.get("token"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            ["providers", provider, "url"] => self
+                .providers
+                .get(*provider)
+                .and_then(|ps| ps.extra.get("url"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            ["mirrors", provider] => self.mirrors.get(*provider).map(|m| m.url.clone()),
             ["mirrors", provider, "enabled"] => {
                 self.mirrors.get(*provider).map(|m| m.enabled.to_string())
             }
             ["mirrors", provider, "priority"] => {
                 self.mirrors.get(*provider).map(|m| m.priority.to_string())
             }
-            ["mirrors", provider, "verify_ssl"] => {
-                self.mirrors.get(*provider).map(|m| m.verify_ssl.to_string())
-            }
+            ["mirrors", provider, "verify_ssl"] => self
+                .mirrors
+                .get(*provider)
+                .map(|m| m.verify_ssl.to_string()),
             _ => None,
         }
     }
@@ -398,9 +441,9 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["general", "metadata_cache_ttl"] => {
-                self.general.metadata_cache_ttl = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for metadata_cache_ttl".into()))?;
+                self.general.metadata_cache_ttl = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for metadata_cache_ttl".into())
+                })?;
             }
             ["general", "cache_max_size"] => {
                 self.general.cache_max_size = value
@@ -408,9 +451,9 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid value for cache_max_size".into()))?;
             }
             ["general", "cache_max_age_days"] => {
-                self.general.cache_max_age_days = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for cache_max_age_days".into()))?;
+                self.general.cache_max_age_days = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for cache_max_age_days".into())
+                })?;
             }
             ["general", "auto_clean_cache"] => {
                 self.general.auto_clean_cache = value
@@ -418,23 +461,23 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["general", "min_install_space_mb"] => {
-                self.general.min_install_space_mb = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for min_install_space_mb".into()))?;
+                self.general.min_install_space_mb = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for min_install_space_mb".into())
+                })?;
             }
             ["general", "cache_auto_clean_threshold"] => {
-                let v: u8 = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for cache_auto_clean_threshold".into()))?;
+                let v: u8 = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for cache_auto_clean_threshold".into())
+                })?;
                 if v > 100 {
                     return Err(CogniaError::Config("Threshold must be 0-100".into()));
                 }
                 self.general.cache_auto_clean_threshold = v;
             }
             ["general", "cache_monitor_interval"] => {
-                self.general.cache_monitor_interval = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for cache_monitor_interval".into()))?;
+                self.general.cache_monitor_interval = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for cache_monitor_interval".into())
+                })?;
             }
             ["general", "cache_monitor_external"] => {
                 self.general.cache_monitor_external = value
@@ -442,9 +485,9 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["general", "download_speed_limit"] => {
-                self.general.download_speed_limit = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid value for download_speed_limit".into()))?;
+                self.general.download_speed_limit = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for download_speed_limit".into())
+                })?;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value
@@ -504,8 +547,9 @@ impl Settings {
                 let parsed = if trimmed.is_empty() {
                     Vec::new()
                 } else if trimmed.starts_with('[') {
-                    serde_json::from_str(trimmed)
-                        .map_err(|_| CogniaError::Config("Invalid disabled providers list".into()))?
+                    serde_json::from_str(trimmed).map_err(|_| {
+                        CogniaError::Config("Invalid disabled providers list".into())
+                    })?
                 } else {
                     trimmed
                         .split(',')
@@ -528,8 +572,19 @@ impl Settings {
                 self.appearance.accent_color = value.to_string();
             }
             ["appearance", "chart_color_theme"] => {
-                if !["default", "vibrant", "pastel", "ocean", "sunset", "monochrome"].contains(&value) {
-                    return Err(CogniaError::Config("Invalid chart color theme value".into()));
+                if ![
+                    "default",
+                    "vibrant",
+                    "pastel",
+                    "ocean",
+                    "sunset",
+                    "monochrome",
+                ]
+                .contains(&value)
+                {
+                    return Err(CogniaError::Config(
+                        "Invalid chart color theme value".into(),
+                    ));
                 }
                 self.appearance.chart_color_theme = value.to_string();
             }
@@ -544,7 +599,9 @@ impl Settings {
             }
             ["appearance", "interface_density"] => {
                 if !["compact", "comfortable", "spacious"].contains(&value) {
-                    return Err(CogniaError::Config("Invalid interface density value".into()));
+                    return Err(CogniaError::Config(
+                        "Invalid interface density value".into(),
+                    ));
                 }
                 self.appearance.interface_density = value.to_string();
             }
@@ -559,12 +616,50 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["terminal", "default_shell"] => {
+                self.terminal.default_shell = value.to_string();
+            }
+            ["terminal", "default_profile_id"] => {
+                self.terminal.default_profile_id = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
+            }
+            ["terminal", "shell_integration"] => {
+                self.terminal.shell_integration = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["terminal", "proxy_mode"] => {
+                if !["global", "none", "custom"].contains(&value) {
+                    return Err(CogniaError::Config(
+                        "Invalid proxy mode. Valid: global, none, custom".into(),
+                    ));
+                }
+                self.terminal.proxy_mode = value.to_string();
+            }
+            ["terminal", "custom_proxy"] => {
+                self.terminal.custom_proxy = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
+            }
+            ["terminal", "no_proxy"] => {
+                self.terminal.no_proxy = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
+            }
             ["providers", provider, "token"] => {
                 let ps = self.providers.entry(provider.to_string()).or_default();
                 if value.is_empty() {
                     ps.extra.remove("token");
                 } else {
-                    ps.extra.insert("token".to_string(), toml::Value::String(value.to_string()));
+                    ps.extra
+                        .insert("token".to_string(), toml::Value::String(value.to_string()));
                 }
             }
             ["providers", provider, "url"] => {
@@ -572,7 +667,8 @@ impl Settings {
                 if value.is_empty() {
                     ps.extra.remove("url");
                 } else {
-                    ps.extra.insert("url".to_string(), toml::Value::String(value.to_string()));
+                    ps.extra
+                        .insert("url".to_string(), toml::Value::String(value.to_string()));
                 }
             }
             ["mirrors", provider] => {
@@ -581,9 +677,9 @@ impl Settings {
             }
             ["mirrors", provider, "enabled"] => {
                 let config = self.mirrors.entry(provider.to_string()).or_default();
-                config.enabled = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid boolean value for mirror enabled".into()))?;
+                config.enabled = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid boolean value for mirror enabled".into())
+                })?;
             }
             ["mirrors", provider, "priority"] => {
                 let config = self.mirrors.entry(provider.to_string()).or_default();
@@ -593,9 +689,9 @@ impl Settings {
             }
             ["mirrors", provider, "verify_ssl"] => {
                 let config = self.mirrors.entry(provider.to_string()).or_default();
-                config.verify_ssl = value
-                    .parse()
-                    .map_err(|_| CogniaError::Config("Invalid boolean value for verify_ssl".into()))?;
+                config.verify_ssl = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid boolean value for verify_ssl".into())
+                })?;
             }
             _ => return Err(CogniaError::Config(format!("Unknown config key: {}", key))),
         }
@@ -748,8 +844,7 @@ mod tests {
 
     #[test]
     fn test_mirror_config_builder() {
-        let config = MirrorConfig::new("https://pypi.tuna.tsinghua.edu.cn/simple")
-            .with_priority(5);
+        let config = MirrorConfig::new("https://pypi.tuna.tsinghua.edu.cn/simple").with_priority(5);
         assert_eq!(config.url, "https://pypi.tuna.tsinghua.edu.cn/simple");
         assert_eq!(config.priority, 5);
         assert!(config.enabled);

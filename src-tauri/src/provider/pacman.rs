@@ -34,7 +34,10 @@ impl PacmanProvider {
         if parts.len() >= 2 {
             Ok(parts[1].to_string())
         } else {
-            Err(CogniaError::Provider(format!("Version not found for {}", name)))
+            Err(CogniaError::Provider(format!(
+                "Version not found for {}",
+                name
+            )))
         }
     }
 }
@@ -439,7 +442,10 @@ mod tests {
         assert_eq!(packages.len(), 2);
         assert_eq!(packages[0].0, "nginx");
         assert_eq!(packages[0].1, "1.25.3-1");
-        assert_eq!(packages[0].2, Some("Lightweight HTTP server and IMAP/POP3 proxy server".into()));
+        assert_eq!(
+            packages[0].2,
+            Some("Lightweight HTTP server and IMAP/POP3 proxy server".into())
+        );
         assert_eq!(packages[1].0, "nginx-src");
     }
 
@@ -559,7 +565,10 @@ mod tests {
         }
 
         assert_eq!(version, Some("8.4.0-1".into()));
-        assert_eq!(description, Some("command line tool for transferring data".into()));
+        assert_eq!(
+            description,
+            Some("command line tool for transferring data".into())
+        );
         assert_eq!(license, Some("MIT".into()));
         assert_eq!(homepage, Some("https://curl.se/".into()));
     }

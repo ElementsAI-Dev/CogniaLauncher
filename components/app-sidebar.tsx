@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LanguageIcon } from "@/components/provider-management/provider-icon";
@@ -15,9 +15,11 @@ import {
   ScrollText,
   ArrowDownToLine,
   Terminal,
+  SquareTerminal,
   ChevronRight,
   BookOpen,
   GitBranch,
+  Variable,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,10 +42,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 import { LANGUAGES } from "@/lib/constants/environments";
+import { useEnvironmentStore } from "@/lib/stores/environment";
 import { isTauri } from "@/lib/tauri";
 import { useWsl } from "@/hooks/use-wsl";
 
@@ -55,6 +56,8 @@ const navItems = [
   { href: "/cache", labelKey: "nav.cache", icon: HardDrive, tourId: undefined },
   { href: "/downloads", labelKey: "nav.downloads", icon: ArrowDownToLine, tourId: undefined },
   { href: "/git", labelKey: "nav.git", icon: GitBranch, tourId: undefined },
+  { href: "/envvar", labelKey: "nav.envvar", icon: Variable, tourId: undefined },
+  { href: "/terminal", labelKey: "nav.terminal", icon: SquareTerminal, tourId: undefined },
   { href: "/wsl", labelKey: "nav.wsl", icon: Terminal, tourId: undefined },
   { href: "/logs", labelKey: "nav.logs", icon: ScrollText, tourId: undefined },
   { href: "/docs", labelKey: "nav.docs", icon: BookOpen, tourId: undefined },
@@ -67,6 +70,18 @@ export function AppSidebar() {
   const { t } = useLocale();
   const isDesktop = isTauri();
   const { distros, checkAvailability, refreshDistros } = useWsl();
+  const availableEnvTypesKey = useEnvironmentStore((s) =>
+    s.environments
+      .filter((env) => env.available)
+      .map((env) => env.env_type)
+      .sort()
+      .join(",")
+  );
+
+  const detectedLanguages = useMemo(() => {
+    const typeSet = new Set(availableEnvTypesKey.split(",").filter(Boolean));
+    return LANGUAGES.filter((lang) => typeSet.has(lang.id));
+  }, [availableEnvTypesKey]);
 
   const wslInitRef = useRef(false);
   useEffect(() => {
@@ -153,7 +168,7 @@ export function AppSidebar() {
                           </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
-                      {LANGUAGES.map((lang) => (
+                      {detectedLanguages.map((lang) => (
                         <SidebarMenuSubItem key={lang.id}>
                           <SidebarMenuSubButton
                             asChild
@@ -254,8 +269,8 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
-              {/* Downloads & Git */}
-              {navItems.slice(5, 7).map((item) => {
+              {/* Downloads, Git & Env Vars */}
+              {navItems.slice(5, 8).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -345,7 +360,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.settings")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(8).map((item) => {
+              {navItems.slice(9).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -369,14 +384,10 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border">
-        <div className="flex items-center justify-between px-2 py-1 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-1">
-          <span className="sidebar-text text-xs text-muted-foreground">
+        <div className="flex items-center justify-center px-2 py-1">
+          <span className="text-xs text-muted-foreground">
             {t("common.version")}
           </span>
-          <div className="flex items-center gap-1 group-data-[collapsible=icon]:flex-col">
-            <ThemeToggle />
-            <LanguageToggle />
-          </div>
         </div>
       </SidebarFooter>
 

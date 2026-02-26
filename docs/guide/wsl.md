@@ -9,6 +9,19 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 
 ## 功能概述
 
+### 能力探测与自动降级
+
+- 启动 WSL 页面后，应用会读取 `wsl --help` 与 `wsl --version`，自动探测当前机器支持的命令能力。
+- 对于新命令（如 `--manage --move` / `--manage --resize` / `--set-default-user`），界面会按能力自动启用或置灰，并提示原因。
+- 默认用户设置优先使用 `wsl --manage <distro> --set-default-user`；若当前环境不支持，会自动回退到旧兼容路径。
+- 运行中发行版检测优先使用 `wsl --list --running --quiet`，避免多语言输出误判。
+
+### 版本要求（关键能力）
+
+- `wsl --manage` 系列能力建议使用 **Microsoft Store 版 WSL 2.5+**（`move`/`resize`/`set-default-user` 等命令以本机 `wsl --help` 为准）。
+- `--set-sparse` 需要较新的 Store 版 WSL（微软在 2024 年已公开该能力）。
+- 如本机命令面未提供某参数，CogniaLauncher 会自动降级并提示。
+
 ### 发行版管理
 
 - **列出已安装** — 查看所有 WSL 发行版及其状态
@@ -40,6 +53,9 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 - **挂载磁盘** — 将物理磁盘挂载到 WSL
 - **卸载磁盘** — 从 WSL 卸载磁盘
 - **磁盘使用** — 查看发行版的磁盘占用
+- **迁移发行版** — 使用 `wsl --manage <distro> --move <location>`
+- **扩容虚拟磁盘** — 使用 `wsl --manage <distro> --resize <size>`
+- **Sparse 模式** — 开启/关闭 VHD 自动回收
 
 ### 网络与用户
 
@@ -59,6 +75,15 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 
 - 检查 WSL 组件更新
 - 执行 WSL 更新
+
+### 高风险操作防护
+
+以下操作在 UI 中均会弹出二次确认，并给出管理员权限/风险提示：
+
+- 注销发行版（`unregister`）
+- 迁移与扩容（`move` / `resize`）
+- 挂载与卸载磁盘（`mount` / `unmount`）
+- 关闭所有实例（`shutdown`）
 
 ---
 
@@ -84,3 +109,6 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 | `wsl_change_default_user` | 更改默认用户 |
 | `wsl_get_distro_config` | 读取发行版配置 |
 | `wsl_set_distro_config` | 写入发行版配置 |
+| `wsl_get_capabilities` | 获取运行时命令能力 |
+| `wsl_move_distro` | 迁移发行版磁盘位置 |
+| `wsl_resize_distro` | 扩容发行版虚拟磁盘 |

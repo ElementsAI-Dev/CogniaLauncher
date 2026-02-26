@@ -1,6 +1,6 @@
+use super::db::CacheEntryType;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{disk::format_size, fs};
-use super::db::CacheEntryType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -88,9 +88,10 @@ impl EnhancedCache {
     /// Get an entry from cache, updating access time
     pub async fn get(&mut self, key: &str) -> Option<PathBuf> {
         // First check if entry exists and gather info
-        let entry_info = self.entries.get(key).map(|e| {
-            (e.file_path.clone(), e.created_at)
-        });
+        let entry_info = self
+            .entries
+            .get(key)
+            .map(|e| (e.file_path.clone(), e.created_at));
 
         let (file_path, created_at) = match entry_info {
             Some(info) => info,
@@ -152,22 +153,30 @@ impl EnhancedCache {
     /// Evict entries using LRU strategy if needed
     async fn evict_if_needed(&mut self, needed_size: u64) -> CogniaResult<()> {
         let current_size = self.total_size();
-        
+
         if current_size + needed_size <= self.max_size {
             return Ok(());
         }
 
         // Collect entry info for sorting (key, last_accessed, access_count, size, file_path)
-        let mut entries: Vec<_> = self.entries.iter()
-            .map(|(k, e)| (k.clone(), e.last_accessed, e.access_count, e.size, e.file_path.clone()))
+        let mut entries: Vec<_> = self
+            .entries
+            .iter()
+            .map(|(k, e)| {
+                (
+                    k.clone(),
+                    e.last_accessed,
+                    e.access_count,
+                    e.size,
+                    e.file_path.clone(),
+                )
+            })
             .collect();
-        
+
         // Sort by last accessed (oldest first) and access count
-        entries.sort_by(|a, b| {
-            match a.1.cmp(&b.1) {
-                std::cmp::Ordering::Equal => a.2.cmp(&b.2),
-                other => other,
-            }
+        entries.sort_by(|a, b| match a.1.cmp(&b.1) {
+            std::cmp::Ordering::Equal => a.2.cmp(&b.2),
+            other => other,
         });
 
         let mut freed = 0u64;
@@ -252,7 +261,11 @@ impl EnhancedCache {
     }
 
     /// Clean entries of a specific type with option to use trash
-    pub async fn clean_type_with_option(&mut self, entry_type: CacheEntryType, use_trash: bool) -> CogniaResult<u64> {
+    pub async fn clean_type_with_option(
+        &mut self,
+        entry_type: CacheEntryType,
+        use_trash: bool,
+    ) -> CogniaResult<u64> {
         let to_remove: Vec<_> = self
             .entries
             .iter()
@@ -304,7 +317,7 @@ impl EnhancedCache {
     pub fn preview_expired(&self) -> Vec<&EnhancedCacheEntry> {
         let now = chrono::Utc::now().timestamp();
         let max_age_secs = self.max_age.as_secs() as i64;
-        
+
         self.entries
             .values()
             .filter(|e| now - e.created_at > max_age_secs)
@@ -336,7 +349,9 @@ impl EnhancedCache {
                 // Check size
                 let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(0);
                 if actual_size != entry.size {
-                    result.size_mismatch.push((key.clone(), entry.size, actual_size));
+                    result
+                        .size_mismatch
+                        .push((key.clone(), entry.size, actual_size));
                     continue;
                 }
 
@@ -421,7 +436,9 @@ pub struct VerificationResult {
 
 impl VerificationResult {
     pub fn is_valid(&self) -> bool {
-        self.missing.is_empty() && self.size_mismatch.is_empty() && self.checksum_mismatch.is_empty()
+        self.missing.is_empty()
+            && self.size_mismatch.is_empty()
+            && self.checksum_mismatch.is_empty()
     }
 
     pub fn total_errors(&self) -> usize {
@@ -588,7 +605,11 @@ impl DownloadResumer {
         max_age: Duration,
         use_trash: bool,
     ) -> CogniaResult<usize> {
-        let stale: Vec<_> = self.get_stale(max_age).iter().map(|p| p.url.clone()).collect();
+        let stale: Vec<_> = self
+            .get_stale(max_age)
+            .iter()
+            .map(|p| p.url.clone())
+            .collect();
         let count = stale.len();
 
         for url in stale {
@@ -607,7 +628,6 @@ impl DownloadResumer {
         format!("{:016x}", hasher.finish())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -639,7 +659,9 @@ mod tests {
         // Create a test file
         let test_file = cache_dir.join("test-file.txt");
         fs::create_dir_all(&cache_dir).await.unwrap();
-        fs::write_file_string(&test_file, "test content").await.unwrap();
+        fs::write_file_string(&test_file, "test content")
+            .await
+            .unwrap();
 
         let entry = EnhancedCacheEntry {
             key: "test-key".to_string(),
@@ -665,18 +687,16 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         // Create a test file
         let test_file = cache_dir.join("dirty-test.txt");
         fs::create_dir_all(&cache_dir).await.unwrap();
-        fs::write_file_string(&test_file, "dirty content").await.unwrap();
+        fs::write_file_string(&test_file, "dirty content")
+            .await
+            .unwrap();
 
         let entry = EnhancedCacheEntry {
             key: "dirty-key".to_string(),
@@ -694,13 +714,9 @@ mod tests {
         cache.flush().await.unwrap();
 
         // Reopen and verify persistence
-        let mut cache2 = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache2 = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         let result = cache2.get("dirty-key").await;
         assert!(result.is_some());
@@ -711,13 +727,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         // Create valid file
         let valid_file = cache_dir.join("valid.txt");
@@ -749,7 +761,9 @@ mod tests {
             entry_type: CacheEntryType::Download,
             metadata: HashMap::new(),
         };
-        cache.entries.insert("missing-key".to_string(), missing_entry);
+        cache
+            .entries
+            .insert("missing-key".to_string(), missing_entry);
         cache.flush().await.unwrap();
 
         let result = cache.verify().await.unwrap();
@@ -763,13 +777,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 
@@ -785,7 +795,9 @@ mod tests {
             entry_type: CacheEntryType::Download,
             metadata: HashMap::new(),
         };
-        cache.entries.insert("repair-missing".to_string(), missing_entry);
+        cache
+            .entries
+            .insert("repair-missing".to_string(), missing_entry);
         cache.flush().await.unwrap();
 
         let repair_result = cache.repair().await.unwrap();
@@ -815,7 +827,9 @@ mod tests {
         // Add 3 files of 100 bytes each
         for i in 0..3 {
             let file = cache_dir.join(format!("evict-{}.txt", i));
-            fs::write_file_string(&file, &"x".repeat(100)).await.unwrap();
+            fs::write_file_string(&file, &"x".repeat(100))
+                .await
+                .unwrap();
 
             let entry = EnhancedCacheEntry {
                 key: format!("evict-key-{}", i),
@@ -875,7 +889,9 @@ mod tests {
         // Add entries that will be expired
         for i in 0..3 {
             let file = cache_dir.join(format!("preview-expired-{}.txt", i));
-            fs::write_file_string(&file, &format!("content {}", i)).await.unwrap();
+            fs::write_file_string(&file, &format!("content {}", i))
+                .await
+                .unwrap();
 
             let entry = EnhancedCacheEntry {
                 key: format!("preview-expired-{}", i),
@@ -903,13 +919,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 
@@ -962,13 +974,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(0),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(0))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 
@@ -1000,13 +1008,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(0),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(0))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 
@@ -1038,13 +1042,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 
@@ -1087,7 +1087,10 @@ mod tests {
         }
 
         // Clean only Download type
-        let freed = cache.clean_type_with_option(CacheEntryType::Download, false).await.unwrap();
+        let freed = cache
+            .clean_type_with_option(CacheEntryType::Download, false)
+            .await
+            .unwrap();
         assert!(freed > 0);
 
         // Only Metadata entries should remain
@@ -1099,13 +1102,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_dir = dir.path().join("cache");
 
-        let mut cache = EnhancedCache::open(
-            &cache_dir,
-            1024 * 1024,
-            Duration::from_secs(3600),
-        )
-        .await
-        .unwrap();
+        let mut cache = EnhancedCache::open(&cache_dir, 1024 * 1024, Duration::from_secs(3600))
+            .await
+            .unwrap();
 
         fs::create_dir_all(&cache_dir).await.unwrap();
 

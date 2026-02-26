@@ -21,9 +21,7 @@ pub struct PnpmProvider {
 
 impl PnpmProvider {
     pub fn new() -> Self {
-        Self {
-            registry_url: None,
-        }
+        Self { registry_url: None }
     }
 
     /// Set the registry URL
@@ -41,18 +39,18 @@ impl PnpmProvider {
     /// Build pnpm arguments with registry configuration
     fn build_pnpm_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
         let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
-        
+
         if let Some(ref url) = self.registry_url {
             args.push(format!("--registry={}", url));
         }
-        
+
         args
     }
 
     async fn run_pnpm(&self, args: &[&str]) -> CogniaResult<String> {
         let full_args = self.build_pnpm_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let out = process::execute("pnpm", &args_refs, Some(opts)).await?;
         if out.success {
@@ -86,15 +84,15 @@ impl PnpmProvider {
         } else {
             vec!["list", name, "--depth=0", "--json"]
         };
-        
+
         let out = self.run_pnpm_raw(&args).await?;
-        
+
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
             // pnpm returns array or object depending on version
             let deps = json[0]["dependencies"]
                 .as_object()
                 .or_else(|| json["dependencies"].as_object());
-            
+
             if let Some(deps) = deps {
                 if let Some(info) = deps.get(name) {
                     if let Some(version) = info["version"].as_str() {
@@ -103,7 +101,7 @@ impl PnpmProvider {
                 }
             }
         }
-        
+
         Err(CogniaError::Provider(format!("Package {} not found", name)))
     }
 }
@@ -194,12 +192,17 @@ impl Provider for PnpmProvider {
     }
 
     async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
-        let pkg = if version.is_empty() { name.to_string() } else { format!("{}@{}", name, version) };
+        let pkg = if version.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}@{}", name, version)
+        };
         let out = self
             .run_pnpm(&["view", &pkg, "dependencies", "--json"])
             .await?;
 
-        let value: serde_json::Value = serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
+        let value: serde_json::Value =
+            serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
         let deps = value
             .as_object()
             .map(|obj| {
@@ -324,7 +327,10 @@ impl Provider for PnpmProvider {
             .unwrap_or_else(|_| req.version.clone().unwrap_or_else(|| "unknown".into()));
 
         let install_path = if req.global {
-            self.get_global_dir().await.unwrap_or_default().join(&req.name)
+            self.get_global_dir()
+                .await
+                .unwrap_or_default()
+                .join(&req.name)
         } else {
             PathBuf::from("node_modules").join(&req.name)
         };
@@ -491,19 +497,20 @@ mod tests {
 
     #[test]
     fn test_pnpm_provider_builder() {
-        let provider = PnpmProvider::new()
-            .with_registry("https://registry.npmmirror.com");
-        
-        assert_eq!(provider.registry_url, Some("https://registry.npmmirror.com".to_string()));
+        let provider = PnpmProvider::new().with_registry("https://registry.npmmirror.com");
+
+        assert_eq!(
+            provider.registry_url,
+            Some("https://registry.npmmirror.com".to_string())
+        );
     }
 
     #[test]
     fn test_build_pnpm_args() {
-        let provider = PnpmProvider::new()
-            .with_registry("https://registry.npmmirror.com");
-        
+        let provider = PnpmProvider::new().with_registry("https://registry.npmmirror.com");
+
         let args = provider.build_pnpm_args(&["add", "lodash"]);
-        
+
         assert!(args.contains(&"add".to_string()));
         assert!(args.contains(&"lodash".to_string()));
         assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));

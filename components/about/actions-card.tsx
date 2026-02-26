@@ -69,12 +69,11 @@ export function ActionsCard({
             {t("about.changelog")}
           </Button>
 
-          {/* Export Diagnostics */}
+          {/* Export Diagnostics — works in both desktop (ZIP) and web (JSON) */}
           <Button
             variant="outline"
             onClick={onExportDiagnostics}
-            disabled={!isDesktop}
-            title={!isDesktop ? t("about.updateDesktopOnly") : undefined}
+            title={!isDesktop ? t("diagnostic.webLimited") : undefined}
           >
             <ClipboardList className="h-4 w-4 mr-2" aria-hidden="true" />
             {t("about.exportDiagnostics")}

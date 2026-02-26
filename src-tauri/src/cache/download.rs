@@ -1,4 +1,4 @@
-use super::{CacheEntry, CacheEntryType, SqliteCacheDb, sqlite_db::CacheAccessStats};
+use super::{sqlite_db::CacheAccessStats, CacheEntry, CacheEntryType, SqliteCacheDb};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     disk::format_size,
@@ -301,7 +301,9 @@ impl DownloadCache {
         limit: usize,
         offset: usize,
     ) -> CogniaResult<(Vec<CacheEntry>, usize)> {
-        self.db.list_filtered(entry_type, search, sort_by, limit, offset).await
+        self.db
+            .list_filtered(entry_type, search, sort_by, limit, offset)
+            .await
     }
 
     /// Remove a cache entry with optional trash support
@@ -493,16 +495,10 @@ mod tests {
         let checksum = fs::calculate_sha256(&test_file).await.unwrap();
         cache.add_file(&test_file, &checksum).await.unwrap();
 
-        let preview = cache
-            .preview_expired(Duration::from_secs(0))
-            .await
-            .unwrap();
+        let preview = cache.preview_expired(Duration::from_secs(0)).await.unwrap();
         assert_eq!(preview.len(), 1);
 
-        let freed = cache
-            .clean_expired(Duration::from_secs(0))
-            .await
-            .unwrap();
+        let freed = cache.clean_expired(Duration::from_secs(0)).await.unwrap();
         assert!(freed > 0);
 
         let stats = cache.stats().await.unwrap();
@@ -518,16 +514,23 @@ mod tests {
         for i in 0..5 {
             let test_file = dir.path().join(format!("evict-test-{}.txt", i));
             // Unique content for each file to get different checksums
-            fs::write_file_string(&test_file, &format!("unique content {}: {}", i, "x".repeat(100)))
-                .await
-                .unwrap();
+            fs::write_file_string(
+                &test_file,
+                &format!("unique content {}: {}", i, "x".repeat(100)),
+            )
+            .await
+            .unwrap();
 
             let checksum = fs::calculate_sha256(&test_file).await.unwrap();
             cache.add_file(&test_file, &checksum).await.unwrap();
         }
 
         let stats_before = cache.stats().await.unwrap();
-        assert!(stats_before.entry_count >= 3, "Expected at least 3 entries, got {}", stats_before.entry_count);
+        assert!(
+            stats_before.entry_count >= 3,
+            "Expected at least 3 entries, got {}",
+            stats_before.entry_count
+        );
         assert!(stats_before.total_size > 0);
 
         // Evict to smaller size - use a size smaller than total

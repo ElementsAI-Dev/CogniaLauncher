@@ -127,10 +127,18 @@ impl XmakeProvider {
                     // Remove "(in repo-name)" suffix from description
                     let description = if let Some(paren_pos) = desc_part.rfind(" (in ") {
                         let d = desc_part[..paren_pos].trim();
-                        if d.is_empty() { None } else { Some(d.to_string()) }
+                        if d.is_empty() {
+                            None
+                        } else {
+                            Some(d.to_string())
+                        }
                     } else {
                         let d = desc_part.trim();
-                        if d.is_empty() { None } else { Some(d.to_string()) }
+                        if d.is_empty() {
+                            None
+                        } else {
+                            Some(d.to_string())
+                        }
                     };
 
                     if !name.is_empty() {
@@ -724,10 +732,16 @@ mod tests {
         -> cflags: Set the C compiler flags.
 "#;
         let info = XmakeProvider::parse_info_output(output);
-        assert_eq!(info.description.as_deref(), Some("A Massively Spiffy Yet Delicately Unobtrusive Compression Library"));
+        assert_eq!(
+            info.description.as_deref(),
+            Some("A Massively Spiffy Yet Delicately Unobtrusive Compression Library")
+        );
         assert_eq!(info.homepage.as_deref(), Some("http://www.zlib.net"));
         assert_eq!(info.license.as_deref(), Some("zlib"));
-        assert_eq!(info.versions, vec!["1.3.1", "1.3", "1.2.13", "1.2.12", "1.2.11"]);
+        assert_eq!(
+            info.versions,
+            vec!["1.3.1", "1.3", "1.2.13", "1.2.12", "1.2.11"]
+        );
     }
 
     #[test]

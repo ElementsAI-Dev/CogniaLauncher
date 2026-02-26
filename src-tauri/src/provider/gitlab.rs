@@ -79,14 +79,20 @@ impl GitLabProvider {
 
     pub async fn list_branches(&self, project: &str) -> CogniaResult<Vec<GitLabBranch>> {
         let encoded = Self::encode_project(project);
-        self.api_get(&format!("/projects/{}/repository/branches?per_page=100", encoded))
-            .await
+        self.api_get(&format!(
+            "/projects/{}/repository/branches?per_page=100",
+            encoded
+        ))
+        .await
     }
 
     pub async fn list_tags(&self, project: &str) -> CogniaResult<Vec<GitLabTag>> {
         let encoded = Self::encode_project(project);
-        self.api_get(&format!("/projects/{}/repository/tags?per_page=100", encoded))
-            .await
+        self.api_get(&format!(
+            "/projects/{}/repository/tags?per_page=100",
+            encoded
+        ))
+        .await
     }
 
     pub async fn list_releases(&self, project: &str) -> CogniaResult<Vec<GitLabRelease>> {
@@ -102,11 +108,8 @@ impl GitLabProvider {
     ) -> CogniaResult<GitLabRelease> {
         let encoded = Self::encode_project(project);
         let encoded_tag = urlencoding::encode(tag);
-        self.api_get(&format!(
-            "/projects/{}/releases/{}",
-            encoded, encoded_tag
-        ))
-        .await
+        self.api_get(&format!("/projects/{}/releases/{}", encoded, encoded_tag))
+            .await
     }
 
     pub async fn validate_project(&self, project: &str) -> bool {
@@ -145,12 +148,7 @@ impl GitLabProvider {
         &self.instance_url
     }
 
-    pub fn get_source_archive_url(
-        &self,
-        project: &str,
-        ref_name: &str,
-        format: &str,
-    ) -> String {
+    pub fn get_source_archive_url(&self, project: &str, ref_name: &str, format: &str) -> String {
         let encoded = Self::encode_project(project);
         let ext = match format {
             "tar.gz" => "tar.gz",
@@ -386,10 +384,7 @@ impl Provider for GitLabProvider {
         let versions = self.get_versions(name).await?;
         let (description, homepage) = match self.get_project_info(name).await {
             Ok(info) => (info.description, Some(info.web_url)),
-            Err(_) => (
-                None,
-                Some(format!("{}/{}", self.instance_url, name)),
-            ),
+            Err(_) => (None, Some(format!("{}/{}", self.instance_url, name))),
         };
         Ok(PackageInfo {
             name: name.into(),
@@ -446,18 +441,10 @@ impl Provider for GitLabProvider {
         };
 
         let asset = self
-            .match_asset(
-                &release.assets.links,
-                current_platform(),
-                current_arch(),
-            )
+            .match_asset(&release.assets.links, current_platform(), current_arch())
             .ok_or_else(|| CogniaError::PlatformNotSupported("No compatible asset".into()))?;
 
-        let pkg_name = req
-            .name
-            .split('/')
-            .next_back()
-            .unwrap_or(&req.name);
+        let pkg_name = req.name.split('/').next_back().unwrap_or(&req.name);
         let install_dir = fs::get_cognia_dir()
             .unwrap()
             .join("packages")
@@ -465,10 +452,7 @@ impl Provider for GitLabProvider {
             .join(&release.tag_name);
         fs::create_dir_all(&install_dir).await?;
 
-        let download_url = asset
-            .direct_asset_url
-            .as_deref()
-            .unwrap_or(&asset.url);
+        let download_url = asset.direct_asset_url.as_deref().unwrap_or(&asset.url);
 
         let dest = install_dir.join(&asset.name);
 
@@ -490,11 +474,7 @@ impl Provider for GitLabProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let pkg_name = req
-            .name
-            .split('/')
-            .next_back()
-            .unwrap_or(&req.name);
+        let pkg_name = req.name.split('/').next_back().unwrap_or(&req.name);
         let pkg_dir = fs::get_cognia_dir()
             .unwrap()
             .join("packages")

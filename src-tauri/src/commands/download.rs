@@ -1,6 +1,8 @@
 //! Download management commands
 
-use crate::cache::download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
+use crate::cache::download_history::{
+    DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats,
+};
 use crate::config::Settings;
 use crate::download::{
     DownloadConfig, DownloadEvent, DownloadManager, DownloadManagerConfig, DownloadTask,
@@ -108,10 +110,7 @@ pub struct DownloadRequest {
 }
 
 /// Initialize the download manager and start event forwarding
-pub async fn init_download_manager(
-    app: AppHandle,
-    settings: &Settings,
-) -> SharedDownloadManager {
+pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> SharedDownloadManager {
     let config = DownloadManagerConfig {
         max_concurrent: settings.general.parallel_downloads as usize,
         speed_limit: settings.general.download_speed_limit,
@@ -131,7 +130,10 @@ pub async fn init_download_manager(
         .cleanup_stale_partials(std::time::Duration::from_secs(7 * 86400))
         .await;
     if cleaned > 0 {
-        log::info!("Cleaned {} stale partial download files on startup", cleaned);
+        log::info!(
+            "Cleaned {} stale partial download files on startup",
+            cleaned
+        );
     }
 
     // Start the manager
@@ -198,7 +200,8 @@ pub async fn init_download_manager(
                     struct QueuePayload {
                         stats: QueueStatsInfo,
                     }
-                    let _ = app_clone.emit("download-queue-updated", &QueuePayload { stats: enriched });
+                    let _ =
+                        app_clone.emit("download-queue-updated", &QueuePayload { stats: enriched });
                 }
                 _ => {
                     // Other events emit as-is (they only contain task_id / error strings)
@@ -336,18 +339,11 @@ pub async fn download_add(
                     }
                     match tokio::fs::copy(&cached_path, &destination).await {
                         Ok(_) => {
-                            log::info!(
-                                "Download cache hit: {} -> {:?}",
-                                checksum,
-                                destination
-                            );
+                            log::info!("Download cache hit: {} -> {:?}", checksum, destination);
                             return Ok(format!("cache-hit:{}", checksum));
                         }
                         Err(e) => {
-                            log::warn!(
-                                "Cache hit copy failed (falling back to download): {}",
-                                e
-                            );
+                            log::warn!("Cache hit copy failed (falling back to download): {}", e);
                             // Fall through to normal download
                         }
                     }
@@ -356,12 +352,8 @@ pub async fn download_add(
         }
     }
 
-    let mut builder = DownloadTask::builder(
-        request.url,
-        destination,
-        request.name,
-    )
-    .with_priority(request.priority.unwrap_or(0));
+    let mut builder = DownloadTask::builder(request.url, destination, request.name)
+        .with_priority(request.priority.unwrap_or(0));
 
     if let Some(ref checksum) = request.checksum {
         if !checksum.is_empty() {
@@ -563,9 +555,7 @@ pub async fn download_set_max_concurrent(
 
 /// Gracefully shut down the download manager (call on app exit)
 #[tauri::command]
-pub async fn download_shutdown(
-    manager: State<'_, SharedDownloadManager>,
-) -> Result<(), String> {
+pub async fn download_shutdown(manager: State<'_, SharedDownloadManager>) -> Result<(), String> {
     let mgr = manager.read().await;
     mgr.shutdown().await;
     Ok(())
@@ -942,7 +932,6 @@ pub async fn disk_space_check(path: String, required: u64) -> Result<bool, Strin
         .await
         .map_err(|e| e.to_string())
 }
-
 
 #[cfg(test)]
 mod tests {

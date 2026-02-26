@@ -9,10 +9,7 @@ use std::time::Duration;
 pub struct WingetProvider;
 
 /// Common flags appended to every winget invocation for non-interactive automated use.
-const COMMON_FLAGS: &[&str] = &[
-    "--accept-source-agreements",
-    "--disable-interactivity",
-];
+const COMMON_FLAGS: &[&str] = &["--accept-source-agreements", "--disable-interactivity"];
 
 impl WingetProvider {
     pub fn new() -> Self {
@@ -29,8 +26,7 @@ impl WingetProvider {
             }
         }
 
-        let opts = process::ProcessOptions::new()
-            .with_timeout(Duration::from_secs(120));
+        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(120));
 
         let out = process::execute("winget", &full_args, Some(opts)).await?;
 
@@ -42,7 +38,11 @@ impl WingetProvider {
         } else {
             let stderr = Self::clean_output(&out.stderr);
             // Some winget operations write useful output to stdout even on non-zero exit
-            let msg = if stderr.trim().is_empty() { stdout } else { stderr };
+            let msg = if stderr.trim().is_empty() {
+                stdout
+            } else {
+                stderr
+            };
             Err(CogniaError::Provider(msg))
         }
     }
@@ -50,16 +50,14 @@ impl WingetProvider {
     /// Strip null bytes and UTF-8 BOM that winget sometimes emits on Windows.
     fn clean_output(raw: &str) -> String {
         raw.replace('\0', "")
-           .trim_start_matches('\u{feff}')
-           .to_string()
+            .trim_start_matches('\u{feff}')
+            .to_string()
     }
 
     /// Query the locally-installed version of a package via `winget list --id --exact`.
     /// This is more reliable than `winget show` which queries the source catalog.
     async fn query_installed_version(&self, id: &str) -> CogniaResult<String> {
-        let out = self.run_winget(&[
-            "list", "--id", id, "--exact",
-        ]).await?;
+        let out = self.run_winget(&["list", "--id", id, "--exact"]).await?;
 
         let (data_lines, col_starts) = Self::parse_winget_columns(&out);
 
@@ -83,10 +81,13 @@ impl WingetProvider {
             }
         }
 
-        Err(CogniaError::Provider(format!("Installed version not found for {}", id)))
+        Err(CogniaError::Provider(format!(
+            "Installed version not found for {}",
+            id
+        )))
     }
 
-    /// Parse winget's column-based output by finding the separator line (---) 
+    /// Parse winget's column-based output by finding the separator line (---)
     /// and using it to determine column positions.
     /// Returns (data_lines, column_starts) where column_starts are byte offsets.
     fn parse_winget_columns(output: &str) -> (Vec<&str>, Vec<usize>) {
@@ -117,7 +118,11 @@ impl WingetProvider {
             lines[idx + 1..].to_vec()
         } else {
             // Fallback: skip first 2 lines (header + possible separator)
-            if lines.len() > 2 { lines[2..].to_vec() } else { vec![] }
+            if lines.len() > 2 {
+                lines[2..].to_vec()
+            } else {
+                vec![]
+            }
         };
 
         (data_lines, column_starts)
@@ -177,7 +182,11 @@ impl Provider for WingetProvider {
         system_detection::is_command_available("winget", &["--version"]).await
     }
 
-    async fn search(&self, query: &str, options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(25);
         let limit_str = limit.to_string();
 
@@ -204,7 +213,11 @@ impl Provider for WingetProvider {
                     // Prefer Id as the package identifier (more reliable for install)
                     name: if !id.is_empty() { id } else { name },
                     description: None,
-                    latest_version: if version.is_empty() { None } else { Some(version) },
+                    latest_version: if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
                     provider: self.id().into(),
                 })
             })
@@ -302,7 +315,10 @@ impl Provider for WingetProvider {
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         // Try exact ID match first, fallback to name search
-        let out = match self.run_winget(&["show", "--id", name, "--versions", "--exact"]).await {
+        let out = match self
+            .run_winget(&["show", "--id", name, "--versions", "--exact"])
+            .await
+        {
             Ok(o) => o,
             Err(_) => self.run_winget(&["show", name, "--versions"]).await?,
         };
@@ -373,13 +389,7 @@ impl Provider for WingetProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let mut args = vec![
-            "uninstall",
-            "--id",
-            &req.name,
-            "--exact",
-            "--silent",
-        ];
+        let mut args = vec!["uninstall", "--id", &req.name, "--exact", "--silent"];
         let ver;
         if let Some(v) = &req.version {
             ver = v.clone();
@@ -433,9 +443,7 @@ impl Provider for WingetProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self
-            .run_winget(&["upgrade"])
-            .await?;
+        let out = self.run_winget(&["upgrade"]).await?;
 
         // Winget upgrade output columns: Name, Id, Version, Available, Source
         let (data_lines, col_starts) = Self::parse_winget_columns(&out);
@@ -522,20 +530,23 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = self.run_winget(&[
-            "upgrade",
-            "--all",
-            "--accept-package-agreements",
-            "--silent",
-            "--include-pinned",
-        ])
-        .await?;
+        let out = self
+            .run_winget(&[
+                "upgrade",
+                "--all",
+                "--accept-package-agreements",
+                "--silent",
+                "--include-pinned",
+            ])
+            .await?;
 
         // Parse output to report which packages were upgraded
         let mut upgraded = Vec::new();
         for line in out.lines() {
             let trimmed = line.trim();
-            if trimmed.contains("Successfully installed") || trimmed.contains("successfully installed") {
+            if trimmed.contains("Successfully installed")
+                || trimmed.contains("successfully installed")
+            {
                 upgraded.push(trimmed.to_string());
             }
         }
@@ -546,9 +557,7 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
-        let out = self
-            .run_winget(&["list", "--id", name, "--exact"])
-            .await;
+        let out = self.run_winget(&["list", "--id", name, "--exact"]).await;
 
         match out {
             Ok(output) => {
@@ -693,20 +702,43 @@ Version
 
     #[test]
     fn test_parse_show_field() {
-        assert_eq!(WingetProvider::parse_show_field("Version: 1.2.3", "Version:"), Some("1.2.3"));
-        assert_eq!(WingetProvider::parse_show_field("Homepage: https://example.com", "Homepage:"), Some("https://example.com"));
-        assert_eq!(WingetProvider::parse_show_field("Description:", "Description:"), Some(""));
-        assert_eq!(WingetProvider::parse_show_field("Other field", "Version:"), None);
+        assert_eq!(
+            WingetProvider::parse_show_field("Version: 1.2.3", "Version:"),
+            Some("1.2.3")
+        );
+        assert_eq!(
+            WingetProvider::parse_show_field("Homepage: https://example.com", "Homepage:"),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            WingetProvider::parse_show_field("Description:", "Description:"),
+            Some("")
+        );
+        assert_eq!(
+            WingetProvider::parse_show_field("Other field", "Version:"),
+            None
+        );
     }
 
     #[test]
     fn test_requires_elevation() {
         let provider = WingetProvider::new();
-        assert!(SystemPackageProvider::requires_elevation(&provider, "install"));
-        assert!(SystemPackageProvider::requires_elevation(&provider, "uninstall"));
-        assert!(SystemPackageProvider::requires_elevation(&provider, "upgrade"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "search"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "list"));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "install"
+        ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider,
+            "uninstall"
+        ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "upgrade"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "search"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "list"
+        ));
     }
 
     #[test]

@@ -54,7 +54,7 @@ export function EnvironmentList({
   const router = useRouter();
   const { t } = useLocale();
 
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filter, setFilter] = useState<FilterType>("available");
   const [expanded, setExpanded] = useState(false);
 
   const filteredEnvironments = useMemo(() => {

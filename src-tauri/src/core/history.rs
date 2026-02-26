@@ -110,9 +110,7 @@ impl InstallHistory {
         self.entries
             .iter()
             .filter(|e| {
-                e.name.eq_ignore_ascii_case(name)
-                    && e.success
-                    && e.action == HistoryAction::Install
+                e.name.eq_ignore_ascii_case(name) && e.success && e.action == HistoryAction::Install
             })
             .map(|e| e.version.as_str())
             .next()
@@ -233,11 +231,7 @@ impl HistoryManager {
 
     pub async fn get_history(limit: Option<usize>) -> CogniaResult<Vec<InstallHistoryEntry>> {
         let history = InstallHistory::load().await?;
-        Ok(history
-            .get_entries(limit)
-            .into_iter()
-            .cloned()
-            .collect())
+        Ok(history.get_entries(limit).into_iter().cloned().collect())
     }
 
     pub async fn get_package_history(name: &str) -> CogniaResult<Vec<InstallHistoryEntry>> {
@@ -353,6 +347,5 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].action, HistoryAction::Uninstall);
         assert_eq!(entries[1].action, HistoryAction::Install);
-
     }
 }

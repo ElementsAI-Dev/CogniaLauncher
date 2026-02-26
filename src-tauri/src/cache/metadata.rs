@@ -317,7 +317,8 @@ mod tests {
 
         // Add some metadata
         for i in 0..3 {
-            cache.set(&format!("preview-key-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("preview-key-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }
@@ -339,7 +340,8 @@ mod tests {
 
         // Add expired entries
         for i in 0..2 {
-            cache.set(&format!("expired-key-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("expired-key-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }
@@ -355,7 +357,8 @@ mod tests {
         let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
 
         for i in 0..2 {
-            cache.set(&format!("expired-perm-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("expired-perm-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }
@@ -373,7 +376,8 @@ mod tests {
         let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
 
         for i in 0..2 {
-            cache.set(&format!("expired-trash-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("expired-trash-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }
@@ -391,7 +395,8 @@ mod tests {
         let mut cache = MetadataCache::open(dir.path()).await.unwrap();
 
         for i in 0..3 {
-            cache.set(&format!("all-perm-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("all-perm-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }
@@ -409,7 +414,8 @@ mod tests {
         let mut cache = MetadataCache::open(dir.path()).await.unwrap();
 
         for i in 0..3 {
-            cache.set(&format!("all-trash-{}", i), &format!("value-{}", i))
+            cache
+                .set(&format!("all-trash-{}", i), &format!("value-{}", i))
                 .await
                 .unwrap();
         }

@@ -165,10 +165,7 @@ pub async fn path_setup(settings: State<'_, SharedSettings>) -> Result<(), Strin
         .map_err(|e| e.to_string())?;
 
     let path_manager = PathManager::new(shim_dir);
-    path_manager
-        .add_to_path()
-        .await
-        .map_err(|e| e.to_string())
+    path_manager.add_to_path().await.map_err(|e| e.to_string())
 }
 
 /// Remove shim directory from PATH

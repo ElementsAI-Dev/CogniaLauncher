@@ -336,10 +336,10 @@ impl ExternalCacheProvider {
             Self::Poetry => None, // Direct delete; poetry cache clear requires specifying cache names
             Self::Conda => Some(("conda", &["clean", "--all", "-y"])),
             Self::Deno => Some(("deno", &["clean"])),
-            Self::Bun => None, // Direct delete
+            Self::Bun => None,    // Direct delete
             Self::Gradle => None, // Direct delete (daemon should be stopped first)
-            Self::Maven => None, // Direct delete of .m2/repository
-            Self::Gem => None, // Direct delete of gem cache dir
+            Self::Maven => None,  // Direct delete of .m2/repository
+            Self::Gem => None,    // Direct delete of gem cache dir
             Self::Rustup => None, // Direct delete of downloads dir
             #[cfg(windows)]
             Self::Scoop => Some(("scoop", &["cache", "rm", "*"])),
@@ -362,10 +362,10 @@ impl ExternalCacheProvider {
             Self::Flutter => None, // Direct delete of pub-cache
             #[cfg(target_os = "macos")]
             Self::CocoaPods => Some(("pod", &["cache", "clean", "--all"])),
-            Self::Cypress => None, // Direct delete
+            Self::Cypress => None,  // Direct delete
             Self::Electron => None, // Direct delete
-            Self::Vcpkg => None, // Direct delete of binary cache
-            Self::Sbt => None, // Direct delete of ivy cache
+            Self::Vcpkg => None,    // Direct delete of binary cache
+            Self::Sbt => None,      // Direct delete of ivy cache
         }
     }
 
@@ -432,8 +432,13 @@ impl ExternalCacheProvider {
             #[cfg(target_os = "linux")]
             Self::LinuxCache => "system",
             // Developer tool caches
-            Self::Docker | Self::Podman | Self::Flutter | Self::Cypress
-            | Self::Electron | Self::Vcpkg | Self::Sbt => "devtools",
+            Self::Docker
+            | Self::Podman
+            | Self::Flutter
+            | Self::Cypress
+            | Self::Electron
+            | Self::Vcpkg
+            | Self::Sbt => "devtools",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "devtools",
             // Package managers
@@ -616,9 +621,12 @@ fn get_cargo_cache_path() -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(|p| PathBuf::from(p).join(".cargo").join("registry").join("cache"))
+        std::env::var("USERPROFILE").ok().map(|p| {
+            PathBuf::from(p)
+                .join(".cargo")
+                .join("registry")
+                .join("cache")
+        })
     }
     #[cfg(not(windows))]
     {
@@ -657,9 +665,13 @@ fn get_go_cache_path() -> Option<PathBuf> {
 
     #[cfg(windows)]
     {
-        std::env::var("USERPROFILE")
-            .ok()
-            .map(|p| PathBuf::from(p).join("go").join("pkg").join("mod").join("cache"))
+        std::env::var("USERPROFILE").ok().map(|p| {
+            PathBuf::from(p)
+                .join("go")
+                .join("pkg")
+                .join("mod")
+                .join("cache")
+        })
     }
     #[cfg(not(windows))]
     {
@@ -789,7 +801,10 @@ fn get_conda_cache_path() -> Option<PathBuf> {
             .map(|p| PathBuf::from(p).join("anaconda3").join("pkgs")),
     ];
 
-    candidates.into_iter().flatten().find(|p| p.exists())
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|p| p.exists())
         .or_else(|| dirs::home_dir().map(|h| h.join(".conda").join("pkgs")))
 }
 
@@ -873,7 +888,9 @@ fn get_chocolatey_cache_path() -> Option<PathBuf> {
 
     // User-level cache (non-elevated)
     if let Ok(profile) = std::env::var("USERPROFILE") {
-        let user_cache = PathBuf::from(&profile).join(".chocolatey").join("http-cache");
+        let user_cache = PathBuf::from(&profile)
+            .join(".chocolatey")
+            .join("http-cache");
         if user_cache.exists() {
             return Some(user_cache);
         }
@@ -961,9 +978,12 @@ fn get_windows_temp_path() -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn get_windows_thumbnail_path() -> Option<PathBuf> {
-    std::env::var("LOCALAPPDATA")
-        .ok()
-        .map(|p| PathBuf::from(p).join("Microsoft").join("Windows").join("Explorer"))
+    std::env::var("LOCALAPPDATA").ok().map(|p| {
+        PathBuf::from(p)
+            .join("Microsoft")
+            .join("Windows")
+            .join("Explorer")
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -1260,9 +1280,8 @@ pub async fn clean_cache(
     provider_id: &str,
     use_trash: bool,
 ) -> CogniaResult<ExternalCacheCleanResult> {
-    let provider = ExternalCacheProvider::from_str(provider_id).ok_or_else(|| {
-        CogniaError::Provider(format!("Unknown cache provider: {}", provider_id))
-    })?;
+    let provider = ExternalCacheProvider::from_str(provider_id)
+        .ok_or_else(|| CogniaError::Provider(format!("Unknown cache provider: {}", provider_id)))?;
 
     let cache_path = provider.cache_path();
     let preserve_dir = provider.should_preserve_dir();
@@ -1392,7 +1411,10 @@ mod tests {
         assert_eq!(ExternalCacheProvider::Scoop.id(), "scoop");
         assert_eq!(ExternalCacheProvider::Chocolatey.id(), "chocolatey");
         assert_eq!(ExternalCacheProvider::WindowsTemp.id(), "windows_temp");
-        assert_eq!(ExternalCacheProvider::WindowsThumbnail.id(), "windows_thumbnail");
+        assert_eq!(
+            ExternalCacheProvider::WindowsThumbnail.id(),
+            "windows_thumbnail"
+        );
     }
 
     #[test]
@@ -1407,14 +1429,38 @@ mod tests {
 
     #[test]
     fn test_devtools_provider_from_str() {
-        assert_eq!(ExternalCacheProvider::from_str("docker"), Some(ExternalCacheProvider::Docker));
-        assert_eq!(ExternalCacheProvider::from_str("flutter"), Some(ExternalCacheProvider::Flutter));
-        assert_eq!(ExternalCacheProvider::from_str("dart"), Some(ExternalCacheProvider::Flutter));
-        assert_eq!(ExternalCacheProvider::from_str("cypress"), Some(ExternalCacheProvider::Cypress));
-        assert_eq!(ExternalCacheProvider::from_str("electron"), Some(ExternalCacheProvider::Electron));
-        assert_eq!(ExternalCacheProvider::from_str("vcpkg"), Some(ExternalCacheProvider::Vcpkg));
-        assert_eq!(ExternalCacheProvider::from_str("sbt"), Some(ExternalCacheProvider::Sbt));
-        assert_eq!(ExternalCacheProvider::from_str("ivy"), Some(ExternalCacheProvider::Sbt));
+        assert_eq!(
+            ExternalCacheProvider::from_str("docker"),
+            Some(ExternalCacheProvider::Docker)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("flutter"),
+            Some(ExternalCacheProvider::Flutter)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("dart"),
+            Some(ExternalCacheProvider::Flutter)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("cypress"),
+            Some(ExternalCacheProvider::Cypress)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("electron"),
+            Some(ExternalCacheProvider::Electron)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("vcpkg"),
+            Some(ExternalCacheProvider::Vcpkg)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("sbt"),
+            Some(ExternalCacheProvider::Sbt)
+        );
+        assert_eq!(
+            ExternalCacheProvider::from_str("ivy"),
+            Some(ExternalCacheProvider::Sbt)
+        );
     }
 
     #[test]

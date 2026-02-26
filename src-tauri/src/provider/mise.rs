@@ -61,10 +61,7 @@ impl MiseProvider {
                 for (tool, versions_val) in obj {
                     if let Some(versions_arr) = versions_val.as_array() {
                         for v in versions_arr {
-                            let version = v["version"]
-                                .as_str()
-                                .unwrap_or("")
-                                .to_string();
+                            let version = v["version"].as_str().unwrap_or("").to_string();
                             let install_path = v["install_path"]
                                 .as_str()
                                 .map(PathBuf::from)
@@ -72,12 +69,7 @@ impl MiseProvider {
                             let active = v["active"].as_bool().unwrap_or(false);
 
                             if !version.is_empty() {
-                                results.push((
-                                    tool.clone(),
-                                    version,
-                                    install_path,
-                                    active,
-                                ));
+                                results.push((tool.clone(), version, install_path, active));
                             }
                         }
                     }

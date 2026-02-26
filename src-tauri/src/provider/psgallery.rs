@@ -271,8 +271,7 @@ impl Provider for PSGalleryProvider {
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let script = "Get-InstalledModule | ForEach-Object { \"$($_.Name)|$($_.Version)|$($_.InstalledLocation)\" }";
         let out = self.run_pwsh(script).await?;
-        let modules_path =
-            Self::get_modules_path().unwrap_or_else(|| PathBuf::from("Modules"));
+        let modules_path = Self::get_modules_path().unwrap_or_else(|| PathBuf::from("Modules"));
 
         let packages: Vec<InstalledPackage> = out
             .lines()

@@ -29,11 +29,19 @@ impl ZypperProvider {
 
     /// Get the installed version of a package using rpm (more reliable than zypper info)
     async fn query_installed_version_rpm(&self, name: &str) -> CogniaResult<String> {
-        let out = process::execute("rpm", &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name], None).await?;
+        let out = process::execute(
+            "rpm",
+            &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name],
+            None,
+        )
+        .await?;
         if out.success {
             Ok(out.stdout.trim().to_string())
         } else {
-            Err(CogniaError::Provider(format!("Package {} not installed", name)))
+            Err(CogniaError::Provider(format!(
+                "Package {} not installed",
+                name
+            )))
         }
     }
 }

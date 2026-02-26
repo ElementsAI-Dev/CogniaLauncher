@@ -75,9 +75,9 @@ impl PlatformPaths {
     /// Get npm global packages directory
     pub fn npm_global_dir() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                std::env::var("APPDATA").ok().map(|p| PathBuf::from(p).join("npm"))
-            }
+            Platform::Windows => std::env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("npm")),
             Platform::MacOS | Platform::Linux | Platform::Unknown => {
                 // Check npm prefix first
                 if let Ok(prefix) = std::env::var("NPM_CONFIG_PREFIX") {
@@ -92,9 +92,9 @@ impl PlatformPaths {
     /// Get npm cache directory
     pub fn npm_cache_dir() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                std::env::var("APPDATA").ok().map(|p| PathBuf::from(p).join("npm-cache"))
-            }
+            Platform::Windows => std::env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("npm-cache")),
             Platform::MacOS | Platform::Linux | Platform::Unknown => {
                 Self::home_dir().map(|h| h.join(".npm"))
             }
@@ -106,32 +106,35 @@ impl PlatformPaths {
     /// Get pip site-packages directory for user installs
     pub fn pip_user_site() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                std::env::var("APPDATA").ok().map(|p| {
-                    PathBuf::from(p).join("Python").join("Python3").join("site-packages")
-                })
-            }
-            Platform::MacOS => {
-                Self::home_dir().map(|h| {
-                    h.join("Library").join("Python").join("3.11").join("lib").join("python").join("site-packages")
-                })
-            }
-            Platform::Linux | Platform::Unknown => {
-                Self::home_dir().map(|h| {
-                    h.join(".local").join("lib").join("python3").join("site-packages")
-                })
-            }
+            Platform::Windows => std::env::var("APPDATA").ok().map(|p| {
+                PathBuf::from(p)
+                    .join("Python")
+                    .join("Python3")
+                    .join("site-packages")
+            }),
+            Platform::MacOS => Self::home_dir().map(|h| {
+                h.join("Library")
+                    .join("Python")
+                    .join("3.11")
+                    .join("lib")
+                    .join("python")
+                    .join("site-packages")
+            }),
+            Platform::Linux | Platform::Unknown => Self::home_dir().map(|h| {
+                h.join(".local")
+                    .join("lib")
+                    .join("python3")
+                    .join("site-packages")
+            }),
         }
     }
 
     /// Get pip scripts/bin directory for user installs
     pub fn pip_user_bin() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                std::env::var("APPDATA").ok().map(|p| {
-                    PathBuf::from(p).join("Python").join("Scripts")
-                })
-            }
+            Platform::Windows => std::env::var("APPDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("Python").join("Scripts")),
             Platform::MacOS | Platform::Linux | Platform::Unknown => {
                 Self::home_dir().map(|h| h.join(".local").join("bin"))
             }
@@ -158,12 +161,10 @@ impl PlatformPaths {
     /// Get Homebrew prefix based on platform and architecture
     pub fn brew_prefix() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::MacOS => {
-                match Self::current_arch() {
-                    Architecture::Aarch64 => Some(PathBuf::from("/opt/homebrew")),
-                    _ => Some(PathBuf::from("/usr/local")),
-                }
-            }
+            Platform::MacOS => match Self::current_arch() {
+                Architecture::Aarch64 => Some(PathBuf::from("/opt/homebrew")),
+                _ => Some(PathBuf::from("/usr/local")),
+            },
             Platform::Linux | Platform::Unknown => {
                 Some(PathBuf::from("/home/linuxbrew/.linuxbrew"))
             }
@@ -183,9 +184,7 @@ impl PlatformPaths {
         if Self::current_platform() != Platform::Windows {
             return None;
         }
-        std::env::var("ProgramFiles")
-            .ok()
-            .map(PathBuf::from)
+        std::env::var("ProgramFiles").ok().map(PathBuf::from)
     }
 
     /// Get scoop directory
@@ -247,11 +246,9 @@ impl PlatformPaths {
         std::env::var("FNM_DIR")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => Self::data_dir().map(|d| d.join("fnm")),
-                    _ => Self::home_dir().map(|h| h.join(".fnm")),
-                }
+            .or_else(|| match Self::current_platform() {
+                Platform::Windows => Self::data_dir().map(|d| d.join("fnm")),
+                _ => Self::home_dir().map(|h| h.join(".fnm")),
             })
     }
 
@@ -310,14 +307,12 @@ impl PlatformPaths {
         std::env::var("COMPOSER_HOME")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => {
-                        std::env::var("APPDATA").ok().map(|p| PathBuf::from(p).join("Composer"))
-                    }
-                    Platform::MacOS | Platform::Linux | Platform::Unknown => {
-                        Self::home_dir().map(|h| h.join(".composer"))
-                    }
+            .or_else(|| match Self::current_platform() {
+                Platform::Windows => std::env::var("APPDATA")
+                    .ok()
+                    .map(|p| PathBuf::from(p).join("Composer")),
+                Platform::MacOS | Platform::Linux | Platform::Unknown => {
+                    Self::home_dir().map(|h| h.join(".composer"))
                 }
             })
     }
@@ -327,12 +322,10 @@ impl PlatformPaths {
         std::env::var("POETRY_HOME")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => Self::data_dir().map(|d| d.join("pypoetry")),
-                    Platform::MacOS | Platform::Linux | Platform::Unknown => {
-                        Self::home_dir().map(|h| h.join(".local").join("share").join("pypoetry"))
-                    }
+            .or_else(|| match Self::current_platform() {
+                Platform::Windows => Self::data_dir().map(|d| d.join("pypoetry")),
+                Platform::MacOS | Platform::Linux | Platform::Unknown => {
+                    Self::home_dir().map(|h| h.join(".local").join("share").join("pypoetry"))
                 }
             })
     }
@@ -348,35 +341,39 @@ impl PlatformPaths {
     /// Get PowerShell modules directory
     pub fn powershell_modules() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                Self::home_dir().map(|h| {
-                    h.join("Documents").join("WindowsPowerShell").join("Modules")
-                })
-            }
-            Platform::MacOS | Platform::Linux | Platform::Unknown => {
-                Self::home_dir().map(|h| h.join(".local").join("share").join("powershell").join("Modules"))
-            }
+            Platform::Windows => Self::home_dir().map(|h| {
+                h.join("Documents")
+                    .join("WindowsPowerShell")
+                    .join("Modules")
+            }),
+            Platform::MacOS | Platform::Linux | Platform::Unknown => Self::home_dir().map(|h| {
+                h.join(".local")
+                    .join("share")
+                    .join("powershell")
+                    .join("Modules")
+            }),
         }
     }
 
     /// Get vcpkg root directory
     pub fn vcpkg_root() -> Option<PathBuf> {
-        std::env::var("VCPKG_ROOT")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => Some(PathBuf::from("C:\\vcpkg")),
-                    _ => Self::home_dir().map(|h| h.join("vcpkg")),
-                }
-            })
+        std::env::var("VCPKG_ROOT").ok().map(PathBuf::from).or_else(
+            || match Self::current_platform() {
+                Platform::Windows => Some(PathBuf::from("C:\\vcpkg")),
+                _ => Self::home_dir().map(|h| h.join("vcpkg")),
+            },
+        )
     }
 
     /// Get Docker data directory
     pub fn docker_data_dir() -> Option<PathBuf> {
         match Self::current_platform() {
             Platform::Windows => Some(PathBuf::from("C:\\ProgramData\\Docker")),
-            Platform::MacOS => Self::home_dir().map(|h| h.join("Library").join("Containers").join("com.docker.docker")),
+            Platform::MacOS => Self::home_dir().map(|h| {
+                h.join("Library")
+                    .join("Containers")
+                    .join("com.docker.docker")
+            }),
             Platform::Linux | Platform::Unknown => Some(PathBuf::from("/var/lib/docker")),
         }
     }
@@ -389,11 +386,9 @@ impl PlatformPaths {
     /// Get NuGet packages directory
     pub fn nuget_packages() -> Option<PathBuf> {
         match Self::current_platform() {
-            Platform::Windows => {
-                std::env::var("USERPROFILE")
-                    .ok()
-                    .map(|p| PathBuf::from(p).join(".nuget").join("packages"))
-            }
+            Platform::Windows => std::env::var("USERPROFILE")
+                .ok()
+                .map(|p| PathBuf::from(p).join(".nuget").join("packages")),
             _ => Self::home_dir().map(|h| h.join(".nuget").join("packages")),
         }
     }
@@ -408,15 +403,12 @@ impl PlatformPaths {
 
     /// Get pnpm home directory
     pub fn pnpm_home() -> Option<PathBuf> {
-        std::env::var("PNPM_HOME")
-            .ok()
-            .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => Self::data_dir().map(|d| d.join("pnpm")),
-                    _ => Self::home_dir().map(|h| h.join(".local").join("share").join("pnpm")),
-                }
-            })
+        std::env::var("PNPM_HOME").ok().map(PathBuf::from).or_else(
+            || match Self::current_platform() {
+                Platform::Windows => Self::data_dir().map(|d| d.join("pnpm")),
+                _ => Self::home_dir().map(|h| h.join(".local").join("share").join("pnpm")),
+            },
+        )
     }
 
     /// Get yarn global directory
@@ -432,11 +424,13 @@ impl PlatformPaths {
         std::env::var("UV_CACHE_DIR")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| {
-                match Self::current_platform() {
-                    Platform::Windows => Self::data_dir().map(|d| d.join("uv")),
-                    Platform::MacOS => Self::home_dir().map(|h| h.join("Library").join("Caches").join("uv")),
-                    Platform::Linux | Platform::Unknown => Self::home_dir().map(|h| h.join(".cache").join("uv")),
+            .or_else(|| match Self::current_platform() {
+                Platform::Windows => Self::data_dir().map(|d| d.join("uv")),
+                Platform::MacOS => {
+                    Self::home_dir().map(|h| h.join("Library").join("Caches").join("uv"))
+                }
+                Platform::Linux | Platform::Unknown => {
+                    Self::home_dir().map(|h| h.join(".cache").join("uv"))
                 }
             })
     }

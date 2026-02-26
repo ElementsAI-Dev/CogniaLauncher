@@ -1,14 +1,15 @@
 pub mod batch;
 pub mod custom_detection;
 pub mod environment;
+pub mod eol;
 pub mod health_check;
 pub mod history;
 pub mod installer;
 pub mod orchestrator;
 pub mod profiles;
 pub mod project_env_detect;
-pub mod eol;
 pub mod shim;
+pub mod terminal;
 
 pub use batch::*;
 pub use custom_detection::*;

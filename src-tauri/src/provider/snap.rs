@@ -460,7 +460,10 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "firefox");
         assert_eq!(results[0].latest_version, Some("120.0".into()));
-        assert_eq!(results[0].description, Some("Mozilla Firefox web browser".into()));
+        assert_eq!(
+            results[0].description,
+            Some("Mozilla Firefox web browser".into())
+        );
         assert_eq!(results[1].name, "vlc");
     }
 
@@ -496,7 +499,11 @@ mod tests {
         assert_eq!(packages[0].version, "20231123");
         assert_eq!(packages[1].name, "firefox");
         assert_eq!(packages[1].version, "120.0");
-        assert!(packages[1].install_path.to_str().unwrap().contains("/snap/firefox"));
+        assert!(packages[1]
+            .install_path
+            .to_str()
+            .unwrap()
+            .contains("/snap/firefox"));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Tauri 命令参考
 
-CogniaLauncher 后端提供 288 条 Tauri 命令，跨 21 个模块，通过 IPC 供前端调用。
+CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC 供前端调用。
 
 ---
 
@@ -263,6 +263,24 @@ CogniaLauncher 后端提供 288 条 Tauri 命令，跨 21 个模块，通过 IPC
 
 ---
 
+## 日志与诊断 — 11 条
+
+| 命令 | 描述 |
+|------|------|
+| `log_list_files` | 列出日志文件 |
+| `log_query` | 查询日志（级别/时间/关键词） |
+| `log_export` | 导出日志（TXT/JSON） |
+| `log_get_dir` | 获取日志目录 |
+| `log_get_total_size` | 获取日志总大小 |
+| `log_clear` | 清理日志文件 |
+| `diagnostic_export_bundle` | 手动导出完整诊断包 |
+| `diagnostic_get_default_export_path` | 获取默认导出路径 |
+| `diagnostic_check_last_crash` | 检查上次崩溃 marker |
+| `diagnostic_dismiss_crash` | 清除崩溃 marker |
+| `diagnostic_capture_frontend_crash` | 捕获前端未处理异常并生成崩溃诊断包 |
+
+---
+
 ## 其他命令模块
 
 | 模块 | 命令数 | 命令前缀 | 描述 |
@@ -272,6 +290,7 @@ CogniaLauncher 后端提供 288 条 Tauri 命令，跨 21 个模块，通过 IPC
 | Launch | 6 | `launch_with_env`, `env_activate`, `exec_shell_with_env`, `which_program` | 程序启动和环境激活 |
 | Shim/PATH | 10 | `shim_*`, `path_*` | Shim 创建和 PATH 管理 |
 | Log | 6 | `log_*` | 日志管理 |
+| Diagnostic | 5 | `diagnostic_*` | 诊断包导出、崩溃恢复与前端异常自动采集 |
 | GitHub | 13 | `github_*` | GitHub Releases 集成 |
 | GitLab | 15 | `gitlab_*` | GitLab Releases 集成 |
 | Tray | 12 | `tray_*` | 系统托盘管理 |

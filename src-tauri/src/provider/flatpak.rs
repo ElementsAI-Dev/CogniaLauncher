@@ -35,7 +35,10 @@ impl FlatpakProvider {
                 return Ok(version.trim().to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", app_id)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            app_id
+        )))
     }
 }
 

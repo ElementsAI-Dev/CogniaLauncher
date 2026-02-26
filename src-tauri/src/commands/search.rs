@@ -150,12 +150,13 @@ pub async fn advanced_search(
     }
 
     // Sort by score (or custom sort)
-    all_results.sort_by(|a, b| {
-        match options.sort_by.as_deref() {
-            Some("name") => a.package.name.cmp(&b.package.name),
-            Some("provider") => a.package.provider.cmp(&b.package.provider),
-            _ => b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal),
-        }
+    all_results.sort_by(|a, b| match options.sort_by.as_deref() {
+        Some("name") => a.package.name.cmp(&b.package.name),
+        Some("provider") => a.package.provider.cmp(&b.package.provider),
+        _ => b
+            .score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal),
     });
 
     // Reverse if descending
@@ -270,11 +271,7 @@ pub struct SearchHistoryEntry {
 fn calculate_score(pkg: &PackageSummary, query_terms: &[&str]) -> f64 {
     let mut score = 0.0;
     let name_lower = pkg.name.to_lowercase();
-    let desc_lower = pkg
-        .description
-        .as_deref()
-        .unwrap_or("")
-        .to_lowercase();
+    let desc_lower = pkg.description.as_deref().unwrap_or("").to_lowercase();
 
     for term in query_terms {
         // Exact name match (highest)

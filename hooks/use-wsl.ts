@@ -4,6 +4,7 @@ import type {
   WslDistroStatus,
   WslStatus,
   WslVersionInfo,
+  WslCapabilities,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -21,6 +22,7 @@ export interface UseWslReturn {
   status: WslStatus | null;
   runningDistros: string[];
   config: WslConfig | null;
+  capabilities: WslCapabilities | null;
   loading: boolean;
   error: string | null;
 
@@ -30,6 +32,7 @@ export interface UseWslReturn {
   refreshOnlineDistros: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   refreshRunning: () => Promise<void>;
+  refreshCapabilities: () => Promise<void>;
   refreshAll: () => Promise<void>;
   terminate: (name: string) => Promise<void>;
   shutdown: () => Promise<void>;
@@ -53,7 +56,10 @@ export interface UseWslReturn {
   getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
   setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
   getVersionInfo: () => Promise<WslVersionInfo | null>;
+  getCapabilities: () => Promise<WslCapabilities | null>;
   setSparse: (distro: string, enabled: boolean) => Promise<void>;
+  moveDistro: (name: string, location: string) => Promise<string>;
+  resizeDistro: (name: string, size: string) => Promise<string>;
   installWslOnly: () => Promise<string>;
   installWithLocation: (name: string, location: string) => Promise<string>;
   detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
@@ -78,20 +84,26 @@ export function useWsl(): UseWslReturn {
   const [status, setStatus] = useState<WslStatus | null>(null);
   const [runningDistros, setRunningDistros] = useState<string[]>([]);
   const [config, setConfig] = useState<WslConfig | null>(null);
+  const [capabilities, setCapabilities] = useState<WslCapabilities | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const checkAvailability = useCallback(async (): Promise<boolean> => {
     if (!tauri.isTauri()) {
       setAvailable(false);
+      setCapabilities(null);
       return false;
     }
     try {
       const result = await tauri.wslIsAvailable();
       setAvailable(result);
+      if (!result) {
+        setCapabilities(null);
+      }
       return result;
     } catch {
       setAvailable(false);
+      setCapabilities(null);
       return false;
     }
   }, []);
@@ -144,6 +156,17 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const refreshCapabilities = useCallback(async () => {
+    if (!tauri.isTauri()) return;
+    try {
+      const result = await tauri.wslGetCapabilities();
+      setCapabilities(result);
+    } catch (err) {
+      console.error('Failed to detect WSL capabilities:', err);
+      setCapabilities(null);
+    }
+  }, []);
+
   const refreshConfig = useCallback(async () => {
     if (!tauri.isTauri()) return;
     try {
@@ -159,13 +182,14 @@ export function useWsl(): UseWslReturn {
     setLoading(true);
     setError(null);
     try {
-      const [distroResult, onlineResult, statusResult, runningResult, configResult] =
+      const [distroResult, onlineResult, statusResult, runningResult, configResult, capabilitiesResult] =
         await Promise.allSettled([
           tauri.wslListDistros(),
           tauri.wslListOnline(),
           tauri.wslGetStatus(),
           tauri.wslListRunning(),
           tauri.wslGetConfig(),
+          tauri.wslGetCapabilities(),
         ]);
 
       if (distroResult.status === 'fulfilled') setDistros(distroResult.value);
@@ -173,6 +197,7 @@ export function useWsl(): UseWslReturn {
       if (statusResult.status === 'fulfilled') setStatus(statusResult.value);
       if (runningResult.status === 'fulfilled') setRunningDistros(runningResult.value);
       if (configResult.status === 'fulfilled') setConfig(configResult.value);
+      if (capabilitiesResult.status === 'fulfilled') setCapabilities(capabilitiesResult.value);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -426,6 +451,17 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const getCapabilities = useCallback(async (): Promise<WslCapabilities | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const detected = await tauri.wslGetCapabilities();
+      setCapabilities(detected);
+      return detected;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const setSparse = useCallback(async (distro: string, enabled: boolean) => {
     if (!tauri.isTauri()) return;
     try {
@@ -436,6 +472,32 @@ export function useWsl(): UseWslReturn {
       throw err;
     }
   }, []);
+
+  const moveDistro = useCallback(async (name: string, location: string): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      setError(null);
+      const result = await tauri.wslMoveDistro(name, location);
+      await refreshDistros();
+      return result;
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
+
+  const resizeDistro = useCallback(async (name: string, size: string): Promise<string> => {
+    if (!tauri.isTauri()) return '';
+    try {
+      setError(null);
+      const result = await tauri.wslResizeDistro(name, size);
+      await refreshDistros();
+      return result;
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
 
   const installWslOnly = useCallback(async (): Promise<string> => {
     if (!tauri.isTauri()) return '';
@@ -475,6 +537,7 @@ export function useWsl(): UseWslReturn {
     status,
     runningDistros,
     config,
+    capabilities,
     loading,
     error,
     checkAvailability,
@@ -482,6 +545,7 @@ export function useWsl(): UseWslReturn {
     refreshOnlineDistros,
     refreshStatus,
     refreshRunning,
+    refreshCapabilities,
     refreshAll,
     terminate,
     shutdown,
@@ -505,7 +569,10 @@ export function useWsl(): UseWslReturn {
     getDistroConfig,
     setDistroConfigValue,
     getVersionInfo,
+    getCapabilities,
     setSparse,
+    moveDistro,
+    resizeDistro,
     installWslOnly,
     installWithLocation,
     detectDistroEnv,

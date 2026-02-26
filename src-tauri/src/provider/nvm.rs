@@ -225,10 +225,7 @@ impl Provider for NvmProvider {
         Ok(())
     }
 
-    async fn list_installed(
-        &self,
-        filter: InstalledFilter,
-    ) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         #[cfg(windows)]
         let output = self.run_nvm(&["list"]).await?;
         #[cfg(not(windows))]
@@ -271,7 +268,10 @@ impl Provider for NvmProvider {
         }
 
         #[cfg(windows)]
-        let remote_output = self.run_nvm(&["list", "available"]).await.unwrap_or_default();
+        let remote_output = self
+            .run_nvm(&["list", "available"])
+            .await
+            .unwrap_or_default();
         #[cfg(not(windows))]
         let remote_output = self.run_nvm(&["ls-remote"]).await.unwrap_or_default();
 
@@ -539,8 +539,7 @@ impl SystemPackageProvider for NvmProvider {
         #[cfg(not(windows))]
         {
             // nvm is a shell function, not a binary — return the nvm.sh script path
-            self.nvm_dir()
-                .map(|d| d.join("nvm.sh"))
+            self.nvm_dir().map(|d| d.join("nvm.sh"))
         }
     }
 

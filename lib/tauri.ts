@@ -53,6 +53,8 @@ export type {
   PlatformInfo,
   DiskInfo,
   NetworkInterfaceInfo,
+  ComponentInfo,
+  BatteryInfo,
   BatchInstallOptions,
   BatchProgress,
   BatchResult,
@@ -100,6 +102,8 @@ export type {
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
+  TrayMenuItemId,
+  TrayMenuConfig,
   TrayStateInfo,
   ExtractionStrategy,
   VersionTransform,
@@ -126,6 +130,7 @@ export type {
   WslDistroStatus,
   WslStatus,
   WslVersionInfo,
+  WslCapabilities,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -154,6 +159,26 @@ export type {
   EnvInfoResult,
   ShimInfo,
   PathStatusInfo,
+  EnvVarScope,
+  EnvFileFormat,
+  PathEntryInfo,
+  ShellProfileInfo,
+  EnvVarImportResult,
+  ShellType,
+  ShellConfigFile,
+  ShellInfo,
+  TerminalProfile,
+  PSProfileInfo,
+  PSModuleInfo,
+  PSScriptInfo,
+  ShellFrameworkInfo,
+  ShellPlugin,
+  ShellConfigEntries,
+  DiagnosticExportOptions,
+  DiagnosticCaptureFrontendCrashOptions,
+  DiagnosticExportResult,
+  DiagnosticErrorContext,
+  CrashInfo,
 } from '@/types/tauri';
 
 import type {
@@ -199,6 +224,8 @@ import type {
   PlatformInfo,
   DiskInfo,
   NetworkInterfaceInfo,
+  ComponentInfo,
+  BatteryInfo,
   BatchProgress,
   BatchResult,
   BatchInstallOptions,
@@ -230,6 +257,8 @@ import type {
   TrayIconState,
   TrayLanguage,
   TrayClickBehavior,
+  TrayMenuItemId,
+  TrayMenuConfig,
   TrayStateInfo,
   CustomDetectionRule,
   CustomDetectionResult,
@@ -247,6 +276,7 @@ import type {
   WslDistroStatus,
   WslStatus,
   WslVersionInfo,
+  WslCapabilities,
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
@@ -275,6 +305,24 @@ import type {
   EnvInfoResult,
   ShimInfo,
   PathStatusInfo,
+  EnvVarScope,
+  EnvFileFormat,
+  PathEntryInfo,
+  ShellProfileInfo,
+  EnvVarImportResult,
+  ShellType,
+  ShellInfo,
+  TerminalProfile,
+  PSProfileInfo,
+  PSModuleInfo,
+  PSScriptInfo,
+  ShellFrameworkInfo,
+  ShellPlugin,
+  ShellConfigEntries,
+  DiagnosticExportOptions,
+  DiagnosticCaptureFrontendCrashOptions,
+  DiagnosticExportResult,
+  CrashInfo,
 } from '@/types/tauri';
 
 // Re-export so existing `import { isTauri } from '@/lib/tauri'` call-sites keep working.
@@ -500,6 +548,8 @@ export const getCogniaDir = () => invoke<string>('get_cognia_dir');
 export const getPlatformInfo = () => invoke<PlatformInfo>('get_platform_info');
 export const getDiskInfo = () => invoke<DiskInfo[]>('get_disk_info');
 export const getNetworkInterfaces = () => invoke<NetworkInterfaceInfo[]>('get_network_interfaces');
+export const getComponentsInfo = () => invoke<ComponentInfo[]>('get_components_info');
+export const getBatteryInfo = () => invoke<BatteryInfo | null>('get_battery_info');
 
 // Cache commands
 export const cacheInfo = () => invoke<CacheInfo>('cache_info');
@@ -816,6 +866,19 @@ export const logGetDir = () => invoke<string>('log_get_dir');
 export const logExport = (options: LogExportOptions) => invoke<LogExportResult>('log_export', { options });
 export const logGetTotalSize = () => invoke<number>('log_get_total_size');
 
+// Diagnostic commands
+export const diagnosticExportBundle = (options: DiagnosticExportOptions) =>
+  invoke<DiagnosticExportResult>('diagnostic_export_bundle', { options });
+export const diagnosticCaptureFrontendCrash = (
+  options: DiagnosticCaptureFrontendCrashOptions,
+) => invoke<CrashInfo>('diagnostic_capture_frontend_crash', { options });
+export const diagnosticGetDefaultExportPath = () =>
+  invoke<string>('diagnostic_get_default_export_path');
+export const diagnosticCheckLastCrash = () =>
+  invoke<CrashInfo | null>('diagnostic_check_last_crash');
+export const diagnosticDismissCrash = () =>
+  invoke<void>('diagnostic_dismiss_crash');
+
 // Command output streaming event
 export async function listenCommandOutput(
   callback: (event: CommandOutputEvent) => void
@@ -1039,6 +1102,27 @@ export const traySendNotification = (title: string, body: string) =>
 export const trayRebuild = () =>
   invoke<void>('tray_rebuild');
 
+export const traySetMinimizeToTray = (enabled: boolean) =>
+  invoke<void>('tray_set_minimize_to_tray', { enabled });
+
+export const traySetStartMinimized = (enabled: boolean) =>
+  invoke<void>('tray_set_start_minimized', { enabled });
+
+export const traySetAlwaysOnTop = (enabled: boolean) =>
+  invoke<void>('tray_set_always_on_top', { enabled });
+
+export const trayGetMenuConfig = () =>
+  invoke<TrayMenuConfig>('tray_get_menu_config');
+
+export const traySetMenuConfig = (config: TrayMenuConfig) =>
+  invoke<void>('tray_set_menu_config', { config });
+
+export const trayGetAvailableMenuItems = () =>
+  invoke<TrayMenuItemId[]>('tray_get_available_menu_items');
+
+export const trayResetMenuConfig = () =>
+  invoke<void>('tray_reset_menu_config');
+
 // Listen for navigation events from tray
 export async function listenNavigate(
   callback: (path: string) => void
@@ -1054,6 +1138,32 @@ export async function listenCheckUpdates(
 ): Promise<UnlistenFn> {
   return listen<void>('check-updates', () => {
     callback();
+  });
+}
+
+// Listen for download pause/resume events from tray
+export async function listenDownloadPauseAll(
+  callback: () => void
+): Promise<UnlistenFn> {
+  return listen<void>('download-pause-all', () => {
+    callback();
+  });
+}
+
+export async function listenDownloadResumeAll(
+  callback: () => void
+): Promise<UnlistenFn> {
+  return listen<void>('download-resume-all', () => {
+    callback();
+  });
+}
+
+// Listen for always-on-top toggle from tray
+export async function listenToggleAlwaysOnTop(
+  callback: (enabled: boolean) => void
+): Promise<UnlistenFn> {
+  return listen<boolean>('toggle-always-on-top', (event) => {
+    callback(event.payload);
   });
 }
 
@@ -1436,6 +1546,14 @@ export const wslSetVersion = (name: string, version: number) =>
 export const wslSetDefaultVersion = (version: number) =>
   invoke<void>('wsl_set_default_version', { version });
 
+/** Move a WSL distribution to a new location */
+export const wslMoveDistro = (name: string, location: string) =>
+  invoke<string>('wsl_move_distro', { name, location });
+
+/** Resize a WSL distribution virtual disk */
+export const wslResizeDistro = (name: string, size: string) =>
+  invoke<string>('wsl_resize_distro', { name, size });
+
 /** Export a WSL distribution to a tar/vhdx file */
 export const wslExport = (name: string, filePath: string, asVhd?: boolean) =>
   invoke<void>('wsl_export', { name, filePath, asVhd });
@@ -1507,6 +1625,10 @@ export const wslSetDistroConfig = (distro: string, section: string, key: string,
 /** Get full WSL version info (all component versions) */
 export const wslGetVersionInfo = () =>
   invoke<WslVersionInfo>('wsl_get_version_info');
+
+/** Get runtime WSL capability flags */
+export const wslGetCapabilities = () =>
+  invoke<WslCapabilities>('wsl_get_capabilities');
 
 /** Set sparse VHD mode for a WSL distribution */
 export const wslSetSparse = (distro: string, enabled: boolean) =>
@@ -1766,3 +1888,179 @@ export const gitGetFileStats = (path: string, file: string, limit?: number) =>
 /** Search commits by message, author, or diff content */
 export const gitSearchCommits = (path: string, query: string, searchType?: string, limit?: number) =>
   invoke<GitCommitEntry[]>('git_search_commits', { path, query, searchType, limit });
+
+// ============================================================================
+// Environment Variable Management
+// ============================================================================
+
+/** List all current process environment variables */
+export const envvarListAll = () =>
+  invoke<Record<string, string>>('envvar_list_all');
+
+/** Get a specific environment variable */
+export const envvarGet = (key: string) =>
+  invoke<string | null>('envvar_get', { key });
+
+/** Set a process-level environment variable */
+export const envvarSetProcess = (key: string, value: string) =>
+  invoke<void>('envvar_set_process', { key, value });
+
+/** Remove a process-level environment variable */
+export const envvarRemoveProcess = (key: string) =>
+  invoke<void>('envvar_remove_process', { key });
+
+/** Get a persistent environment variable by scope */
+export const envvarGetPersistent = (key: string, scope: EnvVarScope) =>
+  invoke<string | null>('envvar_get_persistent', { key, scope });
+
+/** Set a persistent environment variable */
+export const envvarSetPersistent = (key: string, value: string, scope: EnvVarScope) =>
+  invoke<void>('envvar_set_persistent', { key, value, scope });
+
+/** Remove a persistent environment variable */
+export const envvarRemovePersistent = (key: string, scope: EnvVarScope) =>
+  invoke<void>('envvar_remove_persistent', { key, scope });
+
+/** Get PATH entries with existence info */
+export const envvarGetPath = (scope: EnvVarScope) =>
+  invoke<PathEntryInfo[]>('envvar_get_path', { scope });
+
+/** Add a PATH entry */
+export const envvarAddPathEntry = (path: string, scope: EnvVarScope, position?: number) =>
+  invoke<void>('envvar_add_path_entry', { path, scope, position });
+
+/** Remove a PATH entry */
+export const envvarRemovePathEntry = (path: string, scope: EnvVarScope) =>
+  invoke<void>('envvar_remove_path_entry', { path, scope });
+
+/** Reorder PATH entries (full replacement) */
+export const envvarReorderPath = (entries: string[], scope: EnvVarScope) =>
+  invoke<void>('envvar_reorder_path', { entries, scope });
+
+/** List available shell profiles */
+export const envvarListShellProfiles = () =>
+  invoke<ShellProfileInfo[]>('envvar_list_shell_profiles');
+
+/** Read a shell profile config file */
+export const envvarReadShellProfile = (path: string) =>
+  invoke<string>('envvar_read_shell_profile', { path });
+
+/** Import variables from .env file content */
+export const envvarImportEnvFile = (content: string, scope: EnvVarScope) =>
+  invoke<EnvVarImportResult>('envvar_import_env_file', { content, scope });
+
+/** Export variables to a specific format */
+export const envvarExportEnvFile = (scope: EnvVarScope, format: EnvFileFormat) =>
+  invoke<string>('envvar_export_env_file', { scope, format });
+
+// ============================================================================
+// Terminal Management
+// ============================================================================
+
+/** Detect all installed shells on the system */
+export const terminalDetectShells = () =>
+  invoke<ShellInfo[]>('terminal_detect_shells');
+
+/** Get info for a specific shell by id */
+export const terminalGetShellInfo = (shellId: string) =>
+  invoke<ShellInfo>('terminal_get_shell_info', { shellId });
+
+/** List all terminal profiles */
+export const terminalListProfiles = () =>
+  invoke<TerminalProfile[]>('terminal_list_profiles');
+
+/** Get a terminal profile by id */
+export const terminalGetProfile = (id: string) =>
+  invoke<TerminalProfile>('terminal_get_profile', { id });
+
+/** Create a new terminal profile */
+export const terminalCreateProfile = (profile: TerminalProfile) =>
+  invoke<string>('terminal_create_profile', { profile });
+
+/** Update an existing terminal profile */
+export const terminalUpdateProfile = (profile: TerminalProfile) =>
+  invoke<void>('terminal_update_profile', { profile });
+
+/** Delete a terminal profile */
+export const terminalDeleteProfile = (id: string) =>
+  invoke<boolean>('terminal_delete_profile', { id });
+
+/** Get the default terminal profile */
+export const terminalGetDefaultProfile = () =>
+  invoke<TerminalProfile | null>('terminal_get_default_profile');
+
+/** Set the default terminal profile */
+export const terminalSetDefaultProfile = (id: string) =>
+  invoke<void>('terminal_set_default_profile', { id });
+
+/** Launch a terminal profile */
+export const terminalLaunchProfile = (id: string) =>
+  invoke<string>('terminal_launch_profile', { id });
+
+/** Launch a terminal profile and return structured result */
+export const terminalLaunchProfileDetailed = (id: string) =>
+  invoke<LaunchResult>('terminal_launch_profile_detailed', { id });
+
+/** Read a shell config file */
+export const terminalReadConfig = (path: string) =>
+  invoke<string>('terminal_read_config', { path });
+
+/** Backup a shell config file */
+export const terminalBackupConfig = (path: string) =>
+  invoke<string>('terminal_backup_config', { path });
+
+/** Append content to a shell config file */
+export const terminalAppendToConfig = (path: string, content: string) =>
+  invoke<void>('terminal_append_to_config', { path, content });
+
+/** Get parsed config entries (aliases, exports, sources) */
+export const terminalGetConfigEntries = (path: string, shellType: ShellType) =>
+  invoke<ShellConfigEntries>('terminal_get_config_entries', { path, shellType });
+
+/** List PowerShell profiles */
+export const terminalPsListProfiles = () =>
+  invoke<PSProfileInfo[]>('terminal_ps_list_profiles');
+
+/** Read a PowerShell profile content */
+export const terminalPsReadProfile = (scope: string) =>
+  invoke<string>('terminal_ps_read_profile', { scope });
+
+/** Write content to a PowerShell profile */
+export const terminalPsWriteProfile = (scope: string, content: string) =>
+  invoke<void>('terminal_ps_write_profile', { scope, content });
+
+/** Get PowerShell execution policy for all scopes */
+export const terminalPsGetExecutionPolicy = () =>
+  invoke<[string, string][]>('terminal_ps_get_execution_policy');
+
+/** Set PowerShell execution policy */
+export const terminalPsSetExecutionPolicy = (policy: string, scope: string) =>
+  invoke<void>('terminal_ps_set_execution_policy', { policy, scope });
+
+/** List all available PowerShell modules */
+export const terminalPsListAllModules = () =>
+  invoke<PSModuleInfo[]>('terminal_ps_list_all_modules');
+
+/** Get detailed info for a PowerShell module */
+export const terminalPsGetModuleDetail = (name: string) =>
+  invoke<PSModuleInfo>('terminal_ps_get_module_detail', { name });
+
+/** List installed PowerShell scripts */
+export const terminalPsListInstalledScripts = () =>
+  invoke<PSScriptInfo[]>('terminal_ps_list_installed_scripts');
+
+/** Detect shell frameworks for a shell type */
+export const terminalDetectFramework = (shellType: ShellType) =>
+  invoke<ShellFrameworkInfo[]>('terminal_detect_framework', { shellType });
+
+/** List plugins for a detected framework */
+export const terminalListPlugins = (frameworkName: string, frameworkPath: string, shellType: ShellType) =>
+  invoke<ShellPlugin[]>('terminal_list_plugins', { frameworkName, frameworkPath, shellType });
+
+/** Get shell-relevant environment variables */
+export const terminalGetShellEnvVars = () =>
+  invoke<[string, string][]>('terminal_get_shell_env_vars');
+
+/** Get resolved proxy environment variables for terminal */
+export const terminalGetProxyEnvVars = () =>
+  invoke<[string, string][]>('terminal_get_proxy_env_vars');

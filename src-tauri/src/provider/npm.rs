@@ -21,9 +21,7 @@ pub struct NpmProvider {
 
 impl NpmProvider {
     pub fn new() -> Self {
-        Self {
-            registry_url: None,
-        }
+        Self { registry_url: None }
     }
 
     /// Set the registry URL
@@ -46,18 +44,18 @@ impl NpmProvider {
     /// Build npm arguments with registry configuration
     fn build_npm_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
         let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
-        
+
         if let Some(ref url) = self.registry_url {
             args.push(format!("--registry={}", url));
         }
-        
+
         args
     }
 
     async fn run_npm(&self, args: &[&str]) -> CogniaResult<String> {
         let full_args = self.build_npm_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let out = process::execute("npm", &args_refs, Some(opts)).await?;
         if out.success {
@@ -109,7 +107,10 @@ impl NpmProvider {
             }
         }
 
-        Err(CogniaError::Provider(format!("Could not determine version for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Could not determine version for {}",
+            name
+        )))
     }
 }
 
@@ -205,12 +206,17 @@ impl Provider for NpmProvider {
     }
 
     async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<Dependency>> {
-        let pkg = if version.is_empty() { name.to_string() } else { format!("{}@{}", name, version) };
+        let pkg = if version.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}@{}", name, version)
+        };
         let out = self
             .run_npm(&["view", &pkg, "dependencies", "--json"])
             .await?;
 
-        let value: serde_json::Value = serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
+        let value: serde_json::Value =
+            serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
         let deps = value
             .as_object()
             .map(|obj| {
@@ -501,19 +507,20 @@ mod tests {
 
     #[test]
     fn test_npm_provider_builder() {
-        let provider = NpmProvider::new()
-            .with_registry("https://registry.npmmirror.com");
-        
-        assert_eq!(provider.registry_url, Some("https://registry.npmmirror.com".to_string()));
+        let provider = NpmProvider::new().with_registry("https://registry.npmmirror.com");
+
+        assert_eq!(
+            provider.registry_url,
+            Some("https://registry.npmmirror.com".to_string())
+        );
     }
 
     #[test]
     fn test_build_npm_args() {
-        let provider = NpmProvider::new()
-            .with_registry("https://registry.npmmirror.com");
-        
+        let provider = NpmProvider::new().with_registry("https://registry.npmmirror.com");
+
         let args = provider.build_npm_args(&["install", "lodash"]);
-        
+
         assert!(args.contains(&"install".to_string()));
         assert!(args.contains(&"lodash".to_string()));
         assert!(args.contains(&"--registry=https://registry.npmmirror.com".to_string()));
@@ -523,7 +530,7 @@ mod tests {
     fn test_npm_provider_no_mirror() {
         let provider = NpmProvider::new();
         let args = provider.build_npm_args(&["install", "lodash"]);
-        
+
         assert_eq!(args, vec!["install".to_string(), "lodash".to_string()]);
     }
 

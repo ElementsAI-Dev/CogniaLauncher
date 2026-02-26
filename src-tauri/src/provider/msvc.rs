@@ -282,9 +282,7 @@ impl Provider for MsvcProvider {
                 "Visual Studio {} ({})",
                 instance.installation_version, instance.instance_id
             )),
-            homepage: Some(
-                "https://visualstudio.microsoft.com/vs/features/cplusplus/".to_string(),
-            ),
+            homepage: Some("https://visualstudio.microsoft.com/vs/features/cplusplus/".to_string()),
             license: Some("Proprietary".to_string()),
             repository: None,
             versions,
@@ -387,9 +385,7 @@ impl SystemPackageProvider for MsvcProvider {
             return Ok(instance.installation_version.clone());
         }
 
-        Err(CogniaError::Provider(
-            "No MSVC installation found".into(),
-        ))
+        Err(CogniaError::Provider("No MSVC installation found".into()))
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
@@ -418,8 +414,7 @@ impl SystemPackageProvider for MsvcProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let instances = self.query_vc_instances().await?;
         Ok(instances.iter().any(|i| {
-            i.display_name.to_lowercase().contains(&name.to_lowercase())
-                || i.instance_id == name
+            i.display_name.to_lowercase().contains(&name.to_lowercase()) || i.instance_id == name
         }))
     }
 }
@@ -462,10 +457,7 @@ mod tests {
         let instances = parse_vswhere_json(json).unwrap();
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].instance_id, "abc123");
-        assert_eq!(
-            instances[0].display_name,
-            "Visual Studio Community 2022"
-        );
+        assert_eq!(instances[0].display_name, "Visual Studio Community 2022");
         assert_eq!(instances[0].installation_version, "17.9.34728.123");
         assert_eq!(instances[0].is_prerelease, Some(false));
     }
@@ -493,10 +485,7 @@ mod tests {
         assert_eq!(instances.len(), 2);
         assert_eq!(instances[0].instance_id, "inst1");
         assert_eq!(instances[1].instance_id, "inst2");
-        assert_eq!(
-            instances[1].display_name,
-            "Visual Studio Build Tools 2022"
-        );
+        assert_eq!(instances[1].display_name, "Visual Studio Build Tools 2022");
     }
 
     #[test]
@@ -526,9 +515,7 @@ mod tests {
 
     #[test]
     fn test_provider_metadata() {
-        let p = MsvcProvider {
-            vswhere_path: None,
-        };
+        let p = MsvcProvider { vswhere_path: None };
         assert_eq!(p.id(), "msvc");
         assert_eq!(p.display_name(), "MSVC (Visual Studio Build Tools)");
         assert_eq!(p.priority(), 75);
@@ -536,9 +523,7 @@ mod tests {
 
     #[test]
     fn test_capabilities() {
-        let p = MsvcProvider {
-            vswhere_path: None,
-        };
+        let p = MsvcProvider { vswhere_path: None };
         let caps = p.capabilities();
         assert!(caps.contains(&Capability::List));
         assert_eq!(caps.len(), 1);

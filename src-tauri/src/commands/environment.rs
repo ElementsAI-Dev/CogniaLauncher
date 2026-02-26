@@ -826,7 +826,6 @@ pub async fn env_current_version(
         .map_err(|e| e.to_string())
 }
 
-
 // ──────────────────────────────────────────────────────
 // EOL (End-of-Life) data commands
 // ──────────────────────────────────────────────────────
@@ -1098,8 +1097,18 @@ async fn list_python_global_packages(
     let opts = build_process_opts(env_mods, 30);
 
     // Try uv first (10-100x faster), fallback to pip
-    let stdout = if let Ok(o) = process::execute("uv", &["pip", "list", "--format", "json"], Some(opts.clone())).await {
-        if o.success { o.stdout } else { String::new() }
+    let stdout = if let Ok(o) = process::execute(
+        "uv",
+        &["pip", "list", "--format", "json"],
+        Some(opts.clone()),
+    )
+    .await
+    {
+        if o.success {
+            o.stdout
+        } else {
+            String::new()
+        }
     } else {
         String::new()
     };
@@ -1627,9 +1636,7 @@ pub async fn rustup_which(
 
 /// Get the current rustup profile
 #[tauri::command]
-pub async fn rustup_get_profile(
-    registry: State<'_, SharedRegistry>,
-) -> Result<String, String> {
+pub async fn rustup_get_profile(registry: State<'_, SharedRegistry>) -> Result<String, String> {
     let registry_guard = registry.read().await;
     let provider = registry_guard
         .get_environment_provider("rustup")
@@ -1679,8 +1686,7 @@ async fn run_go_command(
 ) -> Result<String, String> {
     use crate::platform::process::{self, ProcessOptions};
 
-    let mut opts = ProcessOptions::new()
-        .with_timeout(std::time::Duration::from_secs(timeout_secs));
+    let mut opts = ProcessOptions::new().with_timeout(std::time::Duration::from_secs(timeout_secs));
 
     if let Some(cwd_path) = cwd {
         opts.cwd = Some(cwd_path.to_string());
@@ -1707,8 +1713,8 @@ async fn run_go_command(
 #[tauri::command]
 pub async fn go_env_info() -> Result<crate::provider::goenv::GoEnvInfo, String> {
     let output = run_go_command(&["env", "-json"], None, 10, None).await?;
-    let json: serde_json::Value = serde_json::from_str(&output)
-        .map_err(|e| format!("Failed to parse go env JSON: {}", e))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&output).map_err(|e| format!("Failed to parse go env JSON: {}", e))?;
 
     Ok(crate::provider::goenv::GoEnvInfo {
         goroot: json["GOROOT"].as_str().unwrap_or("").to_string(),
@@ -1767,7 +1773,12 @@ pub async fn go_clean_cache(cache_type: String) -> Result<String, String> {
         "mod" => vec!["clean", "-modcache"],
         "test" => vec!["clean", "-testcache"],
         "all" => vec!["clean", "-cache", "-modcache", "-testcache"],
-        _ => return Err(format!("Unknown cache type: {}. Use 'build', 'mod', 'test', or 'all'", cache_type)),
+        _ => {
+            return Err(format!(
+                "Unknown cache type: {}. Use 'build', 'mod', 'test', or 'all'",
+                cache_type
+            ))
+        }
     };
     run_go_command(&args, None, 60, None).await?;
     Ok(format!("Successfully cleaned {} cache", cache_type))

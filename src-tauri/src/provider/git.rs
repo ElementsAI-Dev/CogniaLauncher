@@ -27,7 +27,8 @@ fn make_install_opts() -> ProcessOptions {
 
 /// Run a git command with standard timeout
 async fn run_git(args: &[&str]) -> CogniaResult<String> {
-    let out = process::execute("git", args, Some(make_opts())).await
+    let out = process::execute("git", args, Some(make_opts()))
+        .await
         .map_err(|e| CogniaError::Provider(format!("git: {}", e)))?;
     if out.success {
         Ok(out.stdout.trim().to_string())
@@ -43,7 +44,8 @@ async fn run_git(args: &[&str]) -> CogniaResult<String> {
 
 /// Run a git command, returning stdout even on non-zero exit
 async fn run_git_lenient(args: &[&str]) -> CogniaResult<String> {
-    let out = process::execute("git", args, Some(make_opts())).await
+    let out = process::execute("git", args, Some(make_opts()))
+        .await
         .map_err(|e| CogniaError::Provider(format!("git: {}", e)))?;
     let stdout = out.stdout.trim().to_string();
     if !stdout.is_empty() {
@@ -339,17 +341,13 @@ pub fn parse_remotes(output: &str) -> Vec<GitRemoteInfo> {
         }
         let name = parts[0].to_string();
         let url_and_type = parts[1].trim();
-        let entry = map.entry(name).or_insert_with(|| (String::new(), String::new()));
+        let entry = map
+            .entry(name)
+            .or_insert_with(|| (String::new(), String::new()));
         if url_and_type.ends_with("(fetch)") {
-            entry.0 = url_and_type
-                .trim_end_matches("(fetch)")
-                .trim()
-                .to_string();
+            entry.0 = url_and_type.trim_end_matches("(fetch)").trim().to_string();
         } else if url_and_type.ends_with("(push)") {
-            entry.1 = url_and_type
-                .trim_end_matches("(push)")
-                .trim()
-                .to_string();
+            entry.1 = url_and_type.trim_end_matches("(push)").trim().to_string();
         }
     }
     let mut remotes: Vec<GitRemoteInfo> = map
@@ -479,21 +477,19 @@ pub fn parse_blame_porcelain(output: &str) -> Vec<GitBlameEntry> {
     for line in output.lines() {
         if !in_block {
             // First line of a block: <40-char hash> <orig_line> <final_line> [<num_lines>]
-            if line.len() >= 40
-                && line.chars().take(40).all(|c| c.is_ascii_hexdigit())
-            {
+            if line.len() >= 40 && line.chars().take(40).all(|c| c.is_ascii_hexdigit()) {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 current_hash = parts[0].to_string();
-                current_line_no = parts
-                    .get(2)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                current_line_no = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
                 in_block = true;
             }
         } else if let Some(rest) = line.strip_prefix("author ") {
             current_author = rest.to_string();
         } else if let Some(rest) = line.strip_prefix("author-mail ") {
-            current_email = rest.trim_start_matches('<').trim_end_matches('>').to_string();
+            current_email = rest
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .to_string();
         } else if let Some(rest) = line.strip_prefix("author-time ") {
             current_timestamp = rest.parse().unwrap_or(0);
         } else if let Some(rest) = line.strip_prefix("summary ") {
@@ -746,10 +742,9 @@ impl GitProvider {
 
     /// Install git using the detected system package manager
     pub async fn install_git(&self) -> CogniaResult<String> {
-        let pm = self
-            .detect_package_manager()
-            .await
-            .ok_or_else(|| CogniaError::Provider("No supported package manager found to install Git".into()))?;
+        let pm = self.detect_package_manager().await.ok_or_else(|| {
+            CogniaError::Provider("No supported package manager found to install Git".into())
+        })?;
 
         let result = match pm {
             "winget" => {
@@ -812,7 +807,12 @@ impl GitProvider {
                 )
                 .await
             }
-            _ => return Err(CogniaError::Provider(format!("Unsupported package manager: {}", pm))),
+            _ => {
+                return Err(CogniaError::Provider(format!(
+                    "Unsupported package manager: {}",
+                    pm
+                )))
+            }
         };
 
         match result {
@@ -919,7 +919,12 @@ impl GitProvider {
                 )
                 .await
             }
-            _ => return Err(CogniaError::Provider(format!("Unsupported package manager: {}", pm))),
+            _ => {
+                return Err(CogniaError::Provider(format!(
+                    "Unsupported package manager: {}",
+                    pm
+                )))
+            }
         };
 
         match result {
@@ -975,7 +980,8 @@ impl GitProvider {
             .await
             .unwrap_or_else(|_| "HEAD (detached)".into());
 
-        let status_output = run_git_in_lenient(path, &["status", "--porcelain"]).await
+        let status_output = run_git_in_lenient(path, &["status", "--porcelain"])
+            .await
             .unwrap_or_default();
         let (staged, modified, untracked) = parse_status_porcelain(&status_output);
         let is_dirty = staged > 0 || modified > 0 || untracked > 0;
@@ -1120,7 +1126,10 @@ impl GitProvider {
         let meta_output = run_git_in(path, &["log", "-1", &format_arg, hash]).await?;
         let fields: Vec<&str> = meta_output.split(FIELD_SEP).collect();
         if fields.len() < 6 {
-            return Err(CogniaError::Provider(format!("git: invalid commit {}", hash)));
+            return Err(CogniaError::Provider(format!(
+                "git: invalid commit {}",
+                hash
+            )));
         }
         let parents: Vec<String> = fields[1]
             .split_whitespace()
@@ -1192,9 +1201,23 @@ impl GitProvider {
             u.to_string()
         } else {
             // Try to determine upstream automatically
-            match run_git_in(path, &["rev-parse", "--abbrev-ref", &format!("{}@{{upstream}}", branch)]).await {
+            match run_git_in(
+                path,
+                &[
+                    "rev-parse",
+                    "--abbrev-ref",
+                    &format!("{}@{{upstream}}", branch),
+                ],
+            )
+            .await
+            {
                 Ok(u) => u,
-                Err(_) => return Ok(GitAheadBehind { ahead: 0, behind: 0 }),
+                Err(_) => {
+                    return Ok(GitAheadBehind {
+                        ahead: 0,
+                        behind: 0,
+                    })
+                }
             }
         };
         let range = format!("{}...{}", branch, upstream_ref);
@@ -1225,12 +1248,7 @@ impl GitProvider {
     }
 
     /// Delete a branch
-    pub async fn delete_branch(
-        &self,
-        path: &str,
-        name: &str,
-        force: bool,
-    ) -> CogniaResult<String> {
+    pub async fn delete_branch(&self, path: &str, name: &str, force: bool) -> CogniaResult<String> {
         let flag = if force { "-D" } else { "-d" };
         run_git_in(path, &["branch", flag, name]).await?;
         Ok(format!("Branch '{}' deleted", name))
@@ -1315,11 +1333,7 @@ impl GitProvider {
     }
 
     /// Get activity data (commit counts per day) for heatmap
-    pub async fn get_activity(
-        &self,
-        path: &str,
-        days: u32,
-    ) -> CogniaResult<Vec<GitDayActivity>> {
+    pub async fn get_activity(&self, path: &str, days: u32) -> CogniaResult<Vec<GitDayActivity>> {
         let since_arg = format!("--since={} days ago", days);
         let output = run_git_in_lenient(path, &["log", "--all", "--format=%aI", &since_arg])
             .await
@@ -1334,15 +1348,20 @@ impl GitProvider {
         file: &str,
         limit: u32,
     ) -> CogniaResult<Vec<GitFileStatEntry>> {
-        let format_str = format!(
-            "%H{}%an{}%aI",
-            FIELD_SEP, FIELD_SEP
-        );
+        let format_str = format!("%H{}%an{}%aI", FIELD_SEP, FIELD_SEP);
         let format_arg = format!("--format={}", format_str);
         let limit_str = format!("-{}", limit);
         let output = run_git_in_lenient(
             path,
-            &["log", "--numstat", &format_arg, &limit_str, "--follow", "--", file],
+            &[
+                "log",
+                "--numstat",
+                &format_arg,
+                &limit_str,
+                "--follow",
+                "--",
+                file,
+            ],
         )
         .await?;
         Ok(parse_file_stats(&output))
@@ -1426,7 +1445,11 @@ impl Provider for GitProvider {
         self.get_git_version().await.ok().flatten().is_some()
     }
 
-    async fn search(&self, _query: &str, _options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(
+        &self,
+        _query: &str,
+        _options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
         Ok(vec![PackageSummary {
             name: "git".into(),
             description: Some("Distributed version control system".into()),
@@ -1473,7 +1496,10 @@ impl Provider for GitProvider {
 
     async fn install(&self, _request: InstallRequest) -> CogniaResult<InstallReceipt> {
         let _msg = self.install_git().await?;
-        let version = self.get_git_version().await?.unwrap_or_else(|| "unknown".into());
+        let version = self
+            .get_git_version()
+            .await?
+            .unwrap_or_else(|| "unknown".into());
         let path = self.get_git_path().await.unwrap_or_default();
         Ok(InstallReceipt {
             name: "git".into(),
@@ -1545,7 +1571,12 @@ impl Provider for GitProvider {
                 )
                 .await
             }
-            _ => return Err(CogniaError::Provider(format!("Unsupported package manager: {}", pm))),
+            _ => {
+                return Err(CogniaError::Provider(format!(
+                    "Unsupported package manager: {}",
+                    pm
+                )))
+            }
         };
 
         match result {
@@ -1561,11 +1592,17 @@ impl Provider for GitProvider {
                     err.trim()
                 )))
             }
-            Err(e) => Err(CogniaError::Provider(format!("Git uninstall failed: {}", e))),
+            Err(e) => Err(CogniaError::Provider(format!(
+                "Git uninstall failed: {}",
+                e
+            ))),
         }
     }
 
-    async fn list_installed(&self, _filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(
+        &self,
+        _filter: InstalledFilter,
+    ) -> CogniaResult<Vec<InstalledPackage>> {
         if let Some(version) = self.get_git_version().await? {
             let path = self.get_git_path().await.unwrap_or_default();
             Ok(vec![InstalledPackage {
@@ -1677,10 +1714,7 @@ mod tests {
         let input = "url.ssh://git@github.com/.insteadOf=https://github.com/\n";
         let entries = parse_config_list(input);
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].key,
-            "url.ssh://git@github.com/.insteadOf"
-        );
+        assert_eq!(entries[0].key, "url.ssh://git@github.com/.insteadOf");
         assert_eq!(entries[0].value, "https://github.com/");
     }
 
@@ -1711,10 +1745,22 @@ mod tests {
              feature/test{}def5678{}{}{}heads/feature/test\n\
              origin/main{}abc1234{}{}{}remotes/origin/main\n\
              dependabot/npm/lodash{}ghi9012{}{}{}heads/dependabot/npm/lodash",
-            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP,
-            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP,
-            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP,
-            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP,
+            FIELD_SEP
         );
         let branches = parse_branches(&input);
         assert_eq!(branches.len(), 4);
@@ -1888,7 +1934,8 @@ filename src/main.rs\n\
 
     #[test]
     fn test_parse_activity() {
-        let input = "2025-01-15T10:30:00+08:00\n2025-01-15T11:00:00+08:00\n2025-01-14T09:00:00+08:00\n";
+        let input =
+            "2025-01-15T10:30:00+08:00\n2025-01-15T11:00:00+08:00\n2025-01-14T09:00:00+08:00\n";
         let activity = parse_activity(input);
         assert_eq!(activity.len(), 2);
         let day15 = activity.iter().find(|a| a.date == "2025-01-15").unwrap();

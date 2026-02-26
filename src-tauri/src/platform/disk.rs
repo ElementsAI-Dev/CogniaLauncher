@@ -104,8 +104,8 @@ pub async fn get_disk_space(path: &Path) -> CogniaResult<DiskSpace> {
         .to_str()
         .ok_or_else(|| CogniaError::Internal("Invalid path".to_string()))?;
 
-    let c_path = CString::new(path_str)
-        .map_err(|_| CogniaError::Internal("Invalid path".to_string()))?;
+    let c_path =
+        CString::new(path_str).map_err(|_| CogniaError::Internal("Invalid path".to_string()))?;
 
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
 
@@ -208,7 +208,11 @@ pub fn parse_size(s: &str) -> Option<u64> {
         (s.as_str(), 1u64)
     };
 
-    num_str.trim().parse::<f64>().ok().map(|n| (n * unit as f64) as u64)
+    num_str
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(|n| (n * unit as f64) as u64)
 }
 
 #[cfg(test)]

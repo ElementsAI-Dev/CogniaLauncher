@@ -96,7 +96,7 @@ impl CargoProvider {
     /// Get the installed version of a crate from cargo install --list
     async fn get_installed_crate_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_cargo(&["install", "--list"]).await?;
-        
+
         for line in out.lines() {
             if !line.starts_with(' ') && !line.is_empty() {
                 // Format: "crate_name v0.1.0:"
@@ -106,8 +106,11 @@ impl CargoProvider {
                 }
             }
         }
-        
-        Err(CogniaError::Provider(format!("Crate {} not found in installed list", name)))
+
+        Err(CogniaError::Provider(format!(
+            "Crate {} not found in installed list",
+            name
+        )))
     }
 }
 
@@ -661,17 +664,19 @@ mod tests {
 
     #[test]
     fn test_cargo_provider_builder() {
-        let provider = CargoProvider::new()
-            .with_registry("https://rsproxy.cn");
-        
-        assert_eq!(provider.registry_url, Some("https://rsproxy.cn".to_string()));
+        let provider = CargoProvider::new().with_registry("https://rsproxy.cn");
+
+        assert_eq!(
+            provider.registry_url,
+            Some("https://rsproxy.cn".to_string())
+        );
     }
 
     #[test]
     fn test_cargo_provider_with_env() {
-        let provider = CargoProvider::new()
-            .with_env("CARGO_HTTP_PROXY", "http://proxy.example.com:8080");
-        
+        let provider =
+            CargoProvider::new().with_env("CARGO_HTTP_PROXY", "http://proxy.example.com:8080");
+
         assert_eq!(
             provider.env_vars.get("CARGO_HTTP_PROXY"),
             Some(&"http://proxy.example.com:8080".to_string())
@@ -749,8 +754,11 @@ serde_json v1.0.117:
 
     #[test]
     fn test_cargo_provider_with_registry_opt_some() {
-        let provider = CargoProvider::new()
-            .with_registry_opt(Some("https://rsproxy.cn".to_string()));
-        assert_eq!(provider.registry_url, Some("https://rsproxy.cn".to_string()));
+        let provider =
+            CargoProvider::new().with_registry_opt(Some("https://rsproxy.cn".to_string()));
+        assert_eq!(
+            provider.registry_url,
+            Some("https://rsproxy.cn".to_string())
+        );
     }
 }

@@ -32,32 +32,38 @@ impl PipxProvider {
 
     /// Get pipx home directory
     fn get_pipx_home() -> Option<PathBuf> {
-        std::env::var("PIPX_HOME").ok().map(PathBuf::from).or_else(|| {
-            if cfg!(windows) {
-                std::env::var("USERPROFILE")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".local").join("pipx"))
-            } else {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".local").join("pipx"))
-            }
-        })
+        std::env::var("PIPX_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                if cfg!(windows) {
+                    std::env::var("USERPROFILE")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".local").join("pipx"))
+                } else {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".local").join("pipx"))
+                }
+            })
     }
 
     /// Get pipx bin directory
     fn get_pipx_bin() -> Option<PathBuf> {
-        std::env::var("PIPX_BIN_DIR").ok().map(PathBuf::from).or_else(|| {
-            if cfg!(windows) {
-                std::env::var("USERPROFILE")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".local").join("bin"))
-            } else {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join(".local").join("bin"))
-            }
-        })
+        std::env::var("PIPX_BIN_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                if cfg!(windows) {
+                    std::env::var("USERPROFILE")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".local").join("bin"))
+                } else {
+                    std::env::var("HOME")
+                        .ok()
+                        .map(|h| PathBuf::from(h).join(".local").join("bin"))
+                }
+            })
     }
 
     /// Parse `pipx list --json` output

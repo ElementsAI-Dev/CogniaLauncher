@@ -33,7 +33,8 @@ impl NixProvider {
         if let Some(&cached) = self.use_new_cli.get() {
             return cached;
         }
-        let detected = if let Ok(out) = process::execute("nix", &["profile", "--help"], None).await {
+        let detected = if let Ok(out) = process::execute("nix", &["profile", "--help"], None).await
+        {
             out.success
         } else {
             false
@@ -194,12 +195,7 @@ impl Provider for NixProvider {
                     if let Some((_, val)) = obj.iter().next() {
                         return Ok(PackageInfo {
                             name: name.into(),
-                            display_name: Some(
-                                val["pname"]
-                                    .as_str()
-                                    .unwrap_or(name)
-                                    .to_string(),
-                            ),
+                            display_name: Some(val["pname"].as_str().unwrap_or(name).to_string()),
                             description: val["description"].as_str().map(|s| s.to_string()),
                             homepage: None,
                             license: None,
@@ -288,7 +284,11 @@ impl Provider for NixProvider {
                 // Try to extract version from the end
                 if let Some(pos) = line.rfind('-') {
                     let potential_version = &line[pos + 1..];
-                    if potential_version.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                    if potential_version
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_digit())
+                    {
                         return Ok(Some(potential_version.to_string()));
                     }
                 }
@@ -331,11 +331,16 @@ impl Provider for NixProvider {
 
                                 // Extract name from store path: /nix/store/hash-name-version
                                 let path_part = store_path.rsplit('/').next()?;
-                                let name_version = path_part.split_once('-').map(|(_, rest)| rest)?;
+                                let name_version =
+                                    path_part.split_once('-').map(|(_, rest)| rest)?;
 
                                 let (name, version) = if let Some(pos) = name_version.rfind('-') {
                                     let potential_ver = &name_version[pos + 1..];
-                                    if potential_ver.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                                    if potential_ver
+                                        .chars()
+                                        .next()
+                                        .map_or(false, |c| c.is_ascii_digit())
+                                    {
                                         (name_version[..pos].to_string(), potential_ver.to_string())
                                     } else {
                                         (name_version.to_string(), "unknown".to_string())
@@ -382,7 +387,11 @@ impl Provider for NixProvider {
                 // Parse "name-version" format
                 let (name, version) = if let Some(pos) = full_name.rfind('-') {
                     let potential_ver = &full_name[pos + 1..];
-                    if potential_ver.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                    if potential_ver
+                        .chars()
+                        .next()
+                        .map_or(false, |c| c.is_ascii_digit())
+                    {
                         (full_name[..pos].to_string(), potential_ver.to_string())
                     } else {
                         (full_name.clone(), "unknown".to_string())
@@ -415,11 +424,12 @@ impl Provider for NixProvider {
         let out = process::execute("nix-env", &["-u", "--dry-run"], Some(opts)).await;
 
         if let Ok(result) = out {
-            let output = if result.stderr.contains("upgrading") || result.stderr.contains("would upgrade") {
-                &result.stderr
-            } else {
-                &result.stdout
-            };
+            let output =
+                if result.stderr.contains("upgrading") || result.stderr.contains("would upgrade") {
+                    &result.stderr
+                } else {
+                    &result.stdout
+                };
 
             return Ok(output
                 .lines()

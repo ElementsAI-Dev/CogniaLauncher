@@ -51,7 +51,9 @@ impl VoltaProvider {
         if out.success {
             Ok(out.stdout.trim().trim_start_matches('v').to_string())
         } else {
-            Err(CogniaError::Provider("Failed to get Node.js version".into()))
+            Err(CogniaError::Provider(
+                "Failed to get Node.js version".into(),
+            ))
         }
     }
 
@@ -70,11 +72,7 @@ impl VoltaProvider {
             let (tool, version_part) = split_name_version(line);
             if let Some(ver_str) = version_part {
                 // Version might have trailing info like "(default)"
-                let version = ver_str
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
+                let version = ver_str.split_whitespace().next().unwrap_or("").to_string();
 
                 if !tool.is_empty() && !version.is_empty() {
                     results.push((tool.to_string(), version, PathBuf::new()));

@@ -1,7 +1,10 @@
 //! Download history tracking
 
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{disk::{format_size, format_duration}, fs};
+use crate::platform::{
+    disk::{format_duration, format_size},
+    fs,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -357,7 +360,6 @@ impl HistoryStats {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

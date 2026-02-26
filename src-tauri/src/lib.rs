@@ -12,8 +12,10 @@ pub mod tray;
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
 use commands::download::init_download_manager;
+use commands::terminal::SharedTerminalProfileManager;
 use config::Settings;
 use core::custom_detection::CustomDetectionManager;
+use core::terminal::TerminalProfileManager;
 use log::{debug, info};
 use provider::ProviderRegistry;
 use std::collections::HashMap;
@@ -39,20 +41,21 @@ pub fn is_initialized() -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Install panic hook BEFORE anything else so crashes generate reports
+    commands::diagnostic::install_panic_hook();
+
     let mut builder = tauri::Builder::default();
 
     // Single-instance must be the first plugin registered (Tauri docs requirement)
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(
-            |app, _args, _cwd| {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.unminimize();
-                    let _ = window.set_focus();
-                }
-            },
-        ));
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }));
     }
 
     builder
@@ -150,19 +153,47 @@ pub fn run() {
                 drop(settings_guard);
                 info!("Download manager initialized");
 
+                // Initialize terminal profile manager
+                let cognia_dir = settings.read().await.get_root_dir();
+                let terminal_manager = match TerminalProfileManager::new(&cognia_dir).await {
+                    Ok(mgr) => {
+                        info!("Terminal profile manager initialized");
+                        mgr
+                    }
+                    Err(e) => {
+                        info!("Terminal profile manager init error (using empty): {}", e);
+                        TerminalProfileManager::new(&std::path::PathBuf::from("."))
+                            .await
+                            .unwrap_or_else(|_| {
+                                // This is a panic-safe fallback; we create a minimal manager
+                                panic!("Cannot initialize terminal profile manager at all")
+                            })
+                    }
+                };
+
                 // Mark initialization as complete
                 INITIALIZED.store(true, Ordering::SeqCst);
                 info!("Application initialization complete");
 
-                download_manager
+                (download_manager, terminal_manager)
             });
 
-            // Register download manager as Tauri managed state
+            // Register download manager and terminal profile manager as Tauri managed state
+            let (download_manager, terminal_manager) = download_manager;
             app.manage(download_manager);
+            app.manage(Arc::new(RwLock::new(terminal_manager)) as SharedTerminalProfileManager);
 
             // Initialize system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
                 info!("Failed to setup system tray: {}", e);
+            }
+
+            // Hide window if start-minimized is enabled
+            if tray::should_start_minimized(app.handle()) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                    info!("Started minimized to tray");
+                }
             }
 
             // Start background cache cleanup task
@@ -264,6 +295,8 @@ pub fn run() {
             commands::config::get_platform_info,
             commands::config::get_disk_info,
             commands::config::get_network_interfaces,
+            commands::config::get_components_info,
+            commands::config::get_battery_info,
             commands::config::app_check_init,
             // Cache commands
             commands::cache::cache_info,
@@ -359,6 +392,22 @@ pub fn run() {
             commands::shim::path_remove,
             commands::shim::path_check,
             commands::shim::path_get_add_command,
+            // Environment variable management commands
+            commands::envvar::envvar_list_all,
+            commands::envvar::envvar_get,
+            commands::envvar::envvar_set_process,
+            commands::envvar::envvar_remove_process,
+            commands::envvar::envvar_get_persistent,
+            commands::envvar::envvar_set_persistent,
+            commands::envvar::envvar_remove_persistent,
+            commands::envvar::envvar_get_path,
+            commands::envvar::envvar_add_path_entry,
+            commands::envvar::envvar_remove_path_entry,
+            commands::envvar::envvar_reorder_path,
+            commands::envvar::envvar_list_shell_profiles,
+            commands::envvar::envvar_read_shell_profile,
+            commands::envvar::envvar_import_env_file,
+            commands::envvar::envvar_export_env_file,
             // Updater commands
             commands::updater::self_check_update,
             commands::updater::self_update,
@@ -369,6 +418,12 @@ pub fn run() {
             commands::log::log_get_dir,
             commands::log::log_export,
             commands::log::log_get_total_size,
+            // Diagnostic commands
+            commands::diagnostic::diagnostic_export_bundle,
+            commands::diagnostic::diagnostic_get_default_export_path,
+            commands::diagnostic::diagnostic_check_last_crash,
+            commands::diagnostic::diagnostic_dismiss_crash,
+            commands::diagnostic::diagnostic_capture_frontend_crash,
             // Manifest commands
             commands::manifest::manifest_read,
             commands::manifest::manifest_init,
@@ -450,6 +505,13 @@ pub fn run() {
             tray::tray_disable_autostart,
             tray::tray_send_notification,
             tray::tray_rebuild,
+            tray::tray_set_minimize_to_tray,
+            tray::tray_set_start_minimized,
+            tray::tray_set_always_on_top,
+            tray::tray_get_menu_config,
+            tray::tray_set_menu_config,
+            tray::tray_get_available_menu_items,
+            tray::tray_reset_menu_config,
             // Custom detection commands
             commands::custom_detection::custom_rule_list,
             commands::custom_detection::custom_rule_get,
@@ -495,7 +557,10 @@ pub fn run() {
             commands::wsl::wsl_get_distro_config,
             commands::wsl::wsl_set_distro_config,
             commands::wsl::wsl_get_version_info,
+            commands::wsl::wsl_get_capabilities,
             commands::wsl::wsl_set_sparse,
+            commands::wsl::wsl_move_distro,
+            commands::wsl::wsl_resize_distro,
             commands::wsl::wsl_install_wsl_only,
             commands::wsl::wsl_install_with_location,
             commands::wsl::wsl_debug_detection,
@@ -536,6 +601,34 @@ pub fn run() {
             commands::git::git_search_commits,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
+            // Terminal management commands
+            commands::terminal::terminal_detect_shells,
+            commands::terminal::terminal_get_shell_info,
+            commands::terminal::terminal_list_profiles,
+            commands::terminal::terminal_get_profile,
+            commands::terminal::terminal_create_profile,
+            commands::terminal::terminal_update_profile,
+            commands::terminal::terminal_delete_profile,
+            commands::terminal::terminal_get_default_profile,
+            commands::terminal::terminal_set_default_profile,
+            commands::terminal::terminal_launch_profile,
+            commands::terminal::terminal_launch_profile_detailed,
+            commands::terminal::terminal_get_proxy_env_vars,
+            commands::terminal::terminal_read_config,
+            commands::terminal::terminal_backup_config,
+            commands::terminal::terminal_append_to_config,
+            commands::terminal::terminal_get_config_entries,
+            commands::terminal::terminal_ps_list_profiles,
+            commands::terminal::terminal_ps_read_profile,
+            commands::terminal::terminal_ps_write_profile,
+            commands::terminal::terminal_ps_get_execution_policy,
+            commands::terminal::terminal_ps_set_execution_policy,
+            commands::terminal::terminal_ps_list_all_modules,
+            commands::terminal::terminal_ps_get_module_detail,
+            commands::terminal::terminal_ps_list_installed_scripts,
+            commands::terminal::terminal_detect_framework,
+            commands::terminal::terminal_list_plugins,
+            commands::terminal::terminal_get_shell_env_vars,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -559,6 +652,14 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle();
+                if tray::handle_close_to_tray(app) {
+                    api.prevent_close();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -37,7 +37,10 @@ impl ApkProvider {
                 return Ok(line[pos + 1..].to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 }
 
@@ -442,7 +445,10 @@ mod tests {
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].name, "curl-8.4.0");
-        assert_eq!(results[0].description, Some("A URL retrieval utility and library".into()));
+        assert_eq!(
+            results[0].description,
+            Some("A URL retrieval utility and library".into())
+        );
     }
 
     #[test]

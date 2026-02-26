@@ -36,15 +36,13 @@ impl Msys2Provider {
 
     /// Get the full path to pacman.exe
     fn get_pacman_exe(&self) -> Option<String> {
-        self.msys2_root
-            .as_ref()
-            .map(|root| {
-                root.join("usr")
-                    .join("bin")
-                    .join("pacman.exe")
-                    .to_string_lossy()
-                    .to_string()
-            })
+        self.msys2_root.as_ref().map(|root| {
+            root.join("usr")
+                .join("bin")
+                .join("pacman.exe")
+                .to_string_lossy()
+                .to_string()
+        })
     }
 
     fn make_opts(&self) -> ProcessOptions {
@@ -116,7 +114,12 @@ fn find_msys2_root() -> Option<PathBuf> {
     // 4. Check user profile
     if let Ok(profile) = std::env::var("USERPROFILE") {
         let user_path = PathBuf::from(profile).join("msys64");
-        if user_path.join("usr").join("bin").join("pacman.exe").exists() {
+        if user_path
+            .join("usr")
+            .join("bin")
+            .join("pacman.exe")
+            .exists()
+        {
             return Some(user_path);
         }
     }
@@ -491,10 +494,7 @@ mod tests {
     fn test_find_msys2_root_default() {
         let default = PathBuf::from(r"C:\msys64");
         let expected = default.join("usr").join("bin").join("pacman.exe");
-        assert_eq!(
-            expected.to_string_lossy(),
-            r"C:\msys64\usr\bin\pacman.exe"
-        );
+        assert_eq!(expected.to_string_lossy(), r"C:\msys64\usr\bin\pacman.exe");
     }
 
     #[test]

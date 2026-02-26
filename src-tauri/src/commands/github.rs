@@ -113,11 +113,13 @@ pub struct ParsedRepo {
 
 #[tauri::command]
 pub async fn github_parse_url(url: String) -> Result<Option<ParsedRepo>, String> {
-    Ok(GitHubProvider::parse_repo_url(&url).map(|(owner, repo)| ParsedRepo {
-        full_name: format!("{}/{}", owner, repo),
-        owner,
-        repo,
-    }))
+    Ok(
+        GitHubProvider::parse_repo_url(&url).map(|(owner, repo)| ParsedRepo {
+            full_name: format!("{}/{}", owner, repo),
+            owner,
+            repo,
+        }),
+    )
 }
 
 /// Helper to create a GitHubProvider with an optional token.
@@ -143,7 +145,10 @@ pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result
 }
 
 #[tauri::command]
-pub async fn github_list_branches(repo: String, token: Option<String>) -> Result<Vec<BranchInfo>, String> {
+pub async fn github_list_branches(
+    repo: String,
+    token: Option<String>,
+) -> Result<Vec<BranchInfo>, String> {
     let provider = make_github_provider(token).await;
     provider
         .list_branches(&repo)
@@ -163,7 +168,10 @@ pub async fn github_list_tags(repo: String, token: Option<String>) -> Result<Vec
 }
 
 #[tauri::command]
-pub async fn github_list_releases(repo: String, token: Option<String>) -> Result<Vec<ReleaseInfo>, String> {
+pub async fn github_list_releases(
+    repo: String,
+    token: Option<String>,
+) -> Result<Vec<ReleaseInfo>, String> {
     let provider = make_github_provider(token).await;
     provider
         .list_releases(&repo)
@@ -252,7 +260,9 @@ pub async fn github_download_source(
 
 #[tauri::command]
 pub async fn github_set_token(token: String) -> Result<(), String> {
-    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let mut settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     settings
         .set_value("providers.github.token", &token)
         .map_err(|e| e.to_string())?;
@@ -261,14 +271,19 @@ pub async fn github_set_token(token: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn github_get_token() -> Result<Option<String>, String> {
-    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
-    Ok(settings.get_value("providers.github.token")
+    let settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(settings
+        .get_value("providers.github.token")
         .or_else(|| std::env::var("GITHUB_TOKEN").ok()))
 }
 
 #[tauri::command]
 pub async fn github_clear_token() -> Result<(), String> {
-    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let mut settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     settings
         .set_value("providers.github.token", "")
         .map_err(|e| e.to_string())?;
@@ -321,4 +336,3 @@ pub async fn github_validate_token(token: String) -> Result<bool, String> {
     let provider = GitHubProvider::new().with_token(Some(token));
     Ok(provider.validate_token().await)
 }
-

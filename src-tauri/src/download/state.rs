@@ -18,10 +18,7 @@ pub enum DownloadState {
     /// Task completed successfully
     Completed,
     /// Task failed with an error
-    Failed {
-        error: String,
-        recoverable: bool,
-    },
+    Failed { error: String, recoverable: bool },
 }
 
 impl Default for DownloadState {
@@ -33,12 +30,22 @@ impl Default for DownloadState {
 impl DownloadState {
     /// Check if the download is in a terminal state
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Cancelled | Self::Failed { .. })
+        matches!(
+            self,
+            Self::Completed | Self::Cancelled | Self::Failed { .. }
+        )
     }
 
     /// Check if the download can be resumed
     pub fn can_resume(&self) -> bool {
-        matches!(self, Self::Paused | Self::Failed { recoverable: true, .. })
+        matches!(
+            self,
+            Self::Paused
+                | Self::Failed {
+                    recoverable: true,
+                    ..
+                }
+        )
     }
 
     /// Check if the download can be paused
@@ -98,9 +105,16 @@ impl std::fmt::Display for DownloadError {
             Self::Network { message } => write!(f, "Network error: {}", message),
             Self::FileSystem { message } => write!(f, "File system error: {}", message),
             Self::ChecksumMismatch { expected, actual } => {
-                write!(f, "Checksum mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Checksum mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
-            Self::InsufficientSpace { required, available } => {
+            Self::InsufficientSpace {
+                required,
+                available,
+            } => {
                 write!(
                     f,
                     "Insufficient disk space: {} required, {} available",
@@ -132,9 +146,9 @@ impl DownloadError {
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::Network { .. }
-                | Self::Timeout { .. }
-                | Self::RateLimited { .. }
-                | Self::Interrupted => true,
+            | Self::Timeout { .. }
+            | Self::RateLimited { .. }
+            | Self::Interrupted => true,
             Self::HttpError { status, .. } if *status >= 500 => true,
             _ => false,
         }
@@ -148,7 +162,6 @@ impl DownloadError {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -216,10 +229,7 @@ mod tests {
             actual: "def".into()
         }
         .is_recoverable());
-        assert!(!DownloadError::InvalidUrl {
-            url: "bad".into()
-        }
-        .is_recoverable());
+        assert!(!DownloadError::InvalidUrl { url: "bad".into() }.is_recoverable());
         assert!(!DownloadError::HttpError {
             status: 404,
             message: "Not Found".into()
@@ -280,10 +290,7 @@ mod tests {
         };
         let state = err.to_failed_state();
         match state {
-            DownloadState::Failed {
-                error,
-                recoverable,
-            } => {
+            DownloadState::Failed { error, recoverable } => {
                 assert!(error.contains("Network error: timeout"));
                 assert!(recoverable);
             }
@@ -296,10 +303,7 @@ mod tests {
         };
         let state = err.to_failed_state();
         match state {
-            DownloadState::Failed {
-                error,
-                recoverable,
-            } => {
+            DownloadState::Failed { error, recoverable } => {
                 assert!(error.contains("Checksum mismatch"));
                 assert!(!recoverable);
             }
@@ -353,11 +357,9 @@ mod tests {
             .to_string()
             .contains("Rate limited"));
 
-        assert!(DownloadError::TaskNotFound {
-            id: "abc".into()
-        }
-        .to_string()
-        .contains("not found"));
+        assert!(DownloadError::TaskNotFound { id: "abc".into() }
+            .to_string()
+            .contains("not found"));
 
         assert!(DownloadError::InvalidOperation {
             state: "paused".into(),

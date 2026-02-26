@@ -443,7 +443,10 @@ impl BatchManager {
                 if let Some(p) = registry.get(provider_id) {
                     if p.is_available().await {
                         if let Ok(installed) = p
-                            .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
+                            .list_installed(crate::provider::InstalledFilter {
+                                global_only: true,
+                                ..Default::default()
+                            })
                             .await
                         {
                             all_installed.extend(installed.into_iter().map(|i| PackageSpec {
@@ -499,12 +502,7 @@ impl BatchManager {
                         Ok(mut item) => {
                             item.action = format!("updated {} -> {}", current, latest);
                             let _ = HistoryManager::record_update(
-                                &spec.name,
-                                &current,
-                                &latest,
-                                &provider,
-                                true,
-                                None,
+                                &spec.name, &current, &latest, &provider, true, None,
                             )
                             .await;
                             successful.push(item);
@@ -679,14 +677,7 @@ impl BatchManager {
         global: bool,
         force: bool,
     ) -> Result<BatchItemResult, BatchItemError> {
-        Self::install_with_retry(
-            self.registry.clone(),
-            spec,
-            global,
-            force,
-            self.max_retries,
-        )
-        .await
+        Self::install_with_retry(self.registry.clone(), spec, global, force, self.max_retries).await
     }
 
     async fn uninstall_single(
@@ -867,7 +858,10 @@ impl PackageSpec {
             "latest", "next", "beta", "alpha", "canary", "rc", "stable", "dev", "nightly",
         ];
         let s_lower = s.to_lowercase();
-        if dist_tags.iter().any(|tag| s_lower == *tag || s_lower.starts_with(&format!("{}-", tag))) {
+        if dist_tags
+            .iter()
+            .any(|tag| s_lower == *tag || s_lower.starts_with(&format!("{}-", tag)))
+        {
             return true;
         }
 
@@ -886,14 +880,23 @@ impl PackageSpec {
         // Comparison operators followed by digit: >=1.0.0, <=2.0.0, >0.5, <3, =1.0
         if matches!(first_char, '>' | '<' | '=') {
             let rest = s.trim_start_matches(|c| c == '>' || c == '<' || c == '=');
-            if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if rest
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 return true;
             }
         }
 
         // Version prefix: v1.0.0, V1.0.0
         if matches!(first_char, 'v' | 'V') {
-            if s.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if s.chars()
+                .nth(1)
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 return true;
             }
         }
@@ -1062,7 +1065,7 @@ mod tests {
     fn test_cancellation_token_cancel() {
         let token = CancellationToken::new();
         assert!(!token.is_cancelled());
-        
+
         token.cancel();
         assert!(token.is_cancelled());
     }
@@ -1072,7 +1075,7 @@ mod tests {
         let token = CancellationToken::new();
         token.cancel();
         assert!(token.is_cancelled());
-        
+
         token.reset();
         assert!(!token.is_cancelled());
     }
@@ -1081,9 +1084,9 @@ mod tests {
     fn test_cancellation_token_clone() {
         let token = CancellationToken::new();
         let cloned = token.clone();
-        
+
         token.cancel();
-        
+
         // Both should be cancelled since they share the same Arc
         assert!(token.is_cancelled());
         assert!(cloned.is_cancelled());
@@ -1166,7 +1169,11 @@ mod tests {
             total: 5,
         };
         match progress {
-            BatchProgress::Installing { package, current, total } => {
+            BatchProgress::Installing {
+                package,
+                current,
+                total,
+            } => {
                 assert_eq!(package, "lodash");
                 assert_eq!(current, 1);
                 assert_eq!(total, 5);
@@ -1184,7 +1191,12 @@ mod tests {
             total: 5,
         };
         match progress {
-            BatchProgress::ItemCompleted { package, success, current, total } => {
+            BatchProgress::ItemCompleted {
+                package,
+                success,
+                current,
+                total,
+            } => {
                 assert_eq!(package, "lodash");
                 assert!(success);
                 assert_eq!(current, 1);

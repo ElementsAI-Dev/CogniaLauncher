@@ -416,7 +416,10 @@ impl HealthCheckManager {
 
         // Check 3: Verify the provider can list packages (functional check)
         match provider
-            .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
+            .list_installed(crate::provider::InstalledFilter {
+                global_only: true,
+                ..Default::default()
+            })
             .await
         {
             Ok(_) => {
@@ -917,11 +920,17 @@ impl HealthCheckManager {
             "deno" => vec![".deno".to_string()],
             "pyenv" => vec!["pyenv".to_string(), ".pyenv".to_string()],
             "uv" => vec!["uv".to_string(), ".local/share/uv".to_string()],
-            "conda" => vec!["conda".to_string(), "miniconda".to_string(), "anaconda".to_string()],
+            "conda" => vec![
+                "conda".to_string(),
+                "miniconda".to_string(),
+                "anaconda".to_string(),
+            ],
             "goenv" => vec!["goenv".to_string(), ".goenv".to_string()],
             "rustup" => vec![".cargo".to_string(), ".rustup".to_string()],
             "rbenv" => vec!["rbenv".to_string(), ".rbenv".to_string()],
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => vec!["sdkman".to_string(), ".sdkman".to_string()],
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => {
+                vec!["sdkman".to_string(), ".sdkman".to_string()]
+            }
             "phpbrew" => vec!["phpbrew".to_string(), ".phpbrew".to_string()],
             "dotnet" => vec!["dotnet".to_string()],
             "zig" => vec![".zig".to_string()],
@@ -936,7 +945,10 @@ impl HealthCheckManager {
         match provider_id {
             "fnm" => "eval \"$(fnm env)\"".to_string(),
             "nvm" => "source ~/.nvm/nvm.sh".to_string(),
-            "volta" => "export VOLTA_HOME=\"$HOME/.volta\" && export PATH=\"$VOLTA_HOME/bin:$PATH\"".to_string(),
+            "volta" => {
+                "export VOLTA_HOME=\"$HOME/.volta\" && export PATH=\"$VOLTA_HOME/bin:$PATH\""
+                    .to_string()
+            }
             "deno" => "export PATH=\"$HOME/.deno/bin:$PATH\"".to_string(),
             "pyenv" => "eval \"$(pyenv init -)\"".to_string(),
             "uv" => "# uv manages PATH automatically".to_string(),
@@ -944,7 +956,9 @@ impl HealthCheckManager {
             "goenv" => "eval \"$(goenv init -)\"".to_string(),
             "rustup" => "source $HOME/.cargo/env".to_string(),
             "rbenv" => "eval \"$(rbenv init -)\"".to_string(),
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => {
+                "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string()
+            }
             "phpbrew" => "source ~/.phpbrew/bashrc".to_string(),
             "zig" => "export PATH=\"$HOME/.zig/current:$PATH\"".to_string(),
             "fvm" => "export PATH=\"$HOME/fvm/default/bin:$PATH\"".to_string(),

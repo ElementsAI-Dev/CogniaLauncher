@@ -15,14 +15,17 @@ impl ScoopProvider {
 
     /// Execute a scoop command with a generous timeout.
     async fn run_scoop(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = process::ProcessOptions::new()
-            .with_timeout(Duration::from_secs(120));
+        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(120));
 
         let out = process::execute("scoop", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            let msg = if out.stderr.trim().is_empty() {
+                out.stdout
+            } else {
+                out.stderr
+            };
             Err(CogniaError::Provider(msg))
         }
     }
@@ -45,7 +48,8 @@ impl ScoopProvider {
             }
         }
         // Fallback to Version: if Installed: field missing
-        latest_version.ok_or_else(|| CogniaError::Provider(format!("Version not found for {}", name)))
+        latest_version
+            .ok_or_else(|| CogniaError::Provider(format!("Version not found for {}", name)))
     }
 
     fn get_scoop_dir() -> Option<PathBuf> {
@@ -70,7 +74,10 @@ impl ScoopProvider {
             }
 
             // Detect table separator (---- ---- ----)
-            if !separator_seen && trimmed.chars().all(|c| c == '-' || c == ' ') && trimmed.contains('-') {
+            if !separator_seen
+                && trimmed.chars().all(|c| c == '-' || c == ' ')
+                && trimmed.contains('-')
+            {
                 separator_seen = true;
                 in_table = true;
                 continue;
@@ -94,9 +101,11 @@ impl ScoopProvider {
                 if let Some(name_start) = trimmed.find('\'') {
                     if let Some(name_end) = trimmed[name_start + 1..].find('\'') {
                         let name = &trimmed[name_start + 1..name_start + 1 + name_end];
-                        let version = trimmed
-                            .find('(')
-                            .and_then(|start| trimmed.find(')').map(|end| trimmed[start + 1..end].to_string()));
+                        let version = trimmed.find('(').and_then(|start| {
+                            trimmed
+                                .find(')')
+                                .map(|end| trimmed[start + 1..end].to_string())
+                        });
                         results.push((name.to_string(), version));
                     }
                 }
@@ -284,9 +293,8 @@ impl Provider for ScoopProvider {
         }
 
         // Use manifest path as repository hint
-        let repository = manifest.or_else(|| {
-            bucket.map(|b| format!("https://github.com/ScoopInstaller/{}", b))
-        });
+        let repository =
+            manifest.or_else(|| bucket.map(|b| format!("https://github.com/ScoopInstaller/{}", b)));
 
         Ok(PackageInfo {
             name: name.into(),
@@ -458,13 +466,21 @@ impl SystemPackageProvider for ScoopProvider {
             // "Scoop (v0.5.3)" or just version number
             if let Some(v_pos) = trimmed.find('v') {
                 let rest = &trimmed[v_pos + 1..];
-                let version: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+                let version: String = rest
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
                 if !version.is_empty() {
                     return Ok(version);
                 }
             }
             // Plain version line like "0.5.3"
-            if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            {
                 return Ok(trimmed.to_string());
             }
         }
@@ -604,9 +620,16 @@ mod tests {
     #[test]
     fn test_requires_elevation() {
         let provider = ScoopProvider::new();
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "install"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "uninstall"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "upgrade"));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "install"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider,
+            "uninstall"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "upgrade"
+        ));
     }
 
     #[test]

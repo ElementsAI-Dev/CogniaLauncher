@@ -101,14 +101,14 @@ macro_rules! impl_node_provider_install {
         global_dir_method: $global_dir:expr
     ) => {
         impl $provider {
-            async fn install_package_common(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+            async fn install_package_common(
+                &self,
+                req: InstallRequest,
+            ) -> CogniaResult<InstallReceipt> {
                 use $crate::provider::node_base::NodeProviderUtils;
-                
-                let pkg = NodeProviderUtils::build_package_spec(
-                    &req.name,
-                    req.version.as_deref(),
-                    $sep,
-                );
+
+                let pkg =
+                    NodeProviderUtils::build_package_spec(&req.name, req.version.as_deref(), $sep);
 
                 let args: Vec<&str> = if req.global {
                     let mut base: Vec<&str> = $global_args.to_vec();
@@ -174,23 +174,44 @@ mod tests {
 
     #[test]
     fn test_split_name_version_with_version() {
-        assert_eq!(split_name_version("lodash@4.17.21"), ("lodash", Some("4.17.21")));
-        assert_eq!(split_name_version("express@4.18.2"), ("express", Some("4.18.2")));
-        assert_eq!(split_name_version("react@18.0.0"), ("react", Some("18.0.0")));
+        assert_eq!(
+            split_name_version("lodash@4.17.21"),
+            ("lodash", Some("4.17.21"))
+        );
+        assert_eq!(
+            split_name_version("express@4.18.2"),
+            ("express", Some("4.18.2"))
+        );
+        assert_eq!(
+            split_name_version("react@18.0.0"),
+            ("react", Some("18.0.0"))
+        );
     }
 
     #[test]
     fn test_split_name_version_scoped_no_version() {
         assert_eq!(split_name_version("@types/node"), ("@types/node", None));
-        assert_eq!(split_name_version("@vue/cli-service"), ("@vue/cli-service", None));
+        assert_eq!(
+            split_name_version("@vue/cli-service"),
+            ("@vue/cli-service", None)
+        );
         assert_eq!(split_name_version("@angular/core"), ("@angular/core", None));
     }
 
     #[test]
     fn test_split_name_version_scoped_with_version() {
-        assert_eq!(split_name_version("@types/node@18.0.0"), ("@types/node", Some("18.0.0")));
-        assert_eq!(split_name_version("@vue/cli-service@5.0.8"), ("@vue/cli-service", Some("5.0.8")));
-        assert_eq!(split_name_version("@types/react@^18.0.0"), ("@types/react", Some("^18.0.0")));
+        assert_eq!(
+            split_name_version("@types/node@18.0.0"),
+            ("@types/node", Some("18.0.0"))
+        );
+        assert_eq!(
+            split_name_version("@vue/cli-service@5.0.8"),
+            ("@vue/cli-service", Some("5.0.8"))
+        );
+        assert_eq!(
+            split_name_version("@types/react@^18.0.0"),
+            ("@types/react", Some("^18.0.0"))
+        );
     }
 
     #[test]
@@ -198,21 +219,42 @@ mod tests {
         assert_eq!(split_name_version(""), ("", None));
         assert_eq!(split_name_version("  "), ("", None));
         assert_eq!(split_name_version("lodash@"), ("lodash@", None));
-        assert_eq!(split_name_version("  lodash@4.0.0  "), ("lodash", Some("4.0.0")));
+        assert_eq!(
+            split_name_version("  lodash@4.0.0  "),
+            ("lodash", Some("4.0.0"))
+        );
     }
 
     #[test]
     fn test_split_name_version_dist_tags() {
-        assert_eq!(split_name_version("lodash@latest"), ("lodash", Some("latest")));
-        assert_eq!(split_name_version("@types/node@latest"), ("@types/node", Some("latest")));
+        assert_eq!(
+            split_name_version("lodash@latest"),
+            ("lodash", Some("latest"))
+        );
+        assert_eq!(
+            split_name_version("@types/node@latest"),
+            ("@types/node", Some("latest"))
+        );
         assert_eq!(split_name_version("react@next"), ("react", Some("next")));
     }
 
     #[test]
     fn test_split_name_version_version_ranges() {
-        assert_eq!(split_name_version("lodash@^4.0.0"), ("lodash", Some("^4.0.0")));
-        assert_eq!(split_name_version("lodash@~4.0.0"), ("lodash", Some("~4.0.0")));
-        assert_eq!(split_name_version("lodash@>=4.0.0"), ("lodash", Some(">=4.0.0")));
-        assert_eq!(split_name_version("@types/node@>=18.0.0"), ("@types/node", Some(">=18.0.0")));
+        assert_eq!(
+            split_name_version("lodash@^4.0.0"),
+            ("lodash", Some("^4.0.0"))
+        );
+        assert_eq!(
+            split_name_version("lodash@~4.0.0"),
+            ("lodash", Some("~4.0.0"))
+        );
+        assert_eq!(
+            split_name_version("lodash@>=4.0.0"),
+            ("lodash", Some(">=4.0.0"))
+        );
+        assert_eq!(
+            split_name_version("@types/node@>=18.0.0"),
+            ("@types/node", Some(">=18.0.0"))
+        );
     }
 }

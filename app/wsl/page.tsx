@@ -39,7 +39,7 @@ import {
   ArrowUpCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslImportOptions } from '@/types/tauri';
+import type { WslImportOptions, WslMountOptions } from '@/types/tauri';
 
 export default function WslPage() {
   const { t } = useLocale();
@@ -49,6 +49,7 @@ export default function WslPage() {
     distros,
     onlineDistros,
     status,
+    capabilities,
     loading,
     error,
     checkAvailability,
@@ -60,8 +61,10 @@ export default function WslPage() {
     shutdown,
     setDefault,
     setVersion,
+    setDefaultVersion,
     exportDistro,
     importDistro,
+    importInPlace,
     updateWsl,
     launch,
     config,
@@ -69,10 +72,13 @@ export default function WslPage() {
     refreshConfig,
     setConfigValue,
     getDiskUsage,
+    mountDisk,
+    unmountDisk,
     getIpAddress,
     changeDefaultUser,
     getDistroConfig,
     setDistroConfigValue,
+    installWslOnly,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -80,10 +86,13 @@ export default function WslPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportDistroName, setExportDistroName] = useState('');
-  const [confirmAction, setConfirmAction] = useState<{
-    type: 'unregister' | 'shutdown';
-    name?: string;
-  } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'unregister'; name: string }
+    | { type: 'shutdown' }
+    | { type: 'mount'; options: WslMountOptions }
+    | { type: 'unmount'; diskPath?: string }
+    | null
+  >(null);
   const [selectedDistroForConfig, setSelectedDistroForConfig] = useState<string | null>(null);
 
   // Auto-select first distro for per-distro config when distros change
@@ -201,6 +210,93 @@ export default function WslPage() {
     }
   }, [importDistro, t]);
 
+  const handleInstallWslOnly = useCallback(async () => installWslOnly(), [installWslOnly]);
+
+  const handleSetDefaultVersion = useCallback(async (version: number) => {
+    try {
+      await setDefaultVersion(version);
+      toast.success(t('wsl.setDefaultVersionSuccess').replace('{version}', String(version)));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [setDefaultVersion, t]);
+
+  const handleImportInPlacePrompt = useCallback(async () => {
+    const name = window.prompt(t('wsl.name'));
+    if (!name) return;
+    const vhdxPath = window.prompt(t('wsl.vhdxFile'));
+    if (!vhdxPath) return;
+
+    try {
+      await importInPlace(name, vhdxPath);
+      toast.success(t('wsl.importInPlaceSuccess').replace('{name}', name));
+      await refreshDistros();
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [importInPlace, refreshDistros, t]);
+
+  const handleMount = useCallback(async (options: WslMountOptions) => {
+    try {
+      const result = await mountDisk(options);
+      toast.success(t('wsl.mountSuccess') + (result ? `\n${result}` : ''));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [mountDisk, t]);
+
+  const handleUnmount = useCallback(async (diskPath?: string) => {
+    try {
+      await unmountDisk(diskPath);
+      toast.success(t('wsl.unmountSuccess'));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [t, unmountDisk]);
+
+  const handleMountPrompt = useCallback(() => {
+    const diskPath = window.prompt(t('wsl.diskPath'));
+    if (!diskPath) return;
+
+    const isVhd = window.confirm(t('wsl.mountAsVhdConfirm'));
+    const fsTypeInput = window.prompt(t('wsl.mountFsTypeOptional'))?.trim();
+    const partitionInput = window.prompt(t('wsl.mountPartitionOptional'))?.trim();
+    const mountName = window.prompt(t('wsl.mountNameOptional'))?.trim();
+    const mountOptions =
+      capabilities?.mountOptions !== false
+        ? window.prompt(t('wsl.mountOptionsOptional'))?.trim()
+        : undefined;
+    const bare = window.confirm(t('wsl.mountBareConfirm'));
+
+    let partition: number | undefined;
+    if (partitionInput) {
+      const parsed = Number.parseInt(partitionInput, 10);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        toast.error(t('wsl.mountPartitionInvalid'));
+        return;
+      }
+      partition = parsed;
+    }
+
+    setConfirmAction({
+      type: 'mount',
+      options: {
+        diskPath,
+        isVhd,
+        fsType: fsTypeInput || undefined,
+        partition,
+        mountName: mountName || undefined,
+        mountOptions: mountOptions || undefined,
+        bare,
+      },
+    });
+  }, [capabilities?.mountOptions, t]);
+
+  const handleUnmountPrompt = useCallback(() => {
+    const diskPath = window.prompt(t('wsl.diskPathOptional'))?.trim();
+    setConfirmAction({ type: 'unmount', diskPath: diskPath || undefined });
+  }, [t]);
+
   const handleUnregister = useCallback(async (name: string) => {
     try {
       const { packageUninstall } = await import('@/lib/tauri');
@@ -238,13 +334,24 @@ export default function WslPage() {
 
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
-    if (confirmAction.type === 'unregister' && confirmAction.name) {
+    if (confirmAction.type === 'unregister') {
       await handleUnregister(confirmAction.name);
     } else if (confirmAction.type === 'shutdown') {
       await handleShutdown();
+    } else if (confirmAction.type === 'mount') {
+      await handleMount(confirmAction.options);
+    } else if (confirmAction.type === 'unmount') {
+      await handleUnmount(confirmAction.diskPath);
     }
     setConfirmAction(null);
-  }, [confirmAction, handleUnregister, handleShutdown]);
+  }, [confirmAction, handleMount, handleShutdown, handleUnmount, handleUnregister]);
+
+  const importInPlaceUnsupported = capabilities?.importInPlace === false;
+  const importInPlaceHint = importInPlaceUnsupported
+    ? t('wsl.capabilityUnsupported')
+        .replace('{feature}', t('wsl.importInPlace'))
+        .replace('{version}', capabilities?.version ?? 'Unknown')
+    : null;
 
   // Non-Tauri fallback
   if (!isDesktop) {
@@ -264,7 +371,7 @@ export default function WslPage() {
     return (
       <div className="p-4 md:p-6 space-y-6">
         <PageHeader title={t('wsl.title')} description={t('wsl.description')} />
-        <WslNotAvailable t={t} />
+        <WslNotAvailable t={t} onInstallWsl={handleInstallWslOnly} />
       </div>
     );
   }
@@ -394,6 +501,64 @@ export default function WslPage() {
               getIpAddress={() => getIpAddress()}
               t={t}
             />
+            <Card>
+              <CardHeader className="pb-3">
+                <h3 className="text-sm font-semibold">{t('wsl.advancedOps')}</h3>
+                <p className="text-xs text-muted-foreground">{t('wsl.advancedOpsDesc')}</p>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSetDefaultVersion(1)}
+                  >
+                    {t('wsl.defaultVersion')} 1
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSetDefaultVersion(2)}
+                  >
+                    {t('wsl.defaultVersion')} 2
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={handleImportInPlacePrompt}
+                  disabled={importInPlaceUnsupported}
+                  title={importInPlaceHint ?? undefined}
+                >
+                  {t('wsl.importInPlace')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={handleMountPrompt}
+                >
+                  {t('wsl.mount')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={handleUnmountPrompt}
+                >
+                  {t('wsl.unmount')}
+                </Button>
+                {importInPlaceHint && (
+                  <p className="text-xs text-muted-foreground">{importInPlaceHint}</p>
+                )}
+                {capabilities?.mountOptions === false && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('wsl.mountOptionsFallback')}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
             <WslConfigCard
               config={config}
               loading={loading}
@@ -435,30 +600,50 @@ export default function WslPage() {
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction?.type === 'unregister'
-                ? t('wsl.unregister')
-                : t('wsl.shutdown')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction?.type === 'unregister'
-                ? t('wsl.unregisterConfirm').replace(
-                    '{name}',
-                    confirmAction.name ?? ''
-                  )
-                : t('wsl.shutdownConfirm')}
-              {confirmAction?.type === 'unregister' && (
-                <>
-                  <br />
-                  <span className="text-destructive font-medium">
-                    {t('wsl.dataLossWarning')}
-                  </span>
-                </>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmAction?.type === 'unregister'
+                  ? t('wsl.unregister')
+                  : confirmAction?.type === 'mount'
+                    ? t('wsl.mount')
+                    : confirmAction?.type === 'unmount'
+                      ? t('wsl.unmount')
+                      : t('wsl.shutdown')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction?.type === 'unregister'
+                  ? t('wsl.unregisterConfirm').replace(
+                      '{name}',
+                      confirmAction.name ?? ''
+                    )
+                  : confirmAction?.type === 'mount'
+                    ? t('wsl.mountConfirm')
+                    : confirmAction?.type === 'unmount'
+                      ? confirmAction.diskPath
+                        ? t('wsl.unmountConfirm').replace('{path}', confirmAction.diskPath)
+                        : t('wsl.unmountAllConfirm')
+                      : t('wsl.shutdownConfirm')}
+                {confirmAction?.type === 'unregister' && (
+                  <>
+                    <br />
+                    <span className="text-destructive font-medium">
+                      {t('wsl.dataLossWarning')}
+                    </span>
+                  </>
+                )}
+                {(confirmAction?.type === 'mount'
+                  || confirmAction?.type === 'unmount'
+                  || confirmAction?.type === 'shutdown') && (
+                  <>
+                    <br />
+                    <span className="text-muted-foreground">
+                      {t('wsl.highRiskHint')}
+                    </span>
+                  </>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction

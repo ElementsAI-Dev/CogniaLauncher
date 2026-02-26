@@ -84,8 +84,16 @@ describe("ActionsCard", () => {
     expect(defaultProps.onExportDiagnostics).toHaveBeenCalledTimes(1);
   });
 
-  it("disables Export Diagnostics when not desktop", () => {
+  it("enables Export Diagnostics in web mode with tooltip hint", () => {
     render(<ActionsCard {...defaultProps} isDesktop={false} />);
-    expect(screen.getByText("Export Diagnostics").closest("button")).toBeDisabled();
+    const btn = screen.getByText("Export Diagnostics").closest("button");
+    expect(btn).toBeEnabled();
+    expect(btn).toHaveAttribute("title");
+  });
+
+  it("calls onExportDiagnostics in web mode", async () => {
+    render(<ActionsCard {...defaultProps} isDesktop={false} />);
+    await userEvent.click(screen.getByText("Export Diagnostics"));
+    expect(defaultProps.onExportDiagnostics).toHaveBeenCalledTimes(1);
   });
 });

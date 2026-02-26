@@ -189,7 +189,14 @@ impl Provider for FnmProvider {
 
         // Stage 2: Downloading/Installing (fnm handles this internally)
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::downloading(&package_name, 0, None, 0.0)).await;
+            let _ = tx
+                .send(InstallProgressEvent::downloading(
+                    &package_name,
+                    0,
+                    None,
+                    0.0,
+                ))
+                .await;
         }
 
         // Run the actual installation
@@ -197,22 +204,31 @@ impl Provider for FnmProvider {
 
         if let Err(ref e) = result {
             if let Some(ref tx) = progress {
-                let _ = tx.send(InstallProgressEvent::failed(&package_name, &e.to_string())).await;
+                let _ = tx
+                    .send(InstallProgressEvent::failed(&package_name, &e.to_string()))
+                    .await;
             }
             return Err(result.unwrap_err());
         }
 
         // Stage 3: Post-install - verify actual version
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Verifying installation")).await;
+            let _ = tx
+                .send(InstallProgressEvent::configuring(
+                    &package_name,
+                    "Verifying installation",
+                ))
+                .await;
         }
 
         let fnm_dir = self.fnm_dir()?;
-        
+
         // Get actual installed version (handle --lts case)
         let actual_version = if version == "--lts" {
             // After installing LTS, get the actual version number
-            self.get_current_version().await?.unwrap_or_else(|| version.to_string())
+            self.get_current_version()
+                .await?
+                .unwrap_or_else(|| version.to_string())
         } else {
             version.to_string()
         };
@@ -221,7 +237,9 @@ impl Provider for FnmProvider {
 
         // Stage 4: Done
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::done(&package_name, &actual_version)).await;
+            let _ = tx
+                .send(InstallProgressEvent::done(&package_name, &actual_version))
+                .await;
         }
 
         Ok(InstallReceipt {

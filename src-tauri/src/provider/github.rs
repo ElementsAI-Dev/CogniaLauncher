@@ -98,7 +98,11 @@ impl GitHubProvider {
     pub fn get_source_archive_url(&self, repo: &str, ref_name: &str, format: &str) -> String {
         // Always use API URL — works for both public and private repos.
         // Public repos get a 302 redirect to a public URL; private repos need auth headers.
-        let ext = if format == "tar.gz" { "tarball" } else { "zipball" };
+        let ext = if format == "tar.gz" {
+            "tarball"
+        } else {
+            "zipball"
+        };
         format!("{}/repos/{}/{}/{}", GITHUB_API, repo, ext, ref_name)
     }
 
@@ -110,7 +114,10 @@ impl GitHubProvider {
     /// Get HTTP headers needed for authenticated downloads
     pub fn get_download_headers(&self) -> std::collections::HashMap<String, String> {
         let mut headers = std::collections::HashMap::new();
-        headers.insert("X-GitHub-Api-Version".to_string(), GITHUB_API_VERSION.to_string());
+        headers.insert(
+            "X-GitHub-Api-Version".to_string(),
+            GITHUB_API_VERSION.to_string(),
+        );
         if let Some(token) = &self.token {
             headers.insert("Authorization".to_string(), format!("Bearer {}", token));
             // For asset downloads, request binary content
@@ -122,7 +129,10 @@ impl GitHubProvider {
     /// Get HTTP headers for source archive downloads
     pub fn get_source_download_headers(&self) -> std::collections::HashMap<String, String> {
         let mut headers = std::collections::HashMap::new();
-        headers.insert("X-GitHub-Api-Version".to_string(), GITHUB_API_VERSION.to_string());
+        headers.insert(
+            "X-GitHub-Api-Version".to_string(),
+            GITHUB_API_VERSION.to_string(),
+        );
         if let Some(token) = &self.token {
             headers.insert("Authorization".to_string(), format!("Bearer {}", token));
         }
@@ -149,7 +159,7 @@ impl GitHubProvider {
 
     pub fn parse_repo_url(url: &str) -> Option<(String, String)> {
         let url = url.trim();
-        
+
         // Handle owner/repo format directly
         if !url.contains('/') || url.starts_with("http") {
             // Try to parse as URL
@@ -340,7 +350,8 @@ impl Provider for GitHubProvider {
         let (description, homepage, license) = match self.get_repo_info(name).await {
             Ok(info) => (
                 info.description,
-                info.homepage.or(Some(format!("https://github.com/{}", name))),
+                info.homepage
+                    .or(Some(format!("https://github.com/{}", name))),
                 info.license.map(|l| l.spdx_id),
             ),
             Err(_) => (None, Some(format!("https://github.com/{}", name)), None),
@@ -383,9 +394,17 @@ impl Provider for GitHubProvider {
             let mut last_err = CogniaError::Provider("No matching release found".into());
             let mut found = None;
             for tag in &candidates {
-                match self.api_get::<GitHubRelease>(&format!("/repos/{}/releases/tags/{}", req.name, tag)).await {
-                    Ok(r) => { found = Some(r); break; }
-                    Err(e) => { last_err = e; }
+                match self
+                    .api_get::<GitHubRelease>(&format!("/repos/{}/releases/tags/{}", req.name, tag))
+                    .await
+                {
+                    Ok(r) => {
+                        found = Some(r);
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = e;
+                    }
                 }
             }
             found.ok_or(last_err)?

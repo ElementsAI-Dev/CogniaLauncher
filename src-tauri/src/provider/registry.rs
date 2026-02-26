@@ -3,9 +3,10 @@ use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider, SystemPackageProvider};
 use super::{
     apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno, dnf,
-    docker, dotnet, flatpak, fnm, fvm, gem, git, github, gitlab, goenv, luarocks, macports, mise, msvc,
-    msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery, pub_dev, pyenv,
-    rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn, zig, zypper,
+    docker, dotnet, flatpak, fnm, fvm, gem, git, github, gitlab, goenv, luarocks, macports, mise,
+    msvc, msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery,
+    pub_dev, pyenv, rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn,
+    zig, zypper,
 };
 use crate::config::Settings;
 use crate::error::CogniaResult;

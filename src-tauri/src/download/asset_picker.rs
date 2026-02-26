@@ -38,9 +38,8 @@ static LIBC_GNU: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)(?:\b|[_-])(gnu|glibc)(?:\b|[_-])").unwrap());
 
 /// Pattern to exclude checksum and signature files
-static EXCLUDE_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\.(sha256|sha512|sha1|md5|sig|asc|gpg|minisig|sbom)$").unwrap()
-});
+static EXCLUDE_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\.(sha256|sha512|sha1|md5|sig|asc|gpg|minisig|sbom)$").unwrap());
 
 /// Trait for asset-like types
 pub trait AssetLike {
@@ -87,7 +86,10 @@ impl AssetPicker {
     }
 
     /// Pick the best matching asset with full match information
-    pub fn pick_best_with_score<'a, T: AssetLike>(&self, assets: &'a [T]) -> Option<AssetMatch<'a, T>> {
+    pub fn pick_best_with_score<'a, T: AssetLike>(
+        &self,
+        assets: &'a [T],
+    ) -> Option<AssetMatch<'a, T>> {
         let mut matches: Vec<AssetMatch<'a, T>> = assets
             .iter()
             .filter(|a| !self.is_excluded(a.name()))
@@ -188,8 +190,7 @@ impl AssetPicker {
         }
 
         // Check if asset is macOS x64
-        if detected_platform == Some(Platform::MacOS)
-            && detected_arch == Some(Architecture::X86_64)
+        if detected_platform == Some(Platform::MacOS) && detected_arch == Some(Architecture::X86_64)
         {
             Some(AssetMatch {
                 asset,
@@ -327,7 +328,9 @@ mod tests {
     fn make_assets(names: &[&str]) -> Vec<TestAsset> {
         names
             .iter()
-            .map(|n| TestAsset { name: n.to_string() })
+            .map(|n| TestAsset {
+                name: n.to_string(),
+            })
             .collect()
     }
 
@@ -379,10 +382,7 @@ mod tests {
 
     #[test]
     fn test_linux_musl_preference() {
-        let assets = make_assets(&[
-            "app-linux-x64-gnu.tar.gz",
-            "app-linux-x64-musl.tar.gz",
-        ]);
+        let assets = make_assets(&["app-linux-x64-gnu.tar.gz", "app-linux-x64-musl.tar.gz"]);
 
         let picker =
             AssetPicker::new(Platform::Linux, Architecture::X86_64).with_libc(LibcType::Musl);
@@ -392,10 +392,7 @@ mod tests {
 
     #[test]
     fn test_linux_glibc_avoids_musl() {
-        let assets = make_assets(&[
-            "app-linux-x64-gnu.tar.gz",
-            "app-linux-x64-musl.tar.gz",
-        ]);
+        let assets = make_assets(&["app-linux-x64-gnu.tar.gz", "app-linux-x64-musl.tar.gz"]);
 
         let picker =
             AssetPicker::new(Platform::Linux, Architecture::X86_64).with_libc(LibcType::Glibc);
@@ -432,19 +429,43 @@ mod tests {
 
     #[test]
     fn test_detect_platform_standalone() {
-        assert_eq!(detect_platform("app-linux-x64.tar.gz"), Some(Platform::Linux));
-        assert_eq!(detect_platform("app-darwin-arm64.tar.gz"), Some(Platform::MacOS));
-        assert_eq!(detect_platform("app-windows-x64.zip"), Some(Platform::Windows));
+        assert_eq!(
+            detect_platform("app-linux-x64.tar.gz"),
+            Some(Platform::Linux)
+        );
+        assert_eq!(
+            detect_platform("app-darwin-arm64.tar.gz"),
+            Some(Platform::MacOS)
+        );
+        assert_eq!(
+            detect_platform("app-windows-x64.zip"),
+            Some(Platform::Windows)
+        );
         assert_eq!(detect_platform("app.tar.gz"), None);
     }
 
     #[test]
     fn test_detect_arch_standalone() {
-        assert_eq!(detect_arch("app-linux-x86_64.tar.gz"), Some(Architecture::X86_64));
-        assert_eq!(detect_arch("app-linux-amd64.tar.gz"), Some(Architecture::X86_64));
-        assert_eq!(detect_arch("app-darwin-arm64.tar.gz"), Some(Architecture::Aarch64));
-        assert_eq!(detect_arch("app-darwin-aarch64.tar.gz"), Some(Architecture::Aarch64));
-        assert_eq!(detect_arch("app-linux-i686.tar.gz"), Some(Architecture::X86));
+        assert_eq!(
+            detect_arch("app-linux-x86_64.tar.gz"),
+            Some(Architecture::X86_64)
+        );
+        assert_eq!(
+            detect_arch("app-linux-amd64.tar.gz"),
+            Some(Architecture::X86_64)
+        );
+        assert_eq!(
+            detect_arch("app-darwin-arm64.tar.gz"),
+            Some(Architecture::Aarch64)
+        );
+        assert_eq!(
+            detect_arch("app-darwin-aarch64.tar.gz"),
+            Some(Architecture::Aarch64)
+        );
+        assert_eq!(
+            detect_arch("app-linux-i686.tar.gz"),
+            Some(Architecture::X86)
+        );
         assert_eq!(detect_arch("app.tar.gz"), None);
     }
 }

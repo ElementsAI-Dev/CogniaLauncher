@@ -179,7 +179,7 @@ impl Provider for PyenvProvider {
             .version
             .clone()
             .ok_or_else(|| CogniaError::Provider("Version required for install".into()))?;
-        
+
         let package_name = format!("python@{}", version);
 
         // Stage 1: Fetching metadata
@@ -189,7 +189,12 @@ impl Provider for PyenvProvider {
 
         // Stage 2: Downloading/compiling (pyenv compiles from source)
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Downloading and compiling Python (this may take several minutes)")).await;
+            let _ = tx
+                .send(InstallProgressEvent::configuring(
+                    &package_name,
+                    "Downloading and compiling Python (this may take several minutes)",
+                ))
+                .await;
         }
 
         // Run the actual installation (may compile from source, needs long timeout)
@@ -197,14 +202,21 @@ impl Provider for PyenvProvider {
 
         if let Err(ref e) = result {
             if let Some(ref tx) = progress {
-                let _ = tx.send(InstallProgressEvent::failed(&package_name, &e.to_string())).await;
+                let _ = tx
+                    .send(InstallProgressEvent::failed(&package_name, &e.to_string()))
+                    .await;
             }
             return Err(result.unwrap_err());
         }
 
         // Stage 3: Verify installation
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::configuring(&package_name, "Verifying installation")).await;
+            let _ = tx
+                .send(InstallProgressEvent::configuring(
+                    &package_name,
+                    "Verifying installation",
+                ))
+                .await;
         }
 
         let pyenv_root = self.pyenv_root()?;
@@ -214,14 +226,18 @@ impl Provider for PyenvProvider {
         if !install_path.exists() {
             let err_msg = format!("Installation path not found: {:?}", install_path);
             if let Some(ref tx) = progress {
-                let _ = tx.send(InstallProgressEvent::failed(&package_name, &err_msg)).await;
+                let _ = tx
+                    .send(InstallProgressEvent::failed(&package_name, &err_msg))
+                    .await;
             }
             return Err(CogniaError::Installation(err_msg));
         }
 
         // Stage 4: Done
         if let Some(ref tx) = progress {
-            let _ = tx.send(InstallProgressEvent::done(&package_name, &version)).await;
+            let _ = tx
+                .send(InstallProgressEvent::done(&package_name, &version))
+                .await;
         }
 
         Ok(InstallReceipt {
@@ -269,8 +285,14 @@ impl Provider for PyenvProvider {
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         // Compare installed pyenv versions with latest available
-        let installed = self.run_pyenv(&["versions", "--bare"]).await.unwrap_or_default();
-        let available = self.run_pyenv(&["install", "--list"]).await.unwrap_or_default();
+        let installed = self
+            .run_pyenv(&["versions", "--bare"])
+            .await
+            .unwrap_or_default();
+        let available = self
+            .run_pyenv(&["install", "--list"])
+            .await
+            .unwrap_or_default();
 
         // Build a map of (major, minor) -> latest_patch for stable CPython versions
         let mut latest_per_series: std::collections::HashMap<(u32, u32), String> =
@@ -278,7 +300,9 @@ impl Provider for PyenvProvider {
 
         for line in available.lines() {
             let v = line.trim();
-            if v.is_empty() { continue; }
+            if v.is_empty() {
+                continue;
+            }
             // Only match pure stable version numbers like "3.x.y"
             if !v.chars().next().map_or(false, |c| c.is_ascii_digit())
                 || v.contains('-')

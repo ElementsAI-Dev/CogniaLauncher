@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Separator } from "@/components/ui/separator";
 import { SwitchSettingItem, SelectSettingItem } from "./setting-item";
+import { TrayMenuCustomizer } from "./tray-menu-customizer";
 import type { AppSettings } from "@/lib/stores/settings";
 import type { TrayClickBehavior } from "@/lib/tauri";
 import {
@@ -11,6 +12,8 @@ import {
   trayEnableAutostart,
   trayDisableAutostart,
   traySetClickBehavior,
+  traySetMinimizeToTray,
+  traySetStartMinimized,
 } from "@/lib/tauri";
 
 interface TraySettingsProps {
@@ -36,6 +39,26 @@ export function TraySettings({
 
     trayIsAutostartEnabled().then(setAutostartEnabled).catch(console.error);
   }, []);
+
+  const handleMinimizeToTrayChange = useCallback(
+    async (checked: boolean) => {
+      onValueChange("minimizeToTray", checked);
+      if (isTauri()) {
+        traySetMinimizeToTray(checked).catch(console.error);
+      }
+    },
+    [onValueChange],
+  );
+
+  const handleStartMinimizedChange = useCallback(
+    async (checked: boolean) => {
+      onValueChange("startMinimized", checked);
+      if (isTauri()) {
+        traySetStartMinimized(checked).catch(console.error);
+      }
+    },
+    [onValueChange],
+  );
 
   const handleAutostartChange = useCallback(
     async (checked: boolean) => {
@@ -80,9 +103,7 @@ export function TraySettings({
           label={t("settings.minimizeToTray")}
           description={t("settings.minimizeToTrayDesc")}
           checked={appSettings.minimizeToTray}
-          onCheckedChange={(checked) =>
-            onValueChange("minimizeToTray", checked)
-          }
+          onCheckedChange={handleMinimizeToTrayChange}
         />
         <Separator />
         <SwitchSettingItem
@@ -90,9 +111,7 @@ export function TraySettings({
           label={t("settings.startMinimized")}
           description={t("settings.startMinimizedDesc")}
           checked={appSettings.startMinimized}
-          onCheckedChange={(checked) =>
-            onValueChange("startMinimized", checked)
-          }
+          onCheckedChange={handleStartMinimizedChange}
         />
         <Separator />
         <SwitchSettingItem
@@ -128,6 +147,12 @@ export function TraySettings({
           disabled={!isTauri()}
           triggerClassName="w-[180px]"
         />
+        {isTauri() && (
+          <>
+            <Separator />
+            <TrayMenuCustomizer t={t} />
+          </>
+        )}
     </div>
   );
 }

@@ -1,13 +1,11 @@
 use crate::cache::{
-    CacheAccessStats, CacheEntryType,
-    CleanupHistory, CleanupRecord, CleanupRecordBuilder,
-    CombinedCacheStats, DownloadCache, DownloadResumer,
-    ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache,
-    MigrationMode, MigrationResult, MigrationValidation,
-    external, migration,
+    external, migration, CacheAccessStats, CacheEntryType, CleanupHistory, CleanupRecord,
+    CleanupRecordBuilder, CombinedCacheStats, DownloadCache, DownloadResumer,
+    ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode, MigrationResult,
+    MigrationValidation,
 };
-use crate::platform::{disk, disk::format_size, fs};
 use crate::config::Settings;
+use crate::platform::{disk, disk::format_size, fs};
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -129,9 +127,14 @@ pub async fn cache_clean(
     // Build history record before cleaning
     let mut builder = CleanupRecordBuilder::new(clean_type_str, false);
     build_cleanup_record(
-        &mut builder, &download_cache, &metadata_cache, &mut resumer,
-        clean_type_str, max_age,
-    ).await?;
+        &mut builder,
+        &download_cache,
+        &metadata_cache,
+        &mut resumer,
+        clean_type_str,
+        max_age,
+    )
+    .await?;
     let record = builder.build();
     let deleted_count = record.file_count;
 
@@ -141,7 +144,11 @@ pub async fn cache_clean(
             (freed, 0)
         }
         "metadata" => {
-            let md_size_before = metadata_cache.stats().await.map_err(|e| e.to_string())?.total_size;
+            let md_size_before = metadata_cache
+                .stats()
+                .await
+                .map_err(|e| e.to_string())?
+                .total_size;
             let _count = metadata_cache
                 .clean_all()
                 .await
@@ -162,7 +169,11 @@ pub async fn cache_clean(
         }
         _ => {
             let dl = download_cache.clean().await.map_err(|e| e.to_string())?;
-            let md_size_before = metadata_cache.stats().await.map_err(|e| e.to_string())?.total_size;
+            let md_size_before = metadata_cache
+                .stats()
+                .await
+                .map_err(|e| e.to_string())?
+                .total_size;
             let _md = metadata_cache
                 .clean_all()
                 .await
@@ -261,9 +272,7 @@ pub async fn cache_verify(
             continue;
         }
 
-        let actual_size = fs::file_size(&entry.file_path)
-            .await
-            .unwrap_or(entry.size);
+        let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
         if actual_size != entry.size {
             size_mismatches += 1;
             details.push(CacheIssue {
@@ -302,9 +311,7 @@ pub async fn cache_verify(
             continue;
         }
 
-        let actual_size = fs::file_size(&entry.file_path)
-            .await
-            .unwrap_or(entry.size);
+        let actual_size = fs::file_size(&entry.file_path).await.unwrap_or(entry.size);
         if actual_size != entry.size {
             size_mismatches += 1;
             details.push(CacheIssue {
@@ -378,7 +385,10 @@ pub async fn cache_repair(
 
         if !exists {
             // File missing: remove orphaned DB record
-            let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+            let _ = download_cache
+                .remove(&entry.checksum)
+                .await
+                .map_err(|e| e.to_string())?;
             removed_entries += 1;
             continue;
         }
@@ -386,7 +396,10 @@ pub async fn cache_repair(
         if actual_size != entry.size {
             // Size mismatch: remove entry and corrupted file
             freed_bytes += actual_size;
-            let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+            let _ = download_cache
+                .remove(&entry.checksum)
+                .await
+                .map_err(|e| e.to_string())?;
             removed_entries += 1;
             continue;
         }
@@ -396,7 +409,10 @@ pub async fn cache_repair(
             Ok(actual_checksum) if actual_checksum != entry.checksum => {
                 // Corrupted checksum in DB: re-register with correct checksum so the entry stays valid
                 let _ = download_cache.remove(&entry.checksum).await;
-                match download_cache.add_file(&entry.file_path, &actual_checksum).await {
+                match download_cache
+                    .add_file(&entry.file_path, &actual_checksum)
+                    .await
+                {
                     Ok(_) => {
                         recovered_entries += 1;
                     }
@@ -409,7 +425,10 @@ pub async fn cache_repair(
             Err(_) => {
                 // Cannot verify: remove
                 freed_bytes += actual_size;
-                let _ = download_cache.remove(&entry.checksum).await.map_err(|e| e.to_string())?;
+                let _ = download_cache
+                    .remove(&entry.checksum)
+                    .await
+                    .map_err(|e| e.to_string())?;
                 removed_entries += 1;
             }
             _ => {
@@ -424,7 +443,10 @@ pub async fn cache_repair(
             // preview_clean returns keys with "metadata:" prefix; remove() adds it again,
             // so we strip the prefix to avoid double-prefixing
             let raw_key = entry.key.strip_prefix("metadata:").unwrap_or(&entry.key);
-            let _ = metadata_cache.remove(raw_key).await.map_err(|e| e.to_string())?;
+            let _ = metadata_cache
+                .remove(raw_key)
+                .await
+                .map_err(|e| e.to_string())?;
             removed_entries += 1;
         }
     }
@@ -454,8 +476,12 @@ pub struct CacheSettings {
     pub monitor_external: bool,
 }
 
-fn default_threshold() -> u8 { 80 }
-fn default_monitor_interval() -> u64 { 300 }
+fn default_threshold() -> u8 {
+    80
+}
+fn default_monitor_interval() -> u64 {
+    300
+}
 
 #[tauri::command]
 pub async fn get_cache_settings(
@@ -489,7 +515,6 @@ pub async fn set_cache_settings(
     s.save().await.map_err(|e| e.to_string())?;
     Ok(())
 }
-
 
 fn format_timestamp(timestamp: i64) -> String {
     Utc.timestamp_opt(timestamp, 0)
@@ -541,11 +566,7 @@ async fn append_partial_record(
         } else {
             0
         };
-        builder.add_file(
-            partial.file_path.display().to_string(),
-            size,
-            "partial",
-        );
+        builder.add_file(partial.file_path.display().to_string(), size, "partial");
     }
     Ok(())
 }
@@ -568,9 +589,7 @@ async fn fs_clean_path(
                 .await
                 .map_err(|e| e.to_string())
         } else {
-            fs::remove_dir_all(path)
-                .await
-                .map_err(|e| e.to_string())
+            fs::remove_dir_all(path).await.map_err(|e| e.to_string())
         }
     } else {
         Ok(())
@@ -617,31 +636,79 @@ async fn build_cleanup_record(
 ) -> Result<(), String> {
     match clean_type {
         "downloads" => {
-            for entry in download_cache.preview_clean().await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            for entry in download_cache
+                .preview_clean()
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "download",
+                );
             }
             append_partial_record(builder, resumer, Duration::from_secs(0)).await?;
         }
         "metadata" => {
-            for entry in metadata_cache.preview_clean().await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            for entry in metadata_cache
+                .preview_clean()
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "metadata",
+                );
             }
         }
         "expired" => {
-            for entry in download_cache.preview_expired(max_age).await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            for entry in download_cache
+                .preview_expired(max_age)
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "download",
+                );
             }
-            for entry in metadata_cache.preview_expired().await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            for entry in metadata_cache
+                .preview_expired()
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "metadata",
+                );
             }
             append_partial_record(builder, resumer, max_age).await?;
         }
         _ => {
-            for entry in download_cache.preview_clean().await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "download");
+            for entry in download_cache
+                .preview_clean()
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "download",
+                );
             }
-            for entry in metadata_cache.preview_clean().await.map_err(|e| e.to_string())? {
-                builder.add_file(entry.file_path.display().to_string(), entry.size, "metadata");
+            for entry in metadata_cache
+                .preview_clean()
+                .await
+                .map_err(|e| e.to_string())?
+            {
+                builder.add_file(
+                    entry.file_path.display().to_string(),
+                    entry.size,
+                    "metadata",
+                );
             }
             append_partial_record(builder, resumer, Duration::from_secs(0)).await?;
         }
@@ -723,7 +790,8 @@ pub async fn cache_clean_preview(
                     created_at: entry.created_at.to_rfc3339(),
                 });
             }
-            total_size += append_partial_preview(&mut files, &mut resumer, Duration::from_secs(0)).await?;
+            total_size +=
+                append_partial_preview(&mut files, &mut resumer, Duration::from_secs(0)).await?;
         }
         "metadata" => {
             for entry in metadata_cache
@@ -802,7 +870,8 @@ pub async fn cache_clean_preview(
                     created_at: entry.created_at.to_rfc3339(),
                 });
             }
-            total_size += append_partial_preview(&mut files, &mut resumer, Duration::from_secs(0)).await?;
+            total_size +=
+                append_partial_preview(&mut files, &mut resumer, Duration::from_secs(0)).await?;
         }
     }
 
@@ -860,9 +929,14 @@ pub async fn cache_clean_enhanced(
     // Build history record using shared helper
     let mut builder = CleanupRecordBuilder::new(clean_type_str, use_trash);
     build_cleanup_record(
-        &mut builder, &download_cache, &metadata_cache, &mut resumer,
-        clean_type_str, max_age,
-    ).await?;
+        &mut builder,
+        &download_cache,
+        &metadata_cache,
+        &mut resumer,
+        clean_type_str,
+        max_age,
+    )
+    .await?;
     let record = builder.build();
     let history_id = record.id.clone();
     let deleted_count = record.file_count;
@@ -876,7 +950,11 @@ pub async fn cache_clean_enhanced(
             (freed, 0)
         }
         "metadata" => {
-            let md_size_before = metadata_cache.stats().await.map_err(|e| e.to_string())?.total_size;
+            let md_size_before = metadata_cache
+                .stats()
+                .await
+                .map_err(|e| e.to_string())?
+                .total_size;
             let _count = metadata_cache
                 .clean_all_with_option(use_trash)
                 .await
@@ -900,7 +978,11 @@ pub async fn cache_clean_enhanced(
                 .clean_with_option(use_trash)
                 .await
                 .map_err(|e| e.to_string())?;
-            let md_size_before = metadata_cache.stats().await.map_err(|e| e.to_string())?.total_size;
+            let md_size_before = metadata_cache
+                .stats()
+                .await
+                .map_err(|e| e.to_string())?
+                .total_size;
             let _md = metadata_cache
                 .clean_all_with_option(use_trash)
                 .await
@@ -955,9 +1037,7 @@ pub async fn get_cleanup_history(
 
 /// Clear all cleanup history
 #[tauri::command]
-pub async fn clear_cleanup_history(
-    settings: State<'_, SharedSettings>,
-) -> Result<usize, String> {
+pub async fn clear_cleanup_history(settings: State<'_, SharedSettings>) -> Result<usize, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     drop(s);
@@ -1024,9 +1104,7 @@ pub async fn get_cache_access_stats(
 
 /// Reset cache access statistics
 #[tauri::command]
-pub async fn reset_cache_access_stats(
-    settings: State<'_, SharedSettings>,
-) -> Result<(), String> {
+pub async fn reset_cache_access_stats(settings: State<'_, SharedSettings>) -> Result<(), String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     drop(s);
@@ -1035,7 +1113,10 @@ pub async fn reset_cache_access_stats(
         .await
         .map_err(|e| e.to_string())?;
 
-    download_cache.reset_access_stats().await.map_err(|e| e.to_string())
+    download_cache
+        .reset_access_stats()
+        .await
+        .map_err(|e| e.to_string())
 }
 
 // ==================== Cache Entry Browser ====================
@@ -1169,7 +1250,11 @@ pub async fn delete_cache_entries(
     let mut deleted = 0;
 
     for key in keys {
-        if download_cache.remove_with_option(&key, use_trash).await.is_ok() {
+        if download_cache
+            .remove_with_option(&key, use_trash)
+            .await
+            .is_ok()
+        {
             deleted += 1;
         }
     }
@@ -1515,9 +1600,7 @@ pub async fn set_cache_path(
 
 /// Reset cache path to default
 #[tauri::command]
-pub async fn reset_cache_path(
-    settings: State<'_, SharedSettings>,
-) -> Result<String, String> {
+pub async fn reset_cache_path(settings: State<'_, SharedSettings>) -> Result<String, String> {
     let mut s = settings.write().await;
     s.paths.cache = None;
     s.save().await.map_err(|e| e.to_string())?;
@@ -1561,7 +1644,12 @@ pub async fn cache_migrate(
     let migration_mode = match mode.as_str() {
         "move" => MigrationMode::Move,
         "move_and_link" => MigrationMode::MoveAndLink,
-        _ => return Err(format!("Invalid migration mode: {}. Use 'move' or 'move_and_link'", mode)),
+        _ => {
+            return Err(format!(
+                "Invalid migration mode: {}. Use 'move' or 'move_and_link'",
+                mode
+            ))
+        }
     };
 
     let result = migration::migrate_cache(&source, &dest, migration_mode)
@@ -1618,9 +1706,14 @@ pub async fn cache_force_clean(
     // Build history record using shared helper
     let mut builder = CleanupRecordBuilder::new("force_all", use_trash);
     build_cleanup_record(
-        &mut builder, &download_cache, &metadata_cache, &mut resumer,
-        "all", Duration::from_secs(0),
-    ).await?;
+        &mut builder,
+        &download_cache,
+        &metadata_cache,
+        &mut resumer,
+        "all",
+        Duration::from_secs(0),
+    )
+    .await?;
     let record = builder.build();
     let history_id = record.id.clone();
     let deleted_count = record.file_count;
@@ -1754,10 +1847,7 @@ pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, St
 
     for provider in external::ExternalCacheProvider::all() {
         let cache_path = provider.cache_path();
-        let exists = cache_path
-            .as_ref()
-            .map(|p| p.exists())
-            .unwrap_or(false);
+        let exists = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
         let size = if let Some(ref p) = cache_path {
             if exists {
                 external::calculate_dir_size(p).await
@@ -1770,9 +1860,9 @@ pub async fn get_external_cache_paths() -> Result<Vec<ExternalCachePathInfo>, St
 
         let is_available = external::is_provider_available(provider).await;
 
-        let clean_cmd = provider.clean_command().map(|(cmd, args)| {
-            format!("{} {}", cmd, args.join(" "))
-        });
+        let clean_cmd = provider
+            .clean_command()
+            .map(|(cmd, args)| format!("{} {}", cmd, args.join(" ")));
         let has_clean_command = clean_cmd.is_some();
 
         // Get environment variables that were checked for this provider
@@ -1811,7 +1901,9 @@ fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<Strin
         external::ExternalCacheProvider::Poetry => vec!["POETRY_CACHE_DIR".into()],
         external::ExternalCacheProvider::Conda => vec!["CONDA_PKGS_DIRS".into()],
         external::ExternalCacheProvider::Deno => vec!["DENO_DIR".into()],
-        external::ExternalCacheProvider::Bun => vec!["BUN_INSTALL_CACHE_DIR".into(), "BUN_INSTALL".into()],
+        external::ExternalCacheProvider::Bun => {
+            vec!["BUN_INSTALL_CACHE_DIR".into(), "BUN_INSTALL".into()]
+        }
         external::ExternalCacheProvider::Gradle => vec!["GRADLE_USER_HOME".into()],
         external::ExternalCacheProvider::Maven => vec!["MAVEN_REPO_LOCAL".into()],
         external::ExternalCacheProvider::Gem => vec!["GEM_HOME".into()],

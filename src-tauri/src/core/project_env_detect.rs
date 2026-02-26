@@ -34,7 +34,13 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             "mise.toml",
         ],
         // rustup precedence: rust-toolchain wins if both files exist.
-        "rust" => &["rust-toolchain", "rust-toolchain.toml", "Cargo.toml (rust-version)", ".tool-versions", "mise.toml"],
+        "rust" => &[
+            "rust-toolchain",
+            "rust-toolchain.toml",
+            "Cargo.toml (rust-version)",
+            ".tool-versions",
+            "mise.toml",
+        ],
         "ruby" => &[".ruby-version", "Gemfile", ".tool-versions", "mise.toml"],
         "java" => &[
             ".java-version",
@@ -44,8 +50,19 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             "build.gradle (sourceCompatibility)",
             "mise.toml",
         ],
-        "kotlin" => &[".kotlin-version", ".sdkmanrc", ".tool-versions", "mise.toml"],
-        "scala" => &["build.sbt", ".scala-version", ".sdkmanrc", ".tool-versions", "mise.toml"],
+        "kotlin" => &[
+            ".kotlin-version",
+            ".sdkmanrc",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "scala" => &[
+            "build.sbt",
+            ".scala-version",
+            ".sdkmanrc",
+            ".tool-versions",
+            "mise.toml",
+        ],
         "php" => &[
             ".php-version",
             "composer.json (require.php)",
@@ -61,23 +78,91 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
             "package.json (engines.bun)",
             "mise.toml",
         ],
-        "zig" => &[".zig-version", "build.zig.zon (minimum_zig_version)", ".tool-versions", "mise.toml"],
-        "dart" => &["pubspec.yaml (environment.sdk)", ".fvmrc", ".dart-version", ".tool-versions", "mise.toml"],
+        "zig" => &[
+            ".zig-version",
+            "build.zig.zon (minimum_zig_version)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "dart" => &[
+            "pubspec.yaml (environment.sdk)",
+            ".fvmrc",
+            ".dart-version",
+            ".tool-versions",
+            "mise.toml",
+        ],
         "lua" => &[".lua-version", ".tool-versions", "mise.toml"],
         "groovy" => &[".sdkmanrc", ".tool-versions", "mise.toml"],
-        "elixir" => &[".elixir-version", "mix.exs (elixir)", ".tool-versions", "mise.toml"],
-        "erlang" => &[".erlang-version", "rebar.config (minimum_otp_vsn)", ".tool-versions", "mise.toml"],
-        "swift" => &[".swift-version", "Package.swift (swift-tools-version)", ".tool-versions", "mise.toml"],
-        "julia" => &[".julia-version", "Project.toml (compat.julia)", ".tool-versions", "mise.toml"],
-        "perl" => &[".perl-version", "cpanfile (perl)", ".tool-versions", "mise.toml"],
-        "r" => &[".Rversion", "DESCRIPTION (R)", ".tool-versions", "mise.toml"],
-        "haskell" => &["stack.yaml (resolver)", "cabal.project", ".tool-versions", "mise.toml"],
-        "c" => &["CMakeLists.txt (CMAKE_C_STANDARD)", ".tool-versions", "mise.toml"],
-        "cpp" => &["CMakeLists.txt (CMAKE_CXX_STANDARD)", ".tool-versions", "mise.toml"],
-        "typescript" => &["tsconfig.json (compilerOptions.target)", ".tool-versions", "mise.toml"],
+        "elixir" => &[
+            ".elixir-version",
+            "mix.exs (elixir)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "erlang" => &[
+            ".erlang-version",
+            "rebar.config (minimum_otp_vsn)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "swift" => &[
+            ".swift-version",
+            "Package.swift (swift-tools-version)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "julia" => &[
+            ".julia-version",
+            "Project.toml (compat.julia)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "perl" => &[
+            ".perl-version",
+            "cpanfile (perl)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "r" => &[
+            ".Rversion",
+            "DESCRIPTION (R)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "haskell" => &[
+            "stack.yaml (resolver)",
+            "cabal.project",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "c" => &[
+            "CMakeLists.txt (CMAKE_C_STANDARD)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "cpp" => &[
+            "CMakeLists.txt (CMAKE_CXX_STANDARD)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "typescript" => &[
+            "tsconfig.json (compilerOptions.target)",
+            ".tool-versions",
+            "mise.toml",
+        ],
         "clojure" => &[".tool-versions", "mise.toml"],
-        "crystal" => &[".crystal-version", "shard.yml (crystal)", ".tool-versions", "mise.toml"],
-        "nim" => &[".nim-version", "nimble (nim)", ".tool-versions", "mise.toml"],
+        "crystal" => &[
+            ".crystal-version",
+            "shard.yml (crystal)",
+            ".tool-versions",
+            "mise.toml",
+        ],
+        "nim" => &[
+            ".nim-version",
+            "nimble (nim)",
+            ".tool-versions",
+            "mise.toml",
+        ],
         "ocaml" => &[".ocaml-version", ".tool-versions", "mise.toml"],
         "fortran" => &[".tool-versions", "mise.toml"],
         _ => &[],
@@ -224,9 +309,7 @@ async fn detect_python(dir: &Path, source: &str) -> CogniaResult<Option<Detected
         "Pipfile" | "Pipfile (requires.python_version)" => {
             read_pipfile_python(dir.join("Pipfile")).await
         }
-        "uv.toml (requires-python)" => {
-            read_uv_toml_requires_python(dir.join("uv.toml")).await
-        }
+        "uv.toml (requires-python)" => read_uv_toml_requires_python(dir.join("uv.toml")).await,
         "runtime.txt" => read_runtime_txt_python(dir.join("runtime.txt")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["python"], ".tool-versions").await
@@ -261,9 +344,7 @@ async fn detect_rust(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
         // rustup precedence: rust-toolchain wins over rust-toolchain.toml if both exist.
         "rust-toolchain" => read_rust_toolchain(dir.join("rust-toolchain")).await,
         "rust-toolchain.toml" => read_rust_toolchain_toml(dir.join("rust-toolchain.toml")).await,
-        "Cargo.toml (rust-version)" => {
-            read_cargo_toml_rust_version(dir.join("Cargo.toml")).await
-        }
+        "Cargo.toml (rust-version)" => read_cargo_toml_rust_version(dir.join("Cargo.toml")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["rust"], ".tool-versions").await
         }
@@ -332,9 +413,7 @@ async fn detect_java(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVa
 async fn detect_scala(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
         "build.sbt" => read_build_sbt_scala_version(dir.join("build.sbt")).await,
-        ".scala-version" => {
-            read_version_file(dir.join(".scala-version"), ".scala-version").await
-        }
+        ".scala-version" => read_version_file(dir.join(".scala-version"), ".scala-version").await,
         ".sdkmanrc" => read_sdkmanrc_version(dir.join(".sdkmanrc"), "scala").await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["scala"], ".tool-versions").await
@@ -1387,9 +1466,7 @@ async fn detect_erlang(dir: &Path, source: &str) -> CogniaResult<Option<Detected
 
 async fn detect_swift(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
-        ".swift-version" => {
-            read_version_file(dir.join(".swift-version"), ".swift-version").await
-        }
+        ".swift-version" => read_version_file(dir.join(".swift-version"), ".swift-version").await,
         "Package.swift (swift-tools-version)" => {
             read_package_swift_tools_version(dir.join("Package.swift")).await
         }
@@ -1403,9 +1480,7 @@ async fn detect_swift(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
 
 async fn detect_julia(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
-        ".julia-version" => {
-            read_version_file(dir.join(".julia-version"), ".julia-version").await
-        }
+        ".julia-version" => read_version_file(dir.join(".julia-version"), ".julia-version").await,
         "Project.toml (compat.julia)" => {
             read_project_toml_julia_compat(dir.join("Project.toml")).await
         }
@@ -1419,9 +1494,7 @@ async fn detect_julia(dir: &Path, source: &str) -> CogniaResult<Option<DetectedV
 
 async fn detect_perl(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
-        ".perl-version" => {
-            read_version_file(dir.join(".perl-version"), ".perl-version").await
-        }
+        ".perl-version" => read_version_file(dir.join(".perl-version"), ".perl-version").await,
         "cpanfile (perl)" => read_cpanfile_perl_version(dir.join("cpanfile")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["perl"], ".tool-versions").await
@@ -1445,12 +1518,8 @@ async fn detect_r(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue
 
 async fn detect_haskell(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
-        "stack.yaml (resolver)" => {
-            read_stack_yaml_resolver(dir.join("stack.yaml")).await
-        }
-        "cabal.project" => {
-            read_cabal_project_with(dir.join("cabal.project")).await
-        }
+        "stack.yaml (resolver)" => read_stack_yaml_resolver(dir.join("stack.yaml")).await,
+        "cabal.project" => read_cabal_project_with(dir.join("cabal.project")).await,
         ".tool-versions" => {
             read_tool_versions(
                 dir.join(".tool-versions"),
@@ -1502,9 +1571,7 @@ async fn detect_nim(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
 
 async fn detect_ocaml(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue>> {
     match source {
-        ".ocaml-version" => {
-            read_version_file(dir.join(".ocaml-version"), ".ocaml-version").await
-        }
+        ".ocaml-version" => read_version_file(dir.join(".ocaml-version"), ".ocaml-version").await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["ocaml"], ".tool-versions").await
         }
@@ -1928,7 +1995,12 @@ async fn detect_cpp(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
             read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_CXX_STANDARD", source).await
         }
         ".tool-versions" => {
-            read_tool_versions(dir.join(".tool-versions"), &["cpp", "c++"], ".tool-versions").await
+            read_tool_versions(
+                dir.join(".tool-versions"),
+                &["cpp", "c++"],
+                ".tool-versions",
+            )
+            .await
         }
         "mise.toml" => read_mise_toml(dir, &["cpp", "c++"], source).await,
         _ => Ok(None),
@@ -2242,9 +2314,12 @@ channel = "stable"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(root.join(".sdkmanrc"), "scala=3.4.0\njava=21.0.2-tem\n")
-            .await
-            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join(".sdkmanrc"),
+            "scala=3.4.0\njava=21.0.2-tem\n",
+        )
+        .await
+        .unwrap();
 
         let sources = vec![".sdkmanrc".to_string()];
         let detected = detect_env_version("scala", root, &sources)
@@ -2310,12 +2385,9 @@ ThisBuild / organization := "com.example"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join("build.sbt"),
-            r#"name := "my-project""#,
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join("build.sbt"), r#"name := "my-project""#)
+            .await
+            .unwrap();
 
         let sources = vec!["build.sbt".to_string()];
         let detected = detect_env_version("scala", root, &sources).await.unwrap();
@@ -2337,9 +2409,12 @@ ThisBuild / organization := "com.example"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(root.join(".tool-versions"), "scala 3.4.2\njava 21.0.2\n")
-            .await
-            .unwrap();
+        crate::platform::fs::write_file_string(
+            root.join(".tool-versions"),
+            "scala 3.4.2\njava 21.0.2\n",
+        )
+        .await
+        .unwrap();
 
         let sources = vec![".tool-versions".to_string()];
         let detected = detect_env_version("scala", root, &sources)
@@ -2535,12 +2610,9 @@ java {
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join(".fvmrc"),
-            r#"{"flutter": "3.19.0"}"#,
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join(".fvmrc"), r#"{"flutter": "3.19.0"}"#)
+            .await
+            .unwrap();
 
         let sources = vec![".fvmrc".to_string()];
         let detected = detect_env_version("dart", root, &sources)
@@ -2557,12 +2629,9 @@ java {
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join(".fvmrc"),
-            r#"{"flutter": "stable"}"#,
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join(".fvmrc"), r#"{"flutter": "stable"}"#)
+            .await
+            .unwrap();
 
         let sources = vec![".fvmrc".to_string()];
         let detected = detect_env_version("dart", root, &sources)
@@ -2673,12 +2742,9 @@ java {
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join(".fvmrc"),
-            r#"{"flutter": "3.19.0"}"#,
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join(".fvmrc"), r#"{"flutter": "3.19.0"}"#)
+            .await
+            .unwrap();
         crate::platform::fs::write_file_string(
             root.join("pubspec.yaml"),
             "name: my_app\nenvironment:\n  sdk: \">=3.0.0 <4.0.0\"\n",
@@ -3111,7 +3177,9 @@ rust-version = "1.70"
         .unwrap();
 
         let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
-        let detected = detect_env_version("typescript", root, &sources).await.unwrap();
+        let detected = detect_env_version("typescript", root, &sources)
+            .await
+            .unwrap();
         assert!(detected.is_none());
     }
 
@@ -3121,7 +3189,9 @@ rust-version = "1.70"
         let root = dir.path();
 
         let sources = vec!["tsconfig.json (compilerOptions.target)".to_string()];
-        let detected = detect_env_version("typescript", root, &sources).await.unwrap();
+        let detected = detect_env_version("typescript", root, &sources)
+            .await
+            .unwrap();
         assert!(detected.is_none());
     }
 
@@ -3330,18 +3400,12 @@ rust-version = "1.70"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join(".mise.toml"),
-            "[tools]\njava = \"21\"\n",
-        )
-        .await
-        .unwrap();
-        crate::platform::fs::write_file_string(
-            root.join("mise.toml"),
-            "[tools]\njava = \"17\"\n",
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\njava = \"21\"\n")
+            .await
+            .unwrap();
+        crate::platform::fs::write_file_string(root.join("mise.toml"), "[tools]\njava = \"17\"\n")
+            .await
+            .unwrap();
 
         let sources = vec!["mise.toml".to_string()];
         let detected = detect_env_version("java", root, &sources)
@@ -3357,12 +3421,9 @@ rust-version = "1.70"
         let dir = tempdir().unwrap();
         let root = dir.path();
 
-        crate::platform::fs::write_file_string(
-            root.join(".mise.toml"),
-            "[tools]\nnode = \"20\"\n",
-        )
-        .await
-        .unwrap();
+        crate::platform::fs::write_file_string(root.join(".mise.toml"), "[tools]\nnode = \"20\"\n")
+            .await
+            .unwrap();
 
         let sources = vec!["mise.toml".to_string()];
         let detected = detect_env_version("python", root, &sources).await.unwrap();
@@ -3410,13 +3471,22 @@ rust-version = "1.70"
 
         let sources = vec!["mise.toml".to_string()];
 
-        let zig = detect_env_version("zig", root, &sources).await.unwrap().unwrap();
+        let zig = detect_env_version("zig", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(zig.version, "0.13.0");
 
-        let deno = detect_env_version("deno", root, &sources).await.unwrap().unwrap();
+        let deno = detect_env_version("deno", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(deno.version, "1.45.0");
 
-        let elixir = detect_env_version("elixir", root, &sources).await.unwrap().unwrap();
+        let elixir = detect_env_version("elixir", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(elixir.version, "1.17.0");
     }
 
@@ -3648,10 +3718,7 @@ rust-version = "1.70"
         .await
         .unwrap();
 
-        let sources = vec![
-            ".python-version".to_string(),
-            "mise.toml".to_string(),
-        ];
+        let sources = vec![".python-version".to_string(), "mise.toml".to_string()];
         let detected = detect_env_version("python", root, &sources)
             .await
             .unwrap()
@@ -3678,10 +3745,7 @@ rust-version = "1.70"
             .await
             .unwrap();
 
-        let sources = vec![
-            ".go-version".to_string(),
-            "mise.toml".to_string(),
-        ];
+        let sources = vec![".go-version".to_string(), "mise.toml".to_string()];
         let detected = detect_env_version("go", &child, &sources)
             .await
             .unwrap()
@@ -3719,17 +3783,46 @@ rust-version = "1.70"
         let root = dir.path();
 
         let sources = vec![".tool-versions".to_string()];
-        let detected = detect_env_version("unknown_lang", root, &sources).await.unwrap();
+        let detected = detect_env_version("unknown_lang", root, &sources)
+            .await
+            .unwrap();
         assert!(detected.is_none());
     }
 
     #[tokio::test]
     async fn default_detection_sources_returns_non_empty_for_known_types() {
         for env_type in &[
-            "node", "python", "go", "rust", "ruby", "java", "kotlin", "scala",
-            "php", "dotnet", "deno", "bun", "zig", "dart", "lua", "groovy",
-            "elixir", "erlang", "swift", "julia", "perl", "r", "haskell",
-            "c", "cpp", "typescript", "clojure", "crystal", "nim", "ocaml", "fortran",
+            "node",
+            "python",
+            "go",
+            "rust",
+            "ruby",
+            "java",
+            "kotlin",
+            "scala",
+            "php",
+            "dotnet",
+            "deno",
+            "bun",
+            "zig",
+            "dart",
+            "lua",
+            "groovy",
+            "elixir",
+            "erlang",
+            "swift",
+            "julia",
+            "perl",
+            "r",
+            "haskell",
+            "c",
+            "cpp",
+            "typescript",
+            "clojure",
+            "crystal",
+            "nim",
+            "ocaml",
+            "fortran",
         ] {
             let sources = default_detection_sources(env_type);
             assert!(

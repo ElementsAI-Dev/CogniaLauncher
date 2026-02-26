@@ -55,17 +55,17 @@ impl UvProvider {
     /// Build uv arguments with mirror configuration
     fn build_uv_args<'a>(&'a self, base_args: &[&'a str]) -> Vec<String> {
         let mut args: Vec<String> = base_args.iter().map(|s| s.to_string()).collect();
-        
+
         if let Some(ref url) = self.index_url {
             args.push("--index-url".to_string());
             args.push(url.clone());
         }
-        
+
         for url in &self.extra_index_urls {
             args.push("--extra-index-url".to_string());
             args.push(url.clone());
         }
-        
+
         args
     }
 
@@ -76,7 +76,10 @@ impl UvProvider {
             let lib_dir = if cfg!(windows) {
                 PathBuf::from(&venv).join("Lib").join("site-packages")
             } else {
-                PathBuf::from(&venv).join("lib").join("python3").join("site-packages")
+                PathBuf::from(&venv)
+                    .join("lib")
+                    .join("python3")
+                    .join("site-packages")
             };
             if lib_dir.exists() {
                 return Some(lib_dir);
@@ -88,16 +91,20 @@ impl UvProvider {
                 .ok()
                 .map(|p| PathBuf::from(p).join("Python").join("site-packages"))
         } else {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| PathBuf::from(h).join(".local").join("lib").join("python3").join("site-packages"))
+            std::env::var("HOME").ok().map(|h| {
+                PathBuf::from(h)
+                    .join(".local")
+                    .join("lib")
+                    .join("python3")
+                    .join("site-packages")
+            })
         }
     }
 
     async fn run_uv(&self, args: &[&str]) -> CogniaResult<String> {
         let full_args = self.build_uv_args(args);
         let args_refs: Vec<&str> = full_args.iter().map(|s| s.as_str()).collect();
-        
+
         let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let out = process::execute("uv", &args_refs, Some(opts)).await?;
         if out.success {
@@ -139,10 +146,10 @@ impl UvProvider {
     /// Get the installed version and location of a package using uv pip show
     async fn get_package_info_raw(&self, name: &str) -> CogniaResult<(String, PathBuf)> {
         let output = self.run_uv_raw(&["pip", "show", name]).await?;
-        
+
         let mut version = String::new();
         let mut location = PathBuf::new();
-        
+
         for line in output.lines() {
             if let Some(v) = line.strip_prefix("Version:") {
                 version = v.trim().to_string();
@@ -150,11 +157,11 @@ impl UvProvider {
                 location = PathBuf::from(loc.trim());
             }
         }
-        
+
         if version.is_empty() {
             return Err(CogniaError::Provider(format!("Package {} not found", name)));
         }
-        
+
         Ok((version, location))
     }
 }
@@ -423,7 +430,9 @@ impl Provider for UvProvider {
         self.run_uv(&["pip", "install", &pkg]).await?;
 
         // Get the actual installed version and location
-        let (actual_version, install_path) = self.get_package_info_raw(&req.name).await
+        let (actual_version, install_path) = self
+            .get_package_info_raw(&req.name)
+            .await
             .unwrap_or_else(|_| (req.version.clone().unwrap_or_default(), PathBuf::new()));
 
         Ok(InstallReceipt {
@@ -443,7 +452,9 @@ impl Provider for UvProvider {
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         // list doesn't need mirror args
-        let out = self.run_uv_raw(&["pip", "list", "--format", "json"]).await?;
+        let out = self
+            .run_uv_raw(&["pip", "list", "--format", "json"])
+            .await?;
 
         if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&out) {
             return Ok(packages
@@ -525,7 +536,12 @@ impl SystemPackageProvider for UvProvider {
     async fn get_version(&self) -> CogniaResult<String> {
         let out = self.run_uv_raw(&["--version"]).await?;
         // Output format: "uv 0.8.22 (ade2bdbd2 2025-09-23)"
-        Ok(out.trim().split_whitespace().nth(1).unwrap_or("unknown").to_string())
+        Ok(out
+            .trim()
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("unknown")
+            .to_string())
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
@@ -553,7 +569,9 @@ impl SystemPackageProvider for UvProvider {
 #[async_trait]
 impl EnvironmentProvider for UvProvider {
     async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
-        let output = self.run_uv_raw(&["python", "list", "--only-installed"]).await?;
+        let output = self
+            .run_uv_raw(&["python", "list", "--only-installed"])
+            .await?;
         let current = self.get_current_version().await?.unwrap_or_default();
 
         let mut versions = Vec::new();
@@ -579,7 +597,11 @@ impl EnvironmentProvider for UvProvider {
                         .find(|c: char| c != '.' && !c.is_ascii_digit())
                         .unwrap_or(rest.len());
                     let v = &rest[..ver_end];
-                    if v.is_empty() { None } else { Some(v) }
+                    if v.is_empty() {
+                        None
+                    } else {
+                        Some(v)
+                    }
                 });
 
             if let Some(ver) = version {
@@ -608,7 +630,9 @@ impl EnvironmentProvider for UvProvider {
 
     async fn get_current_version(&self) -> CogniaResult<Option<String>> {
         // Try reading .python-version file first
-        if let Ok(content) = crate::platform::fs::read_file_string(&PathBuf::from(".python-version")).await {
+        if let Ok(content) =
+            crate::platform::fs::read_file_string(&PathBuf::from(".python-version")).await
+        {
             let version = content.trim();
             if !version.is_empty() {
                 return Ok(Some(version.to_string()));
@@ -742,9 +766,13 @@ impl EnvironmentProvider for UvProvider {
                 .ok()
                 .map(|p| PathBuf::from(p).join("uv").join("python"))
         } else {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| PathBuf::from(h).join(".local").join("share").join("uv").join("python"))
+            std::env::var("HOME").ok().map(|h| {
+                PathBuf::from(h)
+                    .join(".local")
+                    .join("share")
+                    .join("uv")
+                    .join("python")
+            })
         };
 
         if let Some(base_path) = base {
@@ -787,18 +815,20 @@ mod tests {
         let provider = UvProvider::new()
             .with_index_url("https://pypi.tuna.tsinghua.edu.cn/simple")
             .with_extra_index_url("https://pypi.org/simple");
-        
-        assert_eq!(provider.index_url, Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string()));
+
+        assert_eq!(
+            provider.index_url,
+            Some("https://pypi.tuna.tsinghua.edu.cn/simple".to_string())
+        );
         assert_eq!(provider.extra_index_urls.len(), 1);
     }
 
     #[test]
     fn test_build_uv_args() {
-        let provider = UvProvider::new()
-            .with_index_url("https://mirror.example.com/simple");
-        
+        let provider = UvProvider::new().with_index_url("https://mirror.example.com/simple");
+
         let args = provider.build_uv_args(&["pip", "install", "requests"]);
-        
+
         assert!(args.contains(&"pip".to_string()));
         assert!(args.contains(&"install".to_string()));
         assert!(args.contains(&"requests".to_string()));
@@ -810,7 +840,14 @@ mod tests {
     fn test_uv_provider_no_mirror() {
         let provider = UvProvider::new();
         let args = provider.build_uv_args(&["pip", "install", "requests"]);
-        
-        assert_eq!(args, vec!["pip".to_string(), "install".to_string(), "requests".to_string()]);
+
+        assert_eq!(
+            args,
+            vec![
+                "pip".to_string(),
+                "install".to_string(),
+                "requests".to_string()
+            ]
+        );
     }
 }

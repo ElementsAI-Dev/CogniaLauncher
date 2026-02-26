@@ -255,9 +255,7 @@ impl Provider for ConanProvider {
 
         // Fallback: try `conan list "<query>*" -r <remote>` for broader matching
         let pattern = format!("{}*", query);
-        let out = self
-            .run_conan(&["list", &pattern, "-r", remote])
-            .await;
+        let out = self.run_conan(&["list", &pattern, "-r", remote]).await;
 
         if let Ok(output) = out {
             let packages = Self::parse_list_output(&output);
@@ -308,9 +306,7 @@ impl Provider for ConanProvider {
 
         if let Some(latest) = versions.first() {
             let ref_str = format!("{}/{}", name, latest.version);
-            let inspect_out = self
-                .run_conan(&["inspect", &ref_str, "-r", remote])
-                .await;
+            let inspect_out = self.run_conan(&["inspect", &ref_str, "-r", remote]).await;
             if let Ok(inspect) = inspect_out {
                 for line in inspect.lines() {
                     let trimmed = line.trim();
@@ -341,10 +337,7 @@ impl Provider for ConanProvider {
 
         // Fallback homepage to ConanCenter page
         if homepage.is_none() {
-            homepage = Some(format!(
-                "https://conan.io/center/recipes/{}",
-                name
-            ));
+            homepage = Some(format!("https://conan.io/center/recipes/{}", name));
         }
 
         Ok(PackageInfo {
@@ -665,8 +658,7 @@ mod tests {
 
     #[test]
     fn test_parse_ref_with_revision() {
-        let (name, version) =
-            ConanProvider::parse_ref("openssl/3.2.0#abc123").unwrap();
+        let (name, version) = ConanProvider::parse_ref("openssl/3.2.0#abc123").unwrap();
         assert_eq!(name, "openssl");
         assert_eq!(version, "3.2.0");
     }

@@ -34,6 +34,10 @@ export interface SystemInfo {
   appVersion: string;
   homeDir: string;
   locale: string;
+  components: tauri.ComponentInfo[];
+  battery: tauri.BatteryInfo | null;
+  disks: tauri.DiskInfo[];
+  networks: tauri.NetworkInterfaceInfo[];
 }
 
 export interface UseAboutDataReturn {
@@ -138,6 +142,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        components: [],
+        battery: null,
+        disks: [],
+        networks: [],
       });
       setSystemLoading(false);
       return;
@@ -145,10 +153,26 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
     setSystemLoading(true);
     try {
-      const [platformInfo, cogniaDir] = await Promise.all([
+      const [platformResult, cogniaDirResult, componentsResult, batteryResult, disksResult, networksResult] = await Promise.allSettled([
         tauri.getPlatformInfo(),
         tauri.getCogniaDir(),
+        tauri.getComponentsInfo(),
+        tauri.getBatteryInfo(),
+        tauri.getDiskInfo(),
+        tauri.getNetworkInterfaces(),
       ]);
+
+      const platformInfo = platformResult.status === 'fulfilled' ? platformResult.value : null;
+      const cogniaDir = cogniaDirResult.status === 'fulfilled' ? cogniaDirResult.value : '~/.cognia';
+      const components = componentsResult.status === 'fulfilled' ? componentsResult.value : [];
+      const battery = batteryResult.status === 'fulfilled' ? batteryResult.value : null;
+      const disks = disksResult.status === 'fulfilled' ? disksResult.value : [];
+      const networks = networksResult.status === 'fulfilled' ? networksResult.value : [];
+
+      if (!platformInfo) {
+        throw new Error('Failed to load platform info');
+      }
+
       setSystemInfo({
         os: platformInfo.os,
         arch: platformInfo.arch,
@@ -177,6 +201,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: platformInfo.appVersion || APP_VERSION,
         homeDir: cogniaDir,
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        components,
+        battery,
+        disks,
+        networks,
       });
     } catch (err) {
       console.error('Failed to load system info:', err);
@@ -209,6 +237,10 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        components: [],
+        battery: null,
+        disks: [],
+        networks: [],
       });
     } finally {
       setSystemLoading(false);
@@ -282,86 +314,151 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   }, []);
 
   const exportDiagnostics = useCallback(async (t: (key: string) => string) => {
-    if (!tauri.isTauri()) {
-      toast.error(t('about.updateDesktopOnly'));
+    // Desktop mode: full ZIP bundle via Tauri backend
+    if (isTauri()) {
+      try {
+        let outputPath: string | undefined;
+        try {
+          const { save } = await import('@tauri-apps/plugin-dialog');
+          const defaultPath = await tauri.diagnosticGetDefaultExportPath();
+          const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const selected = await save({
+            title: t('diagnostic.selectExportPath'),
+            defaultPath: `${defaultPath}/cognia-diagnostic-${ts}.zip`,
+            filters: [{ name: 'ZIP', extensions: ['zip'] }],
+          });
+          if (!selected) return; // user cancelled
+          outputPath = selected;
+        } catch {
+          // Dialog failed, let backend use default path
+        }
+
+        toast.info(t('diagnostic.generating'));
+
+        const result = await tauri.diagnosticExportBundle({
+          outputPath,
+          includeConfig: true,
+        });
+
+        const sizeMb = (result.size / (1024 * 1024)).toFixed(1);
+        toast.success(t('diagnostic.exportSuccess'), {
+          description: `${result.path} (${sizeMb} MB, ${result.fileCount} files)`,
+          duration: 8000,
+          action: {
+            label: t('diagnostic.openFolder'),
+            onClick: async () => {
+              try {
+                const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+                await revealItemInDir(result.path);
+              } catch {
+                // fallback: ignore
+              }
+            },
+          },
+        });
+      } catch (err) {
+        console.error('Failed to export diagnostics:', err);
+        toast.error(t('about.diagnosticsFailed'));
+      }
       return;
     }
 
+    // Web mode: generate a client-side diagnostic JSON file download
     try {
-      const [providers, cacheStats, logSize] = await Promise.allSettled([
-        tauri.providerStatusAll(),
-        tauri.getCombinedCacheStats(),
-        tauri.logGetTotalSize(),
-      ]);
+      const formatMem = (bytes: number) =>
+        bytes > 0 ? `${Math.round(bytes / (1024 * 1024 * 1024))} GB` : 'N/A';
 
-      const formatMem = (bytes: number) => bytes > 0 ? `${Math.round(bytes / (1024 * 1024 * 1024))} GB` : 'N/A';
-      const coresStr = systemInfo?.physicalCoreCount && systemInfo.physicalCoreCount !== systemInfo.cpuCores
-        ? `${systemInfo.physicalCoreCount}P/${systemInfo.cpuCores}L`
-        : `${systemInfo?.cpuCores || 0}`;
+      const report: Record<string, unknown> = {
+        generated: new Date().toISOString(),
+        mode: 'web',
+        appVersion: APP_VERSION,
+        system: {
+          os: systemInfo?.osLongVersion || systemInfo?.os || 'Web',
+          osName: systemInfo?.osName || navigator.platform || 'Unknown',
+          arch: systemInfo?.cpuArch || systemInfo?.arch || 'Unknown',
+          cpu: systemInfo?.cpuModel || 'Unknown',
+          cpuCores: systemInfo?.cpuCores || navigator.hardwareConcurrency || 0,
+          memoryTotal: systemInfo?.totalMemory
+            ? formatMem(systemInfo.totalMemory)
+            : 'Unknown',
+          memoryUsed: systemInfo?.usedMemory
+            ? formatMem(systemInfo.usedMemory)
+            : 'Unknown',
+          gpus: systemInfo?.gpus?.map((g) => ({
+            name: g.name,
+            vramMb: g.vramMb,
+          })) || [],
+        },
+        browser: {
+          userAgent: navigator.userAgent,
+          language: navigator.language,
+          languages: [...navigator.languages],
+          platform: navigator.platform,
+          cookieEnabled: navigator.cookieEnabled,
+          onLine: navigator.onLine,
+          hardwareConcurrency: navigator.hardwareConcurrency,
+          // deviceMemory may not be available in all browsers
+          deviceMemory: (navigator as unknown as Record<string, unknown>).deviceMemory ?? null,
+          maxTouchPoints: navigator.maxTouchPoints,
+        },
+        screen: {
+          width: screen.width,
+          height: screen.height,
+          colorDepth: screen.colorDepth,
+          pixelRatio: window.devicePixelRatio,
+        },
+        performance: {
+          memory: (performance as unknown as Record<string, unknown>).memory ?? null,
+          timing: performance.timing
+            ? {
+                navigationStart: performance.timing.navigationStart,
+                loadEventEnd: performance.timing.loadEventEnd,
+                domContentLoadedEventEnd:
+                  performance.timing.domContentLoadedEventEnd,
+              }
+            : null,
+        },
+        update: updateInfo
+          ? {
+              currentVersion: updateInfo.current_version,
+              latestVersion: updateInfo.latest_version,
+              updateAvailable: updateInfo.update_available,
+            }
+          : null,
+        localStorage: {
+          itemCount: localStorage.length,
+          estimatedSizeKB: (() => {
+            try {
+              let total = 0;
+              for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key) {
+                  total += key.length + (localStorage.getItem(key)?.length || 0);
+                }
+              }
+              return Math.round((total * 2) / 1024); // UTF-16 → bytes → KB
+            } catch {
+              return null;
+            }
+          })(),
+        },
+      };
 
-      const lines: string[] = [
-        'CogniaLauncher Diagnostic Report',
-        '================================',
-        `Generated: ${new Date().toISOString()}`,
-        '',
-        '--- System Info ---',
-        `App Version: v${updateInfo?.current_version || systemInfo?.appVersion || APP_VERSION}`,
-        `OS: ${systemInfo?.osLongVersion || systemInfo?.os || 'Unknown'}`,
-        `OS Name: ${systemInfo?.osName || 'Unknown'}`,
-        `Arch: ${systemInfo?.cpuArch || systemInfo?.arch || 'Unknown'}`,
-        `Kernel: ${systemInfo?.kernelVersion || 'Unknown'}`,
-        `Hostname: ${systemInfo?.hostname || 'Unknown'}`,
-        `CPU: ${systemInfo?.cpuModel || 'Unknown'} (${coresStr} cores, ${systemInfo?.cpuFrequency || 0} MHz)`,
-        `CPU Vendor: ${systemInfo?.cpuVendorId || 'Unknown'}`,
-        `Memory: ${systemInfo?.totalMemory ? formatMem(systemInfo.totalMemory) : 'Unknown'} (Used: ${systemInfo?.usedMemory ? formatMem(systemInfo.usedMemory) : 'N/A'})`,
-        `Swap: ${systemInfo?.totalSwap ? `${formatMem(systemInfo.totalSwap)} (Used: ${formatMem(systemInfo.usedSwap)})` : 'None'}`,
-        `GPU: ${systemInfo?.gpus?.length ? systemInfo.gpus.map(g => `${g.name}${g.vramMb ? ` (${g.vramMb} MB)` : ''}`).join(', ') : 'Unknown'}`,
-        `Data Dir: ${systemInfo?.homeDir || 'Unknown'}`,
-        `Locale: ${systemInfo?.locale || 'Unknown'}`,
-      ];
+      const json = JSON.stringify(report, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cognia-diagnostic-${ts}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-      if (updateInfo) {
-        lines.push('', '--- Update Status ---');
-        lines.push(`Current: v${updateInfo.current_version}`);
-        lines.push(`Latest: v${updateInfo.latest_version || updateInfo.current_version}`);
-        lines.push(`Update Available: ${updateInfo.update_available ? 'Yes' : 'No'}`);
-      }
-
-      if (providers.status === 'fulfilled') {
-        const all = providers.value;
-        const installed = all.filter((p) => p.installed);
-        lines.push('', '--- Providers ---');
-        lines.push(`Total: ${all.length}, Available: ${installed.length}`);
-        if (installed.length > 0) {
-          lines.push(`Installed: ${installed.map((p) => p.id).join(', ')}`);
-        }
-        const notInstalled = all.filter((p) => !p.installed);
-        if (notInstalled.length > 0) {
-          lines.push(`Not Available: ${notInstalled.map((p) => p.id).join(', ')}`);
-        }
-      }
-
-      if (cacheStats.status === 'fulfilled') {
-        const stats = cacheStats.value;
-        lines.push('', '--- Cache ---');
-        lines.push(`Internal: ${stats.internalSizeHuman}`);
-        lines.push(`External: ${stats.externalSizeHuman}`);
-        lines.push(`Total: ${stats.totalSizeHuman}`);
-      }
-
-      if (logSize.status === 'fulfilled') {
-        const bytes = logSize.value;
-        const sizeStr = bytes > 0
-          ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-          : '0 B';
-        lines.push('', '--- Logs ---');
-        lines.push(`Total Log Size: ${sizeStr}`);
-      }
-
-      await navigator.clipboard.writeText(lines.join('\n'));
-      toast.success(t('about.diagnosticsCopied'));
+      toast.success(t('diagnostic.exportSuccessWeb'));
     } catch (err) {
-      console.error('Failed to export diagnostics:', err);
+      console.error('Failed to export web diagnostics:', err);
       toast.error(t('about.diagnosticsFailed'));
     }
   }, [updateInfo, systemInfo]);

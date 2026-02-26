@@ -1,6 +1,9 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{env::Platform, process::{self, ProcessOptions}};
+use crate::platform::{
+    env::Platform,
+    process::{self, ProcessOptions},
+};
 use crate::resolver::Dependency;
 use async_trait::async_trait;
 use std::collections::HashSet;
@@ -306,7 +309,12 @@ impl Provider for VcpkgProvider {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     let ver = parts.first()?;
                     // Skip lines that don't look like versions
-                    if !ver.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    if !ver
+                        .chars()
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                    {
                         return None;
                     }
                     Some(VersionInfo {
@@ -373,7 +381,11 @@ impl Provider for VcpkgProvider {
             // vcpkg version pinning: name@version or name:triplet
             // For classic mode, version pinning via @version
             pkg = if self.default_triplet.is_some() {
-                format!("{}:{}", req.name, self.default_triplet.as_deref().unwrap_or(""))
+                format!(
+                    "{}:{}",
+                    req.name,
+                    self.default_triplet.as_deref().unwrap_or("")
+                )
             } else {
                 req.name.clone()
             };
@@ -478,8 +490,12 @@ impl Provider for VcpkgProvider {
                         let name_field = left_parts.first()?.trim();
                         let name = name_field.split(':').next()?.to_string();
                         let current = left_parts.get(1).unwrap_or(&"").to_string();
-                        let latest = parts[1].trim().split_whitespace().next()
-                            .unwrap_or("").to_string();
+                        let latest = parts[1]
+                            .trim()
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
 
                         Some(UpdateInfo {
                             name,

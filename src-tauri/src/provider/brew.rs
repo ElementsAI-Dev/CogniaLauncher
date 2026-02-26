@@ -14,13 +14,16 @@ impl BrewProvider {
     }
 
     async fn run_brew(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = process::ProcessOptions::new()
-            .with_timeout(Duration::from_secs(300)); // brew operations can be slow
+        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(300)); // brew operations can be slow
         let out = process::execute("brew", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            let msg = if out.stderr.trim().is_empty() {
+                out.stdout
+            } else {
+                out.stderr
+            };
             Err(CogniaError::Provider(msg))
         }
     }
@@ -38,7 +41,10 @@ impl BrewProvider {
                 return Ok(versions.to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 }
 
@@ -105,17 +111,18 @@ impl Provider for BrewProvider {
         let out = self.run_brew(&["info", "--json=v2", name]).await?;
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
             // Try formulae first, then casks
-            let pkg = json["formulae"].get(0)
-                .or_else(|| json["casks"].get(0));
+            let pkg = json["formulae"].get(0).or_else(|| json["casks"].get(0));
 
             if let Some(pkg) = pkg {
-                let version = pkg["versions"]["stable"].as_str()
+                let version = pkg["versions"]["stable"]
+                    .as_str()
                     .or_else(|| pkg["version"].as_str())
                     .map(|s| s.to_string());
 
                 return Ok(PackageInfo {
                     name: name.into(),
-                    display_name: pkg["full_name"].as_str()
+                    display_name: pkg["full_name"]
+                        .as_str()
                         .or_else(|| pkg["token"].as_str())
                         .map(|s| s.to_string()),
                     description: pkg["desc"].as_str().map(|s| s.to_string()),
@@ -123,12 +130,14 @@ impl Provider for BrewProvider {
                     license: pkg["license"].as_str().map(|s| s.to_string()),
                     repository: None,
                     versions: version
-                        .map(|v| vec![VersionInfo {
-                            version: v,
-                            release_date: None,
-                            deprecated: pkg["deprecated"].as_bool().unwrap_or(false),
-                            yanked: false,
-                        }])
+                        .map(|v| {
+                            vec![VersionInfo {
+                                version: v,
+                                release_date: None,
+                                deprecated: pkg["deprecated"].as_bool().unwrap_or(false),
+                                yanked: false,
+                            }]
+                        })
                         .unwrap_or_default(),
                     provider: self.id().into(),
                 });
@@ -218,7 +227,9 @@ impl Provider for BrewProvider {
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let out = self.run_brew(&["list", "--versions"]).await?;
-        let brew_prefix = self.run_brew(&["--prefix"]).await
+        let brew_prefix = self
+            .run_brew(&["--prefix"])
+            .await
             .map(|s| PathBuf::from(s.trim()))
             .unwrap_or_else(|_| PathBuf::from("/opt/homebrew"));
 
@@ -432,7 +443,10 @@ mod tests {
         assert_eq!(packages[1].name, "node");
         assert_eq!(packages[1].version, "20.10.0"); // First version listed
         assert_eq!(packages[2].name, "curl");
-        assert!(packages[0].install_path.ends_with("Cellar/git") || packages[0].install_path.ends_with("Cellar\\git"));
+        assert!(
+            packages[0].install_path.ends_with("Cellar/git")
+                || packages[0].install_path.ends_with("Cellar\\git")
+        );
     }
 
     #[test]
@@ -496,7 +510,10 @@ mod tests {
         let pkg = &json["formulae"][0];
 
         assert_eq!(pkg["full_name"].as_str().unwrap(), "git");
-        assert_eq!(pkg["desc"].as_str().unwrap(), "Distributed revision control system");
+        assert_eq!(
+            pkg["desc"].as_str().unwrap(),
+            "Distributed revision control system"
+        );
         assert_eq!(pkg["homepage"].as_str().unwrap(), "https://git-scm.com");
         assert_eq!(pkg["license"].as_str().unwrap(), "GPL-2.0-only");
         assert_eq!(pkg["versions"]["stable"].as_str().unwrap(), "2.42.0");

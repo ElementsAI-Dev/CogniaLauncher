@@ -29,11 +29,19 @@ impl DnfProvider {
 
     /// Get the installed version of a package using rpm (more reliable than dnf info)
     async fn query_installed_version_rpm(&self, name: &str) -> CogniaResult<String> {
-        let out = process::execute("rpm", &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name], None).await?;
+        let out = process::execute(
+            "rpm",
+            &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name],
+            None,
+        )
+        .await?;
         if out.success {
             Ok(out.stdout.trim().to_string())
         } else {
-            Err(CogniaError::Provider(format!("Package {} not installed", name)))
+            Err(CogniaError::Provider(format!(
+                "Package {} not installed",
+                name
+            )))
         }
     }
 }
@@ -464,7 +472,10 @@ mod tests {
         }
 
         assert_eq!(version, Some("8.0.1".into()));
-        assert_eq!(description, Some("curl is a command line tool for transferring data".into()));
+        assert_eq!(
+            description,
+            Some("curl is a command line tool for transferring data".into())
+        );
         assert_eq!(license, Some("MIT".into()));
         assert_eq!(homepage, Some("https://curl.se/".into()));
     }

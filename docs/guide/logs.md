@@ -1,89 +1,52 @@
 # 日志系统
 
-CogniaLauncher 提供完整的日志记录和查看功能。
+CogniaLauncher 的日志体系分为三层：后端结构化日志、前端运行时日志、崩溃诊断包。
 
 ---
 
 ## 日志来源
 
-### 后端日志
+### 后端日志（Tauri + `tauri-plugin-log`）
 
-使用 `tauri-plugin-log` 记录：
+- 输出目标：标准输出、WebView、日志文件
+- 日志轮转：最多 5 个文件、单文件 10MB
+- 日志级别：`ERROR` / `WARN` / `INFO` / `DEBUG` / `TRACE`
 
-- **输出目标**：标准输出、WebView、日志文件
-- **日志轮转**：保留 5 个文件，每个最大 10MB
-- **日志级别**：Error、Warn、Info、Debug、Trace
+### 前端日志（LogProvider）
 
-### 前端日志
+- 控制台拦截：`console.*` 写入前端日志 store
+- 事件日志：下载、批量操作、自更新、更新检查等统一进入日志面板
+- 运行时异常：监听 `window.error` 与 `window.unhandledrejection`
 
-通过 `LogProvider` 组件拦截浏览器控制台输出：
+### 崩溃诊断包
 
-- `console.log` → Info
-- `console.warn` → Warn
-- `console.error` → Error
-- `console.debug` → Debug
-
-### 事件日志
-
-自动记录关键事件：
-
-- 下载任务状态变化（添加、开始、完成、失败等）
-- 自更新进度
-- 更新检查进度
+- Rust panic：通过 panic hook 自动生成 ZIP
+- 前端未捕获异常（仅桌面模式）：自动调用 `diagnostic_capture_frontend_crash`
+- 每个会话最多自动上报 1 次，避免刷屏
+- 生成后保留最近 20 份，旧诊断包会自动清理
 
 ---
 
-## 日志查看
+## 日志格式兼容
 
-### 实时日志
+日志查询与导出支持同时解析以下两种历史格式：
 
-日志页面的 **实时** 标签页：
+1. 新格式  
+   `[YYYY-MM-DD HH:MM:SS(.ms)][LEVEL][TARGET] MESSAGE`
+2. 旧格式  
+   `[YYYY-MM-DD][HH:MM:SS][TARGET][LEVEL] MESSAGE`
 
-- 实时滚动显示新日志
-- 按级别过滤（Error/Warn/Info/Debug）
-- 按关键词搜索
-- 分页浏览
+说明：
 
-### 日志文件
-
-日志页面的 **文件** 标签页：
-
-- 查看历史日志文件
-- 日志文件总大小统计
-- 文件内容搜索
+- 旧格式会自动合并 `date + time` 为完整时间戳，确保 `start_time` / `end_time` 过滤准确。
+- 非结构化行会走 fallback，不会因解析失败而丢失日志。
 
 ---
 
-## 日志格式
+## 崩溃恢复体验
 
-后端日志格式：
-
-```
-[TIMESTAMP][LEVEL][TARGET] MESSAGE
-```
-
-示例：
-
-```
-[2026-02-05 10:30:00][INFO][cognia_launcher::commands::environment] Installing Node.js v20.11.0
-```
-
----
-
-## 日志面板
-
-除了专用的日志页面，还可以通过日志抽屉（LogDrawer）在任何页面查看最近的日志。
-
----
-
-## 状态管理
-
-日志数据存储在 `lib/stores/log.ts`（Zustand）：
-
-- 日志条目列表
-- 过滤条件
-- 分页状态
-- 持久化偏好
+- 自动诊断成功后，本次会话显示轻量提示（toast）。
+- 同时写入 crash marker；下次启动会弹出恢复对话框，支持打开报告目录或忽略提示。
 
 ---
 
@@ -91,6 +54,11 @@ CogniaLauncher 提供完整的日志记录和查看功能。
 
 | 命令 | 描述 |
 |------|------|
-| `log_get_entries` | 获取日志条目 |
-| `log_clear` | 清空日志 |
-| `log_get_total_size` | 获取日志文件总大小 |
+| `log_query` | 查询日志（级别/时间/关键词过滤 + 分页） |
+| `log_export` | 导出日志（TXT/JSON） |
+| `log_list_files` | 列出日志文件 |
+| `log_get_dir` | 获取日志目录 |
+| `log_get_total_size` | 获取日志总大小 |
+| `log_clear` | 清理日志文件 |
+| `diagnostic_export_bundle` | 手动导出诊断包 |
+| `diagnostic_capture_frontend_crash` | 前端异常自动诊断包命令 |

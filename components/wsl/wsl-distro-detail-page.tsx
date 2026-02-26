@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Breadcrumb as BreadcrumbRoot,
@@ -53,6 +54,9 @@ import {
   Trash2,
   ArrowUpDown,
   UserCog,
+  MoveRight,
+  Expand,
+  HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroStatus } from '@/types/tauri';
@@ -67,9 +71,11 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const {
     available,
     distros,
+    capabilities,
     loading,
     error,
     checkAvailability,
+    getCapabilities,
     refreshDistros,
     refreshStatus,
     terminate,
@@ -81,6 +87,9 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     getDiskUsage,
     getIpAddress,
     changeDefaultUser,
+    setSparse,
+    moveDistro,
+    resizeDistro,
     getDistroConfig,
     setDistroConfigValue,
     detectDistroEnv,
@@ -88,9 +97,12 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
 
   const initializedRef = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<{
-    type: 'unregister' | 'terminate';
-  } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: 'unregister' | 'terminate' }
+    | { type: 'move'; location: string }
+    | { type: 'resize'; size: string }
+    | null
+  >(null);
 
   // Initialize on mount
   useEffect(() => {
@@ -102,10 +114,11 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
       if (isAvailable) {
         await refreshDistros();
         await refreshStatus();
+        await getCapabilities();
       }
     };
     init();
-  }, [isDesktop, checkAvailability, refreshDistros, refreshStatus]);
+  }, [isDesktop, checkAvailability, getCapabilities, refreshDistros, refreshStatus]);
 
   // Find the distro data
   const distro: WslDistroStatus | undefined = distros.find(
@@ -204,15 +217,73 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     }
   }, [changeDefaultUser, distroName, t]);
 
+  const handleSetSparse = useCallback(async (enabled: boolean) => {
+    try {
+      await setSparse(distroName, enabled);
+      toast.success(
+        enabled
+          ? t('wsl.setSparseSuccessEnabled').replace('{name}', distroName)
+          : t('wsl.setSparseSuccessDisabled').replace('{name}', distroName)
+      );
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [distroName, setSparse, t]);
+
+  const handleMovePrompt = useCallback(() => {
+    const location = window.prompt(t('wsl.moveLocation'));
+    if (!location) return;
+    setConfirmAction({ type: 'move', location });
+  }, [t]);
+
+  const handleResizePrompt = useCallback(() => {
+    const size = window.prompt(t('wsl.resizeSize'));
+    if (!size) return;
+    setConfirmAction({ type: 'resize', size });
+  }, [t]);
+
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
     if (confirmAction.type === 'unregister') {
       await handleUnregister();
     } else if (confirmAction.type === 'terminate') {
       await handleTerminate();
+    } else if (confirmAction.type === 'move') {
+      try {
+        const result = await moveDistro(distroName, confirmAction.location);
+        toast.success(t('wsl.moveSuccess').replace('{name}', distroName) + (result ? `\n${result}` : ''));
+      } catch (err) {
+        toast.error(String(err));
+      }
+    } else if (confirmAction.type === 'resize') {
+      try {
+        const result = await resizeDistro(distroName, confirmAction.size);
+        toast.success(t('wsl.resizeSuccess').replace('{name}', distroName) + (result ? `\n${result}` : ''));
+      } catch (err) {
+        toast.error(String(err));
+      }
     }
     setConfirmAction(null);
-  }, [confirmAction, handleUnregister, handleTerminate]);
+  }, [confirmAction, distroName, handleTerminate, handleUnregister, moveDistro, resizeDistro, t]);
+
+  const moveUnsupported = capabilities?.move === false;
+  const resizeUnsupported = capabilities?.resize === false;
+  const sparseUnsupported = capabilities?.setSparse === false;
+  const moveHint = moveUnsupported
+    ? t('wsl.capabilityUnsupported')
+        .replace('{feature}', t('wsl.move'))
+        .replace('{version}', capabilities?.version ?? 'Unknown')
+    : undefined;
+  const resizeHint = resizeUnsupported
+    ? t('wsl.capabilityUnsupported')
+        .replace('{feature}', t('wsl.resize'))
+        .replace('{version}', capabilities?.version ?? 'Unknown')
+    : undefined;
+  const sparseHint = sparseUnsupported
+    ? t('wsl.capabilityUnsupported')
+        .replace('{feature}', t('wsl.setSparse'))
+        .replace('{version}', capabilities?.version ?? 'Unknown')
+    : undefined;
 
   // Non-Tauri fallback
   if (!isDesktop) {
@@ -380,6 +451,66 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         </Alert>
       )}
 
+      <Card>
+        <CardHeader className="pb-3">
+          <h3 className="text-sm font-semibold">{t('wsl.manageOps')}</h3>
+          <p className="text-xs text-muted-foreground">{t('wsl.manageOpsDesc')}</p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={handleMovePrompt}
+              disabled={moveUnsupported}
+              title={moveHint}
+            >
+              <MoveRight className="h-3.5 w-3.5" />
+              {t('wsl.move')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={handleResizePrompt}
+              disabled={resizeUnsupported}
+              title={resizeHint}
+            >
+              <Expand className="h-3.5 w-3.5" />
+              {t('wsl.resize')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={() => handleSetSparse(true)}
+              disabled={sparseUnsupported}
+              title={sparseHint}
+            >
+              <HardDrive className="h-3.5 w-3.5" />
+              {t('wsl.setSparseEnable')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={() => handleSetSparse(false)}
+              disabled={sparseUnsupported}
+              title={sparseHint}
+            >
+              <HardDrive className="h-3.5 w-3.5" />
+              {t('wsl.setSparseDisable')}
+            </Button>
+          </div>
+          {(moveHint || resizeHint || sparseHint) && (
+            <p className="text-xs text-muted-foreground">
+              {moveHint ?? resizeHint ?? sparseHint}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
@@ -475,17 +606,33 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             <AlertDialogTitle>
               {confirmAction?.type === 'unregister'
                 ? t('wsl.unregister')
-                : t('wsl.terminate')}
+                : confirmAction?.type === 'move'
+                  ? t('wsl.move')
+                  : confirmAction?.type === 'resize'
+                    ? t('wsl.resize')
+                    : t('wsl.terminate')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmAction?.type === 'unregister'
                 ? t('wsl.unregisterConfirm').replace('{name}', distroName)
-                : `${t('wsl.terminate')} ${distroName}?`}
+                : confirmAction?.type === 'move'
+                  ? t('wsl.moveConfirm').replace('{name}', distroName)
+                  : confirmAction?.type === 'resize'
+                    ? t('wsl.resizeConfirm').replace('{name}', distroName)
+                    : `${t('wsl.terminate')} ${distroName}?`}
               {confirmAction?.type === 'unregister' && (
                 <>
                   <br />
                   <span className="text-destructive font-medium">
                     {t('wsl.dataLossWarning')}
+                  </span>
+                </>
+              )}
+              {(confirmAction?.type === 'move' || confirmAction?.type === 'resize') && (
+                <>
+                  <br />
+                  <span className="text-muted-foreground">
+                    {t('wsl.highRiskHint')}
                   </span>
                 </>
               )}
@@ -497,6 +644,8 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               onClick={confirmAndExecute}
               className={
                 confirmAction?.type === 'unregister'
+                  || confirmAction?.type === 'move'
+                  || confirmAction?.type === 'resize'
                   ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
                   : ''
               }

@@ -58,12 +58,10 @@ impl BundlerProvider {
             urlencoding::encode(query)
         );
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("RubyGems API request failed: {}", e)))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                CogniaError::Provider(format!("RubyGems API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(CogniaError::Provider(format!(
@@ -72,10 +70,9 @@ impl BundlerProvider {
             )));
         }
 
-        let gems: Vec<RubyGemResponse> = response
-            .json()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Failed to parse RubyGems response: {}", e)))?;
+        let gems: Vec<RubyGemResponse> = response.json().await.map_err(|e| {
+            CogniaError::Provider(format!("Failed to parse RubyGems response: {}", e))
+        })?;
 
         Ok(gems
             .into_iter()
@@ -96,21 +93,18 @@ impl BundlerProvider {
     async fn get_gem_info(&self, name: &str) -> CogniaResult<RubyGemInfo> {
         let url = format!("https://rubygems.org/api/v1/gems/{}.json", name);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("RubyGems API request failed: {}", e)))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                CogniaError::Provider(format!("RubyGems API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(CogniaError::PackageNotFound(name.to_string()));
         }
 
-        let gem: RubyGemResponse = response
-            .json()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Failed to parse RubyGems response: {}", e)))?;
+        let gem: RubyGemResponse = response.json().await.map_err(|e| {
+            CogniaError::Provider(format!("Failed to parse RubyGems response: {}", e))
+        })?;
 
         // Get versions
         let versions = self.get_gem_versions(name).await.unwrap_or_default();
@@ -130,21 +124,18 @@ impl BundlerProvider {
     async fn get_gem_versions_detailed(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let url = format!("https://rubygems.org/api/v1/versions/{}.json", name);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("RubyGems API request failed: {}", e)))?;
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                CogniaError::Provider(format!("RubyGems API request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Ok(vec![]);
         }
 
-        let versions: Vec<RubyGemVersionResponse> = response
-            .json()
-            .await
-            .map_err(|e| CogniaError::Provider(format!("Failed to parse versions response: {}", e)))?;
+        let versions: Vec<RubyGemVersionResponse> = response.json().await.map_err(|e| {
+            CogniaError::Provider(format!("Failed to parse versions response: {}", e))
+        })?;
 
         Ok(versions
             .into_iter()
@@ -185,8 +176,15 @@ impl BundlerProvider {
                     // Ruby gems are typically installed in GEM_HOME or vendor/bundle
                     let install_path = std::env::var("GEM_HOME")
                         .ok()
-                        .map(|p| PathBuf::from(p).join("gems").join(format!("{}-{}", &gem_name, &version)))
-                        .unwrap_or_else(|| PathBuf::from("vendor/bundle/gems").join(format!("{}-{}", &gem_name, &version)));
+                        .map(|p| {
+                            PathBuf::from(p)
+                                .join("gems")
+                                .join(format!("{}-{}", &gem_name, &version))
+                        })
+                        .unwrap_or_else(|| {
+                            PathBuf::from("vendor/bundle/gems")
+                                .join(format!("{}-{}", &gem_name, &version))
+                        });
 
                     packages.push(InstalledPackage {
                         name: gem_name,
@@ -206,7 +204,7 @@ impl BundlerProvider {
     /// Get the installed version of a gem from bundle list output
     async fn get_gem_version(&self, name: &str) -> CogniaResult<String> {
         let output = self.run_bundle(&["list"]).await?;
-        
+
         for line in output.lines() {
             let line = line.trim();
             // Format: "  * gem_name (version)"
@@ -217,7 +215,7 @@ impl BundlerProvider {
                 .split_whitespace()
                 .next()
                 .unwrap_or("");
-            
+
             // Use exact match (case-insensitive) to avoid substring false positives
             if gem_name.eq_ignore_ascii_case(name) {
                 if let Some((_, version_part)) = line.rsplit_once(' ') {
@@ -229,7 +227,7 @@ impl BundlerProvider {
                 }
             }
         }
-        
+
         Err(CogniaError::Provider(format!("Gem {} not found", name)))
     }
 
@@ -525,7 +523,10 @@ impl SystemPackageProvider for BundlerProvider {
                     .trim()
                     .strip_prefix("Bundler version ")
                     .unwrap_or(bundle_output.trim());
-                return Ok(format!("Bundler {} (RubyGems {})", bundler_version, gem_version));
+                return Ok(format!(
+                    "Bundler {} (RubyGems {})",
+                    bundler_version, gem_version
+                ));
             }
         }
 

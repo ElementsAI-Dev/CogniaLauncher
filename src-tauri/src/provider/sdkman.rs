@@ -49,9 +49,11 @@ async fn run_sdk(sdkman_dir: &Path, args: &[&str]) -> CogniaResult<String> {
         } else {
             output.stdout.clone()
         };
-        Err(CogniaError::Provider(
-            if combined.is_empty() { output.stderr } else { combined },
-        ))
+        Err(CogniaError::Provider(if combined.is_empty() {
+            output.stderr
+        } else {
+            combined
+        }))
     }
 }
 
@@ -194,8 +196,7 @@ pub fn extract_java_version_from_gradle(content: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim();
         // sourceCompatibility = JavaVersion.VERSION_17 or sourceCompatibility = '17'
-        if trimmed.starts_with("sourceCompatibility")
-            || trimmed.starts_with("targetCompatibility")
+        if trimmed.starts_with("sourceCompatibility") || trimmed.starts_with("targetCompatibility")
         {
             if let Some(ver) = extract_gradle_version_value(trimmed) {
                 return Some(ver);
@@ -415,7 +416,9 @@ impl SdkmanProvider {
             let trimmed = line.trim();
             // sdk list output shows candidate names followed by descriptions
             if let Some(first_word) = trimmed.split_whitespace().next() {
-                if first_word.chars().all(|c| c.is_ascii_lowercase() || c == '-') 
+                if first_word
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c == '-')
                     && !first_word.is_empty()
                     && first_word.len() < 30
                 {
@@ -515,7 +518,11 @@ impl Provider for SdkmanProvider {
             let entries = parse_sdk_list_java(&output);
             Ok(entries
                 .into_iter()
-                .filter(|e| query.is_empty() || e.identifier.contains(query) || e.vendor.to_lowercase().contains(&query.to_lowercase()))
+                .filter(|e| {
+                    query.is_empty()
+                        || e.identifier.contains(query)
+                        || e.vendor.to_lowercase().contains(&query.to_lowercase())
+                })
                 .take(limit)
                 .map(|e| PackageSummary {
                     name: e.identifier.clone(),
@@ -781,9 +788,7 @@ impl EnvironmentProvider for SdkmanProvider {
                             .metadata()
                             .ok()
                             .and_then(|m| m.modified().ok())
-                            .map(|t| {
-                                chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339()
-                            });
+                            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339());
                         versions.push(InstalledVersion {
                             version: version.to_string(),
                             install_path: entry.path(),
@@ -914,10 +919,7 @@ impl EnvironmentProvider for SdkmanProvider {
                     for line in content.lines() {
                         let line = line.trim();
                         if line.starts_with(&format!("{} ", self.candidate)) {
-                            let version = line
-                                .strip_prefix(&self.candidate)
-                                .unwrap_or("")
-                                .trim();
+                            let version = line.strip_prefix(&self.candidate).unwrap_or("").trim();
                             if !version.is_empty() {
                                 return Ok(Some(VersionDetection {
                                     version: version.to_string(),
@@ -1362,7 +1364,8 @@ zipStorePath=wrapper/dists
 
     #[test]
     fn test_extract_gradle_wrapper_version_all() {
-        let props = "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip";
+        let props =
+            "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip";
         assert_eq!(
             extract_gradle_wrapper_version(props),
             Some("8.11.1".to_string())
@@ -1412,9 +1415,18 @@ zipStorePath=wrapper/dists
     #[test]
     fn test_version_file_names() {
         assert_eq!(SdkmanProvider::java().version_file_name(), ".java-version");
-        assert_eq!(SdkmanProvider::kotlin().version_file_name(), ".kotlin-version");
-        assert_eq!(SdkmanProvider::new("gradle").version_file_name(), ".gradle-version");
-        assert_eq!(SdkmanProvider::new("maven").version_file_name(), ".maven-version");
+        assert_eq!(
+            SdkmanProvider::kotlin().version_file_name(),
+            ".kotlin-version"
+        );
+        assert_eq!(
+            SdkmanProvider::new("gradle").version_file_name(),
+            ".gradle-version"
+        );
+        assert_eq!(
+            SdkmanProvider::new("maven").version_file_name(),
+            ".maven-version"
+        );
     }
 
     #[test]

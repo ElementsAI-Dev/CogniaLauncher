@@ -103,10 +103,7 @@ impl PodmanProvider {
     }
 
     /// Query Docker Hub API for repository info
-    async fn fetch_hub_info(
-        &self,
-        name: &str,
-    ) -> Option<(String, Option<String>, Option<u64>)> {
+    async fn fetch_hub_info(&self, name: &str) -> Option<(String, Option<String>, Option<u64>)> {
         let (namespace, repo) = Self::parse_hub_image(name)?;
 
         let url = format!(
@@ -123,9 +120,14 @@ impl PodmanProvider {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .or_else(|| {
-                json["full_description"]
-                    .as_str()
-                    .map(|s| s.split("\n\n").next().unwrap_or(s).chars().take(500).collect())
+                json["full_description"].as_str().map(|s| {
+                    s.split("\n\n")
+                        .next()
+                        .unwrap_or(s)
+                        .chars()
+                        .take(500)
+                        .collect()
+                })
             });
         let star_count = json["star_count"].as_u64();
 
@@ -151,7 +153,11 @@ impl PodmanProvider {
     async fn get_local_digest(&self, image: &str) -> Option<String> {
         let out = self
             .run_podman(&[
-                "image", "inspect", image, "--format", "{{index .RepoDigests 0}}",
+                "image",
+                "inspect",
+                image,
+                "--format",
+                "{{index .RepoDigests 0}}",
             ])
             .await
             .ok()?;
@@ -226,14 +232,7 @@ impl Provider for PodmanProvider {
     ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(25).to_string();
         let out = self
-            .run_podman(&[
-                "search",
-                query,
-                "--limit",
-                &limit,
-                "--format",
-                "{{json .}}",
-            ])
+            .run_podman(&["search", query, "--limit", &limit, "--format", "{{json .}}"])
             .await?;
 
         let packages: Vec<PackageSummary> = out
@@ -393,13 +392,7 @@ impl Provider for PodmanProvider {
 
         // Fall back to local image tags
         let out = self
-            .run_podman(&[
-                "image",
-                "inspect",
-                name,
-                "--format",
-                "{{json .RepoTags}}",
-            ])
+            .run_podman(&["image", "inspect", name, "--format", "{{json .RepoTags}}"])
             .await;
 
         if let Ok(output) = out {
@@ -576,18 +569,20 @@ impl Provider for PodmanProvider {
             let local_digest = self.get_local_digest(image).await;
 
             let manifest_opts = ProcessOptions::new().with_timeout(Duration::from_secs(30));
-            let remote_check =
-                process::execute("podman", &["manifest", "inspect", image], Some(manifest_opts))
-                    .await;
+            let remote_check = process::execute(
+                "podman",
+                &["manifest", "inspect", image],
+                Some(manifest_opts),
+            )
+            .await;
 
             if let Ok(remote_out) = remote_check {
                 if remote_out.success {
                     if let Ok(manifest) =
                         serde_json::from_str::<serde_json::Value>(&remote_out.stdout)
                     {
-                        let remote_digest = manifest["config"]["digest"]
-                            .as_str()
-                            .map(|s| s.to_string());
+                        let remote_digest =
+                            manifest["config"]["digest"].as_str().map(|s| s.to_string());
 
                         let has_update = match (&local_digest, &remote_digest) {
                             (Some(local), Some(remote)) => local != remote,
@@ -764,10 +759,7 @@ mod tests {
             PodmanProvider::format_image("nginx", Some("1.25")),
             "nginx:1.25"
         );
-        assert_eq!(
-            PodmanProvider::format_image("nginx", None),
-            "nginx:latest"
-        );
+        assert_eq!(PodmanProvider::format_image("nginx", None), "nginx:latest");
     }
 
     #[test]
@@ -788,9 +780,7 @@ mod tests {
         assert_eq!(provider.id(), "podman");
         assert_eq!(provider.display_name(), "Podman (Daemonless Containers)");
         assert_eq!(provider.priority(), 58);
-        assert!(provider
-            .supported_platforms()
-            .contains(&Platform::Windows));
+        assert!(provider.supported_platforms().contains(&Platform::Windows));
         assert!(provider.supported_platforms().contains(&Platform::MacOS));
         assert!(provider.supported_platforms().contains(&Platform::Linux));
     }

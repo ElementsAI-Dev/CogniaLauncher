@@ -56,10 +56,7 @@ pub async fn git_install() -> Result<String, String> {
 /// Update git to the latest version
 #[tauri::command]
 pub async fn git_update() -> Result<String, String> {
-    get_provider()
-        .update_git()
-        .await
-        .map_err(|e| e.to_string())
+    get_provider().update_git().await.map_err(|e| e.to_string())
 }
 
 /// Get all global git configuration entries
@@ -190,10 +187,7 @@ pub async fn git_get_blame(path: String, file: String) -> Result<Vec<GitBlameEnt
 
 /// Get detailed information about a specific commit
 #[tauri::command]
-pub async fn git_get_commit_detail(
-    path: String,
-    hash: String,
-) -> Result<GitCommitDetail, String> {
+pub async fn git_get_commit_detail(path: String, hash: String) -> Result<GitCommitDetail, String> {
     get_provider()
         .get_commit_detail(&path, &hash)
         .await
@@ -272,10 +266,7 @@ pub async fn git_delete_branch(
 
 /// Apply a stash
 #[tauri::command]
-pub async fn git_stash_apply(
-    path: String,
-    stash_id: Option<String>,
-) -> Result<String, String> {
+pub async fn git_stash_apply(path: String, stash_id: Option<String>) -> Result<String, String> {
     get_provider()
         .stash_apply(&path, stash_id.as_deref())
         .await
@@ -284,10 +275,7 @@ pub async fn git_stash_apply(
 
 /// Pop a stash
 #[tauri::command]
-pub async fn git_stash_pop(
-    path: String,
-    stash_id: Option<String>,
-) -> Result<String, String> {
+pub async fn git_stash_pop(path: String, stash_id: Option<String>) -> Result<String, String> {
     get_provider()
         .stash_pop(&path, stash_id.as_deref())
         .await
@@ -296,10 +284,7 @@ pub async fn git_stash_pop(
 
 /// Drop a stash
 #[tauri::command]
-pub async fn git_stash_drop(
-    path: String,
-    stash_id: Option<String>,
-) -> Result<String, String> {
+pub async fn git_stash_drop(path: String, stash_id: Option<String>) -> Result<String, String> {
     get_provider()
         .stash_drop(&path, stash_id.as_deref())
         .await
@@ -314,7 +299,11 @@ pub async fn git_stash_save(
     include_untracked: Option<bool>,
 ) -> Result<String, String> {
     get_provider()
-        .stash_save(&path, message.as_deref(), include_untracked.unwrap_or(false))
+        .stash_save(
+            &path,
+            message.as_deref(),
+            include_untracked.unwrap_or(false),
+        )
         .await
         .map_err(|e| e.to_string())
 }

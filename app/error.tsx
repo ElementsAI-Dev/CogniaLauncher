@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, RotateCcw, Home, ChevronDown, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { captureFrontendCrash } from "@/lib/crash-reporter";
 
 export default function Error({
   error,
@@ -17,6 +18,15 @@ export default function Error({
 
   useEffect(() => {
     console.error("Unhandled error:", error);
+    void captureFrontendCrash({
+      source: "next.error-boundary",
+      error,
+      includeConfig: true,
+      extra: {
+        digest: error.digest,
+        boundary: "app/error.tsx",
+      },
+    });
   }, [error]);
 
   const handleCopyError = async () => {

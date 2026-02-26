@@ -24,18 +24,18 @@ describe('Platform Detection', () => {
       global.window = windowBackup;
     });
 
-    it('returns false when __TAURI__ is not in window', () => {
+    it('returns false when __TAURI_INTERNALS__ is not in window', () => {
       expect(isTauri()).toBe(false);
     });
 
-    it('returns true when __TAURI__ is in window', () => {
-      // @ts-expect-error - adding __TAURI__ for testing
-      global.window.__TAURI__ = {};
+    it('returns true when __TAURI_INTERNALS__ is in window', () => {
+      // @ts-expect-error - adding __TAURI_INTERNALS__ for testing
+      global.window.__TAURI_INTERNALS__ = {};
 
       expect(isTauri()).toBe(true);
 
-      // @ts-expect-error - removing __TAURI__ after testing
-      delete global.window.__TAURI__;
+      // @ts-expect-error - removing __TAURI_INTERNALS__ after testing
+      delete global.window.__TAURI_INTERNALS__;
     });
   });
 

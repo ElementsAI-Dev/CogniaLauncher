@@ -31,15 +31,15 @@ pub async fn profile_create(
     manager: State<'_, SharedProfileManager>,
 ) -> Result<EnvironmentProfile, String> {
     let mut profile = EnvironmentProfile::new(name);
-    
+
     if let Some(desc) = description {
         profile = profile.with_description(desc);
     }
-    
+
     for env in environments {
         profile.add_environment(env);
     }
-    
+
     let mut mgr = manager.write().await;
     mgr.create(profile).await.map_err(|e| e.to_string())
 }
@@ -101,5 +101,7 @@ pub async fn profile_create_from_current(
     manager: State<'_, SharedProfileManager>,
 ) -> Result<EnvironmentProfile, String> {
     let mut mgr = manager.write().await;
-    mgr.create_from_current(&name).await.map_err(|e| e.to_string())
+    mgr.create_from_current(&name)
+        .await
+        .map_err(|e| e.to_string())
 }

@@ -385,9 +385,14 @@ export interface DiskInfo {
   fileSystem: string;
   diskType: string;
   isRemovable: boolean;
+  isReadOnly: boolean;
+  readBytes: number;
+  writtenBytes: number;
   totalSpaceHuman: string;
   availableSpaceHuman: string;
   usedSpaceHuman: string;
+  readBytesHuman: string;
+  writtenBytesHuman: string;
 }
 
 export interface NetworkInterfaceInfo {
@@ -398,6 +403,33 @@ export interface NetworkInterfaceInfo {
   totalTransmitted: number;
   totalReceivedHuman: string;
   totalTransmittedHuman: string;
+  mtu: number;
+  totalPacketsReceived: number;
+  totalPacketsTransmitted: number;
+  totalErrorsOnReceived: number;
+  totalErrorsOnTransmitted: number;
+}
+
+export interface ComponentInfo {
+  label: string;
+  temperature: number | null;
+  max: number | null;
+  critical: number | null;
+}
+
+export interface BatteryInfo {
+  percent: number;
+  isCharging: boolean;
+  isPluggedIn: boolean;
+  healthPercent: number | null;
+  cycleCount: number | null;
+  designCapacityMwh: number | null;
+  fullCapacityMwh: number | null;
+  voltageMv: number | null;
+  powerSource: string;
+  timeToEmptyMins: number | null;
+  timeToFullMins: number | null;
+  technology: string | null;
 }
 
 // ============================================================================
@@ -884,12 +916,31 @@ export type TrayIconState = 'normal' | 'downloading' | 'update' | 'error';
 export type TrayLanguage = 'en' | 'zh';
 export type TrayClickBehavior = 'toggle_window' | 'show_menu' | 'do_nothing';
 
+export type TrayMenuItemId =
+  | 'show_hide'
+  | 'quick_nav'
+  | 'downloads'
+  | 'settings'
+  | 'check_updates'
+  | 'open_logs'
+  | 'always_on_top'
+  | 'autostart'
+  | 'quit';
+
+export interface TrayMenuConfig {
+  items: TrayMenuItemId[];
+}
+
 export interface TrayStateInfo {
-  icon_state: TrayIconState;
+  iconState: TrayIconState;
   language: TrayLanguage;
-  active_downloads: number;
-  has_update: boolean;
-  click_behavior: TrayClickBehavior;
+  activeDownloads: number;
+  hasUpdate: boolean;
+  clickBehavior: TrayClickBehavior;
+  minimizeToTray: boolean;
+  startMinimized: boolean;
+  alwaysOnTop: boolean;
+  menuConfig: TrayMenuConfig;
 }
 
 // ============================================================================
@@ -1120,6 +1171,20 @@ export interface WslVersionInfo {
   windowsVersion?: string;
 }
 
+/** Runtime-detected WSL capabilities for feature gating */
+export interface WslCapabilities {
+  manage: boolean;
+  move: boolean;
+  resize: boolean;
+  setSparse: boolean;
+  setDefaultUser: boolean;
+  mountOptions: boolean;
+  shutdownForce: boolean;
+  exportFormat: boolean;
+  importInPlace: boolean;
+  version?: string;
+}
+
 /** Options for importing a WSL distribution */
 export interface WslImportOptions {
   name: string;
@@ -1156,6 +1221,7 @@ export interface WslMountOptions {
   fsType?: string;
   partition?: number;
   mountName?: string;
+  mountOptions?: string;
   bare: boolean;
 }
 
@@ -1406,4 +1472,150 @@ export interface PathValidationResult {
   diskAvailableHuman: string;
   warnings: string[];
   errors: string[];
+}
+
+// ============================================================================
+// Environment Variable Management
+// ============================================================================
+
+export type EnvVarScope = 'process' | 'user' | 'system';
+export type EnvFileFormat = 'dotenv' | 'shell' | 'fish' | 'powershell';
+
+export interface PathEntryInfo {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+}
+
+export interface ShellProfileInfo {
+  shell: string;
+  configPath: string;
+  exists: boolean;
+  isCurrent: boolean;
+}
+
+export interface EnvVarImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+// ============================================================================
+// Terminal Management
+// ============================================================================
+
+export type ShellType = 'bash' | 'zsh' | 'fish' | 'powershell' | 'cmd';
+
+export interface ShellConfigFile {
+  path: string;
+  exists: boolean;
+  sizeBytes: number;
+}
+
+export interface ShellInfo {
+  id: string;
+  name: string;
+  shellType: ShellType;
+  version: string | null;
+  executablePath: string;
+  configFiles: ShellConfigFile[];
+  isDefault: boolean;
+}
+
+export interface TerminalProfile {
+  id: string;
+  name: string;
+  shellId: string;
+  args: string[];
+  envVars: Record<string, string>;
+  cwd: string | null;
+  startupCommand: string | null;
+  envType: string | null;
+  envVersion: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PSProfileInfo {
+  scope: string;
+  path: string;
+  exists: boolean;
+  sizeBytes: number;
+}
+
+export interface PSModuleInfo {
+  name: string;
+  version: string;
+  moduleType: string;
+  path: string;
+  description: string;
+  exportedCommandsCount: number;
+}
+
+export interface PSScriptInfo {
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  installPath: string;
+}
+
+export interface ShellFrameworkInfo {
+  name: string;
+  version: string | null;
+  path: string;
+  shellType: ShellType;
+}
+
+export interface ShellPlugin {
+  name: string;
+  enabled: boolean;
+  source: string;
+}
+
+export interface ShellConfigEntries {
+  aliases: [string, string][];
+  exports: [string, string][];
+  sources: string[];
+}
+
+// ============================================================================
+// Diagnostic Types
+// ============================================================================
+
+/** Options for exporting a diagnostic bundle */
+export interface DiagnosticExportOptions {
+  outputPath?: string;
+  includeConfig?: boolean;
+  errorContext?: DiagnosticErrorContext;
+}
+
+/** Options for auto-capturing a frontend crash diagnostic bundle */
+export interface DiagnosticCaptureFrontendCrashOptions {
+  includeConfig?: boolean;
+  errorContext: DiagnosticErrorContext;
+}
+
+/** Error context to embed in a diagnostic report */
+export interface DiagnosticErrorContext {
+  message?: string;
+  stack?: string;
+  component?: string;
+  timestamp?: string;
+  extra?: Record<string, unknown>;
+}
+
+/** Result of a diagnostic bundle export */
+export interface DiagnosticExportResult {
+  path: string;
+  size: number;
+  fileCount: number;
+}
+
+/** Information about a crash from a previous session */
+export interface CrashInfo {
+  reportPath: string;
+  timestamp: string;
+  message?: string;
 }

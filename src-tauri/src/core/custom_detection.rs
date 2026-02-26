@@ -167,7 +167,8 @@ impl CustomDetectionManager {
 
     /// Get rules for a specific environment type
     pub fn get_rules_for_env(&self, env_type: &str) -> Vec<&CustomDetectionRule> {
-        let mut rules: Vec<_> = self.rules
+        let mut rules: Vec<_> = self
+            .rules
             .iter()
             .filter(|r| r.enabled && r.env_type == env_type)
             .collect();
@@ -178,7 +179,10 @@ impl CustomDetectionManager {
     /// Add a new rule
     pub fn add_rule(&mut self, rule: CustomDetectionRule) -> CogniaResult<()> {
         if self.rules.iter().any(|r| r.id == rule.id) {
-            return Err(CogniaError::Config(format!("Rule with ID '{}' already exists", rule.id)));
+            return Err(CogniaError::Config(format!(
+                "Rule with ID '{}' already exists",
+                rule.id
+            )));
         }
         self.rules.push(rule);
         Ok(())
@@ -217,21 +221,18 @@ impl CustomDetectionManager {
         start_path: &Path,
     ) -> CogniaResult<Option<CustomDetectionResult>> {
         let rules = self.get_rules_for_env(env_type);
-        
+
         for rule in rules {
             if let Some(result) = self.evaluate_rule(rule, start_path).await? {
                 return Ok(Some(result));
             }
         }
-        
+
         Ok(None)
     }
 
     /// Detect all versions in a directory using custom rules
-    pub async fn detect_all(
-        &self,
-        start_path: &Path,
-    ) -> CogniaResult<Vec<CustomDetectionResult>> {
+    pub async fn detect_all(&self, start_path: &Path) -> CogniaResult<Vec<CustomDetectionResult>> {
         let mut results = Vec::new();
         let mut detected_envs = std::collections::HashSet::new();
 
@@ -262,15 +263,18 @@ impl CustomDetectionManager {
     ) -> CogniaResult<Option<CustomDetectionResult>> {
         // Walk up directory tree
         let mut current = start_path.to_path_buf();
-        
+
         loop {
             for pattern in &rule.file_patterns {
                 // Check if file matches pattern
                 if let Some(matched_file) = self.match_file_pattern(&current, pattern).await? {
                     // Try to extract version
-                    if let Some(raw_version) = self.extract_version(&matched_file, &rule.extraction).await? {
+                    if let Some(raw_version) = self
+                        .extract_version(&matched_file, &rule.extraction)
+                        .await?
+                    {
                         let version = self.transform_version(&raw_version, &rule.version_transform);
-                        
+
                         if !version.is_empty() {
                             return Ok(Some(CustomDetectionResult {
                                 rule_id: rule.id.clone(),
@@ -294,11 +298,7 @@ impl CustomDetectionManager {
     }
 
     /// Match file pattern in directory
-    async fn match_file_pattern(
-        &self,
-        dir: &Path,
-        pattern: &str,
-    ) -> CogniaResult<Option<PathBuf>> {
+    async fn match_file_pattern(&self, dir: &Path, pattern: &str) -> CogniaResult<Option<PathBuf>> {
         // Handle simple filename patterns
         let file_path = dir.join(pattern);
         if file_path.exists() {
@@ -330,30 +330,29 @@ impl CustomDetectionManager {
             ExtractionStrategy::Regex { pattern, multiline } => {
                 self.extract_regex(file_path, pattern, *multiline).await
             }
-            ExtractionStrategy::JsonPath { path } => {
-                self.extract_json_path(file_path, path).await
-            }
-            ExtractionStrategy::TomlPath { path } => {
-                self.extract_toml_path(file_path, path).await
-            }
-            ExtractionStrategy::YamlPath { path } => {
-                self.extract_yaml_path(file_path, path).await
-            }
-            ExtractionStrategy::XmlPath { path } => {
-                self.extract_xml_path(file_path, path).await
-            }
-            ExtractionStrategy::PlainText { strip_prefix, strip_suffix } => {
-                self.extract_plain_text(file_path, strip_prefix.as_deref(), strip_suffix.as_deref()).await
+            ExtractionStrategy::JsonPath { path } => self.extract_json_path(file_path, path).await,
+            ExtractionStrategy::TomlPath { path } => self.extract_toml_path(file_path, path).await,
+            ExtractionStrategy::YamlPath { path } => self.extract_yaml_path(file_path, path).await,
+            ExtractionStrategy::XmlPath { path } => self.extract_xml_path(file_path, path).await,
+            ExtractionStrategy::PlainText {
+                strip_prefix,
+                strip_suffix,
+            } => {
+                self.extract_plain_text(file_path, strip_prefix.as_deref(), strip_suffix.as_deref())
+                    .await
             }
             ExtractionStrategy::ToolVersions { tool_name } => {
                 self.extract_tool_versions(file_path, tool_name).await
             }
             ExtractionStrategy::IniKey { section, key } => {
-                self.extract_ini_key(file_path, section.as_deref(), key).await
+                self.extract_ini_key(file_path, section.as_deref(), key)
+                    .await
             }
-            ExtractionStrategy::Command { cmd, args, output_pattern } => {
-                self.extract_command(cmd, args, output_pattern).await
-            }
+            ExtractionStrategy::Command {
+                cmd,
+                args,
+                output_pattern,
+            } => self.extract_command(cmd, args, output_pattern).await,
         }
     }
 
@@ -364,15 +363,15 @@ impl CustomDetectionManager {
         multiline: bool,
     ) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
-        
+
         let regex = if multiline {
             Regex::new(&format!("(?m){}", pattern))
         } else {
             Regex::new(pattern)
         };
-        
+
         let re = regex.map_err(|e| CogniaError::Config(format!("Invalid regex: {}", e)))?;
-        
+
         if let Some(caps) = re.captures(&content) {
             // Try named group "version" first
             if let Some(m) = caps.name("version") {
@@ -383,7 +382,7 @@ impl CustomDetectionManager {
                 return Ok(Some(m.as_str().to_string()));
             }
         }
-        
+
         Ok(None)
     }
 
@@ -395,7 +394,7 @@ impl CustomDetectionManager {
         let content = fs::read_file_string(file_path).await?;
         let json: serde_json::Value = serde_json::from_str(&content)
             .map_err(|e| CogniaError::Config(format!("Invalid JSON: {}", e)))?;
-        
+
         let mut current = &json;
         for key in path.split('.') {
             current = match current.get(key) {
@@ -403,7 +402,7 @@ impl CustomDetectionManager {
                 None => return Ok(None),
             };
         }
-        
+
         match current {
             serde_json::Value::String(s) => Ok(Some(s.clone())),
             serde_json::Value::Number(n) => Ok(Some(n.to_string())),
@@ -417,9 +416,10 @@ impl CustomDetectionManager {
         path: &str,
     ) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
-        let toml: toml::Value = content.parse()
+        let toml: toml::Value = content
+            .parse()
             .map_err(|e| CogniaError::Config(format!("Invalid TOML: {}", e)))?;
-        
+
         let mut current = &toml;
         for key in path.split('.') {
             current = match current.get(key) {
@@ -427,7 +427,7 @@ impl CustomDetectionManager {
                 None => return Ok(None),
             };
         }
-        
+
         match current {
             toml::Value::String(s) => Ok(Some(s.clone())),
             toml::Value::Integer(n) => Ok(Some(n.to_string())),
@@ -444,7 +444,7 @@ impl CustomDetectionManager {
         let content = fs::read_file_string(file_path).await?;
         let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
             .map_err(|e| CogniaError::Config(format!("Invalid YAML: {}", e)))?;
-        
+
         let mut current = &yaml;
         for key in path.split('.') {
             current = match current.get(key) {
@@ -452,7 +452,7 @@ impl CustomDetectionManager {
                 None => return Ok(None),
             };
         }
-        
+
         match current {
             serde_yaml::Value::String(s) => Ok(Some(s.clone())),
             serde_yaml::Value::Number(n) => Ok(Some(n.to_string())),
@@ -460,13 +460,9 @@ impl CustomDetectionManager {
         }
     }
 
-    async fn extract_xml_path(
-        &self,
-        file_path: &Path,
-        path: &str,
-    ) -> CogniaResult<Option<String>> {
+    async fn extract_xml_path(&self, file_path: &Path, path: &str) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
-        
+
         // Simple XML extraction using regex (for basic cases)
         let tags: Vec<&str> = path.split('.').collect();
         if let Some(last_tag) = tags.last() {
@@ -479,7 +475,7 @@ impl CustomDetectionManager {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -491,19 +487,19 @@ impl CustomDetectionManager {
     ) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
         let mut version = content.trim().to_string();
-        
+
         if let Some(prefix) = strip_prefix {
             if let Some(stripped) = version.strip_prefix(prefix) {
                 version = stripped.to_string();
             }
         }
-        
+
         if let Some(suffix) = strip_suffix {
             if let Some(stripped) = version.strip_suffix(suffix) {
                 version = stripped.to_string();
             }
         }
-        
+
         if version.is_empty() {
             Ok(None)
         } else {
@@ -517,19 +513,19 @@ impl CustomDetectionManager {
         tool_name: &str,
     ) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
-        
+
         for line in content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            
+
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 && parts[0] == tool_name {
                 return Ok(Some(parts[1].to_string()));
             }
         }
-        
+
         Ok(None)
     }
 
@@ -541,17 +537,17 @@ impl CustomDetectionManager {
     ) -> CogniaResult<Option<String>> {
         let content = fs::read_file_string(file_path).await?;
         let mut in_section = section.is_none();
-        
+
         for line in content.lines() {
             let line = line.trim();
-            
+
             // Check for section header
             if line.starts_with('[') && line.ends_with(']') {
-                let current_section = &line[1..line.len()-1];
+                let current_section = &line[1..line.len() - 1];
                 in_section = section.map_or(true, |s| s == current_section);
                 continue;
             }
-            
+
             if in_section && line.contains('=') {
                 let parts: Vec<&str> = line.splitn(2, '=').collect();
                 if parts.len() == 2 && parts[0].trim() == key {
@@ -559,7 +555,7 @@ impl CustomDetectionManager {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -570,32 +566,32 @@ impl CustomDetectionManager {
         output_pattern: &str,
     ) -> CogniaResult<Option<String>> {
         use crate::platform::process;
-        
+
         let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let output = process::execute(cmd, &args_ref, None).await?;
-        
+
         let text = if output.stdout.is_empty() {
             &output.stderr
         } else {
             &output.stdout
         };
-        
+
         let re = Regex::new(output_pattern)
             .map_err(|e| CogniaError::Config(format!("Invalid output pattern: {}", e)))?;
-        
+
         if let Some(caps) = re.captures(text) {
             if let Some(m) = caps.name("version").or_else(|| caps.get(1)) {
                 return Ok(Some(m.as_str().to_string()));
             }
         }
-        
+
         Ok(None)
     }
 
     /// Transform extracted version
     fn transform_version(&self, version: &str, transform: &Option<VersionTransform>) -> String {
         let mut result = version.trim().to_string();
-        
+
         if let Some(t) = transform {
             // Strip version prefix
             if t.strip_version_prefix {
@@ -607,20 +603,20 @@ impl CustomDetectionManager {
                     .unwrap_or(&result)
                     .to_string();
             }
-            
+
             // Apply regex transformation
             if let (Some(pattern), Some(template)) = (&t.match_pattern, &t.replace_template) {
                 if let Ok(re) = Regex::new(pattern) {
                     result = re.replace(&result, template).to_string();
                 }
             }
-            
+
             // Normalize to semver (basic)
             if t.normalize_semver {
                 result = normalize_semver(&result);
             }
         }
-        
+
         result
     }
 }
@@ -631,7 +627,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     let pattern = pattern.replace('*', ".*");
     let pattern = pattern.replace('?', ".");
     let pattern = format!("^{}$", pattern);
-    
+
     Regex::new(&pattern)
         .map(|re| re.is_match(text))
         .unwrap_or(false)
@@ -640,7 +636,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 /// Basic semver normalization
 fn normalize_semver(version: &str) -> String {
     let re = Regex::new(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?").unwrap();
-    
+
     if let Some(caps) = re.captures(version) {
         let major = caps.get(1).map_or("0", |m| m.as_str());
         let minor = caps.get(2).map_or("0", |m| m.as_str());
@@ -839,7 +835,7 @@ mod tests {
     fn test_preset_rules() {
         let presets = create_preset_rules();
         assert!(!presets.is_empty());
-        
+
         // Check that all presets have required fields
         for rule in presets {
             assert!(!rule.id.is_empty());

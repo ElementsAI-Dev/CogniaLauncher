@@ -236,8 +236,14 @@ impl Provider for GoenvProvider {
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         // Compare installed goenv versions with latest available
-        let installed = self.run_goenv(&["versions", "--bare"]).await.unwrap_or_default();
-        let available = self.run_goenv(&["install", "--list"]).await.unwrap_or_default();
+        let installed = self
+            .run_goenv(&["versions", "--bare"])
+            .await
+            .unwrap_or_default();
+        let available = self
+            .run_goenv(&["install", "--list"])
+            .await
+            .unwrap_or_default();
 
         // Collect all stable available versions
         let available_versions: Vec<&str> = available
@@ -340,7 +346,7 @@ impl EnvironmentProvider for GoenvProvider {
 
     async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
         let mut current = start_path.to_path_buf();
-        
+
         // Walk up directory tree looking for version files
         loop {
             // 1. Check .go-version file (highest priority)
@@ -476,7 +482,10 @@ impl SystemPackageProvider for GoenvProvider {
     async fn get_version(&self) -> CogniaResult<String> {
         let output = self.run_goenv(&["--version"]).await?;
         // Output format: "goenv 2.1.11" or similar
-        let version = output.trim().strip_prefix("goenv ").unwrap_or(output.trim());
+        let version = output
+            .trim()
+            .strip_prefix("goenv ")
+            .unwrap_or(output.trim());
         Ok(version.to_string())
     }
 
@@ -525,7 +534,8 @@ impl GoModProvider {
         let mut opts = ProcessOptions::new().with_timeout(Duration::from_secs(60));
         // Pass GOPROXY env var when a custom proxy is configured
         if let Some(ref proxy) = self.proxy_url {
-            opts.env.insert("GOPROXY".into(), format!("{},direct", proxy));
+            opts.env
+                .insert("GOPROXY".into(), format!("{},direct", proxy));
         }
         let output = process::execute("go", args, Some(opts)).await?;
         if output.success {
@@ -592,7 +602,6 @@ pub struct GoCacheInfo {
     pub mod_cache_size: u64,
     pub mod_cache_size_human: String,
 }
-
 
 /// Calculate directory size in bytes (best-effort, non-recursive symlink following)
 pub fn go_dir_size(path: &str) -> u64 {
@@ -713,7 +722,8 @@ impl Provider for GoModProvider {
                         .iter()
                         .take(limit)
                         .filter_map(|r| {
-                            let name = r["packagePath"].as_str()
+                            let name = r["packagePath"]
+                                .as_str()
                                 .or_else(|| r["modulePath"].as_str())?;
                             Some(PackageSummary {
                                 name: name.to_string(),
@@ -773,7 +783,9 @@ impl Provider for GoModProvider {
                                     version: v,
                                     release_date: None,
                                     deprecated: json["Deprecated"].as_str().is_some(),
-                                    yanked: json["Retracted"].as_array().map_or(false, |a| !a.is_empty()),
+                                    yanked: json["Retracted"]
+                                        .as_array()
+                                        .map_or(false, |a| !a.is_empty()),
                                 }]
                             })
                             .unwrap_or_default()
@@ -815,7 +827,11 @@ impl Provider for GoModProvider {
         Ok(versions)
     }
 
-    async fn get_dependencies(&self, name: &str, version: &str) -> CogniaResult<Vec<crate::resolver::Dependency>> {
+    async fn get_dependencies(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> CogniaResult<Vec<crate::resolver::Dependency>> {
         // Use go list -m -json to get module dependencies
         let query = if version.is_empty() {
             format!("{}@latest", name)
@@ -829,7 +845,11 @@ impl Provider for GoModProvider {
             "{}/@v/{}.mod",
             // Remove trailing slash from proxy base URL if present
             self.proxy_base_url().trim_end_matches('/').to_string() + "/" + name,
-            if version.is_empty() { "latest" } else { version }
+            if version.is_empty() {
+                "latest"
+            } else {
+                version
+            }
         );
 
         let api = get_api_client();
@@ -922,11 +942,7 @@ impl Provider for GoModProvider {
 
         if binary_path.exists() {
             std::fs::remove_file(&binary_path).map_err(|e| {
-                CogniaError::Provider(format!(
-                    "Failed to remove {}: {}",
-                    binary_path.display(),
-                    e
-                ))
+                CogniaError::Provider(format!("Failed to remove {}: {}", binary_path.display(), e))
             })?;
             Ok(())
         } else {
@@ -938,10 +954,7 @@ impl Provider for GoModProvider {
         }
     }
 
-    async fn list_installed(
-        &self,
-        filter: InstalledFilter,
-    ) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         // List binaries in GOBIN or GOPATH/bin
         let bin_dir = match Self::get_gobin() {
             Some(dir) => dir,
@@ -978,9 +991,7 @@ impl Provider for GoModProvider {
                             .metadata()
                             .ok()
                             .and_then(|m| m.modified().ok())
-                            .map(|t| {
-                                chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339()
-                            })
+                            .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
                             .unwrap_or_default();
 
                         packages.push(InstalledPackage {
@@ -1230,8 +1241,7 @@ mod tests {
 
     #[test]
     fn test_go_mod_provider_proxy_with_trailing_slash() {
-        let provider =
-            GoModProvider::new().with_proxy_opt(Some("https://goproxy.io/".into()));
+        let provider = GoModProvider::new().with_proxy_opt(Some("https://goproxy.io/".into()));
         assert_eq!(provider.proxy_base_url(), "https://goproxy.io/");
     }
 
@@ -1309,7 +1319,8 @@ mod tests {
 
     #[test]
     fn test_parse_go_mod_no_version_lines() {
-        let content = "module example.com/mymodule\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n";
+        let content =
+            "module example.com/mymodule\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n";
         let (go_ver, tc_ver) = parse_go_mod_versions(content);
         assert!(go_ver.is_none());
         assert!(tc_ver.is_none());

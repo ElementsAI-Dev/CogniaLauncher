@@ -14,8 +14,7 @@ impl AptProvider {
     }
 
     async fn run_apt(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = process::ProcessOptions::new()
-            .with_timeout(Duration::from_secs(120));
+        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(120));
         let out = process::execute("apt-cache", args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
@@ -28,14 +27,20 @@ impl AptProvider {
     async fn query_installed_version_dpkg(&self, name: &str) -> CogniaResult<String> {
         let out = process::execute("dpkg", &["-s", name], None).await?;
         if !out.success {
-            return Err(CogniaError::Provider(format!("Package {} not installed", name)));
+            return Err(CogniaError::Provider(format!(
+                "Package {} not installed",
+                name
+            )));
         }
         for line in out.stdout.lines() {
             if let Some(version) = line.strip_prefix("Version:") {
                 return Ok(version.trim().to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 }
 
@@ -239,7 +244,8 @@ impl Provider for AptProvider {
 
         if let Ok(result) = out {
             if result.success {
-                return Ok(result.stdout
+                return Ok(result
+                    .stdout
                     .lines()
                     .filter(|l| !l.is_empty() && l.contains("upgradable"))
                     .filter_map(|line| {
@@ -418,7 +424,11 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "nginx");
         assert_eq!(results[1].name, "nginx-common");
-        assert!(results[0].description.as_ref().unwrap().contains("proxy server"));
+        assert!(results[0]
+            .description
+            .as_ref()
+            .unwrap()
+            .contains("proxy server"));
     }
 
     #[test]

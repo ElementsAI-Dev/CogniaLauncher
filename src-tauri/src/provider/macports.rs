@@ -37,7 +37,10 @@ impl MacPortsProvider {
                 return Ok(parts[1].trim_start_matches('@').to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 }
 
@@ -427,7 +430,10 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "curl");
         assert_eq!(results[0].latest_version, Some("8.4.0".into()));
-        assert_eq!(results[0].description, Some("Transfer data with URL syntax".into()));
+        assert_eq!(
+            results[0].description,
+            Some("Transfer data with URL syntax".into())
+        );
         assert_eq!(results[1].name, "nginx");
     }
 
@@ -469,7 +475,11 @@ mod tests {
         assert_eq!(packages[1].name, "git");
         assert_eq!(packages[1].version, "2.42.0_0");
         assert_eq!(packages[2].name, "nginx");
-        assert!(packages[0].install_path.to_str().unwrap().contains("/opt/local"));
+        assert!(packages[0]
+            .install_path
+            .to_str()
+            .unwrap()
+            .contains("/opt/local"));
     }
 
     #[test]
@@ -552,7 +562,10 @@ mod tests {
             }
         }
 
-        assert_eq!(description, Some("curl is a command line tool for transferring data".into()));
+        assert_eq!(
+            description,
+            Some("curl is a command line tool for transferring data".into())
+        );
         assert_eq!(homepage, Some("https://curl.se/".into()));
         assert_eq!(license, Some("MIT".into()));
     }

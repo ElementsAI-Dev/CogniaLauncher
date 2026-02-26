@@ -36,10 +36,7 @@ impl LuaRocksProvider {
         let out = self.run_luarocks(&["show", name, "--mversion"]).await?;
         let version = out.trim().to_string();
         if version.is_empty() {
-            Err(CogniaError::Provider(format!(
-                "Rock {} not found",
-                name
-            )))
+            Err(CogniaError::Provider(format!("Rock {} not found", name)))
         } else {
             Ok(version)
         }
@@ -72,7 +69,8 @@ pub fn parse_search_output(output: &str) -> Vec<(String, Vec<String>)> {
 
     for line in output.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("Search results:") || trimmed.starts_with("==") {
+        if trimmed.is_empty() || trimmed.starts_with("Search results:") || trimmed.starts_with("==")
+        {
             continue;
         }
 
@@ -145,11 +143,7 @@ pub fn parse_list_output(output: &str) -> Vec<(String, String, String)> {
                 if parts.len() >= 1 {
                     let version = parts[0].trim().to_string();
                     let path = if parts.len() >= 2 {
-                        parts[1]
-                            .trim()
-                            .trim_start_matches('-')
-                            .trim()
-                            .to_string()
+                        parts[1].trim().trim_start_matches('-').trim().to_string()
                     } else {
                         String::new()
                     };
@@ -387,11 +381,7 @@ impl Provider for LuaRocksProvider {
             .collect())
     }
 
-    async fn get_dependencies(
-        &self,
-        name: &str,
-        _version: &str,
-    ) -> CogniaResult<Vec<Dependency>> {
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         // Try to get deps from installed rock
         if let Ok(out) = self.run_luarocks(&["show", name, "--deps"]).await {
             let mut deps = Vec::new();
@@ -402,11 +392,7 @@ impl Provider for LuaRocksProvider {
                 if trimmed.starts_with("Depends on:") || trimmed == "Dependencies:" {
                     in_depends = true;
                     // Check if deps are on the same line
-                    let after = trimmed
-                        .split(':')
-                        .nth(1)
-                        .unwrap_or("")
-                        .trim();
+                    let after = trimmed.split(':').nth(1).unwrap_or("").trim();
                     if !after.is_empty() {
                         for dep in after.split(',') {
                             let dep = dep.trim();
@@ -689,10 +675,7 @@ luasocket
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, "luafilesystem");
         assert_eq!(results[0].1, "1.8.0-1");
-        assert_eq!(
-            results[0].2,
-            "/usr/local/lib/luarocks/rocks-5.4"
-        );
+        assert_eq!(results[0].2, "/usr/local/lib/luarocks/rocks-5.4");
         assert_eq!(results[1].0, "luasocket");
         assert_eq!(results[1].1, "3.1.0-1");
     }
@@ -728,10 +711,7 @@ Installed in: /usr/local
             info.get("homepage"),
             Some(&"http://lunarmodules.github.io/luasocket/".to_string())
         );
-        assert_eq!(
-            info.get("installed in"),
-            Some(&"/usr/local".to_string())
-        );
+        assert_eq!(info.get("installed in"), Some(&"/usr/local".to_string()));
     }
 
     #[test]

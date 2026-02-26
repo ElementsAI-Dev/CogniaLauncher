@@ -231,8 +231,9 @@ impl ZigProvider {
             })
         });
 
-        let entry = entry
-            .ok_or_else(|| CogniaError::Provider(format!("Version {} not found in index", version)))?;
+        let entry = entry.ok_or_else(|| {
+            CogniaError::Provider(format!("Version {} not found in index", version))
+        })?;
 
         let tarball = entry
             .get(platform_key)
@@ -366,9 +367,7 @@ impl Provider for ZigProvider {
         Ok(PackageInfo {
             name: name.into(),
             display_name: Some(format!("Zig {}", version)),
-            description: Some(
-                "Zig — General-purpose programming language and toolchain".into(),
-            ),
+            description: Some("Zig — General-purpose programming language and toolchain".into()),
             homepage: Some("https://ziglang.org".into()),
             license: Some("MIT".into()),
             repository: Some("https://github.com/ziglang/zig".into()),
@@ -472,13 +471,15 @@ impl Provider for ZigProvider {
         } else {
             "tar.xz"
         };
-        let archive_path = versions_dir.join(format!(".{}-download.{}", actual_version, archive_ext));
+        let archive_path =
+            versions_dir.join(format!(".{}-download.{}", actual_version, archive_ext));
         tokio::fs::write(&archive_path, &bytes)
             .await
             .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))?;
 
         // Extract using shell commands (same approach as core::installer)
-        let extract_result = crate::core::installer::extract_archive(&archive_path, &temp_dir).await;
+        let extract_result =
+            crate::core::installer::extract_archive(&archive_path, &temp_dir).await;
         // Cleanup archive file regardless of result
         let _ = tokio::fs::remove_file(&archive_path).await;
         extract_result.map_err(|e| CogniaError::Provider(format!("Extraction failed: {}", e)))?;
@@ -536,10 +537,9 @@ impl Provider for ZigProvider {
         let packages: Vec<InstalledPackage> = installed
             .into_iter()
             .filter(|(version, _)| {
-                filter
-                    .name_filter
-                    .as_ref()
-                    .map_or(true, |f| version.contains(f) || format!("zig@{}", version).contains(f))
+                filter.name_filter.as_ref().map_or(true, |f| {
+                    version.contains(f) || format!("zig@{}", version).contains(f)
+                })
             })
             .map(|(version, path)| InstalledPackage {
                 name: format!("zig@{}", version),

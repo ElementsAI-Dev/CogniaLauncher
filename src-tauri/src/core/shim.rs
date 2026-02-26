@@ -39,18 +39,16 @@ impl ShimManager {
         let config_path = self.shim_dir.join("shims.json");
         if fs::exists(&config_path).await {
             let content = fs::read_file_string(&config_path).await?;
-            self.configs = serde_json::from_str(&content).map_err(|e| {
-                CogniaError::Config(format!("Failed to parse shim config: {}", e))
-            })?;
+            self.configs = serde_json::from_str(&content)
+                .map_err(|e| CogniaError::Config(format!("Failed to parse shim config: {}", e)))?;
         }
         Ok(())
     }
 
     async fn save_configs(&self) -> CogniaResult<()> {
         let config_path = self.shim_dir.join("shims.json");
-        let content = serde_json::to_string_pretty(&self.configs).map_err(|e| {
-            CogniaError::Config(format!("Failed to serialize shim config: {}", e))
-        })?;
+        let content = serde_json::to_string_pretty(&self.configs)
+            .map_err(|e| CogniaError::Config(format!("Failed to serialize shim config: {}", e)))?;
         fs::write_file_string(&config_path, &content).await?;
         Ok(())
     }
@@ -201,10 +199,7 @@ exec "${{BASH_SOURCE%/*}}/../versions/{}/{}/{}" "$@"
             .cloned()
             .ok_or_else(|| CogniaError::Internal(format!("Shim not found: {}", binary_name)))?;
 
-        let new_config = ShimConfig {
-            version,
-            ..config
-        };
+        let new_config = ShimConfig { version, ..config };
 
         self.create_shim(new_config).await?;
         Ok(())

@@ -142,9 +142,7 @@ pub fn move_to_trash(path: impl AsRef<Path>) -> FsResult<()> {
     if !path.exists() {
         return Err(FsError::NotFound(path.to_path_buf()));
     }
-    trash::delete(path).map_err(|e| {
-        FsError::Io(io::Error::other(e.to_string()))
-    })
+    trash::delete(path).map_err(|e| FsError::Io(io::Error::other(e.to_string())))
 }
 
 /// Move multiple files to trash (batch operation)
@@ -158,9 +156,7 @@ pub fn move_to_trash_batch<P: AsRef<Path>>(paths: &[P]) -> FsResult<usize> {
     if count == 0 {
         return Ok(0);
     }
-    trash::delete_all(&valid_paths).map_err(|e| {
-        FsError::Io(io::Error::other(e.to_string()))
-    })?;
+    trash::delete_all(&valid_paths).map_err(|e| FsError::Io(io::Error::other(e.to_string())))?;
     Ok(count)
 }
 
@@ -197,7 +193,7 @@ pub async fn remove_files_batch(paths: Vec<PathBuf>, use_trash: bool) -> FsResul
     if paths.is_empty() {
         return Ok(0);
     }
-    
+
     if use_trash {
         tokio::task::spawn_blocking(move || move_to_trash_batch(&paths))
             .await

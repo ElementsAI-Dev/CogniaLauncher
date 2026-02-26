@@ -81,7 +81,9 @@ pub async fn custom_rule_toggle(
         let mut updated_rule = rule;
         updated_rule.enabled = enabled;
         updated_rule.updated_at = Some(chrono::Utc::now().to_rfc3339());
-        manager.update_rule(updated_rule).map_err(|e| e.to_string())?;
+        manager
+            .update_rule(updated_rule)
+            .map_err(|e| e.to_string())?;
         manager.save().await.map_err(|e| e.to_string())
     } else {
         Err(format!("Rule '{}' not found", rule_id))
@@ -155,11 +157,14 @@ pub async fn custom_rule_test(
     test_path: String,
 ) -> Result<TestRuleResult, String> {
     let manager = CustomDetectionManager::new(std::path::Path::new(""));
-    
+
     // Create a temporary manager just for testing
     let start = std::time::Instant::now();
-    
-    match manager.detect(&rule.env_type, std::path::Path::new(&test_path)).await {
+
+    match manager
+        .detect(&rule.env_type, std::path::Path::new(&test_path))
+        .await
+    {
         Ok(Some(result)) => Ok(TestRuleResult {
             success: true,
             version: Some(result.version),

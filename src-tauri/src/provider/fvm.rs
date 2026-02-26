@@ -59,11 +59,13 @@ impl FvmProvider {
     }
 
     async fn run_fvm(&self, args: &[&str]) -> CogniaResult<String> {
-        self.run_fvm_with_timeout(args, Duration::from_secs(120)).await
+        self.run_fvm_with_timeout(args, Duration::from_secs(120))
+            .await
     }
 
     async fn run_fvm_long(&self, args: &[&str]) -> CogniaResult<String> {
-        self.run_fvm_with_timeout(args, Duration::from_secs(600)).await
+        self.run_fvm_with_timeout(args, Duration::from_secs(600))
+            .await
     }
 
     async fn run_fvm_with_timeout(&self, args: &[&str], timeout: Duration) -> CogniaResult<String> {
@@ -89,9 +91,7 @@ impl FvmProvider {
     }
 
     async fn fetch_releases_json(&self) -> CogniaResult<Vec<serde_json::Value>> {
-        let output = self
-            .run_fvm(&["api", "releases", "-c"])
-            .await?;
+        let output = self.run_fvm(&["api", "releases", "-c"]).await?;
         let releases: Vec<serde_json::Value> = serde_json::from_str(&output)
             .map_err(|e| CogniaError::Parse(format!("Failed to parse fvm api releases: {}", e)))?;
         Ok(releases)
@@ -270,7 +270,10 @@ impl Provider for FvmProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        let versions = self.fetch_installed_versions_json().await.unwrap_or_default();
+        let versions = self
+            .fetch_installed_versions_json()
+            .await
+            .unwrap_or_default();
         let cache_dir = self.cache_dir().unwrap_or_default();
 
         let mut packages = Vec::new();
@@ -337,7 +340,10 @@ impl Provider for FvmProvider {
 impl EnvironmentProvider for FvmProvider {
     async fn list_installed_versions(&self) -> CogniaResult<Vec<InstalledVersion>> {
         let current = self.get_current_version().await?.unwrap_or_default();
-        let versions = self.fetch_installed_versions_json().await.unwrap_or_default();
+        let versions = self
+            .fetch_installed_versions_json()
+            .await
+            .unwrap_or_default();
         let cache_dir = self.cache_dir().unwrap_or_default();
 
         Ok(versions
@@ -583,10 +589,7 @@ mod tests {
     #[test]
     fn test_parse_fvm_config_json() {
         let content = r#"{"flutterSdkVersion": "3.16.0", "cachePath": ".fvm/flutter_sdk"}"#;
-        assert_eq!(
-            parse_fvm_config_json(content),
-            Some("3.16.0".to_string())
-        );
+        assert_eq!(parse_fvm_config_json(content), Some("3.16.0".to_string()));
     }
 
     #[test]
@@ -603,7 +606,10 @@ mod tests {
     #[test]
     fn test_parse_fvmrc_whitespace_value() {
         // Whitespace-only values are preserved (caller's responsibility to trim)
-        assert_eq!(parse_fvmrc(r#"{"flutter": "  3.19.0  "}"#), Some("  3.19.0  ".to_string()));
+        assert_eq!(
+            parse_fvmrc(r#"{"flutter": "  3.19.0  "}"#),
+            Some("  3.19.0  ".to_string())
+        );
     }
 
     #[test]
@@ -703,7 +709,11 @@ mod tests {
         let instructions = provider.get_install_instructions();
         assert!(instructions.is_some());
         let text = instructions.unwrap();
-        assert!(text.contains("fvm"), "Expected fvm in instructions: {}", text);
+        assert!(
+            text.contains("fvm"),
+            "Expected fvm in instructions: {}",
+            text
+        );
     }
 
     #[test]

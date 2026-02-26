@@ -1,7 +1,7 @@
 //! Download task definition
 
 use super::state::{DownloadError, DownloadState};
-use crate::platform::disk::{format_size, format_duration};
+use crate::platform::disk::{format_duration, format_size};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -72,7 +72,13 @@ impl DownloadProgress {
     /// Create a new progress instance
     pub fn new(downloaded: u64, total: Option<u64>, speed: f64) -> Self {
         let percent = total
-            .map(|t| if t > 0 { (downloaded as f64 / t as f64 * 100.0) as f32 } else { 0.0 })
+            .map(|t| {
+                if t > 0 {
+                    (downloaded as f64 / t as f64 * 100.0) as f32
+                } else {
+                    0.0
+                }
+            })
             .unwrap_or(0.0);
 
         let eta_secs = if speed > 0.0 {
@@ -289,7 +295,6 @@ impl DownloadTaskBuilder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,7 +324,8 @@ mod tests {
 
     #[test]
     fn test_download_progress_human_formats() {
-        let progress = DownloadProgress::new(1024 * 1024 * 50, Some(1024 * 1024 * 100), 1024.0 * 1024.0);
+        let progress =
+            DownloadProgress::new(1024 * 1024 * 50, Some(1024 * 1024 * 100), 1024.0 * 1024.0);
         assert_eq!(progress.downloaded_human(), "50.00 MB");
         assert_eq!(progress.total_human(), Some("100.00 MB".to_string()));
         assert_eq!(progress.speed_human(), "1.00 MB/s");

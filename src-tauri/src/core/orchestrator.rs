@@ -1,7 +1,9 @@
 use crate::config::Settings;
-use crate::error::{CogniaError, CogniaResult};
-use crate::provider::{InstallReceipt, InstallRequest, InstalledFilter, Provider, ProviderRegistry};
 use crate::core::{HistoryManager, PackageSpec};
+use crate::error::{CogniaError, CogniaResult};
+use crate::provider::{
+    InstallReceipt, InstallRequest, InstalledFilter, Provider, ProviderRegistry,
+};
 use crate::resolver::{Dependency, Package, Resolver, Version};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
@@ -74,7 +76,10 @@ impl Orchestrator {
             if let Some(provider) = registry.get(provider_id) {
                 if provider.is_available().await {
                     if let Ok(installed) = provider
-                        .list_installed(crate::provider::InstalledFilter { global_only: true, ..Default::default() })
+                        .list_installed(crate::provider::InstalledFilter {
+                            global_only: true,
+                            ..Default::default()
+                        })
                         .await
                     {
                         for pkg in installed {
@@ -186,11 +191,23 @@ impl Orchestrator {
         }
 
         for dep in &deps {
-            visit(&dep.name, &dependency_map, &mut visiting, &mut visited, &mut order);
+            visit(
+                &dep.name,
+                &dependency_map,
+                &mut visiting,
+                &mut visited,
+                &mut order,
+            );
         }
         for name in resolution.iter().map(|(name, _)| name) {
             if !visited.contains(name) {
-                visit(name, &dependency_map, &mut visiting, &mut visited, &mut order);
+                visit(
+                    name,
+                    &dependency_map,
+                    &mut visiting,
+                    &mut visited,
+                    &mut order,
+                );
             }
         }
 
@@ -277,8 +294,9 @@ impl Orchestrator {
                 Ok(mut receipt) => {
                     // Post-verification: Get actual installed version if receipt.version is empty
                     if receipt.version.is_empty() {
-                        if let Ok(installed_version) =
-                            self.verify_installed_version(&*provider, &receipt.name).await
+                        if let Ok(installed_version) = self
+                            .verify_installed_version(&*provider, &receipt.name)
+                            .await
                         {
                             receipt.version = installed_version;
                         }
@@ -357,9 +375,12 @@ impl Orchestrator {
                     CogniaError::ProviderNotFound(format!("Provider not found: {}", provider_id))
                 })?
             } else {
-                registry.find_for_package(&spec.name).await?.ok_or_else(|| {
-                    CogniaError::ProviderNotFound(format!("No provider for {}", spec.name))
-                })?
+                registry
+                    .find_for_package(&spec.name)
+                    .await?
+                    .ok_or_else(|| {
+                        CogniaError::ProviderNotFound(format!("No provider for {}", spec.name))
+                    })?
             };
 
             let installed_version = self

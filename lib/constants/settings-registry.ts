@@ -458,6 +458,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     keywords: ['tray', 'click', 'action', 'behavior', '托盘', '点击', '行为'],
     tauriOnly: true,
   },
+  {
+    key: 'tray.menu_customize',
+    section: 'tray',
+    labelKey: 'settings.trayMenuCustomize',
+    descKey: 'settings.trayMenuCustomizeDesc',
+    type: 'select',
+    keywords: ['tray', 'menu', 'customize', 'order', 'reorder', '托盘', '菜单', '自定义', '排序'],
+    tauriOnly: true,
+  },
 
   // Paths Settings
   {

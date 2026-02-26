@@ -107,7 +107,7 @@ impl ProfileManager {
     /// Load profiles from storage
     pub async fn load(&mut self) -> CogniaResult<()> {
         let profiles_file = self.storage_path.join("profiles.json");
-        
+
         if profiles_file.exists() {
             let content = crate::platform::fs::read_file_string(&profiles_file).await?;
             self.profiles = serde_json::from_str(&content)
@@ -120,7 +120,7 @@ impl ProfileManager {
     /// Save profiles to storage
     pub async fn save(&self) -> CogniaResult<()> {
         let profiles_file = self.storage_path.join("profiles.json");
-        
+
         // Ensure directory exists
         if let Some(parent) = profiles_file.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -128,7 +128,7 @@ impl ProfileManager {
 
         let content = serde_json::to_string_pretty(&self.profiles)
             .map_err(|e| CogniaError::Parse(format!("Failed to serialize profiles: {}", e)))?;
-        
+
         crate::platform::fs::write_file_string(&profiles_file, &content).await?;
 
         Ok(())
@@ -145,7 +145,10 @@ impl ProfileManager {
     }
 
     /// Create a new profile
-    pub async fn create(&mut self, profile: EnvironmentProfile) -> CogniaResult<EnvironmentProfile> {
+    pub async fn create(
+        &mut self,
+        profile: EnvironmentProfile,
+    ) -> CogniaResult<EnvironmentProfile> {
         if self.profiles.contains_key(&profile.id) {
             return Err(CogniaError::Provider(format!(
                 "Profile with ID {} already exists",
@@ -160,7 +163,10 @@ impl ProfileManager {
     }
 
     /// Update an existing profile
-    pub async fn update(&mut self, profile: EnvironmentProfile) -> CogniaResult<EnvironmentProfile> {
+    pub async fn update(
+        &mut self,
+        profile: EnvironmentProfile,
+    ) -> CogniaResult<EnvironmentProfile> {
         if !self.profiles.contains_key(&profile.id) {
             return Err(CogniaError::Provider(format!(
                 "Profile with ID {} not found",
@@ -170,7 +176,7 @@ impl ProfileManager {
 
         let mut updated = profile.clone();
         updated.updated_at = chrono::Utc::now().to_rfc3339();
-        
+
         self.profiles.insert(updated.id.clone(), updated.clone());
         self.save().await?;
 
@@ -192,9 +198,9 @@ impl ProfileManager {
 
     /// Apply a profile (set all environment versions)
     pub async fn apply(&self, id: &str) -> CogniaResult<ProfileApplyResult> {
-        let profile = self.get(id).ok_or_else(|| {
-            CogniaError::Provider(format!("Profile with ID {} not found", id))
-        })?;
+        let profile = self
+            .get(id)
+            .ok_or_else(|| CogniaError::Provider(format!("Profile with ID {} not found", id)))?;
 
         let mut result = ProfileApplyResult {
             profile_id: profile.id.clone(),
@@ -208,9 +214,10 @@ impl ProfileManager {
 
         for env in &profile.environments {
             // Try to find the provider
-            let provider_id = env.provider_id.clone().unwrap_or_else(|| {
-                self.env_type_to_default_provider(&env.env_type)
-            });
+            let provider_id = env
+                .provider_id
+                .clone()
+                .unwrap_or_else(|| self.env_type_to_default_provider(&env.env_type));
 
             match registry.get_environment_provider(&provider_id) {
                 Some(provider) => {
@@ -218,7 +225,7 @@ impl ProfileManager {
                     match provider.list_installed_versions().await {
                         Ok(versions) => {
                             let is_installed = versions.iter().any(|v| v.version == env.version);
-                            
+
                             if !is_installed {
                                 result.skipped.push(ProfileEnvironmentSkipped {
                                     env_type: env.env_type.clone(),
@@ -270,9 +277,9 @@ impl ProfileManager {
 
     /// Export a profile to JSON
     pub fn export(&self, id: &str) -> CogniaResult<String> {
-        let profile = self.get(id).ok_or_else(|| {
-            CogniaError::Provider(format!("Profile with ID {} not found", id))
-        })?;
+        let profile = self
+            .get(id)
+            .ok_or_else(|| CogniaError::Provider(format!("Profile with ID {} not found", id)))?;
 
         serde_json::to_string_pretty(&profile)
             .map_err(|e| CogniaError::Parse(format!("Failed to export profile: {}", e)))
@@ -294,7 +301,7 @@ impl ProfileManager {
     /// Create a profile from current environment state
     pub async fn create_from_current(&mut self, name: &str) -> CogniaResult<EnvironmentProfile> {
         let mut profile = EnvironmentProfile::new(name);
-        
+
         // Collect environment info while holding the read lock
         {
             let registry = self.registry.read().await;

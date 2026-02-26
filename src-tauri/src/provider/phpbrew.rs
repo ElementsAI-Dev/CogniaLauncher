@@ -168,7 +168,12 @@ impl Provider for PhpbrewProvider {
             .filter_map(|line| {
                 let line = line.trim();
                 // Lines that start with numbers are version lines
-                if line.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if line
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     // Parse version numbers from the line
                     let versions: Vec<&str> = line.split_whitespace().collect();
                     Some(versions)
@@ -217,7 +222,12 @@ impl Provider for PhpbrewProvider {
             .lines()
             .filter_map(|line| {
                 let line = line.trim();
-                if line.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                if line
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                {
                     Some(line.split_whitespace().collect::<Vec<_>>())
                 } else {
                     None
@@ -261,10 +271,7 @@ impl Provider for PhpbrewProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let version = req
-            .name
-            .strip_prefix("php@")
-            .unwrap_or(&req.name);
+        let version = req.name.strip_prefix("php@").unwrap_or(&req.name);
 
         self.run_phpbrew(&["remove", version]).await?;
         Ok(())
@@ -311,7 +318,9 @@ impl EnvironmentProvider for PhpbrewProvider {
         if let Ok(output) = self.run_phpbrew(&["current"]).await {
             let current = output.trim();
             if !current.is_empty() && current != "none" {
-                return Ok(Some(current.strip_prefix("php-").unwrap_or(current).to_string()));
+                return Ok(Some(
+                    current.strip_prefix("php-").unwrap_or(current).to_string(),
+                ));
             }
         }
 
@@ -335,18 +344,11 @@ impl EnvironmentProvider for PhpbrewProvider {
         Ok(())
     }
 
-    async fn set_local_version(
-        &self,
-        project_path: &Path,
-        version: &str,
-    ) -> CogniaResult<()> {
+    async fn set_local_version(&self, project_path: &Path, version: &str) -> CogniaResult<()> {
         Self::write_php_version_file(project_path, version).await
     }
 
-    async fn detect_version(
-        &self,
-        start_path: &Path,
-    ) -> CogniaResult<Option<VersionDetection>> {
+    async fn detect_version(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
         // Check .php-version in current and parent directories
         let mut current = start_path.to_path_buf();
 
@@ -410,7 +412,10 @@ impl EnvironmentProvider for PhpbrewProvider {
 
         let mut set_variables = std::collections::HashMap::new();
         set_variables.insert("PHPBREW_PHP".to_string(), format!("php-{}", version));
-        set_variables.insert("PHPBREW_PATH".to_string(), php_path.to_string_lossy().into_owned());
+        set_variables.insert(
+            "PHPBREW_PATH".to_string(),
+            php_path.to_string_lossy().into_owned(),
+        );
 
         Ok(EnvModifications {
             path_prepend: vec![bin_path],

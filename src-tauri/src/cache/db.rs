@@ -181,7 +181,9 @@ impl CacheDb {
     }
 
     pub async fn insert(&mut self, entry: CacheEntry) -> CogniaResult<()> {
-        self.index.checksum_index.insert(entry.checksum.clone(), entry.key.clone());
+        self.index
+            .checksum_index
+            .insert(entry.checksum.clone(), entry.key.clone());
         self.index.entries.insert(entry.key.clone(), entry);
         self.mark_dirty();
         self.flush_if_needed().await
@@ -308,7 +310,9 @@ impl CacheDb {
         for (key, entry) in entries {
             if kept_size + entry.size <= max_size {
                 kept_size += entry.size;
-                self.index.checksum_index.insert(entry.checksum.clone(), key.clone());
+                self.index
+                    .checksum_index
+                    .insert(entry.checksum.clone(), key.clone());
                 self.index.entries.insert(key, entry);
             } else {
                 removed_count += 1;

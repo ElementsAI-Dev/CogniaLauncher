@@ -5,7 +5,6 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-
 #[derive(Error, Debug)]
 pub enum ProcessError {
     #[error("Process failed to start: {0}")]

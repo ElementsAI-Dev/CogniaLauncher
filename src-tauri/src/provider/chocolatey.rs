@@ -21,14 +21,17 @@ impl ChocolateyProvider {
             full_args.push("--no-progress");
         }
 
-        let opts = process::ProcessOptions::new()
-            .with_timeout(Duration::from_secs(300)); // choco operations can be slow
+        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(300)); // choco operations can be slow
 
         let out = process::execute("choco", &full_args, Some(opts)).await?;
         if out.success {
             Ok(out.stdout)
         } else {
-            let msg = if out.stderr.trim().is_empty() { out.stdout } else { out.stderr };
+            let msg = if out.stderr.trim().is_empty() {
+                out.stdout
+            } else {
+                out.stderr
+            };
             Err(CogniaError::Provider(msg))
         }
     }
@@ -44,7 +47,10 @@ impl ChocolateyProvider {
                 return Ok(parts[1].trim().to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Package {} not installed", name)))
+        Err(CogniaError::Provider(format!(
+            "Package {} not installed",
+            name
+        )))
     }
 
     fn get_choco_dir() -> PathBuf {
@@ -159,7 +165,11 @@ impl Provider for ChocolateyProvider {
             .map(|(name, version)| PackageSummary {
                 name: name.into(),
                 description: None,
-                latest_version: if version.is_empty() { None } else { Some(version.into()) },
+                latest_version: if version.is_empty() {
+                    None
+                } else {
+                    Some(version.into())
+                },
                 provider: self.id().into(),
             })
             .collect())
@@ -262,7 +272,15 @@ impl Provider for ChocolateyProvider {
 
     async fn get_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let out = self
-            .run_choco(&["search", name, "--exact", "--all-versions", "-r", "--limit", "30"])
+            .run_choco(&[
+                "search",
+                name,
+                "--exact",
+                "--all-versions",
+                "-r",
+                "--limit",
+                "30",
+            ])
             .await?;
 
         let parsed = Self::parse_pipe_output(&out);
@@ -504,7 +522,10 @@ mod tests {
         let results = ChocolateyProvider::parse_outdated_output(output);
 
         // Simulate check_updates filter: skip pinned
-        let non_pinned: Vec<_> = results.into_iter().filter(|(_, _, _, pinned)| !pinned).collect();
+        let non_pinned: Vec<_> = results
+            .into_iter()
+            .filter(|(_, _, _, pinned)| !pinned)
+            .collect();
         assert_eq!(non_pinned.len(), 1);
         assert_eq!(non_pinned[0].0, "git");
     }
@@ -532,7 +553,10 @@ mod tests {
     fn test_provider_metadata() {
         let provider = ChocolateyProvider::new();
         assert_eq!(provider.id(), "chocolatey");
-        assert_eq!(provider.display_name(), "Chocolatey (Windows Package Manager)");
+        assert_eq!(
+            provider.display_name(),
+            "Chocolatey (Windows Package Manager)"
+        );
         assert_eq!(provider.priority(), 88);
         assert_eq!(provider.supported_platforms(), vec![Platform::Windows]);
     }
@@ -540,11 +564,22 @@ mod tests {
     #[test]
     fn test_requires_elevation() {
         let provider = ChocolateyProvider::new();
-        assert!(SystemPackageProvider::requires_elevation(&provider, "install"));
-        assert!(SystemPackageProvider::requires_elevation(&provider, "uninstall"));
-        assert!(SystemPackageProvider::requires_elevation(&provider, "upgrade"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "search"));
-        assert!(!SystemPackageProvider::requires_elevation(&provider, "list"));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "install"
+        ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider,
+            "uninstall"
+        ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "upgrade"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "search"
+        ));
+        assert!(!SystemPackageProvider::requires_elevation(
+            &provider, "list"
+        ));
     }
 
     #[test]

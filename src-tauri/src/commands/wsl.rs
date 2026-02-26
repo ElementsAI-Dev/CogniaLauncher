@@ -1,4 +1,4 @@
-use crate::provider::wsl::WslProvider;
+use crate::provider::wsl::{WslCapabilities, WslProvider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -38,6 +38,23 @@ pub struct WslVersionInfoDto {
     pub windows_version: Option<String>,
 }
 
+/// Runtime WSL capability flags exposed to frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslCapabilitiesDto {
+    pub manage: bool,
+    #[serde(rename = "move")]
+    pub r#move: bool,
+    pub resize: bool,
+    pub set_sparse: bool,
+    pub set_default_user: bool,
+    pub mount_options: bool,
+    pub shutdown_force: bool,
+    pub export_format: bool,
+    pub import_in_place: bool,
+    pub version: Option<String>,
+}
+
 /// Options for WSL import operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,6 +88,21 @@ fn get_provider() -> WslProvider {
     WslProvider::new()
 }
 
+fn map_capabilities(capabilities: WslCapabilities) -> WslCapabilitiesDto {
+    WslCapabilitiesDto {
+        manage: capabilities.manage,
+        r#move: capabilities.r#move,
+        resize: capabilities.resize,
+        set_sparse: capabilities.set_sparse,
+        set_default_user: capabilities.set_default_user,
+        mount_options: capabilities.mount_options,
+        shutdown_force: capabilities.shutdown_force,
+        export_format: capabilities.export_format,
+        import_in_place: capabilities.import_in_place,
+        version: capabilities.version,
+    }
+}
+
 /// Diagnostic command: returns step-by-step WSL detection info for debugging.
 /// This helps identify exactly where detection fails on a given system.
 #[tauri::command]
@@ -92,7 +124,6 @@ pub async fn wsl_debug_detection() -> Result<serde_json::Value, String> {
 
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000);
         }
 
@@ -100,8 +131,13 @@ pub async fn wsl_debug_detection() -> Result<serde_json::Value, String> {
             Ok(output) => {
                 let raw_stdout_len = output.stdout.len();
                 let raw_stderr_len = output.stderr.len();
-                let raw_stdout_hex: String = output.stdout.iter().take(40)
-                    .map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+                let raw_stdout_hex: String = output
+                    .stdout
+                    .iter()
+                    .take(40)
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
 
                 // Try to decode
                 let stdout_decoded = String::from_utf8_lossy(&output.stdout).to_string();
@@ -225,13 +261,9 @@ pub async fn wsl_status() -> Result<WslStatus, String> {
         .unwrap_or_else(|_| "WSL status unavailable".into());
 
     // Parse status output for default distribution and version
-    let (default_distribution, default_version) =
-        WslProvider::parse_status_output(&status_info);
+    let (default_distribution, default_version) = WslProvider::parse_status_output(&status_info);
 
-    let running = provider
-        .list_running()
-        .await
-        .unwrap_or_default();
+    let running = provider.list_running().await.unwrap_or_default();
 
     Ok(WslStatus {
         version,
@@ -263,11 +295,25 @@ pub async fn wsl_get_version_info() -> Result<WslVersionInfoDto, String> {
     })
 }
 
+/// Get runtime WSL capability flags detected from the current machine.
+#[tauri::command]
+pub async fn wsl_get_capabilities() -> Result<WslCapabilitiesDto, String> {
+    let provider = get_provider();
+    let capabilities = provider
+        .get_capabilities()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(map_capabilities(capabilities))
+}
+
 /// Terminate a specific WSL distribution
 #[tauri::command]
 pub async fn wsl_terminate(name: String) -> Result<(), String> {
     let provider = get_provider();
-    provider.terminate_distro(&name).await.map_err(|e| e.to_string())
+    provider
+        .terminate_distro(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Shutdown all running WSL instances
@@ -281,7 +327,10 @@ pub async fn wsl_shutdown() -> Result<(), String> {
 #[tauri::command]
 pub async fn wsl_set_default(name: String) -> Result<(), String> {
     let provider = get_provider();
-    provider.set_default_distro(&name).await.map_err(|e| e.to_string())
+    provider
+        .set_default_distro(&name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Set WSL version (1 or 2) for a distribution
@@ -291,7 +340,10 @@ pub async fn wsl_set_version(name: String, version: u8) -> Result<(), String> {
         return Err("WSL version must be 1 or 2".into());
     }
     let provider = get_provider();
-    provider.set_distro_version(&name, version).await.map_err(|e| e.to_string())
+    provider
+        .set_distro_version(&name, version)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Set the default WSL version for new installations
@@ -301,12 +353,39 @@ pub async fn wsl_set_default_version(version: u8) -> Result<(), String> {
         return Err("WSL version must be 1 or 2".into());
     }
     let provider = get_provider();
-    provider.set_default_version(version).await.map_err(|e| e.to_string())
+    provider
+        .set_default_version(version)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Move a WSL distribution's disk to a new location.
+#[tauri::command]
+pub async fn wsl_move_distro(name: String, location: String) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .move_distro(&name, &location)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Resize a WSL distribution's disk.
+#[tauri::command]
+pub async fn wsl_resize_distro(name: String, size: String) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .resize_distro(&name, &size)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Export a WSL distribution to a file (tar or vhdx)
 #[tauri::command]
-pub async fn wsl_export(name: String, file_path: String, as_vhd: Option<bool>) -> Result<(), String> {
+pub async fn wsl_export(
+    name: String,
+    file_path: String,
+    as_vhd: Option<bool>,
+) -> Result<(), String> {
     let provider = get_provider();
     provider
         .export_distro(&name, &file_path, as_vhd.unwrap_or(false))
@@ -441,6 +520,7 @@ pub struct WslMountOptions {
     pub fs_type: Option<String>,
     pub partition: Option<u32>,
     pub mount_name: Option<String>,
+    pub mount_options: Option<String>,
     pub bare: bool,
 }
 
@@ -465,6 +545,7 @@ pub async fn wsl_mount(options: WslMountOptions) -> Result<String, String> {
             options.fs_type.as_deref(),
             options.partition,
             options.mount_name.as_deref(),
+            options.mount_options.as_deref(),
             options.bare,
         )
         .await
@@ -493,10 +574,7 @@ pub async fn wsl_get_ip(distro: Option<String>) -> Result<String, String> {
 
 /// Change the default user for a distribution
 #[tauri::command]
-pub async fn wsl_change_default_user(
-    distro: String,
-    username: String,
-) -> Result<(), String> {
+pub async fn wsl_change_default_user(distro: String, username: String) -> Result<(), String> {
     let provider = get_provider();
     provider
         .change_default_user(&distro, &username)
@@ -530,10 +608,7 @@ pub async fn wsl_set_sparse(distro: String, enabled: bool) -> Result<(), String>
 #[tauri::command]
 pub async fn wsl_install_wsl_only() -> Result<String, String> {
     let provider = get_provider();
-    provider
-        .install_wsl_only()
-        .await
-        .map_err(|e| e.to_string())
+    provider.install_wsl_only().await.map_err(|e| e.to_string())
 }
 
 /// Install a distribution to a custom location

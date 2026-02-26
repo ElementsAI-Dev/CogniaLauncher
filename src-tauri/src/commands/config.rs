@@ -35,47 +35,53 @@ const DEFAULT_MIRROR_KEYS: &[&str] = &[
     "mirrors.go",
 ];
 
+/// Static configuration keys included in config_list output.
+const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
+    "general.parallel_downloads",
+    "general.resolve_strategy",
+    "general.auto_update_metadata",
+    "general.metadata_cache_ttl",
+    "general.cache_max_size",
+    "general.cache_max_age_days",
+    "general.auto_clean_cache",
+    "general.min_install_space_mb",
+    "general.cache_auto_clean_threshold",
+    "general.cache_monitor_interval",
+    "general.cache_monitor_external",
+    "general.download_speed_limit",
+    "network.timeout",
+    "network.retries",
+    "network.proxy",
+    "security.allow_http",
+    "security.verify_certificates",
+    "security.allow_self_signed",
+    "appearance.theme",
+    "appearance.accent_color",
+    "appearance.chart_color_theme",
+    "appearance.interface_radius",
+    "appearance.interface_density",
+    "appearance.language",
+    "appearance.reduced_motion",
+    "paths.root",
+    "paths.cache",
+    "paths.environments",
+    "provider_settings.disabled_providers",
+    "terminal.default_shell",
+    "terminal.default_profile_id",
+    "terminal.shell_integration",
+    "terminal.proxy_mode",
+    "terminal.custom_proxy",
+    "terminal.no_proxy",
+];
+
 #[tauri::command]
 pub async fn config_list(
     settings: State<'_, SharedSettings>,
 ) -> Result<Vec<(String, String)>, String> {
     let s = settings.read().await;
-    
-    // Static configuration keys
-    let static_keys = vec![
-        "general.parallel_downloads",
-        "general.resolve_strategy",
-        "general.auto_update_metadata",
-        "general.metadata_cache_ttl",
-        "general.cache_max_size",
-        "general.cache_max_age_days",
-        "general.auto_clean_cache",
-        "general.min_install_space_mb",
-        "general.cache_auto_clean_threshold",
-        "general.cache_monitor_interval",
-        "general.cache_monitor_external",
-        "general.download_speed_limit",
-        "network.timeout",
-        "network.retries",
-        "network.proxy",
-        "security.allow_http",
-        "security.verify_certificates",
-        "security.allow_self_signed",
-        "appearance.theme",
-        "appearance.accent_color",
-        "appearance.chart_color_theme",
-        "appearance.interface_radius",
-        "appearance.interface_density",
-        "appearance.language",
-        "appearance.reduced_motion",
-        "paths.root",
-        "paths.cache",
-        "paths.environments",
-        "provider_settings.disabled_providers",
-    ];
 
-    let mut result: Vec<(String, String)> = static_keys
-        .into_iter()
+    let mut result: Vec<(String, String)> = CONFIG_LIST_STATIC_KEYS
+        .iter()
         .filter_map(|k| s.get_value(k).map(|v| (k.to_string(), v)))
         .collect();
 
@@ -96,7 +102,7 @@ pub async fn config_list(
                 if !token.is_empty() {
                     // Mask token for display (show first 4 chars + asterisks)
                     let masked = if token.len() > 8 {
-                        format!("{}****{}", &token[..4], &token[token.len()-4..])
+                        format!("{}****{}", &token[..4], &token[token.len() - 4..])
                     } else {
                         "****".to_string()
                     };
@@ -163,6 +169,11 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
+    // sysinfo requires two CPU refreshes with a delay for accurate usage data.
+    // MINIMUM_CPU_UPDATE_INTERVAL is ~200ms.
+    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+    sys.refresh_cpu_usage();
+
     let cpu_model = sys
         .cpus()
         .first()
@@ -173,11 +184,7 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
         .first()
         .map(|cpu| cpu.vendor_id().to_string())
         .unwrap_or_default();
-    let cpu_frequency = sys
-        .cpus()
-        .first()
-        .map(|cpu| cpu.frequency())
-        .unwrap_or(0);
+    let cpu_frequency = sys.cpus().first().map(|cpu| cpu.frequency()).unwrap_or(0);
     let cpu_cores = sys.cpus().len() as u32;
     let physical_core_count = sys.physical_core_count().map(|c| c as u32);
     let global_cpu_usage = sys.global_cpu_usage();
@@ -219,6 +226,18 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
         gpus,
         app_version: env!("CARGO_PKG_VERSION").to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CONFIG_LIST_STATIC_KEYS;
+
+    #[test]
+    fn config_list_static_keys_include_terminal_proxy_settings() {
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.proxy_mode"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.custom_proxy"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.no_proxy"));
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -272,9 +291,14 @@ pub struct DiskInfo {
     pub file_system: String,
     pub disk_type: String,
     pub is_removable: bool,
+    pub is_read_only: bool,
+    pub read_bytes: u64,
+    pub written_bytes: u64,
     pub total_space_human: String,
     pub available_space_human: String,
     pub used_space_human: String,
+    pub read_bytes_human: String,
+    pub written_bytes_human: String,
 }
 
 #[derive(Serialize)]
@@ -287,6 +311,60 @@ pub struct NetworkInterfaceInfo {
     pub total_transmitted: u64,
     pub total_received_human: String,
     pub total_transmitted_human: String,
+    pub mtu: u64,
+    pub total_packets_received: u64,
+    pub total_packets_transmitted: u64,
+    pub total_errors_on_received: u64,
+    pub total_errors_on_transmitted: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentInfo {
+    pub label: String,
+    pub temperature: Option<f32>,
+    pub max: Option<f32>,
+    pub critical: Option<f32>,
+}
+
+#[tauri::command]
+pub fn get_components_info() -> Result<Vec<ComponentInfo>, String> {
+    use sysinfo::Components;
+
+    let components = Components::new_with_refreshed_list();
+    let result: Vec<ComponentInfo> = components
+        .iter()
+        .map(|c| ComponentInfo {
+            label: c.label().to_string(),
+            temperature: c.temperature(),
+            max: c.max(),
+            critical: c.critical(),
+        })
+        .collect();
+
+    Ok(result)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatteryInfo {
+    pub percent: u8,
+    pub is_charging: bool,
+    pub is_plugged_in: bool,
+    pub health_percent: Option<u8>,
+    pub cycle_count: Option<u32>,
+    pub design_capacity_mwh: Option<u64>,
+    pub full_capacity_mwh: Option<u64>,
+    pub voltage_mv: Option<u64>,
+    pub power_source: String,
+    pub time_to_empty_mins: Option<u32>,
+    pub time_to_full_mins: Option<u32>,
+    pub technology: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_battery_info() -> Result<Option<BatteryInfo>, String> {
+    Ok(detect_battery().await)
 }
 
 #[tauri::command]
@@ -312,6 +390,8 @@ pub fn get_disk_info() -> Result<Vec<DiskInfo>, String> {
             _ => "Unknown".to_string(),
         };
 
+        let usage = disk.usage();
+
         result.push(DiskInfo {
             name: disk.name().to_string_lossy().to_string(),
             mount_point: disk.mount_point().to_string_lossy().to_string(),
@@ -322,9 +402,14 @@ pub fn get_disk_info() -> Result<Vec<DiskInfo>, String> {
             file_system: disk.file_system().to_string_lossy().to_string(),
             disk_type,
             is_removable: disk.is_removable(),
+            is_read_only: disk.is_read_only(),
+            read_bytes: usage.read_bytes,
+            written_bytes: usage.written_bytes,
             total_space_human: format_size(total),
             available_space_human: format_size(available),
             used_space_human: format_size(used),
+            read_bytes_human: format_size(usage.read_bytes),
+            written_bytes_human: format_size(usage.written_bytes),
         });
     }
 
@@ -356,6 +441,11 @@ pub fn get_network_interfaces() -> Result<Vec<NetworkInterfaceInfo>, String> {
             total_transmitted,
             total_received_human: format_size(total_received),
             total_transmitted_human: format_size(total_transmitted),
+            mtu: data.mtu(),
+            total_packets_received: data.total_packets_received(),
+            total_packets_transmitted: data.total_packets_transmitted(),
+            total_errors_on_received: data.total_errors_on_received(),
+            total_errors_on_transmitted: data.total_errors_on_transmitted(),
         });
     }
 
@@ -387,7 +477,8 @@ async fn detect_gpus() -> Vec<GpuInfo> {
 async fn detect_gpus_windows() -> Vec<GpuInfo> {
     use crate::platform::process;
 
-    let opts = Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
+    let opts =
+        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
 
     // Prefer PowerShell Get-CimInstance (wmic is deprecated since Windows 10 21H1)
     let ps_output = process::execute(
@@ -413,7 +504,13 @@ async fn detect_gpus_windows() -> Vec<GpuInfo> {
     // Fallback to wmic for older Windows versions without PowerShell 5+
     let wmic_output = process::execute(
         "wmic",
-        &["path", "Win32_VideoController", "get", "Name,AdapterRAM,DriverVersion,AdapterCompatibility", "/format:csv"],
+        &[
+            "path",
+            "Win32_VideoController",
+            "get",
+            "Name,AdapterRAM,DriverVersion,AdapterCompatibility",
+            "/format:csv",
+        ],
         opts,
     )
     .await;
@@ -482,7 +579,11 @@ fn parse_powershell_gpu_json(json_str: &str) -> Option<Vec<GpuInfo>> {
 
     let mut gpus = Vec::new();
     for item in &items {
-        let name = item.get("Name").and_then(|v| v.as_str()).unwrap_or("").trim();
+        let name = item
+            .get("Name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
         if name.is_empty() {
             continue;
         }
@@ -513,13 +614,9 @@ fn parse_powershell_gpu_json(json_str: &str) -> Option<Vec<GpuInfo>> {
 async fn detect_gpus_macos() -> Vec<GpuInfo> {
     use crate::platform::process;
 
-    let opts = Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
-    let output = process::execute(
-        "system_profiler",
-        &["SPDisplaysDataType", "-json"],
-        opts,
-    )
-    .await;
+    let opts =
+        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
+    let output = process::execute("system_profiler", &["SPDisplaysDataType", "-json"], opts).await;
 
     let mut gpus = Vec::new();
     if let Ok(out) = output {
@@ -565,7 +662,8 @@ async fn detect_gpus_macos() -> Vec<GpuInfo> {
 async fn detect_gpus_linux() -> Vec<GpuInfo> {
     use crate::platform::process;
 
-    let opts = Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
+    let opts =
+        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
     let mut gpus = Vec::new();
 
     // Try lspci first
@@ -573,7 +671,10 @@ async fn detect_gpus_linux() -> Vec<GpuInfo> {
         if out.success {
             for line in out.stdout.lines() {
                 let lower = line.to_lowercase();
-                if lower.contains("vga") || lower.contains("3d controller") || lower.contains("display controller") {
+                if lower.contains("vga")
+                    || lower.contains("3d controller")
+                    || lower.contains("display controller")
+                {
                     // Extract GPU name: everything after the category description
                     let name = if let Some(pos) = line.find(":") {
                         let after_bus = &line[pos + 1..];
@@ -611,7 +712,10 @@ async fn detect_gpus_linux() -> Vec<GpuInfo> {
     // Try nvidia-smi for NVIDIA GPUs (enriches info)
     if let Ok(out) = process::execute(
         "nvidia-smi",
-        &["--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"],
+        &[
+            "--query-gpu=name,memory.total,driver_version",
+            "--format=csv,noheader,nounits",
+        ],
         opts,
     )
     .await
@@ -638,9 +742,7 @@ async fn detect_gpus_linux() -> Vec<GpuInfo> {
 
             if !nvidia_gpus.is_empty() {
                 // Remove existing NVIDIA entries from lspci and add nvidia-smi ones
-                gpus.retain(|g| {
-                    g.vendor.as_deref() != Some("NVIDIA")
-                });
+                gpus.retain(|g| g.vendor.as_deref() != Some("NVIDIA"));
                 gpus.extend(nvidia_gpus);
             }
         }
@@ -667,6 +769,267 @@ fn parse_vram_string(s: &str) -> Option<u64> {
     }
 }
 
+/// Detect battery information using platform-native methods
+async fn detect_battery() -> Option<BatteryInfo> {
+    #[cfg(target_os = "windows")]
+    {
+        return detect_battery_windows().await;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return detect_battery_macos().await;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return detect_battery_linux().await;
+    }
+
+    #[allow(unreachable_code)]
+    None
+}
+
+#[cfg(target_os = "windows")]
+async fn detect_battery_windows() -> Option<BatteryInfo> {
+    use crate::platform::process;
+
+    let opts =
+        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)));
+    let output = process::execute(
+        "powershell",
+        &[
+            "-NoProfile", "-NonInteractive", "-Command",
+            "Get-CimInstance Win32_Battery | Select-Object EstimatedChargeRemaining,BatteryStatus,DesignCapacity,FullChargeCapacity,DesignVoltage,EstimatedRunTime,Chemistry | ConvertTo-Json -Compress",
+        ],
+        opts,
+    )
+    .await;
+
+    if let Ok(out) = output {
+        if out.success {
+            let json_str = out.stdout.trim();
+            if json_str.is_empty() || json_str == "null" {
+                return None;
+            }
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                // Handle both single object and array
+                let item = match &value {
+                    serde_json::Value::Array(arr) => arr.first()?.clone(),
+                    serde_json::Value::Object(_) => value,
+                    _ => return None,
+                };
+
+                let percent = item
+                    .get("EstimatedChargeRemaining")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u8;
+
+                // BatteryStatus: 1=Discharging, 2=AC, 3=Fully Charged, 4=Low, 5=Critical,
+                // 6=Charging, 7=Charging+High, 8=Charging+Low, 9=Charging+Critical, 10=Undefined, 11=Partially Charged
+                let status = item
+                    .get("BatteryStatus")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let is_charging = matches!(status, 6 | 7 | 8 | 9);
+                let is_plugged_in = matches!(status, 2 | 3 | 6 | 7 | 8 | 9 | 11);
+
+                let design_cap = item.get("DesignCapacity").and_then(|v| v.as_u64());
+                let full_cap = item.get("FullChargeCapacity").and_then(|v| v.as_u64());
+                let health_percent = match (design_cap, full_cap) {
+                    (Some(d), Some(f)) if d > 0 => {
+                        Some(((f as f64 / d as f64) * 100.0).min(100.0) as u8)
+                    }
+                    _ => None,
+                };
+
+                let voltage_mv = item.get("DesignVoltage").and_then(|v| v.as_u64());
+
+                let estimated_run_time = item.get("EstimatedRunTime").and_then(|v| v.as_u64());
+                let time_to_empty_mins = if !is_charging && !is_plugged_in {
+                    // 0x1FFFFFFF = unknown/plugged in
+                    estimated_run_time
+                        .filter(|&v| v < 0x1FFFFFFF)
+                        .map(|v| v as u32)
+                } else {
+                    None
+                };
+
+                // Chemistry: 1=Other, 2=Unknown, 3=Lead Acid, 4=Nickel Cadmium, 5=Nickel Metal Hydride,
+                // 6=Lithium-ion, 7=Zinc air, 8=Lithium Polymer
+                let technology =
+                    item.get("Chemistry")
+                        .and_then(|v| v.as_u64())
+                        .and_then(|c| match c {
+                            3 => Some("Lead Acid".to_string()),
+                            4 => Some("NiCd".to_string()),
+                            5 => Some("NiMH".to_string()),
+                            6 => Some("Li-ion".to_string()),
+                            7 => Some("Zinc Air".to_string()),
+                            8 => Some("Li-poly".to_string()),
+                            _ => None,
+                        });
+
+                let power_source = if is_plugged_in { "ac" } else { "battery" };
+
+                return Some(BatteryInfo {
+                    percent,
+                    is_charging,
+                    is_plugged_in,
+                    health_percent,
+                    cycle_count: None, // Win32_Battery doesn't expose cycle count
+                    design_capacity_mwh: design_cap,
+                    full_capacity_mwh: full_cap,
+                    voltage_mv,
+                    power_source: power_source.to_string(),
+                    time_to_empty_mins,
+                    time_to_full_mins: None,
+                    technology,
+                });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+async fn detect_battery_macos() -> Option<BatteryInfo> {
+    use crate::platform::process;
+
+    let opts = Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(5)));
+    let output = process::execute("pmset", &["-g", "batt"], opts).await;
+
+    if let Ok(out) = output {
+        if out.success {
+            let stdout = &out.stdout;
+            // Example: " -InternalBattery-0 (id=...)	85%; charging; 0:45 remaining"
+            // or: " -InternalBattery-0 (id=...)	100%; charged; 0:00 remaining"
+            // or: " -InternalBattery-0 (id=...)	72%; discharging; 3:21 remaining"
+            for line in stdout.lines() {
+                if !line.contains("InternalBattery") {
+                    continue;
+                }
+                // Parse percentage
+                let percent = line
+                    .split('%')
+                    .next()
+                    .and_then(|s| s.split_whitespace().last())
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(0);
+
+                let lower = line.to_lowercase();
+                let is_charging = lower.contains("charging")
+                    && !lower.contains("discharging")
+                    && !lower.contains("not charging");
+                let is_plugged_in = lower.contains("ac power")
+                    || lower.contains("charging")
+                    || lower.contains("charged");
+
+                // Parse time remaining: "X:YY remaining"
+                let time_mins = line
+                    .split(';')
+                    .find(|s| s.contains("remaining"))
+                    .and_then(|s| {
+                        let parts: Vec<&str> =
+                            s.trim().split_whitespace().next()?.split(':').collect();
+                        if parts.len() == 2 {
+                            let hours = parts[0].parse::<u32>().ok()?;
+                            let mins = parts[1].parse::<u32>().ok()?;
+                            Some(hours * 60 + mins)
+                        } else {
+                            None
+                        }
+                    });
+
+                let power_source = if is_plugged_in { "ac" } else { "battery" };
+
+                return Some(BatteryInfo {
+                    percent,
+                    is_charging,
+                    is_plugged_in,
+                    health_percent: None,
+                    cycle_count: None,
+                    design_capacity_mwh: None,
+                    full_capacity_mwh: None,
+                    voltage_mv: None,
+                    power_source: power_source.to_string(),
+                    time_to_empty_mins: if !is_charging { time_mins } else { None },
+                    time_to_full_mins: if is_charging { time_mins } else { None },
+                    technology: None,
+                });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+async fn detect_battery_linux() -> Option<BatteryInfo> {
+    use std::path::Path;
+
+    let power_supply = Path::new("/sys/class/power_supply");
+    if !power_supply.exists() {
+        return None;
+    }
+
+    // Find first BAT* directory
+    let bat_dir = std::fs::read_dir(power_supply).ok()?.find_map(|entry| {
+        let entry = entry.ok()?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with("BAT") {
+            Some(entry.path())
+        } else {
+            None
+        }
+    })?;
+
+    let read_file = |filename: &str| -> Option<String> {
+        std::fs::read_to_string(bat_dir.join(filename))
+            .ok()
+            .map(|s| s.trim().to_string())
+    };
+
+    let percent = read_file("capacity")?.parse::<u8>().ok()?;
+    let status = read_file("status").unwrap_or_default();
+
+    let is_charging = status.eq_ignore_ascii_case("Charging");
+    let is_plugged_in = !status.eq_ignore_ascii_case("Discharging");
+
+    let cycle_count = read_file("cycle_count").and_then(|s| s.parse::<u32>().ok());
+    let energy_full_design = read_file("energy_full_design").and_then(|s| s.parse::<u64>().ok());
+    let energy_full = read_file("energy_full").and_then(|s| s.parse::<u64>().ok());
+    let voltage_now = read_file("voltage_now").and_then(|s| s.parse::<u64>().ok());
+    let technology = read_file("technology");
+
+    // energy values are in µWh, convert to mWh
+    let design_capacity_mwh = energy_full_design.map(|v| v / 1000);
+    let full_capacity_mwh = energy_full.map(|v| v / 1000);
+    let voltage_mv = voltage_now.map(|v| v / 1000);
+
+    let health_percent = match (energy_full_design, energy_full) {
+        (Some(d), Some(f)) if d > 0 => Some(((f as f64 / d as f64) * 100.0).min(100.0) as u8),
+        _ => None,
+    };
+
+    let power_source = if is_plugged_in { "ac" } else { "battery" };
+
+    Some(BatteryInfo {
+        percent,
+        is_charging,
+        is_plugged_in,
+        health_percent,
+        cycle_count,
+        design_capacity_mwh,
+        full_capacity_mwh,
+        voltage_mv,
+        power_source: power_source.to_string(),
+        time_to_empty_mins: None,
+        time_to_full_mins: None,
+        technology,
+    })
+}
+
 #[derive(serde::Serialize)]
 pub struct AppInitStatus {
     pub initialized: bool,
@@ -683,9 +1046,7 @@ pub fn app_check_init() -> AppInitStatus {
 
 /// Export the full backend config as a TOML string
 #[tauri::command]
-pub async fn config_export(
-    settings: State<'_, SharedSettings>,
-) -> Result<String, String> {
+pub async fn config_export(settings: State<'_, SharedSettings>) -> Result<String, String> {
     let s = settings.read().await;
     toml::to_string_pretty(&*s).map_err(|e| format!("Failed to serialize config: {}", e))
 }

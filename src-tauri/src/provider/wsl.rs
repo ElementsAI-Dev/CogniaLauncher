@@ -1,7 +1,7 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{env::Platform, process};
 use crate::platform::process::{ProcessOptions, ProcessOutput};
+use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -21,8 +21,10 @@ const WSL_AVAIL_TIMEOUT: Duration = Duration::from_secs(15);
 /// Detection strategy:
 /// 1. Check for UTF-16LE BOM (FF FE) → decode as UTF-16LE (skip BOM)
 /// 2. Check for UTF-16BE BOM (FE FF) → decode as UTF-16BE (skip BOM)
-/// 3. Heuristic: if length >= 2 and every other byte (index 1, 3, 5...) is 0x00
-///    for at least the first few chars → UTF-16LE (no BOM)
+/// 3. Null-byte heuristic: valid UTF-8 text never contains embedded null bytes
+///    (U+0000). UTF-16LE text *always* contains null bytes because even CJK text
+///    includes ASCII newlines, spaces, and digits whose high byte is 0x00.
+///    If any null byte is found → try UTF-16LE, validate, and use if good.
 /// 4. Otherwise → UTF-8
 fn decode_wsl_bytes(bytes: &[u8]) -> String {
     if bytes.is_empty() {
@@ -39,20 +41,27 @@ fn decode_wsl_bytes(bytes: &[u8]) -> String {
         return decode_utf16be(&bytes[2..]);
     }
 
-    // Heuristic: check if this looks like UTF-16LE without BOM.
-    // For ASCII text in UTF-16LE, every odd-indexed byte is 0x00.
-    // Check the first few pairs to detect this pattern.
-    if bytes.len() >= 4 {
-        let sample_len = std::cmp::min(bytes.len(), 20);
-        let null_count = bytes[1..sample_len]
-            .iter()
-            .step_by(2)
-            .filter(|&&b| b == 0x00)
-            .count();
-        let total_pairs = (sample_len - 1 + 1) / 2; // number of odd-index bytes sampled
-        // If more than half of sampled odd-index bytes are null → likely UTF-16LE
-        if total_pairs > 0 && null_count > total_pairs / 2 {
-            return decode_utf16le(bytes);
+    // Null-byte heuristic: if any null byte exists, it's very likely UTF-16LE.
+    // Valid UTF-8 text never contains embedded null bytes. UTF-16LE text will
+    // always contain null bytes because ASCII characters (spaces, newlines,
+    // digits, punctuation) have 0x00 as their high byte. Even CJK-heavy output
+    // from wsl.exe contains enough ASCII to guarantee null bytes.
+    if bytes.len() >= 2 && bytes.contains(&0x00) {
+        // UTF-16LE produces even-length byte sequences; handle odd length gracefully
+        let data = if bytes.len() % 2 == 0 {
+            bytes
+        } else {
+            &bytes[..bytes.len() - 1]
+        };
+
+        let utf16_result = decode_utf16le(data);
+
+        // Validate: reject if the result is mostly replacement characters (U+FFFD),
+        // which would indicate a wrong decode.
+        let total_chars = utf16_result.chars().count();
+        let replacement_count = utf16_result.chars().filter(|&c| c == '\u{FFFD}').count();
+        if total_chars > 0 && (replacement_count as f64 / total_chars as f64) < 0.1 {
+            return utf16_result;
         }
     }
 
@@ -98,18 +107,13 @@ async fn execute_wsl(args: &[&str], timeout: Duration) -> CogniaResult<ProcessOu
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd.spawn().map_err(|e| {
-        CogniaError::Provider(format!("Failed to start wsl.exe: {}", e))
-    })?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| CogniaError::Provider(format!("Failed to start wsl.exe: {}", e)))?;
 
     let output = tokio::time::timeout(timeout, child.wait_with_output())
         .await
-        .map_err(|_| {
-            CogniaError::Provider(format!(
-                "WSL command timed out after {:?}",
-                timeout
-            ))
-        })?
+        .map_err(|_| CogniaError::Provider(format!("WSL command timed out after {:?}", timeout)))?
         .map_err(|e| CogniaError::Provider(format!("WSL process error: {}", e)))?;
 
     let stdout = decode_wsl_bytes(&output.stdout);
@@ -131,9 +135,13 @@ async fn execute_program(
     args: &[&str],
     timeout: Duration,
 ) -> CogniaResult<ProcessOutput> {
-    process::execute(program, args, Some(ProcessOptions::new().with_timeout(timeout)))
-        .await
-        .map_err(|e| CogniaError::Provider(format!("{}", e)))
+    process::execute(
+        program,
+        args,
+        Some(ProcessOptions::new().with_timeout(timeout)),
+    )
+    .await
+    .map_err(|e| CogniaError::Provider(format!("{}", e)))
 }
 
 /// WSL (Windows Subsystem for Linux) distribution management provider.
@@ -181,6 +189,21 @@ pub struct WslVersionInfo {
     pub direct3d_version: Option<String>,
     pub dxcore_version: Option<String>,
     pub windows_version: Option<String>,
+}
+
+/// Runtime-detected WSL command capabilities.
+#[derive(Debug, Clone, Default)]
+pub struct WslCapabilities {
+    pub manage: bool,
+    pub r#move: bool,
+    pub resize: bool,
+    pub set_sparse: bool,
+    pub set_default_user: bool,
+    pub mount_options: bool,
+    pub shutdown_force: bool,
+    pub export_format: bool,
+    pub import_in_place: bool,
+    pub version: Option<String>,
 }
 
 /// Detected environment information from inside a WSL distribution.
@@ -333,11 +356,16 @@ impl WslProvider {
                     trimmed.starts_with('*')
                         || (!trimmed.is_empty()
                             && trimmed.split_whitespace().count() >= 2
-                            && trimmed.split_whitespace().last().map_or(false, |v| {
-                                v == "1" || v == "2"
-                            }))
+                            && trimmed
+                                .split_whitespace()
+                                .last()
+                                .map_or(false, |v| v == "1" || v == "2"))
                 });
-                data_start.unwrap_or(if lines.len() > 1 { 1 } else { return vec![]; })
+                data_start.unwrap_or(if lines.len() > 1 {
+                    1
+                } else {
+                    return vec![];
+                })
             }
         };
 
@@ -407,19 +435,25 @@ impl WslProvider {
                 let friendly_start = upper.find("FRIENDLY").unwrap_or_else(|| {
                     // If no "FRIENDLY", try to find second "NAME" occurrence
                     let first_name = upper.find("NAME").unwrap_or(0);
-                    upper[first_name + 4..].find("NAME").map(|p| p + first_name + 4).unwrap_or(32)
+                    upper[first_name + 4..]
+                        .find("NAME")
+                        .map(|p| p + first_name + 4)
+                        .unwrap_or(32)
                 });
                 (idx + 1, friendly_start)
             }
             None => {
                 // Fallback: skip descriptive lines, look for data
-                let data_start = lines.iter().position(|l| {
-                    let trimmed = l.trim();
-                    !trimmed.is_empty()
-                        && !trimmed.starts_with("The following")
-                        && !trimmed.starts_with("Install using")
-                        && !trimmed.to_uppercase().contains("NAME")
-                }).unwrap_or(lines.len());
+                let data_start = lines
+                    .iter()
+                    .position(|l| {
+                        let trimmed = l.trim();
+                        !trimmed.is_empty()
+                            && !trimmed.starts_with("The following")
+                            && !trimmed.starts_with("Install using")
+                            && !trimmed.to_uppercase().contains("NAME")
+                    })
+                    .unwrap_or(lines.len());
                 (data_start, 32)
             }
         };
@@ -458,8 +492,8 @@ impl WslProvider {
         for line in out.lines() {
             let lower = line.to_lowercase();
             // Match English "version" or Chinese "版本"
-            let is_wsl_version_line = lower.contains("wsl")
-                && (lower.contains("version") || lower.contains("版本"));
+            let is_wsl_version_line =
+                lower.contains("wsl") && (lower.contains("version") || lower.contains("版本"));
             if is_wsl_version_line {
                 // Extract version number after ':'
                 if let Some(v) = line.split(':').nth(1) {
@@ -521,7 +555,8 @@ impl WslProvider {
                     && (key.contains("version") || key.contains("版本"))
                 {
                     info.wsl_version = Some(value);
-                } else if key.contains("kernel") || (key.contains("内核") && key.contains("版本")) {
+                } else if key.contains("kernel") || (key.contains("内核") && key.contains("版本"))
+                {
                     info.kernel_version = Some(value);
                 } else if key.contains("wslg") {
                     info.wslg_version = Some(value);
@@ -531,7 +566,8 @@ impl WslProvider {
                     info.direct3d_version = Some(value);
                 } else if key.contains("dxcore") {
                     info.dxcore_version = Some(value);
-                } else if key.contains("windows") && (key.contains("version") || key.contains("版本"))
+                } else if key.contains("windows")
+                    && (key.contains("version") || key.contains("版本"))
                 {
                     info.windows_version = Some(value);
                 }
@@ -582,12 +618,115 @@ impl WslProvider {
         (default_distro, default_version)
     }
 
+    /// Parse `wsl --list --running --quiet` output into a list of distro names.
+    pub fn parse_list_running_quiet(output: &str) -> Vec<String> {
+        output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
+    fn is_likely_distro_name(value: &str) -> bool {
+        if value.is_empty() || value.contains(':') {
+            return false;
+        }
+        if value.contains('\\') || value.contains('/') {
+            return false;
+        }
+        if value.split_whitespace().count() > 1 {
+            return false;
+        }
+        value
+            .chars()
+            .all(|ch| ch.is_alphanumeric() || ch == '-' || ch == '_' || ch == '.')
+    }
+
+    /// Parse legacy `wsl --list --running` output (table or localized text).
+    /// Uses table parsing first, then a strict single-token fallback to avoid
+    /// misclassifying localized "no running distributions" messages as distro names.
+    pub fn parse_list_running(output: &str) -> Vec<String> {
+        let parsed = Self::parse_list_verbose(output);
+        if !parsed.is_empty() {
+            return parsed.into_iter().map(|d| d.name).collect();
+        }
+
+        output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.trim_start_matches('*').trim())
+            .filter(|line| Self::is_likely_distro_name(line))
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
+    fn help_has_flag(help_output: &str, flag: &str) -> bool {
+        help_output.contains(flag)
+    }
+
+    /// Parse capabilities from `wsl --help` (primary) and `wsl --version` (optional).
+    pub fn parse_capabilities(help_output: &str, version_output: Option<&str>) -> WslCapabilities {
+        let manage = Self::help_has_flag(help_output, "--manage");
+        let has_mount = Self::help_has_flag(help_output, "--mount");
+        let has_shutdown = Self::help_has_flag(help_output, "--shutdown");
+        let has_export = Self::help_has_flag(help_output, "--export");
+
+        let version = version_output.and_then(|raw| {
+            let parsed = Self::parse_version_output(raw);
+            parsed.wsl_version.or_else(|| {
+                raw.lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .map(ToOwned::to_owned)
+            })
+        });
+
+        WslCapabilities {
+            manage,
+            r#move: manage && Self::help_has_flag(help_output, "--move"),
+            resize: manage && Self::help_has_flag(help_output, "--resize"),
+            set_sparse: manage && Self::help_has_flag(help_output, "--set-sparse"),
+            set_default_user: manage && Self::help_has_flag(help_output, "--set-default-user"),
+            mount_options: has_mount && Self::help_has_flag(help_output, "--options"),
+            shutdown_force: has_shutdown && Self::help_has_flag(help_output, "--force"),
+            export_format: has_export && Self::help_has_flag(help_output, "--format"),
+            import_in_place: Self::help_has_flag(help_output, "--import-in-place"),
+            version,
+        }
+    }
+
+    /// Detect available WSL capabilities by probing `wsl --help` and `wsl --version`.
+    pub async fn get_capabilities(&self) -> CogniaResult<WslCapabilities> {
+        let help_output = self.run_wsl_lenient(&["--help"]).await.unwrap_or_default();
+        let version_output = self.run_wsl_lenient(&["--version"]).await.ok();
+        Ok(Self::parse_capabilities(
+            &help_output,
+            version_output.as_deref(),
+        ))
+    }
+
+    fn is_unsupported_option_error(message: &str) -> bool {
+        let lower = message.to_lowercase();
+        lower.contains("unknown option")
+            || lower.contains("unrecognized option")
+            || lower.contains("invalid option")
+            || lower.contains("invalid command")
+            || lower.contains("not supported")
+            || lower.contains("未知选项")
+            || lower.contains("未识别")
+            || lower.contains("不支持")
+            || lower.contains("无效选项")
+    }
+
     /// Set sparse VHD mode for a WSL distribution.
     /// When enabled, the virtual disk will automatically reclaim unused space.
     /// Requires WSL 2.0.0+ (Store version).
     pub async fn set_sparse_vhd(&self, distro: &str, enabled: bool) -> CogniaResult<()> {
         let flag = if enabled { "true" } else { "false" };
-        self.run_wsl(&["--manage", distro, "--set-sparse", flag]).await?;
+        self.run_wsl(&["--manage", distro, "--set-sparse", flag])
+            .await?;
         Ok(())
     }
 
@@ -600,35 +739,101 @@ impl WslProvider {
 
     /// Install a distribution to a custom location.
     /// Uses `wsl --install -d <name> --location <path>`.
-    pub async fn install_with_location(
-        &self,
-        name: &str,
-        location: &str,
-    ) -> CogniaResult<String> {
+    pub async fn install_with_location(&self, name: &str, location: &str) -> CogniaResult<String> {
         self.run_wsl_long(&[
-            "--install", "-d", name, "--no-launch", "--web-download",
-            "--location", location,
-        ]).await
+            "--install",
+            "-d",
+            name,
+            "--no-launch",
+            "--web-download",
+            "--location",
+            location,
+        ])
+        .await
+    }
+
+    fn build_move_args(distro: &str, location: &str) -> Vec<String> {
+        vec![
+            "--manage".into(),
+            distro.into(),
+            "--move".into(),
+            location.into(),
+        ]
+    }
+
+    fn build_resize_args(distro: &str, size: &str) -> Vec<String> {
+        vec![
+            "--manage".into(),
+            distro.into(),
+            "--resize".into(),
+            size.into(),
+        ]
+    }
+
+    fn build_mount_args(
+        disk_path: &str,
+        is_vhd: bool,
+        fs_type: Option<&str>,
+        partition: Option<u32>,
+        mount_name: Option<&str>,
+        mount_options: Option<&str>,
+        bare: bool,
+    ) -> Vec<String> {
+        let mut args = vec!["--mount".into(), disk_path.into()];
+        if is_vhd {
+            args.push("--vhd".into());
+        }
+        if let Some(fs) = fs_type {
+            args.push("--type".into());
+            args.push(fs.into());
+        }
+        if let Some(p) = partition {
+            args.push("--partition".into());
+            args.push(p.to_string());
+        }
+        if let Some(name) = mount_name {
+            args.push("--name".into());
+            args.push(name.into());
+        }
+        if let Some(options) = mount_options {
+            args.push("--options".into());
+            args.push(options.into());
+        }
+        if bare {
+            args.push("--bare".into());
+        }
+        args
+    }
+
+    /// Move a distribution's virtual disk to a new location.
+    /// Uses `wsl --manage <distro> --move <location>`.
+    pub async fn move_distro(&self, distro: &str, location: &str) -> CogniaResult<String> {
+        let args = Self::build_move_args(distro, location);
+        let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.run_wsl_long(&args_ref).await
+    }
+
+    /// Resize a distribution's virtual disk.
+    /// Uses `wsl --manage <distro> --resize <size>`.
+    pub async fn resize_distro(&self, distro: &str, size: &str) -> CogniaResult<String> {
+        let args = Self::build_resize_args(distro, size);
+        let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.run_wsl_long(&args_ref).await
     }
 
     /// List currently running WSL distributions.
-    /// Parses `wsl --list --running` output to get distribution names.
+    /// Tries `wsl --list --running --quiet` first for locale-safe parsing, then
+    /// falls back to legacy `wsl --list --running` parsing.
     pub async fn list_running(&self) -> CogniaResult<Vec<String>> {
+        if let Ok(out) = execute_wsl(&["--list", "--running", "--quiet"], WSL_TIMEOUT).await {
+            if out.success {
+                let stdout = Self::trim_output(&out.stdout);
+                return Ok(Self::parse_list_running_quiet(&stdout));
+            }
+        }
+
         let out = self.run_wsl_lenient(&["--list", "--running"]).await?;
-        let distros: Vec<String> = out
-            .lines()
-            .filter(|l| {
-                let trimmed = l.trim();
-                // Skip empty lines and header lines (locale-aware)
-                !trimmed.is_empty()
-                    && !trimmed.contains("Windows Subsystem")
-                    && !trimmed.contains("适用于 Linux 的 Windows 子系统") // Chinese
-                    && !trimmed.contains("Linux 用 Windows サブシステム") // Japanese
-            })
-            .map(|l| l.trim().trim_end_matches(" (Default)").trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect();
-        Ok(distros)
+        Ok(Self::parse_list_running(&out))
     }
 
     /// Terminate a specific running distribution
@@ -664,7 +869,12 @@ impl WslProvider {
     }
 
     /// Export a distribution to a tar/vhdx file
-    pub async fn export_distro(&self, name: &str, file_path: &str, as_vhd: bool) -> CogniaResult<()> {
+    pub async fn export_distro(
+        &self,
+        name: &str,
+        file_path: &str,
+        as_vhd: bool,
+    ) -> CogniaResult<()> {
         let mut args = vec!["--export", name, file_path];
         if as_vhd {
             args.push("--vhd");
@@ -698,12 +908,9 @@ impl WslProvider {
 
     /// Import a distribution in-place from an existing .vhdx file.
     /// The virtual hard disk must be formatted in the ext4 filesystem type.
-    pub async fn import_distro_in_place(
-        &self,
-        name: &str,
-        vhdx_path: &str,
-    ) -> CogniaResult<()> {
-        self.run_wsl_long(&["--import-in-place", name, vhdx_path]).await?;
+    pub async fn import_distro_in_place(&self, name: &str, vhdx_path: &str) -> CogniaResult<()> {
+        self.run_wsl_long(&["--import-in-place", name, vhdx_path])
+            .await?;
         Ok(())
     }
 
@@ -740,7 +947,9 @@ impl WslProvider {
     pub async fn get_distro_detail(&self, name: &str) -> CogniaResult<Option<WslDistroInfo>> {
         let out = self.run_wsl_lenient(&["--list", "--verbose"]).await?;
         let distros = Self::parse_list_verbose(&out);
-        Ok(distros.into_iter().find(|d| d.name.eq_ignore_ascii_case(name)))
+        Ok(distros
+            .into_iter()
+            .find(|d| d.name.eq_ignore_ascii_case(name)))
     }
 
     /// Execute a command inside a specific WSL distribution.
@@ -796,18 +1005,20 @@ impl WslProvider {
 
     /// Read the global .wslconfig file.
     /// Returns the parsed key-value pairs grouped by section.
-    pub fn read_wslconfig() -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>> {
-        let user_profile = std::env::var("USERPROFILE")
-            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+    pub fn read_wslconfig(
+    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>>
+    {
+        let user_profile = std::env::var("USERPROFILE").map_err(|_| {
+            CogniaError::Provider("USERPROFILE environment variable not set".into())
+        })?;
         let config_path = PathBuf::from(&user_profile).join(".wslconfig");
 
         if !config_path.exists() {
             return Ok(std::collections::HashMap::new());
         }
 
-        let content = std::fs::read_to_string(&config_path).map_err(|e| {
-            CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
-        })?;
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| CogniaError::Provider(format!("Failed to read .wslconfig: {}", e)))?;
 
         Ok(Self::parse_ini_content(&content))
     }
@@ -815,14 +1026,14 @@ impl WslProvider {
     /// Write a setting to the global .wslconfig file.
     /// Creates the file if it doesn't exist.
     pub fn write_wslconfig(section: &str, key: &str, value: &str) -> CogniaResult<()> {
-        let user_profile = std::env::var("USERPROFILE")
-            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+        let user_profile = std::env::var("USERPROFILE").map_err(|_| {
+            CogniaError::Provider("USERPROFILE environment variable not set".into())
+        })?;
         let config_path = PathBuf::from(&user_profile).join(".wslconfig");
 
         let mut sections = if config_path.exists() {
-            let content = std::fs::read_to_string(&config_path).map_err(|e| {
-                CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
-            })?;
+            let content = std::fs::read_to_string(&config_path)
+                .map_err(|e| CogniaError::Provider(format!("Failed to read .wslconfig: {}", e)))?;
             Self::parse_ini_content(&content)
         } else {
             std::collections::HashMap::new()
@@ -834,26 +1045,25 @@ impl WslProvider {
             .insert(key.to_string(), value.to_string());
 
         let output = Self::serialize_ini_content(&sections);
-        std::fs::write(&config_path, output).map_err(|e| {
-            CogniaError::Provider(format!("Failed to write .wslconfig: {}", e))
-        })?;
+        std::fs::write(&config_path, output)
+            .map_err(|e| CogniaError::Provider(format!("Failed to write .wslconfig: {}", e)))?;
 
         Ok(())
     }
 
     /// Remove a setting from the global .wslconfig file.
     pub fn remove_wslconfig_key(section: &str, key: &str) -> CogniaResult<bool> {
-        let user_profile = std::env::var("USERPROFILE")
-            .map_err(|_| CogniaError::Provider("USERPROFILE environment variable not set".into()))?;
+        let user_profile = std::env::var("USERPROFILE").map_err(|_| {
+            CogniaError::Provider("USERPROFILE environment variable not set".into())
+        })?;
         let config_path = PathBuf::from(&user_profile).join(".wslconfig");
 
         if !config_path.exists() {
             return Ok(false);
         }
 
-        let content = std::fs::read_to_string(&config_path).map_err(|e| {
-            CogniaError::Provider(format!("Failed to read .wslconfig: {}", e))
-        })?;
+        let content = std::fs::read_to_string(&config_path)
+            .map_err(|e| CogniaError::Provider(format!("Failed to read .wslconfig: {}", e)))?;
 
         let mut sections = Self::parse_ini_content(&content);
         let removed = if let Some(sec) = sections.get_mut(section) {
@@ -868,17 +1078,21 @@ impl WslProvider {
 
         if removed {
             let output = Self::serialize_ini_content(&sections);
-            std::fs::write(&config_path, output).map_err(|e| {
-                CogniaError::Provider(format!("Failed to write .wslconfig: {}", e))
-            })?;
+            std::fs::write(&config_path, output)
+                .map_err(|e| CogniaError::Provider(format!("Failed to write .wslconfig: {}", e)))?;
         }
 
         Ok(removed)
     }
 
     /// Parse INI-style content into section → key → value map.
-    fn parse_ini_content(content: &str) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
-        let mut sections: std::collections::HashMap<String, std::collections::HashMap<String, String>> = std::collections::HashMap::new();
+    fn parse_ini_content(
+        content: &str,
+    ) -> std::collections::HashMap<String, std::collections::HashMap<String, String>> {
+        let mut sections: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, String>,
+        > = std::collections::HashMap::new();
         let mut current_section = String::new();
 
         for line in content.lines() {
@@ -905,7 +1119,9 @@ impl WslProvider {
     }
 
     /// Serialize section → key → value map back to INI format.
-    fn serialize_ini_content(sections: &std::collections::HashMap<String, std::collections::HashMap<String, String>>) -> String {
+    fn serialize_ini_content(
+        sections: &std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    ) -> String {
         let mut output = String::new();
         // Sort sections for consistent output
         let mut section_names: Vec<&String> = sections.keys().collect();
@@ -1002,32 +1218,20 @@ impl WslProvider {
         fs_type: Option<&str>,
         partition: Option<u32>,
         mount_name: Option<&str>,
+        mount_options: Option<&str>,
         bare: bool,
     ) -> CogniaResult<String> {
-        let mut args = vec!["--mount", disk_path];
-        if is_vhd {
-            args.push("--vhd");
-        }
-        let fs_str;
-        if let Some(fs) = fs_type {
-            fs_str = fs.to_string();
-            args.push("--type");
-            args.push(&fs_str);
-        }
-        let part_str;
-        if let Some(p) = partition {
-            part_str = p.to_string();
-            args.push("--partition");
-            args.push(&part_str);
-        }
-        if let Some(name) = mount_name {
-            args.push("--name");
-            args.push(name);
-        }
-        if bare {
-            args.push("--bare");
-        }
-        self.run_wsl_long(&args).await
+        let args = Self::build_mount_args(
+            disk_path,
+            is_vhd,
+            fs_type,
+            partition,
+            mount_name,
+            mount_options,
+            bare,
+        );
+        let args_ref: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.run_wsl_long(&args_ref).await
     }
 
     /// Unmount a previously mounted disk. If no path given, unmounts all.
@@ -1050,17 +1254,30 @@ impl WslProvider {
         let out = execute_wsl(&args, WSL_TIMEOUT).await?;
         let ip = Self::trim_output(&out.stdout).trim().to_string();
         if ip.is_empty() {
-            return Err(CogniaError::Provider("WSL: Could not determine IP address".into()));
+            return Err(CogniaError::Provider(
+                "WSL: Could not determine IP address".into(),
+            ));
         }
         // hostname -I may return multiple IPs, take the first one
         Ok(ip.split_whitespace().next().unwrap_or(&ip).to_string())
     }
 
     /// Change the default user for a distribution.
-    /// Uses `<distro>.exe config --default-user <user>` (only works for Store-installed distros).
-    /// Falls back to editing /etc/wsl.conf for imported distros.
+    /// Prefers `wsl --manage <distro> --set-default-user <user>` on modern WSL,
+    /// then falls back to launcher/config-based strategies for compatibility.
     pub async fn change_default_user(&self, distro: &str, username: &str) -> CogniaResult<()> {
-        // Try the launcher executable approach first (e.g., ubuntu.exe config --default-user user)
+        // Preferred modern path (WSL manage command).
+        match self
+            .run_wsl(&["--manage", distro, "--set-default-user", username])
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(err) if !Self::is_unsupported_option_error(&err.to_string()) => return Err(err),
+            Err(_) => {}
+        }
+
+        // Fallback 1: launcher executable approach
+        // (e.g., ubuntu.exe config --default-user user).
         let exe_name = format!("{}.exe", distro.to_lowercase());
         let result = execute_program(
             &exe_name,
@@ -1072,7 +1289,7 @@ impl WslProvider {
         match result {
             Ok(out) if out.success => Ok(()),
             _ => {
-                // Fallback: edit /etc/wsl.conf inside the distro
+                // Fallback 2: edit /etc/wsl.conf inside the distro.
                 let cmd = format!(
                     "if grep -q '\\[user\\]' /etc/wsl.conf 2>/dev/null; then \
                      sed -i 's/^default=.*/default={}/' /etc/wsl.conf; \
@@ -1096,7 +1313,8 @@ impl WslProvider {
     pub async fn read_distro_config(
         &self,
         distro: &str,
-    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>> {
+    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>>
+    {
         let (stdout, _, code) = self
             .exec_command(distro, "cat /etc/wsl.conf 2>/dev/null || echo ''", None)
             .await?;
@@ -1210,17 +1428,20 @@ impl WslProvider {
     pub fn detect_package_manager_from_id(id: &str, id_like: &[String]) -> Option<&'static str> {
         // Check exact ID first
         let pm = match id {
-            "ubuntu" | "debian" | "linuxmint" | "pop" | "elementary" | "zorin"
-            | "kali" | "parrot" | "raspbian" | "elxr" | "pengwin" | "wlinux"
-            | "deepin" | "mx" => Some("apt"),
+            "ubuntu" | "debian" | "linuxmint" | "pop" | "elementary" | "zorin" | "kali"
+            | "parrot" | "raspbian" | "elxr" | "pengwin" | "wlinux" | "deepin" | "mx" => {
+                Some("apt")
+            }
 
             "arch" | "manjaro" | "endeavouros" | "garuda" | "artix" => Some("pacman"),
 
-            "fedora" | "rhel" | "centos" | "rocky" | "almalinux" | "nobara"
-            | "amazon" => Some("dnf"),
+            "fedora" | "rhel" | "centos" | "rocky" | "almalinux" | "nobara" | "amazon" => {
+                Some("dnf")
+            }
 
-            "opensuse-tumbleweed" | "opensuse-leap" | "opensuse" | "sles" | "sled"
-            | "suse" => Some("zypper"),
+            "opensuse-tumbleweed" | "opensuse-leap" | "opensuse" | "sles" | "sled" | "suse" => {
+                Some("zypper")
+            }
 
             "alpine" => Some("apk"),
             "void" => Some("xbps-install"),
@@ -1262,7 +1483,9 @@ impl WslProvider {
             "zypper" => Some("rpm -qa 2>/dev/null | wc -l"),
             "apk" => Some("apk list --installed 2>/dev/null | wc -l"),
             "xbps-install" => Some("xbps-query -l 2>/dev/null | wc -l"),
-            "emerge" => Some("qlist -I 2>/dev/null | wc -l || ls /var/db/pkg/*/* -d 2>/dev/null | wc -l"),
+            "emerge" => {
+                Some("qlist -I 2>/dev/null | wc -l || ls /var/db/pkg/*/* -d 2>/dev/null | wc -l")
+            }
             "nix" => Some("nix-env -q 2>/dev/null | wc -l"),
             _ => None,
         }
@@ -1369,7 +1592,13 @@ impl WslProvider {
         let init_system = parts[3].trim().to_string();
 
         // 5. Package manager — prefer ID-based detection, fall back to binary probe
-        let probed_pm = parts[4].trim().lines().next().unwrap_or("").trim().to_string();
+        let probed_pm = parts[4]
+            .trim()
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         let package_manager = Self::detect_package_manager_from_id(&distro_id, &distro_id_like)
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
@@ -1393,31 +1622,36 @@ impl WslProvider {
         // 7. Default shell
         let default_shell = {
             let s = parts[6].trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         };
 
         // 8. Hostname
         let hostname = {
             let h = parts[7].trim().to_string();
-            if h.is_empty() { None } else { Some(h) }
+            if h.is_empty() {
+                None
+            } else {
+                Some(h)
+            }
         };
 
         // 9. Uptime
-        let uptime_seconds = parts[8]
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .map(|f| f as u64);
+        let uptime_seconds = parts[8].trim().parse::<f64>().ok().map(|f| f as u64);
 
         // 10. Get installed package count using the detected package manager
-        let installed_packages = if let Some(cmd) = Self::get_package_count_command(&package_manager) {
-            match self.exec_command(distro, cmd, None).await {
-                Ok((out, _, 0)) => out.trim().parse::<u64>().ok(),
-                _ => None,
-            }
-        } else {
-            None
-        };
+        let installed_packages =
+            if let Some(cmd) = Self::get_package_count_command(&package_manager) {
+                match self.exec_command(distro, cmd, None).await {
+                    Ok((out, _, 0)) => out.trim().parse::<u64>().ok(),
+                    _ => None,
+                }
+            } else {
+                None
+            };
 
         Ok(WslDistroEnvironment {
             distro_id,
@@ -1495,11 +1729,14 @@ impl Provider for WslProvider {
                     &combined.chars().take(200).collect::<String>()
                 );
                 let has_digit = combined.chars().any(|c| c.is_ascii_digit());
-                let has_marker = combined.contains('.')
-                    || combined.contains("WSL")
-                    || combined.contains("wsl");
+                let has_marker =
+                    combined.contains('.') || combined.contains("WSL") || combined.contains("wsl");
                 if has_digit && has_marker {
-                    log::debug!("[WSL] is_available: Step 1 PASSED (has_digit={}, has_marker={})", has_digit, has_marker);
+                    log::debug!(
+                        "[WSL] is_available: Step 1 PASSED (has_digit={}, has_marker={})",
+                        has_digit,
+                        has_marker
+                    );
                     return true;
                 }
                 log::debug!("[WSL] is_available: Step 1 failed positive check (has_digit={}, has_marker={})", has_digit, has_marker);
@@ -1566,7 +1803,10 @@ impl Provider for WslProvider {
         {
             let abs_path = "C:\\Windows\\System32\\wsl.exe";
             let exists = std::path::Path::new(abs_path).exists();
-            log::debug!("[WSL] is_available: Step 4 — absolute path fallback, exists={}", exists);
+            log::debug!(
+                "[WSL] is_available: Step 4 — absolute path fallback, exists={}",
+                exists
+            );
             if exists {
                 match TokioCommand::new(abs_path)
                     .arg("--help")
@@ -1644,7 +1884,11 @@ impl Provider for WslProvider {
                     "WSL {} distribution ({}, {})",
                     info.wsl_version,
                     info.state,
-                    if info.is_default { "default" } else { "not default" }
+                    if info.is_default {
+                        "default"
+                    } else {
+                        "not default"
+                    }
                 )),
                 homepage: Some("https://learn.microsoft.com/en-us/windows/wsl/".into()),
                 license: None,
@@ -1769,25 +2013,23 @@ impl Provider for WslProvider {
         // Terminate first to ensure clean unregister
         let _ = self.terminate_distro(&req.name).await;
 
-        self.run_wsl(&["--unregister", &req.name]).await.map_err(|e| {
-            CogniaError::Provider(format!(
-                "Failed to unregister WSL distribution '{}': {}. All data will be lost.",
-                req.name, e
-            ))
-        })?;
+        self.run_wsl(&["--unregister", &req.name])
+            .await
+            .map_err(|e| {
+                CogniaError::Provider(format!(
+                    "Failed to unregister WSL distribution '{}': {}. All data will be lost.",
+                    req.name, e
+                ))
+            })?;
         Ok(())
     }
 
     /// List all installed WSL distributions with their state and version.
-    async fn list_installed(
-        &self,
-        filter: InstalledFilter,
-    ) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
         let out = self.run_wsl_lenient(&["--list", "--verbose"]).await?;
         let distros = Self::parse_list_verbose(&out);
 
-        let local_app_data = std::env::var("LOCALAPPDATA")
-            .unwrap_or_else(|_| "C:\\Users".into());
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "C:\\Users".into());
 
         Ok(distros
             .into_iter()
@@ -1830,7 +2072,12 @@ impl Provider for WslProvider {
         // Use winget to check for available updates (non-destructive)
         let winget_result = process::execute(
             "winget",
-            &["list", "Microsoft.WSL", "--accept-source-agreements", "--disable-interactivity"],
+            &[
+                "list",
+                "Microsoft.WSL",
+                "--accept-source-agreements",
+                "--disable-interactivity",
+            ],
             Some(ProcessOptions::new().with_timeout(Duration::from_secs(30))),
         )
         .await;
@@ -1849,7 +2096,9 @@ impl Provider for WslProvider {
                 // where the second (Available) differs from the first (Installed)
                 let mut found_installed = false;
                 for (i, part) in parts.iter().enumerate() {
-                    if part.contains('.') && part.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                    if part.contains('.')
+                        && part.chars().next().map_or(false, |c| c.is_ascii_digit())
+                    {
                         if !found_installed {
                             found_installed = true;
                         } else {
@@ -1947,9 +2196,7 @@ impl SystemPackageProvider for WslProvider {
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let out = self.run_wsl_lenient(&["--list", "--quiet"]).await;
         match out {
-            Ok(output) => Ok(output
-                .lines()
-                .any(|l| l.trim().eq_ignore_ascii_case(name))),
+            Ok(output) => Ok(output.lines().any(|l| l.trim().eq_ignore_ascii_case(name))),
             Err(_) => Ok(false),
         }
     }
@@ -2078,7 +2325,8 @@ mod tests {
 
     #[test]
     fn test_serialize_roundtrip() {
-        let content = "[experimental]\nautoMemoryReclaim=gradual\n\n[wsl2]\nmemory=4GB\nprocessors=2\n";
+        let content =
+            "[experimental]\nautoMemoryReclaim=gradual\n\n[wsl2]\nmemory=4GB\nprocessors=2\n";
         let sections = WslProvider::parse_ini_content(content);
         let output = WslProvider::serialize_ini_content(&sections);
         let reparsed = WslProvider::parse_ini_content(&output);
@@ -2151,10 +2399,7 @@ mod tests {
     fn test_decode_wsl_bytes_utf16le_list_verbose() {
         // "  NAME      STATE" in UTF-16LE
         let text = "  NAME      STATE";
-        let utf16le: Vec<u8> = text
-            .encode_utf16()
-            .flat_map(|u| u.to_le_bytes())
-            .collect();
+        let utf16le: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
         let decoded = decode_wsl_bytes(&utf16le);
         assert_eq!(decoded, "  NAME      STATE");
     }
@@ -2171,6 +2416,39 @@ mod tests {
         // Pure UTF-8 Chinese text (not UTF-16LE)
         let input = "你好世界".as_bytes();
         assert_eq!(decode_wsl_bytes(input), "你好世界");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_cjk_heavy() {
+        // "适用于 Linux 的 Windows 子系统分发:\nUbuntu (默认)\n" in UTF-16LE
+        // This is the exact scenario that caused garbled text: CJK-heavy headers
+        // where the old heuristic (odd-byte sampling) failed.
+        let text = "适用于 Linux 的 Windows 子系统分发:\nUbuntu (默认)\n";
+        let utf16le: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let decoded = decode_wsl_bytes(&utf16le);
+        assert!(decoded.contains("Ubuntu"), "decoded={}", decoded);
+        assert!(decoded.contains("适用于"), "decoded={}", decoded);
+        assert!(decoded.contains("默认"), "decoded={}", decoded);
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_running_list() {
+        // Simulates `wsl --list --running` output in Chinese locale
+        let text = "适用于 Linux 的 Windows 子系统分发:\nUbuntu-24.04 (默认)\nDebian\n";
+        let utf16le: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let decoded = decode_wsl_bytes(&utf16le);
+        assert!(decoded.contains("Ubuntu-24.04"), "decoded={}", decoded);
+        assert!(decoded.contains("Debian"), "decoded={}", decoded);
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf16le_japanese() {
+        // Japanese locale header
+        let text = "Linux 用 Windows サブシステム ディストリビューション:\nUbuntu\n";
+        let utf16le: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let decoded = decode_wsl_bytes(&utf16le);
+        assert!(decoded.contains("Ubuntu"), "decoded={}", decoded);
+        assert!(decoded.contains("サブシステム"), "decoded={}", decoded);
     }
 
     // ========================================================================
@@ -2194,7 +2472,8 @@ mod tests {
     #[test]
     fn test_parse_list_verbose_no_header_fallback() {
         // Output with no recognizable header but valid data lines
-        let output = "UNKNOWN_HEADER_LINE\n* Ubuntu    Running         2\n  Debian    Stopped         1\n";
+        let output =
+            "UNKNOWN_HEADER_LINE\n* Ubuntu    Running         2\n  Debian    Stopped         1\n";
         let distros = WslProvider::parse_list_verbose(output);
 
         assert_eq!(distros.len(), 2);
@@ -2202,6 +2481,19 @@ mod tests {
         assert!(distros[0].is_default);
         assert_eq!(distros[1].name, "Debian");
         assert_eq!(distros[1].wsl_version, "1");
+    }
+
+    #[test]
+    fn test_parse_list_running_quiet_empty() {
+        let running = WslProvider::parse_list_running_quiet("");
+        assert!(running.is_empty());
+    }
+
+    #[test]
+    fn test_parse_list_running_localized_no_running_message() {
+        let output = "当前没有正在运行的分发。";
+        let running = WslProvider::parse_list_running(output);
+        assert!(running.is_empty());
     }
 
     #[test]
@@ -2292,6 +2584,102 @@ Default Version: 2
         let (distro, version) = WslProvider::parse_status_output("");
         assert!(distro.is_none());
         assert!(version.is_none());
+    }
+
+    #[test]
+    fn test_parse_capabilities_english_help() {
+        let help = r#"
+Usage: wsl.exe [Argument]
+  --manage <Distro>
+  --move <Location>
+  --resize <Size>
+  --set-default-user <UserName>
+  --set-sparse <true|false>
+  --mount <DiskPath>
+  --options <Options>
+  --shutdown
+  --force
+  --export <Distro> <FileName>
+  --format <tar|vhd>
+  --import-in-place <Distro> <FileName>
+"#;
+        let version = "WSL version: 2.6.1.0";
+        let caps = WslProvider::parse_capabilities(help, Some(version));
+
+        assert!(caps.manage);
+        assert!(caps.r#move);
+        assert!(caps.resize);
+        assert!(caps.set_default_user);
+        assert!(caps.set_sparse);
+        assert!(caps.mount_options);
+        assert!(caps.shutdown_force);
+        assert!(caps.export_format);
+        assert!(caps.import_in_place);
+        assert_eq!(caps.version.as_deref(), Some("2.6.1.0"));
+    }
+
+    #[test]
+    fn test_parse_capabilities_without_manage() {
+        let help = r#"
+用法: wsl.exe [参数]
+  --mount <DiskPath>
+  --unmount [DiskPath]
+  --import-in-place <Distro> <FileName>
+"#;
+        let caps = WslProvider::parse_capabilities(help, None);
+
+        assert!(!caps.manage);
+        assert!(!caps.r#move);
+        assert!(!caps.resize);
+        assert!(!caps.set_sparse);
+        assert!(!caps.set_default_user);
+        assert!(!caps.mount_options);
+        assert!(!caps.shutdown_force);
+        assert!(!caps.export_format);
+        assert!(caps.import_in_place);
+    }
+
+    #[test]
+    fn test_build_move_and_resize_args() {
+        let move_args = WslProvider::build_move_args("Ubuntu", "D:\\WSL\\Ubuntu");
+        let resize_args = WslProvider::build_resize_args("Ubuntu", "300GB");
+
+        assert_eq!(
+            move_args,
+            vec!["--manage", "Ubuntu", "--move", "D:\\WSL\\Ubuntu"]
+        );
+        assert_eq!(resize_args, vec!["--manage", "Ubuntu", "--resize", "300GB"]);
+    }
+
+    #[test]
+    fn test_build_mount_args_with_options() {
+        let args = WslProvider::build_mount_args(
+            r"\\.\PhysicalDrive1",
+            true,
+            Some("ext4"),
+            Some(2),
+            Some("data"),
+            Some("uid=1000,gid=1000"),
+            true,
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                "--mount",
+                r"\\.\PhysicalDrive1",
+                "--vhd",
+                "--type",
+                "ext4",
+                "--partition",
+                "2",
+                "--name",
+                "data",
+                "--options",
+                "uid=1000,gid=1000",
+                "--bare",
+            ]
+        );
     }
 
     // ========================================================================

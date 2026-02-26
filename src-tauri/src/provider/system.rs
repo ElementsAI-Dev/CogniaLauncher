@@ -150,7 +150,10 @@ impl SystemEnvironmentType {
                 version_args: vec!["--version"],
                 version_pattern: r"v?(\d+\.\d+\.\d+)",
                 version_files: vec![".nvmrc", ".node-version", ".tool-versions"],
-                manifest_files: vec![("package.json", r#""engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)""#)],
+                manifest_files: vec![(
+                    "package.json",
+                    r#""engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)""#,
+                )],
             },
             Self::Python => SystemDetectionConfig {
                 #[cfg(windows)]
@@ -272,7 +275,11 @@ impl SystemEnvironmentType {
             },
             Self::Erlang => SystemDetectionConfig {
                 commands: vec!["erl"],
-                version_args: vec!["-noshell", "-eval", r#"io:format("~s~n",[erlang:system_info(otp_release)]),halt()."#],
+                version_args: vec![
+                    "-noshell",
+                    "-eval",
+                    r#"io:format("~s~n",[erlang:system_info(otp_release)]),halt()."#,
+                ],
                 version_pattern: r"(\d+)",
                 version_files: vec![".erlang-version", ".tool-versions"],
                 manifest_files: vec![],
@@ -282,7 +289,10 @@ impl SystemEnvironmentType {
                 version_args: vec!["--version"],
                 version_pattern: r"(?:Apple )?Swift version (\d+\.\d+(?:\.\d+)?)",
                 version_files: vec![".swift-version", ".tool-versions"],
-                manifest_files: vec![("Package.swift", r"swift-tools-version:\s*(\d+\.\d+(?:\.\d+)?)")],
+                manifest_files: vec![(
+                    "Package.swift",
+                    r"swift-tools-version:\s*(\d+\.\d+(?:\.\d+)?)",
+                )],
             },
             Self::Julia => SystemDetectionConfig {
                 commands: vec!["julia"],
@@ -451,7 +461,10 @@ impl SystemEnvironmentProvider {
     }
 
     /// Detect version from project files
-    async fn detect_from_project_files(&self, start_path: &Path) -> CogniaResult<Option<VersionDetection>> {
+    async fn detect_from_project_files(
+        &self,
+        start_path: &Path,
+    ) -> CogniaResult<Option<VersionDetection>> {
         let config = self.env_type.detection_config();
         let mut current = start_path.to_path_buf();
 
@@ -462,13 +475,15 @@ impl SystemEnvironmentProvider {
                 if file_path.exists() {
                     if *version_file == ".tool-versions" {
                         // Parse .tool-versions format (asdf-style)
-                        if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await {
+                        if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await
+                        {
                             let env_type = self.env_type.env_type();
                             for line in content.lines() {
                                 let line = line.trim();
-                                if line.starts_with(env_type) || 
-                                   (env_type == "node" && line.starts_with("nodejs")) ||
-                                   (env_type == "go" && line.starts_with("golang")) {
+                                if line.starts_with(env_type)
+                                    || (env_type == "node" && line.starts_with("nodejs"))
+                                    || (env_type == "go" && line.starts_with("golang"))
+                                {
                                     let parts: Vec<&str> = line.split_whitespace().collect();
                                     if parts.len() >= 2 {
                                         return Ok(Some(VersionDetection {
@@ -482,7 +497,8 @@ impl SystemEnvironmentProvider {
                         }
                     } else {
                         // Simple version file
-                        if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await {
+                        if let Ok(content) = crate::platform::fs::read_file_string(&file_path).await
+                        {
                             let version = content.trim().to_string();
                             if !version.is_empty() && !version.starts_with('#') {
                                 return Ok(Some(VersionDetection {
@@ -591,11 +607,15 @@ impl Provider for SystemEnvironmentProvider {
 
     async fn uninstall(&self, _request: UninstallRequest) -> CogniaResult<()> {
         Err(CogniaError::Provider(
-            "System provider does not support uninstallation. Use your system package manager.".into(),
+            "System provider does not support uninstallation. Use your system package manager."
+                .into(),
         ))
     }
 
-    async fn list_installed(&self, _filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+    async fn list_installed(
+        &self,
+        _filter: InstalledFilter,
+    ) -> CogniaResult<Vec<InstalledPackage>> {
         if let Ok(Some((version, path))) = self.detect_system_version().await {
             Ok(vec![InstalledPackage {
                 name: self.env_type.env_type().to_string(),

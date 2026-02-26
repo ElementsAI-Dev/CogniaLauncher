@@ -62,9 +62,12 @@ impl PoetryProvider {
                 .ok()
                 .map(|p| PathBuf::from(p).join("pypoetry"))
         } else {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| PathBuf::from(h).join(".local").join("share").join("pypoetry"))
+            std::env::var("HOME").ok().map(|h| {
+                PathBuf::from(h)
+                    .join(".local")
+                    .join("share")
+                    .join("pypoetry")
+            })
         }
     }
 
@@ -85,7 +88,12 @@ impl PoetryProvider {
                 let install_path = poetry_home
                     .as_ref()
                     .map(|p| p.join("venv").join("lib").join(&name))
-                    .unwrap_or_else(|| PathBuf::from("pypoetry").join("venv").join("lib").join(&name));
+                    .unwrap_or_else(|| {
+                        PathBuf::from("pypoetry")
+                            .join("venv")
+                            .join("lib")
+                            .join(&name)
+                    });
 
                 packages.push(InstalledPackage {
                     name,
@@ -110,7 +118,10 @@ impl PoetryProvider {
                 return Ok(version.to_string());
             }
         }
-        Err(CogniaError::Provider(format!("Version not found for {}", name)))
+        Err(CogniaError::Provider(format!(
+            "Version not found for {}",
+            name
+        )))
     }
 }
 
@@ -256,11 +267,8 @@ impl Provider for PoetryProvider {
                         // Format: " - package_name (>=1.0,<2.0)"
                         let dep_line = line.trim_start_matches(" - ").trim();
                         if !dep_line.is_empty() {
-                            let dep_name = dep_line
-                                .split_whitespace()
-                                .next()
-                                .unwrap_or("")
-                                .to_string();
+                            let dep_name =
+                                dep_line.split_whitespace().next().unwrap_or("").to_string();
                             let constraint = dep_line
                                 .find('(')
                                 .and_then(|start| {

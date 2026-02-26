@@ -1,8 +1,10 @@
 use crate::config::Settings;
-use crate::core::{BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager, PackageSpec};
+use crate::core::{
+    BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager, PackageSpec,
+};
 use crate::provider::ProviderRegistry;
 use crate::resolver::{Dependency, Package, Resolver, Version, VersionConstraint};
-use futures::future::{BoxFuture, join_all};
+use futures::future::{join_all, BoxFuture};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -148,7 +150,10 @@ pub async fn resolve_dependencies(
             constraint: spec
                 .version
                 .as_ref()
-                .map(|v| v.parse::<VersionConstraint>().unwrap_or(VersionConstraint::Any))
+                .map(|v| {
+                    v.parse::<VersionConstraint>()
+                        .unwrap_or(VersionConstraint::Any)
+                })
                 .unwrap_or(VersionConstraint::Any),
         })
         .collect();
@@ -157,10 +162,12 @@ pub async fn resolve_dependencies(
     let mut resolver = Resolver::new();
 
     // Track which provider provides each package
-    let mut package_providers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut package_providers: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     // Collect installed packages for comparison
-    let mut installed_packages: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut installed_packages: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for provider_id in reg.list() {
         if let Some(provider) = reg.get(provider_id) {
             if provider.is_available().await {
@@ -261,8 +268,9 @@ pub async fn resolve_dependencies(
 
                     let child_nodes = if let Some(ref provider_id) = provider_id {
                         if let Some(provider) = registry.get(provider_id) {
-                            if let Ok(dependencies) =
-                                provider.get_dependencies(&dep.name, &resolved_version).await
+                            if let Ok(dependencies) = provider
+                                .get_dependencies(&dep.name, &resolved_version)
+                                .await
                             {
                                 let futures = dependencies.into_iter().map(|child| {
                                     build_node(
@@ -388,31 +396,37 @@ pub async fn check_updates(
     let reg = registry.read().await;
 
     // Phase 1: Collect available providers in parallel
-    emit_update_check_progress(&app_handle, &UpdateCheckProgress {
-        phase: "collecting".into(),
-        current: 0,
-        total: 0,
-        current_package: None,
-        current_provider: None,
-        found_updates: 0,
-        errors: 0,
-    });
+    emit_update_check_progress(
+        &app_handle,
+        &UpdateCheckProgress {
+            phase: "collecting".into(),
+            current: 0,
+            total: 0,
+            current_package: None,
+            current_provider: None,
+            found_updates: 0,
+            errors: 0,
+        },
+    );
 
     let provider_ids: Vec<String> = reg.list().iter().map(|id| id.to_string()).collect();
 
     // Check which providers are available in parallel
-    let availability_futures: Vec<_> = provider_ids.iter().map(|id| {
-        let provider = reg.get(id);
-        let id = id.clone();
-        async move {
-            if let Some(p) = provider {
-                if p.is_available().await {
-                    return Some(id);
+    let availability_futures: Vec<_> = provider_ids
+        .iter()
+        .map(|id| {
+            let provider = reg.get(id);
+            let id = id.clone();
+            async move {
+                if let Some(p) = provider {
+                    if p.is_available().await {
+                        return Some(id);
+                    }
                 }
+                None
             }
-            None
-        }
-    }).collect();
+        })
+        .collect();
     let available_providers: Vec<String> = join_all(availability_futures)
         .await
         .into_iter()
@@ -420,30 +434,39 @@ pub async fn check_updates(
         .collect();
 
     // Phase 2: Collect installed packages from all available providers in parallel
-    let collect_futures: Vec<_> = available_providers.iter().map(|provider_id| {
-        let provider = reg.get(provider_id);
-        let provider_id = provider_id.clone();
-        let packages_filter = packages.clone();
-        async move {
-            if let Some(p) = provider {
-                match p.list_installed(crate::provider::InstalledFilter::default()).await {
-                    Ok(installed) => {
-                        let filtered: Vec<_> = installed.into_iter().filter(|pkg| {
-                            if let Some(ref filter) = packages_filter {
-                                filter.iter().any(|f| f.eq_ignore_ascii_case(&pkg.name))
-                            } else {
-                                true
-                            }
-                        }).collect();
-                        (provider_id, filtered, None)
+    let collect_futures: Vec<_> = available_providers
+        .iter()
+        .map(|provider_id| {
+            let provider = reg.get(provider_id);
+            let provider_id = provider_id.clone();
+            let packages_filter = packages.clone();
+            async move {
+                if let Some(p) = provider {
+                    match p
+                        .list_installed(crate::provider::InstalledFilter::default())
+                        .await
+                    {
+                        Ok(installed) => {
+                            let filtered: Vec<_> = installed
+                                .into_iter()
+                                .filter(|pkg| {
+                                    if let Some(ref filter) = packages_filter {
+                                        filter.iter().any(|f| f.eq_ignore_ascii_case(&pkg.name))
+                                    } else {
+                                        true
+                                    }
+                                })
+                                .collect();
+                            (provider_id, filtered, None)
+                        }
+                        Err(e) => (provider_id, vec![], Some(e.to_string())),
                     }
-                    Err(e) => (provider_id, vec![], Some(e.to_string())),
+                } else {
+                    (provider_id, vec![], Some("Provider not found".into()))
                 }
-            } else {
-                (provider_id, vec![], Some("Provider not found".into()))
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     let collect_results = join_all(collect_futures).await;
 
@@ -470,15 +493,18 @@ pub async fn check_updates(
     let found_updates = Arc::new(AtomicUsize::new(0));
     let error_count = Arc::new(AtomicUsize::new(collect_errors.len()));
 
-    emit_update_check_progress(&app_handle, &UpdateCheckProgress {
-        phase: "checking".into(),
-        current: 0,
-        total,
-        current_package: None,
-        current_provider: None,
-        found_updates: 0,
-        errors: collect_errors.len(),
-    });
+    emit_update_check_progress(
+        &app_handle,
+        &UpdateCheckProgress {
+            phase: "checking".into(),
+            current: 0,
+            total,
+            current_package: None,
+            current_provider: None,
+            found_updates: 0,
+            errors: collect_errors.len(),
+        },
+    );
 
     // Phase 3: Check each package for updates in parallel (buffered concurrency)
     let updates = Arc::new(tokio::sync::Mutex::new(Vec::new()));
@@ -488,71 +514,79 @@ pub async fn check_updates(
     let concurrency = 8; // Max parallel version checks
 
     stream::iter(check_items.into_iter().enumerate())
-        .for_each_concurrent(concurrency, |(idx, (provider_id, pkg_name, pkg_version))| {
-            let reg_ref = &reg;
-            let app_handle = &app_handle;
-            let updates = Arc::clone(&updates);
-            let errors = Arc::clone(&errors);
-            let checked = Arc::clone(&checked);
-            let found_updates = Arc::clone(&found_updates);
-            let error_count = Arc::clone(&error_count);
+        .for_each_concurrent(
+            concurrency,
+            |(idx, (provider_id, pkg_name, pkg_version))| {
+                let reg_ref = &reg;
+                let app_handle = &app_handle;
+                let updates = Arc::clone(&updates);
+                let errors = Arc::clone(&errors);
+                let checked = Arc::clone(&checked);
+                let found_updates = Arc::clone(&found_updates);
+                let error_count = Arc::clone(&error_count);
 
-            async move {
-                emit_update_check_progress(app_handle, &UpdateCheckProgress {
-                    phase: "checking".into(),
-                    current: idx + 1,
-                    total,
-                    current_package: Some(pkg_name.clone()),
-                    current_provider: Some(provider_id.clone()),
-                    found_updates: found_updates.load(Ordering::Relaxed),
-                    errors: error_count.load(Ordering::Relaxed),
-                });
+                async move {
+                    emit_update_check_progress(
+                        app_handle,
+                        &UpdateCheckProgress {
+                            phase: "checking".into(),
+                            current: idx + 1,
+                            total,
+                            current_package: Some(pkg_name.clone()),
+                            current_provider: Some(provider_id.clone()),
+                            found_updates: found_updates.load(Ordering::Relaxed),
+                            errors: error_count.load(Ordering::Relaxed),
+                        },
+                    );
 
-                if let Some(provider) = reg_ref.get(&provider_id) {
-                    match provider.get_versions(&pkg_name).await {
-                        Ok(versions) => {
-                            if let Some(latest) = versions.first() {
-                                if latest.version != pkg_version {
-                                    let current: Version = pkg_version.parse().unwrap_or(Version::new(0, 0, 0));
-                                    let new_ver: Version = latest.version.parse().unwrap_or(Version::new(0, 0, 0));
+                    if let Some(provider) = reg_ref.get(&provider_id) {
+                        match provider.get_versions(&pkg_name).await {
+                            Ok(versions) => {
+                                if let Some(latest) = versions.first() {
+                                    if latest.version != pkg_version {
+                                        let current: Version =
+                                            pkg_version.parse().unwrap_or(Version::new(0, 0, 0));
+                                        let new_ver: Version =
+                                            latest.version.parse().unwrap_or(Version::new(0, 0, 0));
 
-                                    if new_ver > current {
-                                        let update_type = if new_ver.major > current.major {
-                                            "major"
-                                        } else if new_ver.minor > current.minor {
-                                            "minor"
-                                        } else {
-                                            "patch"
-                                        };
+                                        if new_ver > current {
+                                            let update_type = if new_ver.major > current.major {
+                                                "major"
+                                            } else if new_ver.minor > current.minor {
+                                                "minor"
+                                            } else {
+                                                "patch"
+                                            };
 
-                                        let result = UpdateCheckResult {
-                                            name: pkg_name.clone(),
-                                            current_version: pkg_version,
-                                            latest_version: latest.version.clone(),
-                                            provider: provider_id.clone(),
-                                            update_type: update_type.into(),
-                                        };
+                                            let result = UpdateCheckResult {
+                                                name: pkg_name.clone(),
+                                                current_version: pkg_version,
+                                                latest_version: latest.version.clone(),
+                                                provider: provider_id.clone(),
+                                                update_type: update_type.into(),
+                                            };
 
-                                        found_updates.fetch_add(1, Ordering::Relaxed);
-                                        updates.lock().await.push(result);
+                                            found_updates.fetch_add(1, Ordering::Relaxed);
+                                            updates.lock().await.push(result);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            error_count.fetch_add(1, Ordering::Relaxed);
-                            errors.lock().await.push(UpdateCheckError {
-                                provider: provider_id.clone(),
-                                package: Some(pkg_name.clone()),
-                                message: e.to_string(),
-                            });
+                            Err(e) => {
+                                error_count.fetch_add(1, Ordering::Relaxed);
+                                errors.lock().await.push(UpdateCheckError {
+                                    provider: provider_id.clone(),
+                                    package: Some(pkg_name.clone()),
+                                    message: e.to_string(),
+                                });
+                            }
                         }
                     }
-                }
 
-                checked.fetch_add(1, Ordering::Relaxed);
-            }
-        })
+                    checked.fetch_add(1, Ordering::Relaxed);
+                }
+            },
+        )
         .await;
 
     let final_updates = Arc::try_unwrap(updates).unwrap().into_inner();
@@ -560,15 +594,18 @@ pub async fn check_updates(
     let total_checked = checked.load(Ordering::Relaxed);
 
     // Phase 4: Done
-    emit_update_check_progress(&app_handle, &UpdateCheckProgress {
-        phase: "done".into(),
-        current: total_checked,
-        total,
-        current_package: None,
-        current_provider: None,
-        found_updates: final_updates.len(),
-        errors: final_errors.len(),
-    });
+    emit_update_check_progress(
+        &app_handle,
+        &UpdateCheckProgress {
+            phase: "done".into(),
+            current: total_checked,
+            total,
+            current_package: None,
+            current_provider: None,
+            found_updates: final_updates.len(),
+            errors: final_errors.len(),
+        },
+    );
 
     Ok(UpdateCheckSummary {
         updates: final_updates,
@@ -675,14 +712,8 @@ pub async fn package_rollback(
 
     match install_result {
         Ok(_) => {
-            let _ = HistoryManager::record_rollback(
-                &name,
-                &to_version,
-                &provider_id,
-                true,
-                None,
-            )
-            .await;
+            let _ =
+                HistoryManager::record_rollback(&name, &to_version, &provider_id, true, None).await;
             Ok(())
         }
         Err(err) => {
@@ -713,13 +744,11 @@ pub struct InstallHistoryEntry {
 }
 
 #[tauri::command]
-pub async fn get_install_history(
-    limit: Option<usize>,
-) -> Result<Vec<InstallHistoryEntry>, String> {
+pub async fn get_install_history(limit: Option<usize>) -> Result<Vec<InstallHistoryEntry>, String> {
     let entries = HistoryManager::get_history(limit)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(entries
         .into_iter()
         .map(|e| InstallHistoryEntry {
@@ -737,13 +766,11 @@ pub async fn get_install_history(
 
 /// Get installation history for a specific package
 #[tauri::command]
-pub async fn get_package_history(
-    name: String,
-) -> Result<Vec<InstallHistoryEntry>, String> {
+pub async fn get_package_history(name: String) -> Result<Vec<InstallHistoryEntry>, String> {
     let entries = HistoryManager::get_package_history(&name)
         .await
         .map_err(|e| e.to_string())?;
-    
+
     Ok(entries
         .into_iter()
         .map(|e| InstallHistoryEntry {

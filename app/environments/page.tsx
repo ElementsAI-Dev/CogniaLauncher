@@ -127,6 +127,8 @@ export default function EnvironmentsPage() {
   const filteredEnvironments = useMemo(() => {
     return environments
       .filter((env) => {
+        // Only show available/detected environments
+        if (!env.available) return false;
         // Search filter
         if (searchQuery) {
           const query = searchQuery.toLowerCase();
@@ -136,9 +138,6 @@ export default function EnvironmentsPage() {
             return false;
           }
         }
-        // Status filter
-        if (statusFilter === 'available' && !env.available) return false;
-        if (statusFilter === 'unavailable' && env.available) return false;
         return true;
       })
       .sort((a, b) => {
@@ -152,7 +151,7 @@ export default function EnvironmentsPage() {
             return a.env_type.localeCompare(b.env_type);
         }
       });
-  }, [environments, searchQuery, statusFilter, sortBy]);
+  }, [environments, searchQuery, sortBy]);
 
   const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
     await installVersion(provider, version, provider);

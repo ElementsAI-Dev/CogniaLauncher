@@ -134,7 +134,10 @@ fn normalize_path(path_str: &str) -> PathBuf {
 const MAX_PATH_LENGTH: usize = 4096;
 
 #[tauri::command]
-pub async fn validate_path(path: String, expect_directory: bool) -> Result<PathValidationResult, String> {
+pub async fn validate_path(
+    path: String,
+    expect_directory: bool,
+) -> Result<PathValidationResult, String> {
     let trimmed = path.trim();
 
     // Empty path is valid — means "use default"
@@ -164,7 +167,10 @@ pub async fn validate_path(path: String, expect_directory: bool) -> Result<PathV
 
     // Length check
     if trimmed.len() > MAX_PATH_LENGTH {
-        errors.push(format!("Path exceeds maximum length of {} characters", MAX_PATH_LENGTH));
+        errors.push(format!(
+            "Path exceeds maximum length of {} characters",
+            MAX_PATH_LENGTH
+        ));
     }
 
     // Suspicious characters
@@ -212,7 +218,10 @@ pub async fn validate_path(path: String, expect_directory: bool) -> Result<PathV
     let parent_writable = parent.as_ref().map_or(false, |p| check_writable(p));
 
     if !exists && !parent_exists {
-        warnings.push("Neither the path nor its parent directory exists. It will need to be created.".to_string());
+        warnings.push(
+            "Neither the path nor its parent directory exists. It will need to be created."
+                .to_string(),
+        );
     } else if !exists && parent_exists && !parent_writable {
         errors.push("Parent directory exists but is not writable".to_string());
     }

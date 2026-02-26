@@ -24,6 +24,11 @@ import {
   HardDrive,
   Server,
   Gauge,
+  Thermometer,
+  Battery,
+  BatteryCharging,
+  Wifi,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes, formatUptime } from "@/lib/utils";
@@ -434,6 +439,193 @@ export function SystemInfoCard({
           </>
         )}
 
+        {/* Temperature Section - only shown if components detected */}
+        {systemInfo?.components && systemInfo.components.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Thermometer className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+                  {t("about.temperature")}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                {systemInfo.components.slice(0, 6).map((comp, idx) => (
+                  <InfoRow
+                    key={idx}
+                    label={comp.label}
+                    value={
+                      comp.temperature != null
+                        ? `${comp.temperature.toFixed(1)}°C${comp.critical != null ? ` / ${comp.critical.toFixed(0)}°C` : ""}`
+                        : undefined
+                    }
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Battery Section - only shown if battery detected */}
+        {systemInfo?.battery && (
+          <>
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 mb-2">
+                {systemInfo.battery.isCharging ? (
+                  <BatteryCharging className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                ) : (
+                  <Battery className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                )}
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+                  {t("about.battery")}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                <div className="space-y-1">
+                  <InfoRow
+                    label={t("about.batteryPercent")}
+                    value={`${systemInfo.battery.percent}%`}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                  {!systemLoading && (
+                    <div className="flex items-center gap-2">
+                      <Progress
+                        value={systemInfo.battery.percent}
+                        className={`h-1.5 flex-1 ${
+                          systemInfo.battery.percent <= 20
+                            ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                            : systemInfo.battery.percent <= 50
+                              ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                              : "[&>[data-slot=progress-indicator]]:bg-green-500"
+                        }`}
+                        aria-label={`${t("about.battery")} ${systemInfo.battery.percent}%`}
+                      />
+                      <span className="text-[11px] text-muted-foreground w-8 text-right">
+                        {systemInfo.battery.percent}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <InfoRow
+                  label={t("about.powerSource")}
+                  value={
+                    systemInfo.battery.isCharging
+                      ? t("about.batteryCharging")
+                      : systemInfo.battery.isPluggedIn
+                        ? t("about.batteryPluggedIn")
+                        : t("about.batteryDischarging")
+                  }
+                  isLoading={systemLoading}
+                  unknownText={unknownText}
+                />
+                {systemInfo.battery.healthPercent != null && (
+                  <InfoRow
+                    label={t("about.batteryHealth")}
+                    value={`${systemInfo.battery.healthPercent}%`}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                )}
+                {systemInfo.battery.technology && (
+                  <InfoRow
+                    label={t("about.batteryTechnology")}
+                    value={systemInfo.battery.technology}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                )}
+                {systemInfo.battery.cycleCount != null && (
+                  <InfoRow
+                    label={t("about.cycleCount")}
+                    value={`${systemInfo.battery.cycleCount}`}
+                    isLoading={systemLoading}
+                    unknownText={unknownText}
+                  />
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Storage Section - only shown if disks detected */}
+        {systemInfo?.disks && systemInfo.disks.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Database className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+                  {t("about.storage")}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                {systemInfo.disks.slice(0, 4).map((disk, idx) => (
+                  <div key={idx} className="space-y-1">
+                    <InfoRow
+                      label={disk.mountPoint || disk.name}
+                      value={`${disk.usedSpaceHuman} / ${disk.totalSpaceHuman} (${disk.diskType})`}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                    {!systemLoading && (
+                      <div className="flex items-center gap-2">
+                        <Progress
+                          value={disk.usagePercent}
+                          className={`h-1.5 flex-1 ${
+                            disk.usagePercent > 90
+                              ? "[&>[data-slot=progress-indicator]]:bg-red-500"
+                              : disk.usagePercent > 70
+                                ? "[&>[data-slot=progress-indicator]]:bg-yellow-500"
+                                : "[&>[data-slot=progress-indicator]]:bg-blue-500"
+                          }`}
+                          aria-label={`${disk.mountPoint} ${Math.round(disk.usagePercent)}%`}
+                        />
+                        <span className="text-[11px] text-muted-foreground w-8 text-right">
+                          {Math.round(disk.usagePercent)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Network Section - only shown if interfaces detected */}
+        {systemInfo?.networks && systemInfo.networks.length > 0 && (
+          <>
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Wifi className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-medium">
+                  {t("about.networkInfo")}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                {systemInfo.networks
+                  .filter((n) => n.ipAddresses.length > 0 && n.macAddress !== "00:00:00:00:00:00")
+                  .slice(0, 4)
+                  .map((net, idx) => (
+                    <InfoRow
+                      key={idx}
+                      label={net.name}
+                      value={`${net.ipAddresses[0]}${net.mtu ? ` (MTU: ${net.mtu})` : ""}`}
+                      isLoading={systemLoading}
+                      unknownText={unknownText}
+                    />
+                  ))}
+              </div>
+            </div>
+          </>
+        )}
+
         <Separator />
 
         {/* Runtime Section */}
@@ -478,6 +670,30 @@ export function SystemInfoCard({
               isLoading={systemLoading}
               unknownText={unknownText}
             />
+            {systemInfo?.bootTime ? (
+              <InfoRow
+                label={t("about.bootTime")}
+                value={new Date(systemInfo.bootTime * 1000).toLocaleString()}
+                isLoading={systemLoading}
+                unknownText={unknownText}
+              />
+            ) : null}
+            {systemInfo?.loadAverage && systemInfo.loadAverage.some((v) => v > 0) && (
+              <InfoRow
+                label={t("about.loadAverage")}
+                value={systemInfo.loadAverage.map((v) => v.toFixed(2)).join(" / ")}
+                isLoading={systemLoading}
+                unknownText={unknownText}
+              />
+            )}
+            {systemInfo?.globalCpuUsage != null && systemInfo.globalCpuUsage > 0 && (
+              <InfoRow
+                label={t("about.cpuUsage")}
+                value={`${systemInfo.globalCpuUsage.toFixed(1)}%`}
+                isLoading={systemLoading}
+                unknownText={unknownText}
+              />
+            )}
           </div>
         </div>
       </CardContent>

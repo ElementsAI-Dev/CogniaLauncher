@@ -72,7 +72,12 @@ impl From<GitLabRelease> for GitLabReleaseInfo {
             created_at: r.created_at,
             released_at: r.released_at,
             upcoming_release: r.upcoming_release.unwrap_or(false),
-            assets: r.assets.links.into_iter().map(GitLabAssetInfo::from).collect(),
+            assets: r
+                .assets
+                .links
+                .into_iter()
+                .map(GitLabAssetInfo::from)
+                .collect(),
             sources: r
                 .assets
                 .sources
@@ -327,7 +332,9 @@ pub async fn gitlab_download_source(
 
 #[tauri::command]
 pub async fn gitlab_set_token(token: String) -> Result<(), String> {
-    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let mut settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     settings
         .set_value("providers.gitlab.token", &token)
         .map_err(|e| e.to_string())?;
@@ -336,14 +343,19 @@ pub async fn gitlab_set_token(token: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn gitlab_get_token() -> Result<Option<String>, String> {
-    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
-    Ok(settings.get_value("providers.gitlab.token")
+    let settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(settings
+        .get_value("providers.gitlab.token")
         .or_else(|| std::env::var("GITLAB_TOKEN").ok()))
 }
 
 #[tauri::command]
 pub async fn gitlab_clear_token() -> Result<(), String> {
-    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let mut settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     settings
         .set_value("providers.gitlab.token", "")
         .map_err(|e| e.to_string())?;
@@ -363,7 +375,9 @@ pub async fn gitlab_validate_token(
 
 #[tauri::command]
 pub async fn gitlab_set_instance_url(url: String) -> Result<(), String> {
-    let mut settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let mut settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     settings
         .set_value("providers.gitlab.url", &url)
         .map_err(|e| e.to_string())?;
@@ -372,6 +386,8 @@ pub async fn gitlab_set_instance_url(url: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn gitlab_get_instance_url() -> Result<Option<String>, String> {
-    let settings = crate::config::Settings::load().await.map_err(|e| e.to_string())?;
+    let settings = crate::config::Settings::load()
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(settings.get_value("providers.gitlab.url"))
 }

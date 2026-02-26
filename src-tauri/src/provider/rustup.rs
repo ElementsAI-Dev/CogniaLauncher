@@ -57,7 +57,10 @@ impl RustupProvider {
     }
 
     /// List installed components for a toolchain
-    pub async fn list_components(&self, toolchain: Option<&str>) -> CogniaResult<Vec<RustComponent>> {
+    pub async fn list_components(
+        &self,
+        toolchain: Option<&str>,
+    ) -> CogniaResult<Vec<RustComponent>> {
         let mut args = vec!["component", "list"];
         if let Some(tc) = toolchain {
             args.push("--toolchain");
@@ -78,7 +81,11 @@ impl RustupProvider {
     }
 
     /// Add a component to the current or specified toolchain
-    pub async fn add_component(&self, component: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+    pub async fn add_component(
+        &self,
+        component: &str,
+        toolchain: Option<&str>,
+    ) -> CogniaResult<()> {
         let mut args = vec!["component", "add", component];
         if let Some(tc) = toolchain {
             args.push("--toolchain");
@@ -89,7 +96,11 @@ impl RustupProvider {
     }
 
     /// Remove a component from the current or specified toolchain
-    pub async fn remove_component(&self, component: &str, toolchain: Option<&str>) -> CogniaResult<()> {
+    pub async fn remove_component(
+        &self,
+        component: &str,
+        toolchain: Option<&str>,
+    ) -> CogniaResult<()> {
         let mut args = vec!["component", "remove", component];
         if let Some(tc) = toolchain {
             args.push("--toolchain");
@@ -115,11 +126,7 @@ impl RustupProvider {
                 let line = line.trim();
                 let installed = line.contains("(installed)");
                 let default = line.contains("(default)");
-                let name = line
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or(line)
-                    .to_string();
+                let name = line.split_whitespace().next().unwrap_or(line).to_string();
 
                 RustTarget {
                     name,
@@ -173,9 +180,12 @@ impl RustupProvider {
 
             if line.starts_with("Default host:") {
                 // skip
-            } else if line.starts_with("installed toolchains") || line.starts_with("Installed toolchains") {
+            } else if line.starts_with("installed toolchains")
+                || line.starts_with("Installed toolchains")
+            {
                 section = "toolchains";
-            } else if line.starts_with("installed targets") || line.starts_with("Installed targets") {
+            } else if line.starts_with("installed targets") || line.starts_with("Installed targets")
+            {
                 section = "targets";
             } else if line.starts_with("active toolchain") || line.starts_with("Active toolchain") {
                 section = "active";
@@ -185,7 +195,11 @@ impl RustupProvider {
                 match section {
                     "toolchains" => {
                         let is_default = line.contains("(default)") || line.contains("(active)");
-                        let tc = line.replace("(default)", "").replace("(active)", "").trim().to_string();
+                        let tc = line
+                            .replace("(default)", "")
+                            .replace("(active)", "")
+                            .trim()
+                            .to_string();
                         if !tc.is_empty() {
                             installed_toolchains.push(tc.clone());
                             if is_default {
@@ -200,7 +214,8 @@ impl RustupProvider {
                     }
                     "active" => {
                         if active_toolchain.is_none() && !line.starts_with("rustc") {
-                            active_toolchain = Some(line.split_whitespace().next().unwrap_or(line).to_string());
+                            active_toolchain =
+                                Some(line.split_whitespace().next().unwrap_or(line).to_string());
                         }
                         if line.starts_with("rustc") {
                             // Extract version: "rustc 1.75.0 (82e1608df 2023-12-21)"
@@ -609,13 +624,15 @@ impl EnvironmentProvider for RustupProvider {
                             continue;
                         }
                         // Look for channel in [toolchain] section or at top level
-                        if (in_toolchain_section || !content.contains('[')) && line.starts_with("channel") {
+                        if (in_toolchain_section || !content.contains('['))
+                            && line.starts_with("channel")
+                        {
                             if let Some(value) = line.split('=').nth(1) {
                                 let version = value
                                     .trim()
                                     .trim_matches('"')
                                     .trim_matches('\'')
-                                    .split('#')  // Remove inline comments
+                                    .split('#') // Remove inline comments
                                     .next()
                                     .unwrap_or("")
                                     .trim();
@@ -855,10 +872,7 @@ pub(crate) fn parse_cargo_toml_rust_version(content: &str) -> Option<String> {
                     .trim_matches('\'')
                     .trim();
                 if !version.is_empty()
-                    && version
-                        .chars()
-                        .next()
-                        .map_or(false, |c| c.is_ascii_digit())
+                    && version.chars().next().map_or(false, |c| c.is_ascii_digit())
                 {
                     return Some(version.to_string());
                 }
@@ -930,11 +944,7 @@ pub(crate) fn parse_component_list_output(output: &str) -> Vec<(String, bool, bo
             let line = line.trim();
             let installed = line.contains("(installed)");
             let default = line.contains("(default)");
-            let name = line
-                .split_whitespace()
-                .next()
-                .unwrap_or(line)
-                .to_string();
+            let name = line.split_whitespace().next().unwrap_or(line).to_string();
             (name, installed, default)
         })
         .collect()
@@ -1039,7 +1049,10 @@ rustfmt-x86_64-unknown-linux-gnu (installed)";
         assert!(!components[0].2); // not default
 
         // llvm-tools not installed
-        assert_eq!(components[2].0, "llvm-tools-preview-x86_64-unknown-linux-gnu");
+        assert_eq!(
+            components[2].0,
+            "llvm-tools-preview-x86_64-unknown-linux-gnu"
+        );
         assert!(!components[2].1);
 
         // rustc default

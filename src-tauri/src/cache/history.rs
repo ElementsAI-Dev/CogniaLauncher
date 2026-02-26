@@ -65,7 +65,7 @@ impl CleanupHistory {
     /// Open or create cleanup history for the given cache directory
     pub async fn open(cache_dir: &Path) -> CogniaResult<Self> {
         let history_path = cache_dir.join("cleanup-history.json");
-        
+
         let index = if fs::exists(&history_path).await {
             let content = fs::read_file_string(&history_path).await?;
             serde_json::from_str(&content).unwrap_or_else(|_| HistoryIndex {
@@ -78,8 +78,11 @@ impl CleanupHistory {
                 records: Vec::new(),
             }
         };
-        
-        Ok(Self { history_path, index })
+
+        Ok(Self {
+            history_path,
+            index,
+        })
     }
 
     /// Add a new cleanup record to history
@@ -89,15 +92,15 @@ impl CleanupHistory {
             record.files.truncate(MAX_FILES_PER_RECORD);
             record.files_truncated = true;
         }
-        
+
         // Insert at the beginning (most recent first)
         self.index.records.insert(0, record);
-        
+
         // Trim old records
         if self.index.records.len() > MAX_HISTORY_RECORDS {
             self.index.records.truncate(MAX_HISTORY_RECORDS);
         }
-        
+
         self.save().await
     }
 
@@ -123,7 +126,7 @@ impl CleanupHistory {
         let total_files: usize = self.index.records.iter().map(|r| r.file_count).sum();
         let trash_count = self.index.records.iter().filter(|r| r.use_trash).count();
         let permanent_count = self.index.records.len() - trash_count;
-        
+
         CleanupSummary {
             total_cleanups: self.index.records.len(),
             total_freed_bytes: total_freed,
@@ -211,7 +214,6 @@ impl CleanupRecordBuilder {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

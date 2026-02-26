@@ -8,10 +8,10 @@ use crate::platform::{
 };
 use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
+use reqwest::Client;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
-use reqwest::Client;
 
 /// Bun - Fast JavaScript runtime and package manager
 ///
@@ -94,9 +94,9 @@ impl BunProvider {
         } else {
             vec!["pm", "ls"]
         };
-        
+
         let output = self.run_bun_raw(&args).await?;
-        
+
         // Parse bun pm ls output: package@version format
         for line in output.lines() {
             let line = line.trim();
@@ -112,7 +112,7 @@ impl BunProvider {
                 }
             }
         }
-        
+
         Err(CogniaError::Provider(format!("Package {} not found", name)))
     }
 }
@@ -231,7 +231,8 @@ impl Provider for BunProvider {
         };
 
         // Use provider's configured registry or default
-        let registry_url = self.registry_url
+        let registry_url = self
+            .registry_url
             .as_deref()
             .unwrap_or(super::api::DEFAULT_NPM_REGISTRY);
         let url = format!("{}/{}", registry_url, pkg);
@@ -398,7 +399,10 @@ impl Provider for BunProvider {
         let targets: Vec<&InstalledPackage> = if packages.is_empty() {
             installed.iter().collect()
         } else {
-            installed.iter().filter(|p| packages.contains(&p.name)).collect()
+            installed
+                .iter()
+                .filter(|p| packages.contains(&p.name))
+                .collect()
         };
 
         for pkg in targets {

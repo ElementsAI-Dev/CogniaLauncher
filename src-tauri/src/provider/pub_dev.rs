@@ -62,10 +62,7 @@ impl PubProvider {
             .ok_or_else(|| CogniaError::Provider("Could not parse Dart version".into()))
     }
 
-    async fn fetch_package_info_json(
-        &self,
-        name: &str,
-    ) -> CogniaResult<serde_json::Value> {
+    async fn fetch_package_info_json(&self, name: &str) -> CogniaResult<serde_json::Value> {
         let url = format!("https://pub.dev/api/packages/{}", name);
         let response = self
             .client
@@ -202,23 +199,23 @@ impl Provider for PubProvider {
             }
 
             // Fetch individual package info for description and version
-            let (description, version) =
-                if let Ok(info) = self.fetch_package_info_json(&name).await {
-                    let desc = info
-                        .get("latest")
-                        .and_then(|l| l.get("pubspec"))
-                        .and_then(|p| p.get("description"))
-                        .and_then(|d| d.as_str())
-                        .map(|s| s.to_string());
-                    let ver = info
-                        .get("latest")
-                        .and_then(|l| l.get("version"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    (desc, ver)
-                } else {
-                    (None, None)
-                };
+            let (description, version) = if let Ok(info) = self.fetch_package_info_json(&name).await
+            {
+                let desc = info
+                    .get("latest")
+                    .and_then(|l| l.get("pubspec"))
+                    .and_then(|p| p.get("description"))
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string());
+                let ver = info
+                    .get("latest")
+                    .and_then(|l| l.get("version"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                (desc, ver)
+            } else {
+                (None, None)
+            };
 
             results.push(PackageSummary {
                 name,
@@ -407,7 +404,10 @@ impl SystemPackageProvider for PubProvider {
     }
 
     fn get_install_instructions(&self) -> Option<String> {
-        Some("Install Flutter SDK (includes Dart): https://flutter.dev/docs/get-started/install".into())
+        Some(
+            "Install Flutter SDK (includes Dart): https://flutter.dev/docs/get-started/install"
+                .into(),
+        )
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
@@ -423,7 +423,9 @@ mod tests {
     #[test]
     fn test_parse_dart_version() {
         assert_eq!(
-            parse_dart_version("Dart SDK version: 3.3.0 (stable) (Thu Feb 15 2024) on \"windows_x64\""),
+            parse_dart_version(
+                "Dart SDK version: 3.3.0 (stable) (Thu Feb 15 2024) on \"windows_x64\""
+            ),
             Some("3.3.0".to_string())
         );
     }
@@ -470,7 +472,9 @@ mod tests {
     #[test]
     fn test_parse_dart_version_dev_channel() {
         assert_eq!(
-            parse_dart_version("Dart SDK version: 3.4.0-282.1.beta (beta) (Thu Mar 14 2024) on \"linux_x64\""),
+            parse_dart_version(
+                "Dart SDK version: 3.4.0-282.1.beta (beta) (Thu Mar 14 2024) on \"linux_x64\""
+            ),
             Some("3.4.0".to_string())
         );
     }
@@ -487,7 +491,8 @@ mod tests {
     #[test]
     fn test_parse_dart_version_multiline() {
         // In some cases dart --version may emit extra lines
-        let output = "Some preamble\nDart SDK version: 3.3.0 (stable) (Thu Feb 15 2024)\nSome footer";
+        let output =
+            "Some preamble\nDart SDK version: 3.3.0 (stable) (Thu Feb 15 2024)\nSome footer";
         assert_eq!(parse_dart_version(output), Some("3.3.0".to_string()));
     }
 
@@ -557,7 +562,11 @@ mod tests {
         let instructions = provider.get_install_instructions();
         assert!(instructions.is_some());
         let text = instructions.unwrap();
-        assert!(text.contains("flutter.dev"), "Expected flutter.dev in instructions: {}", text);
+        assert!(
+            text.contains("flutter.dev"),
+            "Expected flutter.dev in instructions: {}",
+            text
+        );
     }
 
     #[test]

@@ -301,8 +301,8 @@ impl EnvironmentProvider for AsdfProvider {
                         continue;
                     }
 
-                    let is_active = line.trim().starts_with('*')
-                        || current.as_deref() == Some(version_str);
+                    let is_active =
+                        line.trim().starts_with('*') || current.as_deref() == Some(version_str);
 
                     versions.push(InstalledVersion {
                         version: format!("{}@{}", plugin, version_str),

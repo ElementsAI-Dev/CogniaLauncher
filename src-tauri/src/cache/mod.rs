@@ -13,12 +13,12 @@ pub use db::{CacheDb, CacheEntry, CacheEntryType, CacheIndex, CacheStats};
 pub use download::DownloadCache;
 pub use download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
 pub use enhanced::DownloadResumer;
-pub use history::{CleanedFileInfo, CleanupHistory, CleanupRecord, CleanupRecordBuilder, CleanupSummary};
-pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
-pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};
 pub use external::{
     CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo, ExternalCacheProvider,
 };
-pub use migration::{
-    MigrationMode, MigrationResult, MigrationValidation,
+pub use history::{
+    CleanedFileInfo, CleanupHistory, CleanupRecord, CleanupRecordBuilder, CleanupSummary,
 };
+pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
+pub use migration::{MigrationMode, MigrationResult, MigrationValidation};
+pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};
