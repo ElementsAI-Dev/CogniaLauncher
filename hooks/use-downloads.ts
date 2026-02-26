@@ -301,6 +301,37 @@ export function useDownloads() {
     await tauri.downloadRevealFile(path);
   }, []);
 
+  // Set priority for a download task
+  const setPriority = useCallback(
+    async (taskId: string, priority: number) => {
+      if (!tauri.isTauri()) return;
+      await tauri.downloadSetPriority(taskId, priority);
+      await refreshTasks();
+    },
+    [refreshTasks]
+  );
+
+  // Force-retry a single terminal task (failed/cancelled/completed)
+  const retryTask = useCallback(
+    async (taskId: string) => {
+      if (!tauri.isTauri()) return;
+      await tauri.downloadRetry(taskId);
+      await refreshTasks();
+    },
+    [refreshTasks]
+  );
+
+  // Calculate SHA256 checksum of a file
+  const calculateChecksum = useCallback(
+    async (path: string): Promise<string> => {
+      if (!tauri.isTauri()) {
+        throw new Error('Tauri not available');
+      }
+      return await tauri.downloadCalculateChecksum(path);
+    },
+    []
+  );
+
   // Batch pause selected downloads
   const batchPause = useCallback(
     async (taskIds?: string[]): Promise<number> => {
@@ -396,6 +427,17 @@ export function useDownloads() {
     []
   );
 
+  // Extract archive
+  const extractArchive = useCallback(
+    async (archivePath: string, destPath: string): Promise<string[]> => {
+      if (!tauri.isTauri()) {
+        throw new Error('Tauri not available');
+      }
+      return await tauri.downloadExtract(archivePath, destPath);
+    },
+    []
+  );
+
   return {
     // State
     tasks: store.tasks,
@@ -437,6 +479,11 @@ export function useDownloads() {
     verifyFile,
     openFile,
     revealFile,
+    calculateChecksum,
+
+    // Actions - Task
+    retryTask,
+    setPriority,
 
     // Actions - Batch
     batchPause,
@@ -453,6 +500,9 @@ export function useDownloads() {
     // Actions - Disk
     getDiskSpace,
     checkDiskSpace,
+
+    // Actions - Extract
+    extractArchive,
 
     // Actions - Refresh
     refreshTasks,

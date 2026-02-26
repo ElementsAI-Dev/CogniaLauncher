@@ -6,7 +6,7 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{disk::format_size, fs, process};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Supported external cache providers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -370,7 +370,7 @@ impl ExternalCacheProvider {
     }
 
     /// Parse provider from string
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "npm" => Some(Self::Npm),
             "pnpm" => Some(Self::Pnpm),
@@ -1136,18 +1136,18 @@ pub async fn is_provider_available(provider: ExternalCacheProvider) -> bool {
 }
 
 /// Calculate directory size recursively
-pub async fn calculate_dir_size(path: &PathBuf) -> u64 {
+pub async fn calculate_dir_size(path: &Path) -> u64 {
     if !path.exists() {
         return 0;
     }
 
-    let path = path.clone();
+    let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || calculate_dir_size_sync(&path))
         .await
         .unwrap_or(0)
 }
 
-fn calculate_dir_size_sync(path: &PathBuf) -> u64 {
+fn calculate_dir_size_sync(path: &Path) -> u64 {
     let mut total_size = 0u64;
 
     if let Ok(entries) = std::fs::read_dir(path) {
@@ -1167,7 +1167,7 @@ fn calculate_dir_size_sync(path: &PathBuf) -> u64 {
 }
 
 /// Direct delete a cache directory (with optional move-to-trash support)
-async fn direct_delete_cache(path: &PathBuf, use_trash: bool) -> Result<(), CogniaError> {
+async fn direct_delete_cache(path: &Path, use_trash: bool) -> Result<(), CogniaError> {
     if !path.exists() {
         return Ok(());
     }
@@ -1186,12 +1186,12 @@ async fn direct_delete_cache(path: &PathBuf, use_trash: bool) -> Result<(), Cogn
 /// Used for system caches (e.g. %TEMP%, ~/Library/Caches, ~/.cache) where the
 /// parent directory must continue to exist.
 /// Silently skips entries that are locked or in-use.
-async fn clean_cache_contents(path: &PathBuf, use_trash: bool) -> Result<(), CogniaError> {
+async fn clean_cache_contents(path: &Path, use_trash: bool) -> Result<(), CogniaError> {
     if !path.exists() {
         return Ok(());
     }
 
-    let path = path.clone();
+    let path = path.to_path_buf();
     let entries: Vec<PathBuf> = tokio::task::spawn_blocking(move || {
         let mut items = Vec::new();
         if let Ok(read_dir) = std::fs::read_dir(&path) {
@@ -1227,7 +1227,7 @@ async fn clean_cache_contents(path: &PathBuf, use_trash: bool) -> Result<(), Cog
 }
 
 /// Public wrapper for clean_cache_contents, used by force-clean commands
-pub async fn clean_cache_contents_public(path: &PathBuf, use_trash: bool) -> CogniaResult<()> {
+pub async fn clean_cache_contents_public(path: &Path, use_trash: bool) -> CogniaResult<()> {
     clean_cache_contents(path, use_trash).await
 }
 
@@ -1280,7 +1280,7 @@ pub async fn clean_cache(
     provider_id: &str,
     use_trash: bool,
 ) -> CogniaResult<ExternalCacheCleanResult> {
-    let provider = ExternalCacheProvider::from_str(provider_id)
+    let provider = ExternalCacheProvider::parse_str(provider_id)
         .ok_or_else(|| CogniaError::Provider(format!("Unknown cache provider: {}", provider_id)))?;
 
     let cache_path = provider.cache_path();
@@ -1430,35 +1430,35 @@ mod tests {
     #[test]
     fn test_devtools_provider_from_str() {
         assert_eq!(
-            ExternalCacheProvider::from_str("docker"),
+            ExternalCacheProvider::parse_str("docker"),
             Some(ExternalCacheProvider::Docker)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("flutter"),
+            ExternalCacheProvider::parse_str("flutter"),
             Some(ExternalCacheProvider::Flutter)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("dart"),
+            ExternalCacheProvider::parse_str("dart"),
             Some(ExternalCacheProvider::Flutter)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("cypress"),
+            ExternalCacheProvider::parse_str("cypress"),
             Some(ExternalCacheProvider::Cypress)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("electron"),
+            ExternalCacheProvider::parse_str("electron"),
             Some(ExternalCacheProvider::Electron)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("vcpkg"),
+            ExternalCacheProvider::parse_str("vcpkg"),
             Some(ExternalCacheProvider::Vcpkg)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("sbt"),
+            ExternalCacheProvider::parse_str("sbt"),
             Some(ExternalCacheProvider::Sbt)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("ivy"),
+            ExternalCacheProvider::parse_str("ivy"),
             Some(ExternalCacheProvider::Sbt)
         );
     }
@@ -1495,36 +1495,36 @@ mod tests {
     #[test]
     fn test_provider_from_str() {
         assert_eq!(
-            ExternalCacheProvider::from_str("npm"),
+            ExternalCacheProvider::parse_str("npm"),
             Some(ExternalCacheProvider::Npm)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("NPM"),
+            ExternalCacheProvider::parse_str("NPM"),
             Some(ExternalCacheProvider::Npm)
         );
-        assert_eq!(ExternalCacheProvider::from_str("unknown"), None);
+        assert_eq!(ExternalCacheProvider::parse_str("unknown"), None);
     }
 
     #[test]
     fn test_extended_provider_from_str() {
         assert_eq!(
-            ExternalCacheProvider::from_str("maven"),
+            ExternalCacheProvider::parse_str("maven"),
             Some(ExternalCacheProvider::Maven)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("mvn"),
+            ExternalCacheProvider::parse_str("mvn"),
             Some(ExternalCacheProvider::Maven)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("gem"),
+            ExternalCacheProvider::parse_str("gem"),
             Some(ExternalCacheProvider::Gem)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("rubygems"),
+            ExternalCacheProvider::parse_str("rubygems"),
             Some(ExternalCacheProvider::Gem)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("rustup"),
+            ExternalCacheProvider::parse_str("rustup"),
             Some(ExternalCacheProvider::Rustup)
         );
     }
@@ -1532,35 +1532,35 @@ mod tests {
     #[test]
     fn test_new_provider_from_str() {
         assert_eq!(
-            ExternalCacheProvider::from_str("composer"),
+            ExternalCacheProvider::parse_str("composer"),
             Some(ExternalCacheProvider::Composer)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("poetry"),
+            ExternalCacheProvider::parse_str("poetry"),
             Some(ExternalCacheProvider::Poetry)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("conda"),
+            ExternalCacheProvider::parse_str("conda"),
             Some(ExternalCacheProvider::Conda)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("miniconda"),
+            ExternalCacheProvider::parse_str("miniconda"),
             Some(ExternalCacheProvider::Conda)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("anaconda"),
+            ExternalCacheProvider::parse_str("anaconda"),
             Some(ExternalCacheProvider::Conda)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("deno"),
+            ExternalCacheProvider::parse_str("deno"),
             Some(ExternalCacheProvider::Deno)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("bun"),
+            ExternalCacheProvider::parse_str("bun"),
             Some(ExternalCacheProvider::Bun)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("gradle"),
+            ExternalCacheProvider::parse_str("gradle"),
             Some(ExternalCacheProvider::Gradle)
         );
     }
@@ -1569,15 +1569,15 @@ mod tests {
     #[test]
     fn test_windows_provider_from_str() {
         assert_eq!(
-            ExternalCacheProvider::from_str("scoop"),
+            ExternalCacheProvider::parse_str("scoop"),
             Some(ExternalCacheProvider::Scoop)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("chocolatey"),
+            ExternalCacheProvider::parse_str("chocolatey"),
             Some(ExternalCacheProvider::Chocolatey)
         );
         assert_eq!(
-            ExternalCacheProvider::from_str("choco"),
+            ExternalCacheProvider::parse_str("choco"),
             Some(ExternalCacheProvider::Chocolatey)
         );
     }

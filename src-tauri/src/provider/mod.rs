@@ -1,3 +1,4 @@
+pub mod adoptium;
 pub mod api;
 pub mod apk;
 pub mod apt;

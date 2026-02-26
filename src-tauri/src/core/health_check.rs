@@ -1,6 +1,6 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::provider::{EnvironmentProvider, Provider, ProviderRegistry};
-use reqwest::Client;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -482,13 +482,9 @@ impl HealthCheckManager {
             }
         };
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
+        let client = crate::platform::proxy::get_shared_client();
 
-        match client.get(url).send().await {
+        match client.get(url).timeout(Duration::from_secs(10)).send().await {
             Ok(resp) if resp.status().is_success() => {
                 // OK
             }
@@ -549,11 +545,16 @@ impl HealthCheckManager {
             "java" => "sdkman".to_string(),
             "kotlin" => "sdkman-kotlin".to_string(),
             "scala" => "sdkman-scala".to_string(),
+            "groovy" => "sdkman-groovy".to_string(),
+            "gradle" => "sdkman-gradle".to_string(),
+            "maven" => "sdkman-maven".to_string(),
             "php" => "phpbrew".to_string(),
             "dotnet" => "dotnet".to_string(),
             "zig" => "zig".to_string(),
             "dart" => "fvm".to_string(),
             "lua" => "system-lua".to_string(),
+            "c" => "system-c".to_string(),
+            "cpp" => "system-cpp".to_string(),
             _ => env_type.to_string(),
         }
     }
@@ -815,10 +816,16 @@ impl HealthCheckManager {
             "sdkman" => "java".to_string(),
             "sdkman-kotlin" => "kotlin".to_string(),
             "sdkman-scala" => "scala".to_string(),
+            "sdkman-groovy" => "groovy".to_string(),
+            "sdkman-gradle" => "gradle".to_string(),
+            "sdkman-maven" => "maven".to_string(),
+            "adoptium" => "java".to_string(),
             "phpbrew" => "php".to_string(),
             "dotnet" => "dotnet".to_string(),
             "zig" => "zig".to_string(),
             "fvm" => "dart".to_string(),
+            "system-c" => "c".to_string(),
+            "system-cpp" => "cpp".to_string(),
             _ => provider_id.to_string(),
         }
     }
@@ -878,7 +885,8 @@ impl HealthCheckManager {
                 }
             }
             "rbenv" => "git clone https://github.com/rbenv/rbenv.git ~/.rbenv".to_string(),
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle" | "sdkman-maven" => "curl -s \"https://get.sdkman.io\" | bash".to_string(),
+            "adoptium" => "Managed by CogniaLauncher — no external tool required".to_string(),
             "phpbrew" => "curl -L -O https://github.com/phpbrew/phpbrew/releases/latest/download/phpbrew.phar && chmod +x phpbrew.phar && sudo mv phpbrew.phar /usr/local/bin/phpbrew".to_string(),
             "dotnet" => {
                 if cfg!(windows) {
@@ -907,6 +915,15 @@ impl HealthCheckManager {
                     "sudo apt install lua5.4 || sudo dnf install lua".to_string()
                 }
             }
+            "system-c" | "system-cpp" => {
+                if cfg!(windows) {
+                    "winget install Microsoft.VisualStudio.2022.BuildTools --override \"--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64\"".to_string()
+                } else if cfg!(target_os = "macos") {
+                    "xcode-select --install".to_string()
+                } else {
+                    "sudo apt install build-essential || sudo dnf install gcc gcc-c++".to_string()
+                }
+            }
             _ => format!("# Install {} manually", provider_id),
         }
     }
@@ -928,14 +945,16 @@ impl HealthCheckManager {
             "goenv" => vec!["goenv".to_string(), ".goenv".to_string()],
             "rustup" => vec![".cargo".to_string(), ".rustup".to_string()],
             "rbenv" => vec!["rbenv".to_string(), ".rbenv".to_string()],
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => {
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle" | "sdkman-maven" => {
                 vec!["sdkman".to_string(), ".sdkman".to_string()]
             }
+            "adoptium" => vec![".CogniaLauncher".to_string(), "jdks".to_string()],
             "phpbrew" => vec!["phpbrew".to_string(), ".phpbrew".to_string()],
             "dotnet" => vec!["dotnet".to_string()],
             "zig" => vec![".zig".to_string()],
             "fvm" => vec![".fvm".to_string(), "fvm".to_string()],
             "system-lua" => vec!["lua".to_string()],
+            "system-c" | "system-cpp" => vec![],
             _ => vec![],
         }
     }
@@ -956,13 +975,15 @@ impl HealthCheckManager {
             "goenv" => "eval \"$(goenv init -)\"".to_string(),
             "rustup" => "source $HOME/.cargo/env".to_string(),
             "rbenv" => "eval \"$(rbenv init -)\"".to_string(),
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" => {
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle" | "sdkman-maven" => {
                 "source \"$HOME/.sdkman/bin/sdkman-init.sh\"".to_string()
             }
+            "adoptium" => "export JAVA_HOME=\"$HOME/.CogniaLauncher/jdks/current\" && export PATH=\"$JAVA_HOME/bin:$PATH\"".to_string(),
             "phpbrew" => "source ~/.phpbrew/bashrc".to_string(),
             "zig" => "export PATH=\"$HOME/.zig/current:$PATH\"".to_string(),
             "fvm" => "export PATH=\"$HOME/fvm/default/bin:$PATH\"".to_string(),
             "system-lua" => "eval $(luarocks path)".to_string(),
+            "system-c" | "system-cpp" => "# System compilers are available in PATH by default".to_string(),
             _ => format!("# Configure {} in your shell", provider_id),
         }
     }
@@ -1181,5 +1202,136 @@ mod tests {
         ];
 
         assert_eq!(categories.len(), 9);
+    }
+
+    fn make_test_manager() -> HealthCheckManager {
+        let registry = ProviderRegistry::new();
+        HealthCheckManager::new(Arc::new(RwLock::new(registry)))
+    }
+
+    #[test]
+    fn test_env_type_to_provider_c_cpp() {
+        let mgr = make_test_manager();
+        assert_eq!(mgr.env_type_to_provider("c"), "system-c");
+        assert_eq!(mgr.env_type_to_provider("cpp"), "system-cpp");
+    }
+
+    #[test]
+    fn test_provider_to_env_type_c_cpp() {
+        let mgr = make_test_manager();
+        assert_eq!(mgr.provider_to_env_type("system-c"), "c");
+        assert_eq!(mgr.provider_to_env_type("system-cpp"), "cpp");
+    }
+
+    #[test]
+    fn test_get_install_command_c_cpp() {
+        let mgr = make_test_manager();
+        let cmd_c = mgr.get_install_command("system-c");
+        let cmd_cpp = mgr.get_install_command("system-cpp");
+        // Both should return the same platform-specific install command
+        assert_eq!(cmd_c, cmd_cpp);
+        assert!(!cmd_c.is_empty());
+    }
+
+    #[test]
+    fn test_get_expected_path_patterns_c_cpp() {
+        let mgr = make_test_manager();
+        assert!(mgr.get_expected_path_patterns("system-c").is_empty());
+        assert!(mgr.get_expected_path_patterns("system-cpp").is_empty());
+    }
+
+    #[test]
+    fn test_get_shell_setup_command_c_cpp() {
+        let mgr = make_test_manager();
+        let cmd_c = mgr.get_shell_setup_command("system-c");
+        let cmd_cpp = mgr.get_shell_setup_command("system-cpp");
+        assert!(cmd_c.contains("System compilers"));
+        assert!(cmd_cpp.contains("System compilers"));
+    }
+
+    // ── Adoptium / SDKMAN-Gradle / SDKMAN-Maven / SDKMAN-Groovy ──
+
+    #[test]
+    fn test_env_type_to_provider_jvm_tools() {
+        let mgr = make_test_manager();
+        assert_eq!(mgr.env_type_to_provider("groovy"), "sdkman-groovy");
+        assert_eq!(mgr.env_type_to_provider("gradle"), "sdkman-gradle");
+        assert_eq!(mgr.env_type_to_provider("maven"), "sdkman-maven");
+    }
+
+    #[test]
+    fn test_provider_to_env_type_jvm_providers() {
+        let mgr = make_test_manager();
+        assert_eq!(mgr.provider_to_env_type("sdkman-groovy"), "groovy");
+        assert_eq!(mgr.provider_to_env_type("sdkman-gradle"), "gradle");
+        assert_eq!(mgr.provider_to_env_type("sdkman-maven"), "maven");
+        assert_eq!(mgr.provider_to_env_type("adoptium"), "java");
+    }
+
+    #[test]
+    fn test_get_install_command_sdkman_jvm_tools() {
+        let mgr = make_test_manager();
+        let cmd_groovy = mgr.get_install_command("sdkman-groovy");
+        let cmd_gradle = mgr.get_install_command("sdkman-gradle");
+        let cmd_maven = mgr.get_install_command("sdkman-maven");
+        // All SDKMAN variants should return the same install command
+        assert!(cmd_groovy.contains("sdkman"));
+        assert_eq!(cmd_groovy, cmd_gradle);
+        assert_eq!(cmd_gradle, cmd_maven);
+    }
+
+    #[test]
+    fn test_get_install_command_adoptium() {
+        let mgr = make_test_manager();
+        let cmd = mgr.get_install_command("adoptium");
+        assert!(cmd.contains("CogniaLauncher"));
+    }
+
+    #[test]
+    fn test_get_expected_path_patterns_sdkman_jvm_tools() {
+        let mgr = make_test_manager();
+        for provider_id in &["sdkman-groovy", "sdkman-gradle", "sdkman-maven"] {
+            let patterns = mgr.get_expected_path_patterns(provider_id);
+            assert!(
+                patterns.contains(&"sdkman".to_string()),
+                "{} should include 'sdkman' pattern",
+                provider_id
+            );
+            assert!(
+                patterns.contains(&".sdkman".to_string()),
+                "{} should include '.sdkman' pattern",
+                provider_id
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_expected_path_patterns_adoptium() {
+        let mgr = make_test_manager();
+        let patterns = mgr.get_expected_path_patterns("adoptium");
+        assert!(patterns.contains(&".CogniaLauncher".to_string()));
+        assert!(patterns.contains(&"jdks".to_string()));
+    }
+
+    #[test]
+    fn test_get_shell_setup_command_sdkman_jvm_tools() {
+        let mgr = make_test_manager();
+        for provider_id in &["sdkman-groovy", "sdkman-gradle", "sdkman-maven"] {
+            let cmd = mgr.get_shell_setup_command(provider_id);
+            assert!(
+                cmd.contains("sdkman-init.sh"),
+                "{} shell setup should reference sdkman-init.sh, got: {}",
+                provider_id,
+                cmd
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_shell_setup_command_adoptium() {
+        let mgr = make_test_manager();
+        let cmd = mgr.get_shell_setup_command("adoptium");
+        assert!(cmd.contains("JAVA_HOME"));
+        assert!(cmd.contains(".CogniaLauncher/jdks"));
     }
 }

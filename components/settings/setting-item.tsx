@@ -32,8 +32,12 @@ const VALIDATION_RULES: Record<string, ValidationRule> = {
   "network.timeout": { min: 5, max: 300 },
   "network.retries": { min: 0, max: 10 },
   "network.proxy": {
-    pattern: /^(https?:\/\/.*)?$/,
-    patternMessage: "validation.mustBeValidUrlOrEmpty",
+    pattern: /^((https?|socks5?):\/\/.*)?$/,
+    patternMessage: "validation.mustBeValidProxyUrlOrEmpty",
+  },
+  "network.no_proxy": {
+    pattern: /^[a-zA-Z0-9.*,\-_: ]*$/,
+    patternMessage: "validation.mustBeValidNoProxyList",
   },
   "mirrors.npm": {
     pattern: /^https?:\/\/.+$/,

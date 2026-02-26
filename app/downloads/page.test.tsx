@@ -160,6 +160,12 @@ const mockTask: DownloadTask = {
   createdAt: '2024-01-01T10:00:00Z',
   startedAt: '2024-01-01T10:01:00Z',
   completedAt: null,
+  retries: 0,
+  priority: 5,
+  expectedChecksum: null,
+  supportsResume: true,
+  metadata: {},
+  serverFilename: null,
 };
 
 const mockTaskPaused: DownloadTask = {
@@ -184,6 +190,12 @@ const mockTaskPaused: DownloadTask = {
   createdAt: '2024-01-01T10:00:00Z',
   startedAt: '2024-01-01T10:01:00Z',
   completedAt: null,
+  retries: 1,
+  priority: 5,
+  expectedChecksum: 'abc123',
+  supportsResume: false,
+  metadata: { source: 'test' },
+  serverFilename: null,
 };
 
 const mockHistory: HistoryRecord = {
@@ -273,6 +285,23 @@ function setupMocks() {
     getDiskSpace: jest.fn(),
     checkDiskSpace: jest.fn(),
     getSpeedLimit: jest.fn(),
+    getMaxConcurrent: jest.fn(),
+    verifyFile: jest.fn(),
+    openFile: jest.fn(),
+    revealFile: jest.fn(),
+    retryTask: jest.fn(),
+    setPriority: jest.fn(),
+    calculateChecksum: jest.fn().mockResolvedValue('sha256abc'),
+    batchPause: jest.fn().mockResolvedValue(0),
+    batchResume: jest.fn().mockResolvedValue(0),
+    batchCancel: jest.fn().mockResolvedValue(0),
+    batchRemove: jest.fn().mockResolvedValue(0),
+    selectTask: jest.fn(),
+    deselectTask: jest.fn(),
+    selectAllTasks: jest.fn(),
+    deselectAllTasks: jest.fn(),
+    toggleShowHistory: jest.fn(),
+    clearError: jest.fn(),
   });
 }
 

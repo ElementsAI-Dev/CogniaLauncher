@@ -30,7 +30,7 @@ impl PacmanProvider {
     /// Get the installed version of a package using pacman -Q
     async fn query_installed_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_pacman(&["-Q", name]).await?;
-        let parts: Vec<&str> = out.trim().split_whitespace().collect();
+        let parts: Vec<&str> = out.split_whitespace().collect();
         if parts.len() >= 2 {
             Ok(parts[1].to_string())
         } else {

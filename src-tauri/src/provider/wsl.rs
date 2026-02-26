@@ -359,7 +359,7 @@ impl WslProvider {
                             && trimmed
                                 .split_whitespace()
                                 .last()
-                                .map_or(false, |v| v == "1" || v == "2"))
+                                .is_some_and(|v| v == "1" || v == "2"))
                 });
                 data_start.unwrap_or(if lines.len() > 1 {
                     1
@@ -514,7 +514,7 @@ impl WslProvider {
             if let Some(v) = line.split(':').nth(1) {
                 let trimmed = v.trim();
                 if !trimmed.is_empty()
-                    && trimmed.chars().next().map_or(false, |c| c.is_ascii_digit())
+                    && trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return Ok(trimmed.to_string());
                 }
@@ -1211,6 +1211,7 @@ impl WslProvider {
     /// Mount a physical or virtual disk in WSL2.
     /// `disk_path` is the Windows path to the disk (e.g., `\\.\PhysicalDrive1` or a .vhdx).
     /// `options`: filesystem type, partition, bare mount, mount name, etc.
+    #[allow(clippy::too_many_arguments)]
     pub async fn mount_disk(
         &self,
         disk_path: &str,
@@ -1670,6 +1671,251 @@ impl WslProvider {
             installed_packages,
         })
     }
+
+    // ========================================================================
+    // Resource monitoring
+    // ========================================================================
+
+    /// Parse `/proc/meminfo` output to extract memory values in KB.
+    /// Returns (mem_total, mem_available, swap_total, swap_free).
+    pub fn parse_meminfo(output: &str) -> (u64, u64, u64, u64) {
+        let mut mem_total: u64 = 0;
+        let mut mem_available: u64 = 0;
+        let mut swap_total: u64 = 0;
+        let mut swap_free: u64 = 0;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                mem_total = rest.split_whitespace().next()
+                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+                mem_available = rest.split_whitespace().next()
+                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("SwapTotal:") {
+                swap_total = rest.split_whitespace().next()
+                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("SwapFree:") {
+                swap_free = rest.split_whitespace().next()
+                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+            }
+        }
+
+        (mem_total, mem_available, swap_total, swap_free)
+    }
+
+    /// Parse `/proc/loadavg` output to extract 1/5/15-minute load averages.
+    pub fn parse_loadavg(output: &str) -> [f64; 3] {
+        let parts: Vec<&str> = output.split_whitespace().collect();
+        if parts.len() < 3 {
+            return [0.0, 0.0, 0.0];
+        }
+        [
+            parts[0].parse().unwrap_or(0.0),
+            parts[1].parse().unwrap_or(0.0),
+            parts[2].parse().unwrap_or(0.0),
+        ]
+    }
+
+    /// Get live resource usage from a running WSL distribution.
+    pub async fn get_distro_resources(
+        &self,
+        distro: &str,
+    ) -> CogniaResult<WslDistroResources> {
+        let delim = "---COGNIA_RES---";
+        let script = format!(
+            concat!(
+                "cat /proc/meminfo 2>/dev/null || echo ''",
+                "; echo '{d}'",
+                "; cat /proc/loadavg 2>/dev/null || echo ''",
+                "; echo '{d}'",
+                "; grep -c ^processor /proc/cpuinfo 2>/dev/null || echo '0'"
+            ),
+            d = delim
+        );
+
+        let (stdout, stderr, code) = self.exec_command(distro, &script, None).await?;
+        if code != 0 && stdout.trim().is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "Failed to get resources from '{}': {}",
+                distro,
+                stderr.trim()
+            )));
+        }
+
+        let parts: Vec<&str> = stdout.split(delim).collect();
+        if parts.len() < 3 {
+            return Err(CogniaError::Provider(format!(
+                "Unexpected resource output from '{}': got {} sections, expected 3",
+                distro,
+                parts.len()
+            )));
+        }
+
+        let (mem_total, mem_available, swap_total, swap_free) =
+            Self::parse_meminfo(parts[0].trim());
+        let mem_used = mem_total.saturating_sub(mem_available);
+        let swap_used = swap_total.saturating_sub(swap_free);
+        let load_avg = Self::parse_loadavg(parts[1].trim());
+        let cpu_count: u32 = parts[2].trim().parse().unwrap_or(0);
+
+        Ok(WslDistroResources {
+            mem_total_kb: mem_total,
+            mem_available_kb: mem_available,
+            mem_used_kb: mem_used,
+            swap_total_kb: swap_total,
+            swap_used_kb: swap_used,
+            cpu_count,
+            load_avg,
+        })
+    }
+
+    // ========================================================================
+    // User listing
+    // ========================================================================
+
+    /// Parse `/etc/passwd` (or `getent passwd`) output into a list of users.
+    /// Filters to root (uid=0) and normal users (uid >= 1000),
+    /// excluding accounts with nologin/false shells.
+    pub fn parse_passwd(output: &str) -> Vec<WslUser> {
+        let mut users = Vec::new();
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<&str> = line.split(':').collect();
+            if fields.len() < 7 {
+                continue;
+            }
+            let username = fields[0].to_string();
+            let uid: u32 = match fields[2].parse() {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let gid: u32 = fields[3].parse().unwrap_or(0);
+            let home = fields[5].to_string();
+            let shell = fields[6].to_string();
+
+            // Filter: keep root and normal users (uid >= 1000)
+            if uid != 0 && uid < 1000 {
+                continue;
+            }
+
+            // Exclude nologin / false shells
+            if shell.ends_with("/nologin")
+                || shell.ends_with("/false")
+                || shell == "/bin/false"
+                || shell == "/usr/sbin/nologin"
+            {
+                continue;
+            }
+
+            users.push(WslUser {
+                username,
+                uid,
+                gid,
+                home,
+                shell,
+            });
+        }
+        users
+    }
+
+    /// List non-system users in a WSL distribution.
+    pub async fn list_users(&self, distro: &str) -> CogniaResult<Vec<WslUser>> {
+        let (stdout, stderr, code) = self
+            .exec_command(distro, "getent passwd 2>/dev/null || cat /etc/passwd 2>/dev/null || echo ''", None)
+            .await?;
+        if code != 0 && stdout.trim().is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "Failed to list users in '{}': {}",
+                distro,
+                stderr.trim()
+            )));
+        }
+        Ok(Self::parse_passwd(&stdout))
+    }
+
+    // ========================================================================
+    // Package update/upgrade
+    // ========================================================================
+
+    /// Update or upgrade packages in a WSL distribution.
+    /// `mode` should be `"update"` (refresh index) or `"upgrade"` (install upgrades).
+    pub async fn update_distro_packages(
+        &self,
+        distro: &str,
+        mode: &str,
+    ) -> CogniaResult<WslPackageUpdateResult> {
+        // Detect the package manager
+        let env = self.detect_distro_environment(distro).await?;
+        let pm = &env.package_manager;
+
+        let commands = Self::get_distro_update_command(pm).ok_or_else(|| {
+            CogniaError::Provider(format!(
+                "No update commands known for package manager '{}'",
+                pm
+            ))
+        })?;
+
+        let cmd = match mode {
+            "update" => commands.0,
+            "upgrade" => commands.1,
+            _ => {
+                return Err(CogniaError::Provider(format!(
+                    "Invalid mode '{}': expected 'update' or 'upgrade'",
+                    mode
+                )))
+            }
+        };
+
+        let (stdout, stderr, exit_code) =
+            self.exec_command(distro, cmd, Some("root")).await?;
+
+        Ok(WslPackageUpdateResult {
+            package_manager: pm.to_string(),
+            command: cmd.to_string(),
+            stdout,
+            stderr,
+            exit_code,
+        })
+    }
+}
+
+/// Live resource usage from a WSL distribution.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistroResources {
+    pub mem_total_kb: u64,
+    pub mem_available_kb: u64,
+    pub mem_used_kb: u64,
+    pub swap_total_kb: u64,
+    pub swap_used_kb: u64,
+    pub cpu_count: u32,
+    pub load_avg: [f64; 3],
+}
+
+/// A user account inside a WSL distribution.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslUser {
+    pub username: String,
+    pub uid: u32,
+    pub gid: u32,
+    pub home: String,
+    pub shell: String,
+}
+
+/// Result of a package update/upgrade operation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslPackageUpdateResult {
+    pub package_manager: String,
+    pub command: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
 }
 
 impl Default for WslProvider {
@@ -2097,7 +2343,7 @@ impl Provider for WslProvider {
                 let mut found_installed = false;
                 for (i, part) in parts.iter().enumerate() {
                     if part.contains('.')
-                        && part.chars().next().map_or(false, |c| c.is_ascii_digit())
+                        && part.chars().next().is_some_and(|c| c.is_ascii_digit())
                     {
                         if !found_installed {
                             found_installed = true;
@@ -3003,5 +3249,829 @@ VERSION_ID="9.5"
     #[test]
     fn test_update_command_unknown() {
         assert!(WslProvider::get_distro_update_command("unknown").is_none());
+    }
+
+    // ========================================================================
+    // parse_meminfo tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_meminfo_standard() {
+        let output = "\
+MemTotal:       16384000 kB
+MemFree:         2048000 kB
+MemAvailable:    8192000 kB
+Buffers:          512000 kB
+Cached:          4096000 kB
+SwapCached:            0 kB
+Active:          6000000 kB
+Inactive:        3000000 kB
+SwapTotal:       4194304 kB
+SwapFree:        3145728 kB
+";
+        let (mem_total, mem_available, swap_total, swap_free) =
+            WslProvider::parse_meminfo(output);
+        assert_eq!(mem_total, 16384000);
+        assert_eq!(mem_available, 8192000);
+        assert_eq!(swap_total, 4194304);
+        assert_eq!(swap_free, 3145728);
+    }
+
+    #[test]
+    fn test_parse_meminfo_partial() {
+        let output = "MemTotal:       8000000 kB\nSomeOtherLine: 123\n";
+        let (mem_total, mem_available, swap_total, swap_free) =
+            WslProvider::parse_meminfo(output);
+        assert_eq!(mem_total, 8000000);
+        assert_eq!(mem_available, 0);
+        assert_eq!(swap_total, 0);
+        assert_eq!(swap_free, 0);
+    }
+
+    #[test]
+    fn test_parse_meminfo_empty() {
+        let (t, a, st, sf) = WslProvider::parse_meminfo("");
+        assert_eq!((t, a, st, sf), (0, 0, 0, 0));
+    }
+
+    // ========================================================================
+    // parse_loadavg tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_loadavg_standard() {
+        let output = "0.52 0.34 0.21 1/234 5678";
+        let load = WslProvider::parse_loadavg(output);
+        assert!((load[0] - 0.52).abs() < f64::EPSILON);
+        assert!((load[1] - 0.34).abs() < f64::EPSILON);
+        assert!((load[2] - 0.21).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_loadavg_empty() {
+        let load = WslProvider::parse_loadavg("");
+        assert_eq!(load, [0.0, 0.0, 0.0]);
+    }
+
+    // ========================================================================
+    // parse_passwd tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_passwd_standard() {
+        let output = "\
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+alice:x:1000:1000:Alice:/home/alice:/bin/bash
+bob:x:1001:1001:Bob:/home/bob:/bin/zsh
+";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 3); // root, alice, bob
+        assert_eq!(users[0].username, "root");
+        assert_eq!(users[0].uid, 0);
+        assert_eq!(users[1].username, "alice");
+        assert_eq!(users[1].uid, 1000);
+        assert_eq!(users[1].shell, "/bin/bash");
+        assert_eq!(users[2].username, "bob");
+        assert_eq!(users[2].shell, "/bin/zsh");
+    }
+
+    #[test]
+    fn test_parse_passwd_root_included() {
+        let output = "root:x:0:0:root:/root:/bin/bash\n";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "root");
+    }
+
+    #[test]
+    fn test_parse_passwd_nologin_excluded() {
+        let output = "\
+svc:x:999:999:Service:/var/svc:/usr/sbin/nologin
+nologin_user:x:1002:1002::/home/nologin_user:/bin/false
+real_user:x:1003:1003::/home/real_user:/bin/bash
+";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "real_user");
+    }
+
+    #[test]
+    fn test_parse_passwd_empty() {
+        let users = WslProvider::parse_passwd("");
+        assert!(users.is_empty());
+    }
+
+    #[test]
+    fn test_parse_passwd_malformed_lines() {
+        // Too few fields
+        let output = "short:x:1000\nvalid:x:1000:1000:User:/home/valid:/bin/bash\n";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "valid");
+    }
+
+    #[test]
+    fn test_parse_passwd_invalid_uid() {
+        let output = "bad:x:notanumber:1000::/home/bad:/bin/bash\n";
+        let users = WslProvider::parse_passwd(output);
+        assert!(users.is_empty());
+    }
+
+    #[test]
+    fn test_parse_passwd_system_users_excluded() {
+        // UID 1-999 should be excluded (not root and not normal user)
+        let output = "\
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+systemd-resolve:x:100:102::/run/systemd:/usr/sbin/nologin
+alice:x:1000:1000:Alice:/home/alice:/bin/bash
+";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "alice");
+    }
+
+    #[test]
+    fn test_parse_passwd_comment_lines() {
+        let output = "# comment line\nroot:x:0:0:root:/root:/bin/bash\n";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].username, "root");
+    }
+
+    #[test]
+    fn test_parse_passwd_gid_and_home() {
+        let output = "user1:x:1000:1001:User One:/home/user1:/bin/zsh\n";
+        let users = WslProvider::parse_passwd(output);
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].gid, 1001);
+        assert_eq!(users[0].home, "/home/user1");
+    }
+
+    // ========================================================================
+    // is_likely_distro_name tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_likely_distro_name_valid() {
+        assert!(WslProvider::is_likely_distro_name("Ubuntu"));
+        assert!(WslProvider::is_likely_distro_name("Ubuntu-24.04"));
+        assert!(WslProvider::is_likely_distro_name("kali-linux"));
+        assert!(WslProvider::is_likely_distro_name("Debian"));
+    }
+
+    #[test]
+    fn test_is_likely_distro_name_invalid() {
+        assert!(!WslProvider::is_likely_distro_name(""));
+        assert!(!WslProvider::is_likely_distro_name("contains spaces"));
+        assert!(!WslProvider::is_likely_distro_name("has:colon"));
+        assert!(!WslProvider::is_likely_distro_name("has\\backslash"));
+        assert!(!WslProvider::is_likely_distro_name("has/slash"));
+    }
+
+    #[test]
+    fn test_is_likely_distro_name_cjk_message_rejected() {
+        // CJK "no running distributions" messages should NOT be treated as distro names
+        assert!(!WslProvider::is_likely_distro_name("当前没有正在运行的分发。"));
+    }
+
+    // ========================================================================
+    // is_unsupported_option_error tests
+    // ========================================================================
+
+    #[test]
+    fn test_is_unsupported_option_error_english() {
+        assert!(WslProvider::is_unsupported_option_error("unknown option '--set-sparse'"));
+        assert!(WslProvider::is_unsupported_option_error("Unrecognized option: --manage"));
+        assert!(WslProvider::is_unsupported_option_error("Invalid option: foo"));
+        assert!(WslProvider::is_unsupported_option_error("invalid command line"));
+        assert!(WslProvider::is_unsupported_option_error("Feature not supported"));
+    }
+
+    #[test]
+    fn test_is_unsupported_option_error_chinese() {
+        assert!(WslProvider::is_unsupported_option_error("未知选项 '--manage'"));
+        assert!(WslProvider::is_unsupported_option_error("未识别的选项"));
+        assert!(WslProvider::is_unsupported_option_error("不支持该功能"));
+        assert!(WslProvider::is_unsupported_option_error("无效选项: --set-sparse"));
+    }
+
+    #[test]
+    fn test_is_unsupported_option_error_false() {
+        assert!(!WslProvider::is_unsupported_option_error("Success"));
+        assert!(!WslProvider::is_unsupported_option_error("Distribution installed"));
+        assert!(!WslProvider::is_unsupported_option_error(""));
+    }
+
+    // ========================================================================
+    // parse_list_running / parse_list_running_quiet tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_list_running_quiet_with_distros() {
+        let output = "Ubuntu\nDebian\n";
+        let running = WslProvider::parse_list_running_quiet(output);
+        assert_eq!(running, vec!["Ubuntu", "Debian"]);
+    }
+
+    #[test]
+    fn test_parse_list_running_quiet_trims_whitespace() {
+        let output = "  Ubuntu  \n  Debian  \n";
+        let running = WslProvider::parse_list_running_quiet(output);
+        assert_eq!(running, vec!["Ubuntu", "Debian"]);
+    }
+
+    #[test]
+    fn test_parse_list_running_with_distros() {
+        // Verbose-style output from `wsl --list --running`
+        let output = "  NAME      STATE\n* Ubuntu    Running\n  Debian    Running\n";
+        let running = WslProvider::parse_list_running(output);
+        assert!(running.contains(&"Ubuntu".to_string()));
+        assert!(running.contains(&"Debian".to_string()));
+    }
+
+    #[test]
+    fn test_parse_list_running_empty_output() {
+        let running = WslProvider::parse_list_running("");
+        assert!(running.is_empty());
+    }
+
+    // ========================================================================
+    // parse_status_output extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_status_output_chinese() {
+        let output = "\
+默认分发: Ubuntu
+默认版本: 2
+";
+        let (distro, version) = WslProvider::parse_status_output(output);
+        assert_eq!(distro.as_deref(), Some("Ubuntu"));
+        assert_eq!(version.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn test_parse_status_output_partial() {
+        let output = "Default Distribution: Debian\n";
+        let (distro, version) = WslProvider::parse_status_output(output);
+        assert_eq!(distro.as_deref(), Some("Debian"));
+        assert!(version.is_none());
+    }
+
+    // ========================================================================
+    // parse_capabilities extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_capabilities_all_flags() {
+        let help = "\
+--manage <Distro>
+--move <Location>
+--resize <Size>
+--set-default-user <UserName>
+--set-sparse <true|false>
+--mount <DiskPath>
+--options <Options>
+--shutdown
+--force
+--export <Distro>
+--format <tar|vhd>
+--import-in-place <Distro> <FileName>
+";
+        let caps = WslProvider::parse_capabilities(help, None);
+        assert!(caps.manage);
+        assert!(caps.r#move);
+        assert!(caps.resize);
+        assert!(caps.set_default_user);
+        assert!(caps.set_sparse);
+        assert!(caps.mount_options);
+        assert!(caps.shutdown_force);
+        assert!(caps.export_format);
+        assert!(caps.import_in_place);
+        assert!(caps.version.is_none());
+    }
+
+    #[test]
+    fn test_parse_capabilities_empty_help() {
+        let caps = WslProvider::parse_capabilities("", None);
+        assert!(!caps.manage);
+        assert!(!caps.r#move);
+        assert!(!caps.resize);
+        assert!(!caps.set_sparse);
+        assert!(!caps.set_default_user);
+        assert!(!caps.mount_options);
+        assert!(!caps.shutdown_force);
+        assert!(!caps.export_format);
+        assert!(!caps.import_in_place);
+    }
+
+    #[test]
+    fn test_parse_capabilities_move_requires_manage() {
+        // --move without --manage means move=false (gated on manage)
+        let help = "--move <Location>\n--resize <Size>\n";
+        let caps = WslProvider::parse_capabilities(help, None);
+        assert!(!caps.manage);
+        assert!(!caps.r#move);
+        assert!(!caps.resize);
+    }
+
+    #[test]
+    fn test_parse_capabilities_version_extraction() {
+        let help = "--manage <Distro>\n";
+        let version_output = "WSL version: 2.6.1.0\nKernel version: 6.6.87.2-1\n";
+        let caps = WslProvider::parse_capabilities(help, Some(version_output));
+        assert_eq!(caps.version.as_deref(), Some("2.6.1.0"));
+    }
+
+    // ========================================================================
+    // build_mount_args extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_mount_args_minimal() {
+        let args = WslProvider::build_mount_args(
+            r"\\.\PhysicalDrive0",
+            false,
+            None,
+            None,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(args, vec!["--mount", r"\\.\PhysicalDrive0"]);
+    }
+
+    #[test]
+    fn test_build_mount_args_vhd_only() {
+        let args = WslProvider::build_mount_args("disk.vhdx", true, None, None, None, None, false);
+        assert_eq!(args, vec!["--mount", "disk.vhdx", "--vhd"]);
+    }
+
+    // ========================================================================
+    // build_move_args / build_resize_args tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_move_args() {
+        let args = WslProvider::build_move_args("Debian", r"E:\WSL\Debian");
+        assert_eq!(
+            args,
+            vec!["--manage", "Debian", "--move", r"E:\WSL\Debian"]
+        );
+    }
+
+    #[test]
+    fn test_build_resize_args() {
+        let args = WslProvider::build_resize_args("Ubuntu", "100GB");
+        assert_eq!(args, vec!["--manage", "Ubuntu", "--resize", "100GB"]);
+    }
+
+    // ========================================================================
+    // trim_output / clean_wsl_output extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_trim_output_preserves_leading_whitespace() {
+        let input = "  NAME      STATE  \n  data  ";
+        let result = WslProvider::trim_output(input);
+        assert_eq!(result, "  NAME      STATE\n  data");
+    }
+
+    #[test]
+    fn test_trim_output_empty() {
+        assert_eq!(WslProvider::trim_output(""), "");
+    }
+
+    #[test]
+    fn test_clean_wsl_output_no_nulls() {
+        let cleaned = WslProvider::clean_wsl_output("Hello World");
+        assert_eq!(cleaned, "Hello World");
+    }
+
+    #[test]
+    fn test_clean_wsl_output_empty() {
+        assert_eq!(WslProvider::clean_wsl_output(""), "");
+    }
+
+    // ========================================================================
+    // parse_version_output extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_version_output_japanese() {
+        // Japanese locale: "WSL バージョン: X.Y.Z" — only the English "WSL" + colon pattern
+        let output = "WSL version: 2.5.0.0\n";
+        let info = WslProvider::parse_version_output(output);
+        assert_eq!(info.wsl_version.as_deref(), Some("2.5.0.0"));
+    }
+
+    #[test]
+    fn test_parse_version_output_no_colon() {
+        // Line without colon should be ignored
+        let output = "Some random text\nWSL version: 2.0.0\n";
+        let info = WslProvider::parse_version_output(output);
+        assert_eq!(info.wsl_version.as_deref(), Some("2.0.0"));
+    }
+
+    // ========================================================================
+    // decode_wsl_bytes extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_decode_wsl_bytes_odd_length_utf16le() {
+        // Odd-length bytes should be handled gracefully (last byte ignored)
+        // "AB" in UTF-16LE = 41 00 42 00, add trailing byte = 41 00 42 00 XX
+        let input: &[u8] = &[0x41, 0x00, 0x42, 0x00, 0xFF];
+        let decoded = decode_wsl_bytes(input);
+        assert!(decoded.contains("AB"), "decoded={}", decoded);
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_single_byte() {
+        let input: &[u8] = &[0x41]; // 'A' — single byte, no null → UTF-8
+        assert_eq!(decode_wsl_bytes(input), "A");
+    }
+
+    #[test]
+    fn test_decode_wsl_bytes_utf8_with_multibyte_no_nulls() {
+        // Pure UTF-8 with multibyte chars — no null bytes means no UTF-16LE decode
+        let input = "Ñoño".as_bytes();
+        assert_eq!(decode_wsl_bytes(input), "Ñoño");
+    }
+
+    // ========================================================================
+    // parse_list_verbose extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_list_verbose_single_distro() {
+        let output =
+            "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n";
+        let distros = WslProvider::parse_list_verbose(output);
+        assert_eq!(distros.len(), 1);
+        assert_eq!(distros[0].name, "Ubuntu");
+        assert!(distros[0].is_default);
+    }
+
+    #[test]
+    fn test_parse_list_verbose_wsl1_and_wsl2_mixed() {
+        let output = "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n  Alpine    Stopped         1\n  Fedora    Stopped         2\n";
+        let distros = WslProvider::parse_list_verbose(output);
+        assert_eq!(distros.len(), 3);
+        assert_eq!(distros[1].name, "Alpine");
+        assert_eq!(distros[1].wsl_version, "1");
+        assert_eq!(distros[2].wsl_version, "2");
+    }
+
+    #[test]
+    fn test_parse_list_verbose_japanese_headers() {
+        let output = "  名前      状態            バージョン\n* Ubuntu    Running         2\n";
+        let distros = WslProvider::parse_list_verbose(output);
+        assert_eq!(distros.len(), 1);
+        assert_eq!(distros[0].name, "Ubuntu");
+        assert!(distros[0].is_default);
+    }
+
+    // ========================================================================
+    // parse_list_online extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_list_online_no_header() {
+        let output = "Ubuntu                          Ubuntu\nDebian                          Debian GNU/Linux\n";
+        let available = WslProvider::parse_list_online(output);
+        // Should still parse even without the "NAME FRIENDLY NAME" header
+        assert!(!available.is_empty());
+    }
+
+    // ========================================================================
+    // get_distro_filesystem_path extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_distro_filesystem_path_special_chars() {
+        assert_eq!(
+            WslProvider::get_distro_filesystem_path("Ubuntu-24.04"),
+            "\\\\wsl.localhost\\Ubuntu-24.04"
+        );
+    }
+
+    // ========================================================================
+    // Default trait / constructor tests
+    // ========================================================================
+
+    #[test]
+    fn test_default_trait() {
+        let provider = WslProvider::default();
+        assert_eq!(provider.id(), "wsl");
+    }
+
+    #[test]
+    fn test_new() {
+        let provider = WslProvider::new();
+        assert_eq!(provider.display_name(), "Windows Subsystem for Linux");
+    }
+
+    // ========================================================================
+    // Package manager detection extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_pm_linuxmint() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("linuxmint", &[]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_pop_os() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("pop", &[]),
+            Some("apt")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_rocky() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("rocky", &[]),
+            Some("dnf")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_gentoo() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("gentoo", &[]),
+            Some("emerge")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_clear_linux() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("clear-linux-os", &[]),
+            Some("swupd")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_solus() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("solus", &[]),
+            Some("eopkg")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_unknown_with_id_like_arch() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("garuda", &["arch".into()]),
+            // Direct ID match for garuda exists as pacman
+            Some("pacman")
+        );
+    }
+
+    #[test]
+    fn test_detect_pm_id_like_suse_fallback() {
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("unknown-suse-distro", &["suse".into()]),
+            Some("zypper")
+        );
+    }
+
+    // ========================================================================
+    // Package count & update commands extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_package_count_command_dnf() {
+        assert!(WslProvider::get_package_count_command("dnf").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_zypper() {
+        assert!(WslProvider::get_package_count_command("zypper").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_apk() {
+        assert!(WslProvider::get_package_count_command("apk").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_xbps() {
+        assert!(WslProvider::get_package_count_command("xbps-install").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_emerge() {
+        assert!(WslProvider::get_package_count_command("emerge").is_some());
+    }
+
+    #[test]
+    fn test_package_count_command_nix() {
+        assert!(WslProvider::get_package_count_command("nix").is_some());
+    }
+
+    #[test]
+    fn test_update_command_dnf() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("dnf").unwrap();
+        assert!(update.contains("dnf"));
+        assert!(upgrade.contains("dnf"));
+    }
+
+    #[test]
+    fn test_update_command_zypper() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("zypper").unwrap();
+        assert!(update.contains("zypper"));
+        assert!(upgrade.contains("zypper"));
+    }
+
+    #[test]
+    fn test_update_command_apk() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("apk").unwrap();
+        assert!(update.contains("apk"));
+        assert!(upgrade.contains("apk"));
+    }
+
+    #[test]
+    fn test_update_command_emerge() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("emerge").unwrap();
+        assert!(update.contains("emerge"));
+        assert!(upgrade.contains("emerge"));
+    }
+
+    #[test]
+    fn test_update_command_nix() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("nix").unwrap();
+        assert!(update.contains("nix"));
+        assert!(upgrade.contains("nix"));
+    }
+
+    #[test]
+    fn test_update_command_swupd() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("swupd").unwrap();
+        assert!(update.contains("swupd"));
+        assert!(upgrade.contains("swupd"));
+    }
+
+    #[test]
+    fn test_update_command_yum() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("yum").unwrap();
+        assert!(update.contains("yum"));
+        assert!(upgrade.contains("yum"));
+    }
+
+    #[test]
+    fn test_update_command_xbps() {
+        let (update, upgrade) = WslProvider::get_distro_update_command("xbps-install").unwrap();
+        assert!(update.contains("xbps"));
+        assert!(upgrade.contains("xbps"));
+    }
+
+    // ========================================================================
+    // parse_meminfo extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_meminfo_no_swap() {
+        let output = "MemTotal:       16384000 kB\nMemAvailable:    8000000 kB\n";
+        let (t, a, st, sf) = WslProvider::parse_meminfo(output);
+        assert_eq!(t, 16384000);
+        assert_eq!(a, 8000000);
+        assert_eq!(st, 0);
+        assert_eq!(sf, 0);
+    }
+
+    #[test]
+    fn test_parse_meminfo_whitespace_variations() {
+        let output = "MemTotal:    1024 kB\nMemAvailable:     512 kB\n";
+        let (t, a, _, _) = WslProvider::parse_meminfo(output);
+        assert_eq!(t, 1024);
+        assert_eq!(a, 512);
+    }
+
+    // ========================================================================
+    // parse_loadavg extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_loadavg_high_load() {
+        let output = "12.34 5.67 3.21 5/678 9012";
+        let load = WslProvider::parse_loadavg(output);
+        assert!((load[0] - 12.34).abs() < 0.001);
+        assert!((load[1] - 5.67).abs() < 0.001);
+        assert!((load[2] - 3.21).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_parse_loadavg_too_few_fields() {
+        let output = "0.5 0.3";
+        let load = WslProvider::parse_loadavg(output);
+        assert_eq!(load, [0.0, 0.0, 0.0]);
+    }
+
+    // ========================================================================
+    // INI parse/serialize extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_ini_content_no_section() {
+        // Key=value without a section header should be ignored
+        let content = "key=value\n";
+        let sections = WslProvider::parse_ini_content(content);
+        assert!(sections.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ini_content_multiple_equals() {
+        let content = "[section]\nkey=value=with=equals\n";
+        let sections = WslProvider::parse_ini_content(content);
+        assert_eq!(sections["section"]["key"], "value=with=equals");
+    }
+
+    #[test]
+    fn test_serialize_ini_content_empty() {
+        let sections = std::collections::HashMap::new();
+        let output = WslProvider::serialize_ini_content(&sections);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_serialize_ini_content_sorted_output() {
+        let mut sections = std::collections::HashMap::new();
+        let mut wsl2 = std::collections::HashMap::new();
+        wsl2.insert("processors".to_string(), "4".to_string());
+        wsl2.insert("memory".to_string(), "8GB".to_string());
+        sections.insert("wsl2".to_string(), wsl2);
+
+        let mut experimental = std::collections::HashMap::new();
+        experimental.insert("autoMemoryReclaim".to_string(), "gradual".to_string());
+        sections.insert("experimental".to_string(), experimental);
+
+        let output = WslProvider::serialize_ini_content(&sections);
+        // [experimental] should come before [wsl2] (sorted)
+        let exp_pos = output.find("[experimental]").unwrap();
+        let wsl2_pos = output.find("[wsl2]").unwrap();
+        assert!(exp_pos < wsl2_pos, "Sections should be alphabetically sorted");
+    }
+
+    // ========================================================================
+    // parse_os_release extended tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_os_release_no_quotes() {
+        let content = "ID=ubuntu\nVERSION_ID=22.04\n";
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ubuntu");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "22.04");
+    }
+
+    #[test]
+    fn test_parse_os_release_blank_lines() {
+        let content = "\n\nID=debian\n\nVERSION_ID=\"12\"\n\n";
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "debian");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "12");
+    }
+
+    #[test]
+    fn test_parse_os_release_mixed_quotes() {
+        let content = "ID=\"ubuntu\"\nPRETTY_NAME='Ubuntu 24.04'\nVERSION_ID=24.04\n";
+        let map = WslProvider::parse_os_release(content);
+        assert_eq!(map.get("ID").unwrap(), "ubuntu");
+        assert_eq!(map.get("PRETTY_NAME").unwrap(), "Ubuntu 24.04");
+        assert_eq!(map.get("VERSION_ID").unwrap(), "24.04");
+    }
+
+    // ========================================================================
+    // Provider trait capability count
+    // ========================================================================
+
+    #[test]
+    fn test_provider_capability_count() {
+        let provider = WslProvider::new();
+        let caps = provider.capabilities();
+        // Should have at least Install, Uninstall, Search, List, Update
+        assert!(caps.len() >= 5);
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = WslProvider::new();
+        assert!(provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("list"));
     }
 }

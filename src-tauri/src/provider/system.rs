@@ -40,6 +40,8 @@ pub enum SystemEnvironmentType {
     Nim,
     Ocaml,
     Fortran,
+    C,
+    Cpp,
 }
 
 impl SystemEnvironmentType {
@@ -73,6 +75,8 @@ impl SystemEnvironmentType {
             Self::Nim => "system-nim",
             Self::Ocaml => "system-ocaml",
             Self::Fortran => "system-fortran",
+            Self::C => "system-c",
+            Self::Cpp => "system-cpp",
         }
     }
 
@@ -106,6 +110,8 @@ impl SystemEnvironmentType {
             Self::Nim => "Nim (System)",
             Self::Ocaml => "OCaml (System)",
             Self::Fortran => "Fortran (System)",
+            Self::C => "C (System)",
+            Self::Cpp => "C++ (System)",
         }
     }
 
@@ -139,6 +145,8 @@ impl SystemEnvironmentType {
             Self::Nim => "nim",
             Self::Ocaml => "ocaml",
             Self::Fortran => "fortran",
+            Self::C => "c",
+            Self::Cpp => "cpp",
         }
     }
 
@@ -194,7 +202,10 @@ impl SystemEnvironmentType {
                 version_args: vec!["-version"],
                 version_pattern: r#"version "(\d+(?:\.\d+)*)""#,
                 version_files: vec![".java-version", ".tool-versions", ".sdkmanrc"],
-                manifest_files: vec![],
+                manifest_files: vec![
+                    ("pom.xml", r#"<java\.version>(\d+(?:\.\d+)*)</java\.version>"#),
+                    ("build.gradle", r#"sourceCompatibility\s*=\s*['"]?(\d+)"#),
+                ],
             },
             Self::Kotlin => SystemDetectionConfig {
                 commands: vec!["kotlinc"],
@@ -360,6 +371,20 @@ impl SystemEnvironmentType {
                 version_files: vec![".tool-versions"],
                 manifest_files: vec![],
             },
+            Self::C => SystemDetectionConfig {
+                commands: vec!["gcc", "cc"],
+                version_args: vec!["--version"],
+                version_pattern: r"(\d+\.\d+\.\d+)",
+                version_files: vec![".tool-versions"],
+                manifest_files: vec![],
+            },
+            Self::Cpp => SystemDetectionConfig {
+                commands: vec!["g++", "c++"],
+                version_args: vec!["--version"],
+                version_pattern: r"(\d+\.\d+\.\d+)",
+                version_files: vec![".tool-versions"],
+                manifest_files: vec![],
+            },
         }
     }
 
@@ -394,6 +419,8 @@ impl SystemEnvironmentType {
             Self::Nim,
             Self::Ocaml,
             Self::Fortran,
+            Self::C,
+            Self::Cpp,
         ]
     }
 }
@@ -436,7 +463,7 @@ impl SystemEnvironmentProvider {
                 let path = PathBuf::from(&path);
 
                 // Run version command
-                let args: Vec<&str> = config.version_args.iter().copied().collect();
+                let args: Vec<&str> = config.version_args.to_vec();
                 if let Ok(output) = process::execute(cmd, &args, None).await {
                     if output.success {
                         let output_text = if output.stdout.is_empty() {
@@ -788,5 +815,119 @@ mod tests {
         assert_eq!(provider.id(), "system-dart");
         assert_eq!(provider.display_name(), "Dart (System)");
         assert_eq!(provider.version_file_name(), ".dart-version");
+    }
+
+    #[test]
+    fn test_c_system_config() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::C);
+        assert_eq!(provider.id(), "system-c");
+        assert_eq!(provider.display_name(), "C (System)");
+        let config = SystemEnvironmentType::C.detection_config();
+        assert_eq!(config.commands, vec!["gcc", "cc"]);
+        assert_eq!(config.version_args, vec!["--version"]);
+        assert_eq!(config.version_pattern, r"(\d+\.\d+\.\d+)");
+        assert_eq!(config.version_files, vec![".tool-versions"]);
+        assert!(config.manifest_files.is_empty());
+    }
+
+    #[test]
+    fn test_cpp_system_config() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Cpp);
+        assert_eq!(provider.id(), "system-cpp");
+        assert_eq!(provider.display_name(), "C++ (System)");
+        let config = SystemEnvironmentType::Cpp.detection_config();
+        assert_eq!(config.commands, vec!["g++", "c++"]);
+        assert_eq!(config.version_args, vec!["--version"]);
+        assert_eq!(config.version_pattern, r"(\d+\.\d+\.\d+)");
+        assert_eq!(config.version_files, vec![".tool-versions"]);
+        assert!(config.manifest_files.is_empty());
+    }
+
+    #[test]
+    fn test_c_env_type() {
+        assert_eq!(SystemEnvironmentType::C.env_type(), "c");
+        assert_eq!(SystemEnvironmentType::Cpp.env_type(), "cpp");
+    }
+
+    #[test]
+    fn test_c_cpp_in_all() {
+        let all = SystemEnvironmentType::all();
+        assert!(all.contains(&SystemEnvironmentType::C));
+        assert!(all.contains(&SystemEnvironmentType::Cpp));
+    }
+
+    #[test]
+    fn test_c_cpp_provider_traits() {
+        let c_provider = SystemEnvironmentProvider::new(SystemEnvironmentType::C);
+        assert_eq!(c_provider.priority(), 50);
+        assert!(c_provider
+            .capabilities()
+            .contains(&crate::provider::traits::Capability::List));
+        assert_eq!(c_provider.version_file_name(), ".tool-versions");
+
+        let cpp_provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Cpp);
+        assert_eq!(cpp_provider.priority(), 50);
+        assert!(cpp_provider
+            .capabilities()
+            .contains(&crate::provider::traits::Capability::List));
+        assert_eq!(cpp_provider.version_file_name(), ".tool-versions");
+    }
+
+    #[test]
+    fn test_c_cpp_version_pattern_matches_gcc_output() {
+        let config = SystemEnvironmentType::C.detection_config();
+        let re = regex::Regex::new(config.version_pattern).unwrap();
+
+        // gcc output: "gcc (Ubuntu 13.2.0-23ubuntu4) 13.2.0"
+        let caps = re.captures("gcc (Ubuntu 13.2.0-23ubuntu4) 13.2.0");
+        assert!(caps.is_some());
+        assert_eq!(caps.unwrap().get(1).unwrap().as_str(), "13.2.0");
+
+        // clang output: "Apple clang version 15.0.0 (clang-1500.0.40.1)"
+        let caps = re.captures("Apple clang version 15.0.0 (clang-1500.0.40.1)");
+        assert!(caps.is_some());
+        assert_eq!(caps.unwrap().get(1).unwrap().as_str(), "15.0.0");
+    }
+
+    #[test]
+    fn test_cpp_version_pattern_matches_gpp_output() {
+        let config = SystemEnvironmentType::Cpp.detection_config();
+        let re = regex::Regex::new(config.version_pattern).unwrap();
+
+        // g++ output: "g++ (GCC) 14.1.0"
+        let caps = re.captures("g++ (GCC) 14.1.0");
+        assert!(caps.is_some());
+        assert_eq!(caps.unwrap().get(1).unwrap().as_str(), "14.1.0");
+
+        // clang++ output: "clang version 18.1.3"
+        let caps = re.captures("clang version 18.1.3");
+        assert!(caps.is_some());
+        assert_eq!(caps.unwrap().get(1).unwrap().as_str(), "18.1.3");
+    }
+
+    #[tokio::test]
+    async fn test_system_c_detection() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::C);
+        let available = provider.is_available().await;
+        println!("C system available: {}", available);
+
+        if available {
+            let version = provider.get_current_version().await.unwrap();
+            println!("C compiler version: {:?}", version);
+            assert!(version.is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_system_cpp_detection() {
+        let provider = SystemEnvironmentProvider::new(SystemEnvironmentType::Cpp);
+        let available = provider.is_available().await;
+        println!("C++ system available: {}", available);
+
+        if available {
+            let version = provider.get_current_version().await.unwrap();
+            println!("C++ compiler version: {:?}", version);
+            assert!(version.is_some());
+        }
     }
 }

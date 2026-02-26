@@ -30,6 +30,12 @@ function createMockTask(overrides?: Partial<DownloadTask>): DownloadTask {
     createdAt: new Date().toISOString(),
     startedAt: null,
     completedAt: null,
+    retries: 0,
+    priority: 5,
+    expectedChecksum: null,
+    supportsResume: false,
+    metadata: {},
+    serverFilename: null,
     ...overrides,
   };
 }

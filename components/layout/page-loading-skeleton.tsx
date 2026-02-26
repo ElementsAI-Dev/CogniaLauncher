@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 interface PageLoadingSkeletonProps {
-  variant?: "dashboard" | "list" | "cards" | "settings" | "detail";
+  variant?: "dashboard" | "list" | "cards" | "settings" | "detail" | "tabs";
 }
 
 const cardClass = (i: number) => `skeleton-card-${i}` as const;
@@ -14,7 +14,7 @@ export function PageLoadingSkeleton({
 }: PageLoadingSkeletonProps) {
   if (variant === "dashboard") {
     return (
-      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer">
+      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
         <div className="flex items-center justify-between skeleton-card-1">
           <div className="space-y-2">
             <Skeleton className="h-7 w-40" />
@@ -58,7 +58,7 @@ export function PageLoadingSkeleton({
 
   if (variant === "cards") {
     return (
-      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer">
+      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
         <div className="flex items-center justify-between skeleton-card-1">
           <div className="space-y-2">
             <Skeleton className="h-7 w-40" />
@@ -86,7 +86,7 @@ export function PageLoadingSkeleton({
 
   if (variant === "settings") {
     return (
-      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer">
+      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
         <div className="space-y-2 skeleton-card-1">
           <Skeleton className="h-7 w-32" />
           <Skeleton className="h-4 w-56" />
@@ -116,7 +116,7 @@ export function PageLoadingSkeleton({
 
   if (variant === "detail") {
     return (
-      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer">
+      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
         <div className="flex items-center gap-4 skeleton-card-1">
           <Skeleton className="h-12 w-12 rounded-xl" />
           <div className="space-y-2">
@@ -145,9 +145,34 @@ export function PageLoadingSkeleton({
     );
   }
 
+  if (variant === "tabs") {
+    return (
+      <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
+        <div className="space-y-2 skeleton-card-1">
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <Skeleton className="h-10 w-80 rounded-lg skeleton-card-2" />
+        <div className="space-y-4">
+          {[3, 4, 5].map((i) => (
+            <Card key={i} className={`${cardClass(i)} overflow-hidden`}>
+              <CardHeader>
+                <Skeleton className="h-5 w-32 rounded-md" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Skeleton className="h-4 w-full rounded-md" />
+                <Skeleton className="h-4 w-3/4 rounded-md" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // Default: list variant
   return (
-    <div className="p-4 md:p-6 space-y-6 skeleton-shimmer">
+    <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
       <div className="flex items-center justify-between skeleton-card-1">
         <div className="space-y-2">
           <Skeleton className="h-7 w-40" />

@@ -146,7 +146,7 @@ impl Provider for CondaProvider {
         options: SearchOptions,
     ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(20);
-        let args = vec!["search", "--json", query];
+        let args = ["search", "--json", query];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
         let all_args: Vec<&str> = args
@@ -186,7 +186,7 @@ impl Provider for CondaProvider {
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
-        let args = vec!["search", "--json", name];
+        let args = ["search", "--json", name];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
         let all_args: Vec<&str> = args
@@ -303,7 +303,7 @@ impl Provider for CondaProvider {
             req.name.clone()
         };
 
-        let args = vec!["install", "-y", &pkg];
+        let args = ["install", "-y", &pkg];
         let channel_args = self.build_channel_args();
         let channel_refs: Vec<&str> = channel_args.iter().map(|s| s.as_str()).collect();
         let all_args: Vec<&str> = args
@@ -448,7 +448,6 @@ impl SystemPackageProvider for CondaProvider {
         let out = self.run_conda(&["--version"]).await?;
         // Output: "conda 24.11.1"
         Ok(out
-            .trim()
             .split_whitespace()
             .last()
             .unwrap_or("unknown")

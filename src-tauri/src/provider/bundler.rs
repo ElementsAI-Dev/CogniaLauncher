@@ -22,13 +22,9 @@ pub struct BundlerProvider {
 
 impl BundlerProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
-        Self { client }
+        Self {
+            client: crate::platform::proxy::get_shared_client(),
+        }
     }
 
     async fn run_bundle(&self, args: &[&str]) -> CogniaResult<String> {
@@ -164,7 +160,7 @@ impl BundlerProvider {
             }
 
             // Format: "  * gem_name (version)"
-            if let Some(rest) = line.strip_prefix("*").or_else(|| Some(line)) {
+            if let Some(rest) = line.strip_prefix("*").or(Some(line)) {
                 let rest = rest.trim();
                 if let Some((name, version_part)) = rest.rsplit_once(' ') {
                     let version = version_part
@@ -211,7 +207,6 @@ impl BundlerProvider {
             // Extract gem name from line for exact matching
             let gem_name = line
                 .trim_start_matches('*')
-                .trim()
                 .split_whitespace()
                 .next()
                 .unwrap_or("");
@@ -383,14 +378,11 @@ impl Provider for BundlerProvider {
     async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         // Use rubygems.org API to get gem dependencies
         let url = format!("https://rubygems.org/api/v1/gems/{}.json", name);
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         if let Ok(resp) = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await
         {

@@ -386,8 +386,8 @@ impl Provider for GitHubProvider {
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let release: GitHubRelease = if let Some(v) = &req.version {
             // Try the version as-is first, then with/without v prefix
-            let candidates = if v.starts_with('v') {
-                vec![v.clone(), v[1..].to_string()]
+            let candidates = if let Some(stripped) = v.strip_prefix('v') {
+                vec![v.clone(), stripped.to_string()]
             } else {
                 vec![format!("v{}", v), v.clone()]
             };

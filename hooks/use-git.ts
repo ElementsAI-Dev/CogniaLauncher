@@ -16,6 +16,8 @@ import type {
   GitAheadBehind,
   GitDayActivity,
   GitFileStatEntry,
+  GitReflogEntry,
+  GitCloneOptions,
 } from '@/types/tauri';
 
 export interface UseGitReturn {
@@ -92,6 +94,40 @@ export interface UseGitReturn {
   getActivity: (days?: number) => Promise<GitDayActivity[]>;
   getFileStats: (file: string, limit?: number) => Promise<GitFileStatEntry[]>;
   searchCommits: (query: string, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
+
+
+  // Actions - Write operations
+  stageFiles: (files: string[]) => Promise<string>;
+  stageAll: () => Promise<string>;
+  unstageFiles: (files: string[]) => Promise<string>;
+  discardChanges: (files: string[]) => Promise<string>;
+  commit: (message: string, amend?: boolean) => Promise<string>;
+  push: (remote?: string, branch?: string, forceLease?: boolean) => Promise<string>;
+  pull: (remote?: string, branch?: string, rebase?: boolean) => Promise<string>;
+  fetch: (remote?: string) => Promise<string>;
+  cloneRepo: (url: string, destPath: string, options?: GitCloneOptions) => Promise<string>;
+  extractRepoName: (url: string) => Promise<string | null>;
+  validateGitUrl: (url: string) => Promise<boolean>;
+  initRepo: (path: string) => Promise<string>;
+  getDiff: (staged?: boolean, file?: string) => Promise<string>;
+  getDiffBetween: (from: string, to: string, file?: string) => Promise<string>;
+  merge: (branch: string, noFf?: boolean) => Promise<string>;
+  revertCommit: (hash: string, noCommit?: boolean) => Promise<string>;
+  cherryPick: (hash: string) => Promise<string>;
+  resetHead: (mode?: string, target?: string) => Promise<string>;
+
+  // Actions - Remote & branch management
+  remoteAdd: (name: string, url: string) => Promise<string>;
+  remoteRemove: (name: string) => Promise<string>;
+  remoteRename: (oldName: string, newName: string) => Promise<string>;
+  remoteSetUrl: (name: string, url: string) => Promise<string>;
+  branchRename: (oldName: string, newName: string) => Promise<string>;
+  branchSetUpstream: (branch: string, upstream: string) => Promise<string>;
+  pushTags: (remote?: string) => Promise<string>;
+  deleteRemoteBranch: (remote: string, branch: string) => Promise<string>;
+  stashShowDiff: (stashId?: string) => Promise<string>;
+  getReflog: (limit?: number) => Promise<GitReflogEntry[]>;
+  cleanUntracked: (directories?: boolean) => Promise<string>;
 
   // Actions - Refresh all
   refreshAll: () => Promise<void>;
@@ -588,6 +624,283 @@ export function useGit(): UseGitReturn {
     [repoPath],
   );
 
+  // Write operations
+  const stageFiles = useCallback(
+    async (files: string[]): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitStageFiles(repoPath, files);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
+  const stageAll = useCallback(
+    async (): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitStageAll(repoPath);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
+  const unstageFiles = useCallback(
+    async (files: string[]): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitUnstageFiles(repoPath, files);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
+  const discardChanges = useCallback(
+    async (files: string[]): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitDiscardChanges(repoPath, files);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
+  const commit = useCallback(
+    async (message: string, amend?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitCommit(repoPath, message, amend);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
+  const push = useCallback(
+    async (remote?: string, branch?: string, forceLease?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      return await tauri.gitPush(repoPath, remote, branch, forceLease);
+    },
+    [repoPath],
+  );
+
+  const pull = useCallback(
+    async (remote?: string, branch?: string, rebase?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitPull(repoPath, remote, branch, rebase);
+      await refreshRepoInfo();
+      await refreshStatus();
+      await refreshBranches();
+      return msg;
+    },
+    [repoPath, refreshRepoInfo, refreshStatus, refreshBranches],
+  );
+
+  const fetchRemote = useCallback(
+    async (remote?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      return await tauri.gitFetch(repoPath, remote);
+    },
+    [repoPath],
+  );
+
+  const cloneRepo = useCallback(
+    async (url: string, destPath: string, options?: GitCloneOptions): Promise<string> => {
+      if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+      return await tauri.gitClone(url, destPath, options);
+    },
+    [],
+  );
+
+  const extractRepoName = useCallback(async (url: string): Promise<string | null> => {
+    if (!tauri.isTauri()) return null;
+    return await tauri.gitExtractRepoName(url);
+  }, []);
+
+  const validateGitUrl = useCallback(async (url: string): Promise<boolean> => {
+    if (!tauri.isTauri()) return false;
+    return await tauri.gitValidateUrl(url);
+  }, []);
+
+  const initRepo = useCallback(
+    async (path: string): Promise<string> => {
+      if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+      return await tauri.gitInit(path);
+    },
+    [],
+  );
+
+  const getDiff = useCallback(
+    async (staged?: boolean, file?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) return '';
+      return await tauri.gitGetDiff(repoPath, staged, file);
+    },
+    [repoPath],
+  );
+
+  const getDiffBetween = useCallback(
+    async (from: string, to: string, file?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) return '';
+      return await tauri.gitGetDiffBetween(repoPath, from, to, file);
+    },
+    [repoPath],
+  );
+
+  const merge = useCallback(
+    async (branch: string, noFf?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitMerge(repoPath, branch, noFf);
+      await refreshRepoInfo();
+      await refreshStatus();
+      await refreshBranches();
+      return msg;
+    },
+    [repoPath, refreshRepoInfo, refreshStatus, refreshBranches],
+  );
+
+  const revertCommit = useCallback(
+    async (hash: string, noCommit?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitRevert(repoPath, hash, noCommit);
+      await refreshRepoInfo();
+      await refreshStatus();
+      return msg;
+    },
+    [repoPath, refreshRepoInfo, refreshStatus],
+  );
+
+  const cherryPick = useCallback(
+    async (hash: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitCherryPick(repoPath, hash);
+      await refreshRepoInfo();
+      await refreshStatus();
+      return msg;
+    },
+    [repoPath, refreshRepoInfo, refreshStatus],
+  );
+
+  const resetHead = useCallback(
+    async (mode?: string, target?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitReset(repoPath, mode, target);
+      await refreshRepoInfo();
+      await refreshStatus();
+      return msg;
+    },
+    [repoPath, refreshRepoInfo, refreshStatus],
+  );
+
+  // Remote & branch management
+  const remoteAdd = useCallback(
+    async (name: string, url: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitRemoteAdd(repoPath, name, url);
+      await refreshRemotes();
+      return msg;
+    },
+    [repoPath, refreshRemotes],
+  );
+
+  const remoteRemove = useCallback(
+    async (name: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitRemoteRemove(repoPath, name);
+      await refreshRemotes();
+      return msg;
+    },
+    [repoPath, refreshRemotes],
+  );
+
+  const remoteRename = useCallback(
+    async (oldName: string, newName: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitRemoteRename(repoPath, oldName, newName);
+      await refreshRemotes();
+      return msg;
+    },
+    [repoPath, refreshRemotes],
+  );
+
+  const remoteSetUrl = useCallback(
+    async (name: string, url: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitRemoteSetUrl(repoPath, name, url);
+      await refreshRemotes();
+      return msg;
+    },
+    [repoPath, refreshRemotes],
+  );
+
+  const branchRename = useCallback(
+    async (oldName: string, newName: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitBranchRename(repoPath, oldName, newName);
+      await refreshBranches();
+      return msg;
+    },
+    [repoPath, refreshBranches],
+  );
+
+  const branchSetUpstream = useCallback(
+    async (branch: string, upstream: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitBranchSetUpstream(repoPath, branch, upstream);
+      await refreshBranches();
+      return msg;
+    },
+    [repoPath, refreshBranches],
+  );
+
+  const pushTags = useCallback(
+    async (remote?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      return await tauri.gitPushTags(repoPath, remote);
+    },
+    [repoPath],
+  );
+
+  const deleteRemoteBranch = useCallback(
+    async (remote: string, branch: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitDeleteRemoteBranch(repoPath, remote, branch);
+      await refreshBranches();
+      return msg;
+    },
+    [repoPath, refreshBranches],
+  );
+
+  const stashShowDiff = useCallback(
+    async (stashId?: string): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) return '';
+      return await tauri.gitStashShow(repoPath, stashId);
+    },
+    [repoPath],
+  );
+
+  const getReflog = useCallback(
+    async (limit?: number): Promise<GitReflogEntry[]> => {
+      if (!tauri.isTauri() || !repoPath) return [];
+      return await tauri.gitGetReflog(repoPath, limit);
+    },
+    [repoPath],
+  );
+
+  const cleanUntracked = useCallback(
+    async (directories?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitClean(repoPath, directories);
+      await refreshStatus();
+      await refreshRepoInfo();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo],
+  );
+
   const refreshAll = useCallback(async () => {
     if (!tauri.isTauri()) return;
     setLoading(true);
@@ -653,5 +966,34 @@ export function useGit(): UseGitReturn {
     getFileStats,
     searchCommits,
     refreshAll,
+    stageFiles,
+    stageAll,
+    unstageFiles,
+    discardChanges,
+    commit,
+    push,
+    pull,
+    fetch: fetchRemote,
+    cloneRepo,
+    extractRepoName,
+    validateGitUrl,
+    initRepo,
+    getDiff,
+    getDiffBetween,
+    merge,
+    revertCommit,
+    cherryPick,
+    resetHead,
+    remoteAdd,
+    remoteRemove,
+    remoteRename,
+    remoteSetUrl,
+    branchRename,
+    branchSetUpstream,
+    pushTags,
+    deleteRemoteBranch,
+    stashShowDiff,
+    getReflog,
+    cleanUntracked,
   };
 }

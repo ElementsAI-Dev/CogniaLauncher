@@ -11,6 +11,8 @@ const mockT = (key: string, params?: Record<string, string | number>) => {
     "validation.invalidFormat": "Invalid format",
     "validation.mustBeValidUrl": "Must be a valid URL",
     "validation.mustBeValidUrlOrEmpty": "Must be a valid URL or empty",
+    "validation.mustBeValidProxyUrlOrEmpty": "Must be a valid proxy URL or empty",
+    "validation.mustBeValidNoProxyList": "Must be a valid no_proxy list",
   };
   return translations[key] || key;
 };
@@ -88,12 +90,26 @@ describe("validateField", () => {
       expect(
         validateField("network.proxy", "https://proxy.example.com", mockT),
       ).toBeNull();
+      expect(
+        validateField("network.proxy", "socks5://127.0.0.1:1080", mockT),
+      ).toBeNull();
       expect(validateField("network.proxy", "", mockT)).toBeNull(); // Empty is allowed
     });
 
     it("should return error for invalid proxy URL", () => {
       expect(validateField("network.proxy", "not-a-url", mockT)).toBe(
-        "Must be a valid URL or empty",
+        "Must be a valid proxy URL or empty",
+      );
+    });
+
+    it("should return null for valid no_proxy list", () => {
+      expect(validateField("network.no_proxy", "localhost,127.0.0.1,.corp.com", mockT)).toBeNull();
+      expect(validateField("network.no_proxy", "", mockT)).toBeNull();
+    });
+
+    it("should return error for invalid no_proxy list", () => {
+      expect(validateField("network.no_proxy", "localhost;bad!chars", mockT)).toBe(
+        "Must be a valid no_proxy list",
       );
     });
 

@@ -43,16 +43,29 @@ export type {
   CacheIssue,
   CacheRepairResult,
   CacheSettings,
+  CacheOptimizeResult,
+  CacheSizeSnapshot,
+  CacheAutoCleanedEvent,
   CleanPreviewItem,
   CleanPreview,
   EnhancedCleanResult,
   CleanedFileInfo,
   CleanupRecord,
   CleanupHistorySummary,
+  BackupContentType,
+  BackupManifest,
+  BackupInfo,
+  BackupResult,
+  RestoreResult,
+  BackupValidationResult,
+  IntegrityCheckResult,
+  DatabaseInfo,
   GpuInfo,
   PlatformInfo,
   DiskInfo,
   NetworkInterfaceInfo,
+  SystemProxyInfo,
+  ProxyTestResult,
   ComponentInfo,
   BatteryInfo,
   BatchInstallOptions,
@@ -153,6 +166,9 @@ export type {
   GitAheadBehind,
   GitDayActivity,
   GitFileStatEntry,
+  GitReflogEntry,
+  GitCloneOptions,
+  GitCloneProgress,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -186,10 +202,8 @@ import type {
   EnvVerifyResult,
   EnvUpdateCheckResult,
   EnvCleanupResult,
-  CleanedVersion,
   GlobalPackageInfo,
   EnvMigrateResult,
-  MigrateFailure,
   EolCycleInfo,
   EnvironmentInfo,
   InstalledVersion,
@@ -217,13 +231,25 @@ import type {
   CacheVerificationResult,
   CacheRepairResult,
   CacheSettings,
+  CacheOptimizeResult,
+  CacheSizeSnapshot,
+  CacheAutoCleanedEvent,
   CleanPreview,
   EnhancedCleanResult,
   CleanupRecord,
   CleanupHistorySummary,
+  BackupContentType,
+  BackupInfo,
+  BackupResult,
+  RestoreResult,
+  BackupValidationResult,
+  IntegrityCheckResult,
+  DatabaseInfo,
   PlatformInfo,
   DiskInfo,
   NetworkInterfaceInfo,
+  SystemProxyInfo,
+  ProxyTestResult,
   ComponentInfo,
   BatteryInfo,
   BatchProgress,
@@ -284,6 +310,9 @@ import type {
   WslDistroConfig,
   WslMountOptions,
   WslDistroEnvironment,
+  WslDistroResources,
+  WslUser,
+  WslPackageUpdateResult,
   GitRepoInfo,
   GitCommitEntry,
   GitBranchInfo,
@@ -299,6 +328,9 @@ import type {
   GitAheadBehind,
   GitDayActivity,
   GitFileStatEntry,
+  GitReflogEntry,
+  GitCloneOptions,
+  GitCloneProgress,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -548,6 +580,9 @@ export const getCogniaDir = () => invoke<string>('get_cognia_dir');
 export const getPlatformInfo = () => invoke<PlatformInfo>('get_platform_info');
 export const getDiskInfo = () => invoke<DiskInfo[]>('get_disk_info');
 export const getNetworkInterfaces = () => invoke<NetworkInterfaceInfo[]>('get_network_interfaces');
+export const detectSystemProxy = () => invoke<SystemProxyInfo>('detect_system_proxy');
+export const testProxyConnection = (proxyUrl: string, testUrl?: string) =>
+  invoke<ProxyTestResult>('test_proxy_connection', { proxyUrl, testUrl });
 export const getComponentsInfo = () => invoke<ComponentInfo[]>('get_components_info');
 export const getBatteryInfo = () => invoke<BatteryInfo | null>('get_battery_info');
 
@@ -746,6 +781,36 @@ export const getEnhancedCacheSettings = () =>
   invoke<EnhancedCacheSettings>('get_enhanced_cache_settings');
 export const setEnhancedCacheSettings = (newSettings: EnhancedCacheSettings) =>
   invoke<void>('set_enhanced_cache_settings', { newSettings });
+
+// Database optimization & size history
+export const cacheOptimize = () =>
+  invoke<CacheOptimizeResult>('cache_optimize');
+export const getCacheSizeHistory = (days?: number) =>
+  invoke<CacheSizeSnapshot[]>('get_cache_size_history', { days });
+
+// Backup & database maintenance
+export const backupCreate = (contents: BackupContentType[], note?: string) =>
+  invoke<BackupResult>('backup_create', { contents, note });
+export const backupRestore = (backupPath: string, contents: BackupContentType[]) =>
+  invoke<RestoreResult>('backup_restore', { backupPath, contents });
+export const backupList = () =>
+  invoke<BackupInfo[]>('backup_list');
+export const backupDelete = (backupPath: string) =>
+  invoke<boolean>('backup_delete', { backupPath });
+export const backupValidate = (backupPath: string) =>
+  invoke<BackupValidationResult>('backup_validate', { backupPath });
+export const dbIntegrityCheck = () =>
+  invoke<IntegrityCheckResult>('db_integrity_check');
+export const dbGetInfo = () =>
+  invoke<DatabaseInfo>('db_get_info');
+
+export async function listenCacheAutoCleaned(
+  callback: (event: CacheAutoCleanedEvent) => void
+): Promise<UnlistenFn> {
+  return listen<CacheAutoCleanedEvent>('cache-auto-cleaned', (event) => {
+    callback(event.payload);
+  });
+}
 
 // Cache change events
 export interface CacheChangedEvent {
@@ -965,6 +1030,15 @@ export const downloadBatchRemove = (taskIds: string[]) =>
 export const downloadShutdown = () =>
   invoke<void>('download_shutdown');
 
+export const downloadSetPriority = (taskId: string, priority: number) =>
+  invoke<void>('download_set_priority', { taskId, priority });
+
+export const downloadRetry = (taskId: string) =>
+  invoke<void>('download_retry', { taskId });
+
+export const downloadCalculateChecksum = (path: string) =>
+  invoke<string>('download_calculate_checksum', { path });
+
 // Download history commands
 export const downloadHistoryList = (limit?: number) =>
   invoke<DownloadHistoryRecord[]>('download_history_list', { limit });
@@ -987,6 +1061,10 @@ export const diskSpaceGet = (path: string) =>
 
 export const diskSpaceCheck = (path: string, required: number) =>
   invoke<boolean>('disk_space_check', { path, required });
+
+/** Extract an archive to a destination directory */
+export const downloadExtract = (archivePath: string, destPath: string) =>
+  invoke<string[]>('download_extract', { archivePath, destPath });
 
 // Download event listeners
 export async function listenDownloadTaskAdded(
@@ -1650,6 +1728,18 @@ export const wslDebugDetection = () =>
 export const wslDetectDistroEnv = (distro: string) =>
   invoke<WslDistroEnvironment>('wsl_detect_distro_env', { distro });
 
+/** Get live resource usage (memory, swap, CPU, load) from a running WSL distribution */
+export const wslGetDistroResources = (distro: string) =>
+  invoke<WslDistroResources>('wsl_get_distro_resources', { distro });
+
+/** List non-system users in a WSL distribution */
+export const wslListUsers = (distro: string) =>
+  invoke<WslUser[]>('wsl_list_users', { distro });
+
+/** Update or upgrade packages in a WSL distribution */
+export const wslUpdateDistroPackages = (distro: string, mode: string) =>
+  invoke<WslPackageUpdateResult>('wsl_update_distro_packages', { distro, mode });
+
 // ============================================================================
 // Launch Commands
 // ============================================================================
@@ -1889,6 +1979,140 @@ export const gitGetFileStats = (path: string, file: string, limit?: number) =>
 export const gitSearchCommits = (path: string, query: string, searchType?: string, limit?: number) =>
   invoke<GitCommitEntry[]>('git_search_commits', { path, query, searchType, limit });
 
+
+// ============================================================================
+// Git Write Operations
+// ============================================================================
+
+/** Stage specific files */
+export const gitStageFiles = (path: string, files: string[]) =>
+  invoke<string>('git_stage_files', { path, files });
+
+/** Stage all changes */
+export const gitStageAll = (path: string) =>
+  invoke<string>('git_stage_all', { path });
+
+/** Unstage specific files */
+export const gitUnstageFiles = (path: string, files: string[]) =>
+  invoke<string>('git_unstage_files', { path, files });
+
+/** Discard working tree changes for specific files */
+export const gitDiscardChanges = (path: string, files: string[]) =>
+  invoke<string>('git_discard_changes', { path, files });
+
+/** Create a commit */
+export const gitCommit = (path: string, message: string, amend?: boolean) =>
+  invoke<string>('git_commit', { path, message, amend });
+
+/** Push to remote */
+export const gitPush = (path: string, remote?: string, branch?: string, forceLease?: boolean) =>
+  invoke<string>('git_push', { path, remote, branch, forceLease });
+
+/** Pull from remote */
+export const gitPull = (path: string, remote?: string, branch?: string, rebase?: boolean) =>
+  invoke<string>('git_pull', { path, remote, branch, rebase });
+
+/** Fetch from remote */
+export const gitFetch = (path: string, remote?: string) =>
+  invoke<string>('git_fetch', { path, remote });
+
+/** Clone a repository */
+export const gitClone = (url: string, destPath: string, options?: GitCloneOptions) =>
+  invoke<string>('git_clone', { url, destPath, options });
+
+/** Extract repository name from a git URL */
+export const gitExtractRepoName = (url: string) =>
+  invoke<string | null>('git_extract_repo_name', { url });
+
+/** Validate whether a string looks like a valid git remote URL */
+export const gitValidateUrl = (url: string) =>
+  invoke<boolean>('git_validate_url', { url });
+
+/** Listen for git clone progress events */
+export async function listenGitCloneProgress(
+  callback: (progress: GitCloneProgress) => void
+): Promise<UnlistenFn> {
+  return listen<GitCloneProgress>('git-clone-progress', (event) => {
+    callback(event.payload);
+  });
+}
+
+/** Initialize a new repository */
+export const gitInit = (path: string) =>
+  invoke<string>('git_init', { path });
+
+/** Get diff output (working tree or staged changes) */
+export const gitGetDiff = (path: string, staged?: boolean, file?: string) =>
+  invoke<string>('git_get_diff', { path, staged, file });
+
+/** Get diff between two commits */
+export const gitGetDiffBetween = (path: string, from: string, to: string, file?: string) =>
+  invoke<string>('git_get_diff_between', { path, from, to, file });
+
+/** Merge a branch into current */
+export const gitMerge = (path: string, branch: string, noFf?: boolean) =>
+  invoke<string>('git_merge', { path, branch, noFf });
+
+/** Revert a commit */
+export const gitRevert = (path: string, hash: string, noCommit?: boolean) =>
+  invoke<string>('git_revert', { path, hash, noCommit });
+
+/** Cherry-pick a commit */
+export const gitCherryPick = (path: string, hash: string) =>
+  invoke<string>('git_cherry_pick', { path, hash });
+
+/** Reset HEAD to a target */
+export const gitReset = (path: string, mode?: string, target?: string) =>
+  invoke<string>('git_reset', { path, mode, target });
+
+// ============================================================================
+// Git Remote & Branch Management
+// ============================================================================
+
+/** Add a remote */
+export const gitRemoteAdd = (path: string, name: string, url: string) =>
+  invoke<string>('git_remote_add', { path, name, url });
+
+/** Remove a remote */
+export const gitRemoteRemove = (path: string, name: string) =>
+  invoke<string>('git_remote_remove', { path, name });
+
+/** Rename a remote */
+export const gitRemoteRename = (path: string, oldName: string, newName: string) =>
+  invoke<string>('git_remote_rename', { path, oldName, newName });
+
+/** Set remote URL */
+export const gitRemoteSetUrl = (path: string, name: string, url: string) =>
+  invoke<string>('git_remote_set_url', { path, name, url });
+
+/** Rename a branch */
+export const gitBranchRename = (path: string, oldName: string, newName: string) =>
+  invoke<string>('git_branch_rename', { path, oldName, newName });
+
+/** Set upstream tracking branch */
+export const gitBranchSetUpstream = (path: string, branch: string, upstream: string) =>
+  invoke<string>('git_branch_set_upstream', { path, branch, upstream });
+
+/** Push all tags to remote */
+export const gitPushTags = (path: string, remote?: string) =>
+  invoke<string>('git_push_tags', { path, remote });
+
+/** Delete a remote branch */
+export const gitDeleteRemoteBranch = (path: string, remote: string, branch: string) =>
+  invoke<string>('git_delete_remote_branch', { path, remote, branch });
+
+/** Show stash diff */
+export const gitStashShow = (path: string, stashId?: string) =>
+  invoke<string>('git_stash_show', { path, stashId });
+
+/** Get reflog entries */
+export const gitGetReflog = (path: string, limit?: number) =>
+  invoke<GitReflogEntry[]>('git_get_reflog', { path, limit });
+
+/** Remove untracked files */
+export const gitClean = (path: string, directories?: boolean) =>
+  invoke<string>('git_clean', { path, directories });
+
 // ============================================================================
 // Environment Variable Management
 // ============================================================================
@@ -1952,6 +2176,18 @@ export const envvarImportEnvFile = (content: string, scope: EnvVarScope) =>
 /** Export variables to a specific format */
 export const envvarExportEnvFile = (scope: EnvVarScope, format: EnvFileFormat) =>
   invoke<string>('envvar_export_env_file', { scope, format });
+
+/** List all persistent environment variables for a given scope */
+export const envvarListPersistent = (scope: EnvVarScope) =>
+  invoke<[string, string][]>('envvar_list_persistent', { scope });
+
+/** Expand environment variable references in a path string */
+export const envvarExpand = (path: string) =>
+  invoke<string>('envvar_expand', { path });
+
+/** Remove duplicate PATH entries for a given scope, returns count removed */
+export const envvarDeduplicatePath = (scope: EnvVarScope) =>
+  invoke<number>('envvar_deduplicate_path', { scope });
 
 // ============================================================================
 // Terminal Management
@@ -2064,3 +2300,35 @@ export const terminalGetShellEnvVars = () =>
 /** Get resolved proxy environment variables for terminal */
 export const terminalGetProxyEnvVars = () =>
   invoke<[string, string][]>('terminal_get_proxy_env_vars');
+
+/** Duplicate a terminal profile */
+export const terminalDuplicateProfile = (id: string) =>
+  invoke<string>('terminal_duplicate_profile', { id });
+
+/** Export all terminal profiles as JSON */
+export const terminalExportProfiles = () =>
+  invoke<string>('terminal_export_profiles');
+
+/** Import terminal profiles from JSON */
+export const terminalImportProfiles = (json: string, merge: boolean) =>
+  invoke<number>('terminal_import_profiles', { json, merge });
+
+/** Write content to a shell config file (with automatic backup) */
+export const terminalWriteConfig = (path: string, content: string) =>
+  invoke<void>('terminal_write_config', { path, content });
+
+/** Install a PowerShell module from PSGallery */
+export const terminalPsInstallModule = (name: string, scope: string) =>
+  invoke<void>('terminal_ps_install_module', { name, scope });
+
+/** Uninstall a PowerShell module */
+export const terminalPsUninstallModule = (name: string) =>
+  invoke<void>('terminal_ps_uninstall_module', { name });
+
+/** Update a PowerShell module */
+export const terminalPsUpdateModule = (name: string) =>
+  invoke<void>('terminal_ps_update_module', { name });
+
+/** Search PSGallery for modules */
+export const terminalPsFindModule = (query: string) =>
+  invoke<PSModuleInfo[]>('terminal_ps_find_module', { query });

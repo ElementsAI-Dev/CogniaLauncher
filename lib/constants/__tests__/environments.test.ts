@@ -246,6 +246,25 @@ describe('Environment Constants', () => {
       expect(cppFiles).toContain('CMakeLists.txt (CMAKE_CXX_STANDARD)');
     });
 
+    it('c has meson.build and xmake.lua detection files', () => {
+      const cFiles = DEFAULT_DETECTION_FILES.c;
+      expect(cFiles).toContain('meson.build (c_std)');
+      expect(cFiles).toContain('xmake.lua (set_languages c)');
+    });
+
+    it('cpp has meson.build and xmake.lua detection files', () => {
+      const cppFiles = DEFAULT_DETECTION_FILES.cpp;
+      expect(cppFiles).toContain('meson.build (cpp_std)');
+      expect(cppFiles).toContain('xmake.lua (set_languages c++)');
+    });
+
+    it('c and cpp have system provider', () => {
+      const cProviders = DEFAULT_PROVIDERS.c;
+      const cppProviders = DEFAULT_PROVIDERS.cpp;
+      expect(cProviders.find((p) => p.id === 'system-c')).toBeDefined();
+      expect(cppProviders.find((p) => p.id === 'system-cpp')).toBeDefined();
+    });
+
     it('typescript has tsconfig.json (compilerOptions.target) detection file', () => {
       const tsFiles = DEFAULT_DETECTION_FILES.typescript;
       expect(tsFiles).toContain('tsconfig.json (compilerOptions.target)');

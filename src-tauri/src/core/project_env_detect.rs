@@ -137,11 +137,15 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
         ],
         "c" => &[
             "CMakeLists.txt (CMAKE_C_STANDARD)",
+            "meson.build (c_std)",
+            "xmake.lua (set_languages c)",
             ".tool-versions",
             "mise.toml",
         ],
         "cpp" => &[
             "CMakeLists.txt (CMAKE_CXX_STANDARD)",
+            "meson.build (cpp_std)",
+            "xmake.lua (set_languages c++)",
             ".tool-versions",
             "mise.toml",
         ],
@@ -714,7 +718,7 @@ async fn read_tool_versions(
             Some(t) => t,
             None => continue,
         };
-        if !keys.iter().any(|k| *k == tool) {
+        if !keys.contains(&tool) {
             continue;
         }
 
@@ -1980,6 +1984,8 @@ async fn detect_c(dir: &Path, source: &str) -> CogniaResult<Option<DetectedValue
         "CMakeLists.txt (CMAKE_C_STANDARD)" => {
             read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_C_STANDARD", source).await
         }
+        "meson.build (c_std)" => read_meson_build_c_std(dir.join("meson.build")).await,
+        "xmake.lua (set_languages c)" => read_xmake_lua_c_std(dir.join("xmake.lua")).await,
         ".tool-versions" => {
             read_tool_versions(dir.join(".tool-versions"), &["c"], ".tool-versions").await
         }
@@ -1994,6 +2000,8 @@ async fn detect_cpp(dir: &Path, source: &str) -> CogniaResult<Option<DetectedVal
         "CMakeLists.txt (CMAKE_CXX_STANDARD)" => {
             read_cmake_standard(dir.join("CMakeLists.txt"), "CMAKE_CXX_STANDARD", source).await
         }
+        "meson.build (cpp_std)" => read_meson_build_cpp_std(dir.join("meson.build")).await,
+        "xmake.lua (set_languages c++)" => read_xmake_lua_cpp_std(dir.join("xmake.lua")).await,
         ".tool-versions" => {
             read_tool_versions(
                 dir.join(".tool-versions"),
@@ -2036,6 +2044,140 @@ async fn read_cmake_standard(
                 return Ok(Some(DetectedValue {
                     value: format!("C{}", standard),
                     source: source_label.to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// meson.build `c_std` — parse `default_options: ['c_std=c17']` or `'c_std': 'c17'`
+async fn read_meson_build_c_std(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match c_std=cNN or c_std: 'cNN' or "c_std": "cNN"
+    // c_std is NOT a substring of cpp_std, so no false-match risk.
+    let re = match regex::Regex::new(r#"c_std['"]?\s*[=:]\s*['"]?c(\d+)"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(standard) = caps.get(1) {
+            let standard = standard.as_str().trim();
+            if !standard.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("C{}", standard),
+                    source: "meson.build (c_std)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// meson.build `cpp_std` — parse `default_options: ['cpp_std=c++20']` or `'cpp_std': 'c++20'`
+async fn read_meson_build_cpp_std(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match cpp_std=c++NN or cpp_std: 'c++NN' or "cpp_std": "c++20"
+    let re = match regex::Regex::new(r#"cpp_std['"]?\s*[=:]\s*['"]?c\+\+(\d+)"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(standard) = caps.get(1) {
+            let standard = standard.as_str().trim();
+            if !standard.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("C++{}", standard),
+                    source: "meson.build (cpp_std)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// xmake.lua `set_languages("c99")` — extract C standard
+async fn read_xmake_lua_c_std(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match set_languages("c99") or set_languages("c11", "c++20")
+    // Pattern c(\d+) won't match c++ because + is not \d
+    let re = match regex::Regex::new(r#"set_languages\s*\([^)]*["']c(\d+)["']"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(standard) = caps.get(1) {
+            let standard = standard.as_str().trim();
+            if !standard.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("C{}", standard),
+                    source: "xmake.lua (set_languages c)".to_string(),
+                    path,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// xmake.lua `set_languages("c++20")` or `set_languages("cxx20")` — extract C++ standard
+async fn read_xmake_lua_cpp_std(path: PathBuf) -> CogniaResult<Option<DetectedValue>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+
+    let content = match crate::platform::fs::read_file_string(&path).await {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+
+    // Match set_languages("c++20") or set_languages("cxx20")
+    let re = match regex::Regex::new(r#"set_languages\s*\([^)]*["'](?:c\+\+|cxx)(\d+)["']"#) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(caps) = re.captures(&content) {
+        if let Some(standard) = caps.get(1) {
+            let standard = standard.as_str().trim();
+            if !standard.is_empty() {
+                return Ok(Some(DetectedValue {
+                    value: format!("C++{}", standard),
+                    source: "xmake.lua (set_languages c++)".to_string(),
                     path,
                 }));
             }
@@ -3851,5 +3993,167 @@ rust-version = "1.70"
         assert_eq!(enabled.len(), 2);
         assert_eq!(enabled[0], ".nvmrc");
         assert_eq!(enabled[1], ".node-version");
+    }
+
+    // ── meson.build C/C++ detection tests ──
+
+    #[tokio::test]
+    async fn c_meson_build_c_std() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("meson.build"),
+            "project('mylib', 'c', default_options: ['c_std=c17'])\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["meson.build (c_std)".to_string()];
+        let detected = detect_env_version("c", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "c");
+        assert_eq!(detected.version, "C17");
+        assert_eq!(detected.source, "meson.build (c_std)");
+    }
+
+    #[tokio::test]
+    async fn c_meson_build_c_std_dict_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("meson.build"),
+            "project('mylib', 'c',\n  default_options: {'c_std': 'c11'})\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["meson.build (c_std)".to_string()];
+        let detected = detect_env_version("c", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C11");
+    }
+
+    #[tokio::test]
+    async fn cpp_meson_build_cpp_std() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("meson.build"),
+            "project('myapp', 'cpp', default_options: ['cpp_std=c++20'])\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["meson.build (cpp_std)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "cpp");
+        assert_eq!(detected.version, "C++20");
+        assert_eq!(detected.source, "meson.build (cpp_std)");
+    }
+
+    #[tokio::test]
+    async fn cpp_meson_build_cpp_std_dict_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("meson.build"),
+            "project('myapp', 'cpp',\n  default_options: {'cpp_std': 'c++23'})\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["meson.build (cpp_std)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C++23");
+    }
+
+    #[tokio::test]
+    async fn meson_build_missing_returns_none() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        let sources = vec!["meson.build (cpp_std)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources).await.unwrap();
+        assert!(detected.is_none());
+    }
+
+    // ── xmake.lua C/C++ detection tests ──
+
+    #[tokio::test]
+    async fn c_xmake_lua_set_languages() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("xmake.lua"),
+            "set_languages(\"c99\")\ntarget(\"mylib\")\n    set_kind(\"static\")\n    add_files(\"src/*.c\")\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["xmake.lua (set_languages c)".to_string()];
+        let detected = detect_env_version("c", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "c");
+        assert_eq!(detected.version, "C99");
+        assert_eq!(detected.source, "xmake.lua (set_languages c)");
+    }
+
+    #[tokio::test]
+    async fn cpp_xmake_lua_set_languages() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("xmake.lua"),
+            "set_languages(\"c++20\")\ntarget(\"myapp\")\n    set_kind(\"binary\")\n    add_files(\"src/*.cpp\")\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["xmake.lua (set_languages c++)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.env_type, "cpp");
+        assert_eq!(detected.version, "C++20");
+        assert_eq!(detected.source, "xmake.lua (set_languages c++)");
+    }
+
+    #[tokio::test]
+    async fn cpp_xmake_lua_set_languages_cxx_format() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+
+        crate::platform::fs::write_file_string(
+            root.join("xmake.lua"),
+            "set_languages(\"cxx17\")\n",
+        )
+        .await
+        .unwrap();
+
+        let sources = vec!["xmake.lua (set_languages c++)".to_string()];
+        let detected = detect_env_version("cpp", root, &sources)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detected.version, "C++17");
     }
 }

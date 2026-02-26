@@ -40,6 +40,13 @@ pub enum DownloadEvent {
     TaskResumed { task_id: String },
     /// Task was cancelled
     TaskCancelled { task_id: String },
+    /// Task is being extracted
+    TaskExtracting { task_id: String },
+    /// Task archive was extracted
+    TaskExtracted {
+        task_id: String,
+        files: Vec<String>,
+    },
     /// Queue stats updated
     QueueUpdated { stats: QueueStats },
 }
@@ -115,6 +122,24 @@ impl Default for DownloadManagerConfig {
             auto_start: true,
         }
     }
+}
+
+/// Parse a Content-Disposition header value to extract the filename.
+///
+/// Supports both `filename="quoted"` and `filename=unquoted` forms.
+fn parse_content_disposition(header: &str) -> Option<String> {
+    header.split(';').find_map(|part| {
+        let part = part.trim();
+        if part.starts_with("filename=") {
+            Some(
+                part.trim_start_matches("filename=")
+                    .trim_matches('"')
+                    .to_string(),
+            )
+        } else {
+            None
+        }
+    })
 }
 
 /// The main download manager
@@ -459,6 +484,36 @@ impl DownloadManager {
         count
     }
 
+    /// Set priority for a download task
+    pub async fn set_priority(
+        &self,
+        task_id: &str,
+        priority: i32,
+    ) -> Result<(), DownloadError> {
+        let mut queue = self.queue.write().await;
+        queue.set_priority(task_id, priority)?;
+        drop(queue);
+        self.emit_queue_stats().await;
+        Ok(())
+    }
+
+    /// Force-retry a single terminal task (failed/cancelled/completed)
+    pub async fn retry_task(&self, task_id: &str) -> Result<(), DownloadError> {
+        {
+            let controls = self.task_controls.read().await;
+            if let Some(control) = controls.get(task_id) {
+                // Reset control flags so the new worker starts clean
+                control.resume();
+            }
+        }
+
+        let mut queue = self.queue.write().await;
+        queue.retry_task(task_id)?;
+        drop(queue);
+        self.emit_queue_stats().await;
+        Ok(())
+    }
+
     /// Retry all failed downloads
     pub async fn retry_all_failed(&self) -> usize {
         let mut queue = self.queue.write().await;
@@ -639,8 +694,9 @@ impl DownloadManager {
             });
         }
 
-        // Perform the download
-        let result = Self::do_download(
+        // Perform the download with per-task timeout
+        let timeout_duration = Duration::from_secs(task.config.timeout_secs);
+        let download_future = Self::do_download(
             &task,
             &control,
             &queue,
@@ -648,8 +704,13 @@ impl DownloadManager {
             &speed_limiter,
             &event_tx,
             &config,
-        )
-        .await;
+        );
+        let result = match tokio::time::timeout(timeout_duration, download_future).await {
+            Ok(inner) => inner,
+            Err(_) => Err(DownloadError::Timeout {
+                seconds: task.config.timeout_secs,
+            }),
+        };
 
         // Update task state based on result
         match result {
@@ -680,8 +741,12 @@ impl DownloadManager {
                 let will_retry = q.fail(&task_id, err.clone()).unwrap_or(false);
 
                 if will_retry {
-                    // Exponential backoff: 2^retry * 1s, capped at 60s
-                    let backoff_secs = (2u64.pow(retry_count)).min(60);
+                    // Use server-provided retry_after for rate limits,
+                    // otherwise exponential backoff: 2^retry * 1s, capped at 60s
+                    let backoff_secs = match &err {
+                        DownloadError::RateLimited { retry_after } => *retry_after,
+                        _ => (2u64.pow(retry_count)).min(60),
+                    };
                     drop(q); // Release lock during sleep
                     log::info!(
                         "Download {} failed (attempt {}), retrying in {}s: {}",
@@ -795,10 +860,50 @@ impl DownloadManager {
             });
         }
 
+        // Detect resume support from server
+        let server_supports_resume = response
+            .headers()
+            .get("accept-ranges")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v == "bytes")
+            .unwrap_or(false);
+        if server_supports_resume {
+            let mut q = queue.write().await;
+            if let Some(t) = q.get_mut(task_id) {
+                t.supports_resume = true;
+            }
+        }
+
+        // Parse Content-Disposition for server-provided filename
+        let server_filename = response
+            .headers()
+            .get("content-disposition")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_content_disposition);
+        if server_filename.is_some() {
+            let mut q = queue.write().await;
+            if let Some(t) = q.get_mut(task_id) {
+                t.server_filename = server_filename;
+            }
+        }
+
         // Get total size
         let total_size = response
             .content_length()
             .map(|len| len + resume_from.unwrap_or(0));
+
+        // Check disk space before downloading
+        if let Some(total) = total_size {
+            let check_path = dest.parent().unwrap_or(dest);
+            if let Ok(space) = crate::platform::disk::get_disk_space(check_path).await {
+                if space.available < total {
+                    return Err(DownloadError::InsufficientSpace {
+                        required: total,
+                        available: space.available,
+                    });
+                }
+            }
+        }
 
         // Open file
         let mut file = if resume_from.is_some() {
@@ -1407,5 +1512,107 @@ mod tests {
             .cleanup_stale_partials(std::time::Duration::from_secs(0))
             .await;
         assert_eq!(cleaned, 0);
+    }
+
+    #[test]
+    fn test_parse_content_disposition_quoted() {
+        let result = parse_content_disposition(r#"attachment; filename="my-file.zip""#);
+        assert_eq!(result, Some("my-file.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_unquoted() {
+        let result = parse_content_disposition("attachment; filename=my-file.zip");
+        assert_eq!(result, Some("my-file.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_no_filename() {
+        let result = parse_content_disposition("inline");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_content_disposition_empty() {
+        let result = parse_content_disposition("");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_parse_content_disposition_with_extra_params() {
+        let result = parse_content_disposition(
+            r#"attachment; filename="report.pdf"; size=12345"#,
+        );
+        assert_eq!(result, Some("report.pdf".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_spaces_around_filename() {
+        let result = parse_content_disposition(r#"attachment;  filename="spaced.tar.gz" "#);
+        assert_eq!(result, Some("spaced.tar.gz".to_string()));
+    }
+
+    #[test]
+    fn test_download_event_extracting_serialize() {
+        let event = DownloadEvent::TaskExtracting {
+            task_id: "abc-123".to_string(),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("task_extracting"));
+        assert!(json.contains("abc-123"));
+    }
+
+    #[test]
+    fn test_download_event_extracted_serialize() {
+        let event = DownloadEvent::TaskExtracted {
+            task_id: "abc-123".to_string(),
+            files: vec!["file1.txt".to_string(), "dir/file2.txt".to_string()],
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("task_extracted"));
+        assert!(json.contains("file1.txt"));
+        assert!(json.contains("dir/file2.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_task_has_server_filename_none() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert!(task.server_filename.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_task_with_auto_extract() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task = crate::download::DownloadTask::builder(
+            "https://example.com/archive.tar.gz".to_string(),
+            PathBuf::from("/tmp/archive.tar.gz"),
+            "Archive".to_string(),
+        )
+        .with_config(DownloadConfig {
+            auto_extract: true,
+            extract_dest: Some(PathBuf::from("/tmp/extracted")),
+            ..Default::default()
+        })
+        .build();
+
+        let task_id = manager.add_task(task).await;
+        let retrieved = manager.get_task(&task_id).await.unwrap();
+
+        assert!(retrieved.config.auto_extract);
+        assert_eq!(
+            retrieved.config.extract_dest,
+            Some(PathBuf::from("/tmp/extracted"))
+        );
     }
 }

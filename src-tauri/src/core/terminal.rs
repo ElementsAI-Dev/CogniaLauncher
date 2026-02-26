@@ -141,6 +141,78 @@ async fn detect_shells_windows() -> CogniaResult<Vec<ShellInfo>> {
         }
     }
 
+    // MSYS2 Bash
+    let msys2_bash_candidates: Vec<PathBuf> = {
+        let mut paths = vec![
+            PathBuf::from(r"C:\msys64\usr\bin\bash.exe"),
+            PathBuf::from(r"C:\msys32\usr\bin\bash.exe"),
+        ];
+        if let Ok(root) = std::env::var("MSYS2_ROOT") {
+            paths.insert(0, PathBuf::from(&root).join("usr").join("bin").join("bash.exe"));
+        }
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            paths.push(PathBuf::from(profile).join("msys64").join("usr").join("bin").join("bash.exe"));
+        }
+        paths
+    };
+    for path in &msys2_bash_candidates {
+        if path.exists() {
+            let version = get_shell_version(path.to_str().unwrap_or(""), &["--version"]).await;
+            let mut info = build_shell_info(
+                "msys2",
+                "MSYS2 Bash",
+                ShellType::Bash,
+                path.display().to_string(),
+                false,
+            )
+            .await;
+            info.version = version;
+            shells.push(info);
+            break;
+        }
+    }
+
+    // Cygwin Bash
+    let cygwin_paths = [
+        r"C:\cygwin64\bin\bash.exe",
+        r"C:\cygwin\bin\bash.exe",
+    ];
+    for path in &cygwin_paths {
+        if Path::new(path).exists() {
+            let version = get_shell_version(path, &["--version"]).await;
+            let mut info = build_shell_info(
+                "cygwin",
+                "Cygwin Bash",
+                ShellType::Bash,
+                path.to_string(),
+                false,
+            )
+            .await;
+            info.version = version;
+            shells.push(info);
+            break;
+        }
+    }
+
+    // Nushell
+    if let Ok(nu_path) = which::which("nu") {
+        let version = get_shell_version(
+            nu_path.to_str().unwrap_or("nu"),
+            &["--version"],
+        )
+        .await;
+        let mut info = build_shell_info(
+            "nushell",
+            "Nushell",
+            ShellType::Nushell,
+            nu_path.display().to_string(),
+            default_shell == ShellType::Nushell,
+        )
+        .await;
+        info.version = version;
+        shells.push(info);
+    }
+
     Ok(shells)
 }
 
@@ -168,6 +240,7 @@ async fn detect_shells_unix() -> CogniaResult<Vec<ShellInfo>> {
                 "zsh" => ShellType::Zsh,
                 "fish" => ShellType::Fish,
                 "pwsh" => ShellType::PowerShell,
+                "nu" => ShellType::Nushell,
                 _ => continue,
             };
 
@@ -181,6 +254,7 @@ async fn detect_shells_unix() -> CogniaResult<Vec<ShellInfo>> {
                 ShellType::Bash => &["--version"],
                 ShellType::Zsh => &["--version"],
                 ShellType::Fish => &["--version"],
+                ShellType::Nushell => &["--version"],
                 ShellType::PowerShell => &[
                     "-NoProfile",
                     "-NonInteractive",
@@ -224,6 +298,27 @@ async fn detect_shells_unix() -> CogniaResult<Vec<ShellInfo>> {
                 ShellType::PowerShell,
                 pwsh_path.display().to_string(),
                 false,
+            )
+            .await;
+            info.version = version;
+            shells.push(info);
+        }
+    }
+
+    // Check for Nushell if not found in /etc/shells
+    if !seen.contains("nushell") {
+        if let Ok(nu_path) = which::which("nu") {
+            let version = get_shell_version(
+                nu_path.to_str().unwrap_or("nu"),
+                &["--version"],
+            )
+            .await;
+            let mut info = build_shell_info(
+                "nushell",
+                "Nushell",
+                ShellType::Nushell,
+                nu_path.display().to_string(),
+                default_shell == ShellType::Nushell,
             )
             .await;
             info.version = version;
@@ -422,6 +517,49 @@ impl TerminalProfileManager {
         self.save().await?;
         Ok(())
     }
+
+    pub async fn duplicate_profile(&mut self, id: &str) -> CogniaResult<String> {
+        let source = self
+            .get_profile(id)
+            .cloned()
+            .ok_or_else(|| CogniaError::Config(format!("Profile '{}' not found", id)))?;
+        let mut copy = source;
+        copy.name = format!("{} (Copy)", copy.name);
+        copy.is_default = false;
+        self.create_profile(copy).await
+    }
+
+    pub fn export_profiles(&self) -> CogniaResult<String> {
+        serde_json::to_string_pretty(&self.profiles)
+            .map_err(|e| CogniaError::Config(format!("Failed to export profiles: {}", e)))
+    }
+
+    pub async fn import_profiles(
+        &mut self,
+        json: &str,
+        merge: bool,
+    ) -> CogniaResult<usize> {
+        let imported: Vec<TerminalProfile> = serde_json::from_str(json)
+            .map_err(|e| CogniaError::Parse(format!("Invalid profile JSON: {}", e)))?;
+
+        let count = imported.len();
+
+        if !merge {
+            self.profiles.clear();
+        }
+
+        let now = Utc::now().to_rfc3339();
+        for mut profile in imported {
+            profile.id = uuid::Uuid::new_v4().to_string();
+            profile.created_at = now.clone();
+            profile.updated_at = now.clone();
+            profile.is_default = false;
+            self.profiles.push(profile);
+        }
+
+        self.save().await?;
+        Ok(count)
+    }
 }
 
 // ============================================================================
@@ -497,12 +635,34 @@ pub async fn append_to_shell_config(path: &Path, content: &str) -> CogniaResult<
     Ok(())
 }
 
+/// Write content to a shell config file (with automatic backup)
+pub async fn write_shell_config(path: &Path, content: &str) -> CogniaResult<()> {
+    if fs::exists(path).await {
+        backup_shell_config(path).await?;
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("Failed to create config dir: {}", e)))?;
+    }
+
+    tokio::fs::write(path, content)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to write config: {}", e)))?;
+
+    debug!("Wrote config to {}", path.display());
+    Ok(())
+}
+
 /// Parse shell config content to extract aliases, exports, and source lines
 pub fn parse_shell_config(content: &str, shell_type: ShellType) -> ShellConfigEntries {
     match shell_type {
         ShellType::Bash | ShellType::Zsh => parse_posix_config(content),
         ShellType::Fish => parse_fish_config(content),
         ShellType::PowerShell => parse_powershell_config(content),
+        ShellType::Nushell => parse_nushell_config(content),
         ShellType::Cmd => ShellConfigEntries {
             aliases: vec![],
             exports: vec![],
@@ -616,6 +776,39 @@ fn parse_powershell_config(content: &str) -> ShellConfigEntries {
     }
 }
 
+fn parse_nushell_config(content: &str) -> ShellConfigEntries {
+    let mut aliases = Vec::new();
+    let mut exports = Vec::new();
+    let mut sources = Vec::new();
+
+    // alias name = value or alias name = { body }
+    let alias_re = Regex::new(r#"^\s*alias\s+([\w-]+)\s*=\s*(.+)"#).unwrap();
+    // $env.KEY = "value" or $env.KEY = value
+    let export_re = Regex::new(r#"^\s*\$env\.(\w+)\s*=\s*["']?(.*?)["']?\s*$"#).unwrap();
+    // source path or source-env path
+    let source_re = Regex::new(r#"^\s*(?:source|source-env)\s+["']?([^"'\s]+)["']?"#).unwrap();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(caps) = alias_re.captures(line) {
+            aliases.push((caps[1].to_string(), caps[2].trim().to_string()));
+        } else if let Some(caps) = export_re.captures(line) {
+            exports.push((caps[1].to_string(), caps[2].to_string()));
+        } else if let Some(caps) = source_re.captures(line) {
+            sources.push(caps[1].to_string());
+        }
+    }
+
+    ShellConfigEntries {
+        aliases,
+        exports,
+        sources,
+    }
+}
+
 // ============================================================================
 // PowerShell Management
 // ============================================================================
@@ -664,9 +857,14 @@ fn get_ps_executable() -> &'static str {
 
 /// Run a PowerShell command and return stdout
 async fn run_ps_command(command: &str) -> CogniaResult<String> {
+    run_ps_command_with_timeout(command, 30).await
+}
+
+/// Run a PowerShell command with a custom timeout (in seconds)
+async fn run_ps_command_with_timeout(command: &str, timeout_secs: u64) -> CogniaResult<String> {
     let ps = get_ps_executable();
     let opts =
-        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(30)));
+        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(timeout_secs)));
     let output = process::execute(
         ps,
         &["-NoProfile", "-NonInteractive", "-Command", command],
@@ -895,6 +1093,73 @@ Get-InstalledScript 2>$null | Select-Object -Property Name,
     .map_err(|e| CogniaError::Parse(format!("Failed to parse PS scripts: {}", e)))?;
 
     Ok(scripts)
+}
+
+/// Install a PowerShell module from PSGallery
+pub async fn ps_install_module(name: &str, scope: &str) -> CogniaResult<()> {
+    if scope != "CurrentUser" && scope != "AllUsers" {
+        return Err(CogniaError::Config(
+            "Scope must be 'CurrentUser' or 'AllUsers'".into(),
+        ));
+    }
+
+    let command = format!(
+        "Install-Module -Name '{}' -Scope {} -Force -AllowClobber -ErrorAction Stop",
+        name, scope
+    );
+    run_ps_command_with_timeout(&command, 120).await?;
+    Ok(())
+}
+
+/// Uninstall a PowerShell module
+pub async fn ps_uninstall_module(name: &str) -> CogniaResult<()> {
+    let command = format!(
+        "Uninstall-Module -Name '{}' -AllVersions -Force -ErrorAction Stop",
+        name
+    );
+    run_ps_command_with_timeout(&command, 60).await?;
+    Ok(())
+}
+
+/// Update a PowerShell module to the latest version
+pub async fn ps_update_module(name: &str) -> CogniaResult<()> {
+    let command = format!(
+        "Update-Module -Name '{}' -Force -ErrorAction Stop",
+        name
+    );
+    run_ps_command_with_timeout(&command, 120).await?;
+    Ok(())
+}
+
+/// Search PSGallery for modules matching a query
+pub async fn ps_find_module(query: &str) -> CogniaResult<Vec<PSModuleInfo>> {
+    let command = format!(
+        r#"
+Find-Module -Name '*{}*' -ErrorAction SilentlyContinue | Select-Object -First 20 -Property Name,
+    @{{N='Version';E={{$_.Version.ToString()}}}},
+    @{{N='ModuleType';E={{'Script'}}}},
+    @{{N='Path';E={{'PSGallery'}}}},
+    @{{N='Description';E={{$_.Description}}}},
+    @{{N='ExportedCommandsCount';E={{0}}}}
+| ConvertTo-Json -Compress
+"#,
+        query
+    );
+
+    let output = run_ps_command_with_timeout(&command, 60).await?;
+    let output = output.trim();
+    if output.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let modules: Vec<PSModuleInfo> = if output.starts_with('[') {
+        serde_json::from_str(output)
+    } else {
+        serde_json::from_str(&format!("[{}]", output))
+    }
+    .map_err(|e| CogniaError::Parse(format!("Failed to parse gallery results: {}", e)))?;
+
+    Ok(modules)
 }
 
 // ============================================================================
@@ -1237,6 +1502,29 @@ plugins=(
     }
 
     #[test]
+    fn test_parse_nushell_config() {
+        let content = r#"
+# Nushell config
+alias ll = ls -la
+alias gs = git status
+$env.EDITOR = "vim"
+$env.PATH = ($env.PATH | prepend "/usr/local/bin")
+source ~/.config/nushell/local.nu
+source-env ~/.env.nu
+"#;
+        let entries = parse_nushell_config(content);
+        assert_eq!(entries.aliases.len(), 2);
+        assert_eq!(entries.aliases[0], ("ll".to_string(), "ls -la".to_string()));
+        assert_eq!(entries.aliases[1], ("gs".to_string(), "git status".to_string()));
+        assert_eq!(entries.exports.len(), 2);
+        assert_eq!(entries.exports[0].0, "EDITOR");
+        assert_eq!(entries.exports[1].0, "PATH");
+        assert_eq!(entries.sources.len(), 2);
+        assert!(entries.sources[0].contains("local.nu"));
+        assert!(entries.sources[1].contains(".env.nu"));
+    }
+
+    #[test]
     fn test_shell_type_id_roundtrip() {
         for shell in &[
             ShellType::Bash,
@@ -1244,6 +1532,7 @@ plugins=(
             ShellType::Fish,
             ShellType::PowerShell,
             ShellType::Cmd,
+            ShellType::Nushell,
         ] {
             let id = shell.id();
             let parsed = ShellType::from_id(id);
@@ -1277,5 +1566,19 @@ plugins=(
     fn test_detect_framework_returns_empty_for_powershell() {
         let frameworks = detect_shell_framework(ShellType::PowerShell);
         assert!(frameworks.is_empty());
+    }
+
+    #[test]
+    fn test_detect_framework_returns_empty_for_nushell() {
+        let frameworks = detect_shell_framework(ShellType::Nushell);
+        assert!(frameworks.is_empty());
+    }
+
+    #[test]
+    fn test_nushell_config_entries_via_parse_shell_config() {
+        let content = "$env.FOO = \"bar\"";
+        let entries = parse_shell_config(content, ShellType::Nushell);
+        assert_eq!(entries.exports.len(), 1);
+        assert_eq!(entries.exports[0], ("FOO".to_string(), "bar".to_string()));
     }
 }

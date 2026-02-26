@@ -1,5 +1,4 @@
 import { resolveDocPath, getDocContent, getAllDocSlugs, getDocBasePath } from './content';
-import fs from 'fs';
 import path from 'path';
 
 // Use real filesystem — these tests run against the actual docs/ directory

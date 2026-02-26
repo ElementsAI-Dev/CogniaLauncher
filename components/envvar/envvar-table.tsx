@@ -21,8 +21,12 @@ import { Copy, Pencil, Trash2, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+import type { EnvVarScope } from '@/types/tauri';
+
 interface EnvVarTableProps {
   envVars: Record<string, string>;
+  persistentVars?: [string, string][];
+  scope?: EnvVarScope | 'all';
   searchQuery: string;
   onEdit: (key: string, value: string) => void;
   onDelete: (key: string) => void;
@@ -31,6 +35,8 @@ interface EnvVarTableProps {
 
 export function EnvVarTable({
   envVars,
+  persistentVars = [],
+  scope = 'all',
   searchQuery,
   onEdit,
   onDelete,
@@ -39,15 +45,25 @@ export function EnvVarTable({
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
 
+  const isPersistentScope = scope === 'user' || scope === 'system';
+
   const filteredVars = useMemo(() => {
-    const entries = Object.entries(envVars);
+    const entries = isPersistentScope ? persistentVars : Object.entries(envVars);
     if (!searchQuery) return entries;
     const query = searchQuery.toLowerCase();
     return entries.filter(
       ([key, value]) =>
         key.toLowerCase().includes(query) || value.toLowerCase().includes(query),
     );
-  }, [envVars, searchQuery]);
+  }, [envVars, persistentVars, isPersistentScope, searchQuery]);
+
+  const scopeBadgeLabel = useMemo(() => {
+    switch (scope) {
+      case 'user': return t('envvar.scopes.user');
+      case 'system': return t('envvar.scopes.system');
+      default: return t('envvar.scopes.process');
+    }
+  }, [scope, t]);
 
   const handleCopy = useCallback((value: string) => {
     navigator.clipboard.writeText(value).then(() => {
@@ -76,7 +92,11 @@ export function EnvVarTable({
   if (filteredVars.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground text-sm">
-        {searchQuery ? t('envvar.table.noResults') : t('envvar.table.noResults')}
+        {searchQuery
+          ? t('envvar.table.noResults')
+          : isPersistentScope
+            ? t('envvar.table.noPersistentVars')
+            : t('envvar.table.noResults')}
       </div>
     );
   }
@@ -123,7 +143,7 @@ export function EnvVarTable({
                     className={cn(
                       'text-xs text-muted-foreground break-all line-clamp-2 cursor-pointer hover:text-foreground',
                     )}
-                    onDoubleClick={() => handleStartEdit(key, value)}
+                    onDoubleClick={() => !isPersistentScope && handleStartEdit(key, value)}
                     title={value}
                   >
                     {value || <span className="italic opacity-50">(empty)</span>}
@@ -132,7 +152,7 @@ export function EnvVarTable({
               </TableCell>
               <TableCell className="py-2">
                 <Badge variant="secondary" className="text-[10px]">
-                  {t('envvar.scopes.process')}
+                  {scopeBadgeLabel}
                 </Badge>
               </TableCell>
               <TableCell className="py-2 text-right">

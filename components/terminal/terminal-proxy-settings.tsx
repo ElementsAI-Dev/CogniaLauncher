@@ -61,7 +61,7 @@ export function TerminalProxySettings({
     if (!isTauri()) return;
     setSaving(true);
     try {
-      await tauri.configSetValue('terminal.proxy_mode', mode);
+      await tauri.configSet('terminal.proxy_mode', mode);
       await onFetchProxyEnvVars();
     } finally {
       setSaving(false);
@@ -72,7 +72,7 @@ export function TerminalProxySettings({
     if (!isTauri()) return;
     setSaving(true);
     try {
-      await tauri.configSetValue('terminal.custom_proxy', customProxy);
+      await tauri.configSet('terminal.custom_proxy', customProxy);
       await onFetchProxyEnvVars();
     } finally {
       setSaving(false);
@@ -83,7 +83,7 @@ export function TerminalProxySettings({
     if (!isTauri()) return;
     setSaving(true);
     try {
-      await tauri.configSetValue('terminal.no_proxy', noProxy);
+      await tauri.configSet('terminal.no_proxy', noProxy);
       await onFetchProxyEnvVars();
     } finally {
       setSaving(false);

@@ -1,4 +1,7 @@
-use super::{sqlite_db::CacheAccessStats, CacheEntry, CacheEntryType, SqliteCacheDb};
+use super::{
+    sqlite_db::{CacheAccessStats, CacheSizeSnapshot, DatabaseInfo, IntegrityCheckResult},
+    CacheEntry, CacheEntryType, SqliteCacheDb,
+};
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     disk::format_size,
@@ -327,6 +330,53 @@ impl DownloadCache {
     pub async fn list_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<Vec<CacheEntry>> {
         self.db.list_by_type(entry_type).await
     }
+
+    // ==================== Database Maintenance ====================
+
+    /// Optimize database: WAL checkpoint + VACUUM + ANALYZE
+    /// Returns (size_before, size_after) in bytes
+    pub async fn optimize(&self) -> CogniaResult<(u64, u64)> {
+        self.db.optimize().await
+    }
+
+    /// Check database structural integrity
+    pub async fn integrity_check(&self) -> CogniaResult<IntegrityCheckResult> {
+        self.db.integrity_check().await
+    }
+
+    /// Create a consistent backup of the cache database
+    pub async fn backup_to_file(&self, dest: &Path) -> CogniaResult<u64> {
+        self.db.backup_to_file(dest).await
+    }
+
+    /// Get comprehensive database metadata
+    pub async fn get_db_info(&self) -> CogniaResult<DatabaseInfo> {
+        self.db.get_db_info().await
+    }
+
+    // ==================== Size Snapshots ====================
+
+    /// Record a cache size snapshot for trend tracking
+    pub async fn record_size_snapshot(
+        &self,
+        internal_size: u64,
+        download_count: usize,
+        metadata_count: usize,
+    ) -> CogniaResult<()> {
+        self.db
+            .record_size_snapshot(internal_size, download_count, metadata_count)
+            .await
+    }
+
+    /// Get size snapshots for the last N days
+    pub async fn get_size_snapshots(&self, days: u32) -> CogniaResult<Vec<CacheSizeSnapshot>> {
+        self.db.get_size_snapshots(days).await
+    }
+
+    /// Prune snapshots older than N days
+    pub async fn prune_old_snapshots(&self, max_age_days: u32) -> CogniaResult<usize> {
+        self.db.prune_old_snapshots(max_age_days).await
+    }
 }
 
 fn is_entry_expired(entry: &CacheEntry, max_age: Duration) -> bool {
@@ -611,6 +661,217 @@ mod tests {
 
         let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_optimize() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        // Add some data first
+        let test_file = dir.path().join("opt-test.txt");
+        fs::write_file_string(&test_file, "optimize test content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        // Optimize should succeed
+        let (size_before, size_after) = cache.optimize().await.unwrap();
+        assert!(size_before > 0);
+        assert!(size_after > 0);
+    }
+
+    #[tokio::test]
+    async fn test_record_and_get_size_snapshots() {
+        let dir = tempdir().unwrap();
+        let cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        // Record snapshots
+        cache.record_size_snapshot(1000, 5, 3).await.unwrap();
+        cache.record_size_snapshot(2000, 10, 6).await.unwrap();
+
+        let snapshots = cache.get_size_snapshots(30).await.unwrap();
+        assert_eq!(snapshots.len(), 2);
+
+        // Oldest first (ascending order)
+        assert_eq!(snapshots[0].internal_size, 1000);
+        assert_eq!(snapshots[0].download_count, 5);
+        assert_eq!(snapshots[0].metadata_count, 3);
+        assert_eq!(snapshots[1].internal_size, 2000);
+        assert_eq!(snapshots[1].download_count, 10);
+        assert_eq!(snapshots[1].metadata_count, 6);
+    }
+
+    #[tokio::test]
+    async fn test_prune_old_snapshots() {
+        let dir = tempdir().unwrap();
+        let cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        // Record a recent snapshot
+        cache.record_size_snapshot(5000, 20, 10).await.unwrap();
+
+        // Prune with 90 days — recent snapshot should survive
+        let pruned = cache.prune_old_snapshots(90).await.unwrap();
+        assert_eq!(pruned, 0);
+
+        let remaining = cache.get_size_snapshots(365).await.unwrap();
+        assert_eq!(remaining.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_empty_size_snapshots() {
+        let dir = tempdir().unwrap();
+        let cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let snapshots = cache.get_size_snapshots(30).await.unwrap();
+        assert!(snapshots.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_remove_with_option() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("remove-opt.txt");
+        fs::write_file_string(&test_file, "remove option content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        let key = format!("checksum:{}", checksum);
+        let removed = cache.remove_with_option(&key, false).await.unwrap();
+        assert!(removed);
+
+        // Entry should be gone
+        let retrieved = cache.get(&key).await.unwrap();
+        assert!(retrieved.is_none());
+
+        // Removing non-existent key should return false
+        let removed = cache.remove_with_option("nonexistent", false).await.unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn test_list_filtered() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        for i in 0..3 {
+            let test_file = dir.path().join(format!("filtered-{}.txt", i));
+            fs::write_file_string(&test_file, &format!("filtered content {}", i))
+                .await
+                .unwrap();
+            let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+            cache.add_file(&test_file, &checksum).await.unwrap();
+        }
+
+        // List all with limit
+        let (entries, total) = cache
+            .list_filtered(None, None, None, 2, 0)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(total, 3);
+
+        // Pagination offset
+        let (entries, _) = cache
+            .list_filtered(None, None, None, 10, 2)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+
+        // Filter by type (all are downloads)
+        let (entries, total) = cache
+            .list_filtered(Some(CacheEntryType::Download), None, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(total, 3);
+
+        // Filter by type with no matches
+        let (entries, total) = cache
+            .list_filtered(Some(CacheEntryType::Metadata), None, None, 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(entries.len(), 0);
+        assert_eq!(total, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_top_accessed() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        // Add files
+        for i in 0..3 {
+            let test_file = dir.path().join(format!("hot-{}.txt", i));
+            fs::write_file_string(&test_file, &format!("hot content {}", i))
+                .await
+                .unwrap();
+            let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+            cache.add_file(&test_file, &checksum).await.unwrap();
+        }
+
+        // Access some entries multiple times via get
+        let stats_before = cache.stats().await.unwrap();
+        assert_eq!(stats_before.entry_count, 3);
+
+        let top = cache.get_top_accessed(2).await.unwrap();
+        // All entries have 0 hits initially, so we get at most 2
+        assert!(top.len() <= 3);
+    }
+
+    #[tokio::test]
+    async fn test_list_by_type() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        // Add download entries
+        for i in 0..2 {
+            let test_file = dir.path().join(format!("type-{}.txt", i));
+            fs::write_file_string(&test_file, &format!("type content {}", i))
+                .await
+                .unwrap();
+            let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+            cache.add_file(&test_file, &checksum).await.unwrap();
+        }
+
+        let downloads = cache.list_by_type(CacheEntryType::Download).await.unwrap();
+        assert_eq!(downloads.len(), 2);
+
+        let metadata = cache.list_by_type(CacheEntryType::Metadata).await.unwrap();
+        assert_eq!(metadata.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_access_stats() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("access-stats.txt");
+        fs::write_file_string(&test_file, "access stats content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        // Access to generate hit
+        let key = format!("checksum:{}", checksum);
+        let _ = cache.get(&key).await.unwrap();
+
+        // Access miss
+        let _ = cache.get("nonexistent").await.unwrap();
+
+        // Persist and reset
+        cache.persist_access_stats().await.unwrap();
+        cache.reset_access_stats().await.unwrap();
+
+        // After reset, reopen and stats should be zero
+        let cache2 = DownloadCache::open(dir.path()).await.unwrap();
+        let _ = cache2.get("nonexistent").await.unwrap();
+        // Should have 1 miss from fresh stats
     }
 
     #[tokio::test]

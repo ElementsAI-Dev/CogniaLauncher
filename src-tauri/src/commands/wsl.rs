@@ -1,4 +1,6 @@
-use crate::provider::wsl::{WslCapabilities, WslProvider};
+use crate::provider::wsl::{
+    WslCapabilities, WslDistroResources, WslPackageUpdateResult, WslProvider, WslUser,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -658,6 +660,42 @@ pub async fn wsl_detect_distro_env(
     let provider = get_provider();
     provider
         .detect_distro_environment(&distro)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get live resource usage (memory, swap, CPU, load) from a running WSL distribution.
+#[tauri::command]
+pub async fn wsl_get_distro_resources(distro: String) -> Result<WslDistroResources, String> {
+    let provider = get_provider();
+    provider
+        .get_distro_resources(&distro)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List non-system users in a WSL distribution.
+#[tauri::command]
+pub async fn wsl_list_users(distro: String) -> Result<Vec<WslUser>, String> {
+    let provider = get_provider();
+    provider
+        .list_users(&distro)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Update or upgrade packages in a WSL distribution.
+///
+/// `mode` should be `"update"` (refresh package index) or `"upgrade"` (install upgrades).
+/// Automatically detects the distribution's package manager.
+#[tauri::command]
+pub async fn wsl_update_distro_packages(
+    distro: String,
+    mode: String,
+) -> Result<WslPackageUpdateResult, String> {
+    let provider = get_provider();
+    provider
+        .update_distro_packages(&distro, &mode)
         .await
         .map_err(|e| e.to_string())
 }

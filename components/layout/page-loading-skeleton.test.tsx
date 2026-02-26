@@ -31,4 +31,23 @@ describe("PageLoadingSkeleton", () => {
     expect(container.querySelector(".skeleton-card-1")).toBeInTheDocument();
     expect(container.querySelector(".skeleton-card-5")).toBeInTheDocument();
   });
+
+  it("renders tabs variant with header, tabs bar and cards", () => {
+    const { container } = render(<PageLoadingSkeleton variant="tabs" />);
+    expect(container.querySelector(".skeleton-card-1")).toBeInTheDocument();
+    expect(container.querySelector(".skeleton-card-2")).toBeInTheDocument();
+    expect(container.querySelector(".skeleton-card-5")).toBeInTheDocument();
+  });
+
+  it("has accessibility attributes on all variants", () => {
+    const variants = ["dashboard", "list", "cards", "settings", "detail", "tabs"] as const;
+    for (const variant of variants) {
+      const { container, unmount } = render(<PageLoadingSkeleton variant={variant} />);
+      const root = container.firstElementChild as HTMLElement;
+      expect(root).toHaveAttribute("role", "status");
+      expect(root).toHaveAttribute("aria-busy", "true");
+      expect(root).toHaveAttribute("aria-label", "Loading...");
+      unmount();
+    }
+  });
 });

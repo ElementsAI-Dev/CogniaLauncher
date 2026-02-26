@@ -19,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertTriangle } from 'lucide-react';
 import type { EnvVarScope } from '@/types/tauri';
 
 interface EnvVarEditDialogProps {
@@ -128,6 +130,14 @@ export function EnvVarEditDialog({
                 </SelectContent>
               </Select>
             </div>
+          )}
+
+          {(scope === 'user' || scope === 'system') && (
+            <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{t('envvar.confirm.systemWarnTitle')}</AlertTitle>
+              <AlertDescription>{t('envvar.confirm.systemWarnDesc')}</AlertDescription>
+            </Alert>
           )}
         </div>
 

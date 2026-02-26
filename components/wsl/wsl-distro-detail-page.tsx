@@ -34,6 +34,9 @@ import {
 import {
   WslExportDialog,
 } from '@/components/wsl';
+import { WslChangeUserDialog } from '@/components/wsl/wsl-change-user-dialog';
+import { WslMoveDialog } from '@/components/wsl/wsl-move-dialog';
+import { WslResizeDialog } from '@/components/wsl/wsl-resize-dialog';
 import { WslDistroOverview } from '@/components/wsl/wsl-distro-overview';
 import { WslDistroTerminal } from '@/components/wsl/wsl-distro-terminal';
 import { WslDistroFilesystem } from '@/components/wsl/wsl-distro-filesystem';
@@ -93,10 +96,16 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     getDistroConfig,
     setDistroConfigValue,
     detectDistroEnv,
+    listUsers,
+    getDistroResources,
+    updateDistroPackages,
   } = useWsl();
 
   const initializedRef = useRef(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [changeUserOpen, setChangeUserOpen] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [resizeDialogOpen, setResizeDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'unregister' | 'terminate' }
     | { type: 'move'; location: string }
@@ -202,20 +211,18 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     }
   }, [distroName, t]);
 
-  const handleChangeDefaultUser = useCallback(async () => {
-    const username = window.prompt(t('wsl.username'));
-    if (!username) return;
+  const handleChangeDefaultUserConfirm = useCallback(async (distro: string, username: string) => {
     try {
-      await changeDefaultUser(distroName, username);
+      await changeDefaultUser(distro, username);
       toast.success(
         t('wsl.changeDefaultUserSuccess')
-          .replace('{name}', distroName)
+          .replace('{name}', distro)
           .replace('{user}', username)
       );
     } catch (err) {
       toast.error(String(err));
     }
-  }, [changeDefaultUser, distroName, t]);
+  }, [changeDefaultUser, t]);
 
   const handleSetSparse = useCallback(async (enabled: boolean) => {
     try {
@@ -230,17 +237,13 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     }
   }, [distroName, setSparse, t]);
 
-  const handleMovePrompt = useCallback(() => {
-    const location = window.prompt(t('wsl.moveLocation'));
-    if (!location) return;
+  const handleMoveConfirm = useCallback((location: string) => {
     setConfirmAction({ type: 'move', location });
-  }, [t]);
+  }, []);
 
-  const handleResizePrompt = useCallback(() => {
-    const size = window.prompt(t('wsl.resizeSize'));
-    if (!size) return;
+  const handleResizeConfirm = useCallback((size: string) => {
     setConfirmAction({ type: 'resize', size });
-  }, [t]);
+  }, []);
 
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
@@ -409,7 +412,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               <ArrowUpDown className="h-3.5 w-3.5" />
               WSL {targetVersion}
             </Button>
-            <Button variant="outline" size="sm" onClick={handleChangeDefaultUser} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setChangeUserOpen(true)} className="gap-1.5">
               <UserCog className="h-3.5 w-3.5" />
               {t('wsl.changeDefaultUser')}
             </Button>
@@ -462,7 +465,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               variant="outline"
               size="sm"
               className="justify-start gap-1.5"
-              onClick={handleMovePrompt}
+              onClick={() => setMoveDialogOpen(true)}
               disabled={moveUnsupported}
               title={moveHint}
             >
@@ -473,7 +476,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
               variant="outline"
               size="sm"
               className="justify-start gap-1.5"
-              onClick={handleResizePrompt}
+              onClick={() => setResizeDialogOpen(true)}
               disabled={resizeUnsupported}
               title={resizeHint}
             >
@@ -545,6 +548,8 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             getDistroConfig={getDistroConfig}
             setDistroConfigValue={setDistroConfigValue}
             detectDistroEnv={detectDistroEnv}
+            getDistroResources={getDistroResources}
+            updateDistroPackages={updateDistroPackages}
             t={t}
           />
         </TabsContent>
@@ -655,6 +660,34 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Change Default User Dialog */}
+      <WslChangeUserDialog
+        open={changeUserOpen}
+        distroName={distroName}
+        onOpenChange={setChangeUserOpen}
+        onConfirm={handleChangeDefaultUserConfirm}
+        listUsers={listUsers}
+        t={t}
+      />
+
+      {/* Move Dialog */}
+      <WslMoveDialog
+        open={moveDialogOpen}
+        distroName={distroName}
+        onOpenChange={setMoveDialogOpen}
+        onConfirm={handleMoveConfirm}
+        t={t}
+      />
+
+      {/* Resize Dialog */}
+      <WslResizeDialog
+        open={resizeDialogOpen}
+        distroName={distroName}
+        onOpenChange={setResizeDialogOpen}
+        onConfirm={handleResizeConfirm}
+        t={t}
+      />
     </div>
   );
 }

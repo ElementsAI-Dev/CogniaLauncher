@@ -3,9 +3,9 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 export default function ProviderDetailLoading() {
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6 skeleton-shimmer" role="status" aria-busy="true" aria-label="Loading...">
       {/* Header skeleton */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 skeleton-card-1">
         <Skeleton className="h-10 w-10 rounded-lg" />
         <Skeleton className="h-12 w-12 rounded-lg" />
         <div className="space-y-2">
@@ -15,12 +15,12 @@ export default function ProviderDetailLoading() {
       </div>
 
       {/* Tabs skeleton */}
-      <Skeleton className="h-10 w-full max-w-lg" />
+      <Skeleton className="h-10 w-full max-w-lg skeleton-card-2" />
 
       {/* Content skeleton */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i}>
+        {[3, 4, 5, 6].map((i) => (
+          <Card key={i} className={`skeleton-card-${i}`}>
             <CardHeader>
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-4 w-48" />

@@ -22,15 +22,9 @@ pub struct DenoProvider {
 
 impl DenoProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
         Self {
             deno_dir: Self::detect_deno_dir(),
-            client,
+            client: crate::platform::proxy::get_shared_client(),
         }
     }
 

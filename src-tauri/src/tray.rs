@@ -406,7 +406,6 @@ fn build_menu<R: Runtime>(
             TrayMenuItemId::Settings => {
                 if need_separator {
                     menu.append(&PredefinedMenuItem::separator(app)?)?;
-                    need_separator = false;
                 }
                 let item =
                     MenuItem::with_id(app, "settings", labels.open_settings, true, None::<&str>)?;
@@ -433,7 +432,6 @@ fn build_menu<R: Runtime>(
             TrayMenuItemId::AlwaysOnTop => {
                 if need_separator {
                     menu.append(&PredefinedMenuItem::separator(app)?)?;
-                    need_separator = false;
                 }
                 let item = CheckMenuItem::with_id(
                     app,
@@ -540,7 +538,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                     .map(|s| s.always_on_top.load(Ordering::SeqCst))
                     .unwrap_or(false);
                 let new_val = !prev;
-                if let Some(guard) = tray_state.try_read().ok() {
+                if let Ok(guard) = tray_state.try_read() {
                     guard.always_on_top.store(new_val, Ordering::SeqCst);
                 }
                 let _ = app.emit("toggle-always-on-top", new_val);

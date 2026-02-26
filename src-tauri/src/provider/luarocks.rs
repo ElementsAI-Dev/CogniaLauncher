@@ -140,7 +140,7 @@ pub fn parse_list_output(output: &str) -> Vec<(String, String, String)> {
             if let Some(ref name) = current_name {
                 // Parse "   1.8.0-1 (installed) - /path/to/rocks"
                 let parts: Vec<&str> = trimmed.splitn(2, " (installed)").collect();
-                if parts.len() >= 1 {
+                if !parts.is_empty() {
                     let version = parts[0].trim().to_string();
                     let path = if parts.len() >= 2 {
                         parts[1].trim().trim_start_matches('-').trim().to_string()

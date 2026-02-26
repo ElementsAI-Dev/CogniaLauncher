@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,7 @@ pub struct PathEntryInfo {
     pub path: String,
     pub exists: bool,
     pub is_directory: bool,
+    pub is_duplicate: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,13 +79,21 @@ pub async fn envvar_remove_persistent(key: String, scope: EnvVarScope) -> Result
 #[tauri::command]
 pub async fn envvar_get_path(scope: EnvVarScope) -> Result<Vec<PathEntryInfo>, CogniaError> {
     let entries = env::get_persistent_path(scope).await?;
+    let mut seen = HashSet::new();
     let result: Vec<PathEntryInfo> = entries
         .into_iter()
         .map(|path_str| {
             let p = Path::new(&path_str);
+            let key = if cfg!(windows) {
+                path_str.to_lowercase()
+            } else {
+                path_str.clone()
+            };
+            let is_duplicate = !seen.insert(key);
             PathEntryInfo {
                 exists: p.exists(),
                 is_directory: p.is_dir(),
+                is_duplicate,
                 path: path_str,
             }
         })
@@ -187,15 +196,50 @@ pub async fn envvar_export_env_file(
             v
         }
         _ => {
-            // For User/System, we can only reliably export what we can read.
-            // Fall back to process vars as the best approximation.
-            let mut v: Vec<(String, String)> = env::get_all_vars().into_iter().collect();
-            v.sort_by(|a, b| a.0.cmp(&b.0));
-            v
+            env::list_persistent_vars(scope).await?
         }
     };
 
     Ok(env::generate_env_file(&vars, format))
+}
+
+// ============================================================================
+// New commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn envvar_list_persistent(
+    scope: EnvVarScope,
+) -> Result<Vec<(String, String)>, CogniaError> {
+    env::list_persistent_vars(scope).await
+}
+
+#[tauri::command]
+pub fn envvar_expand(path: String) -> Result<String, CogniaError> {
+    Ok(env::expand_path(&path))
+}
+
+#[tauri::command]
+pub async fn envvar_deduplicate_path(scope: EnvVarScope) -> Result<usize, CogniaError> {
+    let entries = env::get_persistent_path(scope).await?;
+    let original_count = entries.len();
+    let mut seen = HashSet::new();
+    let deduped: Vec<String> = entries
+        .into_iter()
+        .filter(|e| {
+            let key = if cfg!(windows) {
+                e.to_lowercase()
+            } else {
+                e.clone()
+            };
+            seen.insert(key)
+        })
+        .collect();
+    let removed = original_count - deduped.len();
+    if removed > 0 {
+        env::set_persistent_path(&deduped, scope).await?;
+    }
+    Ok(removed)
 }
 
 // ============================================================================

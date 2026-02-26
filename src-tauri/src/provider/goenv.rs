@@ -250,7 +250,7 @@ impl Provider for GoenvProvider {
             .lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty() && !l.contains("beta") && !l.contains("rc"))
-            .filter(|l| l.chars().next().map_or(false, |c| c.is_ascii_digit()))
+            .filter(|l| l.chars().next().is_some_and(|c| c.is_ascii_digit()))
             .collect();
 
         if available_versions.is_empty() {
@@ -276,7 +276,7 @@ impl Provider for GoenvProvider {
             let latest_in_series = available_versions
                 .iter()
                 .filter(|v| v.starts_with(&format!("{}.", major_minor)) || **v == major_minor)
-                .last()
+                .next_back()
                 .copied();
 
             // Also check if there's a newer major.minor series
@@ -759,9 +759,10 @@ impl Provider for GoModProvider {
                 let path = json["Path"].as_str().unwrap_or(name);
 
                 // Determine repository URL from module path
-                let repo_url = if path.starts_with("github.com/") {
-                    Some(format!("https://{}", path))
-                } else if path.starts_with("gitlab.com/") || path.starts_with("bitbucket.org/") {
+                let repo_url = if path.starts_with("github.com/")
+                    || path.starts_with("gitlab.com/")
+                    || path.starts_with("bitbucket.org/")
+                {
                     Some(format!("https://{}", path))
                 } else {
                     None
@@ -785,7 +786,7 @@ impl Provider for GoModProvider {
                                     deprecated: json["Deprecated"].as_str().is_some(),
                                     yanked: json["Retracted"]
                                         .as_array()
-                                        .map_or(false, |a| !a.is_empty()),
+                                        .is_some_and(|a| !a.is_empty()),
                                 }]
                             })
                             .unwrap_or_default()

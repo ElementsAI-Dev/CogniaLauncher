@@ -12,6 +12,9 @@ import type {
   WslDistroConfig,
   WslMountOptions,
   WslDistroEnvironment,
+  WslDistroResources,
+  WslUser,
+  WslPackageUpdateResult,
 } from '@/types/tauri';
 
 export interface UseWslReturn {
@@ -63,6 +66,9 @@ export interface UseWslReturn {
   installWslOnly: () => Promise<string>;
   installWithLocation: (name: string, location: string) => Promise<string>;
   detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
+  getDistroResources: (distro: string) => Promise<WslDistroResources | null>;
+  listUsers: (distro: string) => Promise<WslUser[]>;
+  updateDistroPackages: (distro: string, mode: string) => Promise<WslPackageUpdateResult>;
 }
 
 /**
@@ -530,6 +536,29 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const getDistroResources = useCallback(async (distro: string): Promise<WslDistroResources | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslGetDistroResources(distro);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const listUsers = useCallback(async (distro: string): Promise<WslUser[]> => {
+    if (!tauri.isTauri()) return [];
+    try {
+      return await tauri.wslListUsers(distro);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const updateDistroPackages = useCallback(async (distro: string, mode: string): Promise<WslPackageUpdateResult> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    return await tauri.wslUpdateDistroPackages(distro, mode);
+  }, []);
+
   return {
     available,
     distros,
@@ -576,5 +605,8 @@ export function useWsl(): UseWslReturn {
     installWslOnly,
     installWithLocation,
     detectDistroEnv,
+    getDistroResources,
+    listUsers,
+    updateDistroPackages,
   };
 }

@@ -537,7 +537,6 @@ impl SystemPackageProvider for UvProvider {
         let out = self.run_uv_raw(&["--version"]).await?;
         // Output format: "uv 0.8.22 (ade2bdbd2 2025-09-23)"
         Ok(out
-            .trim()
             .split_whitespace()
             .nth(1)
             .unwrap_or("unknown")

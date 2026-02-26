@@ -136,6 +136,7 @@ pub struct NetworkSettings {
     pub timeout: u64,
     pub retries: u32,
     pub proxy: Option<String>,
+    pub no_proxy: Option<String>,
 }
 
 impl Default for NetworkSettings {
@@ -144,6 +145,7 @@ impl Default for NetworkSettings {
             timeout: 30,
             retries: 3,
             proxy: None,
+            no_proxy: None,
         }
     }
 }
@@ -333,6 +335,11 @@ impl Settings {
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
             ["network", "proxy"] => self.network.proxy.clone(),
+            ["network", "no_proxy"] => self
+                .network
+                .no_proxy
+                .clone()
+                .or_else(|| Some(String::new())),
             ["security", "allow_http"] => Some(self.security.allow_http.to_string()),
             ["security", "verify_certificates"] => {
                 Some(self.security.verify_certificates.to_string())
@@ -501,6 +508,13 @@ impl Settings {
             }
             ["network", "proxy"] => {
                 self.network.proxy = if value.is_empty() {
+                    None
+                } else {
+                    Some(value.to_string())
+                };
+            }
+            ["network", "no_proxy"] => {
+                self.network.no_proxy = if value.is_empty() {
                     None
                 } else {
                     Some(value.to_string())
@@ -840,6 +854,34 @@ mod tests {
         assert!(settings
             .set_value("general.download_speed_limit", "not_a_number")
             .is_err());
+    }
+
+    #[test]
+    fn test_no_proxy_get_set() {
+        let mut settings = Settings::default();
+
+        // Default should be empty
+        assert_eq!(
+            settings.get_value("network.no_proxy"),
+            Some(String::new())
+        );
+
+        // Set a bypass list
+        settings
+            .set_value("network.no_proxy", "localhost,127.0.0.1,.internal.com")
+            .unwrap();
+        assert_eq!(
+            settings.get_value("network.no_proxy"),
+            Some("localhost,127.0.0.1,.internal.com".to_string())
+        );
+        assert_eq!(
+            settings.network.no_proxy,
+            Some("localhost,127.0.0.1,.internal.com".to_string())
+        );
+
+        // Clear by setting empty
+        settings.set_value("network.no_proxy", "").unwrap();
+        assert!(settings.network.no_proxy.is_none());
     }
 
     #[test]

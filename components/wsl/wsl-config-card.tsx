@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,19 +29,30 @@ interface WslConfigCardProps {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-const COMMON_WSL2_SETTINGS = [
-  { key: 'memory', label: 'Memory', placeholder: '4GB', description: 'wsl.config.memoryDesc' },
-  { key: 'processors', label: 'Processors', placeholder: '2', description: 'wsl.config.processorsDesc' },
-  { key: 'swap', label: 'Swap', placeholder: '8GB', description: 'wsl.config.swapDesc' },
-  { key: 'localhostForwarding', label: 'Localhost Forwarding', placeholder: 'true', description: 'wsl.config.localhostForwardingDesc' },
-  { key: 'nestedVirtualization', label: 'Nested Virtualization', placeholder: 'true', description: 'wsl.config.nestedVirtualizationDesc' },
-  { key: 'guiApplications', label: 'GUI Applications', placeholder: 'true', description: 'wsl.config.guiApplicationsDesc' },
-  { key: 'networkingMode', label: 'Networking Mode', placeholder: 'NAT', description: 'wsl.config.networkingModeDesc' },
-  { key: 'autoMemoryReclaim', label: 'Auto Memory Reclaim', placeholder: 'dropCache', description: 'wsl.config.autoMemoryReclaimDesc' },
-  { key: 'sparseVhd', label: 'Sparse VHD', placeholder: 'true', description: 'wsl.config.sparseVhdDesc' },
-  { key: 'dnsTunneling', label: 'DNS Tunneling', placeholder: 'true', description: 'wsl.config.dnsTunnelingDesc' },
-  { key: 'firewall', label: 'Firewall', placeholder: 'true', description: 'wsl.config.firewallDesc' },
-] as const;
+type SettingType = 'text' | 'bool' | 'select';
+
+interface WslSettingDef {
+  key: string;
+  label: string;
+  placeholder: string;
+  description: string;
+  type: SettingType;
+  options?: string[];
+}
+
+const COMMON_WSL2_SETTINGS: WslSettingDef[] = [
+  { key: 'memory', label: 'Memory', placeholder: '4GB', description: 'wsl.config.memoryDesc', type: 'text' },
+  { key: 'processors', label: 'Processors', placeholder: '2', description: 'wsl.config.processorsDesc', type: 'text' },
+  { key: 'swap', label: 'Swap', placeholder: '8GB', description: 'wsl.config.swapDesc', type: 'text' },
+  { key: 'localhostForwarding', label: 'Localhost Forwarding', placeholder: 'true', description: 'wsl.config.localhostForwardingDesc', type: 'bool' },
+  { key: 'nestedVirtualization', label: 'Nested Virtualization', placeholder: 'true', description: 'wsl.config.nestedVirtualizationDesc', type: 'bool' },
+  { key: 'guiApplications', label: 'GUI Applications', placeholder: 'true', description: 'wsl.config.guiApplicationsDesc', type: 'bool' },
+  { key: 'networkingMode', label: 'Networking Mode', placeholder: 'NAT', description: 'wsl.config.networkingModeDesc', type: 'select', options: ['NAT', 'mirrored', 'virtioproxy'] },
+  { key: 'autoMemoryReclaim', label: 'Auto Memory Reclaim', placeholder: 'disabled', description: 'wsl.config.autoMemoryReclaimDesc', type: 'select', options: ['disabled', 'gradual', 'dropcache'] },
+  { key: 'sparseVhd', label: 'Sparse VHD', placeholder: 'true', description: 'wsl.config.sparseVhdDesc', type: 'bool' },
+  { key: 'dnsTunneling', label: 'DNS Tunneling', placeholder: 'true', description: 'wsl.config.dnsTunnelingDesc', type: 'bool' },
+  { key: 'firewall', label: 'Firewall', placeholder: 'true', description: 'wsl.config.firewallDesc', type: 'bool' },
+];
 
 export function WslConfigCard({
   config,
@@ -172,31 +184,66 @@ export function WslConfigCard({
         <Separator />
         <div className="space-y-3">
           <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.quickSettings')}</p>
-          <div className="grid grid-cols-2 gap-2">
-            {COMMON_WSL2_SETTINGS.slice(0, 4).map((setting) => {
+          <div className="grid grid-cols-2 gap-3">
+            {COMMON_WSL2_SETTINGS.map((setting) => {
               const currentValue = wsl2Config[setting.key];
               return (
-                <div key={setting.key} className="space-y-1">
-                  <Label className="text-xs">{setting.label}</Label>
-                  <div className="flex gap-1">
-                    <Input
-                      className="h-7 text-xs"
-                      placeholder={currentValue || setting.placeholder}
-                      defaultValue={currentValue ?? ''}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          const input = e.target as HTMLInputElement;
-                          if (input.value) handleQuickSet(setting.key, input.value);
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (e.target.value && e.target.value !== currentValue) {
-                          handleQuickSet(setting.key, e.target.value);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
+                <Tooltip key={setting.key}>
+                  <TooltipTrigger asChild>
+                    <div className="space-y-1">
+                      <Label className="text-xs">{setting.label}</Label>
+                      {setting.type === 'bool' ? (
+                        <div className="flex items-center gap-2 h-7">
+                          <Switch
+                            checked={currentValue === 'true'}
+                            onCheckedChange={(checked) =>
+                              handleQuickSet(setting.key, checked ? 'true' : 'false')
+                            }
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {currentValue ?? setting.placeholder}
+                          </span>
+                        </div>
+                      ) : setting.type === 'select' && setting.options ? (
+                        <Select
+                          value={currentValue || ''}
+                          onValueChange={(val) => handleQuickSet(setting.key, val)}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder={setting.placeholder} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {setting.options.map((opt) => (
+                              <SelectItem key={opt} value={opt}>
+                                {opt}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          className="h-7 text-xs"
+                          placeholder={currentValue || setting.placeholder}
+                          defaultValue={currentValue ?? ''}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              const input = e.target as HTMLInputElement;
+                              if (input.value) handleQuickSet(setting.key, input.value);
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (e.target.value && e.target.value !== currentValue) {
+                              handleQuickSet(setting.key, e.target.value);
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[240px]">
+                    <p className="text-xs">{t(setting.description)}</p>
+                  </TooltipContent>
+                </Tooltip>
               );
             })}
           </div>

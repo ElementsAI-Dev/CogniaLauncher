@@ -10,6 +10,8 @@ export type { DownloadToolbarProps, StatusFilter } from "./download-toolbar";
 export { DownloadEmptyState } from "./download-empty-state";
 export type { DownloadEmptyStateProps } from "./download-empty-state";
 
+export { DownloadDetailDialog } from "./download-detail-dialog";
+
 export { ArchiveFormatSelector } from "./archive-format-selector";
 export type { ArchiveFormat } from "./archive-format-selector";
 

@@ -2,7 +2,7 @@ use crate::error::{CogniaError, CogniaResult};
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::RwLock;
-use std::time::Duration;
+
 
 /// Default registry URLs
 pub const DEFAULT_PYPI_URL: &str = "https://pypi.org";
@@ -50,36 +50,41 @@ impl ApiClientConfig {
 
 /// HTTP API client for package registries
 pub struct PackageApiClient {
-    client: Client,
+    client: RwLock<Client>,
     config: RwLock<ApiClientConfig>,
 }
 
 impl PackageApiClient {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
         Self {
-            client,
+            client: RwLock::new(crate::platform::proxy::get_shared_client()),
             config: RwLock::new(ApiClientConfig::default()),
         }
     }
 
     /// Create a new client with custom configuration
     pub fn with_config(config: ApiClientConfig) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
         Self {
-            client,
+            client: RwLock::new(crate::platform::proxy::get_shared_client()),
             config: RwLock::new(config),
         }
+    }
+
+    /// Rebuild the internal HTTP client from current settings.
+    /// Called when proxy or security settings change.
+    pub fn rebuild_client(&self, settings: &crate::config::Settings) {
+        let new_client = crate::platform::proxy::build_client(settings);
+        if let Ok(mut guard) = self.client.write() {
+            *guard = new_client;
+        }
+    }
+
+    /// Get a clone of the inner reqwest Client (cheap, Arc-based)
+    fn get_client(&self) -> Client {
+        self.client
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_else(|e| e.into_inner().clone())
     }
 
     /// Update the configuration at runtime
@@ -143,7 +148,7 @@ impl PackageApiClient {
         let base_url = self.get_pypi_url();
         let url = format!("{}/pypi/{}/json", base_url, query);
 
-        match self.client.get(&url).send().await {
+        match self.get_client().get(&url).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     let data: PyPIResponse = response.json().await.map_err(|e| {
@@ -180,7 +185,7 @@ impl PackageApiClient {
         let url = format!("{}/pypi/{}/json", base_url, name);
 
         let response = self
-            .client
+            .get_client()
             .get(&url)
             .send()
             .await
@@ -216,7 +221,7 @@ impl PackageApiClient {
             limit
         );
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
+        let response = self.get_client().get(&url).send().await.map_err(|e| {
             CogniaError::Provider(format!("npm registry API request failed: {}", e))
         })?;
 
@@ -255,7 +260,7 @@ impl PackageApiClient {
         let registry_url = self.get_npm_registry();
         let url = format!("{}/{}", registry_url, urlencoding::encode(name));
 
-        let response = self.client.get(&url).send().await.map_err(|e| {
+        let response = self.get_client().get(&url).send().await.map_err(|e| {
             CogniaError::Provider(format!("npm registry API request failed: {}", e))
         })?;
 
@@ -296,7 +301,7 @@ impl PackageApiClient {
         );
 
         let response = self
-            .client
+            .get_client()
             .get(&url)
             .header(
                 "User-Agent",
@@ -335,7 +340,7 @@ impl PackageApiClient {
     /// Useful for APIs that don't fit the standard package registry pattern
     pub async fn raw_get(&self, url: &str) -> CogniaResult<String> {
         let response = self
-            .client
+            .get_client()
             .get(url)
             .header(
                 "User-Agent",
@@ -369,7 +374,7 @@ impl PackageApiClient {
         );
 
         let response = self
-            .client
+            .get_client()
             .get(&url)
             .header(
                 "User-Agent",
@@ -621,6 +626,9 @@ fn pypi_base_url_from_index_url(index_url: &str) -> String {
 /// Update the global API client configuration from Settings
 pub fn update_api_client_from_settings(settings: &crate::config::Settings) {
     let client = get_api_client();
+
+    // Rebuild the underlying reqwest Client with current proxy/security settings
+    client.rebuild_client(settings);
 
     if let Some(pypi_url) = settings.get_mirror_url("pypi") {
         // mirrors.pypi is a pip/uv index-url (usually ends with /simple). The JSON API base

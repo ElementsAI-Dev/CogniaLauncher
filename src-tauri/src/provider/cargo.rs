@@ -383,14 +383,11 @@ impl Provider for CargoProvider {
                 name, target_version
             );
 
-            let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(15))
-                .build()
-                .map_err(|e| CogniaError::Provider(e.to_string()))?;
+            let client = crate::platform::proxy::get_shared_client();
 
             if let Ok(resp) = client
                 .get(&url)
-                .header("User-Agent", "CogniaLauncher/1.0")
+                .timeout(Duration::from_secs(15))
                 .send()
                 .await
             {
@@ -653,8 +650,7 @@ pub(crate) fn is_crate_in_installed_output(output: &str, name: &str) -> bool {
             return false;
         }
         l.split_whitespace()
-            .next()
-            .map_or(false, |crate_name| crate_name == name)
+            .next() == Some(name)
     })
 }
 

@@ -10,6 +10,9 @@ const mockEnvvarGetPath = jest.fn();
 const mockEnvvarListShellProfiles = jest.fn();
 const mockEnvvarImportEnvFile = jest.fn();
 const mockEnvvarExportEnvFile = jest.fn();
+const mockEnvvarListPersistent = jest.fn();
+const mockEnvvarExpand = jest.fn();
+const mockEnvvarDeduplicatePath = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   envvarListAll: (...args: unknown[]) => mockEnvvarListAll(...args),
@@ -26,6 +29,9 @@ jest.mock('@/lib/tauri', () => ({
   envvarReadShellProfile: jest.fn(),
   envvarImportEnvFile: (...args: unknown[]) => mockEnvvarImportEnvFile(...args),
   envvarExportEnvFile: (...args: unknown[]) => mockEnvvarExportEnvFile(...args),
+  envvarListPersistent: (...args: unknown[]) => mockEnvvarListPersistent(...args),
+  envvarExpand: (...args: unknown[]) => mockEnvvarExpand(...args),
+  envvarDeduplicatePath: (...args: unknown[]) => mockEnvvarDeduplicatePath(...args),
 }));
 
 jest.mock('@/lib/errors', () => ({
@@ -41,6 +47,7 @@ describe('useEnvVar', () => {
     const { result } = renderHook(() => useEnvVar());
 
     expect(result.current.envVars).toEqual({});
+    expect(result.current.persistentVars).toEqual([]);
     expect(result.current.pathEntries).toEqual([]);
     expect(result.current.shellProfiles).toEqual([]);
     expect(result.current.loading).toBe(false);
@@ -182,5 +189,60 @@ describe('useEnvVar', () => {
 
     expect(content).toBe(mockContent);
     expect(mockEnvvarExportEnvFile).toHaveBeenCalledWith('process', 'dotenv');
+  });
+
+  it('should fetch persistent vars', async () => {
+    const mockVars: [string, string][] = [['FOO', 'bar'], ['BAZ', 'qux']];
+    mockEnvvarListPersistent.mockResolvedValue(mockVars);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPersistentVars('user');
+    });
+
+    expect(result.current.persistentVars).toEqual(mockVars);
+    expect(mockEnvvarListPersistent).toHaveBeenCalledWith('user');
+  });
+
+  it('should expand path', async () => {
+    mockEnvvarExpand.mockResolvedValue('/home/user/test');
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let expanded: string | null = null;
+    await act(async () => {
+      expanded = await result.current.expandPath('~/test');
+    });
+
+    expect(expanded).toBe('/home/user/test');
+    expect(mockEnvvarExpand).toHaveBeenCalledWith('~/test');
+  });
+
+  it('should deduplicate path', async () => {
+    mockEnvvarDeduplicatePath.mockResolvedValue(3);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let removed = 0;
+    await act(async () => {
+      removed = await result.current.deduplicatePath('user');
+    });
+
+    expect(removed).toBe(3);
+    expect(mockEnvvarDeduplicatePath).toHaveBeenCalledWith('user');
+  });
+
+  it('should handle fetchPersistentVars error', async () => {
+    mockEnvvarListPersistent.mockRejectedValue(new Error('registry access denied'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPersistentVars('system');
+    });
+
+    expect(result.current.persistentVars).toEqual([]);
+    expect(result.current.error).toBe('Error: registry access denied');
   });
 });

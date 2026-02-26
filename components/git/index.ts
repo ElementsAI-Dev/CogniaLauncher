@@ -18,3 +18,8 @@ export { GitSearchCommits } from './git-search-commits';
 export { GitCommitGraph } from './git-commit-graph';
 export { GitVisualFileHistory } from './git-visual-file-history';
 export { GitActivityHeatmap } from './git-activity-heatmap';
+export { GitCommitDialog } from './git-commit-dialog';
+export { GitDiffViewer } from './git-diff-viewer';
+export { GitCloneDialog } from './git-clone-dialog';
+export { GitMergeDialog } from './git-merge-dialog';
+export { GitReflogCard } from './git-reflog-card';

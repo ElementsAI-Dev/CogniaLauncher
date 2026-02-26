@@ -872,7 +872,7 @@ pub(crate) fn parse_cargo_toml_rust_version(content: &str) -> Option<String> {
                     .trim_matches('\'')
                     .trim();
                 if !version.is_empty()
-                    && version.chars().next().map_or(false, |c| c.is_ascii_digit())
+                    && version.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return Some(version.to_string());
                 }
@@ -891,17 +891,15 @@ pub(crate) fn parse_check_updates_output(output: &str) -> Vec<(String, String, S
             let parts: Vec<&str> = line.splitn(2, " - ").collect();
             let toolchain = parts.first().map(|s| s.trim()).unwrap_or("").to_string();
 
-            if let Some(versions_part) = line.split(':').last() {
+            if let Some(versions_part) = line.split(':').next_back() {
                 let versions: Vec<&str> = versions_part.split("->").collect();
                 if versions.len() == 2 {
                     let current = versions[0]
-                        .trim()
                         .split_whitespace()
                         .next()
                         .unwrap_or("")
                         .to_string();
                     let latest = versions[1]
-                        .trim()
                         .split_whitespace()
                         .next()
                         .unwrap_or("")

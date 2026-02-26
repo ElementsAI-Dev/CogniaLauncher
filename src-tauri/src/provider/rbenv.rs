@@ -245,12 +245,12 @@ impl Provider for RbenvProvider {
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
             .filter(|l| {
-                l.chars().next().map_or(false, |c| c.is_ascii_digit())
+                l.chars().next().is_some_and(|c| c.is_ascii_digit())
                     && !l.contains("-dev")
                     && !l.contains("-preview")
                     && !l.contains("-rc")
             })
-            .last()
+            .next_back()
             .unwrap_or("")
             .to_string();
 
@@ -261,7 +261,7 @@ impl Provider for RbenvProvider {
         let mut updates = Vec::new();
         for line in installed.lines() {
             let version = line.trim();
-            if version.is_empty() || !version.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            if version.is_empty() || !version.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 continue;
             }
             // Compare major.minor series

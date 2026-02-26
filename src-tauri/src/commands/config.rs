@@ -24,7 +24,15 @@ pub async fn config_set(
 ) -> Result<(), String> {
     let mut s = settings.write().await;
     s.set_value(&key, &value).map_err(|e| e.to_string())?;
-    s.save().await.map_err(|e| e.to_string())
+    s.save().await.map_err(|e| e.to_string())?;
+
+    // Rebuild shared HTTP client when network or security settings change
+    if key.starts_with("network.") || key.starts_with("security.") {
+        crate::platform::proxy::rebuild_shared_client(&s);
+        crate::provider::api::update_api_client_from_settings(&s);
+    }
+
+    Ok(())
 }
 
 /// Default mirror keys that are always included in config_list
@@ -52,6 +60,7 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "network.timeout",
     "network.retries",
     "network.proxy",
+    "network.no_proxy",
     "security.allow_http",
     "security.verify_certificates",
     "security.allow_self_signed",
@@ -237,6 +246,14 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.proxy_mode"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.custom_proxy"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"terminal.no_proxy"));
+    }
+
+    #[test]
+    fn config_list_static_keys_include_network_no_proxy() {
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.proxy"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.no_proxy"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.timeout"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.retries"));
     }
 }
 
@@ -831,7 +848,7 @@ async fn detect_battery_windows() -> Option<BatteryInfo> {
                     .get("BatteryStatus")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let is_charging = matches!(status, 6 | 7 | 8 | 9);
+                let is_charging = matches!(status, 6..=9);
                 let is_plugged_in = matches!(status, 2 | 3 | 6 | 7 | 8 | 9 | 11);
 
                 let design_cap = item.get("DesignCapacity").and_then(|v| v.as_u64());
@@ -1062,4 +1079,198 @@ pub async fn config_import(
     let mut s = settings.write().await;
     *s = parsed;
     s.save().await.map_err(|e| e.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Proxy detection & testing
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemProxyInfo {
+    pub http_proxy: Option<String>,
+    pub https_proxy: Option<String>,
+    pub no_proxy: Option<String>,
+    pub source: String,
+}
+
+/// Detect system proxy settings from environment variables and OS-level config.
+#[tauri::command]
+pub fn detect_system_proxy() -> Result<SystemProxyInfo, String> {
+    // 1. Check environment variables first
+    let http_proxy = std::env::var("HTTP_PROXY")
+        .or_else(|_| std::env::var("http_proxy"))
+        .or_else(|_| std::env::var("ALL_PROXY"))
+        .or_else(|_| std::env::var("all_proxy"))
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    let https_proxy = std::env::var("HTTPS_PROXY")
+        .or_else(|_| std::env::var("https_proxy"))
+        .or_else(|_| std::env::var("ALL_PROXY"))
+        .or_else(|_| std::env::var("all_proxy"))
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    let no_proxy = std::env::var("NO_PROXY")
+        .or_else(|_| std::env::var("no_proxy"))
+        .ok()
+        .filter(|s| !s.is_empty());
+
+    if http_proxy.is_some() || https_proxy.is_some() {
+        return Ok(SystemProxyInfo {
+            http_proxy,
+            https_proxy,
+            no_proxy,
+            source: "environment".to_string(),
+        });
+    }
+
+    // 2. Windows: read from registry
+    #[cfg(windows)]
+    {
+        if let Some(info) = detect_windows_registry_proxy() {
+            return Ok(info);
+        }
+    }
+
+    Ok(SystemProxyInfo {
+        http_proxy: None,
+        https_proxy: None,
+        no_proxy: None,
+        source: "none".to_string(),
+    })
+}
+
+#[cfg(windows)]
+fn detect_windows_registry_proxy() -> Option<SystemProxyInfo> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let inet = hkcu
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+        .ok()?;
+
+    let enabled: u32 = inet.get_value("ProxyEnable").unwrap_or(0);
+    if enabled == 0 {
+        return None;
+    }
+
+    let server: String = inet.get_value("ProxyServer").unwrap_or_default();
+    if server.is_empty() {
+        return None;
+    }
+
+    let override_list: String = inet.get_value("ProxyOverride").unwrap_or_default();
+    let no_proxy = if override_list.is_empty() {
+        None
+    } else {
+        Some(override_list.replace(';', ","))
+    };
+
+    // Windows proxy server can be "host:port" or "http=host:port;https=host:port"
+    let proxy_url = if server.contains('=') {
+        // Protocol-specific: extract http proxy
+        server
+            .split(';')
+            .find(|s| s.starts_with("http="))
+            .map(|s| s.trim_start_matches("http=").to_string())
+            .map(|s| {
+                if s.starts_with("http://") || s.starts_with("https://") || s.starts_with("socks") {
+                    s
+                } else {
+                    format!("http://{}", s)
+                }
+            })
+    } else {
+        // Single proxy for all protocols
+        let s = if server.starts_with("http://")
+            || server.starts_with("https://")
+            || server.starts_with("socks")
+        {
+            server.clone()
+        } else {
+            format!("http://{}", server)
+        };
+        Some(s)
+    };
+
+    Some(SystemProxyInfo {
+        http_proxy: proxy_url.clone(),
+        https_proxy: proxy_url,
+        no_proxy,
+        source: "windows_registry".to_string(),
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyTestResult {
+    pub success: bool,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
+/// Test proxy connectivity by making a HEAD request through the given proxy.
+#[tauri::command]
+pub async fn test_proxy_connection(
+    proxy_url: String,
+    test_url: Option<String>,
+) -> Result<ProxyTestResult, String> {
+    let target = test_url.unwrap_or_else(|| "https://www.google.com".to_string());
+
+    let proxy = match reqwest::Proxy::all(&proxy_url) {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(ProxyTestResult {
+                success: false,
+                latency_ms: 0,
+                error: Some(format!("Invalid proxy URL: {}", e)),
+            });
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .proxy(proxy)
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(ProxyTestResult {
+                success: false,
+                latency_ms: 0,
+                error: Some(format!("Failed to create test client: {}", e)),
+            });
+        }
+    };
+
+    let start = std::time::Instant::now();
+    match client.head(&target).send().await {
+        Ok(resp) => {
+            let latency = start.elapsed().as_millis() as u64;
+            if resp.status().is_success() || resp.status().is_redirection() {
+                Ok(ProxyTestResult {
+                    success: true,
+                    latency_ms: latency,
+                    error: None,
+                })
+            } else {
+                Ok(ProxyTestResult {
+                    success: false,
+                    latency_ms: latency,
+                    error: Some(format!("HTTP {}", resp.status())),
+                })
+            }
+        }
+        Err(e) => {
+            let latency = start.elapsed().as_millis() as u64;
+            Ok(ProxyTestResult {
+                success: false,
+                latency_ms: latency,
+                error: Some(e.to_string()),
+            })
+        }
+    }
 }

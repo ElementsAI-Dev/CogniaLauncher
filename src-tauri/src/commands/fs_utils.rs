@@ -214,8 +214,8 @@ pub async fn validate_path(
 
     // Parent directory checks
     let parent = normalized.parent().map(|p| p.to_path_buf());
-    let parent_exists = parent.as_ref().map_or(false, |p| p.exists());
-    let parent_writable = parent.as_ref().map_or(false, |p| check_writable(p));
+    let parent_exists = parent.as_ref().is_some_and(|p| p.exists());
+    let parent_writable = parent.as_ref().is_some_and(|p| check_writable(p));
 
     if !exists && !parent_exists {
         warnings.push(

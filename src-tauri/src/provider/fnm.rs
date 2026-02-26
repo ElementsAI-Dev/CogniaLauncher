@@ -332,7 +332,7 @@ impl Provider for FnmProvider {
                         None
                     }
                 })
-                .last(); // remote list is sorted ascending
+                .next_back(); // remote list is sorted ascending
 
             if let Some(latest) = latest_in_major {
                 let latest_clean = latest.trim_start_matches('v');

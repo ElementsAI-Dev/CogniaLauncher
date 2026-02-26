@@ -23,13 +23,9 @@ pub struct DotnetProvider {
 
 impl DotnetProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
-        Self { client }
+        Self {
+            client: crate::platform::proxy::get_shared_client(),
+        }
     }
 
     async fn run_dotnet(&self, args: &[&str]) -> CogniaResult<String> {
@@ -433,14 +429,11 @@ impl Provider for DotnetProvider {
             name.to_lowercase()
         );
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         if let Ok(resp) = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await
         {
@@ -565,7 +558,7 @@ impl Provider for DotnetProvider {
 
                     // NuGet packages are typically in ~/.nuget/packages or project-local
                     let nuget_path = Self::get_nuget_packages_dir()
-                        .map(|p| p.join(&name.to_lowercase()).join(&version))
+                        .map(|p| p.join(name.to_lowercase()).join(&version))
                         .unwrap_or_default();
 
                     packages.push(InstalledPackage {

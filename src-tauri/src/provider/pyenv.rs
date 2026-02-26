@@ -304,7 +304,7 @@ impl Provider for PyenvProvider {
                 continue;
             }
             // Only match pure stable version numbers like "3.x.y"
-            if !v.chars().next().map_or(false, |c| c.is_ascii_digit())
+            if !v.chars().next().is_some_and(|c| c.is_ascii_digit())
                 || v.contains('-')
                 || v.contains('a')
                 || v.contains('b')
@@ -325,7 +325,7 @@ impl Provider for PyenvProvider {
         let mut updates = Vec::new();
         for line in installed.lines() {
             let version = line.trim();
-            if version.is_empty() || !version.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            if version.is_empty() || !version.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 continue;
             }
             let parts: Vec<&str> = version.splitn(3, '.').collect();

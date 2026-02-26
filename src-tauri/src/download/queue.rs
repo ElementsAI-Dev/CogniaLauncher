@@ -371,6 +371,32 @@ impl DownloadQueue {
         count
     }
 
+    /// Force-retry a single terminal task (failed, cancelled, or completed)
+    /// Resets state to Queued, clears error, resets retry count
+    pub fn retry_task(&mut self, id: &str) -> Result<(), DownloadError> {
+        let task = self
+            .tasks
+            .get_mut(id)
+            .ok_or(DownloadError::TaskNotFound { id: id.to_string() })?;
+
+        if !task.state.is_terminal() {
+            return Err(DownloadError::InvalidOperation {
+                state: task.state.status_text().to_string(),
+                operation: "retry".to_string(),
+            });
+        }
+
+        task.state = DownloadState::Queued;
+        task.error = None;
+        task.retries = 0;
+
+        // Remove from any existing position, add to front of pending
+        self.pending.retain(|pid| pid != id);
+        self.pending.push_front(id.to_string());
+
+        Ok(())
+    }
+
     /// Retry all failed tasks
     pub fn retry_all_failed(&mut self) -> usize {
         let failed_ids: Vec<String> = self
@@ -968,5 +994,95 @@ mod tests {
         queue.cancel(&id).unwrap();
 
         assert_eq!(queue.get(&id).unwrap().state, DownloadState::Cancelled);
+    }
+
+    #[test]
+    fn test_queue_retry_task_failed_recoverable() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        let err = DownloadError::Network {
+            message: "timeout".into(),
+        };
+        // Exhaust retries so it stays failed
+        queue.get_mut(&id).unwrap().config.max_retries = 0;
+        queue.fail(&id, err).unwrap();
+        assert!(queue.get(&id).unwrap().state.is_terminal());
+
+        // Force retry should work
+        queue.retry_task(&id).unwrap();
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Queued);
+        assert_eq!(queue.get(&id).unwrap().retries, 0);
+        assert!(queue.get(&id).unwrap().error.is_none());
+    }
+
+    #[test]
+    fn test_queue_retry_task_failed_non_recoverable() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        let err = DownloadError::ChecksumMismatch {
+            expected: "abc".into(),
+            actual: "def".into(),
+        };
+        queue.fail(&id, err).unwrap();
+        assert!(queue.get(&id).unwrap().state.is_terminal());
+
+        // Force retry should work even for non-recoverable
+        queue.retry_task(&id).unwrap();
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Queued);
+        assert_eq!(queue.get(&id).unwrap().retries, 0);
+    }
+
+    #[test]
+    fn test_queue_retry_task_cancelled() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.cancel(&id).unwrap();
+
+        queue.retry_task(&id).unwrap();
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Queued);
+    }
+
+    #[test]
+    fn test_queue_retry_task_active_fails() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+
+        // Retry an active (downloading) task should fail
+        let result = queue.retry_task(&id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_retry_task_completed() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+        queue.complete(&id).unwrap();
+
+        // Retry a completed task should work (force-retry)
+        queue.retry_task(&id).unwrap();
+        assert_eq!(queue.get(&id).unwrap().state, DownloadState::Queued);
+    }
+
+    #[test]
+    fn test_queue_retry_task_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.retry_task("nonexistent");
+        assert!(result.is_err());
     }
 }

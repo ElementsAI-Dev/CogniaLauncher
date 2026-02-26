@@ -6,6 +6,7 @@ use crate::platform::{
 };
 use async_trait::async_trait;
 use reqwest::Client;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -22,15 +23,9 @@ pub struct ZigProvider {
 
 impl ZigProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
         Self {
             zig_dir: Self::detect_zig_dir(),
-            client,
+            client: crate::platform::proxy::get_shared_client(),
         }
     }
 
@@ -200,8 +195,8 @@ impl ZigProvider {
         Ok(versions)
     }
 
-    /// Get the download URL for a specific version and the current platform.
-    async fn get_download_url(&self, version: &str) -> CogniaResult<String> {
+    /// Get the download URL and optional SHA256 hash for a specific version and the current platform.
+    async fn get_download_url(&self, version: &str) -> CogniaResult<(String, Option<String>)> {
         let url = "https://ziglang.org/download/index.json";
         let response = self
             .client
@@ -235,18 +230,29 @@ impl ZigProvider {
             CogniaError::Provider(format!("Version {} not found in index", version))
         })?;
 
-        let tarball = entry
-            .get(platform_key)
-            .and_then(|p| p.get("tarball"))
+        let platform_entry = entry.get(platform_key).ok_or_else(|| {
+            CogniaError::Provider(format!(
+                "No download for platform {} version {}",
+                platform_key, version
+            ))
+        })?;
+
+        let tarball = platform_entry
+            .get("tarball")
             .and_then(|t| t.as_str())
             .ok_or_else(|| {
                 CogniaError::Provider(format!(
-                    "No download for platform {} version {}",
+                    "No tarball URL for platform {} version {}",
                     platform_key, version
                 ))
             })?;
 
-        Ok(tarball.to_string())
+        let shasum = platform_entry
+            .get("shasum")
+            .and_then(|s| s.as_str())
+            .map(String::from);
+
+        Ok((tarball.to_string(), shasum))
     }
 
     /// Scan the versions directory for installed Zig versions.
@@ -287,6 +293,45 @@ impl ZigProvider {
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
     }
+
+    /// Extract Zig version from a `mise.toml` / `.mise.toml` file.
+    pub fn parse_mise_toml_zig_version(content: &str) -> Option<String> {
+        let mut in_tools = false;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[tools]" {
+                in_tools = true;
+                continue;
+            }
+            if trimmed.starts_with('[') {
+                in_tools = false;
+                continue;
+            }
+            if in_tools {
+                if let Some(rest) = trimmed.strip_prefix("zig") {
+                    let rest = rest.trim();
+                    if let Some(value) = rest.strip_prefix('=') {
+                        let version = value.trim().trim_matches('"').trim_matches('\'').trim();
+                        if !version.is_empty() {
+                            return Some(version.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Get directory modification time as RFC3339 string for installed_at.
+    fn dir_installed_at(path: &Path) -> Option<String> {
+        std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map(|t| {
+                let dt: chrono::DateTime<chrono::Utc> = t.into();
+                dt.to_rfc3339()
+            })
+    }
 }
 
 impl Default for ZigProvider {
@@ -313,6 +358,8 @@ impl Provider for ZigProvider {
             Capability::List,
             Capability::VersionSwitch,
             Capability::MultiVersion,
+            Capability::Update,
+            Capability::ProjectLocal,
         ])
     }
 
@@ -364,6 +411,21 @@ impl Provider for ZigProvider {
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
         let version = name.strip_prefix("zig@").unwrap_or(name);
 
+        // Try to find release_date from the download index for this version
+        let release_date = if version != "zig" {
+            self.fetch_available_versions()
+                .await
+                .ok()
+                .and_then(|versions| {
+                    versions
+                        .into_iter()
+                        .find(|(v, _)| v == version)
+                        .and_then(|(_, date)| date)
+                })
+        } else {
+            None
+        };
+
         Ok(PackageInfo {
             name: name.into(),
             display_name: Some(format!("Zig {}", version)),
@@ -373,12 +435,31 @@ impl Provider for ZigProvider {
             repository: Some("https://github.com/ziglang/zig".into()),
             versions: vec![VersionInfo {
                 version: version.to_string(),
-                release_date: None,
+                release_date,
                 deprecated: false,
                 yanked: false,
             }],
             provider: self.id().into(),
         })
+    }
+
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        let version = name.strip_prefix("zig@").unwrap_or(name);
+        let versions_dir = match self.versions_dir() {
+            Ok(d) => d,
+            Err(_) => return Ok(None),
+        };
+        let install_path = versions_dir.join(version);
+        let zig_binary = if cfg!(windows) {
+            install_path.join("zig.exe")
+        } else {
+            install_path.join("zig")
+        };
+        if zig_binary.exists() {
+            Ok(Some(version.to_string()))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
@@ -425,8 +506,8 @@ impl Provider for ZigProvider {
             });
         }
 
-        // Get download URL
-        let download_url = self.get_download_url(&actual_version).await?;
+        // Get download URL and expected checksum
+        let (download_url, expected_shasum) = self.get_download_url(&actual_version).await?;
 
         // Download the archive
         let response = self
@@ -448,6 +529,19 @@ impl Provider for ZigProvider {
             .bytes()
             .await
             .map_err(|e| CogniaError::Network(e.to_string()))?;
+
+        // Verify SHA256 checksum if provided by the download index
+        if let Some(ref expected) = expected_shasum {
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let actual = hex::encode(hasher.finalize());
+            if actual != *expected {
+                return Err(CogniaError::Provider(format!(
+                    "Checksum mismatch for Zig {}: expected {}, got {}",
+                    actual_version, expected, actual
+                )));
+            }
+        }
 
         // Ensure versions directory exists
         tokio::fs::create_dir_all(&versions_dir)
@@ -541,13 +635,17 @@ impl Provider for ZigProvider {
                     version.contains(f) || format!("zig@{}", version).contains(f)
                 })
             })
-            .map(|(version, path)| InstalledPackage {
-                name: format!("zig@{}", version),
-                version,
-                provider: self.id().into(),
-                install_path: path,
-                installed_at: String::new(),
-                is_global: true,
+            .map(|(version, path)| {
+                let installed_at =
+                    Self::dir_installed_at(&path).unwrap_or_default();
+                InstalledPackage {
+                    name: format!("zig@{}", version),
+                    version,
+                    provider: self.id().into(),
+                    install_path: path,
+                    installed_at,
+                    is_global: true,
+                }
             })
             .collect();
 
@@ -555,25 +653,34 @@ impl Provider for ZigProvider {
     }
 
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let current = match self.get_zig_version().await {
-            Ok(v) => v,
-            Err(_) => return Ok(vec![]),
-        };
+        let installed = self.scan_installed_versions().unwrap_or_default();
+        if installed.is_empty() {
+            return Ok(vec![]);
+        }
 
         let versions = self.fetch_available_versions().await.unwrap_or_default();
-        // Find latest stable version
-        if let Some((latest, _)) = versions.iter().find(|(v, _)| !v.contains('-')) {
-            if *latest != current {
-                return Ok(vec![UpdateInfo {
-                    name: "zig".into(),
-                    current_version: current,
+        let latest_stable = versions
+            .iter()
+            .find(|(v, _)| !v.contains('-'))
+            .map(|(v, _)| v.clone());
+
+        let Some(latest) = latest_stable else {
+            return Ok(vec![]);
+        };
+
+        let mut updates = Vec::new();
+        for (version, _) in &installed {
+            if !version.contains('-') && *version != latest {
+                updates.push(UpdateInfo {
+                    name: format!("zig@{}", version),
+                    current_version: version.clone(),
                     latest_version: latest.clone(),
                     provider: self.id().into(),
-                }]);
+                });
             }
         }
 
-        Ok(vec![])
+        Ok(updates)
     }
 }
 
@@ -585,12 +692,15 @@ impl EnvironmentProvider for ZigProvider {
 
         Ok(installed
             .into_iter()
-            .map(|(version, path)| InstalledVersion {
-                is_current: version == current,
-                version,
-                install_path: path,
-                size: None,
-                installed_at: None,
+            .map(|(version, path)| {
+                let installed_at = Self::dir_installed_at(&path);
+                InstalledVersion {
+                    is_current: version == current,
+                    version,
+                    install_path: path,
+                    size: None,
+                    installed_at,
+                }
             })
             .collect())
     }
@@ -694,7 +804,25 @@ impl EnvironmentProvider for ZigProvider {
                 }
             }
 
-            // 3. Check build.zig.zon for minimum_zig_version
+            // 3. Check mise.toml / .mise.toml
+            for mise_name in &["mise.toml", ".mise.toml"] {
+                let mise_file = current.join(mise_name);
+                if mise_file.exists() {
+                    if let Ok(content) =
+                        crate::platform::fs::read_file_string(&mise_file).await
+                    {
+                        if let Some(version) = Self::parse_mise_toml_zig_version(&content) {
+                            return Ok(Some(VersionDetection {
+                                version,
+                                source: VersionSource::LocalFile,
+                                source_path: Some(mise_file),
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // 4. Check build.zig.zon for minimum_zig_version
             let build_zig_zon = current.join("build.zig.zon");
             if build_zig_zon.exists() {
                 if let Ok(content) = crate::platform::fs::read_file_string(&build_zig_zon).await {
@@ -713,7 +841,7 @@ impl EnvironmentProvider for ZigProvider {
             }
         }
 
-        // 4. Fall back to current version
+        // 5. Fall back to current version
         if let Some(version) = self.get_current_version().await? {
             return Ok(Some(VersionDetection {
                 version,
@@ -727,7 +855,12 @@ impl EnvironmentProvider for ZigProvider {
 
     fn get_env_modifications(&self, version: &str) -> CogniaResult<EnvModifications> {
         let version_path = self.versions_dir()?.join(version);
-        Ok(EnvModifications::new().prepend_path(version_path))
+        let mut mods = EnvModifications::new().prepend_path(&version_path);
+        let lib_dir = version_path.join("lib");
+        if lib_dir.exists() {
+            mods = mods.set_var("ZIG_LIB_DIR", lib_dir.to_string_lossy().to_string());
+        }
+        Ok(mods)
     }
 
     fn version_file_name(&self) -> &str {
@@ -747,6 +880,38 @@ impl SystemPackageProvider for ZigProvider {
 
     fn requires_elevation(&self, _operation: &str) -> bool {
         false
+    }
+
+    async fn get_version(&self) -> CogniaResult<String> {
+        self.get_zig_version().await
+    }
+
+    async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
+        if let Some(path) = process::which("zig").await {
+            return Ok(PathBuf::from(path));
+        }
+        // Fallback to managed current symlink
+        if let Ok(zig_dir) = self.zig_dir() {
+            let current_bin = if cfg!(windows) {
+                zig_dir.join("current").join("zig.exe")
+            } else {
+                zig_dir.join("current").join("zig")
+            };
+            if current_bin.exists() {
+                return Ok(current_bin);
+            }
+        }
+        Err(CogniaError::Provider("zig not found in PATH".into()))
+    }
+
+    fn get_install_instructions(&self) -> Option<String> {
+        if cfg!(windows) {
+            Some("winget install zig.zig  OR  scoop install zig".into())
+        } else if cfg!(target_os = "macos") {
+            Some("brew install zig".into())
+        } else {
+            Some("Download from https://ziglang.org/download/".into())
+        }
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
@@ -779,6 +944,29 @@ impl ZigProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    // ── Helper: create a ZigProvider with a custom zig_dir ──
+
+    fn provider_with_dir(dir: &Path) -> ZigProvider {
+        ZigProvider {
+            zig_dir: Some(dir.to_path_buf()),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Create a fake Zig installation directory with a dummy binary.
+    fn create_fake_zig_install(versions_dir: &Path, version: &str) -> PathBuf {
+        let version_path = versions_dir.join(version);
+        fs::create_dir_all(&version_path).unwrap();
+        let binary_name = if cfg!(windows) { "zig.exe" } else { "zig" };
+        fs::write(version_path.join(binary_name), b"fake-zig-binary").unwrap();
+        version_path
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Provider metadata & basic trait methods
+    // ════════════════════════════════════════════════════════════════
 
     #[test]
     fn test_provider_metadata() {
@@ -791,13 +979,50 @@ mod tests {
         assert!(provider.capabilities().contains(&Capability::List));
         assert!(provider.capabilities().contains(&Capability::VersionSwitch));
         assert!(provider.capabilities().contains(&Capability::MultiVersion));
+        assert!(provider.capabilities().contains(&Capability::Update));
+        assert!(provider.capabilities().contains(&Capability::ProjectLocal));
+        assert_eq!(provider.capabilities().len(), 8);
         assert_eq!(provider.priority(), 80);
     }
 
     #[test]
+    fn test_supported_platforms() {
+        let provider = ZigProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert_eq!(platforms.len(), 3);
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = ZigProvider::new();
+        assert_eq!(provider.version_file_name(), ".zig-version");
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = ZigProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+        assert!(!provider.requires_elevation("update"));
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let provider = ZigProvider::default();
+        assert_eq!(provider.id(), "zig");
+        assert!(provider.zig_dir.is_some());
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Platform key detection
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
     fn test_get_platform_key() {
         let key = ZigProvider::get_platform_key();
-        // Should always produce a key on supported CI/development platforms
         assert!(key.is_some(), "Platform key should be available");
         let key = key.unwrap();
         assert!(
@@ -805,22 +1030,35 @@ mod tests {
             "Platform key should be arch-os format: {}",
             key
         );
+        // Must match one of the known platform keys
+        let valid_keys = [
+            "x86_64-windows", "aarch64-windows", "x86-windows",
+            "x86_64-macos", "aarch64-macos",
+            "x86_64-linux", "aarch64-linux", "arm-linux", "x86-linux",
+        ];
+        assert!(
+            valid_keys.contains(&key),
+            "Platform key '{}' not in valid set",
+            key
+        );
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Version output parsing
+    // ════════════════════════════════════════════════════════════════
 
     #[test]
     fn test_parse_zig_version_stable() {
-        let output = "0.13.0\n";
         assert_eq!(
-            ZigProvider::parse_zig_version_output(output),
+            ZigProvider::parse_zig_version_output("0.13.0\n"),
             Some("0.13.0".to_string())
         );
     }
 
     #[test]
     fn test_parse_zig_version_dev() {
-        let output = "0.16.0-dev.2637+6a9510c0e\n";
         assert_eq!(
-            ZigProvider::parse_zig_version_output(output),
+            ZigProvider::parse_zig_version_output("0.16.0-dev.2637+6a9510c0e\n"),
             Some("0.16.0-dev.2637+6a9510c0e".to_string())
         );
     }
@@ -829,7 +1067,30 @@ mod tests {
     fn test_parse_zig_version_empty() {
         assert_eq!(ZigProvider::parse_zig_version_output(""), None);
         assert_eq!(ZigProvider::parse_zig_version_output("   \n"), None);
+        assert_eq!(ZigProvider::parse_zig_version_output("\n\n"), None);
     }
+
+    #[test]
+    fn test_parse_zig_version_multiline() {
+        // Only the first line should be used
+        let output = "0.13.0\nsome other garbage\n";
+        assert_eq!(
+            ZigProvider::parse_zig_version_output(output),
+            Some("0.13.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_zig_version_with_leading_whitespace() {
+        assert_eq!(
+            ZigProvider::parse_zig_version_output("  0.13.0  \n"),
+            Some("0.13.0".to_string())
+        );
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  build.zig.zon parsing
+    // ════════════════════════════════════════════════════════════════
 
     #[test]
     fn test_parse_build_zig_zon_version() {
@@ -846,6 +1107,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_build_zig_zon_dev_version() {
+        let content = r#".{
+    .minimum_zig_version = "0.14.0-dev.367+a69f40316",
+}"#;
+        assert_eq!(
+            ZigProvider::parse_build_zig_zon_version(content),
+            Some("0.14.0-dev.367+a69f40316".to_string())
+        );
+    }
+
+    #[test]
     fn test_parse_build_zig_zon_no_version() {
         let content = r#".{
     .name = "my-project",
@@ -854,6 +1126,84 @@ mod tests {
 }"#;
         assert_eq!(ZigProvider::parse_build_zig_zon_version(content), None);
     }
+
+    #[test]
+    fn test_parse_build_zig_zon_extra_whitespace() {
+        let content = r#".{
+    .minimum_zig_version  =  "0.12.0",
+}"#;
+        assert_eq!(
+            ZigProvider::parse_build_zig_zon_version(content),
+            Some("0.12.0".to_string())
+        );
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  mise.toml parsing
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_parse_mise_toml_zig_version() {
+        let content = "[tools]\nzig = \"0.13.0\"\ndeno = \"1.45.0\"\n";
+        assert_eq!(
+            ZigProvider::parse_mise_toml_zig_version(content),
+            Some("0.13.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_mise_toml_zig_version_single_quotes() {
+        let content = "[tools]\nzig = '0.14.0'\n";
+        assert_eq!(
+            ZigProvider::parse_mise_toml_zig_version(content),
+            Some("0.14.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_mise_toml_no_zig() {
+        let content = "[tools]\nnode = \"20.0.0\"\n";
+        assert_eq!(ZigProvider::parse_mise_toml_zig_version(content), None);
+    }
+
+    #[test]
+    fn test_parse_mise_toml_empty() {
+        assert_eq!(ZigProvider::parse_mise_toml_zig_version(""), None);
+    }
+
+    #[test]
+    fn test_parse_mise_toml_zig_in_wrong_section() {
+        // zig key outside of [tools] should NOT match
+        let content = "[settings]\nzig = \"0.13.0\"\n";
+        assert_eq!(ZigProvider::parse_mise_toml_zig_version(content), None);
+    }
+
+    #[test]
+    fn test_parse_mise_toml_zig_after_section_switch() {
+        // zig in [tools] then another section resets state
+        let content = "[tools]\nnode = \"20\"\n[settings]\nzig = \"0.13.0\"\n";
+        assert_eq!(ZigProvider::parse_mise_toml_zig_version(content), None);
+    }
+
+    #[test]
+    fn test_parse_mise_toml_zig_with_spaces() {
+        let content = "[tools]\n  zig  =  \"0.14.0\"  \n";
+        assert_eq!(
+            ZigProvider::parse_mise_toml_zig_version(content),
+            Some("0.14.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_mise_toml_no_prefix_collision() {
+        // "zigbee" should NOT match as "zig"
+        let content = "[tools]\nzigbee = \"1.0.0\"\n";
+        assert_eq!(ZigProvider::parse_mise_toml_zig_version(content), None);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Download index parsing
+    // ════════════════════════════════════════════════════════════════
 
     #[test]
     fn test_parse_download_index() {
@@ -897,9 +1247,602 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_download_index_shasum_extraction() {
+        let json = serde_json::json!({
+            "0.13.0": {
+                "x86_64-windows": {
+                    "tarball": "https://ziglang.org/builds/zig.zip",
+                    "shasum": "abcdef1234567890"
+                }
+            }
+        });
+        let entry = json.get("0.13.0").unwrap();
+        let platform = entry.get("x86_64-windows").unwrap();
+        let shasum = platform.get("shasum").and_then(|s| s.as_str());
+        assert_eq!(shasum, Some("abcdef1234567890"));
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Directory & filesystem helpers
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
     fn test_detect_zig_dir() {
         let dir = ZigProvider::detect_zig_dir();
-        // Should produce some path on any platform
         assert!(dir.is_some(), "Zig dir should be detectable");
+    }
+
+    #[test]
+    fn test_zig_dir_returns_correct_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = provider_with_dir(tmp.path());
+        assert_eq!(provider.zig_dir().unwrap(), tmp.path());
+    }
+
+    #[test]
+    fn test_zig_dir_none_returns_error() {
+        let provider = ZigProvider {
+            zig_dir: None,
+            client: reqwest::Client::new(),
+        };
+        assert!(provider.zig_dir().is_err());
+    }
+
+    #[test]
+    fn test_versions_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = provider_with_dir(tmp.path());
+        assert_eq!(provider.versions_dir().unwrap(), tmp.path().join("versions"));
+    }
+
+    #[test]
+    fn test_dir_installed_at_nonexistent() {
+        let result = ZigProvider::dir_installed_at(Path::new("/nonexistent/path/zig-test"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_dir_installed_at_real_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = ZigProvider::dir_installed_at(tmp.path());
+        assert!(result.is_some(), "Temp dir should have metadata");
+        let ts = result.unwrap();
+        assert!(ts.contains('T'), "Should be RFC3339 format: {}", ts);
+        // Basic RFC3339 validation: contains date separators
+        assert!(ts.contains('-'), "RFC3339 should contain dashes: {}", ts);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  scan_installed_versions (filesystem tests)
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_scan_installed_versions_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.scan_installed_versions().unwrap();
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_scan_installed_versions_nonexistent_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // versions dir doesn't exist at all
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.scan_installed_versions().unwrap();
+        assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_scan_installed_versions_with_installs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+        create_fake_zig_install(&versions_dir, "0.12.0");
+
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.scan_installed_versions().unwrap();
+        assert_eq!(versions.len(), 2);
+        // Should be sorted descending
+        assert_eq!(versions[0].0, "0.13.0");
+        assert_eq!(versions[1].0, "0.12.0");
+    }
+
+    #[test]
+    fn test_scan_installed_versions_ignores_non_zig_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+
+        // Create a valid install
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        // Create a directory WITHOUT a zig binary — should be skipped
+        let fake_dir = versions_dir.join("not-zig");
+        fs::create_dir_all(&fake_dir).unwrap();
+        fs::write(fake_dir.join("something-else.txt"), b"nope").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.scan_installed_versions().unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].0, "0.13.0");
+    }
+
+    #[test]
+    fn test_scan_installed_versions_ignores_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+
+        // Create a file (not dir) — should be skipped
+        fs::write(versions_dir.join("0.13.0"), b"i am a file").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.scan_installed_versions().unwrap();
+        assert!(versions.is_empty());
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  find_extracted_dir
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_find_extracted_dir_single_subdir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sub = tmp.path().join("zig-linux-x86_64-0.13.0");
+        fs::create_dir_all(&sub).unwrap();
+
+        let result = ZigProvider::find_extracted_dir(tmp.path()).unwrap();
+        assert_eq!(result, sub);
+    }
+
+    #[test]
+    fn test_find_extracted_dir_no_subdir() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No subdirectory, just files
+        fs::write(tmp.path().join("zig.exe"), b"binary").unwrap();
+
+        let result = ZigProvider::find_extracted_dir(tmp.path()).unwrap();
+        assert_eq!(result, tmp.path());
+    }
+
+    #[test]
+    fn test_find_extracted_dir_multiple_subdirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(tmp.path().join("dir1")).unwrap();
+        fs::create_dir_all(tmp.path().join("dir2")).unwrap();
+
+        let result = ZigProvider::find_extracted_dir(tmp.path()).unwrap();
+        // With multiple dirs, returns the temp_dir itself
+        assert_eq!(result, tmp.path());
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  get_env_modifications
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_get_env_modifications_path_prepend() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        let mods = provider.get_env_modifications("0.13.0").unwrap();
+        assert_eq!(mods.path_prepend.len(), 1);
+        assert_eq!(mods.path_prepend[0], versions_dir.join("0.13.0"));
+    }
+
+    #[test]
+    fn test_get_env_modifications_zig_lib_dir_when_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        let version_path = create_fake_zig_install(&versions_dir, "0.13.0");
+        // Create lib dir
+        let lib_dir = version_path.join("lib");
+        fs::create_dir_all(&lib_dir).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let mods = provider.get_env_modifications("0.13.0").unwrap();
+        assert_eq!(
+            mods.set_variables.get("ZIG_LIB_DIR"),
+            Some(&lib_dir.to_string_lossy().to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_env_modifications_no_zig_lib_dir_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+        // No lib dir created
+
+        let provider = provider_with_dir(tmp.path());
+        let mods = provider.get_env_modifications("0.13.0").unwrap();
+        assert!(mods.set_variables.get("ZIG_LIB_DIR").is_none());
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  get_install_instructions
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_get_install_instructions() {
+        let provider = ZigProvider::new();
+        let instructions = provider.get_install_instructions();
+        assert!(instructions.is_some(), "Install instructions should be available");
+        let text = instructions.unwrap();
+        assert!(!text.is_empty());
+        assert!(
+            text.to_lowercase().contains("zig"),
+            "Instructions should mention zig: {}",
+            text
+        );
+        // Platform-specific check
+        if cfg!(windows) {
+            assert!(text.contains("winget"), "Windows instructions should mention winget");
+        } else if cfg!(target_os = "macos") {
+            assert!(text.contains("brew"), "macOS instructions should mention brew");
+        } else {
+            assert!(text.contains("ziglang.org"), "Linux instructions should mention ziglang.org");
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  SHA256 checksum verification
+    // ════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_sha256_checksum_computation() {
+        let data = b"hello zig world";
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        let hash = hex::encode(hasher.finalize());
+        // Known SHA256 of "hello zig world"
+        assert_eq!(hash.len(), 64, "SHA256 hex should be 64 chars");
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // Verify reproducibility
+        let mut hasher2 = Sha256::new();
+        hasher2.update(data);
+        let hash2 = hex::encode(hasher2.finalize());
+        assert_eq!(hash, hash2);
+    }
+
+    #[test]
+    fn test_sha256_different_data_different_hash() {
+        let mut h1 = Sha256::new();
+        h1.update(b"data1");
+        let hash1 = hex::encode(h1.finalize());
+
+        let mut h2 = Sha256::new();
+        h2.update(b"data2");
+        let hash2 = hex::encode(h2.finalize());
+
+        assert_ne!(hash1, hash2);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Async tests: get_installed_version, list_installed, is_available
+    // ════════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_get_installed_version_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        let result = provider.get_installed_version("zig@0.13.0").await.unwrap();
+        assert_eq!(result, Some("0.13.0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_installed_version_not_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let result = provider.get_installed_version("zig@0.99.0").await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_installed_version_without_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        // Without zig@ prefix should also work
+        let result = provider.get_installed_version("0.13.0").await.unwrap();
+        assert_eq!(result, Some("0.13.0".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_get_installed_version_no_zig_dir() {
+        let provider = ZigProvider {
+            zig_dir: None,
+            client: reqwest::Client::new(),
+        };
+        let result = provider.get_installed_version("zig@0.13.0").await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_is_available_with_zig_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = provider_with_dir(tmp.path());
+        assert!(provider.is_available().await);
+    }
+
+    #[tokio::test]
+    async fn test_list_installed_with_filter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+        create_fake_zig_install(&versions_dir, "0.12.0");
+
+        let provider = provider_with_dir(tmp.path());
+
+        // No filter — should return all
+        let all = provider
+            .list_installed(InstalledFilter {
+                name_filter: None,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Filter by version substring
+        let filtered = provider
+            .list_installed(InstalledFilter {
+                name_filter: Some("0.13".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].version, "0.13.0");
+    }
+
+    #[tokio::test]
+    async fn test_list_installed_installed_at_populated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        let packages = provider
+            .list_installed(InstalledFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(packages.len(), 1);
+        // installed_at should be populated (not empty)
+        assert!(
+            !packages[0].installed_at.is_empty(),
+            "installed_at should be populated from filesystem metadata"
+        );
+        assert!(
+            packages[0].installed_at.contains('T'),
+            "installed_at should be RFC3339: {}",
+            packages[0].installed_at
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_installed_versions_installed_at_populated() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        let versions = provider.list_installed_versions().await.unwrap();
+        assert_eq!(versions.len(), 1);
+        assert!(
+            versions[0].installed_at.is_some(),
+            "installed_at should be Some from filesystem metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_package_installed_true() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        create_fake_zig_install(&versions_dir, "0.13.0");
+
+        let provider = provider_with_dir(tmp.path());
+        assert!(provider.is_package_installed("0.13.0").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_is_package_installed_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        assert!(!provider.is_package_installed("0.99.0").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_uninstall_nonexistent_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let result = provider
+            .uninstall(UninstallRequest {
+                name: "zig".into(),
+                version: Some("0.99.0".into()),
+                force: false,
+            })
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not installed"), "Error should mention not installed: {}", err);
+    }
+
+    #[tokio::test]
+    async fn test_uninstall_requires_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let provider = provider_with_dir(tmp.path());
+        let result = provider
+            .uninstall(UninstallRequest {
+                name: "zig".into(),
+                version: None,
+                force: false,
+            })
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_uninstall_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        let version_path = create_fake_zig_install(&versions_dir, "0.13.0");
+        assert!(version_path.exists());
+
+        let provider = provider_with_dir(tmp.path());
+        provider
+            .uninstall(UninstallRequest {
+                name: "zig".into(),
+                version: Some("0.13.0".into()),
+                force: false,
+            })
+            .await
+            .unwrap();
+        assert!(!version_path.exists(), "Version directory should be removed");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  detect_version (async filesystem tests)
+    // ════════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_detect_version_from_zig_version_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".zig-version"), "0.13.0\n").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap();
+        assert!(detection.is_some());
+        let det = detection.unwrap();
+        assert_eq!(det.version, "0.13.0");
+        assert!(matches!(det.source, VersionSource::LocalFile));
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_from_tool_versions() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".tool-versions"), "zig 0.12.0\nnode 20.0.0\n").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap();
+        assert!(detection.is_some());
+        let det = detection.unwrap();
+        assert_eq!(det.version, "0.12.0");
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_from_mise_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("mise.toml"),
+            "[tools]\nzig = \"0.14.0\"\n",
+        )
+        .unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap();
+        assert!(detection.is_some());
+        let det = detection.unwrap();
+        assert_eq!(det.version, "0.14.0");
+        assert!(matches!(det.source, VersionSource::LocalFile));
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_from_dot_mise_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join(".mise.toml"),
+            "[tools]\nzig = \"0.11.0\"\n",
+        )
+        .unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap();
+        assert!(detection.is_some());
+        assert_eq!(detection.unwrap().version, "0.11.0");
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_from_build_zig_zon() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zon = r#".{
+    .name = "test",
+    .minimum_zig_version = "0.12.0",
+}"#;
+        fs::write(tmp.path().join("build.zig.zon"), zon).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let detection = provider.detect_version(tmp.path()).await.unwrap();
+        assert!(detection.is_some());
+        let det = detection.unwrap();
+        assert_eq!(det.version, "0.12.0");
+        assert!(matches!(det.source, VersionSource::Manifest));
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_priority_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create all version sources — .zig-version should win
+        fs::write(tmp.path().join(".zig-version"), "0.13.0").unwrap();
+        fs::write(tmp.path().join(".tool-versions"), "zig 0.12.0\n").unwrap();
+        fs::write(
+            tmp.path().join("mise.toml"),
+            "[tools]\nzig = \"0.11.0\"\n",
+        )
+        .unwrap();
+        let zon = r#".{ .minimum_zig_version = "0.10.0" }"#;
+        fs::write(tmp.path().join("build.zig.zon"), zon).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let det = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(det.version, "0.13.0", ".zig-version should have highest priority");
+    }
+
+    #[tokio::test]
+    async fn test_detect_version_empty_zig_version_file_falls_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Empty .zig-version should be skipped
+        fs::write(tmp.path().join(".zig-version"), "  \n").unwrap();
+        fs::write(tmp.path().join(".tool-versions"), "zig 0.12.0\n").unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let det = provider.detect_version(tmp.path()).await.unwrap().unwrap();
+        assert_eq!(det.version, "0.12.0", "Should fall through to .tool-versions");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  set_global_version
+    // ════════════════════════════════════════════════════════════════
+
+    #[tokio::test]
+    async fn test_set_global_version_not_installed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let versions_dir = tmp.path().join("versions");
+        fs::create_dir_all(&versions_dir).unwrap();
+
+        let provider = provider_with_dir(tmp.path());
+        let result = provider.set_global_version("0.99.0").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not installed"), "Error: {}", err);
     }
 }

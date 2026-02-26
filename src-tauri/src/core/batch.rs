@@ -879,7 +879,7 @@ impl PackageSpec {
 
         // Comparison operators followed by digit: >=1.0.0, <=2.0.0, >0.5, <3, =1.0
         if matches!(first_char, '>' | '<' | '=') {
-            let rest = s.trim_start_matches(|c| c == '>' || c == '<' || c == '=');
+            let rest = s.trim_start_matches(['>', '<', '=']);
             if rest
                 .chars()
                 .next()
@@ -891,15 +891,14 @@ impl PackageSpec {
         }
 
         // Version prefix: v1.0.0, V1.0.0
-        if matches!(first_char, 'v' | 'V') {
-            if s.chars()
+        if matches!(first_char, 'v' | 'V')
+            && s.chars()
                 .nth(1)
                 .map(|c| c.is_ascii_digit())
                 .unwrap_or(false)
             {
                 return true;
             }
-        }
 
         false
     }

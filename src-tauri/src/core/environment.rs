@@ -67,6 +67,9 @@ fn normalize_env_type(input: &str) -> String {
         "system-bun" => "bun".to_string(),
         // Lua providers
         "system-lua" => "lua".to_string(),
+        // C/C++ providers
+        "system-c" => "c".to_string(),
+        "system-cpp" | "msvc" | "msys2" | "vcpkg" | "conan" | "xmake" => "cpp".to_string(),
         _ if input.starts_with("system-") => {
             input.strip_prefix("system-").unwrap_or(input).to_string()
         }
@@ -105,6 +108,8 @@ fn candidate_provider_ids(env_type: &str) -> &'static [&'static str] {
         "nim" => &["mise", "asdf", "system-nim"],
         "ocaml" => &["mise", "asdf", "system-ocaml"],
         "fortran" => &["system-fortran"],
+        "c" => &["system-c"],
+        "cpp" => &["system-cpp"],
         _ => &[],
     }
 }
@@ -185,6 +190,7 @@ impl EnvironmentManager {
         let normalized_env_type = normalize_env_type(env_type);
         let platform = current_platform();
 
+        #[allow(clippy::type_complexity)]
         let (direct_provider, candidates): (
             Option<Arc<dyn EnvironmentProvider>>,
             Vec<(String, bool, Arc<dyn EnvironmentProvider>)>,
@@ -937,5 +943,37 @@ mod tests {
     fn candidate_provider_ids_unknown_returns_empty() {
         let candidates = candidate_provider_ids("unknown_language");
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn normalize_env_type_c_cpp_providers() {
+        assert_eq!(normalize_env_type("system-c"), "c");
+        assert_eq!(normalize_env_type("system-cpp"), "cpp");
+        assert_eq!(normalize_env_type("msvc"), "cpp");
+        assert_eq!(normalize_env_type("msys2"), "cpp");
+        assert_eq!(normalize_env_type("vcpkg"), "cpp");
+        assert_eq!(normalize_env_type("conan"), "cpp");
+        assert_eq!(normalize_env_type("xmake"), "cpp");
+        // c and cpp themselves pass through
+        assert_eq!(normalize_env_type("c"), "c");
+        assert_eq!(normalize_env_type("cpp"), "cpp");
+    }
+
+    #[test]
+    fn candidate_provider_ids_c() {
+        let candidates = candidate_provider_ids("c");
+        assert!(
+            candidates.contains(&"system-c"),
+            "system-c should be a candidate for c"
+        );
+    }
+
+    #[test]
+    fn candidate_provider_ids_cpp() {
+        let candidates = candidate_provider_ids("cpp");
+        assert!(
+            candidates.contains(&"system-cpp"),
+            "system-cpp should be a candidate for cpp"
+        );
     }
 }

@@ -8,7 +8,7 @@ use crate::platform::{
 };
 use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
-use reqwest::Client;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -237,13 +237,9 @@ impl Provider for BunProvider {
             .unwrap_or(super::api::DEFAULT_NPM_REGISTRY);
         let url = format!("{}/{}", registry_url, pkg);
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
-        if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(resp) = client.get(&url).timeout(Duration::from_secs(10)).send().await {
             if resp.status().is_success() {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     if let Some(deps) = json["dependencies"].as_object() {

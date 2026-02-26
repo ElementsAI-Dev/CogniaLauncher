@@ -80,14 +80,8 @@ impl Default for HttpClient {
 
 impl HttpClient {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .expect("Failed to create HTTP client");
-
         Self {
-            client,
+            client: super::proxy::get_shared_client(),
             default_options: RequestOptions::new(),
         }
     }
@@ -100,7 +94,7 @@ impl HttpClient {
     pub fn with_proxy(self, proxy_url: Option<&str>) -> Self {
         if let Some(url) = proxy_url {
             if !url.is_empty() {
-                if let Ok(proxy) = reqwest::Proxy::all(url) {
+                if let Some(proxy) = super::proxy::build_proxy(Some(url), None) {
                     let client = Client::builder()
                         .proxy(proxy)
                         .timeout(Duration::from_secs(30))

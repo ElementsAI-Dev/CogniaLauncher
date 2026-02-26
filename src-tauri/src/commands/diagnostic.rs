@@ -351,7 +351,7 @@ fn build_zip_bundle(
 
     // 1. system-info.json
     let sys_info = collect_system_info_json();
-    zip.start_file("system-info.json", options.clone())
+    zip.start_file("system-info.json", options)
         .map_err(|e| format!("zip error: {e}"))?;
     zip.write_all(sys_info.as_bytes())
         .map_err(|e| format!("zip write error: {e}"))?;
@@ -359,7 +359,7 @@ fn build_zip_bundle(
 
     // 2. config.toml (sanitized)
     if let Some(config) = config_toml {
-        zip.start_file("config.toml", options.clone())
+        zip.start_file("config.toml", options)
             .map_err(|e| format!("zip error: {e}"))?;
         zip.write_all(config.as_bytes())
             .map_err(|e| format!("zip write error: {e}"))?;
@@ -369,7 +369,7 @@ fn build_zip_bundle(
     // 3. error-context.json (if provided)
     if let Some(ctx) = error_context {
         let json = serde_json::to_string_pretty(ctx).unwrap_or_else(|_| "{}".to_string());
-        zip.start_file("error-context.json", options.clone())
+        zip.start_file("error-context.json", options)
             .map_err(|e| format!("zip error: {e}"))?;
         zip.write_all(json.as_bytes())
             .map_err(|e| format!("zip write error: {e}"))?;
@@ -378,7 +378,7 @@ fn build_zip_bundle(
 
     // 4. environment.json (safe subset of env vars)
     let env_json = collect_safe_environment_json();
-    zip.start_file("environment.json", options.clone())
+    zip.start_file("environment.json", options)
         .map_err(|e| format!("zip error: {e}"))?;
     zip.write_all(env_json.as_bytes())
         .map_err(|e| format!("zip write error: {e}"))?;
@@ -393,7 +393,7 @@ fn build_zip_bundle(
                     if path.is_file() {
                         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                             let zip_path = format!("logs/{name}");
-                            zip.start_file(&zip_path, options.clone())
+                            zip.start_file(&zip_path, options)
                                 .map_err(|e| format!("zip error: {e}"))?;
                             let mut f = fs::File::open(&path)
                                 .map_err(|e| format!("Failed to read log {name}: {e}"))?;

@@ -1,8 +1,9 @@
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::fs;
-use chrono::{DateTime, Utc};
+use crate::platform::{disk::format_size, fs};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, SqlitePool};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -66,6 +67,18 @@ impl SqliteCacheDb {
             .await
             .map_err(|e| CogniaError::Internal(format!("Failed to open cache database: {}", e)))?;
 
+        // Enable WAL mode for better concurrent read/write performance
+        sqlx::query("PRAGMA journal_mode=WAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("Failed to set WAL mode: {}", e)))?;
+        sqlx::query("PRAGMA synchronous=NORMAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                CogniaError::Internal(format!("Failed to set synchronous mode: {}", e))
+            })?;
+
         // Run migrations for cache_entries table
         sqlx::query(
             r#"
@@ -120,11 +133,39 @@ impl SqliteCacheDb {
             CREATE INDEX IF NOT EXISTS idx_cache_type ON cache_entries(entry_type);
             CREATE INDEX IF NOT EXISTS idx_cache_accessed ON cache_entries(last_accessed);
             CREATE INDEX IF NOT EXISTS idx_cache_hit_count ON cache_entries(hit_count DESC);
+            CREATE INDEX IF NOT EXISTS idx_cache_checksum ON cache_entries(checksum);
             "#,
         )
         .execute(&pool)
         .await
         .map_err(|e| CogniaError::Internal(format!("Failed to create indexes: {}", e)))?;
+
+        // Create cache_size_snapshots table for trend tracking
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS cache_size_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                internal_size INTEGER NOT NULL,
+                download_count INTEGER NOT NULL,
+                metadata_count INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            CogniaError::Internal(format!("Failed to create snapshots table: {}", e))
+        })?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_snapshot_ts ON cache_size_snapshots(timestamp)",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| {
+            CogniaError::Internal(format!("Failed to create snapshot index: {}", e))
+        })?;
 
         // Load persisted stats
         let (hits, misses) = Self::load_stats_from_db(&pool).await.unwrap_or((0, 0));
@@ -599,6 +640,216 @@ impl SqliteCacheDb {
         }
     }
 
+    // ==================== Database Maintenance ====================
+
+    /// Get database file size in bytes
+    pub async fn db_file_size(&self) -> CogniaResult<u64> {
+        let db_path = self.cache_dir.join("cache.db");
+        if fs::exists(&db_path).await {
+            fs::file_size(&db_path)
+                .await
+                .map_err(|e| CogniaError::Io(std::io::Error::other(e.to_string())))
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Optimize database: WAL checkpoint + VACUUM + ANALYZE
+    /// Returns (size_before, size_after) in bytes
+    pub async fn optimize(&self) -> CogniaResult<(u64, u64)> {
+        let size_before = self.db_file_size().await.unwrap_or(0);
+
+        // Checkpoint WAL first to prevent VACUUM from doubling disk usage
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("WAL checkpoint failed: {}", e)))?;
+
+        sqlx::query("VACUUM")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("VACUUM failed: {}", e)))?;
+
+        sqlx::query("ANALYZE")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("ANALYZE failed: {}", e)))?;
+
+        let size_after = self.db_file_size().await.unwrap_or(0);
+        Ok((size_before, size_after))
+    }
+
+    /// Check database structural integrity via PRAGMA integrity_check
+    pub async fn integrity_check(&self) -> CogniaResult<IntegrityCheckResult> {
+        #[derive(FromRow)]
+        struct IcRow {
+            integrity_check: String,
+        }
+
+        let rows: Vec<IcRow> = sqlx::query_as("PRAGMA integrity_check")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("integrity_check failed: {}", e)))?;
+
+        let errors: Vec<String> = rows
+            .into_iter()
+            .map(|r| r.integrity_check)
+            .filter(|s| s != "ok")
+            .collect();
+
+        Ok(IntegrityCheckResult {
+            ok: errors.is_empty(),
+            errors,
+        })
+    }
+
+    /// Create a consistent backup of the database using VACUUM INTO
+    pub async fn backup_to_file(&self, dest: &Path) -> CogniaResult<u64> {
+        // Checkpoint WAL first for a clean snapshot
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("WAL checkpoint failed: {}", e)))?;
+
+        let dest_str = dest.display().to_string();
+        let query = format!("VACUUM INTO '{}'", dest_str.replace('\'', "''"));
+        sqlx::query(&query)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(format!("VACUUM INTO failed: {}", e)))?;
+
+        // Return backup file size
+        let metadata = tokio::fs::metadata(dest)
+            .await
+            .map_err(|e| CogniaError::Io(e))?;
+        Ok(metadata.len())
+    }
+
+    /// Get comprehensive database metadata
+    pub async fn get_db_info(&self) -> CogniaResult<DatabaseInfo> {
+        let db_size = self.db_file_size().await.unwrap_or(0);
+
+        // WAL file size
+        let wal_path = self.cache_dir.join("cache.db-wal");
+        let wal_size = if fs::exists(&wal_path).await {
+            fs::file_size(&wal_path).await.unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Page count
+        let page_count: i64 = sqlx::query_scalar("PRAGMA page_count")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
+
+        // Page size
+        let page_size: i64 = sqlx::query_scalar("PRAGMA page_size")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(4096);
+
+        // Freelist count (unused pages)
+        let freelist_count: i64 = sqlx::query_scalar("PRAGMA freelist_count")
+            .fetch_one(&self.pool)
+            .await
+            .unwrap_or(0);
+
+        // Row counts per table
+        let mut table_counts = HashMap::new();
+        for table in &["cache_entries", "cache_access_stats", "cache_size_snapshots"] {
+            let query = format!("SELECT COUNT(*) FROM {}", table);
+            let count: i64 = sqlx::query_scalar(&query)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+            table_counts.insert(table.to_string(), count as u64);
+        }
+
+        Ok(DatabaseInfo {
+            db_size,
+            db_size_human: format_size(db_size),
+            wal_size,
+            wal_size_human: format_size(wal_size),
+            page_count: page_count as u64,
+            page_size: page_size as u64,
+            freelist_count: freelist_count as u64,
+            table_counts,
+        })
+    }
+
+    // ==================== Size Snapshots ====================
+
+    /// Record a cache size snapshot for trend tracking
+    pub async fn record_size_snapshot(
+        &self,
+        internal_size: u64,
+        download_count: usize,
+        metadata_count: usize,
+    ) -> CogniaResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count)
+            VALUES (?, ?, ?, ?)
+            "#,
+        )
+        .bind(Utc::now().to_rfc3339())
+        .bind(internal_size as i64)
+        .bind(download_count as i64)
+        .bind(metadata_count as i64)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to record snapshot: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Get size snapshots for the last N days
+    pub async fn get_size_snapshots(&self, days: u32) -> CogniaResult<Vec<CacheSizeSnapshot>> {
+        let cutoff = Utc::now() - ChronoDuration::days(days as i64);
+
+        #[derive(FromRow)]
+        struct SnapshotRow {
+            timestamp: String,
+            internal_size: i64,
+            download_count: i64,
+            metadata_count: i64,
+        }
+
+        let rows: Vec<SnapshotRow> = sqlx::query_as(
+            "SELECT timestamp, internal_size, download_count, metadata_count FROM cache_size_snapshots WHERE timestamp >= ? ORDER BY timestamp ASC",
+        )
+        .bind(cutoff.to_rfc3339())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| CacheSizeSnapshot {
+                timestamp: r.timestamp,
+                internal_size: r.internal_size as u64,
+                internal_size_human: format_size(r.internal_size as u64),
+                download_count: r.download_count as usize,
+                metadata_count: r.metadata_count as usize,
+            })
+            .collect())
+    }
+
+    /// Prune snapshots older than N days
+    pub async fn prune_old_snapshots(&self, max_age_days: u32) -> CogniaResult<usize> {
+        let cutoff = Utc::now() - ChronoDuration::days(max_age_days as i64);
+
+        let result =
+            sqlx::query("DELETE FROM cache_size_snapshots WHERE timestamp < ?")
+                .bind(cutoff.to_rfc3339())
+                .execute(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(result.rows_affected() as usize)
+    }
+
     // Helper: Convert entry type to string
     fn entry_type_to_str(entry_type: CacheEntryType) -> &'static str {
         match entry_type {
@@ -619,6 +870,37 @@ impl SqliteCacheDb {
             _ => CacheEntryType::Download,
         }
     }
+}
+
+/// Result of a database integrity check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntegrityCheckResult {
+    pub ok: bool,
+    pub errors: Vec<String>,
+}
+
+/// Comprehensive database metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseInfo {
+    pub db_size: u64,
+    pub db_size_human: String,
+    pub wal_size: u64,
+    pub wal_size_human: String,
+    pub page_count: u64,
+    pub page_size: u64,
+    pub freelist_count: u64,
+    pub table_counts: HashMap<String, u64>,
+}
+
+/// Cache size snapshot for trend tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheSizeSnapshot {
+    pub timestamp: String,
+    pub internal_size: u64,
+    pub internal_size_human: String,
+    pub download_count: usize,
+    pub metadata_count: usize,
 }
 
 #[cfg(test)]
@@ -1147,5 +1429,111 @@ mod tests {
 
         let metadata = db.list_by_type(CacheEntryType::Metadata).await.unwrap();
         assert_eq!(metadata.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_wal_mode_enabled() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        #[derive(FromRow)]
+        struct PragmaRow {
+            journal_mode: String,
+        }
+
+        let row: PragmaRow = sqlx::query_as("PRAGMA journal_mode")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(row.journal_mode, "wal");
+    }
+
+    #[tokio::test]
+    async fn test_optimize() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        // Insert some entries
+        for i in 0..10 {
+            db.insert(CacheEntry::new(
+                &format!("opt-{}", i),
+                dir.path().join(format!("f{}", i)),
+                1000,
+                &format!("c{}", i),
+                CacheEntryType::Download,
+            ))
+            .await
+            .unwrap();
+        }
+
+        // Delete most entries
+        for i in 0..9 {
+            db.remove(&format!("opt-{}", i)).await.unwrap();
+        }
+
+        let (size_before, size_after) = db.optimize().await.unwrap();
+        // After VACUUM, size should be <= before (may not shrink for tiny DBs)
+        assert!(size_after <= size_before || size_before == 0);
+    }
+
+    #[tokio::test]
+    async fn test_record_and_get_snapshots() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        db.record_size_snapshot(1000, 5, 3).await.unwrap();
+        db.record_size_snapshot(2000, 10, 6).await.unwrap();
+        db.record_size_snapshot(3000, 15, 9).await.unwrap();
+
+        let snapshots = db.get_size_snapshots(30).await.unwrap();
+        assert_eq!(snapshots.len(), 3);
+        assert_eq!(snapshots[0].internal_size, 1000);
+        assert_eq!(snapshots[1].internal_size, 2000);
+        assert_eq!(snapshots[2].internal_size, 3000);
+        assert_eq!(snapshots[2].download_count, 15);
+        assert_eq!(snapshots[2].metadata_count, 9);
+        assert!(!snapshots[0].internal_size_human.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_prune_old_snapshots() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        // Insert a snapshot with old timestamp manually
+        let old_ts =
+            (Utc::now() - ChronoDuration::days(100)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&old_ts)
+        .bind(500i64)
+        .bind(2i64)
+        .bind(1i64)
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        // Insert a recent snapshot
+        db.record_size_snapshot(1000, 5, 3).await.unwrap();
+
+        let all = db.get_size_snapshots(365).await.unwrap();
+        assert_eq!(all.len(), 2);
+
+        let pruned = db.prune_old_snapshots(90).await.unwrap();
+        assert_eq!(pruned, 1);
+
+        let remaining = db.get_size_snapshots(365).await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].internal_size, 1000);
+    }
+
+    #[tokio::test]
+    async fn test_empty_snapshots() {
+        let dir = tempdir().unwrap();
+        let db = SqliteCacheDb::open(dir.path()).await.unwrap();
+
+        let snapshots = db.get_size_snapshots(30).await.unwrap();
+        assert!(snapshots.is_empty());
     }
 }

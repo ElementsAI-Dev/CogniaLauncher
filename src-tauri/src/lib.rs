@@ -21,7 +21,7 @@ use provider::ProviderRegistry;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
 use tokio::time::Duration;
@@ -121,6 +121,12 @@ pub fn run() {
                     }
                 }
 
+                // Initialize the shared HTTP client with proxy/security settings
+                {
+                    let settings_guard = settings.read().await;
+                    platform::proxy::rebuild_shared_client(&settings_guard);
+                }
+
                 // Initialize providers with settings (including mirror configuration)
                 let settings_guard = settings.read().await;
                 match ProviderRegistry::with_settings(&settings_guard).await {
@@ -198,8 +204,9 @@ pub fn run() {
 
             // Start background cache cleanup task
             let cleanup_settings = app.state::<SharedSettings>().inner().clone();
+            let cleanup_app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                cache_cleanup_task(cleanup_settings).await;
+                cache_cleanup_task(cleanup_settings, cleanup_app_handle).await;
             });
 
             Ok(())
@@ -291,6 +298,8 @@ pub fn run() {
             commands::config::config_reset,
             commands::config::config_export,
             commands::config::config_import,
+            commands::config::detect_system_proxy,
+            commands::config::test_proxy_connection,
             commands::config::get_cognia_dir,
             commands::config::get_platform_info,
             commands::config::get_disk_info,
@@ -341,6 +350,17 @@ pub fn run() {
             // Enhanced cache settings
             commands::cache::get_enhanced_cache_settings,
             commands::cache::set_enhanced_cache_settings,
+            // Database optimization & size history
+            commands::cache::cache_optimize,
+            commands::cache::get_cache_size_history,
+            // Backup & database maintenance
+            commands::backup::backup_create,
+            commands::backup::backup_restore,
+            commands::backup::backup_list,
+            commands::backup::backup_delete,
+            commands::backup::backup_validate,
+            commands::backup::db_integrity_check,
+            commands::backup::db_get_info,
             // Batch operations
             commands::batch::batch_install,
             commands::batch::batch_uninstall,
@@ -408,6 +428,9 @@ pub fn run() {
             commands::envvar::envvar_read_shell_profile,
             commands::envvar::envvar_import_env_file,
             commands::envvar::envvar_export_env_file,
+            commands::envvar::envvar_list_persistent,
+            commands::envvar::envvar_expand,
+            commands::envvar::envvar_deduplicate_path,
             // Updater commands
             commands::updater::self_check_update,
             commands::updater::self_update,
@@ -453,6 +476,9 @@ pub fn run() {
             commands::download::download_batch_cancel,
             commands::download::download_batch_remove,
             commands::download::download_shutdown,
+            commands::download::download_set_priority,
+            commands::download::download_retry,
+            commands::download::download_calculate_checksum,
             // Download history commands
             commands::download::download_history_list,
             commands::download::download_history_search,
@@ -462,6 +488,7 @@ pub fn run() {
             // Disk space commands
             commands::download::disk_space_get,
             commands::download::disk_space_check,
+            commands::download::download_extract,
             // GitHub commands
             commands::github::github_parse_url,
             commands::github::github_validate_repo,
@@ -565,6 +592,9 @@ pub fn run() {
             commands::wsl::wsl_install_with_location,
             commands::wsl::wsl_debug_detection,
             commands::wsl::wsl_detect_distro_env,
+            commands::wsl::wsl_get_distro_resources,
+            commands::wsl::wsl_list_users,
+            commands::wsl::wsl_update_distro_packages,
             // Git commands
             commands::git::git_is_available,
             commands::git::git_get_version,
@@ -599,6 +629,37 @@ pub fn run() {
             commands::git::git_get_activity,
             commands::git::git_get_file_stats,
             commands::git::git_search_commits,
+            // Git write operations
+            commands::git::git_stage_files,
+            commands::git::git_stage_all,
+            commands::git::git_unstage_files,
+            commands::git::git_discard_changes,
+            commands::git::git_commit,
+            commands::git::git_push,
+            commands::git::git_pull,
+            commands::git::git_fetch,
+            commands::git::git_clone,
+            commands::git::git_extract_repo_name,
+            commands::git::git_validate_url,
+            commands::git::git_init,
+            commands::git::git_get_diff,
+            commands::git::git_get_diff_between,
+            commands::git::git_merge,
+            commands::git::git_revert,
+            commands::git::git_cherry_pick,
+            commands::git::git_reset,
+            // Git remote & branch management
+            commands::git::git_remote_add,
+            commands::git::git_remote_remove,
+            commands::git::git_remote_rename,
+            commands::git::git_remote_set_url,
+            commands::git::git_branch_rename,
+            commands::git::git_branch_set_upstream,
+            commands::git::git_push_tags,
+            commands::git::git_delete_remote_branch,
+            commands::git::git_stash_show,
+            commands::git::git_get_reflog,
+            commands::git::git_clean,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
             // Terminal management commands
@@ -629,6 +690,14 @@ pub fn run() {
             commands::terminal::terminal_detect_framework,
             commands::terminal::terminal_list_plugins,
             commands::terminal::terminal_get_shell_env_vars,
+            commands::terminal::terminal_duplicate_profile,
+            commands::terminal::terminal_export_profiles,
+            commands::terminal::terminal_import_profiles,
+            commands::terminal::terminal_write_config,
+            commands::terminal::terminal_ps_install_module,
+            commands::terminal::terminal_ps_uninstall_module,
+            commands::terminal::terminal_ps_update_module,
+            commands::terminal::terminal_ps_find_module,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -664,8 +733,18 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheAutoCleanedEvent {
+    expired_metadata_removed: usize,
+    expired_downloads_freed: u64,
+    evicted_count: usize,
+    stale_partials_removed: usize,
+    total_freed_human: String,
+}
+
 /// Background task for automatic cache cleanup
-async fn cache_cleanup_task(settings: SharedSettings) {
+async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
     // Default fallback interval: 1 hour
     const DEFAULT_INTERVAL_SECS: u64 = 3600;
     // Minimum interval to prevent tight loops: 60 seconds
@@ -700,11 +779,40 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             if let Err(e) = download_cache.persist_access_stats().await {
                 debug!("Failed to persist cache access stats: {}", e);
             }
+
+            // Record size snapshot for trend tracking
+            if let Ok(stats) = download_cache.stats().await {
+                let md_count = if let Ok(mc) =
+                    MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await
+                {
+                    mc.stats().await.map(|s| s.entry_count).unwrap_or(0)
+                } else {
+                    0
+                };
+                if let Err(e) = download_cache
+                    .record_size_snapshot(
+                        stats.total_size,
+                        stats.entry_count,
+                        md_count,
+                    )
+                    .await
+                {
+                    debug!("Failed to record size snapshot: {}", e);
+                }
+                // Prune old snapshots (keep 90 days)
+                let _ = download_cache.prune_old_snapshots(90).await;
+            }
         }
 
         if !auto_clean {
             continue;
         }
+
+        // Track cleanup metrics for event emission
+        let mut expired_metadata_removed: usize = 0;
+        let mut expired_downloads_freed: u64 = 0;
+        let mut evicted_count: usize = 0;
+        let mut stale_partials_removed: usize = 0;
 
         // Clean expired metadata entries
         if let Ok(mut metadata_cache) =
@@ -713,6 +821,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
                     debug!("Auto-cleanup: removed {} expired metadata entries", count);
+                    expired_metadata_removed = count;
                 }
                 Err(e) => {
                     info!("Auto-cleanup metadata error: {}", e);
@@ -727,6 +836,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             match download_cache.clean_expired(max_age).await {
                 Ok(freed) if freed > 0 => {
                     debug!("Auto-cleanup: removed {} bytes of expired downloads", freed);
+                    expired_downloads_freed = freed;
                 }
                 Err(e) => {
                     info!("Auto-cleanup download expiry error: {}", e);
@@ -759,6 +869,7 @@ async fn cache_cleanup_task(settings: SharedSettings) {
                                     "Auto-cleanup: evicted {} download entries (usage: {}, target: {})",
                                     count, stats.total_size, evict_target
                                 );
+                                evicted_count = count;
                             }
                             Err(e) => {
                                 info!("Auto-cleanup download error: {}", e);
@@ -778,12 +889,32 @@ async fn cache_cleanup_task(settings: SharedSettings) {
             match resumer.clean_stale(max_age).await {
                 Ok(count) if count > 0 => {
                     debug!("Auto-cleanup: removed {} stale partial downloads", count);
+                    stale_partials_removed = count;
                 }
                 Err(e) => {
                     info!("Auto-cleanup partial download error: {}", e);
                 }
                 _ => {}
             }
+        }
+
+        // Emit event if any cleanup work was done
+        if expired_metadata_removed > 0
+            || expired_downloads_freed > 0
+            || evicted_count > 0
+            || stale_partials_removed > 0
+        {
+            let total_freed = expired_downloads_freed;
+            let _ = app.emit(
+                "cache-auto-cleaned",
+                CacheAutoCleanedEvent {
+                    expired_metadata_removed,
+                    expired_downloads_freed,
+                    evicted_count,
+                    stale_partials_removed,
+                    total_freed_human: platform::disk::format_size(total_freed),
+                },
+            );
         }
     }
 }

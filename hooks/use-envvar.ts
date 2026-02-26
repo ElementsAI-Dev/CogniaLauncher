@@ -13,6 +13,7 @@ import type {
 
 interface EnvVarState {
   envVars: Record<string, string>;
+  persistentVars: [string, string][];
   pathEntries: PathEntryInfo[];
   shellProfiles: ShellProfileInfo[];
   loading: boolean;
@@ -22,6 +23,7 @@ interface EnvVarState {
 export function useEnvVar() {
   const [state, setState] = useState<EnvVarState>({
     envVars: {},
+    persistentVars: [],
     pathEntries: [],
     shellProfiles: [],
     loading: false,
@@ -100,7 +102,8 @@ export function useEnvVar() {
       // Update local state
       if (scope === 'process') {
         setState((s) => {
-          const { [key]: _, ...rest } = s.envVars;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { [key]: _removed, ...rest } = s.envVars;
           return { ...s, envVars: rest };
         });
       }
@@ -216,6 +219,43 @@ export function useEnvVar() {
     }
   }, [setError]);
 
+  const fetchPersistentVars = useCallback(async (
+    scope: EnvVarScope,
+  ): Promise<[string, string][]> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const persistentVars = await tauri.envvarListPersistent(scope);
+      setState((s) => ({ ...s, persistentVars, loading: false }));
+      return persistentVars;
+    } catch (err) {
+      setError(formatError(err));
+      setLoading(false);
+      return [];
+    }
+  }, [setLoading, setError]);
+
+  const expandPath = useCallback(async (path: string): Promise<string | null> => {
+    try {
+      return await tauri.envvarExpand(path);
+    } catch (err) {
+      setError(formatError(err));
+      return null;
+    }
+  }, [setError]);
+
+  const deduplicatePath = useCallback(async (
+    scope: EnvVarScope,
+  ): Promise<number> => {
+    setError(null);
+    try {
+      return await tauri.envvarDeduplicatePath(scope);
+    } catch (err) {
+      setError(formatError(err));
+      return 0;
+    }
+  }, [setError]);
+
   return {
     ...state,
     fetchAllVars,
@@ -230,5 +270,8 @@ export function useEnvVar() {
     readShellProfile,
     importEnvFile,
     exportEnvFile,
+    fetchPersistentVars,
+    expandPath,
+    deduplicatePath,
   };
 }

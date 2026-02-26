@@ -425,12 +425,19 @@
         "rustup": "Rust toolchain installer",
         "rbenv": "Ruby version management",
         "sdkman": "Software Development Kit Manager",
+        "sdkman-kotlin": "Kotlin via SDKMAN!",
+        "sdkman-scala": "Scala via SDKMAN!",
+        "sdkman-groovy": "Groovy via SDKMAN!",
+        "sdkman-gradle": "Gradle via SDKMAN!",
+        "sdkman-maven": "Maven via SDKMAN!",
+        "adoptium": "Eclipse Temurin JDK Manager",
         "phpbrew": "PHP version manager",
         "dotnet": ".NET SDK",
         "deno": "Deno runtime version manager",
         "system-bun": "System-installed Bun runtime",
         "asdf": "Extendable version manager for multiple runtimes",
-        "nix": "Nix package manager with reproducible builds"
+        "nix": "Nix package manager with reproducible builds",
+        "uv": "Fast Python version & package manager by Astral"
       }
     },
     "progress": {
@@ -1070,6 +1077,8 @@
     "infoRustPackageDesc": "Cargo - Install and manage Rust crates and binary packages.",
     "infoRubyPackage": "Ruby Package Providers",
     "infoRubyPackageDesc": "Bundler - Manage Ruby gems and dependencies with Gemfile support.",
+    "infoJava": "Java/JVM Providers",
+    "infoJavaDesc": "SDKMAN!, Adoptium - Manage JDK versions (Temurin, Corretto, etc.), Kotlin, Scala, Groovy compilers, and build tools (Gradle, Maven) with multi-version support and .sdkmanrc project-local configuration.",
     "infoPhpPackage": "PHP Package Providers",
     "infoPhpPackageDesc": "Composer - PHP dependency management with Packagist integration.",
     "infoDotnetPackage": ".NET Package Providers",
@@ -1077,7 +1086,7 @@
     "infoSystem": "System Package Providers",
     "infoSystemDesc": "apt, Homebrew, winget, Scoop, Chocolatey - Interface with OS-level package managers for system software.",
     "infoCpp": "C++ Package Providers",
-    "infoCppDesc": "vcpkg, Conan, Xmake/Xrepo, MSVC, MSYS2 - Manage C/C++ libraries across platforms with dependency resolution and binary caching. Detect Visual Studio Build Tools and MSYS2/MinGW toolchains on Windows.",
+    "infoCppDesc": "vcpkg, Conan, Xmake/Xrepo, MSVC, MSYS2 - Manage C/C++ libraries across platforms with dependency resolution and binary caching. Detect system compilers (GCC/Clang), Visual Studio Build Tools, and MSYS2/MinGW toolchains. Project-level C++ standard detection from CMakeLists.txt, meson.build, and xmake.lua.",
     "infoDart": "Dart/Flutter Providers",
     "infoDartDesc": "FVM, Dart Pub - Flutter SDK version management and pub.dev package management with dependency resolution.",
     "infoLua": "Lua Package Providers",
@@ -1522,6 +1531,18 @@
     "monitorIntervalDesc": "How often to check cache size (seconds, 0 = disabled)",
     "monitorExternal": "Monitor External Caches",
     "monitorExternalDesc": "Include external tool caches in monitoring",
+    "optimize": "Optimize Database",
+    "optimizeDesc": "Run VACUUM and ANALYZE to reclaim unused space and improve performance",
+    "optimizing": "Optimizing...",
+    "optimizeSuccess": "Database optimized, saved {size}",
+    "optimizeFailed": "Database optimization failed",
+    "sizeBefore": "Size Before",
+    "sizeAfter": "Size After",
+    "sizeSaved": "Space Saved",
+    "sizeHistory": "Size History",
+    "sizeHistoryDesc": "Cache size trends over time",
+    "noSizeHistory": "No size history data yet. Snapshots are recorded automatically.",
+    "autoCleanEvent": "Auto-cleanup freed {size}",
     "externalPaths": "External Cache Paths",
     "externalPathsDesc": "Detailed path information for all external cache providers",
     "envVars": "Environment Variables",
@@ -1638,7 +1659,16 @@
     "retries": "Retries",
     "retriesDesc": "Number of retry attempts",
     "proxy": "Proxy",
-    "proxyDesc": "HTTP proxy URL (leave empty to disable)",
+    "proxyDesc": "Proxy URL — supports http://, https://, socks5:// (leave empty to disable)",
+    "noProxyGlobal": "No Proxy (Bypass List)",
+    "noProxyGlobalDesc": "Comma-separated hosts/domains that bypass the proxy (e.g. localhost,127.0.0.1,.corp.com)",
+    "detectSystemProxy": "Detect System Proxy",
+    "testProxyConnection": "Test Connection",
+    "proxyTestSuccess": "Connection successful ({latency}ms)",
+    "proxyTestFailed": "Connection failed: {error}",
+    "proxyDetectedEnv": "Detected from environment variables",
+    "proxyDetectedRegistry": "Detected from Windows system settings",
+    "proxyNotDetected": "No system proxy detected",
     "security": "Security",
     "securityDesc": "Security and verification settings",
     "allowHttp": "Allow HTTP",
@@ -1893,7 +1923,9 @@
     "max": "Maximum value is {max}",
     "invalidFormat": "Invalid format",
     "mustBeValidUrl": "Must be a valid URL",
-    "mustBeValidUrlOrEmpty": "Must be a valid URL or empty"
+    "mustBeValidUrlOrEmpty": "Must be a valid URL or empty",
+    "mustBeValidProxyUrlOrEmpty": "Must be a valid proxy URL (http://, https://, socks5://) or empty",
+    "mustBeValidNoProxyList": "Must be a comma-separated list of hostnames or IP addresses"
   },
   "about": {
     "title": "About",
@@ -2145,6 +2177,51 @@
     },
     "totalSize": "Total Size"
   },
+  "backup": {
+    "title": "Backup & Restore",
+    "description": "Create and manage application data backups",
+    "create": "Create Backup",
+    "restore": "Restore Backup",
+    "delete": "Delete Backup",
+    "validate": "Validate Backup",
+    "creating": "Creating backup...",
+    "restoring": "Restoring backup...",
+    "noBackups": "No backups found",
+    "selectContents": "Select data to include",
+    "addNote": "Add a note (optional)",
+    "backupCreated": "Backup created successfully in {duration}ms",
+    "backupFailed": "Backup failed: {error}",
+    "restoreSuccess": "Restore completed successfully",
+    "restoreFailed": "Restore failed: {error}",
+    "restoreWarning": "Restoring will overwrite current data. This cannot be undone.",
+    "deleteConfirm": "Are you sure you want to delete this backup?",
+    "deleteSuccess": "Backup deleted",
+    "validationPassed": "Backup is valid",
+    "validationFailed": "Backup validation failed",
+    "missingFiles": "Missing files: {count}",
+    "checksumMismatches": "Checksum mismatches: {count}",
+    "contentTypes": {
+      "config": "Settings",
+      "terminal_profiles": "Terminal Profiles",
+      "environment_profiles": "Environment Profiles",
+      "cache_database": "Cache Database",
+      "download_history": "Download History",
+      "cleanup_history": "Cleanup History",
+      "custom_detection_rules": "Custom Detection Rules",
+      "environment_settings": "Environment Settings"
+    },
+    "database": {
+      "title": "Database",
+      "integrityCheck": "Integrity Check",
+      "integrityOk": "Database integrity is OK",
+      "integrityErrors": "Database integrity errors found: {count}",
+      "info": "Database Info",
+      "dbSize": "Database Size",
+      "walSize": "WAL Size",
+      "pageCount": "Page Count",
+      "freelistCount": "Freelist Pages"
+    }
+  },
   "downloads": {
     "title": "Downloads",
     "description": "Manage download tasks and history",
@@ -2172,7 +2249,9 @@
       "paused": "Paused",
       "cancelled": "Cancelled",
       "completed": "Completed",
-      "failed": "Failed"
+      "failed": "Failed",
+      "extracting": "Extracting",
+      "extracted": "Extracted"
     },
     "actions": {
       "pause": "Pause",
@@ -2186,7 +2265,33 @@
       "clearFinished": "Clear Finished",
       "retryFailed": "Retry Failed",
       "open": "Open File",
-      "reveal": "Show in Folder"
+      "reveal": "Show in Folder",
+      "retryTask": "Retry This Task",
+      "setPriority": "Set Priority",
+      "extract": "Extract Archive",
+      "extractTo": "Extract To..."
+    },
+    "detail": {
+      "title": "Download Details",
+      "url": "Source URL",
+      "destination": "Destination",
+      "retries": "Retry Attempts",
+      "priority": "Priority",
+      "checksum": "Expected Checksum",
+      "supportsResume": "Resume Support",
+      "metadata": "Metadata",
+      "timestamps": "Timestamps",
+      "copyUrl": "Copy URL",
+      "urlCopied": "Copied to clipboard",
+      "calculateChecksum": "Calculate Checksum",
+      "checksumResult": "Checksum: {checksum}",
+      "calculating": "Calculating...",
+      "serverFilename": "Server Filename",
+      "supportsResumeYes": "Yes",
+      "supportsResumeNo": "No"
+    },
+    "validation": {
+      "invalidUrl": "Please enter a valid URL"
     },
     "progress": {
       "downloaded": "Downloaded",
@@ -2200,7 +2305,10 @@
       "speedLimitDesc": "Maximum download speed (0 = unlimited)",
       "unlimited": "Unlimited",
       "maxConcurrent": "Max Concurrent",
-      "maxConcurrentDesc": "Maximum simultaneous downloads"
+      "maxConcurrentDesc": "Maximum simultaneous downloads",
+      "speedUnit": "Unit",
+      "autoExtract": "Auto-extract after download",
+      "autoExtractDesc": "Automatically extract archive files when download completes"
     },
     "stats": {
       "total": "Total",
@@ -2237,7 +2345,8 @@
       "fileSystem": "File system error",
       "interrupted": "Download interrupted",
       "httpError": "HTTP error: {status}",
-      "insufficientSpace": "Not enough disk space"
+      "insufficientSpace": "Not enough disk space",
+      "extractFailed": "Failed to extract archive: {error}"
     },
     "toast": {
       "added": "Download added",
@@ -2249,7 +2358,9 @@
       "cancelled": "Download cancelled",
       "cleared": "Cleared {count} downloads",
       "speedLimitSet": "Speed limit set to {speed}",
-      "speedLimitRemoved": "Speed limit removed"
+      "speedLimitRemoved": "Speed limit removed",
+      "extracting": "Extracting archive...",
+      "extracted": "Archive extracted successfully"
     },
     "toolbar": {
       "searchPlaceholder": "Search downloads...",
@@ -2387,6 +2498,7 @@
       "overview": "Overview",
       "repository": "Repository",
       "graph": "Graph",
+      "changes": "Changes",
       "history": "History"
     },
     "status": {
@@ -2522,6 +2634,152 @@
     "notAvailable": "Git management requires the desktop application",
     "emptyState": "Git is not installed on this system",
     "emptyStateDesc": "Install Git to manage repositories and view history.",
+    "actions": {
+      "stage": "Stage",
+      "stageAll": "Stage All",
+      "unstage": "Unstage",
+      "unstageAll": "Unstage All",
+      "discard": "Discard",
+      "discardConfirm": "Discard changes to this file?",
+      "commit": "Commit",
+      "push": "Push",
+      "pull": "Pull",
+      "fetch": "Fetch",
+      "merge": "Merge",
+      "revert": "Revert",
+      "cherryPick": "Cherry Pick",
+      "reset": "Reset",
+      "clone": "Clone",
+      "init": "Init",
+      "clean": "Clean Untracked",
+      "cleanConfirm": "Remove all untracked files?"
+    },
+    "commit": {
+      "title": "Create Commit",
+      "messagePlaceholder": "Enter commit message...",
+      "amend": "Amend last commit",
+      "noStagedFiles": "No staged files to commit",
+      "success": "Commit created successfully"
+    },
+    "pushAction": {
+      "success": "Push completed",
+      "forceLease": "Force push (with lease)"
+    },
+    "pullAction": {
+      "success": "Pull completed",
+      "rebase": "Rebase on pull"
+    },
+    "fetchAction": {
+      "success": "Fetch completed"
+    },
+    "mergeAction": {
+      "title": "Merge Branch",
+      "selectBranch": "Select branch to merge",
+      "noFf": "No fast-forward",
+      "success": "Merge completed",
+      "conflicts": "Merge conflicts detected"
+    },
+    "revertAction": {
+      "success": "Commit reverted"
+    },
+    "cherryPickAction": {
+      "success": "Cherry-pick applied"
+    },
+    "resetAction": {
+      "title": "Reset HEAD",
+      "soft": "Soft (keep changes staged)",
+      "mixed": "Mixed (keep changes unstaged)",
+      "hard": "Hard (discard all changes)",
+      "confirm": "This will change your working directory. Continue?",
+      "success": "Reset completed"
+    },
+    "cloneAction": {
+      "title": "Clone Repository",
+      "url": "Repository URL",
+      "urlPlaceholder": "https://github.com/user/repo.git",
+      "destination": "Destination Path",
+      "cloning": "Cloning...",
+      "success": "Repository cloned successfully",
+      "advancedOptions": "Advanced Options",
+      "branch": "Branch",
+      "branchPlaceholder": "Default branch",
+      "depth": "Clone Depth",
+      "depthPlaceholder": "Full history",
+      "singleBranch": "Single Branch",
+      "recurseSubmodules": "Include Submodules",
+      "shallowSubmodules": "Shallow Submodules",
+      "noCheckout": "Skip Checkout",
+      "bare": "Bare Repository",
+      "mirror": "Mirror Clone",
+      "sparse": "Sparse Checkout",
+      "noTags": "Skip Tags",
+      "filter": "Object Filter",
+      "filterPlaceholder": "e.g. blob:none",
+      "blobless": "Blobless (blob:none)",
+      "treeless": "Treeless (tree:0)",
+      "jobs": "Parallel Jobs",
+      "jobsPlaceholder": "Auto",
+      "remoteName": "Remote Name",
+      "remoteNamePlaceholder": "origin",
+      "openCloned": "Open Cloned Repository",
+      "invalidUrl": "Invalid repository URL",
+      "validUrl": "Valid repository URL",
+      "phase": {
+        "counting": "Counting objects",
+        "compressing": "Compressing objects",
+        "receiving": "Receiving objects",
+        "resolving": "Resolving deltas",
+        "checking_out": "Checking out files",
+        "done": "Clone complete",
+        "error": "Clone failed"
+      }
+    },
+    "initAction": {
+      "success": "Repository initialized"
+    },
+    "diffView": {
+      "title": "Diff",
+      "staged": "Staged Changes",
+      "unstaged": "Unstaged Changes",
+      "noChanges": "No changes to display"
+    },
+    "remoteAction": {
+      "add": "Add Remote",
+      "remove": "Remove Remote",
+      "rename": "Rename Remote",
+      "setUrl": "Set URL",
+      "namePlaceholder": "e.g. origin",
+      "urlPlaceholder": "e.g. https://github.com/user/repo.git",
+      "addSuccess": "Remote added",
+      "removeSuccess": "Remote removed",
+      "renameSuccess": "Remote renamed"
+    },
+    "branchAction": {
+      "rename": "Rename Branch",
+      "setUpstream": "Set Upstream",
+      "renameSuccess": "Branch renamed",
+      "pushTags": "Push Tags",
+      "pushTagsSuccess": "Tags pushed to remote",
+      "deleteRemote": "Delete Remote Branch",
+      "deleteRemoteConfirm": "Delete remote branch?",
+      "deleteRemoteSuccess": "Remote branch deleted"
+    },
+    "stashAction": {
+      "save": "Stash Changes",
+      "showDiff": "Show Diff",
+      "savePlaceholder": "Stash message (optional)",
+      "includeUntracked": "Include untracked files",
+      "saveSuccess": "Changes stashed"
+    },
+    "reflog": {
+      "title": "Reflog",
+      "load": "Load Reflog",
+      "resetTo": "Reset to this point",
+      "empty": "No reflog entries"
+    },
+    "cleanAction": {
+      "success": "Untracked files removed"
+    },
     "refresh": "Refresh",
     "error": "An error occurred"
   },
@@ -2538,6 +2796,7 @@
       "value": "Value",
       "scope": "Scope",
       "noResults": "No variables found",
+      "noPersistentVars": "No persistent variables found for this scope",
       "search": "Search variables...",
       "copied": "Value copied to clipboard"
     },
@@ -2553,8 +2812,13 @@
       "addPlaceholder": "/usr/local/bin",
       "exists": "Exists",
       "missing": "Missing",
+      "duplicate": "Duplicate",
       "dragHint": "Drag to reorder",
-      "reorderSaved": "PATH order saved"
+      "reorderSaved": "PATH order saved",
+      "missingCount": "{count} missing",
+      "duplicateCount": "{count} duplicates",
+      "deduplicate": "Remove Duplicates",
+      "deduplicateSuccess": "Removed {count} duplicate entries"
     },
     "shellProfiles": {
       "title": "Shell Profiles",
@@ -2571,6 +2835,7 @@
       "formatShell": "Shell (bash/zsh)",
       "formatFish": "Fish",
       "formatPowerShell": "PowerShell",
+      "formatNushell": "Nushell",
       "importSuccess": "Imported {count} variables",
       "importPartial": "Imported {imported}, skipped {skipped}",
       "pasteContent": "Paste .env content here..."
@@ -2605,7 +2870,7 @@
   },
   "terminal": {
     "title": "Terminal Management",
-    "description": "Manage shells, profiles, and terminal settings",
+    "description": "Description",
     "tabShells": "Shells",
     "tabProfiles": "Profiles",
     "tabConfig": "Shell Config",
@@ -2684,7 +2949,6 @@
     "version": "Version",
     "moduleType": "Type",
     "exportedCommands": "Exported Commands",
-    "description": "Description",
     "proxySettings": "Terminal Proxy",
     "proxySettingsDesc": "Configure proxy settings for terminal sessions.",
     "proxyMode": "Proxy Mode",
@@ -2700,7 +2964,36 @@
     "noActiveProxy": "No proxy variables are currently active.",
     "envVars": "Environment Variables",
     "addEnvVar": "Add",
-    "envVarsHint": "Set custom environment variables for this profile. Use HTTP_PROXY, HTTPS_PROXY to override proxy per profile."
+    "envVarsHint": "Set custom environment variables for this profile. Use HTTP_PROXY, HTTPS_PROXY to override proxy per profile.",
+    "tabEnvVars": "Environment",
+    "shellEnvVars": "Shell Environment Variables",
+    "shellEnvVarsDesc": "Environment variables relevant to shell and development tools.",
+    "searchEnvVars": "Search environment variables...",
+    "noEnvVars": "No environment variables found. Click Refresh to load.",
+    "copyValue": "Value copied to clipboard.",
+    "duplicateProfile": "Duplicate",
+    "exportProfiles": "Export All",
+    "importProfiles": "Import",
+    "importMerge": "Merge with existing",
+    "importReplace": "Replace all",
+    "importSuccess": "Profiles imported successfully.",
+    "exportSuccess": "Profiles exported successfully.",
+    "duplicateSuccess": "Profile duplicated.",
+    "editConfig": "Edit",
+    "saveConfig": "Save",
+    "configSaved": "Config saved (backup created).",
+    "installModule": "Install",
+    "uninstallModule": "Uninstall",
+    "updateModule": "Update",
+    "searchGallery": "Gallery",
+    "installModuleName": "Module Name",
+    "installModuleScope": "Scope",
+    "confirmUninstall": "Are you sure you want to uninstall this module?",
+    "moduleInstalled": "Module installed successfully.",
+    "moduleUninstalled": "Module uninstalled.",
+    "moduleUpdated": "Module updated.",
+    "galleryResults": "Gallery Results",
+    "searchGalleryPlaceholder": "Search PSGallery..."
   },
   "wsl": {
     "title": "WSL Management",
@@ -2917,7 +3210,40 @@
       "defaultUser": "Default User",
       "kernel": "Kernel",
       "installedPackages": "Packages",
-      "envDetectFailed": "Could not detect environment (distribution may not be running)"
+      "envDetectFailed": "Could not detect environment (distribution may not be running)",
+      "resources": "Resource Usage",
+      "memory": "Memory",
+      "swap": "Swap",
+      "noSwap": "No swap configured",
+      "cpuLoad": "CPU / Load",
+      "loadAvg": "Load avg",
+      "resourcesFailed": "Could not retrieve resource usage",
+      "packageActions": "Package Management",
+      "pkgUpdate": "Update Index",
+      "pkgUpgrade": "Upgrade Packages",
+      "pkgActionSuccess": "Package {mode} completed ({pm})"
+    },
+    "dialog": {
+      "changeUserDesc": "Select or enter a username to set as the default login user for this distribution.",
+      "selectUser": "Select user",
+      "manualInput": "Enter username manually",
+      "selectFromList": "Select from list",
+      "mount": "Mount Disk",
+      "mountDesc": "Attach a physical or virtual disk to all WSL2 distributions.",
+      "mountDiskPath": "Disk Path",
+      "mountIsVhd": "VHD File",
+      "mountBare": "Bare (attach only)",
+      "mountFsType": "Filesystem Type",
+      "mountPartition": "Partition",
+      "mountName": "Mount Name",
+      "mountOptions": "Mount Options",
+      "move": "Move Distribution",
+      "moveDesc": "Move the distribution's virtual disk to a new location on your host filesystem.",
+      "moveWarning": "This operation may take a long time and should not be interrupted. Ensure the target has enough free space.",
+      "resize": "Resize Virtual Disk",
+      "resizeDesc": "Set a new maximum size for the distribution's virtual hard disk.",
+      "importInPlace": "Import In-Place",
+      "importInPlaceDesc": "Register an existing ext4-formatted .vhdx file directly as a new WSL distribution."
     }
   },
   "launch": {

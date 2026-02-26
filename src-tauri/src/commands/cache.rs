@@ -1,6 +1,6 @@
 use crate::cache::{
-    external, migration, CacheAccessStats, CacheEntryType, CleanupHistory, CleanupRecord,
-    CleanupRecordBuilder, CombinedCacheStats, DownloadCache, DownloadResumer,
+    external, migration, CacheAccessStats, CacheEntryType, CacheSizeSnapshot, CleanupHistory,
+    CleanupRecord, CleanupRecordBuilder, CombinedCacheStats, DownloadCache, DownloadResumer,
     ExternalCacheCleanResult, ExternalCacheInfo, MetadataCache, MigrationMode, MigrationResult,
     MigrationValidation,
 };
@@ -1763,7 +1763,7 @@ pub async fn cache_force_clean_external(
     use_command: Option<bool>,
     use_trash: Option<bool>,
 ) -> Result<ExternalCacheCleanResult, String> {
-    let provider_enum = external::ExternalCacheProvider::from_str(&provider)
+    let provider_enum = external::ExternalCacheProvider::parse_str(&provider)
         .ok_or_else(|| format!("Unknown provider: {}", provider))?;
 
     let use_command = use_command.unwrap_or(true);
@@ -1971,4 +1971,68 @@ pub async fn set_enhanced_cache_settings(
     s.general.cache_monitor_external = new_settings.monitor_external;
     s.save().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ============================================================================
+// Cache Database Optimization
+// ============================================================================
+
+#[derive(Serialize)]
+pub struct CacheOptimizeResult {
+    pub size_before: u64,
+    pub size_before_human: String,
+    pub size_after: u64,
+    pub size_after_human: String,
+    pub size_saved: u64,
+    pub size_saved_human: String,
+}
+
+#[tauri::command]
+pub async fn cache_optimize(
+    settings: State<'_, SharedSettings>,
+) -> Result<CacheOptimizeResult, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let (size_before, size_after) = download_cache.optimize().await.map_err(|e| e.to_string())?;
+
+    let size_saved = size_before.saturating_sub(size_after);
+
+    Ok(CacheOptimizeResult {
+        size_before,
+        size_before_human: format_size(size_before),
+        size_after,
+        size_after_human: format_size(size_after),
+        size_saved,
+        size_saved_human: format_size(size_saved),
+    })
+}
+
+// ============================================================================
+// Cache Size History (Trend Tracking)
+// ============================================================================
+
+#[tauri::command]
+pub async fn get_cache_size_history(
+    days: Option<u32>,
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<CacheSizeSnapshot>, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+
+    let download_cache = DownloadCache::open(&cache_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let days = days.unwrap_or(30);
+    download_cache
+        .get_size_snapshots(days)
+        .await
+        .map_err(|e| e.to_string())
 }

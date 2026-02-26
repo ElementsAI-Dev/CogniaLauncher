@@ -347,7 +347,7 @@ impl Provider for VcpkgProvider {
                     .filter(|l| !l.trim().is_empty() && l.contains(':'))
                     .flat_map(|line| {
                         // Split at first colon only to handle "pkg[core]: deps"
-                        let deps_part = line.splitn(2, ':').nth(1).unwrap_or("");
+                        let deps_part = line.split_once(':').map(|x| x.1).unwrap_or("");
                         deps_part
                             .split(',')
                             .filter(|s| !s.trim().is_empty())
@@ -491,7 +491,6 @@ impl Provider for VcpkgProvider {
                         let name = name_field.split(':').next()?.to_string();
                         let current = left_parts.get(1).unwrap_or(&"").to_string();
                         let latest = parts[1]
-                            .trim()
                             .split_whitespace()
                             .next()
                             .unwrap_or("")

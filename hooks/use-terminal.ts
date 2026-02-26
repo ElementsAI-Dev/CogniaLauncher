@@ -330,6 +330,99 @@ export function useTerminal() {
     }
   }, []);
 
+  // Profile Duplicate / Import / Export
+  const duplicateProfile = useCallback(async (id: string) => {
+    if (!isTauri()) return;
+    try {
+      const newId = await tauri.terminalDuplicateProfile(id);
+      await fetchProfiles();
+      toast.success('Profile duplicated');
+      return newId;
+    } catch (e) {
+      toast.error(`Failed to duplicate profile: ${e}`);
+    }
+  }, [fetchProfiles]);
+
+  const exportProfiles = useCallback(async () => {
+    if (!isTauri()) return '';
+    try {
+      const json = await tauri.terminalExportProfiles();
+      toast.success('Profiles exported');
+      return json;
+    } catch (e) {
+      toast.error(`Failed to export profiles: ${e}`);
+      return '';
+    }
+  }, []);
+
+  const importProfiles = useCallback(async (json: string, merge: boolean) => {
+    if (!isTauri()) return 0;
+    try {
+      const count = await tauri.terminalImportProfiles(json, merge);
+      await fetchProfiles();
+      toast.success(`Imported ${count} profile(s)`);
+      return count;
+    } catch (e) {
+      toast.error(`Failed to import profiles: ${e}`);
+      return 0;
+    }
+  }, [fetchProfiles]);
+
+  // Shell Config Write
+  const writeShellConfig = useCallback(async (path: string, content: string) => {
+    if (!isTauri()) return;
+    try {
+      await tauri.terminalWriteConfig(path, content);
+      toast.success('Config saved (backup created)');
+    } catch (e) {
+      toast.error(`Failed to save config: ${e}`);
+    }
+  }, []);
+
+  // PowerShell Module Management
+  const installPSModule = useCallback(async (name: string, scope: string) => {
+    if (!isTauri()) return;
+    try {
+      await tauri.terminalPsInstallModule(name, scope);
+      await fetchPSModules();
+      toast.success(`Module '${name}' installed`);
+    } catch (e) {
+      toast.error(`Failed to install module: ${e}`);
+    }
+  }, [fetchPSModules]);
+
+  const uninstallPSModule = useCallback(async (name: string) => {
+    if (!isTauri()) return;
+    try {
+      await tauri.terminalPsUninstallModule(name);
+      await fetchPSModules();
+      toast.success(`Module '${name}' uninstalled`);
+    } catch (e) {
+      toast.error(`Failed to uninstall module: ${e}`);
+    }
+  }, [fetchPSModules]);
+
+  const updatePSModule = useCallback(async (name: string) => {
+    if (!isTauri()) return;
+    try {
+      await tauri.terminalPsUpdateModule(name);
+      await fetchPSModules();
+      toast.success(`Module '${name}' updated`);
+    } catch (e) {
+      toast.error(`Failed to update module: ${e}`);
+    }
+  }, [fetchPSModules]);
+
+  const searchPSModules = useCallback(async (query: string) => {
+    if (!isTauri()) return [];
+    try {
+      return await tauri.terminalPsFindModule(query);
+    } catch (e) {
+      toast.error(`Failed to search modules: ${e}`);
+      return [];
+    }
+  }, []);
+
   // Proxy Environment Variables
   const fetchProxyEnvVars = useCallback(async () => {
     if (!isTauri()) return;
@@ -394,5 +487,13 @@ export function useTerminal() {
     fetchPlugins,
     fetchShellEnvVars,
     fetchProxyEnvVars,
+    duplicateProfile,
+    exportProfiles,
+    importProfiles,
+    writeShellConfig,
+    installPSModule,
+    uninstallPSModule,
+    updatePSModule,
+    searchPSModules,
   };
 }

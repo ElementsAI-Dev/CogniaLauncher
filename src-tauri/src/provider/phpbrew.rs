@@ -66,7 +66,6 @@ impl PhpbrewProvider {
             let is_current = line.starts_with('*');
             let version_part = line
                 .trim_start_matches('*')
-                .trim()
                 .split_whitespace()
                 .next()
                 .unwrap_or("");
@@ -450,7 +449,7 @@ impl SystemPackageProvider for PhpbrewProvider {
         let version = output
             .lines()
             .next()
-            .and_then(|l| l.split('-').last())
+            .and_then(|l| l.split('-').next_back())
             .map(|v| v.trim())
             .unwrap_or(output.trim());
         Ok(version.to_string())

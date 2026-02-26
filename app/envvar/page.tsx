@@ -22,6 +22,7 @@ import type { EnvVarScope } from '@/types/tauri';
 export default function EnvVarPage() {
   const {
     envVars,
+    persistentVars,
     pathEntries,
     shellProfiles,
     loading,
@@ -37,6 +38,8 @@ export default function EnvVarPage() {
     readShellProfile,
     importEnvFile,
     exportEnvFile,
+    fetchPersistentVars,
+    deduplicatePath,
   } = useEnvVar();
 
   const { t } = useLocale();
@@ -71,6 +74,17 @@ export default function EnvVarPage() {
       fetchPath(scope);
     }
   }, [fetchPath]);
+
+  const handleScopeFilterChange = useCallback((scope: EnvVarScope | 'all') => {
+    setScopeFilter(scope);
+    if (isTauri()) {
+      if (scope === 'all' || scope === 'process') {
+        fetchAllVars();
+      } else {
+        fetchPersistentVars(scope);
+      }
+    }
+  }, [fetchAllVars, fetchPersistentVars]);
 
   const handleEdit = useCallback((key: string, value: string) => {
     setVar(key, value, 'process').then((ok) => {
@@ -157,8 +171,8 @@ export default function EnvVarPage() {
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             scopeFilter={scopeFilter}
-            onScopeFilterChange={setScopeFilter}
-            onRefresh={fetchAllVars}
+            onScopeFilterChange={handleScopeFilterChange}
+            onRefresh={() => scopeFilter === 'user' || scopeFilter === 'system' ? fetchPersistentVars(scopeFilter) : fetchAllVars()}
             onAdd={handleOpenAdd}
             onImport={() => setImportExportOpen(true)}
             onExport={() => setImportExportOpen(true)}
@@ -167,6 +181,8 @@ export default function EnvVarPage() {
           />
           <EnvVarTable
             envVars={envVars}
+            persistentVars={persistentVars}
+            scope={scopeFilter}
             searchQuery={searchQuery}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -182,6 +198,7 @@ export default function EnvVarPage() {
             onAdd={(path, position) => addPathEntry(path, pathScope, position)}
             onRemove={(path) => removePathEntry(path, pathScope)}
             onReorder={(entries) => reorderPath(entries, pathScope)}
+            onDeduplicate={() => deduplicatePath(pathScope)}
             onRefresh={() => fetchPath(pathScope)}
             loading={loading}
             t={t}

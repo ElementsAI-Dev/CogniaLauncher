@@ -363,6 +363,9 @@ pub async fn env_list_providers(
                 "sdkman-kotlin" => ("kotlin", "SDKMAN! - Kotlin compiler manager"),
                 "sdkman-scala" => ("scala", "SDKMAN! - Scala compiler manager"),
                 "sdkman-groovy" => ("groovy", "SDKMAN! - Groovy compiler manager"),
+                "sdkman-gradle" => ("gradle", "SDKMAN! - Gradle build tool manager"),
+                "sdkman-maven" => ("maven", "SDKMAN! - Maven build tool manager"),
+                "adoptium" => ("java", "Adoptium Temurin JDK - Cross-platform Java version manager"),
                 "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
                 "dotnet" => ("dotnet", ".NET SDK version management"),
                 "deno" => ("deno", "Deno runtime version management"),
@@ -431,6 +434,9 @@ pub async fn env_resolve_alias(
         "sdkman-kotlin" => "kotlin",
         "sdkman-scala" => "scala",
         "sdkman-groovy" => "groovy",
+        "sdkman-gradle" => "gradle",
+        "sdkman-maven" => "maven",
+        "adoptium" => "java",
         "phpbrew" => "php",
         "dotnet" => "dotnet",
         "deno" => "deno",
@@ -652,6 +658,8 @@ pub async fn env_detect_system(env_type: String) -> Result<Option<SystemEnvironm
         "nim" => Some(SystemEnvironmentType::Nim),
         "ocaml" => Some(SystemEnvironmentType::Ocaml),
         "fortran" | "gfortran" => Some(SystemEnvironmentType::Fortran),
+        "c" | "gcc" | "cc" => Some(SystemEnvironmentType::C),
+        "cpp" | "c++" | "g++" | "clang++" | "clang" => Some(SystemEnvironmentType::Cpp),
         _ => None,
     };
 
@@ -710,6 +718,9 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("zig".to_string(), "zig".to_string());
     mapping.insert("fvm".to_string(), "dart".to_string());
     mapping.insert("sdkman-groovy".to_string(), "groovy".to_string());
+    mapping.insert("sdkman-gradle".to_string(), "gradle".to_string());
+    mapping.insert("sdkman-maven".to_string(), "maven".to_string());
+    mapping.insert("adoptium".to_string(), "java".to_string());
 
     // System providers
     mapping.insert("system-node".to_string(), "node".to_string());
@@ -741,6 +752,15 @@ pub async fn env_get_type_mapping() -> Result<std::collections::HashMap<String, 
     mapping.insert("system-nim".to_string(), "nim".to_string());
     mapping.insert("system-ocaml".to_string(), "ocaml".to_string());
     mapping.insert("system-fortran".to_string(), "fortran".to_string());
+
+    // C/C++ tool providers
+    mapping.insert("msvc".to_string(), "cpp".to_string());
+    mapping.insert("msys2".to_string(), "cpp".to_string());
+    mapping.insert("vcpkg".to_string(), "cpp".to_string());
+    mapping.insert("conan".to_string(), "cpp".to_string());
+    mapping.insert("xmake".to_string(), "cpp".to_string());
+    mapping.insert("system-c".to_string(), "c".to_string());
+    mapping.insert("system-cpp".to_string(), "cpp".to_string());
 
     Ok(mapping)
 }
@@ -1033,8 +1053,10 @@ fn build_process_opts(
     env_mods: &crate::platform::env::EnvModifications,
     timeout_secs: u64,
 ) -> crate::platform::process::ProcessOptions {
-    let mut opts = crate::platform::process::ProcessOptions::default();
-    opts.timeout = Some(std::time::Duration::from_secs(timeout_secs));
+    let mut opts = crate::platform::process::ProcessOptions {
+        timeout: Some(std::time::Duration::from_secs(timeout_secs)),
+        ..Default::default()
+    };
     for (k, v) in &env_mods.set_variables {
         opts.env.insert(k.clone(), v.clone());
     }
@@ -1245,7 +1267,7 @@ async fn list_go_global_packages(
     let bin_dir = env_mods
         .set_variables
         .get("GOBIN")
-        .map(|s| std::path::PathBuf::from(s))
+        .map(std::path::PathBuf::from)
         .or_else(|| {
             env_mods
                 .set_variables

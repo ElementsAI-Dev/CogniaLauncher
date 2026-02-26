@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { FileText, Copy, RefreshCw } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { FileText, Copy, RefreshCw, Pencil, Save } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellConfigEntries } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ interface TerminalShellConfigProps {
   onReadConfig: (path: string) => Promise<string>;
   onFetchConfigEntries: (path: string, shellType: ShellType) => Promise<ShellConfigEntries | null>;
   onBackupConfig: (path: string) => Promise<string | undefined>;
+  onWriteConfig?: (path: string, content: string) => Promise<void>;
 }
 
 export function TerminalShellConfig({
@@ -24,11 +26,14 @@ export function TerminalShellConfig({
   onReadConfig,
   onFetchConfigEntries,
   onBackupConfig,
+  onWriteConfig,
 }: TerminalShellConfigProps) {
   const { t } = useLocale();
   const [selectedShellId, setSelectedShellId] = useState<string>(shells[0]?.id ?? '');
   const [selectedConfigPath, setSelectedConfigPath] = useState<string>('');
   const [configContent, setConfigContent] = useState<string>('');
+  const [editContent, setEditContent] = useState<string>('');
+  const [editing, setEditing] = useState(false);
   const [entries, setEntries] = useState<ShellConfigEntries | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +44,8 @@ export function TerminalShellConfig({
     setSelectedShellId(shellId);
     setSelectedConfigPath('');
     setConfigContent('');
+    setEditContent('');
+    setEditing(false);
     setEntries(null);
   };
 
@@ -201,15 +208,55 @@ export function TerminalShellConfig({
         )}
 
         {configContent && !loading && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleCopyContent}>
-              <Copy className="h-3.5 w-3.5 mr-1" />
-              {t('terminal.copyConfig')}
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleBackup}>
-              <FileText className="h-3.5 w-3.5 mr-1" />
-              {t('terminal.backupConfig')}
-            </Button>
+          <div className="space-y-3">
+            {editing ? (
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="font-mono text-xs min-h-[200px]"
+              />
+            ) : null}
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleCopyContent}>
+                <Copy className="h-3.5 w-3.5 mr-1" />
+                {t('terminal.copyConfig')}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleBackup}>
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {t('terminal.backupConfig')}
+              </Button>
+              {onWriteConfig && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (editing) {
+                      setEditing(false);
+                      setEditContent('');
+                    } else {
+                      setEditContent(configContent);
+                      setEditing(true);
+                    }
+                  }}
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  {editing ? t('terminal.cancel') : t('terminal.editConfig')}
+                </Button>
+              )}
+              {editing && onWriteConfig && (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    await onWriteConfig(selectedConfigPath, editContent);
+                    setConfigContent(editContent);
+                    setEditing(false);
+                  }}
+                >
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                  {t('terminal.saveConfig')}
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </CardContent>

@@ -225,6 +225,48 @@ pub struct GitFileStatEntry {
     pub deletions: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitReflogEntry {
+    pub hash: String,
+    pub selector: String,
+    pub action: String,
+    pub message: String,
+    pub date: String,
+}
+
+// ============================================================================
+// Clone options & progress types
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCloneOptions {
+    pub branch: Option<String>,
+    pub depth: Option<u32>,
+    pub single_branch: Option<bool>,
+    pub recurse_submodules: Option<bool>,
+    pub shallow_submodules: Option<bool>,
+    pub no_checkout: Option<bool>,
+    pub bare: Option<bool>,
+    pub mirror: Option<bool>,
+    pub sparse: Option<bool>,
+    pub filter: Option<String>,
+    pub jobs: Option<u32>,
+    pub no_tags: Option<bool>,
+    pub remote_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCloneProgress {
+    pub phase: String,
+    pub percent: Option<u32>,
+    pub current: Option<u64>,
+    pub total: Option<u64>,
+    pub message: String,
+}
+
 // ============================================================================
 // Parsing helpers
 // ============================================================================
@@ -678,11 +720,215 @@ pub fn parse_file_stats(output: &str) -> Vec<GitFileStatEntry> {
     entries
 }
 
+/// Parse `git reflog show --format="%H\x1f%gd\x1f%gs\x1f%aI"` output
+pub fn parse_reflog(output: &str) -> Vec<GitReflogEntry> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let fields: Vec<&str> = line.split(FIELD_SEP).collect();
+            if fields.len() < 4 {
+                return None;
+            }
+            let subject = fields[2];
+            let action = subject
+                .split(':')
+                .next()
+                .unwrap_or(subject)
+                .trim()
+                .to_string();
+            Some(GitReflogEntry {
+                hash: fields[0].to_string(),
+                selector: fields[1].to_string(),
+                action,
+                message: subject.to_string(),
+                date: fields[3].to_string(),
+            })
+        })
+        .collect()
+}
+
+// ============================================================================
+// Clone progress parsing & URL helpers
+// ============================================================================
+
+/// Parse a git clone progress line from stderr.
+/// Git clone with `--progress` emits lines like:
+///   "remote: Counting objects: 100% (50/50), done."
+///   "Receiving objects:  45% (100/222)"
+///   "Resolving deltas: 100% (80/80), done."
+///   "Checking out files:  67% (100/150)"
+pub fn parse_clone_progress(line: &str) -> Option<GitCloneProgress> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+
+    // Strip optional "remote: " prefix
+    let content = line.strip_prefix("remote: ").unwrap_or(line);
+
+    let phase = if content.starts_with("Counting") {
+        "counting"
+    } else if content.starts_with("Compressing") {
+        "compressing"
+    } else if content.starts_with("Receiving") {
+        "receiving"
+    } else if content.starts_with("Resolving") {
+        "resolving"
+    } else if content.starts_with("Checking out") {
+        "checking_out"
+    } else {
+        return None;
+    };
+
+    let percent_re = Regex::new(r"(\d+)%").ok()?;
+    let count_re = Regex::new(r"\((\d+)/(\d+)\)").ok()?;
+
+    let percent = percent_re
+        .captures(content)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<u32>().ok());
+
+    let (current, total) = if let Some(caps) = count_re.captures(content) {
+        let cur = caps.get(1).and_then(|m| m.as_str().parse::<u64>().ok());
+        let tot = caps.get(2).and_then(|m| m.as_str().parse::<u64>().ok());
+        (cur, tot)
+    } else {
+        (None, None)
+    };
+
+    Some(GitCloneProgress {
+        phase: phase.to_string(),
+        percent,
+        current,
+        total,
+        message: line.to_string(),
+    })
+}
+
+/// Extract repository name from a git URL (any host).
+/// Handles HTTPS, SSH, git:// protocols and local paths.
+pub fn extract_repo_name(url: &str) -> Option<String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+
+    // Strip trailing slashes and .git suffix
+    let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    // SSH format: git@host:path/repo
+    if let Some(after_at) = cleaned.strip_prefix("git@") {
+        if let Some(colon_pos) = after_at.find(':') {
+            let path = &after_at[colon_pos + 1..];
+            return path.rsplit('/').next().map(|s| s.to_string()).filter(|s| !s.is_empty());
+        }
+    }
+
+    // URL format: scheme://host/path/repo
+    if cleaned.contains("://") {
+        return cleaned.rsplit('/').next().map(|s| s.to_string()).filter(|s| !s.is_empty());
+    }
+
+    // Local path or bare name: extract basename
+    #[cfg(windows)]
+    let name = cleaned.rsplit(&['/', '\\'][..]).next();
+    #[cfg(not(windows))]
+    let name = cleaned.rsplit('/').next();
+
+    name.map(|s| s.to_string()).filter(|s| !s.is_empty())
+}
+
+/// Validate whether a string looks like a valid git remote URL.
+pub fn validate_git_url(url: &str) -> bool {
+    let url = url.trim();
+    if url.is_empty() {
+        return false;
+    }
+
+    // HTTPS/HTTP/git:// protocol
+    for scheme in &["https://", "http://", "git://", "ssh://"] {
+        if let Some(rest) = url.strip_prefix(scheme) {
+            // Must have at least host/path
+            return rest.contains('/') && rest.len() > 3;
+        }
+    }
+
+    // SSH shorthand: git@host:path
+    if let Some(rest) = url.strip_prefix("git@") {
+        return rest.contains(':') && rest.len() > 3;
+    }
+
+    false
+}
+
+/// Build clone args from GitCloneOptions
+fn build_clone_args(url: &str, dest_path: &str, options: &GitCloneOptions) -> Vec<String> {
+    let mut args: Vec<String> = vec!["clone".into()];
+    if let Some(ref b) = options.branch {
+        args.push("--branch".into());
+        args.push(b.clone());
+    }
+    if let Some(d) = options.depth {
+        args.push(format!("--depth={}", d));
+    }
+    if options.single_branch == Some(true) {
+        args.push("--single-branch".into());
+    }
+    if options.recurse_submodules == Some(true) {
+        args.push("--recurse-submodules".into());
+    }
+    if options.shallow_submodules == Some(true) {
+        args.push("--shallow-submodules".into());
+    }
+    if options.no_checkout == Some(true) {
+        args.push("--no-checkout".into());
+    }
+    if options.bare == Some(true) {
+        args.push("--bare".into());
+    }
+    if options.mirror == Some(true) {
+        args.push("--mirror".into());
+    }
+    if options.sparse == Some(true) {
+        args.push("--sparse".into());
+    }
+    if let Some(ref f) = options.filter {
+        args.push(format!("--filter={}", f));
+    }
+    if let Some(j) = options.jobs {
+        args.push(format!("--jobs={}", j));
+    }
+    if options.no_tags == Some(true) {
+        args.push("--no-tags".into());
+    }
+    if let Some(ref name) = options.remote_name {
+        args.push("--origin".into());
+        args.push(name.clone());
+    }
+    args.push("--progress".into());
+    args.push(url.into());
+    args.push(dest_path.into());
+    args
+}
+
 // ============================================================================
 // GitProvider
 // ============================================================================
 
 pub struct GitProvider;
+
+impl Default for GitProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GitProvider {
     pub fn new() -> Self {
@@ -1408,6 +1654,458 @@ impl GitProvider {
         let output = run_git_in_lenient(path, &args).await?;
         Ok(parse_log_output(&output))
     }
+
+    // ========================================================================
+    // Write operations: staging, committing, syncing
+    // ========================================================================
+
+    /// Stage specific files
+    pub async fn stage_files(&self, path: &str, files: &[&str]) -> CogniaResult<String> {
+        let mut args = vec!["add", "--"];
+        args.extend_from_slice(files);
+        run_git_in(path, &args).await?;
+        Ok(format!("Staged {} file(s)", files.len()))
+    }
+
+    /// Stage all changes
+    pub async fn stage_all(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["add", "-A"]).await?;
+        Ok("All changes staged".into())
+    }
+
+    /// Unstage specific files (git restore --staged)
+    pub async fn unstage_files(&self, path: &str, files: &[&str]) -> CogniaResult<String> {
+        let mut args = vec!["restore", "--staged", "--"];
+        args.extend_from_slice(files);
+        run_git_in(path, &args).await?;
+        Ok(format!("Unstaged {} file(s)", files.len()))
+    }
+
+    /// Discard working tree changes for specific files (git restore)
+    pub async fn discard_changes(&self, path: &str, files: &[&str]) -> CogniaResult<String> {
+        let mut args = vec!["restore", "--"];
+        args.extend_from_slice(files);
+        run_git_in(path, &args).await?;
+        Ok(format!("Discarded changes in {} file(s)", files.len()))
+    }
+
+    /// Create a commit
+    pub async fn commit(
+        &self,
+        path: &str,
+        message: &str,
+        amend: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["commit", "-m", message];
+        if amend {
+            args.push("--amend");
+        }
+        run_git_in(path, &args).await
+    }
+
+    /// Push to remote
+    pub async fn push(
+        &self,
+        path: &str,
+        remote: Option<&str>,
+        branch: Option<&str>,
+        force_lease: bool,
+    ) -> CogniaResult<String> {
+        let mut full_args = vec!["-C", path, "push"];
+        if force_lease {
+            full_args.push("--force-with-lease");
+        }
+        if let Some(r) = remote {
+            full_args.push(r);
+        }
+        if let Some(b) = branch {
+            full_args.push(b);
+        }
+        let out = process::execute("git", &full_args, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git push: {}", e)))?;
+        if out.success {
+            let msg = out.stderr.trim().to_string();
+            Ok(if msg.is_empty() {
+                "Push completed".into()
+            } else {
+                msg
+            })
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("git push: {}", err)))
+        }
+    }
+
+    /// Pull from remote
+    pub async fn pull(
+        &self,
+        path: &str,
+        remote: Option<&str>,
+        branch: Option<&str>,
+        rebase: bool,
+    ) -> CogniaResult<String> {
+        let mut full_args = vec!["-C", path, "pull"];
+        if rebase {
+            full_args.push("--rebase");
+        }
+        if let Some(r) = remote {
+            full_args.push(r);
+        }
+        if let Some(b) = branch {
+            full_args.push(b);
+        }
+        let out = process::execute("git", &full_args, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git pull: {}", e)))?;
+        if out.success {
+            Ok(out.stdout.trim().to_string())
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("git pull: {}", err)))
+        }
+    }
+
+    /// Fetch from remote
+    pub async fn fetch_remote(&self, path: &str, remote: Option<&str>) -> CogniaResult<String> {
+        let mut full_args = vec!["-C", path, "fetch"];
+        if let Some(r) = remote {
+            full_args.push(r);
+        }
+        let out = process::execute("git", &full_args, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git fetch: {}", e)))?;
+        if out.success {
+            let msg = out.stderr.trim().to_string();
+            Ok(if msg.is_empty() {
+                "Fetch completed".into()
+            } else {
+                msg
+            })
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("git fetch: {}", err)))
+        }
+    }
+
+    /// Clone a repository with options
+    pub async fn clone_repo(
+        &self,
+        url: &str,
+        dest_path: &str,
+        options: GitCloneOptions,
+    ) -> CogniaResult<String> {
+        let args = build_clone_args(url, dest_path, &options);
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let out = process::execute("git", &arg_refs, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git clone: {}", e)))?;
+        if out.success {
+            Ok(format!("Repository cloned to {}", dest_path))
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("git clone: {}", err)))
+        }
+    }
+
+    /// Clone a repository with streaming progress
+    pub async fn clone_repo_with_progress<F>(
+        &self,
+        url: &str,
+        dest_path: &str,
+        options: GitCloneOptions,
+        mut on_progress: F,
+    ) -> CogniaResult<String>
+    where
+        F: FnMut(GitCloneProgress),
+    {
+        let args = build_clone_args(url, dest_path, &options);
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let out = process::execute_with_streaming(
+            "git",
+            &arg_refs,
+            Some(make_install_opts()),
+            |_stdout_line| {},
+            |stderr_line| {
+                if let Some(progress) = parse_clone_progress(stderr_line) {
+                    on_progress(progress);
+                }
+            },
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("git clone: {}", e)))?;
+        if out.success {
+            on_progress(GitCloneProgress {
+                phase: "done".to_string(),
+                percent: Some(100),
+                current: None,
+                total: None,
+                message: format!("Repository cloned to {}", dest_path),
+            });
+            Ok(format!("Repository cloned to {}", dest_path))
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            on_progress(GitCloneProgress {
+                phase: "error".to_string(),
+                percent: None,
+                current: None,
+                total: None,
+                message: err.clone(),
+            });
+            Err(CogniaError::Provider(format!("git clone: {}", err)))
+        }
+    }
+
+    /// Initialize a new repository
+    pub async fn init_repo(&self, path: &str) -> CogniaResult<String> {
+        run_git(&["init", path]).await
+    }
+
+    /// Get diff output (working tree or staged changes)
+    pub async fn get_diff(
+        &self,
+        path: &str,
+        staged: bool,
+        file: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["diff"];
+        if staged {
+            args.push("--staged");
+        }
+        if let Some(f) = file {
+            args.push("--");
+            args.push(f);
+        }
+        run_git_in_lenient(path, &args).await
+    }
+
+    /// Get diff between two commits
+    pub async fn get_diff_between(
+        &self,
+        path: &str,
+        from: &str,
+        to: &str,
+        file: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["diff", from, to];
+        if let Some(f) = file {
+            args.push("--");
+            args.push(f);
+        }
+        run_git_in_lenient(path, &args).await
+    }
+
+    /// Merge a branch into current
+    pub async fn merge_branch(
+        &self,
+        path: &str,
+        branch: &str,
+        no_ff: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["merge"];
+        if no_ff {
+            args.push("--no-ff");
+        }
+        args.push(branch);
+        run_git_in(path, &args).await
+    }
+
+    /// Revert a commit
+    pub async fn revert_commit(
+        &self,
+        path: &str,
+        hash: &str,
+        no_commit: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["revert"];
+        if no_commit {
+            args.push("--no-commit");
+        }
+        args.push(hash);
+        run_git_in(path, &args).await
+    }
+
+    /// Cherry-pick a commit
+    pub async fn cherry_pick(&self, path: &str, hash: &str) -> CogniaResult<String> {
+        run_git_in(path, &["cherry-pick", hash]).await
+    }
+
+    /// Reset HEAD to a target
+    pub async fn reset_head(
+        &self,
+        path: &str,
+        mode: &str,
+        target: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mode_flag = match mode {
+            "soft" => "--soft",
+            "hard" => "--hard",
+            _ => "--mixed",
+        };
+        let mut args = vec!["reset", mode_flag];
+        if let Some(t) = target {
+            args.push(t);
+        }
+        run_git_in(path, &args).await?;
+        Ok("Reset completed".into())
+    }
+
+    // ========================================================================
+    // Remote & branch management
+    // ========================================================================
+
+    /// Add a remote
+    pub async fn remote_add(&self, path: &str, name: &str, url: &str) -> CogniaResult<String> {
+        run_git_in(path, &["remote", "add", name, url]).await?;
+        Ok(format!("Remote '{}' added", name))
+    }
+
+    /// Remove a remote
+    pub async fn remote_remove(&self, path: &str, name: &str) -> CogniaResult<String> {
+        run_git_in(path, &["remote", "remove", name]).await?;
+        Ok(format!("Remote '{}' removed", name))
+    }
+
+    /// Rename a remote
+    pub async fn remote_rename(
+        &self,
+        path: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> CogniaResult<String> {
+        run_git_in(path, &["remote", "rename", old_name, new_name]).await?;
+        Ok(format!("Remote '{}' renamed to '{}'", old_name, new_name))
+    }
+
+    /// Set remote URL
+    pub async fn remote_set_url(
+        &self,
+        path: &str,
+        name: &str,
+        url: &str,
+    ) -> CogniaResult<String> {
+        run_git_in(path, &["remote", "set-url", name, url]).await?;
+        Ok(format!("Remote '{}' URL updated", name))
+    }
+
+    /// Rename a branch
+    pub async fn branch_rename(
+        &self,
+        path: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> CogniaResult<String> {
+        run_git_in(path, &["branch", "-m", old_name, new_name]).await?;
+        Ok(format!("Branch '{}' renamed to '{}'", old_name, new_name))
+    }
+
+    /// Set upstream tracking branch
+    pub async fn branch_set_upstream(
+        &self,
+        path: &str,
+        branch: &str,
+        upstream: &str,
+    ) -> CogniaResult<String> {
+        let upstream_arg = format!("--set-upstream-to={}", upstream);
+        run_git_in(path, &["branch", &upstream_arg, branch]).await?;
+        Ok(format!("Upstream for '{}' set to '{}'", branch, upstream))
+    }
+
+    /// Push all tags to remote
+    pub async fn push_tags(&self, path: &str, remote: Option<&str>) -> CogniaResult<String> {
+        let mut full_args = vec!["-C", path, "push", "--tags"];
+        if let Some(r) = remote {
+            full_args.push(r);
+        }
+        let out = process::execute("git", &full_args, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git push --tags: {}", e)))?;
+        if out.success {
+            Ok("Tags pushed to remote".into())
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!("git push --tags: {}", err)))
+        }
+    }
+
+    /// Delete a remote branch
+    pub async fn delete_remote_branch(
+        &self,
+        path: &str,
+        remote: &str,
+        branch: &str,
+    ) -> CogniaResult<String> {
+        let full_args = vec!["-C", path, "push", remote, "--delete", branch];
+        let out = process::execute("git", &full_args, Some(make_install_opts()))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git push --delete: {}", e)))?;
+        if out.success {
+            Ok(format!("Remote branch '{}/{}' deleted", remote, branch))
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            Err(CogniaError::Provider(format!(
+                "git push --delete: {}",
+                err
+            )))
+        }
+    }
+
+    /// Show stash diff
+    pub async fn stash_show(&self, path: &str, stash_id: Option<&str>) -> CogniaResult<String> {
+        let mut args = vec!["stash", "show", "-p"];
+        if let Some(id) = stash_id {
+            args.push(id);
+        }
+        run_git_in_lenient(path, &args).await
+    }
+
+    /// Get reflog entries
+    pub async fn get_reflog(&self, path: &str, limit: u32) -> CogniaResult<Vec<GitReflogEntry>> {
+        let format_str = format!("%H{}%gd{}%gs{}%aI", FIELD_SEP, FIELD_SEP, FIELD_SEP);
+        let format_arg = format!("--format={}", format_str);
+        let limit_str = format!("-{}", limit);
+        let output = run_git_in_lenient(path, &["reflog", "show", &format_arg, &limit_str])
+            .await
+            .unwrap_or_default();
+        Ok(parse_reflog(&output))
+    }
+
+    /// Remove untracked files
+    pub async fn clean_untracked(&self, path: &str, directories: bool) -> CogniaResult<String> {
+        let mut args = vec!["clean", "-f"];
+        if directories {
+            args.push("-d");
+        }
+        run_git_in(path, &args).await
+    }
 }
 
 // ============================================================================
@@ -1962,5 +2660,187 @@ filename src/main.rs\n\
         assert_eq!(stats[1].hash, "def5678");
         assert_eq!(stats[1].additions, 3);
         assert_eq!(stats[1].deletions, 0);
+    }
+
+    #[test]
+    fn test_parse_reflog() {
+        let input = format!(
+            "abc1234{}HEAD@{{0}}{}commit: add feature{}2025-01-15T10:30:00+08:00\n\
+             def5678{}HEAD@{{1}}{}checkout: moving from main to dev{}2025-01-14T09:00:00+08:00",
+            FIELD_SEP, FIELD_SEP, FIELD_SEP,
+            FIELD_SEP, FIELD_SEP, FIELD_SEP
+        );
+        let entries = parse_reflog(&input);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].hash, "abc1234");
+        assert_eq!(entries[0].selector, "HEAD@{0}");
+        assert_eq!(entries[0].action, "commit");
+        assert_eq!(entries[0].message, "commit: add feature");
+        assert_eq!(entries[1].action, "checkout");
+        assert_eq!(entries[1].selector, "HEAD@{1}");
+    }
+
+    // ====================================================================
+    // Clone progress parsing tests
+    // ====================================================================
+
+    #[test]
+    fn test_parse_clone_counting_objects() {
+        let result = parse_clone_progress("remote: Counting objects: 100% (50/50), done.");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "counting");
+        assert_eq!(p.percent, Some(100));
+        assert_eq!(p.current, Some(50));
+        assert_eq!(p.total, Some(50));
+    }
+
+    #[test]
+    fn test_parse_clone_receiving_partial() {
+        let result = parse_clone_progress("Receiving objects:  45% (100/222)");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "receiving");
+        assert_eq!(p.percent, Some(45));
+        assert_eq!(p.current, Some(100));
+        assert_eq!(p.total, Some(222));
+    }
+
+    #[test]
+    fn test_parse_clone_resolving_done() {
+        let result = parse_clone_progress("Resolving deltas: 100% (80/80), done.");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "resolving");
+        assert_eq!(p.percent, Some(100));
+        assert_eq!(p.current, Some(80));
+        assert_eq!(p.total, Some(80));
+    }
+
+    #[test]
+    fn test_parse_clone_checking_out() {
+        let result = parse_clone_progress("Checking out files:  67% (100/150)");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "checking_out");
+        assert_eq!(p.percent, Some(67));
+        assert_eq!(p.current, Some(100));
+        assert_eq!(p.total, Some(150));
+    }
+
+    #[test]
+    fn test_parse_clone_compressing() {
+        let result =
+            parse_clone_progress("remote: Compressing objects: 100% (30/30), done.");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "compressing");
+        assert_eq!(p.percent, Some(100));
+    }
+
+    #[test]
+    fn test_parse_clone_cloning_into() {
+        assert!(parse_clone_progress("Cloning into 'repo'...").is_none());
+    }
+
+    #[test]
+    fn test_parse_clone_empty_line() {
+        assert!(parse_clone_progress("").is_none());
+    }
+
+    #[test]
+    fn test_parse_clone_unknown_line() {
+        assert!(parse_clone_progress("some random output").is_none());
+    }
+
+    // ====================================================================
+    // extract_repo_name tests
+    // ====================================================================
+
+    #[test]
+    fn test_extract_https_github() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/repo.git"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_ssh_github() {
+        assert_eq!(
+            extract_repo_name("git@github.com:user/repo.git"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_https_no_git_suffix() {
+        assert_eq!(
+            extract_repo_name("https://gitlab.com/user/repo"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_https_trailing_slash() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/repo/"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_ssh_nested() {
+        assert_eq!(
+            extract_repo_name("git@gitlab.com:group/subgroup/repo.git"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_local_path() {
+        assert_eq!(
+            extract_repo_name("/home/user/projects/myrepo"),
+            Some("myrepo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_empty() {
+        assert_eq!(extract_repo_name(""), None);
+    }
+
+    // ====================================================================
+    // validate_git_url tests
+    // ====================================================================
+
+    #[test]
+    fn test_valid_https() {
+        assert!(validate_git_url("https://github.com/user/repo.git"));
+    }
+
+    #[test]
+    fn test_valid_ssh() {
+        assert!(validate_git_url("git@github.com:user/repo.git"));
+    }
+
+    #[test]
+    fn test_valid_git_protocol() {
+        assert!(validate_git_url("git://example.com/repo.git"));
+    }
+
+    #[test]
+    fn test_invalid_empty() {
+        assert!(!validate_git_url(""));
+    }
+
+    #[test]
+    fn test_invalid_random() {
+        assert!(!validate_git_url("not a url"));
+    }
+
+    #[test]
+    fn test_invalid_no_path() {
+        assert!(!validate_git_url("https://"));
     }
 }

@@ -72,6 +72,7 @@ impl EnvModifications {
                 ShellType::Fish => format!("set -e {}", var),
                 ShellType::PowerShell => format!("Remove-Item Env:{}", var),
                 ShellType::Cmd => format!("set {}=", var),
+                ShellType::Nushell => format!("hide-env {}", var),
             });
         }
 
@@ -81,6 +82,7 @@ impl EnvModifications {
                 ShellType::Fish => format!("set -gx {} \"{}\"", key, value),
                 ShellType::PowerShell => format!("$env:{} = \"{}\"", key, value),
                 ShellType::Cmd => format!("set {}={}", key, value),
+                ShellType::Nushell => format!("$env.{} = \"{}\"", key, value),
             });
         }
 
@@ -140,6 +142,16 @@ impl EnvModifications {
                     }
                     format!("set PATH={}", parts.join(";"))
                 }
+                ShellType::Nushell => {
+                    let mut cmds = Vec::new();
+                    for p in &prepend_str {
+                        cmds.push(format!("$env.PATH = ($env.PATH | prepend \"{}\")", p));
+                    }
+                    for p in &append_str {
+                        cmds.push(format!("$env.PATH = ($env.PATH | append \"{}\")", p));
+                    }
+                    cmds.join("\n")
+                }
             };
             commands.push(path_cmd);
         }
@@ -156,11 +168,15 @@ pub enum ShellType {
     Fish,
     PowerShell,
     Cmd,
+    Nushell,
 }
 
 impl ShellType {
     pub fn detect() -> Self {
         if let Ok(shell) = env::var("SHELL") {
+            if shell.contains("nu") && !shell.contains("bash") {
+                return ShellType::Nushell;
+            }
             if shell.contains("zsh") {
                 return ShellType::Zsh;
             }
@@ -177,7 +193,7 @@ impl ShellType {
             if env::var("PSModulePath").is_ok() {
                 return ShellType::PowerShell;
             }
-            return ShellType::Cmd;
+            ShellType::Cmd
         }
 
         #[cfg(not(windows))]
@@ -192,6 +208,7 @@ impl ShellType {
             ShellType::Fish => "fish",
             ShellType::PowerShell => "powershell",
             ShellType::Cmd => "cmd",
+            ShellType::Nushell => "nushell",
         }
     }
 
@@ -203,6 +220,7 @@ impl ShellType {
             ShellType::Fish => "Fish",
             ShellType::PowerShell => "PowerShell",
             ShellType::Cmd => "Command Prompt",
+            ShellType::Nushell => "Nushell",
         }
     }
 
@@ -214,6 +232,7 @@ impl ShellType {
             "fish" => Some(ShellType::Fish),
             "powershell" | "pwsh" => Some(ShellType::PowerShell),
             "cmd" => Some(ShellType::Cmd),
+            "nushell" | "nu" => Some(ShellType::Nushell),
             _ => None,
         }
     }
@@ -260,6 +279,26 @@ impl ShellType {
                 }
             }
             ShellType::Cmd => vec![],
+            ShellType::Nushell => {
+                #[cfg(windows)]
+                {
+                    if let Ok(appdata) = env::var("APPDATA") {
+                        vec![
+                            PathBuf::from(&appdata).join("nushell").join("config.nu"),
+                            PathBuf::from(&appdata).join("nushell").join("env.nu"),
+                        ]
+                    } else {
+                        vec![]
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    vec![
+                        home.join(".config/nushell/config.nu"),
+                        home.join(".config/nushell/env.nu"),
+                    ]
+                }
+            }
         }
     }
 
@@ -284,6 +323,7 @@ impl ShellType {
             ShellType::Bash => which::which("bash").ok().map(|p| p.display().to_string()),
             ShellType::Zsh => which::which("zsh").ok().map(|p| p.display().to_string()),
             ShellType::Fish => which::which("fish").ok().map(|p| p.display().to_string()),
+            ShellType::Nushell => which::which("nu").ok().map(|p| p.display().to_string()),
         }
     }
 }
@@ -358,6 +398,7 @@ pub enum EnvFileFormat {
     Fish,
     #[serde(rename = "powershell")]
     PowerShell,
+    Nushell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,6 +477,87 @@ pub async fn set_persistent_path(entries: &[String], scope: EnvVarScope) -> Cogn
 }
 
 // ============================================================================
+// List persistent vars (cross-platform)
+// ============================================================================
+
+pub async fn list_persistent_vars(scope: EnvVarScope) -> CogniaResult<Vec<(String, String)>> {
+    match scope {
+        EnvVarScope::Process => {
+            let mut v: Vec<(String, String)> = get_all_vars().into_iter().collect();
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(v)
+        }
+        EnvVarScope::User | EnvVarScope::System => list_persistent_vars_platform(scope).await,
+    }
+}
+
+#[cfg(windows)]
+async fn list_persistent_vars_platform(
+    scope: EnvVarScope,
+) -> CogniaResult<Vec<(String, String)>> {
+    let regkey = open_env_regkey(scope, false)?;
+    let mut result = Vec::new();
+    for item in regkey.enum_values() {
+        match item {
+            Ok((name, value)) => {
+                let val_str = match value.vtype {
+                    winreg::enums::RegType::REG_SZ | winreg::enums::RegType::REG_EXPAND_SZ => {
+                        String::from_utf8_lossy(&value.bytes)
+                            .trim_end_matches('\0')
+                            .to_string()
+                    }
+                    _ => continue,
+                };
+                result.push((name, val_str));
+            }
+            Err(_) => continue,
+        }
+    }
+    result.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(result)
+}
+
+#[cfg(not(windows))]
+async fn list_persistent_vars_platform(
+    scope: EnvVarScope,
+) -> CogniaResult<Vec<(String, String)>> {
+    match scope {
+        EnvVarScope::System => {
+            // Linux: parse /etc/environment
+            #[cfg(target_os = "linux")]
+            {
+                let content = tokio::fs::read_to_string("/etc/environment")
+                    .await
+                    .unwrap_or_default();
+                let mut result: Vec<(String, String)> = parse_env_file(&content);
+                result.sort_by(|a, b| a.0.cmp(&b.0));
+                return Ok(result);
+            }
+            // macOS: no /etc/environment equivalent for arbitrary vars
+            #[cfg(not(target_os = "linux"))]
+            {
+                Ok(Vec::new())
+            }
+        }
+        EnvVarScope::User => {
+            let shell = ShellType::detect();
+            if let Some(rc_path) = shell.config_file() {
+                if rc_path.exists() {
+                    let content = tokio::fs::read_to_string(&rc_path)
+                        .await
+                        .map_err(CogniaError::Io)?;
+                    let mut result = parse_env_file(&content);
+                    result.sort_by(|a, b| a.0.cmp(&b.0));
+                    return Ok(result);
+                }
+            }
+            Ok(Vec::new())
+        }
+        _ => unreachable!(),
+    }
+}
+
+// ============================================================================
 // Shell profile detection
 // ============================================================================
 
@@ -449,6 +571,7 @@ pub fn list_shell_profiles() -> Vec<ShellProfileInfo> {
         ShellType::Fish,
         ShellType::PowerShell,
         ShellType::Cmd,
+        ShellType::Nushell,
     ];
 
     for shell in &shells {
@@ -477,8 +600,12 @@ pub fn read_shell_profile(path: &str) -> CogniaResult<String> {
         ".profile",
         ".zshrc",
         ".zprofile",
+        ".zshenv",
         "config.fish",
         "Microsoft.PowerShell_profile.ps1",
+        "profile.ps1",
+        "config.nu",
+        "env.nu",
     ];
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if !known_names.contains(&file_name) {
@@ -491,7 +618,7 @@ pub fn read_shell_profile(path: &str) -> CogniaResult<String> {
         return Ok(String::new());
     }
 
-    std::fs::read_to_string(path).map_err(|e| CogniaError::Io(e))
+    std::fs::read_to_string(path).map_err(CogniaError::Io)
 }
 
 // ============================================================================
@@ -510,11 +637,10 @@ pub fn parse_env_file(content: &str) -> Vec<(String, String)> {
         }
 
         // Strip optional "export " prefix
-        let stripped = if trimmed.starts_with("export ") {
-            &trimmed[7..]
-        } else if trimmed.starts_with("set -gx ") {
+        let stripped = if let Some(rest) = trimmed.strip_prefix("export ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("set -gx ") {
             // fish: set -gx KEY "VALUE"
-            let rest = &trimmed[8..];
             if let Some(space_pos) = rest.find(' ') {
                 let key = &rest[..space_pos];
                 let value = rest[space_pos + 1..].trim();
@@ -523,9 +649,8 @@ pub fn parse_env_file(content: &str) -> Vec<(String, String)> {
                 continue;
             }
             continue;
-        } else if trimmed.starts_with("$env:") {
+        } else if let Some(rest) = trimmed.strip_prefix("$env:") {
             // PowerShell: $env:KEY = "VALUE"
-            let rest = &trimmed[5..];
             if let Some(eq_pos) = rest.find('=') {
                 let key = rest[..eq_pos].trim().to_string();
                 let value = rest[eq_pos + 1..].trim();
@@ -592,6 +717,12 @@ pub fn generate_env_file(vars: &[(String, String)], format: EnvFileFormat) -> St
                 lines.push(format!("$env:{} = \"{}\"", key, escaped));
             }
         }
+        EnvFileFormat::Nushell => {
+            for (key, value) in vars {
+                let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+                lines.push(format!("$env.{} = \"{}\"", key, escaped));
+            }
+        }
     }
 
     lines.join("\n")
@@ -602,28 +733,71 @@ pub fn generate_env_file(vars: &[(String, String)], format: EnvFileFormat) -> St
 // ============================================================================
 
 #[cfg(windows)]
+fn open_env_regkey(
+    scope: EnvVarScope,
+    write: bool,
+) -> CogniaResult<winreg::RegKey> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let (hive, subkey) = match scope {
+        EnvVarScope::User => (HKEY_CURRENT_USER, "Environment"),
+        EnvVarScope::System => (
+            HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+        _ => unreachable!(),
+    };
+
+    let predefined = RegKey::predef(hive);
+    if write {
+        predefined
+            .open_subkey_with_flags(subkey, KEY_READ | KEY_WRITE)
+            .map_err(|e| CogniaError::Internal(format!("Registry open failed: {}", e)))
+    } else {
+        predefined
+            .open_subkey(subkey)
+            .map_err(|e| CogniaError::Internal(format!("Registry open failed: {}", e)))
+    }
+}
+
+#[cfg(windows)]
+fn broadcast_env_change() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    let env_wide: Vec<u16> = "Environment\0".encode_utf16().collect();
+    unsafe {
+        SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            env_wide.as_ptr() as isize,
+            SMTO_ABORTIFHUNG,
+            5000,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
+#[cfg(windows)]
 async fn get_persistent_var_platform(
     key: &str,
     scope: EnvVarScope,
 ) -> CogniaResult<Option<String>> {
-    let scope_str = match scope {
-        EnvVarScope::User => "User",
-        EnvVarScope::System => "Machine",
-        _ => unreachable!(),
-    };
-    let cmd = format!(
-        "[Environment]::GetEnvironmentVariable('{}', '{}')",
-        key.replace('\'', "''"),
-        scope_str,
-    );
-    let output = super::process::execute("powershell", &["-NoProfile", "-Command", &cmd], None)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("PowerShell exec failed: {}", e)))?;
-    let val = output.stdout.trim().to_string();
-    if val.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(val))
+    let regkey = open_env_regkey(scope, false)?;
+    match regkey.get_value::<String, _>(key) {
+        Ok(val) => {
+            if val.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(val))
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(CogniaError::Internal(format!(
+            "Registry read failed: {}",
+            e
+        ))),
     }
 }
 
@@ -657,14 +831,7 @@ async fn get_persistent_var_platform(
                     let content = tokio::fs::read_to_string(&rc_path)
                         .await
                         .map_err(CogniaError::Io)?;
-                    let pattern = format!("export {}=", key);
-                    for line in content.lines() {
-                        let trimmed = line.trim();
-                        if trimmed.starts_with(&pattern) {
-                            let val = &trimmed[pattern.len()..];
-                            return Ok(Some(strip_quotes(val.trim()).to_string()));
-                        }
-                    }
+                    return Ok(find_var_in_shell_content(&content, key, &shell));
                 }
             }
             Ok(None)
@@ -673,26 +840,62 @@ async fn get_persistent_var_platform(
     }
 }
 
+#[cfg(not(windows))]
+fn find_var_in_shell_content(content: &str, key: &str, shell: &ShellType) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        match shell {
+            ShellType::Fish => {
+                let pattern = format!("set -gx {} ", key);
+                if trimmed.starts_with(&pattern) {
+                    let val = &trimmed[pattern.len()..];
+                    return Some(strip_quotes(val.trim()).to_string());
+                }
+            }
+            ShellType::Nushell => {
+                let pattern = format!("$env.{} = ", key);
+                if trimmed.starts_with(&pattern) {
+                    let val = &trimmed[pattern.len()..];
+                    return Some(strip_quotes(val.trim()).to_string());
+                }
+            }
+            ShellType::PowerShell => {
+                let pattern = format!("$env:{} = ", key);
+                if let Some(rest) = trimmed.strip_prefix(&pattern) {
+                    return Some(strip_quotes(rest.trim()).to_string());
+                }
+                let pattern_nospace = format!("$env:{}=", key);
+                if let Some(rest) = trimmed.strip_prefix(&pattern_nospace) {
+                    return Some(strip_quotes(rest.trim()).to_string());
+                }
+            }
+            _ => {
+                // Bash/Zsh: export KEY=VALUE
+                let pattern = format!("export {}=", key);
+                if trimmed.starts_with(&pattern) {
+                    let val = &trimmed[pattern.len()..];
+                    return Some(strip_quotes(val.trim()).to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(windows)]
 async fn set_persistent_var_platform(
     key: &str,
     value: &str,
     scope: EnvVarScope,
 ) -> CogniaResult<()> {
-    let scope_str = match scope {
-        EnvVarScope::User => "User",
-        EnvVarScope::System => "Machine",
-        _ => unreachable!(),
-    };
-    let cmd = format!(
-        "[Environment]::SetEnvironmentVariable('{}', '{}', '{}')",
-        key.replace('\'', "''"),
-        value.replace('\'', "''"),
-        scope_str,
-    );
-    super::process::execute("powershell", &["-NoProfile", "-Command", &cmd], None)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("PowerShell exec failed: {}", e)))?;
+    let regkey = open_env_regkey(scope, true)?;
+    regkey
+        .set_value(key, &value)
+        .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
+    broadcast_env_change();
     Ok(())
 }
 
@@ -717,19 +920,18 @@ async fn set_persistent_var_platform(
 
 #[cfg(windows)]
 async fn remove_persistent_var_platform(key: &str, scope: EnvVarScope) -> CogniaResult<()> {
-    let scope_str = match scope {
-        EnvVarScope::User => "User",
-        EnvVarScope::System => "Machine",
-        _ => unreachable!(),
-    };
-    let cmd = format!(
-        "[Environment]::SetEnvironmentVariable('{}', $null, '{}')",
-        key.replace('\'', "''"),
-        scope_str,
-    );
-    super::process::execute("powershell", &["-NoProfile", "-Command", &cmd], None)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("PowerShell exec failed: {}", e)))?;
+    let regkey = open_env_regkey(scope, true)?;
+    match regkey.delete_value(key) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(CogniaError::Internal(format!(
+                "Registry delete failed: {}",
+                e
+            )));
+        }
+    }
+    broadcast_env_change();
     Ok(())
 }
 
@@ -754,27 +956,25 @@ async fn remove_persistent_var_platform(key: &str, scope: EnvVarScope) -> Cognia
 
 #[cfg(windows)]
 async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<String>> {
-    let scope_str = match scope {
-        EnvVarScope::User => "User",
-        EnvVarScope::System => "Machine",
-        _ => unreachable!(),
-    };
-    let cmd = format!(
-        "[Environment]::GetEnvironmentVariable('Path', '{}')",
-        scope_str,
-    );
-    let output = super::process::execute("powershell", &["-NoProfile", "-Command", &cmd], None)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("PowerShell exec failed: {}", e)))?;
-    let val = output.stdout.trim();
-    if val.is_empty() {
-        Ok(Vec::new())
-    } else {
-        Ok(val
-            .split(';')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect())
+    let regkey = open_env_regkey(scope, false)?;
+    match regkey.get_value::<String, _>("Path") {
+        Ok(val) => {
+            let val = val.trim();
+            if val.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(val
+                    .split(';')
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string())
+                    .collect())
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(CogniaError::Internal(format!(
+            "Registry read PATH failed: {}",
+            e
+        ))),
     }
 }
 
@@ -834,23 +1034,19 @@ async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<St
                     let content = tokio::fs::read_to_string(&rc_path)
                         .await
                         .map_err(CogniaError::Io)?;
-                    for line in content.lines() {
-                        let trimmed = line.trim();
-                        if trimmed.starts_with("export PATH=")
-                            || trimmed.starts_with("export PATH=\"")
-                        {
-                            let val = &trimmed[12..];
-                            let val = strip_quotes(val.trim());
-                            // Extract only the literal paths, not $PATH references
-                            let parts: Vec<String> = val
-                                .split(':')
-                                .filter(|s| {
-                                    !s.is_empty() && !s.contains("$PATH") && !s.contains("${PATH}")
-                                })
-                                .map(|s| s.to_string())
-                                .collect();
-                            return Ok(parts);
-                        }
+                    if let Some(val) = find_var_in_shell_content(&content, "PATH", &shell) {
+                        let sep = ':';
+                        let parts: Vec<String> = val
+                            .split(sep)
+                            .filter(|s| {
+                                !s.is_empty()
+                                    && !s.contains("$PATH")
+                                    && !s.contains("${PATH}")
+                                    && !s.contains("$env.PATH")
+                            })
+                            .map(|s| s.to_string())
+                            .collect();
+                        return Ok(parts);
                     }
                 }
             }
@@ -862,20 +1058,12 @@ async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<St
 
 #[cfg(windows)]
 async fn set_persistent_path_platform(entries: &[String], scope: EnvVarScope) -> CogniaResult<()> {
-    let scope_str = match scope {
-        EnvVarScope::User => "User",
-        EnvVarScope::System => "Machine",
-        _ => unreachable!(),
-    };
+    let regkey = open_env_regkey(scope, true)?;
     let joined = entries.join(";");
-    let cmd = format!(
-        "[Environment]::SetEnvironmentVariable('Path', '{}', '{}')",
-        joined.replace('\'', "''"),
-        scope_str,
-    );
-    super::process::execute("powershell", &["-NoProfile", "-Command", &cmd], None)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("PowerShell exec failed: {}", e)))?;
+    regkey
+        .set_value("Path", &joined)
+        .map_err(|e| CogniaError::Internal(format!("Registry write PATH failed: {}", e)))?;
+    broadcast_env_change();
     Ok(())
 }
 
@@ -886,9 +1074,14 @@ async fn set_persistent_path_platform(entries: &[String], scope: EnvVarScope) ->
             #[cfg(target_os = "macos")]
             {
                 let content = entries.join("\n") + "\n";
-                tokio::fs::write("/etc/paths", content)
+                tokio::fs::write("/etc/paths.d/cognia", content)
                     .await
-                    .map_err(CogniaError::Io)?;
+                    .map_err(|e| {
+                        CogniaError::PermissionDenied(format!(
+                            "Cannot write /etc/paths.d/cognia: {}",
+                            e
+                        ))
+                    })?;
             }
             #[cfg(target_os = "linux")]
             {
@@ -937,6 +1130,20 @@ async fn upsert_shell_rc_var(
                 format!("set -gx {} \"{}\"", key, escaped),
             )
         }
+        ShellType::Nushell => {
+            let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+            (
+                format!("$env.{} = ", key),
+                format!("$env.{} = \"{}\"", key, escaped),
+            )
+        }
+        ShellType::PowerShell => {
+            let escaped = value.replace('`', "``").replace('"', "`\"");
+            (
+                format!("$env:{} = ", key),
+                format!("$env:{} = \"{}\"", key, escaped),
+            )
+        }
         _ => {
             let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
             (
@@ -978,14 +1185,19 @@ async fn remove_shell_rc_var(rc_path: &Path, key: &str, shell: &ShellType) -> Co
         .await
         .map_err(CogniaError::Io)?;
 
-    let pattern = match shell {
-        ShellType::Fish => format!("set -gx {} ", key),
-        _ => format!("export {}=", key),
+    let patterns: Vec<String> = match shell {
+        ShellType::Fish => vec![format!("set -gx {} ", key)],
+        ShellType::Nushell => vec![format!("$env.{} = ", key), format!("$env.{} =", key)],
+        ShellType::PowerShell => vec![format!("$env:{} = ", key), format!("$env:{}=", key)],
+        _ => vec![format!("export {}=", key)],
     };
 
     let lines: Vec<&str> = content
         .lines()
-        .filter(|line| !line.trim().starts_with(&pattern))
+        .filter(|line| {
+            let trimmed = line.trim();
+            !patterns.iter().any(|p| trimmed.starts_with(p))
+        })
         .collect();
 
     let mut output = lines.join("\n");
@@ -1357,5 +1569,135 @@ mod tests {
         assert_eq!(strip_quotes("'world'"), "world");
         assert_eq!(strip_quotes("no quotes"), "no quotes");
         assert_eq!(strip_quotes("\"mismatched'"), "\"mismatched'");
+    }
+
+    #[test]
+    fn test_nushell_shell_type_roundtrip() {
+        assert_eq!(ShellType::from_id("nushell"), Some(ShellType::Nushell));
+        assert_eq!(ShellType::from_id("nu"), Some(ShellType::Nushell));
+        assert_eq!(ShellType::Nushell.id(), "nushell");
+        assert_eq!(ShellType::Nushell.display_name(), "Nushell");
+    }
+
+    #[test]
+    fn test_nushell_shell_commands() {
+        let mods = EnvModifications::new().set_var("FOO", "bar");
+        let nu_cmd = mods.to_shell_commands(ShellType::Nushell);
+        assert!(nu_cmd.contains("$env.FOO = \"bar\""));
+
+        let mods2 = EnvModifications::new().unset_var("BAZ");
+        let nu_unset = mods2.to_shell_commands(ShellType::Nushell);
+        assert!(nu_unset.contains("hide-env BAZ"));
+    }
+
+    #[test]
+    fn test_nushell_path_commands() {
+        let mods = EnvModifications::new()
+            .prepend_path("/usr/local/bin")
+            .append_path("/opt/bin");
+        let nu_cmd = mods.to_shell_commands(ShellType::Nushell);
+        assert!(nu_cmd.contains("$env.PATH = ($env.PATH | prepend \"/usr/local/bin\")"));
+        assert!(nu_cmd.contains("$env.PATH = ($env.PATH | append \"/opt/bin\")"));
+    }
+
+    #[test]
+    fn test_generate_env_file_nushell() {
+        let vars = vec![("FOO".to_string(), "bar".to_string())];
+        let output = generate_env_file(&vars, EnvFileFormat::Nushell);
+        assert!(output.contains("$env.FOO = \"bar\""));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_find_var_in_shell_content_bash() {
+        let content = "# comment\nexport MY_VAR=\"hello world\"\nexport OTHER=123";
+        let result = find_var_in_shell_content(content, "MY_VAR", &ShellType::Bash);
+        assert_eq!(result, Some("hello world".to_string()));
+
+        let result2 = find_var_in_shell_content(content, "MISSING", &ShellType::Bash);
+        assert_eq!(result2, None);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_find_var_in_shell_content_fish() {
+        let content = "set -gx MY_VAR \"hello\"\nset -gx PATH /usr/bin";
+        let result = find_var_in_shell_content(content, "MY_VAR", &ShellType::Fish);
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_find_var_in_shell_content_nushell() {
+        let content = "$env.MY_VAR = \"hello\"\n$env.PATH = \"/usr/bin\"";
+        let result = find_var_in_shell_content(content, "MY_VAR", &ShellType::Nushell);
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_find_var_in_shell_content_powershell() {
+        let content = "$env:MY_VAR = \"hello\"\n$env:PATH = \"/usr/bin\"";
+        let result = find_var_in_shell_content(content, "MY_VAR", &ShellType::PowerShell);
+        assert_eq!(result, Some("hello".to_string()));
+
+        // Also test without spaces around =
+        let content2 = "$env:FOO=\"bar\"";
+        let result2 = find_var_in_shell_content(content2, "FOO", &ShellType::PowerShell);
+        assert_eq!(result2, Some("bar".to_string()));
+    }
+
+    #[test]
+    fn test_parse_env_file_etc_environment() {
+        let content = "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\"\nLANG=en_US.UTF-8\n# comment\nFOO=\"bar baz\"";
+        let result = parse_env_file(content);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].0, "PATH");
+        assert!(result[0].1.contains("/usr/local/sbin"));
+        assert_eq!(result[1], ("LANG".to_string(), "en_US.UTF-8".to_string()));
+        assert_eq!(result[2], ("FOO".to_string(), "bar baz".to_string()));
+    }
+
+    #[test]
+    fn test_deduplicate_path_logic() {
+        use std::collections::HashSet;
+
+        // Case-sensitive dedup (Unix)
+        let entries = vec![
+            "/usr/bin".to_string(),
+            "/usr/local/bin".to_string(),
+            "/usr/bin".to_string(),
+            "/USR/BIN".to_string(),
+        ];
+        let mut seen = HashSet::new();
+        let deduped: Vec<String> = entries
+            .into_iter()
+            .filter(|e| seen.insert(e.clone()))
+            .collect();
+        // On case-sensitive: /usr/bin and /USR/BIN are different
+        assert_eq!(deduped.len(), 3);
+        assert_eq!(deduped[0], "/usr/bin");
+        assert_eq!(deduped[1], "/usr/local/bin");
+        assert_eq!(deduped[2], "/USR/BIN");
+    }
+
+    #[test]
+    fn test_deduplicate_path_case_insensitive() {
+        use std::collections::HashSet;
+
+        // Case-insensitive dedup (Windows-style)
+        let entries = vec![
+            "C:\\Windows".to_string(),
+            "C:\\Users".to_string(),
+            "c:\\windows".to_string(),
+        ];
+        let mut seen = HashSet::new();
+        let deduped: Vec<String> = entries
+            .into_iter()
+            .filter(|e| seen.insert(e.to_lowercase()))
+            .collect();
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0], "C:\\Windows");
+        assert_eq!(deduped[1], "C:\\Users");
     }
 }

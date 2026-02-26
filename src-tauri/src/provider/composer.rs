@@ -23,13 +23,9 @@ pub struct ComposerProvider {
 
 impl ComposerProvider {
     pub fn new() -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent("CogniaLauncher/0.1.0")
-            .build()
-            .unwrap_or_default();
-
-        Self { client }
+        Self {
+            client: crate::platform::proxy::get_shared_client(),
+        }
     }
 
     async fn run_composer(&self, args: &[&str]) -> CogniaResult<String> {
@@ -380,14 +376,11 @@ impl Provider for ComposerProvider {
     async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         // Use Packagist API to get package dependencies
         let url = format!("https://repo.packagist.org/p2/{}.json", name);
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         if let Ok(resp) = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await
         {

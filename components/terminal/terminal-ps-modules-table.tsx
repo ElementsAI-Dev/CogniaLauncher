@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package, Search, RefreshCw, FileCode } from 'lucide-react';
+import { Package, Search, RefreshCw, FileCode, Trash2, ArrowUpCircle } from 'lucide-react';
 import type { PSModuleInfo, PSScriptInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -24,6 +24,9 @@ interface TerminalPsModulesTableProps {
   scripts: PSScriptInfo[];
   onFetchModules: () => Promise<void>;
   onFetchScripts: () => Promise<void>;
+  onInstallModule?: (name: string, scope: string) => Promise<void>;
+  onUninstallModule?: (name: string) => Promise<void>;
+  onUpdateModule?: (name: string) => Promise<void>;
   loading?: boolean;
 }
 
@@ -32,6 +35,9 @@ export function TerminalPsModulesTable({
   scripts,
   onFetchModules,
   onFetchScripts,
+  onInstallModule,
+  onUninstallModule,
+  onUpdateModule,
   loading,
 }: TerminalPsModulesTableProps) {
   const { t } = useLocale();
@@ -73,10 +79,27 @@ export function TerminalPsModulesTable({
               <CardTitle className="text-base">{t('terminal.psModulesScripts')}</CardTitle>
               <CardDescription>{t('terminal.psModulesScriptsDesc')}</CardDescription>
             </div>
-            <Button size="sm" variant="outline" onClick={handleRefresh}>
-              <RefreshCw className="h-3.5 w-3.5 mr-1" />
-              {t('common.refresh')}
-            </Button>
+            <div className="flex items-center gap-2">
+              {onInstallModule && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const name = window.prompt(t('terminal.installModuleName'));
+                    if (name) {
+                      onInstallModule(name.trim(), 'CurrentUser');
+                    }
+                  }}
+                >
+                  <Package className="h-3.5 w-3.5 mr-1" />
+                  {t('terminal.installModule')}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={handleRefresh}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                {t('common.refresh')}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -134,6 +157,27 @@ export function TerminalPsModulesTable({
                           <Badge variant="secondary" className="text-xs">
                             {mod.moduleType}
                           </Badge>
+                          {onUpdateModule && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => { e.stopPropagation(); onUpdateModule(mod.name); }}
+                              title={t('terminal.updateModule')}
+                            >
+                              <ArrowUpCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {onUninstallModule && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              onClick={(e) => { e.stopPropagation(); onUninstallModule(mod.name); }}
+                              title={t('terminal.uninstallModule')}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}

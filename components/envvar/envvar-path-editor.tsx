@@ -22,7 +22,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown } from 'lucide-react';
+import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { EnvVarScope, PathEntryInfo } from '@/types/tauri';
 
@@ -33,9 +34,10 @@ interface EnvVarPathEditorProps {
   onAdd: (path: string, position?: number) => Promise<boolean>;
   onRemove: (path: string) => Promise<boolean>;
   onReorder: (entries: string[]) => Promise<boolean>;
+  onDeduplicate: () => Promise<number>;
   onRefresh: () => void;
   loading: boolean;
-  t: (key: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function EnvVarPathEditor({
@@ -45,6 +47,7 @@ export function EnvVarPathEditor({
   onAdd,
   onRemove,
   onReorder,
+  onDeduplicate,
   onRefresh,
   loading,
   t,
@@ -67,6 +70,17 @@ export function EnvVarPathEditor({
       onRefresh();
     }
   }, [onRemove, onRefresh]);
+
+  const handleDeduplicate = useCallback(async () => {
+    const removed = await onDeduplicate();
+    if (removed > 0) {
+      toast.success(t('envvar.pathEditor.deduplicateSuccess', { count: removed }));
+      onRefresh();
+    }
+  }, [onDeduplicate, onRefresh, t]);
+
+  const missingCount = pathEntries.filter((e) => !e.exists || !e.isDirectory).length;
+  const duplicateCount = pathEntries.filter((e) => e.isDuplicate).length;
 
   const handleMove = useCallback(async (index: number, direction: 'up' | 'down') => {
     const entries = pathEntries.map((e) => e.path);
@@ -95,7 +109,23 @@ export function EnvVarPathEditor({
         </Select>
         <span className="text-sm text-muted-foreground">
           {pathEntries.length} {t('envvar.pathEditor.title').toLowerCase()}
+          {missingCount > 0 && (
+            <span className="text-red-500 ml-2">
+              · {t('envvar.pathEditor.missingCount', { count: missingCount })}
+            </span>
+          )}
+          {duplicateCount > 0 && (
+            <span className="text-amber-500 ml-2">
+              · {t('envvar.pathEditor.duplicateCount', { count: duplicateCount })}
+            </span>
+          )}
         </span>
+        {duplicateCount > 0 && (
+          <Button variant="outline" size="sm" onClick={handleDeduplicate} disabled={loading} className="gap-1.5 ml-auto">
+            <Copy className="h-3.5 w-3.5" />
+            {t('envvar.pathEditor.deduplicate')}
+          </Button>
+        )}
       </div>
 
       {/* Add new entry */}
@@ -146,6 +176,15 @@ export function EnvVarPathEditor({
                   <><XCircle className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.missing')}</>
                 )}
               </Badge>
+
+              {entry.isDuplicate && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                >
+                  {t('envvar.pathEditor.duplicate')}
+                </Badge>
+              )}
 
               <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 <Button

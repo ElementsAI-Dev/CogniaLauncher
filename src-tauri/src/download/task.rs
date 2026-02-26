@@ -25,6 +25,12 @@ pub struct DownloadConfig {
     /// Whether to allow resume from partial download
     #[serde(default = "default_allow_resume")]
     pub allow_resume: bool,
+    /// Whether to auto-extract archive after download completes
+    #[serde(default)]
+    pub auto_extract: bool,
+    /// Destination directory for extraction (None = same dir as download)
+    #[serde(default)]
+    pub extract_dest: Option<PathBuf>,
 }
 
 fn default_max_retries() -> u32 {
@@ -48,6 +54,8 @@ impl Default for DownloadConfig {
             verify_checksum: default_verify_checksum(),
             speed_limit: 0,
             allow_resume: default_allow_resume(),
+            auto_extract: false,
+            extract_dest: None,
         }
     }
 }
@@ -158,6 +166,9 @@ pub struct DownloadTask {
     /// Custom HTTP headers to send with the download request (e.g. auth tokens)
     #[serde(default)]
     pub headers: std::collections::HashMap<String, String>,
+    /// Server-provided filename from Content-Disposition header
+    #[serde(default)]
+    pub server_filename: Option<String>,
 }
 
 impl DownloadTask {
@@ -182,6 +193,7 @@ impl DownloadTask {
             provider: None,
             metadata: std::collections::HashMap::new(),
             headers: std::collections::HashMap::new(),
+            server_filename: None,
         }
     }
 
@@ -484,6 +496,8 @@ mod tests {
             verify_checksum: false,
             speed_limit: 1024 * 1024,
             allow_resume: false,
+            auto_extract: false,
+            extract_dest: None,
         };
 
         let task = DownloadTask::builder(
@@ -598,5 +612,114 @@ mod tests {
         );
         // Default should be false until server confirms
         assert!(!task.supports_resume);
+    }
+
+    #[test]
+    fn test_download_task_server_filename_default() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        assert!(task.server_filename.is_none());
+    }
+
+    #[test]
+    fn test_download_config_auto_extract_default() {
+        let config = DownloadConfig::default();
+        assert!(!config.auto_extract);
+        assert!(config.extract_dest.is_none());
+    }
+
+    #[test]
+    fn test_download_config_auto_extract_enabled() {
+        let config = DownloadConfig {
+            auto_extract: true,
+            extract_dest: Some(PathBuf::from("/tmp/extracted")),
+            ..Default::default()
+        };
+        assert!(config.auto_extract);
+        assert_eq!(
+            config.extract_dest,
+            Some(PathBuf::from("/tmp/extracted"))
+        );
+    }
+
+    #[test]
+    fn test_download_task_builder_with_auto_extract_config() {
+        let config = DownloadConfig {
+            auto_extract: true,
+            extract_dest: Some(PathBuf::from("/opt/packages")),
+            ..Default::default()
+        };
+
+        let task = DownloadTask::builder(
+            "https://example.com/archive.tar.gz".to_string(),
+            PathBuf::from("/tmp/archive.tar.gz"),
+            "Archive".to_string(),
+        )
+        .with_config(config)
+        .build();
+
+        assert!(task.config.auto_extract);
+        assert_eq!(
+            task.config.extract_dest,
+            Some(PathBuf::from("/opt/packages"))
+        );
+    }
+
+    #[test]
+    fn test_download_config_serde_roundtrip() {
+        let config = DownloadConfig {
+            max_retries: 5,
+            timeout_secs: 600,
+            verify_checksum: false,
+            speed_limit: 2048,
+            allow_resume: false,
+            auto_extract: true,
+            extract_dest: Some(PathBuf::from("/tmp/out")),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: DownloadConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.max_retries, 5);
+        assert_eq!(deserialized.timeout_secs, 600);
+        assert!(!deserialized.verify_checksum);
+        assert_eq!(deserialized.speed_limit, 2048);
+        assert!(!deserialized.allow_resume);
+        assert!(deserialized.auto_extract);
+        assert_eq!(
+            deserialized.extract_dest,
+            Some(PathBuf::from("/tmp/out"))
+        );
+    }
+
+    #[test]
+    fn test_download_config_serde_defaults() {
+        // Deserialize with missing optional fields => defaults apply
+        let json = r#"{"maxRetries":3,"timeoutSecs":300,"verifyChecksum":true,"speedLimit":0,"allowResume":true}"#;
+        let config: DownloadConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.auto_extract);
+        assert!(config.extract_dest.is_none());
+    }
+
+    #[test]
+    fn test_download_task_serde_server_filename() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        task.server_filename = Some("actual-file-v2.0.zip".to_string());
+
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains("actual-file-v2.0.zip"));
+
+        let deserialized: DownloadTask = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            deserialized.server_filename,
+            Some("actual-file-v2.0.zip".to_string())
+        );
     }
 }

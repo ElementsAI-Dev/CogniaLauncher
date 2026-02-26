@@ -597,6 +597,8 @@ html:not(.no-transitions) [data-state="closed"] {
 .skeleton-card-4 { animation: skeleton-card-in 0.4s ease-out 0.2s both; }
 .skeleton-card-5 { animation: skeleton-card-in 0.4s ease-out 0.25s both; }
 .skeleton-card-6 { animation: skeleton-card-in 0.4s ease-out 0.3s both; }
+.skeleton-card-7 { animation: skeleton-card-in 0.4s ease-out 0.35s both; }
+.skeleton-card-8 { animation: skeleton-card-in 0.4s ease-out 0.4s both; }
 
 @keyframes skeleton-card-in {
   from {
@@ -631,7 +633,9 @@ html:not(.no-transitions) [data-state="closed"] {
   .skeleton-card-3,
   .skeleton-card-4,
   .skeleton-card-5,
-  .skeleton-card-6 {
+  .skeleton-card-6,
+  .skeleton-card-7,
+  .skeleton-card-8 {
     animation: none !important;
   }
   .splash-ring {

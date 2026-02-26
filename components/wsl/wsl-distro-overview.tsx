@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -17,10 +18,22 @@ import {
   User,
   Server,
   Box,
+  MemoryStick,
+  RefreshCw,
+  ArrowUpCircle,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatBytes } from '@/lib/utils';
 import { WslDistroConfigCard } from '@/components/wsl/wsl-distro-config-card';
-import type { WslDistroStatus, WslDiskUsage, WslDistroConfig, WslDistroEnvironment } from '@/types/tauri';
+import type {
+  WslDistroStatus,
+  WslDiskUsage,
+  WslDistroConfig,
+  WslDistroEnvironment,
+  WslDistroResources,
+  WslPackageUpdateResult,
+} from '@/types/tauri';
 
 interface WslDistroOverviewProps {
   distroName: string;
@@ -30,6 +43,8 @@ interface WslDistroOverviewProps {
   getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
   setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
   detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
+  getDistroResources?: (distro: string) => Promise<WslDistroResources | null>;
+  updateDistroPackages?: (distro: string, mode: string) => Promise<WslPackageUpdateResult>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -51,6 +66,11 @@ function formatPmLabel(pm: string): string {
   return labels[pm] ?? pm;
 }
 
+/** Format KB to human-readable */
+function formatKb(kb: number): string {
+  return formatBytes(kb * 1024);
+}
+
 export function WslDistroOverview({
   distroName,
   distro,
@@ -59,6 +79,8 @@ export function WslDistroOverview({
   getDistroConfig,
   setDistroConfigValue,
   detectDistroEnv,
+  getDistroResources,
+  updateDistroPackages,
   t,
 }: WslDistroOverviewProps) {
   const [diskUsage, setDiskUsage] = useState<WslDiskUsage | null>(null);
@@ -66,6 +88,9 @@ export function WslDistroOverview({
   const [loadingDisk, setLoadingDisk] = useState(true);
   const [env, setEnv] = useState<WslDistroEnvironment | null>(null);
   const [envFetched, setEnvFetched] = useState(false);
+  const [resources, setResources] = useState<WslDistroResources | null>(null);
+  const [resourcesFetched, setResourcesFetched] = useState(false);
+  const [updatingPkgs, setUpdatingPkgs] = useState<'update' | 'upgrade' | null>(null);
 
   const isRunning = distro?.state.toLowerCase() === 'running';
   const loadingEnv = isRunning && !envFetched;
@@ -114,6 +139,49 @@ export function WslDistroOverview({
       });
     return () => { cancelled = true; };
   }, [distroName, isRunning, getIpAddress]);
+
+  // Load resource usage (only when running and prop provided)
+  useEffect(() => {
+    if (!isRunning || !getDistroResources) return;
+    let cancelled = false;
+    getDistroResources(distroName)
+      .then((res) => {
+        if (!cancelled) setResources(res);
+      })
+      .catch(() => {
+        if (!cancelled) setResources(null);
+      })
+      .finally(() => {
+        if (!cancelled) setResourcesFetched(true);
+      });
+    return () => { cancelled = true; };
+  }, [distroName, isRunning, getDistroResources]);
+
+  const handleRefreshResources = useCallback(() => {
+    if (!getDistroResources) return;
+    setResourcesFetched(false);
+    getDistroResources(distroName)
+      .then(setResources)
+      .catch(() => setResources(null))
+      .finally(() => setResourcesFetched(true));
+  }, [distroName, getDistroResources]);
+
+  const handlePackageAction = useCallback(async (mode: 'update' | 'upgrade') => {
+    if (!updateDistroPackages) return;
+    setUpdatingPkgs(mode);
+    try {
+      const result = await updateDistroPackages(distroName, mode);
+      if (result.exitCode === 0) {
+        toast.success(t('wsl.detail.pkgActionSuccess').replace('{mode}', mode).replace('{pm}', result.packageManager));
+      } else {
+        toast.error(`${result.command} failed (exit ${result.exitCode}): ${result.stderr.slice(0, 200)}`);
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setUpdatingPkgs(null);
+    }
+  }, [distroName, updateDistroPackages, t]);
 
   // Derive displayed IP: only show when running
   const displayedIp = isRunning ? ipAddress : null;
@@ -319,6 +387,134 @@ export function WslDistroOverview({
                 {t('wsl.detail.envDetectFailed')}
               </p>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Resource Usage (only when running and prop provided) */}
+      {isRunning && getDistroResources && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <MemoryStick className="h-4 w-4 text-muted-foreground" />
+                {t('wsl.detail.resources')}
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleRefreshResources}
+                disabled={!resourcesFetched}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${!resourcesFetched ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!resourcesFetched ? (
+              <div className="grid gap-3 grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : resources ? (
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+                {/* Memory */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MemoryStick className="h-3 w-3" />
+                    {t('wsl.detail.memory')}
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {formatKb(resources.memUsedKb)} / {formatKb(resources.memTotalKb)}
+                  </p>
+                  <Progress
+                    value={resources.memTotalKb > 0 ? (resources.memUsedKb / resources.memTotalKb) * 100 : 0}
+                    className="h-1.5"
+                  />
+                </div>
+                {/* Swap */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">{t('wsl.detail.swap')}</p>
+                  {resources.swapTotalKb > 0 ? (
+                    <>
+                      <p className="text-sm font-semibold">
+                        {formatKb(resources.swapUsedKb)} / {formatKb(resources.swapTotalKb)}
+                      </p>
+                      <Progress
+                        value={(resources.swapUsedKb / resources.swapTotalKb) * 100}
+                        className="h-1.5"
+                      />
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t('wsl.detail.noSwap')}</p>
+                  )}
+                </div>
+                {/* CPU & Load */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Cpu className="h-3 w-3" />
+                    {t('wsl.detail.cpuLoad')}
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {resources.cpuCount} {resources.cpuCount === 1 ? 'core' : 'cores'}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {t('wsl.detail.loadAvg')}: {resources.loadAvg[0].toFixed(2)} / {resources.loadAvg[1].toFixed(2)} / {resources.loadAvg[2].toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('wsl.detail.resourcesFailed')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Package Update (only when running with env detected) */}
+      {isRunning && updateDistroPackages && env && env.packageManager !== 'unknown' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              {t('wsl.detail.packageActions')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handlePackageAction('update')}
+                disabled={updatingPkgs !== null}
+              >
+                {updatingPkgs === 'update' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                {t('wsl.detail.pkgUpdate')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handlePackageAction('upgrade')}
+                disabled={updatingPkgs !== null}
+              >
+                {updatingPkgs === 'upgrade' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                )}
+                {t('wsl.detail.pkgUpgrade')}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {formatPmLabel(env.packageManager)}
+              </span>
+            </div>
           </CardContent>
         </Card>
       )}

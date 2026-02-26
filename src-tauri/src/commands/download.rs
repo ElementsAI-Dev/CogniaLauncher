@@ -35,6 +35,12 @@ pub struct DownloadTaskInfo {
     pub created_at: String,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
+    pub retries: u32,
+    pub priority: i32,
+    pub expected_checksum: Option<String>,
+    pub supports_resume: bool,
+    pub metadata: std::collections::HashMap<String, String>,
+    pub server_filename: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +81,12 @@ impl From<&DownloadTask> for DownloadTaskInfo {
             created_at: task.created_at.to_rfc3339(),
             started_at: task.started_at.map(|t| t.to_rfc3339()),
             completed_at: task.completed_at.map(|t| t.to_rfc3339()),
+            retries: task.retries,
+            priority: task.priority,
+            expected_checksum: task.expected_checksum.clone(),
+            supports_resume: task.supports_resume,
+            metadata: task.metadata.clone(),
+            server_filename: task.server_filename.clone(),
         }
     }
 }
@@ -107,6 +119,12 @@ pub struct DownloadRequest {
     pub checksum: Option<String>,
     pub priority: Option<i32>,
     pub provider: Option<String>,
+    #[serde(default)]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub auto_extract: Option<bool>,
+    #[serde(default)]
+    pub extract_dest: Option<String>,
 }
 
 /// Initialize the download manager and start event forwarding
@@ -213,6 +231,8 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
                         DownloadEvent::TaskPaused { .. } => "download-task-paused",
                         DownloadEvent::TaskResumed { .. } => "download-task-resumed",
                         DownloadEvent::TaskCancelled { .. } => "download-task-cancelled",
+                        DownloadEvent::TaskExtracting { .. } => "download-task-extracting",
+                        DownloadEvent::TaskExtracted { .. } => "download-task-extracted",
                         _ => unreachable!(),
                     };
                     let _ = app_clone.emit(event_name, &event);
@@ -363,6 +383,11 @@ pub async fn download_add(
     if let Some(ref provider) = request.provider {
         if !provider.is_empty() {
             builder = builder.with_provider(provider.clone());
+        }
+    }
+    if let Some(headers) = request.headers {
+        if !headers.is_empty() {
+            builder = builder.with_headers(headers);
         }
     }
 
@@ -634,6 +659,46 @@ pub async fn download_open_file(path: String) -> Result<(), String> {
 pub async fn download_reveal_file(path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(path)
         .map_err(|e| format!("Failed to reveal file: {}", e))
+}
+
+/// Set priority for a download task
+#[tauri::command]
+pub async fn download_set_priority(
+    task_id: String,
+    priority: i32,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<(), String> {
+    let mgr = manager.read().await;
+    mgr.set_priority(&task_id, priority)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Force-retry a single terminal task (failed/cancelled/completed)
+#[tauri::command]
+pub async fn download_retry(
+    task_id: String,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<(), String> {
+    let mgr = manager.read().await;
+    mgr.retry_task(&task_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Calculate SHA256 checksum of a file
+#[tauri::command]
+pub async fn download_calculate_checksum(path: String) -> Result<String, String> {
+    use crate::platform::fs;
+
+    let file_path = PathBuf::from(&path);
+    if !file_path.exists() {
+        return Err("File not found".to_string());
+    }
+
+    fs::calculate_sha256(&file_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Batch pause selected downloads
@@ -931,6 +996,27 @@ pub async fn disk_space_check(path: String, required: u64) -> Result<bool, Strin
     disk::check_available_space(std::path::Path::new(&path), required)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Extract an archive to a destination directory
+///
+/// Supports: .zip, .tar.gz, .tgz, .tar.xz, .txz, .tar.bz2, .tbz2, .tar.zst, .tzst, .7z
+#[tauri::command]
+pub async fn download_extract(
+    archive_path: String,
+    dest_path: String,
+) -> Result<Vec<String>, String> {
+    let archive = std::path::Path::new(&archive_path);
+    let dest = std::path::Path::new(&dest_path);
+
+    let files = crate::core::installer::extract_archive(archive, dest)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(files
+        .into_iter()
+        .map(|p| p.display().to_string())
+        .collect())
 }
 
 #[cfg(test)]
@@ -1277,5 +1363,61 @@ mod tests {
 
         assert_eq!(deserialized.total_tasks, 5);
         assert_eq!(deserialized.overall_progress, 50.0);
+    }
+
+    #[test]
+    fn test_download_request_with_headers() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File",
+            "headers": {
+                "Authorization": "Bearer token123",
+                "X-Custom": "value"
+            }
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        let headers = request.headers.unwrap();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers.get("Authorization"), Some(&"Bearer token123".to_string()));
+        assert_eq!(headers.get("X-Custom"), Some(&"value".to_string()));
+    }
+
+    #[test]
+    fn test_download_request_without_headers() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File"
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+        assert!(request.headers.is_none());
+    }
+
+    #[test]
+    fn test_download_task_info_enriched_fields() {
+        let mut task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        )
+        .with_checksum("sha256abc".to_string())
+        .with_priority(10)
+        .with_metadata("version".to_string(), "1.0.0".to_string())
+        .build();
+
+        task.retries = 2;
+        task.supports_resume = true;
+
+        let info = DownloadTaskInfo::from(&task);
+
+        assert_eq!(info.retries, 2);
+        assert_eq!(info.priority, 10);
+        assert_eq!(info.expected_checksum, Some("sha256abc".to_string()));
+        assert!(info.supports_resume);
+        assert_eq!(info.metadata.get("version"), Some(&"1.0.0".to_string()));
     }
 }

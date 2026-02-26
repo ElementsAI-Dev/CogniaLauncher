@@ -72,14 +72,11 @@ impl GemProvider {
     /// Fetch gem info from rubygems.org API
     async fn fetch_rubygems_info(&self, name: &str) -> CogniaResult<serde_json::Value> {
         let url = format!("https://rubygems.org/api/v1/gems/{}.json", name);
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         let resp = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await
             .map_err(|e| CogniaError::Provider(e.to_string()))?;
@@ -99,14 +96,11 @@ impl GemProvider {
     /// Fetch gem versions from rubygems.org API
     async fn fetch_rubygems_versions(&self, name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let url = format!("https://rubygems.org/api/v1/versions/{}.json", name);
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         let resp = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await
             .map_err(|e| CogniaError::Provider(e.to_string()))?;
@@ -195,14 +189,11 @@ impl Provider for GemProvider {
             "https://rubygems.org/api/v1/search.json?query={}&page=1",
             query
         );
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| CogniaError::Provider(e.to_string()))?;
+        let client = crate::platform::proxy::get_shared_client();
 
         let resp = client
             .get(&url)
-            .header("User-Agent", "CogniaLauncher/1.0")
+            .timeout(Duration::from_secs(15))
             .send()
             .await;
 

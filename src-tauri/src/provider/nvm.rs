@@ -303,7 +303,7 @@ impl Provider for NvmProvider {
                         None
                     }
                 })
-                .last();
+                .next_back();
 
             if let Some(latest) = latest_in_major {
                 let latest_clean = latest.trim_start_matches('v');

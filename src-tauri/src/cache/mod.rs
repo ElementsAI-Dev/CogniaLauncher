@@ -1,7 +1,7 @@
 pub mod db;
 pub mod download;
 pub mod download_history;
-pub mod enhanced;
+pub mod download_resumer;
 pub mod external;
 pub mod history;
 pub mod metadata;
@@ -12,7 +12,7 @@ pub mod sqlite_db;
 pub use db::{CacheDb, CacheEntry, CacheEntryType, CacheIndex, CacheStats};
 pub use download::DownloadCache;
 pub use download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
-pub use enhanced::DownloadResumer;
+pub use download_resumer::{DownloadResumer, PartialDownload};
 pub use external::{
     CombinedCacheStats, ExternalCacheCleanResult, ExternalCacheInfo, ExternalCacheProvider,
 };
@@ -21,4 +21,6 @@ pub use history::{
 };
 pub use metadata::{CachedMetadata, MetadataCache, MetadataCacheStats};
 pub use migration::{MigrationMode, MigrationResult, MigrationValidation};
-pub use sqlite_db::{CacheAccessStats, SqliteCacheDb};
+pub use sqlite_db::{
+    CacheAccessStats, CacheSizeSnapshot, DatabaseInfo, IntegrityCheckResult, SqliteCacheDb,
+};

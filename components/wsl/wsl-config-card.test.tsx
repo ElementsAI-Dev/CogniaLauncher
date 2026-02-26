@@ -128,4 +128,72 @@ describe('WslConfigCard', () => {
 
     expect(screen.queryByText('.wslconfig Settings')).not.toBeInTheDocument();
   });
+
+  // Typed controls tests (Phase 5 enhancements)
+  describe('typed quick settings controls', () => {
+    it('renders all 11 quick settings (not sliced to 4)', () => {
+      render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+      // Text-type settings
+      expect(screen.getByText('Memory')).toBeInTheDocument();
+      expect(screen.getByText('Processors')).toBeInTheDocument();
+      expect(screen.getByText('Swap')).toBeInTheDocument();
+
+      // Bool-type settings
+      expect(screen.getByText('Localhost Forwarding')).toBeInTheDocument();
+      expect(screen.getByText('Nested Virtualization')).toBeInTheDocument();
+      expect(screen.getByText('GUI Applications')).toBeInTheDocument();
+      expect(screen.getByText('Sparse VHD')).toBeInTheDocument();
+      expect(screen.getByText('DNS Tunneling')).toBeInTheDocument();
+      expect(screen.getByText('Firewall')).toBeInTheDocument();
+
+      // Select-type settings
+      expect(screen.getByText('Networking Mode')).toBeInTheDocument();
+      expect(screen.getByText('Auto Memory Reclaim')).toBeInTheDocument();
+    });
+
+    it('renders switch controls for boolean settings', () => {
+      render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+      // Boolean settings produce switch elements
+      const switches = screen.getAllByRole('switch');
+      // 6 boolean settings: localhostForwarding, nestedVirtualization, guiApplications,
+      // sparseVhd, dnsTunneling, firewall
+      expect(switches.length).toBe(6);
+    });
+
+    it('renders text inputs for memory/processors/swap', () => {
+      render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+      expect(screen.getByPlaceholderText('4GB')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('2')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('8GB')).toBeInTheDocument();
+    });
+
+    it('switch reflects current config value', () => {
+      const configWithBool: WslConfig = {
+        wsl2: { localhostForwarding: 'true' },
+      };
+      render(<WslConfigCard config={configWithBool} {...defaultProps} />);
+
+      const switches = screen.getAllByRole('switch');
+      // First switch should be localhostForwarding and be checked
+      expect(switches[0]).toHaveAttribute('data-state', 'checked');
+    });
+
+    it('calls onSetConfig when switch is toggled', async () => {
+      render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+      const switches = screen.getAllByRole('switch');
+      await userEvent.click(switches[0]); // Toggle localhostForwarding
+      expect(defaultProps.onSetConfig).toHaveBeenCalledWith('wsl2', 'localhostForwarding', 'true');
+    });
+
+    it('renders select dropdowns for networking mode and auto memory reclaim', () => {
+      render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+      // Select triggers show placeholder text
+      expect(screen.getByText('NAT')).toBeInTheDocument();
+    });
+  });
 });

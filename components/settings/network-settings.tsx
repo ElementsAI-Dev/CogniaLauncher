@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { SettingItem } from "./setting-item";
+import { isTauri } from "@/lib/platform";
+import { Loader2, Search, Wifi } from "lucide-react";
 
 interface NetworkSettingsProps {
   localConfig: Record<string, string>;
@@ -16,6 +20,60 @@ export function NetworkSettings({
   onValueChange,
   t,
 }: NetworkSettingsProps) {
+  const [detectLoading, setDetectLoading] = useState(false);
+  const [detectResult, setDetectResult] = useState<string | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const handleDetectProxy = async () => {
+    if (!isTauri()) return;
+    setDetectLoading(true);
+    setDetectResult(null);
+    try {
+      const { detectSystemProxy } = await import("@/lib/tauri");
+      const info = await detectSystemProxy();
+      if (info.source === "none") {
+        setDetectResult(t("settings.proxyNotDetected"));
+      } else {
+        const proxy = info.httpProxy || info.httpsProxy || "";
+        if (proxy) {
+          onValueChange("network.proxy", proxy);
+          if (info.noProxy) {
+            onValueChange("network.no_proxy", info.noProxy);
+          }
+        }
+        const sourceLabel = info.source === "environment"
+          ? t("settings.proxyDetectedEnv")
+          : t("settings.proxyDetectedRegistry");
+        setDetectResult(`${sourceLabel}: ${proxy}`);
+      }
+    } catch (e) {
+      setDetectResult(String(e));
+    } finally {
+      setDetectLoading(false);
+    }
+  };
+
+  const handleTestProxy = async () => {
+    const proxyUrl = localConfig["network.proxy"];
+    if (!proxyUrl || !isTauri()) return;
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const { testProxyConnection } = await import("@/lib/tauri");
+      const result = await testProxyConnection(proxyUrl);
+      if (result.success) {
+        setTestResult(t("settings.proxyTestSuccess").replace("{latency}", String(result.latencyMs)));
+      } else {
+        setTestResult(t("settings.proxyTestFailed").replace("{error}", result.error || "Unknown"));
+      }
+    } catch (e) {
+      setTestResult(String(e));
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-1">
         <SettingItem
@@ -51,6 +109,47 @@ export function NetworkSettings({
           placeholder="http://proxy.example.com:8080"
           error={errors["network.proxy"]}
         />
+        <Separator />
+        <SettingItem
+          id="network-no-proxy"
+          label={t("settings.noProxyGlobal")}
+          description={t("settings.noProxyGlobalDesc")}
+          value={localConfig["network.no_proxy"] || ""}
+          onChange={(v) => onValueChange("network.no_proxy", v)}
+          placeholder="localhost,127.0.0.1,.internal.com"
+          error={errors["network.no_proxy"]}
+        />
+        {isTauri() && (
+          <>
+            <Separator />
+            <div className="flex items-center gap-2 px-1 py-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDetectProxy}
+                disabled={detectLoading}
+              >
+                {detectLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Search className="mr-1 h-3.5 w-3.5" />}
+                {t("settings.detectSystemProxy")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestProxy}
+                disabled={testLoading || !localConfig["network.proxy"]}
+              >
+                {testLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Wifi className="mr-1 h-3.5 w-3.5" />}
+                {t("settings.testProxyConnection")}
+              </Button>
+            </div>
+            {(detectResult || testResult) && (
+              <div className="px-1 text-xs text-muted-foreground">
+                {detectResult && <p>{detectResult}</p>}
+                {testResult && <p>{testResult}</p>}
+              </div>
+            )}
+          </>
+        )}
     </div>
   );
 }

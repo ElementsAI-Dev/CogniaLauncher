@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDownloads } from '@/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
@@ -21,6 +22,7 @@ import {
   GitLabDownloadDialog,
   DownloadToolbar,
   DownloadEmptyState,
+  DownloadDetailDialog,
   type StatusFilter,
 } from '@/components/downloads';
 import { toast } from 'sonner';
@@ -83,9 +85,12 @@ export default function DownloadsPage() {
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
+  const [speedUnit, setSpeedUnit] = useState<'B/s' | 'KB/s' | 'MB/s'>('B/s');
   const [maxConcurrentInput, setMaxConcurrentInput] = useState('4');
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [detailTask, setDetailTask] = useState<DownloadTask | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const {
     tasks,
@@ -110,6 +115,9 @@ export default function DownloadsPage() {
     setMaxConcurrent,
     openFile,
     revealFile,
+    retryTask,
+    setPriority,
+    calculateChecksum,
     refreshTasks,
     refreshStats,
     refreshHistory,
@@ -121,7 +129,17 @@ export default function DownloadsPage() {
   const queueStats = stats ?? EMPTY_STATS;
 
   useEffect(() => {
-    setSpeedLimitInput(String(speedLimit));
+    // Auto-select best unit when syncing from backend
+    if (speedLimit >= 1024 * 1024) {
+      setSpeedUnit('MB/s');
+      setSpeedLimitInput(String(Math.round((speedLimit / (1024 * 1024)) * 100) / 100));
+    } else if (speedLimit >= 1024) {
+      setSpeedUnit('KB/s');
+      setSpeedLimitInput(String(Math.round((speedLimit / 1024) * 100) / 100));
+    } else {
+      setSpeedUnit('B/s');
+      setSpeedLimitInput(String(speedLimit));
+    }
   }, [speedLimit]);
 
   useEffect(() => {
@@ -233,14 +251,17 @@ export default function DownloadsPage() {
   }, [retryFailed, t]);
 
   const handleApplySettings = useCallback(async () => {
-    const speed = Number(speedLimitInput);
+    const inputValue = Number(speedLimitInput);
     const concurrent = Number(maxConcurrentInput);
 
-    if (!Number.isNaN(speed)) {
-      await setSpeedLimit(speed);
+    if (!Number.isNaN(inputValue)) {
+      // Convert from display unit to bytes
+      const multiplier = speedUnit === 'MB/s' ? 1024 * 1024 : speedUnit === 'KB/s' ? 1024 : 1;
+      const speedBytes = Math.round(inputValue * multiplier);
+      await setSpeedLimit(speedBytes);
       toast.success(
-        speed > 0
-          ? t('downloads.toast.speedLimitSet', { speed: `${speed} B/s` })
+        speedBytes > 0
+          ? t('downloads.toast.speedLimitSet', { speed: `${inputValue} ${speedUnit}` })
           : t('downloads.toast.speedLimitRemoved')
       );
     }
@@ -248,7 +269,7 @@ export default function DownloadsPage() {
     if (!Number.isNaN(concurrent)) {
       await setMaxConcurrent(Math.max(1, concurrent));
     }
-  }, [maxConcurrentInput, setMaxConcurrent, setSpeedLimit, speedLimitInput, t]);
+  }, [maxConcurrentInput, setMaxConcurrent, setSpeedLimit, speedLimitInput, speedUnit, t]);
 
   const historyStatsCard = useMemo(() => {
     if (!historyStats) return null;
@@ -395,7 +416,14 @@ export default function DownloadsPage() {
                         <TableRow key={task.id}>
                           <TableCell className="min-w-[220px]">
                             <div className="space-y-1">
-                              <p className="font-medium truncate" title={task.name}>
+                              <p
+                                className="font-medium truncate cursor-pointer hover:underline"
+                                title={task.name}
+                                onClick={() => {
+                                  setDetailTask(task);
+                                  setDetailOpen(true);
+                                }}
+                              >
                                 {task.name}
                               </p>
                               <p className="text-xs text-muted-foreground truncate" title={task.url}>
@@ -517,17 +545,31 @@ export default function DownloadsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="speed-limit">{t('downloads.settings.speedLimit')}</Label>
-                  <Input
-                    id="speed-limit"
-                    type="number"
-                    min={0}
-                    value={speedLimitInput}
-                    onChange={(event) => setSpeedLimitInput(event.target.value)}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="speed-limit"
+                      type="number"
+                      min={0}
+                      step="0.1"
+                      value={speedLimitInput}
+                      onChange={(event) => setSpeedLimitInput(event.target.value)}
+                      className="flex-1"
+                    />
+                    <Select value={speedUnit} onValueChange={(v) => setSpeedUnit(v as typeof speedUnit)}>
+                      <SelectTrigger className="w-24">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="B/s">B/s</SelectItem>
+                        <SelectItem value="KB/s">KB/s</SelectItem>
+                        <SelectItem value="MB/s">MB/s</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {speedLimitInput === '0'
                       ? t('downloads.settings.unlimited')
-                      : `${speedLimitInput} B/s`}
+                      : `${speedLimitInput} ${speedUnit}`}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -688,6 +730,17 @@ export default function DownloadsPage() {
           refreshTasks();
           refreshStats();
         }}
+      />
+
+      <DownloadDetailDialog
+        task={detailTask}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        onRetry={retryTask}
+        onSetPriority={setPriority}
+        onOpenFile={openFile}
+        onRevealFile={revealFile}
+        onCalculateChecksum={calculateChecksum}
       />
     </div>
   );

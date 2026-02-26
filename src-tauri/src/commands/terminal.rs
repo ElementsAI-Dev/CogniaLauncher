@@ -28,7 +28,7 @@ fn resolve_proxy(settings: &Settings) -> (Option<String>, Option<String>) {
         ),
         _ => (
             settings.network.proxy.clone(),
-            settings.terminal.no_proxy.clone(),
+            settings.terminal.no_proxy.clone().or_else(|| settings.network.no_proxy.clone()),
         ),
     }
 }
@@ -100,6 +100,10 @@ fn build_profile_args(profile: &TerminalProfile, shell_type: ShellType) -> Vec<S
             }
             ShellType::Cmd => {
                 args.push("/C".to_string());
+                args.push(cmd.to_string());
+            }
+            ShellType::Nushell => {
+                args.push("-c".to_string());
                 args.push(cmd.to_string());
             }
         }
@@ -502,6 +506,90 @@ pub async fn terminal_list_plugins(
     Ok(terminal::list_shell_plugins(&framework, None))
 }
 
+// ============================================================================
+// Profile Duplicate / Import / Export
+// ============================================================================
+
+#[tauri::command]
+pub async fn terminal_duplicate_profile(
+    id: String,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<String, String> {
+    let mut manager_guard = manager.write().await;
+    manager_guard
+        .duplicate_profile(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_export_profiles(
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<String, String> {
+    let manager_guard = manager.read().await;
+    manager_guard.export_profiles().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_import_profiles(
+    json: String,
+    merge: bool,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<usize, String> {
+    let mut manager_guard = manager.write().await;
+    manager_guard
+        .import_profiles(&json, merge)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Shell Config Write
+// ============================================================================
+
+#[tauri::command]
+pub async fn terminal_write_config(path: String, content: String) -> Result<(), String> {
+    terminal::write_shell_config(&PathBuf::from(&path), &content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// PowerShell Module Management
+// ============================================================================
+
+#[tauri::command]
+pub async fn terminal_ps_install_module(name: String, scope: String) -> Result<(), String> {
+    terminal::ps_install_module(&name, &scope)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_ps_uninstall_module(name: String) -> Result<(), String> {
+    terminal::ps_uninstall_module(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_ps_update_module(name: String) -> Result<(), String> {
+    terminal::ps_update_module(&name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_ps_find_module(query: String) -> Result<Vec<PSModuleInfo>, String> {
+    terminal::ps_find_module(&query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Shell Environment Variables
+// ============================================================================
+
 #[tauri::command]
 pub async fn terminal_get_shell_env_vars() -> Result<Vec<(String, String)>, String> {
     let mut vars: Vec<(String, String)> = std::env::vars()
@@ -567,6 +655,120 @@ mod tests {
             updated_at: "".to_string(),
         }
     }
+
+    // ======================== resolve_proxy tests ========================
+
+    #[test]
+    fn resolve_proxy_none_mode_returns_no_proxy() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "none".to_string();
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = Some("global.local".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert!(proxy.is_none());
+        assert!(no_proxy.is_none());
+    }
+
+    #[test]
+    fn resolve_proxy_custom_mode_uses_terminal_settings() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "custom".to_string();
+        settings.terminal.custom_proxy = Some("http://custom:3128".to_string());
+        settings.terminal.no_proxy = Some("custom.local".to_string());
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = Some("global.local".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("http://custom:3128".to_string()));
+        assert_eq!(no_proxy, Some("custom.local".to_string()));
+    }
+
+    #[test]
+    fn resolve_proxy_global_mode_uses_network_proxy() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "global".to_string();
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = Some("global.local".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("http://global:8080".to_string()));
+        assert_eq!(no_proxy, Some("global.local".to_string()));
+    }
+
+    #[test]
+    fn resolve_proxy_global_mode_terminal_no_proxy_overrides_network() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "global".to_string();
+        settings.terminal.no_proxy = Some("terminal.local".to_string());
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = Some("global.local".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("http://global:8080".to_string()));
+        // Terminal no_proxy takes priority over network no_proxy
+        assert_eq!(no_proxy, Some("terminal.local".to_string()));
+    }
+
+    #[test]
+    fn resolve_proxy_global_mode_falls_back_to_network_no_proxy() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "global".to_string();
+        settings.terminal.no_proxy = None; // not set
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = Some("global.local".to_string());
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("http://global:8080".to_string()));
+        // Falls back to network.no_proxy
+        assert_eq!(no_proxy, Some("global.local".to_string()));
+    }
+
+    #[test]
+    fn resolve_proxy_global_mode_both_no_proxy_none() {
+        let mut settings = Settings::default();
+        settings.terminal.proxy_mode = "global".to_string();
+        settings.terminal.no_proxy = None;
+        settings.network.proxy = Some("http://global:8080".to_string());
+        settings.network.no_proxy = None;
+
+        let (proxy, no_proxy) = resolve_proxy(&settings);
+        assert_eq!(proxy, Some("http://global:8080".to_string()));
+        assert!(no_proxy.is_none());
+    }
+
+    // ======================== build_proxy_env_vars tests ========================
+
+    #[test]
+    fn build_proxy_env_vars_sets_all_proxy_env() {
+        let env = build_proxy_env_vars(
+            &Some("http://proxy:8080".to_string()),
+            &Some("localhost,127.0.0.1".to_string()),
+        );
+        assert_eq!(env.get("HTTP_PROXY"), Some(&"http://proxy:8080".to_string()));
+        assert_eq!(env.get("http_proxy"), Some(&"http://proxy:8080".to_string()));
+        assert_eq!(env.get("HTTPS_PROXY"), Some(&"http://proxy:8080".to_string()));
+        assert_eq!(env.get("https_proxy"), Some(&"http://proxy:8080".to_string()));
+        assert_eq!(env.get("NO_PROXY"), Some(&"localhost,127.0.0.1".to_string()));
+        assert_eq!(env.get("no_proxy"), Some(&"localhost,127.0.0.1".to_string()));
+    }
+
+    #[test]
+    fn build_proxy_env_vars_empty_proxy_sets_nothing() {
+        let env = build_proxy_env_vars(&None, &None);
+        assert!(env.is_empty());
+    }
+
+    #[test]
+    fn build_proxy_env_vars_empty_string_proxy_sets_nothing() {
+        let env = build_proxy_env_vars(
+            &Some(String::new()),
+            &Some(String::new()),
+        );
+        assert!(env.is_empty());
+    }
+
+    // ======================== existing tests ========================
 
     #[test]
     fn resolve_profile_shell_prefers_detected_shell_ids() {

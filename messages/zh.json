@@ -425,12 +425,19 @@
         "rustup": "Rust 工具链安装程序",
         "rbenv": "Ruby 版本管理",
         "sdkman": "软件开发套件管理器",
+        "sdkman-kotlin": "通过 SDKMAN! 管理 Kotlin",
+        "sdkman-scala": "通过 SDKMAN! 管理 Scala",
+        "sdkman-groovy": "通过 SDKMAN! 管理 Groovy",
+        "sdkman-gradle": "通过 SDKMAN! 管理 Gradle",
+        "sdkman-maven": "通过 SDKMAN! 管理 Maven",
+        "adoptium": "Eclipse Temurin JDK 管理器",
         "phpbrew": "PHP 版本管理器",
         "dotnet": ".NET SDK",
         "deno": "Deno 运行时版本管理器",
         "system-bun": "系统安装的 Bun 运行时",
         "asdf": "支持多种运行时的可扩展版本管理器",
-        "nix": "Nix 包管理器，支持可复现构建"
+        "nix": "Nix 包管理器，支持可复现构建",
+        "uv": "Astral 出品的快速 Python 版本和包管理器"
       }
     },
     "progress": {
@@ -1070,6 +1077,8 @@
     "infoRustPackageDesc": "Cargo - 安装和管理 Rust crates 和二进制包。",
     "infoRubyPackage": "Ruby 包提供商",
     "infoRubyPackageDesc": "Bundler - 管理 Ruby gems 和依赖，支持 Gemfile。",
+    "infoJava": "Java/JVM 提供商",
+    "infoJavaDesc": "SDKMAN!、Adoptium - 管理 JDK 版本（Temurin、Corretto 等）、Kotlin、Scala、Groovy 编译器以及构建工具（Gradle、Maven），支持多版本管理和 .sdkmanrc 项目级配置。",
     "infoPhpPackage": "PHP 包提供商",
     "infoPhpPackageDesc": "Composer - PHP 依赖管理，集成 Packagist。",
     "infoDotnetPackage": ".NET 包提供商",
@@ -1077,7 +1086,7 @@
     "infoSystem": "系统包提供商",
     "infoSystemDesc": "apt、Homebrew、winget、Scoop、Chocolatey - 与操作系统级别的包管理器交互。",
     "infoCpp": "C++ 包提供商",
-    "infoCppDesc": "vcpkg、Conan、Xmake/Xrepo、MSVC、MSYS2 - 跨平台管理 C/C++ 库，支持依赖解析和二进制缓存。在 Windows 上检测 Visual Studio Build Tools 和 MSYS2/MinGW 工具链。",
+    "infoCppDesc": "vcpkg、Conan、Xmake/Xrepo、MSVC、MSYS2 - 跨平台管理 C/C++ 库，支持依赖解析和二进制缓存。检测系统编译器（GCC/Clang）、Visual Studio Build Tools 和 MSYS2/MinGW 工具链。从 CMakeLists.txt、meson.build 和 xmake.lua 检测项目级 C++ 标准。",
     "infoDart": "Dart/Flutter 提供者",
     "infoDartDesc": "FVM、Dart Pub - Flutter SDK 版本管理和 pub.dev 包管理，支持依赖解析。",
     "infoLua": "Lua 包提供商",
@@ -1522,6 +1531,18 @@
     "monitorIntervalDesc": "检查缓存大小的频率（秒，0 = 禁用）",
     "monitorExternal": "监控外部缓存",
     "monitorExternalDesc": "在监控中包含外部工具缓存",
+    "optimize": "优化数据库",
+    "optimizeDesc": "运行 VACUUM 和 ANALYZE 以回收未使用空间并提高性能",
+    "optimizing": "正在优化...",
+    "optimizeSuccess": "数据库已优化，节省 {size}",
+    "optimizeFailed": "数据库优化失败",
+    "sizeBefore": "优化前大小",
+    "sizeAfter": "优化后大小",
+    "sizeSaved": "节省空间",
+    "sizeHistory": "大小历史",
+    "sizeHistoryDesc": "缓存大小随时间变化趋势",
+    "noSizeHistory": "暂无大小历史数据。快照会自动记录。",
+    "autoCleanEvent": "自动清理释放了 {size}",
     "externalPaths": "外部缓存路径",
     "externalPathsDesc": "所有外部缓存提供者的详细路径信息",
     "envVars": "环境变量",
@@ -1638,7 +1659,16 @@
     "retries": "重试次数",
     "retriesDesc": "重试尝试次数",
     "proxy": "代理",
-    "proxyDesc": "HTTP 代理 URL（留空以禁用）",
+    "proxyDesc": "代理 URL — 支持 http://、https://、socks5://（留空以禁用）",
+    "noProxyGlobal": "免代理（绕过列表）",
+    "noProxyGlobalDesc": "逗号分隔的主机/域名列表，这些地址将绕过代理（如 localhost,127.0.0.1,.corp.com）",
+    "detectSystemProxy": "检测系统代理",
+    "testProxyConnection": "测试连接",
+    "proxyTestSuccess": "连接成功（{latency}ms）",
+    "proxyTestFailed": "连接失败：{error}",
+    "proxyDetectedEnv": "从环境变量检测到",
+    "proxyDetectedRegistry": "从 Windows 系统设置检测到",
+    "proxyNotDetected": "未检测到系统代理",
     "security": "安全",
     "securityDesc": "安全和验证设置",
     "allowHttp": "允许 HTTP",
@@ -1893,7 +1923,9 @@
     "max": "最大值为 {max}",
     "invalidFormat": "格式无效",
     "mustBeValidUrl": "必须是有效的 URL",
-    "mustBeValidUrlOrEmpty": "必须是有效的 URL 或留空"
+    "mustBeValidUrlOrEmpty": "必须是有效的 URL 或留空",
+    "mustBeValidProxyUrlOrEmpty": "必须是有效的代理 URL（http://、https://、socks5://）或留空",
+    "mustBeValidNoProxyList": "必须是逗号分隔的主机名或 IP 地址列表"
   },
   "about": {
     "title": "关于",
@@ -2145,6 +2177,51 @@
     },
     "totalSize": "总大小"
   },
+  "backup": {
+    "title": "备份与恢复",
+    "description": "创建和管理应用数据备份",
+    "create": "创建备份",
+    "restore": "恢复备份",
+    "delete": "删除备份",
+    "validate": "验证备份",
+    "creating": "正在创建备份...",
+    "restoring": "正在恢复备份...",
+    "noBackups": "暂无备份",
+    "selectContents": "选择要包含的数据",
+    "addNote": "添加备注（可选）",
+    "backupCreated": "备份创建成功，耗时 {duration}ms",
+    "backupFailed": "备份失败：{error}",
+    "restoreSuccess": "恢复成功",
+    "restoreFailed": "恢复失败：{error}",
+    "restoreWarning": "恢复将覆盖当前数据，此操作不可撤销。",
+    "deleteConfirm": "确定要删除此备份吗？",
+    "deleteSuccess": "备份已删除",
+    "validationPassed": "备份验证通过",
+    "validationFailed": "备份验证失败",
+    "missingFiles": "缺失文件：{count}",
+    "checksumMismatches": "校验和不匹配：{count}",
+    "contentTypes": {
+      "config": "设置",
+      "terminal_profiles": "终端配置",
+      "environment_profiles": "环境配置",
+      "cache_database": "缓存数据库",
+      "download_history": "下载历史",
+      "cleanup_history": "清理历史",
+      "custom_detection_rules": "自定义检测规则",
+      "environment_settings": "环境设置"
+    },
+    "database": {
+      "title": "数据库",
+      "integrityCheck": "完整性检查",
+      "integrityOk": "数据库完整性正常",
+      "integrityErrors": "发现数据库完整性错误：{count}",
+      "info": "数据库信息",
+      "dbSize": "数据库大小",
+      "walSize": "WAL 大小",
+      "pageCount": "页面数",
+      "freelistCount": "空闲页面"
+    }
+  },
   "downloads": {
     "title": "下载",
     "description": "管理下载任务和历史记录",
@@ -2172,7 +2249,9 @@
       "paused": "已暂停",
       "cancelled": "已取消",
       "completed": "已完成",
-      "failed": "失败"
+      "failed": "失败",
+      "extracting": "解压中",
+      "extracted": "已解压"
     },
     "actions": {
       "pause": "暂停",
@@ -2186,7 +2265,33 @@
       "clearFinished": "清除已完成",
       "retryFailed": "重试失败项",
       "open": "打开文件",
-      "reveal": "在文件夹中显示"
+      "reveal": "在文件夹中显示",
+      "retryTask": "重试此任务",
+      "setPriority": "设置优先级",
+      "extract": "解压归档",
+      "extractTo": "解压到..."
+    },
+    "detail": {
+      "title": "下载详情",
+      "url": "源地址",
+      "destination": "目标路径",
+      "retries": "重试次数",
+      "priority": "优先级",
+      "checksum": "预期校验和",
+      "supportsResume": "断点续传",
+      "metadata": "元数据",
+      "timestamps": "时间信息",
+      "copyUrl": "复制链接",
+      "urlCopied": "已复制到剪贴板",
+      "calculateChecksum": "计算校验和",
+      "checksumResult": "校验和: {checksum}",
+      "calculating": "计算中...",
+      "serverFilename": "服务器文件名",
+      "supportsResumeYes": "是",
+      "supportsResumeNo": "否"
+    },
+    "validation": {
+      "invalidUrl": "请输入有效的URL"
     },
     "progress": {
       "downloaded": "已下载",
@@ -2200,7 +2305,10 @@
       "speedLimitDesc": "最大下载速度（0 = 无限制）",
       "unlimited": "无限制",
       "maxConcurrent": "最大并发数",
-      "maxConcurrentDesc": "同时下载的最大数量"
+      "maxConcurrentDesc": "同时下载的最大数量",
+      "speedUnit": "单位",
+      "autoExtract": "下载后自动解压",
+      "autoExtractDesc": "下载完成后自动解压归档文件"
     },
     "stats": {
       "total": "总计",
@@ -2237,7 +2345,8 @@
       "fileSystem": "文件系统错误",
       "interrupted": "下载中断",
       "httpError": "HTTP 错误：{status}",
-      "insufficientSpace": "磁盘空间不足"
+      "insufficientSpace": "磁盘空间不足",
+      "extractFailed": "解压归档失败：{error}"
     },
     "toast": {
       "added": "下载已添加",
@@ -2249,7 +2358,9 @@
       "cancelled": "下载已取消",
       "cleared": "已清除 {count} 个下载",
       "speedLimitSet": "速度限制已设置为 {speed}",
-      "speedLimitRemoved": "速度限制已移除"
+      "speedLimitRemoved": "速度限制已移除",
+      "extracting": "正在解压归档...",
+      "extracted": "归档解压成功"
     },
     "toolbar": {
       "searchPlaceholder": "搜索下载...",
@@ -2387,6 +2498,7 @@
       "overview": "概览",
       "repository": "仓库",
       "graph": "提交图",
+      "changes": "变更",
       "history": "历史"
     },
     "status": {
@@ -2522,6 +2634,152 @@
     "notAvailable": "Git 管理需要桌面应用程序",
     "emptyState": "系统未安装 Git",
     "emptyStateDesc": "安装 Git 以管理仓库和查看历史。",
+    "actions": {
+      "stage": "暂存",
+      "stageAll": "全部暂存",
+      "unstage": "取消暂存",
+      "unstageAll": "全部取消暂存",
+      "discard": "丢弃",
+      "discardConfirm": "丢弃此文件的更改？",
+      "commit": "提交",
+      "push": "推送",
+      "pull": "拉取",
+      "fetch": "获取",
+      "merge": "合并",
+      "revert": "还原",
+      "cherryPick": "拣选",
+      "reset": "重置",
+      "clone": "克隆",
+      "init": "初始化",
+      "clean": "清理未跟踪文件",
+      "cleanConfirm": "删除所有未跟踪的文件？"
+    },
+    "commit": {
+      "title": "创建提交",
+      "messagePlaceholder": "输入提交信息...",
+      "amend": "修改上次提交",
+      "noStagedFiles": "没有已暂存的文件可提交",
+      "success": "提交创建成功"
+    },
+    "pushAction": {
+      "success": "推送完成",
+      "forceLease": "强制推送（使用 lease）"
+    },
+    "pullAction": {
+      "success": "拉取完成",
+      "rebase": "拉取时变基"
+    },
+    "fetchAction": {
+      "success": "获取完成"
+    },
+    "mergeAction": {
+      "title": "合并分支",
+      "selectBranch": "选择要合并的分支",
+      "noFf": "非快进合并",
+      "success": "合并完成",
+      "conflicts": "检测到合并冲突"
+    },
+    "revertAction": {
+      "success": "提交已还原"
+    },
+    "cherryPickAction": {
+      "success": "拣选已应用"
+    },
+    "resetAction": {
+      "title": "重置 HEAD",
+      "soft": "软重置（保留暂存区）",
+      "mixed": "混合重置（保留工作区）",
+      "hard": "硬重置（丢弃所有更改）",
+      "confirm": "此操作将更改您的工作目录。继续？",
+      "success": "重置完成"
+    },
+    "cloneAction": {
+      "title": "克隆仓库",
+      "url": "仓库 URL",
+      "urlPlaceholder": "https://github.com/user/repo.git",
+      "destination": "目标路径",
+      "cloning": "正在克隆...",
+      "success": "仓库克隆成功",
+      "advancedOptions": "高级选项",
+      "branch": "分支",
+      "branchPlaceholder": "默认分支",
+      "depth": "克隆深度",
+      "depthPlaceholder": "完整历史",
+      "singleBranch": "单分支",
+      "recurseSubmodules": "包含子模块",
+      "shallowSubmodules": "浅克隆子模块",
+      "noCheckout": "跳过检出",
+      "bare": "裸仓库",
+      "mirror": "镜像克隆",
+      "sparse": "稀疏检出",
+      "noTags": "跳过标签",
+      "filter": "对象过滤",
+      "filterPlaceholder": "例如 blob:none",
+      "blobless": "无 Blob (blob:none)",
+      "treeless": "无 Tree (tree:0)",
+      "jobs": "并行任务数",
+      "jobsPlaceholder": "自动",
+      "remoteName": "远程名称",
+      "remoteNamePlaceholder": "origin",
+      "openCloned": "打开已克隆的仓库",
+      "invalidUrl": "无效的仓库 URL",
+      "validUrl": "有效的仓库 URL",
+      "phase": {
+        "counting": "正在计数对象",
+        "compressing": "正在压缩对象",
+        "receiving": "正在接收对象",
+        "resolving": "正在解析增量",
+        "checking_out": "正在检出文件",
+        "done": "克隆完成",
+        "error": "克隆失败"
+      }
+    },
+    "initAction": {
+      "success": "仓库已初始化"
+    },
+    "diffView": {
+      "title": "差异",
+      "staged": "已暂存的更改",
+      "unstaged": "未暂存的更改",
+      "noChanges": "没有要显示的更改"
+    },
+    "remoteAction": {
+      "add": "添加远程",
+      "remove": "删除远程",
+      "rename": "重命名远程",
+      "setUrl": "设置 URL",
+      "namePlaceholder": "例如 origin",
+      "urlPlaceholder": "例如 https://github.com/user/repo.git",
+      "addSuccess": "远程已添加",
+      "removeSuccess": "远程已删除",
+      "renameSuccess": "远程已重命名"
+    },
+    "branchAction": {
+      "rename": "重命名分支",
+      "setUpstream": "设置上游",
+      "renameSuccess": "分支已重命名",
+      "pushTags": "推送标签",
+      "pushTagsSuccess": "标签已推送到远程",
+      "deleteRemote": "删除远程分支",
+      "deleteRemoteConfirm": "删除远程分支？",
+      "deleteRemoteSuccess": "远程分支已删除"
+    },
+    "stashAction": {
+      "save": "储藏更改",
+      "showDiff": "查看差异",
+      "savePlaceholder": "储藏信息（可选）",
+      "includeUntracked": "包含未跟踪文件",
+      "saveSuccess": "更改已储藏"
+    },
+    "reflog": {
+      "title": "引用日志",
+      "load": "加载引用日志",
+      "resetTo": "重置到此处",
+      "empty": "没有引用日志条目"
+    },
+    "cleanAction": {
+      "success": "未跟踪文件已删除"
+    },
     "refresh": "刷新",
     "error": "发生错误"
   },
@@ -2538,6 +2796,7 @@
       "value": "值",
       "scope": "作用域",
       "noResults": "未找到变量",
+      "noPersistentVars": "未找到该作用域的持久化变量",
       "search": "搜索变量...",
       "copied": "值已复制到剪贴板"
     },
@@ -2553,8 +2812,13 @@
       "addPlaceholder": "/usr/local/bin",
       "exists": "存在",
       "missing": "缺失",
+      "duplicate": "重复",
       "dragHint": "拖拽排序",
-      "reorderSaved": "PATH 顺序已保存"
+      "reorderSaved": "PATH 顺序已保存",
+      "missingCount": "{count} 个缺失",
+      "duplicateCount": "{count} 个重复",
+      "deduplicate": "移除重复",
+      "deduplicateSuccess": "已移除 {count} 个重复条目"
     },
     "shellProfiles": {
       "title": "Shell 配置文件",
@@ -2571,6 +2835,7 @@
       "formatShell": "Shell (bash/zsh)",
       "formatFish": "Fish",
       "formatPowerShell": "PowerShell",
+      "formatNushell": "Nushell",
       "importSuccess": "已导入 {count} 个变量",
       "importPartial": "已导入 {imported} 个，跳过 {skipped} 个",
       "pasteContent": "在此粘贴 .env 内容..."
@@ -2605,7 +2870,7 @@
   },
   "terminal": {
     "title": "终端管理",
-    "description": "管理 Shell、配置文件和终端设置",
+    "description": "描述",
     "tabShells": "Shell",
     "tabProfiles": "配置文件",
     "tabConfig": "Shell 配置",
@@ -2684,7 +2949,6 @@
     "version": "版本",
     "moduleType": "类型",
     "exportedCommands": "导出命令数",
-    "description": "描述",
     "proxySettings": "终端代理",
     "proxySettingsDesc": "为终端会话配置代理设置。",
     "proxyMode": "代理模式",
@@ -2700,7 +2964,36 @@
     "noActiveProxy": "当前没有活跃的代理变量。",
     "envVars": "环境变量",
     "addEnvVar": "添加",
-    "envVarsHint": "为此配置文件设置自定义环境变量。使用 HTTP_PROXY、HTTPS_PROXY 可按配置文件覆盖代理设置。"
+    "envVarsHint": "为此配置文件设置自定义环境变量。使用 HTTP_PROXY、HTTPS_PROXY 可按配置文件覆盖代理设置。",
+    "tabEnvVars": "环境变量",
+    "shellEnvVars": "Shell 环境变量",
+    "shellEnvVarsDesc": "与 Shell 和开发工具相关的环境变量。",
+    "searchEnvVars": "搜索环境变量...",
+    "noEnvVars": "未找到环境变量。点击刷新加载。",
+    "copyValue": "已复制到剪贴板。",
+    "duplicateProfile": "复制",
+    "exportProfiles": "导出全部",
+    "importProfiles": "导入",
+    "importMerge": "与现有合并",
+    "importReplace": "替换全部",
+    "importSuccess": "配置文件导入成功。",
+    "exportSuccess": "配置文件导出成功。",
+    "duplicateSuccess": "配置文件已复制。",
+    "editConfig": "编辑",
+    "saveConfig": "保存",
+    "configSaved": "配置已保存（已创建备份）。",
+    "installModule": "安装",
+    "uninstallModule": "卸载",
+    "updateModule": "更新",
+    "searchGallery": "库",
+    "installModuleName": "模块名称",
+    "installModuleScope": "作用域",
+    "confirmUninstall": "确定要卸载此模块吗？",
+    "moduleInstalled": "模块安装成功。",
+    "moduleUninstalled": "模块已卸载。",
+    "moduleUpdated": "模块已更新。",
+    "galleryResults": "库搜索结果",
+    "searchGalleryPlaceholder": "搜索 PSGallery..."
   },
   "wsl": {
     "title": "WSL 管理",
@@ -2917,7 +3210,40 @@
       "defaultUser": "默认用户",
       "kernel": "内核",
       "installedPackages": "已安装包",
-      "envDetectFailed": "无法检测环境信息（发行版可能未在运行）"
+      "envDetectFailed": "无法检测环境信息（发行版可能未在运行）",
+      "resources": "资源使用",
+      "memory": "内存",
+      "swap": "交换空间",
+      "noSwap": "未配置交换空间",
+      "cpuLoad": "CPU / 负载",
+      "loadAvg": "平均负载",
+      "resourcesFailed": "无法获取资源使用信息",
+      "packageActions": "包管理",
+      "pkgUpdate": "更新索引",
+      "pkgUpgrade": "升级软件包",
+      "pkgActionSuccess": "包{mode}完成（{pm}）"
+    },
+    "dialog": {
+      "changeUserDesc": "选择或输入一个用户名，将其设置为此发行版的默认登录用户。",
+      "selectUser": "选择用户",
+      "manualInput": "手动输入用户名",
+      "selectFromList": "从列表中选择",
+      "mount": "挂载磁盘",
+      "mountDesc": "将物理磁盘或虚拟磁盘附加到所有 WSL2 发行版。",
+      "mountDiskPath": "磁盘路径",
+      "mountIsVhd": "VHD 文件",
+      "mountBare": "裸挂载（仅附加）",
+      "mountFsType": "文件系统类型",
+      "mountPartition": "分区",
+      "mountName": "挂载名称",
+      "mountOptions": "挂载选项",
+      "move": "移动发行版",
+      "moveDesc": "将发行版的虚拟磁盘移动到主机文件系统上的新位置。",
+      "moveWarning": "此操作可能需要很长时间，且不应被中断。请确保目标位置有足够的可用空间。",
+      "resize": "调整虚拟磁盘大小",
+      "resizeDesc": "为发行版的虚拟硬盘设置新的最大容量。",
+      "importInPlace": "就地导入",
+      "importInPlaceDesc": "将现有的 ext4 格式 .vhdx 文件直接注册为新的 WSL 发行版。"
     }
   },
   "launch": {
@@ -3101,4 +3427,3 @@
     "modCache": "模块缓存"
   }
 }
-

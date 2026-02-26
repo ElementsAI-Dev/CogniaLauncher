@@ -413,8 +413,8 @@ impl Provider for GitLabProvider {
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let release = if let Some(v) = &req.version {
-            let candidates = if v.starts_with('v') {
-                vec![v.clone(), v[1..].to_string()]
+            let candidates = if let Some(stripped) = v.strip_prefix('v') {
+                vec![v.clone(), stripped.to_string()]
             } else {
                 vec![format!("v{}", v), v.clone()]
             };

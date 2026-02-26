@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pencil, Trash2, Star, Plus, Loader2 } from 'lucide-react';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -14,6 +14,9 @@ interface TerminalProfileListProps {
   onDelete: (id: string) => void;
   onSetDefault: (id: string) => void;
   onCreateNew: () => void;
+  onDuplicate?: (id: string) => void;
+  onExportAll?: () => void;
+  onImport?: (json: string, merge: boolean) => void;
   launchingProfileId?: string | null;
   lastLaunchResult?: {
     profileId: string;
@@ -29,6 +32,9 @@ export function TerminalProfileList({
   onDelete,
   onSetDefault,
   onCreateNew,
+  onDuplicate,
+  onExportAll,
+  onImport,
   launchingProfileId = null,
   lastLaunchResult = null,
   onClearLaunchResult,
@@ -39,10 +45,40 @@ export function TerminalProfileList({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium">{t('terminal.profiles')}</h3>
-        <Button size="sm" onClick={onCreateNew}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t('terminal.createProfile')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onExportAll && profiles.length > 0 && (
+            <Button size="sm" variant="outline" onClick={onExportAll}>
+              <Download className="mr-1 h-3.5 w-3.5" />
+              {t('terminal.exportProfiles')}
+            </Button>
+          )}
+          {onImport && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = async (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) {
+                    const text = await file.text();
+                    onImport(text, true);
+                  }
+                };
+                input.click();
+              }}
+            >
+              <Upload className="mr-1 h-3.5 w-3.5" />
+              {t('terminal.importProfiles')}
+            </Button>
+          )}
+          <Button size="sm" onClick={onCreateNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('terminal.createProfile')}
+          </Button>
+        </div>
       </div>
 
       {lastLaunchResult && (
@@ -137,6 +173,11 @@ export function TerminalProfileList({
                     <Button size="sm" variant="outline" onClick={() => onEdit(profile)}>
                       <Pencil className="h-3 w-3" />
                     </Button>
+                    {onDuplicate && (
+                      <Button size="sm" variant="outline" onClick={() => onDuplicate(profile.id)}>
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    )}
                     {!profile.isDefault && (
                       <Button size="sm" variant="outline" onClick={() => onSetDefault(profile.id)}>
                         <Star className="h-3 w-3" />

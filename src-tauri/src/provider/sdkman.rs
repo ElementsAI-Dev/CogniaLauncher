@@ -136,7 +136,7 @@ pub fn parse_sdk_list_versions(output: &str) -> Vec<String> {
         // Versions are separated by whitespace, with optional > marker and * for installed
         for tok in trimmed.split_whitespace() {
             let v = tok.trim_start_matches('>').trim_end_matches('*').trim();
-            if !v.is_empty() && v.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+            if !v.is_empty() && v.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 versions.push(v.to_string());
             }
         }
@@ -292,7 +292,7 @@ fn extract_gradle_quoted_value(line: &str) -> Option<String> {
         let ver = rhs
             .trim_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace())
             .to_string();
-        if !ver.is_empty() && ver.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        if !ver.is_empty() && ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             return Some(ver);
         }
     }
@@ -307,7 +307,7 @@ fn extract_gradle_version_after_keyword(line: &str) -> Option<String> {
             .trim_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace() || c == '(')
             .trim_end_matches(')')
             .to_string();
-        if !ver.is_empty() && ver.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+        if !ver.is_empty() && ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
             return Some(ver);
         }
     }
@@ -457,6 +457,7 @@ impl Provider for SdkmanProvider {
             "kotlin" => "SDKMAN! (Kotlin)",
             "gradle" => "SDKMAN! (Gradle)",
             "maven" => "SDKMAN! (Maven)",
+            "groovy" => "SDKMAN! (Groovy)",
             "scala" => "SDKMAN! (Scala)",
             _ => Box::leak(self.provider_display_name().into_boxed_str()),
         }
@@ -1441,5 +1442,41 @@ zipStorePath=wrapper/dists
         let p = SdkmanProvider::default();
         assert_eq!(p.id(), "sdkman");
         assert_eq!(p.candidate, "java");
+    }
+
+    #[test]
+    fn test_provider_id_gradle() {
+        let p = SdkmanProvider::new("gradle");
+        assert_eq!(p.id(), "sdkman-gradle");
+        assert_eq!(p.candidate, "gradle");
+    }
+
+    #[test]
+    fn test_provider_id_maven() {
+        let p = SdkmanProvider::new("maven");
+        assert_eq!(p.id(), "sdkman-maven");
+        assert_eq!(p.candidate, "maven");
+    }
+
+    #[test]
+    fn test_provider_id_groovy() {
+        let p = SdkmanProvider::new("groovy");
+        assert_eq!(p.id(), "sdkman-groovy");
+        assert_eq!(p.candidate, "groovy");
+    }
+
+    #[test]
+    fn test_provider_id_scala() {
+        let p = SdkmanProvider::new("scala");
+        assert_eq!(p.id(), "sdkman-scala");
+        assert_eq!(p.candidate, "scala");
+    }
+
+    #[test]
+    fn test_display_name_for_tools() {
+        assert_eq!(SdkmanProvider::new("gradle").display_name(), "SDKMAN! (Gradle)");
+        assert_eq!(SdkmanProvider::new("maven").display_name(), "SDKMAN! (Maven)");
+        assert_eq!(SdkmanProvider::new("groovy").display_name(), "SDKMAN! (Groovy)");
+        assert_eq!(SdkmanProvider::new("scala").display_name(), "SDKMAN! (Scala)");
     }
 }

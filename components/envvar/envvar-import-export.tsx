@@ -201,6 +201,7 @@ export function EnvVarImportExport({
                     <SelectItem value="shell">{t('envvar.importExport.formatShell')}</SelectItem>
                     <SelectItem value="fish">{t('envvar.importExport.formatFish')}</SelectItem>
                     <SelectItem value="powershell">{t('envvar.importExport.formatPowerShell')}</SelectItem>
+                    <SelectItem value="nushell">{t('envvar.importExport.formatNushell')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

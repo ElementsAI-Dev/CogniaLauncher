@@ -26,9 +26,15 @@ import {
   GitCommitGraph,
   GitVisualFileHistory,
   GitActivityHeatmap,
+  GitCommitDialog,
+  GitDiffViewer,
+  GitCloneDialog,
+  GitMergeDialog,
+  GitReflogCard,
 } from '@/components/git';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { AlertCircle, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import type { GitCommitDetail as GitCommitDetailType } from '@/types/tauri';
@@ -43,6 +49,8 @@ export default function GitPage() {
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [commitDetail, setCommitDetail] = useState<GitCommitDetailType | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [diffContent, setDiffContent] = useState<string>('');
+  const [diffLoading, setDiffLoading] = useState(false);
 
   useEffect(() => {
     if (!initializedRef.current && isDesktop) {
@@ -140,6 +148,9 @@ export default function GitPage() {
           <TabsTrigger value="history" disabled={!git.available || !git.repoPath}>
             {t('git.tabs.history')}
           </TabsTrigger>
+          <TabsTrigger value="changes" disabled={!git.available || !git.repoPath}>
+            {t('git.tabs.changes')}
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -191,6 +202,29 @@ export default function GitPage() {
               <p className="text-sm text-muted-foreground">{t('git.repo.noRepo')}</p>
             </div>
           )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <GitCloneDialog
+              onClone={async (url, destPath, options) => {
+                const msg = await git.cloneRepo(url, destPath, options);
+                toast.success(t('git.cloneAction.success'), { description: msg });
+                return msg;
+              }}
+              onExtractRepoName={git.extractRepoName}
+              onValidateUrl={git.validateGitUrl}
+              onOpenRepo={(path) => git.setRepoPath(path)}
+            />
+            {git.repoInfo && (
+              <GitMergeDialog
+                branches={git.branches}
+                currentBranch={git.repoInfo.currentBranch}
+                onMerge={async (branch, noFf) => {
+                  const msg = await git.merge(branch, noFf);
+                  toast.success(t('git.mergeAction.success'), { description: msg });
+                  return msg;
+                }}
+              />
+            )}
+          </div>
         </TabsContent>
 
         {/* Graph Tab */}
@@ -252,6 +286,71 @@ export default function GitPage() {
             repoPath={git.repoPath}
             onGetBlame={git.getBlame}
           />
+          <GitReflogCard
+            onGetReflog={git.getReflog}
+            onResetTo={async (hash, mode) => {
+              const msg = await git.resetHead(mode, hash);
+              toast.success(t('git.resetAction.success'), { description: msg });
+              return msg;
+            }}
+          />
+        </TabsContent>
+
+        {/* Changes Tab */}
+        <TabsContent value="changes" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <GitStatusFiles
+              files={git.statusFiles}
+              loading={git.loading}
+              onRefresh={() => git.refreshStatus()}
+            />
+            <GitCommitDialog
+              stagedCount={git.statusFiles.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?").length}
+              onCommit={async (message, amend) => {
+                const msg = await git.commit(message, amend);
+                toast.success(t('git.commit.success'), { description: msg });
+                return msg;
+              }}
+            />
+          </div>
+          <GitDiffViewer
+            diff={diffContent}
+            loading={diffLoading}
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setDiffLoading(true);
+                try {
+                  const d = await git.getDiff(false);
+                  setDiffContent(d);
+                } finally {
+                  setDiffLoading(false);
+                }
+              }}
+              disabled={!git.repoPath}
+            >
+              {t('git.diffView.unstaged')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setDiffLoading(true);
+                try {
+                  const d = await git.getDiff(true);
+                  setDiffContent(d);
+                } finally {
+                  setDiffLoading(false);
+                }
+              }}
+              disabled={!git.repoPath}
+            >
+              {t('git.diffView.staged')}
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -133,7 +133,7 @@ impl Provider for VoltaProvider {
         let tools = vec!["node", "npm", "yarn", "pnpm"];
         let results: Vec<PackageSummary> = tools
             .into_iter()
-            .filter(|t| t.contains(&query.to_lowercase().as_str()))
+            .filter(|t| t.contains(query.to_lowercase().as_str()))
             .map(|t| PackageSummary {
                 name: t.into(),
                 description: Some(format!("{} (managed by Volta)", t)),

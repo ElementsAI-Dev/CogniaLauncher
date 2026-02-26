@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod batch;
 pub mod cache;
 pub mod config;
@@ -22,6 +23,10 @@ pub mod terminal;
 pub mod updater;
 pub mod wsl;
 
+pub use backup::{
+    backup_create, backup_delete, backup_list, backup_restore, backup_validate, db_get_info,
+    db_integrity_check,
+};
 pub use batch::{
     batch_install, batch_uninstall, batch_update, check_updates, clear_install_history,
     get_install_history, get_package_history, get_pinned_packages, package_pin, package_rollback,
@@ -40,8 +45,8 @@ pub use cache::{
 };
 pub use config::{
     app_check_init, config_export, config_get, config_import, config_list, config_reset,
-    config_set, get_battery_info, get_cognia_dir, get_components_info, get_disk_info,
-    get_network_interfaces, get_platform_info,
+    config_set, detect_system_proxy, get_battery_info, get_cognia_dir, get_components_info,
+    get_disk_info, get_network_interfaces, get_platform_info, test_proxy_connection,
 };
 pub use custom_detection::{
     create_shared_custom_detection_manager, custom_rule_add, custom_rule_delete,
@@ -55,12 +60,17 @@ pub use diagnostic::{
     diagnostic_export_bundle, diagnostic_get_default_export_path, install_panic_hook,
 };
 pub use download::{
-    disk_space_check, disk_space_get, download_add, download_cancel, download_cancel_all,
-    download_clear_finished, download_get, download_get_speed_limit, download_history_clear,
-    download_history_list, download_history_remove, download_history_search,
-    download_history_stats, download_list, download_pause, download_pause_all, download_remove,
-    download_resume, download_resume_all, download_retry_failed, download_set_max_concurrent,
-    download_set_speed_limit, download_stats, init_download_manager, SharedDownloadManager,
+    disk_space_check, disk_space_get, download_add, download_batch_cancel, download_batch_pause,
+    download_batch_remove, download_batch_resume, download_calculate_checksum, download_cancel,
+    download_cancel_all, download_clear_finished, download_get, download_get_max_concurrent,
+    download_get_speed_limit,
+    download_history_clear, download_history_list, download_history_remove,
+    download_history_search, download_history_stats, download_list, download_open_file,
+    download_pause, download_pause_all, download_remove, download_resume, download_resume_all,
+    download_retry, download_retry_failed, download_reveal_file, download_set_max_concurrent,
+    download_set_priority, download_set_speed_limit, download_shutdown, download_stats,
+    download_extract, download_verify_file,
+    init_download_manager, SharedDownloadManager,
 };
 pub use environment::{
     env_available_versions, env_check_updates, env_check_updates_all, env_cleanup_versions,
@@ -75,19 +85,26 @@ pub use environment::{
     rustup_set_profile, rustup_show, rustup_update_all, rustup_which,
 };
 pub use envvar::{
-    envvar_add_path_entry, envvar_export_env_file, envvar_get, envvar_get_path,
-    envvar_get_persistent, envvar_import_env_file, envvar_list_all, envvar_list_shell_profiles,
-    envvar_read_shell_profile, envvar_remove_path_entry, envvar_remove_persistent,
-    envvar_remove_process, envvar_reorder_path, envvar_set_persistent, envvar_set_process,
+    envvar_add_path_entry, envvar_deduplicate_path, envvar_expand, envvar_export_env_file,
+    envvar_get, envvar_get_path, envvar_get_persistent, envvar_import_env_file, envvar_list_all,
+    envvar_list_persistent, envvar_list_shell_profiles, envvar_read_shell_profile,
+    envvar_remove_path_entry, envvar_remove_persistent, envvar_remove_process, envvar_reorder_path,
+    envvar_set_persistent, envvar_set_process,
 };
 pub use git::{
-    git_checkout_branch, git_create_branch, git_create_tag, git_delete_branch, git_delete_tag,
-    git_get_activity, git_get_ahead_behind, git_get_blame, git_get_branches, git_get_commit_detail,
-    git_get_config, git_get_contributors, git_get_executable_path, git_get_file_history,
-    git_get_file_stats, git_get_graph_log, git_get_log, git_get_remotes, git_get_repo_info,
-    git_get_stashes, git_get_status, git_get_tags, git_get_version, git_install, git_is_available,
-    git_remove_config, git_search_commits, git_set_config, git_stash_apply, git_stash_drop,
-    git_stash_pop, git_stash_save, git_update,
+    git_branch_rename, git_branch_set_upstream, git_checkout_branch, git_cherry_pick, git_clean,
+    git_clone, git_commit, git_create_branch, git_create_tag, git_delete_branch,
+    git_delete_remote_branch, git_delete_tag, git_discard_changes, git_extract_repo_name,
+    git_fetch, git_get_activity, git_get_ahead_behind, git_get_blame, git_get_branches,
+    git_get_commit_detail, git_get_config, git_get_contributors, git_get_diff,
+    git_get_diff_between, git_get_executable_path, git_get_file_history, git_get_file_stats,
+    git_get_graph_log, git_get_log, git_get_reflog, git_get_remotes, git_get_repo_info,
+    git_get_stashes, git_get_status, git_get_tags, git_get_version, git_init, git_install,
+    git_is_available, git_merge, git_pull, git_push, git_push_tags, git_remote_add,
+    git_remote_remove, git_remote_rename, git_remote_set_url, git_remove_config, git_reset,
+    git_revert, git_search_commits, git_set_config, git_stage_all, git_stage_files,
+    git_stash_apply, git_stash_drop, git_stash_pop, git_stash_save, git_stash_show,
+    git_unstage_files, git_update, git_validate_url,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
@@ -128,14 +145,16 @@ pub use shim::{
 pub use terminal::{
     terminal_append_to_config, terminal_backup_config, terminal_create_profile,
     terminal_delete_profile, terminal_detect_framework, terminal_detect_shells,
-    terminal_get_config_entries, terminal_get_default_profile, terminal_get_profile,
-    terminal_get_proxy_env_vars, terminal_get_shell_env_vars, terminal_get_shell_info,
+    terminal_duplicate_profile, terminal_export_profiles, terminal_get_config_entries,
+    terminal_get_default_profile, terminal_get_profile, terminal_get_proxy_env_vars,
+    terminal_get_shell_env_vars, terminal_get_shell_info, terminal_import_profiles,
     terminal_launch_profile, terminal_launch_profile_detailed, terminal_list_plugins,
-    terminal_list_profiles, terminal_ps_get_execution_policy, terminal_ps_get_module_detail,
-    terminal_ps_list_all_modules, terminal_ps_list_installed_scripts, terminal_ps_list_profiles,
-    terminal_ps_read_profile, terminal_ps_set_execution_policy, terminal_ps_write_profile,
-    terminal_read_config, terminal_set_default_profile, terminal_update_profile,
-    SharedTerminalProfileManager,
+    terminal_list_profiles, terminal_ps_find_module, terminal_ps_get_execution_policy,
+    terminal_ps_get_module_detail, terminal_ps_install_module, terminal_ps_list_all_modules,
+    terminal_ps_list_installed_scripts, terminal_ps_list_profiles, terminal_ps_read_profile,
+    terminal_ps_set_execution_policy, terminal_ps_uninstall_module, terminal_ps_update_module,
+    terminal_ps_write_profile, terminal_read_config, terminal_set_default_profile,
+    terminal_update_profile, terminal_write_config, SharedTerminalProfileManager,
 };
 pub use updater::{self_check_update, self_update};
 pub use wsl::{

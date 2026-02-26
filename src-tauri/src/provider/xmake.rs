@@ -248,7 +248,7 @@ impl XmakeProvider {
 
             // Match "-> name vVersion .. ok" pattern
             if let Some(arrow_rest) = trimmed.strip_prefix("->") {
-                let parts: Vec<&str> = arrow_rest.trim().split_whitespace().collect();
+                let parts: Vec<&str> = arrow_rest.split_whitespace().collect();
                 if parts.len() >= 2 {
                     let name = parts[0].to_string();
                     let version = parts[1].trim_start_matches('v').to_string();

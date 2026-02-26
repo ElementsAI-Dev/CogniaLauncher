@@ -2,9 +2,9 @@ use super::api::update_api_client_from_settings;
 use super::system::{SystemEnvironmentProvider, SystemEnvironmentType};
 use super::traits::{Capability, EnvironmentProvider, Provider, SystemPackageProvider};
 use super::{
-    apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno, dnf,
-    docker, dotnet, flatpak, fnm, fvm, gem, git, github, gitlab, goenv, luarocks, macports, mise,
-    msvc, msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery,
+    adoptium, apk, apt, asdf, brew, bun, bundler, cargo, chocolatey, composer, conan, conda, deno,
+    dnf, docker, dotnet, flatpak, fnm, fvm, gem, git, github, gitlab, goenv, luarocks, macports,
+    mise, msvc, msys2, nix, npm, nvm, pacman, phpbrew, pip, pipx, pnpm, podman, poetry, psgallery,
     pub_dev, pyenv, rbenv, rustup, scoop, sdkman, snap, uv, vcpkg, volta, winget, wsl, xmake, yarn,
     zig, zypper,
 };
@@ -141,6 +141,24 @@ impl ProviderRegistry {
         if sdkman_groovy.supported_platforms().contains(&platform) {
             registry.register_environment_provider(sdkman_groovy.clone());
             registry.register_system_provider(sdkman_groovy);
+        }
+
+        let sdkman_gradle = Arc::new(sdkman::SdkmanProvider::new("gradle"));
+        if sdkman_gradle.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_gradle.clone());
+            registry.register_system_provider(sdkman_gradle);
+        }
+
+        let sdkman_maven = Arc::new(sdkman::SdkmanProvider::new("maven"));
+        if sdkman_maven.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(sdkman_maven.clone());
+            registry.register_system_provider(sdkman_maven);
+        }
+
+        let adoptium_provider = Arc::new(adoptium::AdoptiumProvider::new());
+        if adoptium_provider.supported_platforms().contains(&platform) {
+            registry.register_environment_provider(adoptium_provider.clone());
+            registry.register_system_provider(adoptium_provider);
         }
 
         let phpbrew_provider = Arc::new(phpbrew::PhpbrewProvider::new());
@@ -363,6 +381,12 @@ impl ProviderRegistry {
         let go_provider = Arc::new(goenv::GoModProvider::new().with_proxy_opt(go_mirror));
         if go_provider.supported_platforms().contains(&platform) {
             registry.register_system_provider(go_provider);
+        }
+
+        // Register system C/C++ compiler detection (cross-platform)
+        for env_type in [SystemEnvironmentType::C, SystemEnvironmentType::Cpp] {
+            let provider = Arc::new(SystemEnvironmentProvider::new(env_type));
+            registry.register_environment_provider(provider);
         }
 
         // Register vcpkg provider (cross-platform C++ package manager)

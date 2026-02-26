@@ -255,6 +255,14 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     type: 'input',
     keywords: ['proxy', 'http', 'https', 'socks', '代理', '网络'],
   },
+  {
+    key: 'network.no_proxy',
+    section: 'network',
+    labelKey: 'settings.noProxyGlobal',
+    descKey: 'settings.noProxyGlobalDesc',
+    type: 'input',
+    keywords: ['proxy', 'bypass', 'no_proxy', 'exclude', '代理', '绕过', '排除'],
+  },
 
   // Security Settings
   {

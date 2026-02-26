@@ -14,9 +14,10 @@ import {
   TerminalPsManagement,
   TerminalPsModulesTable,
   TerminalProxySettings,
+  TerminalEnvVars,
 } from '@/components/terminal';
 import type { TerminalProfile } from '@/types/tauri';
-import { Monitor, User, FileText, Blocks, Shield, Globe } from 'lucide-react';
+import { Monitor, User, FileText, Blocks, Shield, Globe, Variable } from 'lucide-react';
 
 export default function TerminalPage() {
   const { t } = useLocale();
@@ -78,6 +79,10 @@ export default function TerminalPage() {
             <Globe className="h-3.5 w-3.5" />
             {t('terminal.tabProxy')}
           </TabsTrigger>
+          <TabsTrigger value="envvars" className="gap-1.5">
+            <Variable className="h-3.5 w-3.5" />
+            {t('terminal.tabEnvVars')}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="shells">
@@ -95,6 +100,20 @@ export default function TerminalPage() {
             onDelete={terminal.deleteProfile}
             onSetDefault={terminal.setDefaultProfile}
             onCreateNew={handleCreateNew}
+            onDuplicate={terminal.duplicateProfile}
+            onExportAll={async () => {
+              const json = await terminal.exportProfiles();
+              if (json) {
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'terminal-profiles.json';
+                a.click();
+                URL.revokeObjectURL(url);
+              }
+            }}
+            onImport={terminal.importProfiles}
             launchingProfileId={terminal.launchingProfileId}
             lastLaunchResult={terminal.lastLaunchResult}
             onClearLaunchResult={terminal.clearLaunchResult}
@@ -107,6 +126,7 @@ export default function TerminalPage() {
             onReadConfig={terminal.readShellConfig}
             onFetchConfigEntries={terminal.fetchConfigEntries}
             onBackupConfig={terminal.backupShellConfig}
+            onWriteConfig={terminal.writeShellConfig}
           />
         </TabsContent>
 
@@ -137,6 +157,9 @@ export default function TerminalPage() {
             scripts={terminal.psScripts}
             onFetchModules={terminal.fetchPSModules}
             onFetchScripts={terminal.fetchPSScripts}
+            onInstallModule={terminal.installPSModule}
+            onUninstallModule={terminal.uninstallPSModule}
+            onUpdateModule={terminal.updatePSModule}
             loading={terminal.loading}
           />
         </TabsContent>
@@ -145,6 +168,14 @@ export default function TerminalPage() {
           <TerminalProxySettings
             proxyEnvVars={terminal.proxyEnvVars}
             onFetchProxyEnvVars={terminal.fetchProxyEnvVars}
+            loading={terminal.loading}
+          />
+        </TabsContent>
+
+        <TabsContent value="envvars">
+          <TerminalEnvVars
+            shellEnvVars={terminal.shellEnvVars}
+            onFetchShellEnvVars={terminal.fetchShellEnvVars}
             loading={terminal.loading}
           />
         </TabsContent>

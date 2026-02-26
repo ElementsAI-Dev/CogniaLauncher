@@ -310,20 +310,20 @@ fn copy_dir_recursive<'a>(
 
         let mut entries = tokio::fs::read_dir(src)
             .await
-            .map_err(|e| CogniaError::Io(e))?;
+            .map_err(CogniaError::Io)?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| CogniaError::Io(e))? {
+        while let Some(entry) = entries.next_entry().await.map_err(CogniaError::Io)? {
             let src_path = entry.path();
             let dst_path = dst.join(entry.file_name());
 
-            let file_type = entry.file_type().await.map_err(|e| CogniaError::Io(e))?;
+            let file_type = entry.file_type().await.map_err(CogniaError::Io)?;
 
             if file_type.is_dir() {
                 copy_dir_recursive(&src_path, &dst_path, bytes_copied, files_count).await?;
             } else if file_type.is_file() {
                 tokio::fs::copy(&src_path, &dst_path)
                     .await
-                    .map_err(|e| CogniaError::Io(e))?;
+                    .map_err(CogniaError::Io)?;
                 let size = tokio::fs::metadata(&dst_path)
                     .await
                     .map(|m| m.len())
@@ -390,11 +390,7 @@ pub async fn migrate_cache(
 
     // Step 4: Verify basic integrity (compare total sizes)
     let dest_size = dir_size(destination).await;
-    let size_diff = if validation.source_size > dest_size {
-        validation.source_size - dest_size
-    } else {
-        dest_size - validation.source_size
-    };
+    let size_diff = validation.source_size.abs_diff(dest_size);
 
     // Allow 1% tolerance for filesystem overhead differences
     let tolerance = validation.source_size / 100;

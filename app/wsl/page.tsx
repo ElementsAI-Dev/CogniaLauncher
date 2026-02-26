@@ -17,6 +17,9 @@ import {
   WslDistroConfigCard,
   WslExecTerminal,
 } from '@/components/wsl';
+import { WslChangeUserDialog } from '@/components/wsl/wsl-change-user-dialog';
+import { WslMountDialog } from '@/components/wsl/wsl-mount-dialog';
+import { WslImportInPlaceDialog } from '@/components/wsl/wsl-import-in-place-dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -79,6 +82,7 @@ export default function WslPage() {
     getDistroConfig,
     setDistroConfigValue,
     installWslOnly,
+    listUsers,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -94,6 +98,10 @@ export default function WslPage() {
     | null
   >(null);
   const [selectedDistroForConfig, setSelectedDistroForConfig] = useState<string | null>(null);
+  const [changeUserOpen, setChangeUserOpen] = useState(false);
+  const [changeUserDistro, setChangeUserDistro] = useState('');
+  const [mountDialogOpen, setMountDialogOpen] = useState(false);
+  const [importInPlaceOpen, setImportInPlaceOpen] = useState(false);
 
   // Auto-select first distro for per-distro config when distros change
   useEffect(() => {
@@ -221,12 +229,7 @@ export default function WslPage() {
     }
   }, [setDefaultVersion, t]);
 
-  const handleImportInPlacePrompt = useCallback(async () => {
-    const name = window.prompt(t('wsl.name'));
-    if (!name) return;
-    const vhdxPath = window.prompt(t('wsl.vhdxFile'));
-    if (!vhdxPath) return;
-
+  const handleImportInPlaceConfirm = useCallback(async (name: string, vhdxPath: string) => {
     try {
       await importInPlace(name, vhdxPath);
       toast.success(t('wsl.importInPlaceSuccess').replace('{name}', name));
@@ -254,48 +257,15 @@ export default function WslPage() {
     }
   }, [t, unmountDisk]);
 
-  const handleMountPrompt = useCallback(() => {
-    const diskPath = window.prompt(t('wsl.diskPath'));
-    if (!diskPath) return;
-
-    const isVhd = window.confirm(t('wsl.mountAsVhdConfirm'));
-    const fsTypeInput = window.prompt(t('wsl.mountFsTypeOptional'))?.trim();
-    const partitionInput = window.prompt(t('wsl.mountPartitionOptional'))?.trim();
-    const mountName = window.prompt(t('wsl.mountNameOptional'))?.trim();
-    const mountOptions =
-      capabilities?.mountOptions !== false
-        ? window.prompt(t('wsl.mountOptionsOptional'))?.trim()
-        : undefined;
-    const bare = window.confirm(t('wsl.mountBareConfirm'));
-
-    let partition: number | undefined;
-    if (partitionInput) {
-      const parsed = Number.parseInt(partitionInput, 10);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        toast.error(t('wsl.mountPartitionInvalid'));
-        return;
-      }
-      partition = parsed;
-    }
-
-    setConfirmAction({
-      type: 'mount',
-      options: {
-        diskPath,
-        isVhd,
-        fsType: fsTypeInput || undefined,
-        partition,
-        mountName: mountName || undefined,
-        mountOptions: mountOptions || undefined,
-        bare,
-      },
-    });
-  }, [capabilities?.mountOptions, t]);
+  const handleMountConfirm = useCallback(async (options: WslMountOptions) => {
+    setConfirmAction({ type: 'mount', options });
+    return '';
+  }, []);
 
   const handleUnmountPrompt = useCallback(() => {
-    const diskPath = window.prompt(t('wsl.diskPathOptional'))?.trim();
-    setConfirmAction({ type: 'unmount', diskPath: diskPath || undefined });
-  }, [t]);
+    // For unmount, a simple confirm dialog is sufficient since it's just an optional path
+    setConfirmAction({ type: 'unmount', diskPath: undefined });
+  }, []);
 
   const handleUnregister = useCallback(async (name: string) => {
     try {
@@ -308,14 +278,17 @@ export default function WslPage() {
     }
   }, [t, refreshDistros]);
 
-  const handleChangeDefaultUser = useCallback(async (name: string) => {
-    const username = window.prompt(t('wsl.username'));
-    if (!username) return;
+  const handleChangeDefaultUserOpen = useCallback((name: string) => {
+    setChangeUserDistro(name);
+    setChangeUserOpen(true);
+  }, []);
+
+  const handleChangeDefaultUserConfirm = useCallback(async (distro: string, username: string) => {
     try {
-      await changeDefaultUser(name, username);
+      await changeDefaultUser(distro, username);
       toast.success(
         t('wsl.changeDefaultUserSuccess')
-          .replace('{name}', name)
+          .replace('{name}', distro)
           .replace('{user}', username)
       );
     } catch (err) {
@@ -463,7 +436,7 @@ export default function WslPage() {
                       onUnregister={(name) =>
                         setConfirmAction({ type: 'unregister', name })
                       }
-                      onChangeDefaultUser={handleChangeDefaultUser}
+                      onChangeDefaultUser={handleChangeDefaultUserOpen}
                       getDiskUsage={getDiskUsage}
                       t={t}
                     />
@@ -527,7 +500,7 @@ export default function WslPage() {
                   variant="outline"
                   size="sm"
                   className="w-full justify-start"
-                  onClick={handleImportInPlacePrompt}
+                  onClick={() => setImportInPlaceOpen(true)}
                   disabled={importInPlaceUnsupported}
                   title={importInPlaceHint ?? undefined}
                 >
@@ -537,7 +510,7 @@ export default function WslPage() {
                   variant="outline"
                   size="sm"
                   className="w-full justify-start"
-                  onClick={handleMountPrompt}
+                  onClick={() => setMountDialogOpen(true)}
                 >
                   {t('wsl.mount')}
                 </Button>
@@ -592,6 +565,33 @@ export default function WslPage() {
         distroName={exportDistroName}
         onOpenChange={setExportOpen}
         onExport={handleExport}
+        t={t}
+      />
+
+      {/* Change Default User Dialog */}
+      <WslChangeUserDialog
+        open={changeUserOpen}
+        distroName={changeUserDistro}
+        onOpenChange={setChangeUserOpen}
+        onConfirm={handleChangeDefaultUserConfirm}
+        listUsers={listUsers}
+        t={t}
+      />
+
+      {/* Mount Disk Dialog */}
+      <WslMountDialog
+        open={mountDialogOpen}
+        onOpenChange={setMountDialogOpen}
+        capabilities={capabilities}
+        onConfirm={handleMountConfirm}
+        t={t}
+      />
+
+      {/* Import In-Place Dialog */}
+      <WslImportInPlaceDialog
+        open={importInPlaceOpen}
+        onOpenChange={setImportInPlaceOpen}
+        onConfirm={handleImportInPlaceConfirm}
         t={t}
       />
 

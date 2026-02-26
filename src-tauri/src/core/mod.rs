@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod batch;
 pub mod custom_detection;
 pub mod environment;

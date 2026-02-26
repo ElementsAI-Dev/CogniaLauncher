@@ -271,13 +271,16 @@ impl AssetPicker {
             7
         } else if lower.ends_with(".tar.zst") {
             6
-        } else if lower.ends_with(".exe") || lower.ends_with(".msi") {
+        } else if lower.ends_with(".exe")
+            || lower.ends_with(".msi")
+            || lower.ends_with(".dmg")
+            || lower.ends_with(".pkg")
+        {
             5
-        } else if lower.ends_with(".dmg") || lower.ends_with(".pkg") {
-            5
-        } else if lower.ends_with(".deb") || lower.ends_with(".rpm") {
-            4
-        } else if lower.ends_with(".appimage") {
+        } else if lower.ends_with(".deb")
+            || lower.ends_with(".rpm")
+            || lower.ends_with(".appimage")
+        {
             4
         } else {
             3

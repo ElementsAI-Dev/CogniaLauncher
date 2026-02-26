@@ -124,6 +124,7 @@ fn is_within_months(date_str: &str, months: i64) -> bool {
 }
 
 /// In-memory cache for EOL data.
+#[allow(clippy::type_complexity)]
 pub struct EolCache {
     data: Arc<RwLock<HashMap<String, (Vec<EolCycleInfo>, Instant)>>>,
 }
@@ -187,13 +188,11 @@ impl Default for EolCache {
 async fn fetch_eol_from_api(product: &str) -> CogniaResult<Vec<EolCycleInfo>> {
     let url = format!("{}/{}.json", EOL_API_BASE, product);
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| CogniaError::Provider(format!("Failed to create HTTP client: {}", e)))?;
+    let client = crate::platform::proxy::get_shared_client();
 
     let response = client
         .get(&url)
+        .timeout(Duration::from_secs(15))
         .header("Accept", "application/json")
         .send()
         .await

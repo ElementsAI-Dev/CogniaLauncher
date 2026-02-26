@@ -287,7 +287,7 @@ impl Provider for NixProvider {
                     if potential_version
                         .chars()
                         .next()
-                        .map_or(false, |c| c.is_ascii_digit())
+                        .is_some_and(|c| c.is_ascii_digit())
                     {
                         return Ok(Some(potential_version.to_string()));
                     }
@@ -339,7 +339,7 @@ impl Provider for NixProvider {
                                     if potential_ver
                                         .chars()
                                         .next()
-                                        .map_or(false, |c| c.is_ascii_digit())
+                                        .is_some_and(|c| c.is_ascii_digit())
                                     {
                                         (name_version[..pos].to_string(), potential_ver.to_string())
                                     } else {
@@ -381,7 +381,7 @@ impl Provider for NixProvider {
                 let full_name = parts.first()?.to_string();
                 let install_path = parts
                     .get(1)
-                    .map(|p| PathBuf::from(p))
+                    .map(PathBuf::from)
                     .unwrap_or_else(|| nix_store.join(&full_name));
 
                 // Parse "name-version" format
@@ -390,7 +390,7 @@ impl Provider for NixProvider {
                     if potential_ver
                         .chars()
                         .next()
-                        .map_or(false, |c| c.is_ascii_digit())
+                        .is_some_and(|c| c.is_ascii_digit())
                     {
                         (full_name[..pos].to_string(), potential_ver.to_string())
                     } else {
@@ -444,7 +444,7 @@ impl Provider for NixProvider {
                         let extract_name_ver = |s: &str| -> (String, String) {
                             if let Some(pos) = s.rfind('-') {
                                 let ver = &s[pos + 1..];
-                                if ver.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+                                if ver.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                                     return (s[..pos].to_string(), ver.to_string());
                                 }
                             }

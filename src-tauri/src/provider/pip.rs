@@ -518,7 +518,6 @@ impl SystemPackageProvider for PipProvider {
         let out = self.run_pip_raw(&["--version"]).await?;
         // Output: "pip 24.3.1 from /path/site-packages/pip (python 3.12)"
         Ok(out
-            .trim()
             .split_whitespace()
             .nth(1)
             .unwrap_or("unknown")

@@ -40,6 +40,15 @@ const DEFAULT_FORM = {
   provider: "",
 };
 
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function inferNameFromUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -75,8 +84,10 @@ export function AddDownloadDialog({
     }
   }, [form.url, form.name]);
 
+  const urlTrimmed = form.url.trim();
+  const urlValid = !urlTrimmed || isValidUrl(urlTrimmed);
   const isValid =
-    form.url.trim() && form.destination.trim() && form.name.trim();
+    urlTrimmed && urlValid && form.destination.trim() && form.name.trim();
 
   const handleSubmit = async () => {
     if (!isValid) return;
@@ -120,6 +131,11 @@ export function AddDownloadDialog({
               }
               placeholder="https://example.com/file.zip"
             />
+            {urlTrimmed && !urlValid && (
+              <p className="text-xs text-destructive">
+                {t('downloads.validation.invalidUrl')}
+              </p>
+            )}
           </div>
 
           <DestinationPicker

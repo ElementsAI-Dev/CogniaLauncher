@@ -336,6 +336,109 @@ export interface CleanupHistorySummary {
   permanent_cleanups: number;
 }
 
+export interface CacheOptimizeResult {
+  sizeBefore: number;
+  sizeBeforeHuman: string;
+  sizeAfter: number;
+  sizeAfterHuman: string;
+  sizeSaved: number;
+  sizeSavedHuman: string;
+}
+
+export interface CacheSizeSnapshot {
+  timestamp: string;
+  internalSize: number;
+  internalSizeHuman: string;
+  downloadCount: number;
+  metadataCount: number;
+}
+
+export interface CacheAutoCleanedEvent {
+  expiredMetadataRemoved: number;
+  expiredDownloadsFreed: number;
+  evictedCount: number;
+  stalePartialsRemoved: number;
+  totalFreedHuman: string;
+}
+
+// ============================================================================
+// Backup & Database Types
+// ============================================================================
+
+export type BackupContentType =
+  | 'config'
+  | 'terminal_profiles'
+  | 'environment_profiles'
+  | 'cache_database'
+  | 'download_history'
+  | 'cleanup_history'
+  | 'custom_detection_rules'
+  | 'environment_settings';
+
+export interface BackupManifest {
+  formatVersion: number;
+  appVersion: string;
+  createdAt: string;
+  platform: string;
+  hostname: string;
+  contents: BackupContentType[];
+  fileChecksums: Record<string, string>;
+  totalSize: number;
+  note: string | null;
+}
+
+export interface BackupInfo {
+  path: string;
+  name: string;
+  manifest: BackupManifest;
+  size: number;
+  sizeHuman: string;
+}
+
+export interface BackupResult {
+  success: boolean;
+  path: string;
+  manifest: BackupManifest;
+  durationMs: number;
+  error: string | null;
+}
+
+export interface RestoreSkipped {
+  contentType: string;
+  reason: string;
+}
+
+export interface RestoreResult {
+  success: boolean;
+  restored: string[];
+  skipped: RestoreSkipped[];
+  error: string | null;
+}
+
+export interface BackupValidationResult {
+  valid: boolean;
+  manifest: BackupManifest | null;
+  missingFiles: string[];
+  checksumMismatches: string[];
+  errors: string[];
+}
+
+export interface IntegrityCheckResult {
+  ok: boolean;
+  errors: string[];
+}
+
+export interface DatabaseInfo {
+  dbSize: number;
+  dbSizeHuman: string;
+  walSize: number;
+  walSizeHuman: string;
+  pageCount: number;
+  pageSize: number;
+  freelistCount: number;
+  tableCounts: Record<string, number>;
+}
+
 // ============================================================================
 // Platform Types
 // ============================================================================
@@ -393,6 +496,19 @@ export interface DiskInfo {
   usedSpaceHuman: string;
   readBytesHuman: string;
   writtenBytesHuman: string;
+}
+
+export interface SystemProxyInfo {
+  httpProxy: string | null;
+  httpsProxy: string | null;
+  noProxy: string | null;
+  source: 'environment' | 'windows_registry' | 'none';
+}
+
+export interface ProxyTestResult {
+  success: boolean;
+  latencyMs: number;
+  error: string | null;
 }
 
 export interface NetworkInterfaceInfo {
@@ -823,6 +939,12 @@ export interface DownloadTask {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  retries: number;
+  priority: number;
+  expectedChecksum: string | null;
+  supportsResume: boolean;
+  metadata: Record<string, string>;
+  serverFilename: string | null;
 }
 
 export interface DownloadQueueStats {
@@ -888,6 +1010,7 @@ export interface DownloadRequest {
   checksum?: string;
   priority?: number;
   provider?: string;
+  headers?: Record<string, string>;
 }
 
 export interface VerifyResult {
@@ -1257,6 +1380,35 @@ export interface WslDistroEnvironment {
   installedPackages?: number;
 }
 
+/** Live resource usage from a running WSL distribution */
+export interface WslDistroResources {
+  memTotalKb: number;
+  memAvailableKb: number;
+  memUsedKb: number;
+  swapTotalKb: number;
+  swapUsedKb: number;
+  cpuCount: number;
+  loadAvg: [number, number, number];
+}
+
+/** A user account inside a WSL distribution */
+export interface WslUser {
+  username: string;
+  uid: number;
+  gid: number;
+  home: string;
+  shell: string;
+}
+
+/** Result of a package update/upgrade operation */
+export interface WslPackageUpdateResult {
+  packageManager: string;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
 // ============================================================================
 // Git Types
 // ============================================================================
@@ -1395,6 +1547,41 @@ export interface GitFileStatEntry {
   deletions: number;
 }
 
+/** Git reflog entry */
+export interface GitReflogEntry {
+  hash: string;
+  selector: string;
+  action: string;
+  message: string;
+  date: string;
+}
+
+/** Git clone options */
+export interface GitCloneOptions {
+  branch?: string;
+  depth?: number;
+  singleBranch?: boolean;
+  recurseSubmodules?: boolean;
+  shallowSubmodules?: boolean;
+  noCheckout?: boolean;
+  bare?: boolean;
+  mirror?: boolean;
+  sparse?: boolean;
+  filter?: string;
+  jobs?: number;
+  noTags?: boolean;
+  remoteName?: string;
+}
+
+/** Git clone progress event */
+export interface GitCloneProgress {
+  phase: string;
+  percent: number | null;
+  current: number | null;
+  total: number | null;
+  message: string;
+}
+
 // ============================================================================
 // Launch Types
 // ============================================================================
@@ -1479,12 +1666,13 @@ export interface PathValidationResult {
 // ============================================================================
 
 export type EnvVarScope = 'process' | 'user' | 'system';
-export type EnvFileFormat = 'dotenv' | 'shell' | 'fish' | 'powershell';
+export type EnvFileFormat = 'dotenv' | 'shell' | 'fish' | 'powershell' | 'nushell';
 
 export interface PathEntryInfo {
   path: string;
   exists: boolean;
   isDirectory: boolean;
+  isDuplicate: boolean;
 }
 
 export interface ShellProfileInfo {
@@ -1504,7 +1692,7 @@ export interface EnvVarImportResult {
 // Terminal Management
 // ============================================================================
 
-export type ShellType = 'bash' | 'zsh' | 'fish' | 'powershell' | 'cmd';
+export type ShellType = 'bash' | 'zsh' | 'fish' | 'powershell' | 'cmd' | 'nushell';
 
 export interface ShellConfigFile {
   path: string;
