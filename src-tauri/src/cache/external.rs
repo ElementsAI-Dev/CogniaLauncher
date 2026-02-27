@@ -1635,4 +1635,76 @@ mod tests {
         assert!(caches.is_ok());
         // Should return an empty or non-empty list without error
     }
+
+    #[test]
+    fn test_all_providers_count() {
+        let all = ExternalCacheProvider::all();
+        // Should have a reasonable number of providers
+        assert!(all.len() >= 20);
+        // Each provider should have a non-empty id and display_name
+        for p in &all {
+            assert!(!p.id().is_empty());
+            assert!(!p.display_name().is_empty());
+            assert!(!p.command().is_empty());
+            assert!(!p.category().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_provider_display_names() {
+        assert_eq!(ExternalCacheProvider::Npm.display_name(), "npm (Node.js)");
+        assert_eq!(ExternalCacheProvider::Pip.display_name(), "pip (Python)");
+        assert_eq!(ExternalCacheProvider::Cargo.display_name(), "Cargo (Rust)");
+        assert_eq!(ExternalCacheProvider::Gradle.display_name(), "Gradle (Java)");
+        assert_eq!(ExternalCacheProvider::Docker.display_name(), "Docker Build Cache");
+    }
+
+    #[test]
+    fn test_provider_commands() {
+        assert_eq!(ExternalCacheProvider::Npm.command(), "npm");
+        assert_eq!(ExternalCacheProvider::Maven.command(), "mvn");
+        assert_eq!(ExternalCacheProvider::Bundler.command(), "bundle");
+        assert_eq!(ExternalCacheProvider::Docker.command(), "docker");
+    }
+
+    #[test]
+    fn test_provider_clean_commands() {
+        // Providers with clean commands
+        let (cmd, args) = ExternalCacheProvider::Npm.clean_command().unwrap();
+        assert_eq!(cmd, "npm");
+        assert!(args.contains(&"clean"));
+
+        // Providers without clean commands (direct delete)
+        assert!(ExternalCacheProvider::Cargo.clean_command().is_none());
+        assert!(ExternalCacheProvider::Bun.clean_command().is_none());
+        assert!(ExternalCacheProvider::Gradle.clean_command().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_calculate_dir_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("size_calc");
+        tokio::fs::create_dir_all(&base).await.unwrap();
+        tokio::fs::write(base.join("a.bin"), vec![0u8; 100]).await.unwrap();
+        tokio::fs::write(base.join("b.bin"), vec![0u8; 200]).await.unwrap();
+
+        let size = calculate_dir_size(&base).await;
+        assert_eq!(size, 300);
+
+        // Non-existent path should return 0
+        let nonexistent = dir.path().join("does_not_exist");
+        let size_none = calculate_dir_size(&nonexistent).await;
+        assert_eq!(size_none, 0);
+    }
+
+    #[test]
+    fn test_podman_cache_path_is_none() {
+        assert!(get_podman_cache_path().is_none());
+    }
+
+    #[test]
+    fn test_parse_str_unknown() {
+        assert!(ExternalCacheProvider::parse_str("nonexistent_tool").is_none());
+        assert!(ExternalCacheProvider::parse_str("").is_none());
+    }
 }

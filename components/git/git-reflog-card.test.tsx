@@ -90,4 +90,23 @@ describe('GitReflogCard', () => {
       expect(screen.queryByTitle('git.reflog.resetTo')).not.toBeInTheDocument();
     });
   });
+
+  it('calls onResetTo with hash and mixed mode when reset button clicked', async () => {
+    render(<GitReflogCard onGetReflog={mockOnGetReflog} onResetTo={mockOnResetTo} />);
+    fireEvent.click(screen.getByText('git.reflog.load'));
+    await waitFor(() => {
+      const resetButtons = screen.getAllByTitle('git.reflog.resetTo');
+      fireEvent.click(resetButtons[0]);
+    });
+    expect(mockOnResetTo).toHaveBeenCalledWith('abc1234567890', 'mixed');
+  });
+
+  it('renders entry messages', async () => {
+    render(<GitReflogCard onGetReflog={mockOnGetReflog} />);
+    fireEvent.click(screen.getByText('git.reflog.load'));
+    await waitFor(() => {
+      expect(screen.getByText(/commit: add feature/)).toBeInTheDocument();
+      expect(screen.getByText(/checkout: moving from main to dev/)).toBeInTheDocument();
+    });
+  });
 });

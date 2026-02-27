@@ -33,4 +33,34 @@ describe('GitBranchCard', () => {
     render(<GitBranchCard branches={branches} />);
     expect(screen.getByText('3')).toBeInTheDocument();
   });
+
+  it('shows empty state when no branches', () => {
+    render(<GitBranchCard branches={[]} />);
+    expect(screen.getByText('No branches')).toBeInTheDocument();
+  });
+
+  it('displays upstream arrow for tracked branch', () => {
+    render(<GitBranchCard branches={branches} />);
+    expect(screen.getByText(/→ origin\/main/)).toBeInTheDocument();
+  });
+
+  it('renders short hashes', () => {
+    render(<GitBranchCard branches={branches} />);
+    expect(screen.getAllByText('abc1234').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('def5678')).toBeInTheDocument();
+  });
+
+  it('shows only local section when no remote branches', () => {
+    const localOnly = branches.filter(b => !b.isRemote);
+    render(<GitBranchCard branches={localOnly} />);
+    expect(screen.getByText(/git\.repo\.localBranches/)).toBeInTheDocument();
+    expect(screen.queryByText(/git\.repo\.remoteBranches/)).not.toBeInTheDocument();
+  });
+
+  it('shows only remote section when no local branches', () => {
+    const remoteOnly = branches.filter(b => b.isRemote);
+    render(<GitBranchCard branches={remoteOnly} />);
+    expect(screen.queryByText(/git\.repo\.localBranches/)).not.toBeInTheDocument();
+    expect(screen.getByText(/git\.repo\.remoteBranches/)).toBeInTheDocument();
+  });
 });

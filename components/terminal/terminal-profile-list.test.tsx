@@ -84,5 +84,119 @@ describe('TerminalProfileList', () => {
     fireEvent.click(launchButtons[1]);
     expect(onLaunch).toHaveBeenCalledWith('profile-idle');
   });
+
+  it('shows empty state with createFirst button', () => {
+    const onCreateNew = jest.fn();
+    render(
+      <TerminalProfileList
+        profiles={[]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={onCreateNew}
+      />,
+    );
+
+    expect(screen.getByText('terminal.noProfiles')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.createFirst/i }));
+    expect(onCreateNew).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders profile card with envType and envVersion', () => {
+    const profile = makeProfile({
+      id: 'p1',
+      name: 'Node Dev',
+      shellId: 'bash',
+      envType: 'node',
+      envVersion: '20',
+    });
+
+    render(
+      <TerminalProfileList
+        profiles={[profile]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Node Dev')).toBeInTheDocument();
+    expect(screen.getByText(/node 20/)).toBeInTheDocument();
+  });
+
+  it('calls onEdit and onDelete with correct arguments', () => {
+    const onEdit = jest.fn();
+    const onDelete = jest.fn();
+    const profile = makeProfile({ id: 'edit-me', name: 'Editable' });
+
+    render(
+      <TerminalProfileList
+        profiles={[profile]}
+        onLaunch={jest.fn()}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+      />,
+    );
+
+    const allButtons = screen.getAllByRole('button');
+    const editBtn = allButtons.find((btn) =>
+      btn.querySelector('.lucide-pencil') !== null
+    );
+    const deleteBtn = allButtons.find((btn) =>
+      btn.classList.contains('text-destructive')
+    );
+
+    if (editBtn) fireEvent.click(editBtn);
+    expect(onEdit).toHaveBeenCalledWith(profile);
+
+    if (deleteBtn) fireEvent.click(deleteBtn);
+    expect(onDelete).toHaveBeenCalledWith('edit-me');
+  });
+
+  it('shows set-default button for non-default and default badge for default', () => {
+    const onSetDefault = jest.fn();
+    const nonDefaultProfile = makeProfile({ id: 'non', name: 'NonDefault', isDefault: false });
+
+    render(
+      <TerminalProfileList
+        profiles={[nonDefaultProfile]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={onSetDefault}
+        onCreateNew={jest.fn()}
+      />,
+    );
+
+    const starButtons = screen.getAllByRole('button').filter((btn) =>
+      btn.querySelector('.lucide-star') !== null
+    );
+    expect(starButtons.length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(starButtons[0]);
+    expect(onSetDefault).toHaveBeenCalledWith('non');
+  });
+
+  it('shows export and import buttons when callbacks provided', () => {
+    render(
+      <TerminalProfileList
+        profiles={[makeProfile({})]}
+        onLaunch={jest.fn()}
+        onEdit={jest.fn()}
+        onDelete={jest.fn()}
+        onSetDefault={jest.fn()}
+        onCreateNew={jest.fn()}
+        onExportAll={jest.fn()}
+        onImport={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('terminal.exportProfiles')).toBeInTheDocument();
+    expect(screen.getByText('terminal.importProfiles')).toBeInTheDocument();
+  });
 });
 

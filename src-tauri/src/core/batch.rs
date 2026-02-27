@@ -1204,4 +1204,230 @@ mod tests {
             _ => panic!("Expected ItemCompleted variant"),
         }
     }
+
+    // ── is_recoverable_error tests ──
+
+    #[test]
+    fn test_is_recoverable_error_timeout() {
+        assert!(BatchManager::is_recoverable_error("Connection timeout occurred"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_connection() {
+        assert!(BatchManager::is_recoverable_error("Connection refused"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_network() {
+        assert!(BatchManager::is_recoverable_error("Network unreachable"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_temporary() {
+        assert!(BatchManager::is_recoverable_error("Temporary failure in name resolution"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_rate_limit() {
+        assert!(BatchManager::is_recoverable_error("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_http_502() {
+        assert!(BatchManager::is_recoverable_error("HTTP 502 Bad Gateway"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_http_503() {
+        assert!(BatchManager::is_recoverable_error("HTTP 503 Service Unavailable"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_http_504() {
+        assert!(BatchManager::is_recoverable_error("HTTP 504 Gateway Timeout"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_case_insensitive() {
+        assert!(BatchManager::is_recoverable_error("TIMEOUT ERROR"));
+        assert!(BatchManager::is_recoverable_error("NETWORK Failure"));
+    }
+
+    #[test]
+    fn test_is_recoverable_error_not_recoverable() {
+        assert!(!BatchManager::is_recoverable_error("Package not found"));
+        assert!(!BatchManager::is_recoverable_error("Permission denied"));
+        assert!(!BatchManager::is_recoverable_error("Invalid checksum"));
+        assert!(!BatchManager::is_recoverable_error(""));
+    }
+
+    // ── get_error_suggestion tests ──
+
+    #[test]
+    fn test_get_error_suggestion_permission() {
+        let suggestion = BatchManager::get_error_suggestion("Permission denied");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("administrator"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_access_denied() {
+        let suggestion = BatchManager::get_error_suggestion("Access denied to resource");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("administrator"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_not_found() {
+        let suggestion = BatchManager::get_error_suggestion("Package not found");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("spelling"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_network() {
+        let suggestion = BatchManager::get_error_suggestion("Network error occurred");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("internet"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_connection() {
+        let suggestion = BatchManager::get_error_suggestion("Connection refused");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("internet"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_rate_limit() {
+        let suggestion = BatchManager::get_error_suggestion("Rate limit exceeded");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("Wait"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_checksum() {
+        let suggestion = BatchManager::get_error_suggestion("Checksum mismatch");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("cache"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_hash() {
+        let suggestion = BatchManager::get_error_suggestion("Hash verification failed");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("cache"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_disk_space() {
+        let suggestion = BatchManager::get_error_suggestion("Not enough disk space");
+        assert!(suggestion.is_some());
+        assert!(suggestion.unwrap().contains("disk space"));
+    }
+
+    #[test]
+    fn test_get_error_suggestion_no_match() {
+        let suggestion = BatchManager::get_error_suggestion("Some unknown error");
+        assert!(suggestion.is_none());
+    }
+
+    #[test]
+    fn test_get_error_suggestion_empty() {
+        let suggestion = BatchManager::get_error_suggestion("");
+        assert!(suggestion.is_none());
+    }
+
+    // ── BatchProgress serde tests ──
+
+    #[test]
+    fn test_batch_progress_starting_serde() {
+        let progress = BatchProgress::Starting { total: 10 };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"starting\""));
+        assert!(json.contains("\"total\":10"));
+
+        let deser: BatchProgress = serde_json::from_str(&json).unwrap();
+        match deser {
+            BatchProgress::Starting { total } => assert_eq!(total, 10),
+            _ => panic!("Expected Starting"),
+        }
+    }
+
+    #[test]
+    fn test_batch_progress_resolving_serde() {
+        let progress = BatchProgress::Resolving {
+            package: "express".into(),
+            current: 2,
+            total: 5,
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"resolving\""));
+    }
+
+    #[test]
+    fn test_batch_progress_downloading_serde() {
+        let progress = BatchProgress::Downloading {
+            package: "react".into(),
+            progress: 0.75,
+            current: 1,
+            total: 3,
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"downloading\""));
+        assert!(json.contains("\"progress\":0.75"));
+    }
+
+    #[test]
+    fn test_batch_result_serde_roundtrip() {
+        let result = BatchResult {
+            successful: vec![BatchItemResult {
+                name: "lodash".into(),
+                version: "4.17.21".into(),
+                provider: "npm".into(),
+                action: "installed".into(),
+            }],
+            failed: vec![BatchItemError {
+                name: "bad-pkg".into(),
+                error: "failed".into(),
+                recoverable: false,
+                suggestion: None,
+            }],
+            skipped: vec![BatchItemSkipped {
+                name: "existing".into(),
+                reason: "Already installed".into(),
+            }],
+            total_time_ms: 1234,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: BatchResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.successful.len(), 1);
+        assert_eq!(deser.failed.len(), 1);
+        assert_eq!(deser.skipped.len(), 1);
+        assert_eq!(deser.total_time_ms, 1234);
+    }
+
+    #[test]
+    fn test_looks_like_version_dist_tag_prefix() {
+        assert!(PackageSpec::looks_like_version("beta-1"));
+        assert!(PackageSpec::looks_like_version("rc-2"));
+        assert!(PackageSpec::looks_like_version("nightly"));
+        assert!(PackageSpec::looks_like_version("stable"));
+        assert!(PackageSpec::looks_like_version("dev"));
+    }
+
+    #[test]
+    fn test_looks_like_version_negative() {
+        assert!(!PackageSpec::looks_like_version(""));
+        assert!(!PackageSpec::looks_like_version("lodash"));
+        assert!(!PackageSpec::looks_like_version("@types/node"));
+    }
+
+    #[test]
+    fn test_package_spec_whitespace_trimming() {
+        let spec = PackageSpec::parse("  lodash@4.17.21  ");
+        assert_eq!(spec.name, "lodash");
+        assert_eq!(spec.version, Some("4.17.21".into()));
+    }
 }

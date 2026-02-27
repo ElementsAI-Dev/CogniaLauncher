@@ -848,4 +848,162 @@ mod extract_tests {
         assert!(json.contains("\"files_done\":1"));
         assert!(json.contains("\"total_files\":5"));
     }
+
+    #[test]
+    fn test_install_transaction_new() {
+        let tx = InstallTransaction::new();
+        assert!(!tx.id.is_empty());
+        assert!(!tx.started_at.is_empty());
+        assert!(tx.operations.is_empty());
+        assert_eq!(tx.status, TransactionStatus::Pending);
+    }
+
+    #[test]
+    fn test_install_transaction_default() {
+        let tx = InstallTransaction::default();
+        assert_eq!(tx.status, TransactionStatus::Pending);
+        assert!(tx.operations.is_empty());
+    }
+
+    #[test]
+    fn test_install_transaction_add_operation() {
+        let mut tx = InstallTransaction::new();
+        tx.add_operation(InstallOperation::CreateDir {
+            path: PathBuf::from("/tmp/test"),
+        });
+        tx.add_operation(InstallOperation::CopyFile {
+            src: PathBuf::from("/tmp/src"),
+            dst: PathBuf::from("/tmp/dst"),
+        });
+        assert_eq!(tx.operations.len(), 2);
+    }
+
+    #[test]
+    fn test_transaction_status_serde() {
+        let statuses = vec![
+            TransactionStatus::Pending,
+            TransactionStatus::InProgress,
+            TransactionStatus::Completed,
+            TransactionStatus::Failed,
+            TransactionStatus::RolledBack,
+        ];
+        for status in statuses {
+            let json = serde_json::to_string(&status).unwrap();
+            let deser: TransactionStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(deser, status);
+        }
+    }
+
+    #[test]
+    fn test_install_operation_create_dir_serde() {
+        let op = InstallOperation::CreateDir {
+            path: PathBuf::from("/tmp/new-dir"),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"create_dir\""));
+        let deser: InstallOperation = serde_json::from_str(&json).unwrap();
+        match deser {
+            InstallOperation::CreateDir { path } => {
+                assert_eq!(path, PathBuf::from("/tmp/new-dir"));
+            }
+            _ => panic!("Expected CreateDir"),
+        }
+    }
+
+    #[test]
+    fn test_install_operation_copy_file_serde() {
+        let op = InstallOperation::CopyFile {
+            src: PathBuf::from("/src/file"),
+            dst: PathBuf::from("/dst/file"),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"copy_file\""));
+    }
+
+    #[test]
+    fn test_install_operation_create_symlink_serde() {
+        let op = InstallOperation::CreateSymlink {
+            src: PathBuf::from("/target"),
+            dst: PathBuf::from("/link"),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"create_symlink\""));
+    }
+
+    #[test]
+    fn test_install_operation_write_file_serde() {
+        let op = InstallOperation::WriteFile {
+            path: PathBuf::from("/tmp/file.txt"),
+            backup: Some(PathBuf::from("/tmp/file.txt.bak")),
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"write_file\""));
+
+        let deser: InstallOperation = serde_json::from_str(&json).unwrap();
+        match deser {
+            InstallOperation::WriteFile { path, backup } => {
+                assert_eq!(path, PathBuf::from("/tmp/file.txt"));
+                assert!(backup.is_some());
+            }
+            _ => panic!("Expected WriteFile"),
+        }
+    }
+
+    #[test]
+    fn test_install_operation_delete_file_serde() {
+        let op = InstallOperation::DeleteFile {
+            path: PathBuf::from("/tmp/old-file"),
+            backup: None,
+        };
+        let json = serde_json::to_string(&op).unwrap();
+        assert!(json.contains("\"type\":\"delete_file\""));
+    }
+
+    #[test]
+    fn test_install_transaction_serde_roundtrip() {
+        let mut tx = InstallTransaction::new();
+        tx.add_operation(InstallOperation::CreateDir {
+            path: PathBuf::from("/tmp/test"),
+        });
+
+        let json = serde_json::to_string(&tx).unwrap();
+        let deser: InstallTransaction = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.id, tx.id);
+        assert_eq!(deser.operations.len(), 1);
+        assert_eq!(deser.status, TransactionStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn test_install_transaction_execute_create_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let new_dir = dir.path().join("subdir");
+
+        let mut tx = InstallTransaction::new();
+        tx.add_operation(InstallOperation::CreateDir {
+            path: new_dir.clone(),
+        });
+
+        tx.execute().await.unwrap();
+        assert_eq!(tx.status, TransactionStatus::Completed);
+        assert!(new_dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_install_transaction_execute_copy_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dst = dir.path().join("dest.txt");
+        std::fs::write(&src, "test content").unwrap();
+
+        let mut tx = InstallTransaction::new();
+        tx.add_operation(InstallOperation::CopyFile {
+            src: src.clone(),
+            dst: dst.clone(),
+        });
+
+        tx.execute().await.unwrap();
+        assert_eq!(tx.status, TransactionStatus::Completed);
+        assert!(dst.exists());
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "test content");
+    }
 }

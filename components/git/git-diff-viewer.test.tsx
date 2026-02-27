@@ -42,4 +42,33 @@ describe('GitDiffViewer', () => {
     expect(screen.getByText('1')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
   });
+
+  it('renders hunk header lines', () => {
+    const diff = '@@ -1,3 +1,4 @@\n context';
+    const { container } = render(<GitDiffViewer diff={diff} />);
+    // Hunk lines get blue styling
+    const hunkLine = container.querySelector('.bg-blue-500\\/10');
+    expect(hunkLine).toBeInTheDocument();
+  });
+
+  it('renders meta lines with muted styling', () => {
+    const diff = 'diff --git a/file.ts b/file.ts\nindex abc..def';
+    const { container } = render(<GitDiffViewer diff={diff} />);
+    const metaLines = container.querySelectorAll('.bg-muted\\/50');
+    expect(metaLines.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders add lines with green styling', () => {
+    const diff = '+added line';
+    const { container } = render(<GitDiffViewer diff={diff} />);
+    const addLine = container.querySelector('.bg-green-500\\/10');
+    expect(addLine).toBeInTheDocument();
+  });
+
+  it('renders delete lines with red styling', () => {
+    const diff = '-removed line';
+    const { container } = render(<GitDiffViewer diff={diff} />);
+    const delLine = container.querySelector('.bg-red-500\\/10');
+    expect(delLine).toBeInTheDocument();
+  });
 });

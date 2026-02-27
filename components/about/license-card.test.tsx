@@ -43,4 +43,22 @@ describe("LicenseCard", () => {
     render(<LicenseCard t={mockT} />);
     expect(screen.getByRole("region")).toBeInTheDocument();
   });
+
+  it("renders MIT badge", () => {
+    render(<LicenseCard t={mockT} />);
+    expect(screen.getByText("MIT")).toBeInTheDocument();
+  });
+
+  it("has noopener noreferrer on license link", () => {
+    render(<LicenseCard t={mockT} />);
+    const link = screen.getByLabelText(/MIT License/);
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("renders description text", () => {
+    render(<LicenseCard t={mockT} />);
+    expect(
+      screen.getByText("Open source license and copyright information"),
+    ).toBeInTheDocument();
+  });
 });

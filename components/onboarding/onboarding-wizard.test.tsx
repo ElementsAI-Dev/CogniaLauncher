@@ -154,4 +154,53 @@ describe("OnboardingWizard", () => {
     await userEvent.click(screen.getByText("Skip"));
     expect(defaultProps.onSkip).toHaveBeenCalledTimes(1);
   });
+
+  it("renders step indicators for all steps", () => {
+    render(<OnboardingWizard {...defaultProps} />);
+    // 7 steps = 7 step indicator buttons (each with aria-label)
+    const stepButtons = screen.getAllByRole("button").filter((btn) =>
+      btn.classList.contains("rounded-full"),
+    );
+    expect(stepButtons.length).toBe(7);
+  });
+
+  it("calls onPrev when Back is clicked", async () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={3}
+        isFirstStep={false}
+        isLastStep={false}
+      />,
+    );
+    await userEvent.click(screen.getByText("Back"));
+    expect(defaultProps.onPrev).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show Skip on first step", () => {
+    render(<OnboardingWizard {...defaultProps} />);
+    expect(screen.queryByText("Skip")).not.toBeInTheDocument();
+  });
+
+  it("does not show Skip on last step", () => {
+    render(
+      <OnboardingWizard
+        {...defaultProps}
+        currentStep={6}
+        isFirstStep={false}
+        isLastStep={true}
+      />,
+    );
+    expect(screen.queryByText("Skip")).not.toBeInTheDocument();
+  });
+
+  it("displays progress percentage", () => {
+    render(<OnboardingWizard {...defaultProps} progress={57} />);
+    expect(screen.getByText("57%")).toBeInTheDocument();
+  });
+
+  it("displays step count text", () => {
+    render(<OnboardingWizard {...defaultProps} />);
+    expect(screen.getByText("Step 1 of 7")).toBeInTheDocument();
+  });
 });

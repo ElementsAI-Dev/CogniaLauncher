@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Jest coverage output:
+    "coverage/**",
     // Tauri build output:
     "src-tauri/target/**",
     // Playwright E2E tests (not React code):

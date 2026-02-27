@@ -371,3 +371,426 @@ pub fn create_shared_profile_manager(
 ) -> SharedProfileManager {
     Arc::new(RwLock::new(ProfileManager::new(storage_path, registry)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_environment_profile_new() {
+        let profile = EnvironmentProfile::new("Test Profile");
+        assert_eq!(profile.name, "Test Profile");
+        assert!(!profile.id.is_empty());
+        assert!(profile.description.is_none());
+        assert!(profile.environments.is_empty());
+        assert!(!profile.created_at.is_empty());
+        assert_eq!(profile.created_at, profile.updated_at);
+    }
+
+    #[test]
+    fn test_environment_profile_with_description() {
+        let profile =
+            EnvironmentProfile::new("Dev Profile").with_description("My dev environment");
+        assert_eq!(profile.description, Some("My dev environment".to_string()));
+    }
+
+    #[test]
+    fn test_environment_profile_add_environment() {
+        let mut profile = EnvironmentProfile::new("Test");
+        let original_updated = profile.updated_at.clone();
+
+        // Brief sleep to ensure timestamp differs
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "20.10.0".into(),
+            provider_id: Some("fnm".into()),
+        });
+
+        assert_eq!(profile.environments.len(), 1);
+        assert_eq!(profile.environments[0].env_type, "node");
+        assert_ne!(profile.updated_at, original_updated);
+    }
+
+    #[test]
+    fn test_environment_profile_add_environment_replaces_same_type() {
+        let mut profile = EnvironmentProfile::new("Test");
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "18.0.0".into(),
+            provider_id: None,
+        });
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "20.0.0".into(),
+            provider_id: Some("fnm".into()),
+        });
+
+        assert_eq!(profile.environments.len(), 1);
+        assert_eq!(profile.environments[0].version, "20.0.0");
+    }
+
+    #[test]
+    fn test_environment_profile_remove_environment() {
+        let mut profile = EnvironmentProfile::new("Test");
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "20.0.0".into(),
+            provider_id: None,
+        });
+        profile.add_environment(ProfileEnvironment {
+            env_type: "python".into(),
+            version: "3.12.0".into(),
+            provider_id: None,
+        });
+
+        profile.remove_environment("node");
+        assert_eq!(profile.environments.len(), 1);
+        assert_eq!(profile.environments[0].env_type, "python");
+    }
+
+    #[test]
+    fn test_environment_profile_remove_nonexistent() {
+        let mut profile = EnvironmentProfile::new("Test");
+        profile.remove_environment("go");
+        assert!(profile.environments.is_empty());
+    }
+
+    #[test]
+    fn test_environment_profile_serde_roundtrip() {
+        let mut profile =
+            EnvironmentProfile::new("Serde Test").with_description("Test description");
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "22.0.0".into(),
+            provider_id: Some("volta".into()),
+        });
+
+        let json = serde_json::to_string(&profile).unwrap();
+        let deser: EnvironmentProfile = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deser.name, "Serde Test");
+        assert_eq!(deser.description, Some("Test description".into()));
+        assert_eq!(deser.environments.len(), 1);
+        assert_eq!(deser.environments[0].env_type, "node");
+        assert_eq!(deser.environments[0].provider_id, Some("volta".into()));
+    }
+
+    #[test]
+    fn test_profile_environment_serde() {
+        let env = ProfileEnvironment {
+            env_type: "rust".into(),
+            version: "1.75.0".into(),
+            provider_id: Some("rustup".into()),
+        };
+        let json = serde_json::to_string(&env).unwrap();
+        let deser: ProfileEnvironment = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.env_type, "rust");
+        assert_eq!(deser.version, "1.75.0");
+    }
+
+    #[test]
+    fn test_profile_apply_result_serde() {
+        let result = ProfileApplyResult {
+            profile_id: "test-id".into(),
+            profile_name: "Test".into(),
+            successful: vec![ProfileEnvironmentResult {
+                env_type: "node".into(),
+                version: "20.0.0".into(),
+                provider_id: "fnm".into(),
+            }],
+            failed: vec![ProfileEnvironmentError {
+                env_type: "python".into(),
+                version: "3.12.0".into(),
+                error: "not installed".into(),
+            }],
+            skipped: vec![ProfileEnvironmentSkipped {
+                env_type: "go".into(),
+                version: "1.22.0".into(),
+                reason: "Provider not available".into(),
+            }],
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: ProfileApplyResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.successful.len(), 1);
+        assert_eq!(deser.failed.len(), 1);
+        assert_eq!(deser.skipped.len(), 1);
+    }
+
+    fn make_test_manager() -> ProfileManager {
+        let registry = ProviderRegistry::new();
+        ProfileManager::new(
+            PathBuf::from("/tmp/test-profiles"),
+            Arc::new(RwLock::new(registry)),
+        )
+    }
+
+    #[test]
+    fn test_profile_manager_list_empty() {
+        let manager = make_test_manager();
+        assert!(manager.list().is_empty());
+    }
+
+    #[test]
+    fn test_profile_manager_get_nonexistent() {
+        let manager = make_test_manager();
+        assert!(manager.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_env_type_to_default_provider() {
+        let manager = make_test_manager();
+        assert_eq!(manager.env_type_to_default_provider("node"), "fnm");
+        assert_eq!(manager.env_type_to_default_provider("python"), "pyenv");
+        assert_eq!(manager.env_type_to_default_provider("go"), "goenv");
+        assert_eq!(manager.env_type_to_default_provider("rust"), "rustup");
+        assert_eq!(manager.env_type_to_default_provider("ruby"), "rbenv");
+        assert_eq!(manager.env_type_to_default_provider("java"), "sdkman");
+        assert_eq!(manager.env_type_to_default_provider("php"), "phpbrew");
+        assert_eq!(manager.env_type_to_default_provider("dotnet"), "dotnet");
+        assert_eq!(manager.env_type_to_default_provider("deno"), "deno");
+        assert_eq!(
+            manager.env_type_to_default_provider("unknown"),
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn test_provider_to_env_type() {
+        let manager = make_test_manager();
+        assert_eq!(manager.provider_to_env_type("fnm"), "node");
+        assert_eq!(manager.provider_to_env_type("nvm"), "node");
+        assert_eq!(manager.provider_to_env_type("pyenv"), "python");
+        assert_eq!(manager.provider_to_env_type("goenv"), "go");
+        assert_eq!(manager.provider_to_env_type("rustup"), "rust");
+        assert_eq!(manager.provider_to_env_type("rbenv"), "ruby");
+        assert_eq!(manager.provider_to_env_type("sdkman"), "java");
+        assert_eq!(manager.provider_to_env_type("phpbrew"), "php");
+        assert_eq!(manager.provider_to_env_type("dotnet"), "dotnet");
+        assert_eq!(manager.provider_to_env_type("deno"), "deno");
+        assert_eq!(manager.provider_to_env_type("custom"), "custom");
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_create_and_get() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let profile = EnvironmentProfile::new("Test Profile");
+        let id = profile.id.clone();
+
+        let created = manager.create(profile).await.unwrap();
+        assert_eq!(created.name, "Test Profile");
+
+        let fetched = manager.get(&id);
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap().name, "Test Profile");
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_create_duplicate_id() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let profile = EnvironmentProfile::new("Test");
+        let id = profile.id.clone();
+        manager.create(profile).await.unwrap();
+
+        let duplicate = EnvironmentProfile {
+            id,
+            name: "Duplicate".into(),
+            description: None,
+            environments: vec![],
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let result = manager.create(duplicate).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_update() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let profile = EnvironmentProfile::new("Original");
+        let id = profile.id.clone();
+        manager.create(profile).await.unwrap();
+
+        let mut updated_profile = manager.get(&id).unwrap();
+        updated_profile.name = "Updated".into();
+
+        let result = manager.update(updated_profile).await.unwrap();
+        assert_eq!(result.name, "Updated");
+        assert_eq!(manager.get(&id).unwrap().name, "Updated");
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_update_nonexistent() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let profile = EnvironmentProfile::new("Ghost");
+        let result = manager.update(profile).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_delete() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let profile = EnvironmentProfile::new("To Delete");
+        let id = profile.id.clone();
+        manager.create(profile).await.unwrap();
+
+        manager.delete(&id).await.unwrap();
+        assert!(manager.get(&id).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_delete_nonexistent() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let result = manager.delete("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_export() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let mut profile = EnvironmentProfile::new("Export Test");
+        profile.add_environment(ProfileEnvironment {
+            env_type: "node".into(),
+            version: "20.0.0".into(),
+            provider_id: Some("fnm".into()),
+        });
+        let id = profile.id.clone();
+        manager.create(profile).await.unwrap();
+
+        let json = manager.export(&id).unwrap();
+        let parsed: EnvironmentProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.name, "Export Test");
+        assert_eq!(parsed.environments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_export_nonexistent() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let result = manager.export("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_import() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        let json = r#"{
+            "id": "original-id",
+            "name": "Imported Profile",
+            "description": null,
+            "environments": [
+                {"env_type": "node", "version": "22.0.0", "provider_id": null}
+            ],
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let imported = manager.import(json).await.unwrap();
+        assert_eq!(imported.name, "Imported Profile");
+        // ID should be regenerated
+        assert_ne!(imported.id, "original-id");
+        assert_eq!(imported.environments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_list() {
+        let registry = ProviderRegistry::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ProfileManager::new(
+            dir.path().to_path_buf(),
+            Arc::new(RwLock::new(registry)),
+        );
+
+        manager
+            .create(EnvironmentProfile::new("Profile 1"))
+            .await
+            .unwrap();
+        manager
+            .create(EnvironmentProfile::new("Profile 2"))
+            .await
+            .unwrap();
+
+        let profiles = manager.list();
+        assert_eq!(profiles.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_profile_manager_save_and_load() {
+        let registry = Arc::new(RwLock::new(ProviderRegistry::new()));
+        let dir = tempfile::tempdir().unwrap();
+
+        let profile_id;
+        {
+            let mut manager =
+                ProfileManager::new(dir.path().to_path_buf(), registry.clone());
+            let profile = EnvironmentProfile::new("Persist Test");
+            profile_id = profile.id.clone();
+            manager.create(profile).await.unwrap();
+        }
+
+        {
+            let mut manager =
+                ProfileManager::new(dir.path().to_path_buf(), registry.clone());
+            manager.load().await.unwrap();
+            let loaded = manager.get(&profile_id);
+            assert!(loaded.is_some());
+            assert_eq!(loaded.unwrap().name, "Persist Test");
+        }
+    }
+}

@@ -448,6 +448,197 @@ mod tests {
     }
 
     #[test]
+    fn test_format_score_tar_gz() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.tar.gz"), 10);
+        assert_eq!(picker.format_score("app-linux-x64.tgz"), 10);
+    }
+
+    #[test]
+    fn test_format_score_tar_xz() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.tar.xz"), 9);
+        assert_eq!(picker.format_score("app-linux-x64.txz"), 9);
+    }
+
+    #[test]
+    fn test_format_score_zip() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.zip"), 8);
+    }
+
+    #[test]
+    fn test_format_score_tar_bz2() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.tar.bz2"), 7);
+        assert_eq!(picker.format_score("app-linux-x64.tbz2"), 7);
+    }
+
+    #[test]
+    fn test_format_score_tar_zst() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.tar.zst"), 6);
+    }
+
+    #[test]
+    fn test_format_score_installers() {
+        let picker = AssetPicker::new(Platform::Windows, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-win-x64.exe"), 5);
+        assert_eq!(picker.format_score("app-win-x64.msi"), 5);
+        assert_eq!(picker.format_score("app-darwin-arm64.dmg"), 5);
+        assert_eq!(picker.format_score("app-darwin-arm64.pkg"), 5);
+    }
+
+    #[test]
+    fn test_format_score_packages() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64.deb"), 4);
+        assert_eq!(picker.format_score("app-linux-x64.rpm"), 4);
+        assert_eq!(picker.format_score("app-linux-x64.AppImage"), 4);
+    }
+
+    #[test]
+    fn test_format_score_unknown() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.format_score("app-linux-x64"), 3);
+        assert_eq!(picker.format_score("app-linux-x64.bin"), 3);
+    }
+
+    #[test]
+    fn test_libc_scoring_musl_system() {
+        let picker =
+            AssetPicker::new(Platform::Linux, Architecture::X86_64).with_libc(LibcType::Musl);
+        assert_eq!(picker.score_libc("app-linux-x64-musl.tar.gz"), 30);
+        assert_eq!(picker.score_libc("app-linux-x64-gnu.tar.gz"), -100);
+        assert_eq!(picker.score_libc("app-linux-x64.tar.gz"), 0);
+    }
+
+    #[test]
+    fn test_libc_scoring_glibc_system() {
+        let picker =
+            AssetPicker::new(Platform::Linux, Architecture::X86_64).with_libc(LibcType::Glibc);
+        assert_eq!(picker.score_libc("app-linux-x64-gnu.tar.gz"), 30);
+        assert_eq!(picker.score_libc("app-linux-x64-musl.tar.gz"), 10);
+        assert_eq!(picker.score_libc("app-linux-x64.tar.gz"), 15);
+    }
+
+    #[test]
+    fn test_libc_scoring_unknown() {
+        let picker =
+            AssetPicker::new(Platform::Linux, Architecture::X86_64).with_libc(LibcType::Unknown);
+        assert_eq!(picker.score_libc("app-linux-x64-musl.tar.gz"), 0);
+        assert_eq!(picker.score_libc("app-linux-x64-gnu.tar.gz"), 0);
+    }
+
+    #[test]
+    fn test_libc_scoring_none() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert_eq!(picker.score_libc("app-linux-x64-musl.tar.gz"), 0);
+    }
+
+    #[test]
+    fn test_is_excluded_all_patterns() {
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert!(picker.is_excluded("file.sha256"));
+        assert!(picker.is_excluded("file.sha512"));
+        assert!(picker.is_excluded("file.sha1"));
+        assert!(picker.is_excluded("file.md5"));
+        assert!(picker.is_excluded("file.sig"));
+        assert!(picker.is_excluded("file.asc"));
+        assert!(picker.is_excluded("file.gpg"));
+        assert!(picker.is_excluded("file.minisig"));
+        assert!(picker.is_excluded("file.sbom"));
+        // Non-excluded
+        assert!(!picker.is_excluded("file.tar.gz"));
+        assert!(!picker.is_excluded("file.zip"));
+    }
+
+    #[test]
+    fn test_pick_best_empty_assets() {
+        let assets: Vec<TestAsset> = vec![];
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        assert!(picker.pick_best(&assets).is_none());
+    }
+
+    #[test]
+    fn test_pick_best_no_matching_platform() {
+        let assets = make_assets(&[
+            "app-windows-x64.zip",
+            "app-darwin-arm64.tar.gz",
+        ]);
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        // No Linux asset → should still return something (platform-less scores)
+        // or None if all are mismatched
+        let result = picker.pick_best(&assets);
+        // Windows and macOS won't match Linux, so None
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_all_matches_sorted_by_score() {
+        let assets = make_assets(&[
+            "app-linux-x64.tar.gz",
+            "app-linux-x64.zip",
+            "app-linux-x64.tar.xz",
+        ]);
+        let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
+        let matches = picker.get_all_matches(&assets);
+        assert_eq!(matches.len(), 3);
+        // Should be sorted by descending score
+        assert!(matches[0].score >= matches[1].score);
+        assert!(matches[1].score >= matches[2].score);
+        // tar.gz (10) > tar.xz (9) > zip (8)
+        assert!(matches[0].asset.name().contains(".tar.gz"));
+    }
+
+    #[test]
+    fn test_detect_platform_osx_variant() {
+        assert_eq!(detect_platform("app-osx-x64.tar.gz"), Some(Platform::MacOS));
+        assert_eq!(
+            detect_platform("app-apple-arm64.tar.gz"),
+            Some(Platform::MacOS)
+        );
+        assert_eq!(
+            detect_platform("app-macos-arm64.tar.gz"),
+            Some(Platform::MacOS)
+        );
+    }
+
+    #[test]
+    fn test_detect_arch_386() {
+        assert_eq!(detect_arch("app-linux-386.tar.gz"), Some(Architecture::X86));
+        assert_eq!(
+            detect_arch("app-linux-i386.tar.gz"),
+            Some(Architecture::X86)
+        );
+        assert_eq!(
+            detect_arch("app-linux-i686.tar.gz"),
+            Some(Architecture::X86)
+        );
+    }
+
+    #[test]
+    fn test_macos_arm_no_fallback_for_linux_user() {
+        let assets = make_assets(&[
+            "app-darwin-arm64.tar.gz",
+            "app-darwin-x64.tar.gz",
+        ]);
+        // Linux ARM64 user should NOT get macOS fallback
+        let picker = AssetPicker::new(Platform::Linux, Architecture::Aarch64);
+        let result = picker.pick_best(&assets);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_windows_x86_arch_mismatch() {
+        let assets = make_assets(&["app-windows-x64.zip"]);
+        // Windows x86 user should NOT get x64 asset (no Rosetta-like fallback on Windows)
+        let picker = AssetPicker::new(Platform::Windows, Architecture::X86);
+        let result = picker.pick_best(&assets);
+        assert!(result.is_none());
+    }
+
+    #[test]
     fn test_detect_arch_standalone() {
         assert_eq!(
             detect_arch("app-linux-x86_64.tar.gz"),

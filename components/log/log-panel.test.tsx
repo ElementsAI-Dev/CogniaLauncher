@@ -196,4 +196,62 @@ describe("LogPanel", () => {
       expect(screen.getByText("Message 2")).toBeInTheDocument();
     });
   });
+
+  describe("advanced filtering", () => {
+    it("filters logs with regex search", () => {
+      useLogStore.getState().addLogs([
+        { timestamp: Date.now(), level: "info", message: "Error: file not found" },
+        { timestamp: Date.now(), level: "info", message: "Success: operation complete" },
+        { timestamp: Date.now(), level: "info", message: "Error: timeout" },
+      ]);
+      useLogStore.getState().setSearch("^Error");
+      useLogStore.getState().setFilter({ useRegex: true });
+
+      render(<LogPanel />);
+
+      // Messages with highlights get split into mark nodes, so use regex matchers
+      expect(screen.getByText(/file not found/)).toBeInTheDocument();
+      expect(screen.getByText(/timeout/)).toBeInTheDocument();
+      expect(screen.queryByText(/Success/)).not.toBeInTheDocument();
+    });
+
+    it("filters logs by time range", () => {
+      const now = Date.now();
+      useLogStore.getState().addLogs([
+        { timestamp: now - 7200_000, level: "info", message: "Old message" },
+        { timestamp: now - 1800_000, level: "info", message: "Recent message" },
+        { timestamp: now, level: "info", message: "Current message" },
+      ]);
+      useLogStore.getState().setTimeRange(now - 3600_000, now);
+
+      render(<LogPanel />);
+
+      expect(screen.queryByText("Old message")).not.toBeInTheDocument();
+      expect(screen.getByText("Recent message")).toBeInTheDocument();
+      expect(screen.getByText("Current message")).toBeInTheDocument();
+    });
+
+    it("filters logs by target", () => {
+      useLogStore.getState().addLogs([
+        { timestamp: Date.now(), level: "info", message: "App msg", target: "app" },
+        { timestamp: Date.now(), level: "info", message: "Net msg", target: "network" },
+      ]);
+      useLogStore.getState().setFilter({ target: "network" });
+
+      render(<LogPanel />);
+
+      expect(screen.queryByText("App msg")).not.toBeInTheDocument();
+      expect(screen.getByText("Net msg")).toBeInTheDocument();
+    });
+
+    it("renders with autoScroll disabled", () => {
+      useLogStore.setState({ ...useLogStore.getState(), autoScroll: false });
+      useLogStore.getState().addLogs([
+        { timestamp: Date.now(), level: "info", message: "No scroll message" },
+      ]);
+
+      render(<LogPanel />);
+      expect(screen.getByText("No scroll message")).toBeInTheDocument();
+    });
+  });
 });

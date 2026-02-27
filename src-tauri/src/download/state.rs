@@ -425,6 +425,72 @@ mod tests {
     }
 
     #[test]
+    fn test_download_error_task_not_found_not_recoverable() {
+        assert!(!DownloadError::TaskNotFound {
+            id: "abc".into()
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_download_error_invalid_operation_not_recoverable() {
+        assert!(!DownloadError::InvalidOperation {
+            state: "paused".into(),
+            operation: "pause".into(),
+        }
+        .is_recoverable());
+    }
+
+    #[test]
+    fn test_download_state_serde_roundtrip() {
+        let states = vec![
+            DownloadState::Queued,
+            DownloadState::Downloading,
+            DownloadState::Paused,
+            DownloadState::Cancelled,
+            DownloadState::Completed,
+            DownloadState::Failed {
+                error: "test error".into(),
+                recoverable: true,
+            },
+            DownloadState::Failed {
+                error: "fatal".into(),
+                recoverable: false,
+            },
+        ];
+
+        for state in states {
+            let json = serde_json::to_string(&state).unwrap();
+            let deserialized: DownloadState = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, state);
+        }
+    }
+
+    #[test]
+    fn test_download_error_serde_roundtrip() {
+        let errors: Vec<DownloadError> = vec![
+            DownloadError::Network { message: "timeout".into() },
+            DownloadError::FileSystem { message: "disk full".into() },
+            DownloadError::ChecksumMismatch { expected: "abc".into(), actual: "def".into() },
+            DownloadError::InsufficientSpace { required: 1000, available: 500 },
+            DownloadError::Interrupted,
+            DownloadError::InvalidUrl { url: "bad://url".into() },
+            DownloadError::HttpError { status: 404, message: "Not Found".into() },
+            DownloadError::Timeout { seconds: 30 },
+            DownloadError::RateLimited { retry_after: 60 },
+            DownloadError::TaskNotFound { id: "abc".into() },
+            DownloadError::InvalidOperation { state: "paused".into(), operation: "pause".into() },
+        ];
+
+        for error in errors {
+            let json = serde_json::to_string(&error).unwrap();
+            let deserialized: DownloadError = serde_json::from_str(&json).unwrap();
+            // Verify round-trip by checking Display output matches
+            assert_eq!(deserialized.to_string(), error.to_string());
+        }
+    }
+
+    #[test]
     fn test_format_size() {
         assert_eq!(format_size(0), "0 B");
         assert_eq!(format_size(500), "500 B");

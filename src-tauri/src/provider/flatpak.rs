@@ -341,3 +341,58 @@ impl SystemPackageProvider for FlatpakProvider {
         Ok(out.is_ok())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = FlatpakProvider::new();
+        assert_eq!(provider.id(), "flatpak");
+        assert_eq!(provider.display_name(), "Flatpak (Universal Linux)");
+        assert_eq!(provider.priority(), 70);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = FlatpakProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+    }
+
+    #[test]
+    fn test_supported_platforms_linux_only() {
+        let provider = FlatpakProvider::new();
+        let platforms = provider.supported_platforms();
+        assert_eq!(platforms, vec![Platform::Linux]);
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = FlatpakProvider::new();
+        assert!(provider.requires_elevation("install"));
+        assert!(provider.requires_elevation("uninstall"));
+        assert!(provider.requires_elevation("update"));
+        assert!(!provider.requires_elevation("search"));
+        assert!(!provider.requires_elevation("list"));
+    }
+
+    #[test]
+    fn test_get_install_instructions() {
+        let provider = FlatpakProvider::new();
+        let instructions = provider.get_install_instructions();
+        assert!(instructions.is_some());
+        assert!(instructions.unwrap().contains("flatpak"));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = FlatpakProvider::default();
+    }
+}

@@ -264,6 +264,73 @@ describe("LocaleProvider", () => {
     });
   });
 
+  describe("initialLocale prop", () => {
+    it("uses initialLocale as server snapshot", () => {
+      render(
+        <LocaleProvider messages={mockMessages as never} initialLocale="zh">
+          <TestConsumer />
+        </LocaleProvider>,
+      );
+
+      // The component should still render (initialLocale is used as server snapshot)
+      expect(screen.getByTestId("locale")).toBeInTheDocument();
+    });
+  });
+
+  describe("non-string leaf values", () => {
+    function NestedValueConsumer() {
+      const { t } = useLocale();
+      // "settings" is an object, not a string — t() should return the key
+      return <span data-testid="nested">{t("settings")}</span>;
+    }
+
+    it("returns key when leaf value is a non-string object", () => {
+      render(
+        <LocaleProvider messages={mockMessages as never}>
+          <NestedValueConsumer />
+        </LocaleProvider>,
+      );
+
+      expect(screen.getByTestId("nested")).toHaveTextContent("settings");
+    });
+  });
+
+  describe("parameter interpolation edge cases", () => {
+    function MissingParamConsumer() {
+      const { t } = useLocale();
+      return (
+        <span data-testid="missing-param">
+          {t("dashboard.versionsInstalled", {})}
+        </span>
+      );
+    }
+
+    it("preserves placeholder when param is missing", () => {
+      const messagesWithParams = {
+        en: {
+          dashboard: {
+            versionsInstalled: "{count} versions installed",
+          },
+        },
+        zh: {
+          dashboard: {
+            versionsInstalled: "已安装 {count} 个版本",
+          },
+        },
+      };
+
+      render(
+        <LocaleProvider messages={messagesWithParams as never}>
+          <MissingParamConsumer />
+        </LocaleProvider>,
+      );
+
+      expect(screen.getByTestId("missing-param")).toHaveTextContent(
+        "{count} versions installed",
+      );
+    });
+  });
+
   describe("useLocale hook", () => {
     it("throws error when used outside provider", () => {
       const consoleError = jest
@@ -275,6 +342,27 @@ describe("LocaleProvider", () => {
       }).toThrow("useLocale must be used within a LocaleProvider");
 
       consoleError.mockRestore();
+    });
+  });
+
+  describe("messages context", () => {
+    function MessagesConsumer() {
+      const { messages } = useLocale();
+      return (
+        <span data-testid="messages-check">
+          {messages && typeof messages === "object" ? "has-messages" : "no-messages"}
+        </span>
+      );
+    }
+
+    it("provides messages object via context", () => {
+      render(
+        <LocaleProvider messages={mockMessages as never}>
+          <MessagesConsumer />
+        </LocaleProvider>,
+      );
+
+      expect(screen.getByTestId("messages-check")).toHaveTextContent("has-messages");
     });
   });
 });

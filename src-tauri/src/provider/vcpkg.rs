@@ -606,4 +606,42 @@ mod tests {
         let provider = VcpkgProvider::new();
         assert!(provider.default_triplet.is_some());
     }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = VcpkgProvider::new();
+        assert_eq!(provider.id(), "vcpkg");
+        assert_eq!(
+            provider.display_name(),
+            "vcpkg (C++ Package Manager)"
+        );
+        assert_eq!(provider.priority(), 70);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = VcpkgProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = VcpkgProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = VcpkgProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
 }

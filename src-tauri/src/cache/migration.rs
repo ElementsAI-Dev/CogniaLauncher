@@ -541,4 +541,138 @@ mod tests {
         // Files should be accessible via old path (through symlink)
         assert!(src.join("test.dat").exists());
     }
+
+    #[tokio::test]
+    async fn test_count_files_recursive() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("count_test");
+        tokio::fs::create_dir_all(base.join("sub1")).await.unwrap();
+        tokio::fs::create_dir_all(base.join("sub2")).await.unwrap();
+        tokio::fs::write(base.join("a.txt"), b"a").await.unwrap();
+        tokio::fs::write(base.join("sub1").join("b.txt"), b"b").await.unwrap();
+        tokio::fs::write(base.join("sub2").join("c.txt"), b"c").await.unwrap();
+        tokio::fs::write(base.join("sub2").join("d.txt"), b"d").await.unwrap();
+
+        let count = count_files_recursive(&base).await;
+        assert_eq!(count, 4);
+    }
+
+    #[tokio::test]
+    async fn test_count_files_empty_dir() {
+        let dir = tempdir().unwrap();
+        let empty = dir.path().join("empty");
+        tokio::fs::create_dir_all(&empty).await.unwrap();
+
+        let count = count_files_recursive(&empty).await;
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_dir_size() {
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("size_test");
+        tokio::fs::create_dir_all(&base).await.unwrap();
+        tokio::fs::write(base.join("f1.txt"), b"hello").await.unwrap();
+        tokio::fs::write(base.join("f2.txt"), b"world!").await.unwrap();
+
+        let size = dir_size(&base).await;
+        assert_eq!(size, 11); // 5 + 6
+    }
+
+    #[test]
+    fn test_is_same_drive_same_path() {
+        let path = std::path::PathBuf::from(std::env::current_dir().unwrap());
+        assert!(is_same_drive(&path, &path));
+    }
+
+    #[tokio::test]
+    async fn test_is_path_writable_valid() {
+        let dir = tempdir().unwrap();
+        assert!(is_path_writable(dir.path()).await);
+    }
+
+    #[tokio::test]
+    async fn test_is_path_writable_nonexistent() {
+        // Use a path whose parent also doesn't exist
+        let dir = tempdir().unwrap();
+        let deep = dir.path().join("a").join("b").join("c").join("d");
+        let result = is_path_writable(&deep).await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_migration() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("valid_src");
+        let dst = dir.path().join("valid_dst");
+
+        tokio::fs::create_dir_all(&src).await.unwrap();
+        tokio::fs::write(src.join("data.bin"), b"some data").await.unwrap();
+
+        let result = validate_migration(&src, &dst).await.unwrap();
+        assert!(result.is_valid);
+        assert!(result.source_exists);
+        assert_eq!(result.source_file_count, 1);
+        assert!(result.source_size > 0);
+        assert!(result.has_enough_space);
+        assert!(result.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_validate_empty_source_warning() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("empty_src");
+        let dst = dir.path().join("empty_dst");
+
+        tokio::fs::create_dir_all(&src).await.unwrap();
+
+        let result = validate_migration(&src, &dst).await.unwrap();
+        assert!(result.is_valid); // Empty source is valid but warns
+        assert!(result.warnings.iter().any(|w| w.contains("empty")));
+    }
+
+    #[tokio::test]
+    async fn test_migrate_nested_directory() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("nested_src");
+        let dst = dir.path().join("nested_dst");
+
+        tokio::fs::create_dir_all(src.join("level1").join("level2")).await.unwrap();
+        tokio::fs::write(src.join("root.txt"), b"root").await.unwrap();
+        tokio::fs::write(src.join("level1").join("mid.txt"), b"mid").await.unwrap();
+        tokio::fs::write(src.join("level1").join("level2").join("deep.txt"), b"deep")
+            .await
+            .unwrap();
+
+        let result = migrate_cache(&src, &dst, MigrationMode::Move).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.files_count, 3);
+        assert!(dst.join("root.txt").exists());
+        assert!(dst.join("level1").join("mid.txt").exists());
+        assert!(dst.join("level1").join("level2").join("deep.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn test_migrate_empty_source() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("empty_migrate_src");
+        let dst = dir.path().join("empty_migrate_dst");
+
+        tokio::fs::create_dir_all(&src).await.unwrap();
+
+        let result = migrate_cache(&src, &dst, MigrationMode::Move).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.files_count, 0);
+        assert_eq!(result.bytes_migrated, 0);
+    }
+
+    #[test]
+    fn test_migration_mode_serde() {
+        let mode = MigrationMode::Move;
+        let json = serde_json::to_string(&mode).unwrap();
+        assert_eq!(json, "\"move\"");
+
+        let mode2: MigrationMode = serde_json::from_str("\"move_and_link\"").unwrap();
+        assert_eq!(mode2, MigrationMode::MoveAndLink);
+    }
 }

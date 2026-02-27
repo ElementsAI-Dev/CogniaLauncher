@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TerminalShellFramework } from './terminal-shell-framework';
 import type { ShellInfo, ShellFrameworkInfo } from '@/types/tauri';
 
@@ -87,5 +87,60 @@ describe('TerminalShellFramework', () => {
     );
 
     expect(screen.getByText('Oh My Zsh')).toBeInTheDocument();
+  });
+
+  it('calls onDetectFrameworks for each shell when detect button clicked', async () => {
+    const onDetectFrameworks = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={[]}
+        plugins={[]}
+        onDetectFrameworks={onDetectFrameworks}
+        onFetchPlugins={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.detectFrameworks/i }));
+
+    await waitFor(() => {
+      expect(onDetectFrameworks).toHaveBeenCalledWith('zsh');
+    });
+  });
+
+  it('calls onFetchPlugins when framework clicked', async () => {
+    const onFetchPlugins = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalShellFramework
+        shells={shells}
+        frameworks={frameworks}
+        plugins={[]}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={onFetchPlugins}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Oh My Zsh'));
+
+    await waitFor(() => {
+      expect(onFetchPlugins).toHaveBeenCalledWith('Oh My Zsh', '/home/user/.oh-my-zsh', 'zsh');
+    });
+  });
+
+  it('disables detect button when no shells provided', () => {
+    render(
+      <TerminalShellFramework
+        shells={[]}
+        frameworks={[]}
+        plugins={[]}
+        onDetectFrameworks={jest.fn()}
+        onFetchPlugins={jest.fn()}
+      />,
+    );
+
+    const detectButton = screen.getByRole('button', { name: /terminal\.detectFrameworks/i });
+    expect(detectButton).toBeDisabled();
   });
 });

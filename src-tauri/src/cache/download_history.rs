@@ -561,4 +561,242 @@ mod tests {
         assert_eq!(cleared, 5);
         assert!(history.is_empty());
     }
+
+    #[test]
+    fn test_download_record_cancelled() {
+        let started_at = Utc::now() - chrono::Duration::seconds(3);
+        let record = DownloadRecord::cancelled(
+            "https://example.com/cancel.zip".to_string(),
+            "cancel.zip".to_string(),
+            PathBuf::from("/tmp/cancel.zip"),
+            512 * 1024,
+            started_at,
+            Some("github".to_string()),
+        );
+
+        assert_eq!(record.status, DownloadStatus::Cancelled);
+        assert_eq!(record.size, 512 * 1024);
+        assert!(record.error.is_none());
+        assert_eq!(record.provider, Some("github".to_string()));
+    }
+
+    #[test]
+    fn test_download_record_format_helpers() {
+        let started_at = Utc::now() - chrono::Duration::seconds(10);
+        let record = DownloadRecord::completed(
+            "url".to_string(),
+            "file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            1048576, // 1 MB
+            None,
+            started_at,
+            None,
+        );
+
+        assert_eq!(record.size_human(), "1.00 MB");
+        assert!(record.speed_human().contains("/s"));
+        assert!(!record.duration_human().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_download_history_list_by_status() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        history
+            .add(DownloadRecord::completed(
+                "url1".to_string(),
+                "file1.zip".to_string(),
+                PathBuf::from("/tmp/file1.zip"),
+                1024,
+                None,
+                Utc::now(),
+                None,
+            ))
+            .await
+            .unwrap();
+
+        history
+            .add(DownloadRecord::failed(
+                "url2".to_string(),
+                "file2.zip".to_string(),
+                PathBuf::from("/tmp/file2.zip"),
+                Utc::now(),
+                "Error".to_string(),
+                None,
+            ))
+            .await
+            .unwrap();
+
+        history
+            .add(DownloadRecord::cancelled(
+                "url3".to_string(),
+                "file3.zip".to_string(),
+                PathBuf::from("/tmp/file3.zip"),
+                100,
+                Utc::now(),
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let completed = history.list_by_status(DownloadStatus::Completed);
+        assert_eq!(completed.len(), 1);
+        let failed = history.list_by_status(DownloadStatus::Failed);
+        assert_eq!(failed.len(), 1);
+        let cancelled = history.list_by_status(DownloadStatus::Cancelled);
+        assert_eq!(cancelled.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_download_history_list_recent() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        history
+            .add(DownloadRecord::completed(
+                "url1".to_string(),
+                "recent.zip".to_string(),
+                PathBuf::from("/tmp/recent.zip"),
+                1024,
+                None,
+                Utc::now(),
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let recent = history.list_recent(1);
+        assert_eq!(recent.len(), 1);
+
+        // 0-day window should include today's records
+        let today = history.list_recent(0);
+        // Depending on timing, may or may not include (cutoff is 0 days ago = now)
+        assert!(today.len() <= 1);
+    }
+
+    #[tokio::test]
+    async fn test_download_history_get_by_id() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        let record = DownloadRecord::completed(
+            "url".to_string(),
+            "get-test.zip".to_string(),
+            PathBuf::from("/tmp/get-test.zip"),
+            1024,
+            None,
+            Utc::now(),
+            None,
+        );
+        let record_id = record.id.clone();
+        history.add(record).await.unwrap();
+
+        let found = history.get(&record_id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().filename, "get-test.zip");
+
+        let not_found = history.get("nonexistent-id");
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_download_history_remove_by_id() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        let record = DownloadRecord::completed(
+            "url".to_string(),
+            "remove-test.zip".to_string(),
+            PathBuf::from("/tmp/remove-test.zip"),
+            1024,
+            None,
+            Utc::now(),
+            None,
+        );
+        let record_id = record.id.clone();
+        history.add(record).await.unwrap();
+        assert_eq!(history.len(), 1);
+
+        let removed = history.remove(&record_id).await.unwrap();
+        assert!(removed);
+        assert_eq!(history.len(), 0);
+
+        let removed_again = history.remove(&record_id).await.unwrap();
+        assert!(!removed_again);
+    }
+
+    #[tokio::test]
+    async fn test_download_history_clear_older_than() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        // Add records (all have today's timestamp)
+        for i in 0..3 {
+            history
+                .add(DownloadRecord::completed(
+                    format!("url{}", i),
+                    format!("file{}.zip", i),
+                    PathBuf::from(format!("/tmp/file{}.zip", i)),
+                    1024,
+                    None,
+                    Utc::now(),
+                    None,
+                ))
+                .await
+                .unwrap();
+        }
+
+        // Clear older than 1 day should remove nothing (all records are fresh)
+        let removed = history.clear_older_than(1).await.unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn test_history_stats_methods() {
+        let stats = HistoryStats {
+            total_count: 10,
+            completed_count: 7,
+            failed_count: 2,
+            cancelled_count: 1,
+            total_bytes: 1048576, // 1 MB
+            average_speed: 524288.0, // 512 KB/s
+        };
+
+        assert_eq!(stats.total_bytes_human(), "1.00 MB");
+        assert!(stats.average_speed_human().contains("/s"));
+        assert!((stats.success_rate() - 70.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_history_stats_empty() {
+        let stats = HistoryStats::default();
+        assert_eq!(stats.success_rate(), 0.0);
+        assert_eq!(stats.total_bytes_human(), "0 B");
+    }
+
+    #[tokio::test]
+    async fn test_download_history_max_records() {
+        let temp_dir = tempdir().unwrap();
+        let mut history = DownloadHistory::open(temp_dir.path()).await.unwrap();
+
+        // Add more than MAX_HISTORY_RECORDS (1000)
+        for i in 0..1010 {
+            history
+                .add(DownloadRecord::completed(
+                    format!("url{}", i),
+                    format!("file{}.zip", i),
+                    PathBuf::from(format!("/tmp/file{}.zip", i)),
+                    100,
+                    None,
+                    Utc::now(),
+                    None,
+                ))
+                .await
+                .unwrap();
+        }
+
+        assert!(history.len() <= MAX_HISTORY_RECORDS);
+    }
 }

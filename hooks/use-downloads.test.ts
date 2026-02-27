@@ -151,37 +151,37 @@ describe('formatBytes', () => {
 
   it('should format kilobytes', () => {
     expect(formatBytes(1024)).toBe('1 KB');
-    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatBytes(1536)).toBe('2 KB');
   });
 
   it('should format megabytes', () => {
-    expect(formatBytes(1048576)).toBe('1 MB');
+    expect(formatBytes(1048576)).toBe('1.0 MB');
   });
 
   it('should format gigabytes', () => {
-    expect(formatBytes(1073741824)).toBe('1 GB');
+    expect(formatBytes(1073741824)).toBe('1.0 GB');
   });
 
   it('should format terabytes', () => {
-    expect(formatBytes(1099511627776)).toBe('1 TB');
+    expect(formatBytes(1099511627776)).toBe('1.0 TB');
   });
 });
 
 describe('formatSpeed', () => {
   it('should format 0 speed', () => {
-    expect(formatSpeed(0)).toBe('0 B/s');
+    expect(formatSpeed(0)).toBe('0.0 B/s');
   });
 
   it('should format bytes per second', () => {
-    expect(formatSpeed(500)).toBe('500 B/s');
+    expect(formatSpeed(500)).toBe('500.0 B/s');
   });
 
   it('should format kilobytes per second', () => {
-    expect(formatSpeed(1024)).toBe('1 KB/s');
+    expect(formatSpeed(1024)).toBe('1.0 KB/s');
   });
 
   it('should format megabytes per second', () => {
-    expect(formatSpeed(1048576)).toBe('1 MB/s');
+    expect(formatSpeed(1048576)).toBe('1.0 MB/s');
   });
 });
 

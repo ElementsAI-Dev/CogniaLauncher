@@ -495,3 +495,162 @@ impl Provider for GitLabProvider {
         Ok(vec![])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_project_url_owner_repo() {
+        let result = GitLabProvider::parse_project_url("owner/repo");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https() {
+        let result = GitLabProvider::parse_project_url("https://gitlab.com/owner/repo");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https_trailing_slash() {
+        let result = GitLabProvider::parse_project_url("https://gitlab.com/owner/repo/");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https_with_git_suffix() {
+        let result =
+            GitLabProvider::parse_project_url("https://gitlab.example.com/owner/repo.git");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https_with_tree_path() {
+        let result =
+            GitLabProvider::parse_project_url("https://gitlab.com/owner/repo/-/tree/main");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_ssh() {
+        let result = GitLabProvider::parse_project_url("git@gitlab.com:owner/repo.git");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_invalid() {
+        assert!(GitLabProvider::parse_project_url("").is_none());
+        assert!(GitLabProvider::parse_project_url("just-a-name").is_none());
+    }
+
+    #[test]
+    fn test_encode_project() {
+        assert_eq!(
+            GitLabProvider::encode_project("owner/repo"),
+            "owner%2Frepo"
+        );
+    }
+
+    #[test]
+    fn test_get_source_archive_url_tar_gz() {
+        let provider = GitLabProvider::new();
+        let url = provider.get_source_archive_url("owner/repo", "main", "tar.gz");
+        assert!(url.contains("archive.tar.gz"));
+        assert!(url.contains("sha=main"));
+        assert!(url.contains("owner%2Frepo"));
+    }
+
+    #[test]
+    fn test_get_source_archive_url_zip() {
+        let provider = GitLabProvider::new();
+        let url = provider.get_source_archive_url("owner/repo", "v1.0", "zip");
+        assert!(url.contains("archive.zip"));
+        assert!(url.contains("sha=v1.0"));
+    }
+
+    #[test]
+    fn test_with_instance_url() {
+        let provider = GitLabProvider::new()
+            .with_instance_url(Some("https://gitlab.example.com/".to_string()));
+        assert_eq!(provider.get_instance_url(), "https://gitlab.example.com");
+        assert!(provider.api_base.contains("gitlab.example.com/api/v4"));
+    }
+
+    #[test]
+    fn test_has_token() {
+        let p1 = GitLabProvider::new();
+        // Token depends on GITLAB_TOKEN env var; just test the method
+        let _ = p1.has_token();
+
+        let mut p2 = GitLabProvider::new();
+        p2.token = Some("glpat-test".into());
+        assert!(p2.has_token());
+    }
+
+    #[test]
+    fn test_get_download_headers_no_token() {
+        let mut provider = GitLabProvider::new();
+        provider.token = None;
+        let headers = provider.get_download_headers();
+        assert!(!headers.contains_key("PRIVATE-TOKEN"));
+    }
+
+    #[test]
+    fn test_get_download_headers_with_token() {
+        let mut provider = GitLabProvider::new();
+        provider.token = Some("glpat-abc".into());
+        let headers = provider.get_download_headers();
+        assert_eq!(headers["PRIVATE-TOKEN"], "glpat-abc");
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = GitLabProvider::new();
+        assert_eq!(provider.id(), "gitlab");
+        assert_eq!(provider.display_name(), "GitLab Releases");
+        assert_eq!(provider.priority(), 45);
+        assert_eq!(provider.get_instance_url(), DEFAULT_GITLAB_URL);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = GitLabProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = GitLabProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = GitLabProvider::default();
+    }
+}

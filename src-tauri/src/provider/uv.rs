@@ -849,4 +849,48 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = UvProvider::new();
+        assert_eq!(provider.id(), "uv");
+        assert_eq!(provider.display_name(), "uv (Fast Python Package Manager)");
+        assert_eq!(provider.priority(), 87);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = UvProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = UvProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = UvProvider::default();
+    }
+
+    #[test]
+    fn test_builder_extra_index() {
+        let provider = UvProvider::new()
+            .with_index_url("https://mirror.example.com/simple")
+            .with_extra_index_url("https://extra.example.com/simple");
+
+        let args = provider.build_uv_args(&["pip", "install", "pkg"]);
+        assert!(args.contains(&"--index-url".to_string()));
+        assert!(args.contains(&"--extra-index-url".to_string()));
+    }
 }

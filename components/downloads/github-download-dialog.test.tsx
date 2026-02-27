@@ -230,4 +230,101 @@ describe("GitHubDownloadDialog", () => {
 
     expect(screen.getByText("downloads.github.releaseNotes")).toBeInTheDocument();
   });
+
+  it("calls reset when cancel button is clicked", () => {
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+    });
+
+    fireEvent.click(screen.getByText("common.cancel"));
+    expect(mockUseGitHubDownloads.reset).toHaveBeenCalled();
+  });
+
+  it("calls validateAndFetch when fetch button is clicked", () => {
+    mockUseGitHubDownloads.repoInput = "test/repo";
+    render(
+      <GitHubDownloadDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    fireEvent.click(screen.getByText("downloads.github.fetch"));
+    expect(mockUseGitHubDownloads.validateAndFetch).toHaveBeenCalled();
+  });
+
+  it("toggles asset checkbox in release view", () => {
+    mockParseAssets.mockReturnValue([
+      {
+        asset: testAsset,
+        platform: "windows",
+        arch: "x64",
+        score: 150,
+        isRecommended: true,
+        isFallback: false,
+      },
+    ]);
+
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+      releases: [testRelease],
+    });
+
+    fireEvent.click(screen.getByText("v1.0.0"));
+
+    // Toggle asset checkbox
+    const checkboxes = screen.getAllByRole("checkbox");
+    expect(checkboxes.length).toBeGreaterThan(0);
+    fireEvent.click(checkboxes[0]);
+  });
+
+  it("selects recommended asset when button is clicked", () => {
+    mockParseAssets.mockReturnValue([
+      {
+        asset: testAsset,
+        platform: "windows",
+        arch: "x64",
+        score: 150,
+        isRecommended: true,
+        isFallback: false,
+      },
+    ]);
+    mockGetRecommendedAsset.mockReturnValue(testAsset);
+
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+      releases: [testRelease],
+    });
+
+    fireEvent.click(screen.getByText("v1.0.0"));
+    fireEvent.click(screen.getByText("downloads.github.selectRecommended"));
+
+    expect(mockGetRecommendedAsset).toHaveBeenCalled();
+  });
+
+  it("shows authentication configured badge when token is set", () => {
+    renderDialog({ token: "ghp_secret123" });
+
+    expect(screen.getByText("downloads.auth.title")).toBeInTheDocument();
+    expect(screen.getByText("downloads.auth.configured")).toBeInTheDocument();
+  });
+
+  it("shows destination picker when validated", () => {
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+    });
+
+    expect(screen.getByText("downloads.github.destination")).toBeInTheDocument();
+  });
+
+  it("disables download button when no selection", () => {
+    renderDialog({
+      parsedRepo: { owner: "test", repo: "repo", fullName: "test/repo" },
+      isValid: true,
+    });
+
+    const btn = screen.getByText("downloads.github.addToQueue").closest("button");
+    expect(btn).toBeDisabled();
+  });
 });

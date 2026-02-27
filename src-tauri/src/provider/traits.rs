@@ -615,3 +615,103 @@ pub struct ArtifactInfo {
     pub size: u64,
     pub checksum: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_progress_event_new() {
+        let evt = InstallProgressEvent::new(InstallStage::Fetching, "test-pkg");
+        assert_eq!(evt.stage, InstallStage::Fetching);
+        assert_eq!(evt.package, "test-pkg");
+        assert_eq!(evt.downloaded_bytes, 0);
+        assert!(evt.total_bytes.is_none());
+        assert_eq!(evt.speed_bps, 0.0);
+        assert_eq!(evt.progress_percent, 0.0);
+        assert!(evt.message.is_empty());
+    }
+
+    #[test]
+    fn test_install_progress_event_fetching() {
+        let evt = InstallProgressEvent::fetching("lodash");
+        assert_eq!(evt.stage, InstallStage::Fetching);
+        assert_eq!(evt.package, "lodash");
+        assert!(evt.message.contains("lodash"));
+    }
+
+    #[test]
+    fn test_install_progress_event_downloading_with_total() {
+        let evt = InstallProgressEvent::downloading("pkg", 500, Some(1000), 1024.0);
+        assert_eq!(evt.stage, InstallStage::Downloading);
+        assert_eq!(evt.downloaded_bytes, 500);
+        assert_eq!(evt.total_bytes, Some(1000));
+        assert_eq!(evt.speed_bps, 1024.0);
+        assert!((evt.progress_percent - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_install_progress_event_downloading_no_total() {
+        let evt = InstallProgressEvent::downloading("pkg", 500, None, 0.0);
+        assert_eq!(evt.progress_percent, 0.0);
+        assert!(evt.total_bytes.is_none());
+    }
+
+    #[test]
+    fn test_install_progress_event_downloading_zero_total() {
+        let evt = InstallProgressEvent::downloading("pkg", 0, Some(0), 0.0);
+        assert_eq!(evt.progress_percent, 0.0);
+    }
+
+    #[test]
+    fn test_install_progress_event_extracting() {
+        let evt = InstallProgressEvent::extracting("archive");
+        assert_eq!(evt.stage, InstallStage::Extracting);
+        assert!(evt.message.contains("archive"));
+    }
+
+    #[test]
+    fn test_install_progress_event_configuring() {
+        let evt = InstallProgressEvent::configuring("pkg", "Running post-install");
+        assert_eq!(evt.stage, InstallStage::Configuring);
+        assert_eq!(evt.message, "Running post-install");
+    }
+
+    #[test]
+    fn test_install_progress_event_done() {
+        let evt = InstallProgressEvent::done("pkg", "1.2.3");
+        assert_eq!(evt.stage, InstallStage::Done);
+        assert_eq!(evt.progress_percent, 100.0);
+        assert!(evt.message.contains("1.2.3"));
+    }
+
+    #[test]
+    fn test_install_progress_event_failed() {
+        let evt = InstallProgressEvent::failed("pkg", "network error");
+        assert_eq!(evt.stage, InstallStage::Failed);
+        assert!(evt.message.contains("network error"));
+    }
+
+    #[test]
+    fn test_capability_serde_roundtrip() {
+        let cap = Capability::Install;
+        let json = serde_json::to_string(&cap).unwrap();
+        assert_eq!(json, "\"install\"");
+        let deserialized: Capability = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, Capability::Install);
+    }
+
+    #[test]
+    fn test_search_options_default() {
+        let opts = SearchOptions::default();
+        assert!(opts.limit.is_none());
+        assert!(opts.page.is_none());
+    }
+
+    #[test]
+    fn test_installed_filter_default() {
+        let filter = InstalledFilter::default();
+        assert!(!filter.global_only);
+        assert!(filter.name_filter.is_none());
+    }
+}

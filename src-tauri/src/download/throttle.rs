@@ -250,4 +250,70 @@ mod tests {
         let result = limiter.try_acquire(1000).await;
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_token_bucket_time_to_available_sufficient() {
+        let bucket = TokenBucket::new(1000);
+        // Bucket starts full (2000 tokens), requesting 500 should be instant
+        let wait = bucket.time_to_available(500);
+        assert_eq!(wait, Duration::ZERO);
+    }
+
+    #[test]
+    fn test_token_bucket_time_to_available_insufficient() {
+        let mut bucket = TokenBucket::new(1000);
+        // Drain all tokens
+        bucket.tokens = 0;
+        let wait = bucket.time_to_available(500);
+        // Need 500 tokens at 1000/s → 0.5s
+        assert!(wait.as_secs_f64() > 0.4 && wait.as_secs_f64() < 0.6);
+    }
+
+    #[test]
+    fn test_token_bucket_partial_consume() {
+        let mut bucket = TokenBucket::new(1000);
+        bucket.tokens = 300;
+        // Request 500, only 300 available → returns 300
+        let consumed = bucket.try_consume(500);
+        assert_eq!(consumed, Some(300));
+        assert_eq!(bucket.tokens, 0);
+    }
+
+    #[test]
+    fn test_token_bucket_consume_exact() {
+        let mut bucket = TokenBucket::new(1000);
+        bucket.tokens = 500;
+        let consumed = bucket.try_consume(500);
+        assert_eq!(consumed, Some(500));
+        assert_eq!(bucket.tokens, 0);
+    }
+
+    #[tokio::test]
+    async fn test_speed_limiter_default() {
+        let limiter = SpeedLimiter::default();
+        assert!(!limiter.is_enabled());
+        assert_eq!(limiter.get_limit().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_speed_limiter_with_limit_get_limit() {
+        let limiter = SpeedLimiter::with_limit(5000);
+        assert!(limiter.is_enabled());
+        assert_eq!(limiter.get_limit().await, 5000);
+    }
+
+    #[tokio::test]
+    async fn test_speed_limiter_try_acquire_disabled_returns_full() {
+        let limiter = SpeedLimiter::new();
+        assert!(!limiter.is_enabled());
+        let result = limiter.try_acquire(99999).await;
+        assert_eq!(result, Some(99999));
+    }
+
+    #[tokio::test]
+    async fn test_speed_limiter_acquire_disabled_returns_full() {
+        let limiter = SpeedLimiter::new();
+        let granted = limiter.acquire(12345).await;
+        assert_eq!(granted, 12345);
+    }
 }

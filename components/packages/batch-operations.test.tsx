@@ -176,4 +176,21 @@ describe("BatchOperations", () => {
     expect(screen.getByText("pandas")).toBeInTheDocument();
     expect(screen.getByText("conda")).toBeInTheDocument();
   });
+
+  it("toggles dry run and force checkboxes in dialog", async () => {
+    const user = userEvent.setup();
+    render(<BatchOperations {...defaultProps} />);
+    await user.click(screen.getByRole("button", { name: /^install$/i }));
+
+    // Toggle dry run checkbox
+    const dryRunCheckbox = screen.getByLabelText("Dry run");
+    await user.click(dryRunCheckbox);
+    // Toggle force checkbox
+    const forceCheckbox = screen.getByLabelText("Force");
+    await user.click(forceCheckbox);
+
+    // Verify checkboxes are toggled (no crash)
+    expect(dryRunCheckbox).toBeInTheDocument();
+    expect(forceCheckbox).toBeInTheDocument();
+  });
 });

@@ -524,4 +524,33 @@ mod tests {
         assert!(caps.contains(&Capability::Install));
         assert!(caps.contains(&Capability::Update));
     }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = PnpmProvider::new();
+        assert_eq!(provider.id(), "pnpm");
+        assert_eq!(provider.display_name(), "pnpm (Performant npm)");
+        assert_eq!(provider.priority(), 86);
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = PnpmProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_pnpm_no_registry() {
+        let provider = PnpmProvider::new();
+        let args = provider.build_pnpm_args(&["add", "lodash"]);
+        assert_eq!(args, vec!["add".to_string(), "lodash".to_string()]);
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = PnpmProvider::default();
+    }
 }

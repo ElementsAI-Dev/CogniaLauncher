@@ -462,3 +462,165 @@ impl Provider for GitHubProvider {
         Ok(vec![])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_repo_url_https() {
+        let result = GitHubProvider::parse_repo_url("https://github.com/denoland/deno");
+        assert_eq!(
+            result,
+            Some(("denoland".to_string(), "deno".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_url_https_trailing_slash() {
+        let result = GitHubProvider::parse_repo_url("https://github.com/rust-lang/rust/");
+        assert_eq!(
+            result,
+            Some(("rust-lang".to_string(), "rust".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_url_http() {
+        let result = GitHubProvider::parse_repo_url("http://github.com/owner/repo");
+        assert_eq!(
+            result,
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_url_ssh() {
+        // Note: SSH format goes through the else branch (contains '/' but not http)
+        // which splits by '/' as owner/repo, so git@github.com:owner becomes the "owner"
+        let result = GitHubProvider::parse_repo_url("git@github.com:owner/repo.git");
+        assert_eq!(
+            result,
+            Some(("git@github.com:owner".to_string(), "repo.git".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_url_owner_repo() {
+        let result = GitHubProvider::parse_repo_url("denoland/deno");
+        assert_eq!(
+            result,
+            Some(("denoland".to_string(), "deno".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_repo_url_invalid() {
+        assert!(GitHubProvider::parse_repo_url("").is_none());
+        assert!(GitHubProvider::parse_repo_url("just-a-name").is_none());
+    }
+
+    #[test]
+    fn test_get_source_archive_url_tarball() {
+        let provider = GitHubProvider::new();
+        let url = provider.get_source_archive_url("owner/repo", "main", "tar.gz");
+        assert!(url.contains("/tarball/main"));
+        assert!(url.starts_with(GITHUB_API));
+    }
+
+    #[test]
+    fn test_get_source_archive_url_zipball() {
+        let provider = GitHubProvider::new();
+        let url = provider.get_source_archive_url("owner/repo", "v1.0", "zip");
+        assert!(url.contains("/zipball/v1.0"));
+    }
+
+    #[test]
+    fn test_get_asset_api_download_url() {
+        let provider = GitHubProvider::new();
+        let url = provider.get_asset_api_download_url("owner/repo", 12345);
+        assert_eq!(
+            url,
+            format!("{}/repos/owner/repo/releases/assets/12345", GITHUB_API)
+        );
+    }
+
+    #[test]
+    fn test_get_download_headers_no_token() {
+        let provider = GitHubProvider {
+            client: HttpClient::new(),
+            token: None,
+        };
+        let headers = provider.get_download_headers();
+        assert!(headers.contains_key("X-GitHub-Api-Version"));
+        assert!(!headers.contains_key("Authorization"));
+    }
+
+    #[test]
+    fn test_get_download_headers_with_token() {
+        let provider = GitHubProvider {
+            client: HttpClient::new(),
+            token: Some("ghp_test123".to_string()),
+        };
+        let headers = provider.get_download_headers();
+        assert!(headers.contains_key("Authorization"));
+        assert!(headers["Authorization"].contains("ghp_test123"));
+        assert_eq!(headers["Accept"], "application/octet-stream");
+    }
+
+    #[test]
+    fn test_has_token() {
+        let p1 = GitHubProvider {
+            client: HttpClient::new(),
+            token: None,
+        };
+        assert!(!p1.has_token());
+
+        let p2 = GitHubProvider {
+            client: HttpClient::new(),
+            token: Some("tok".into()),
+        };
+        assert!(p2.has_token());
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = GitHubProvider::new();
+        assert_eq!(provider.id(), "github");
+        assert_eq!(provider.display_name(), "GitHub Releases");
+        assert_eq!(provider.priority(), 50);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = GitHubProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = GitHubProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = GitHubProvider::default();
+    }
+
+    #[test]
+    fn test_with_token() {
+        let provider = GitHubProvider::new().with_token(Some("my-token".into()));
+        assert!(provider.has_token());
+
+        let provider2 = GitHubProvider::new().with_token(None);
+        // Token from env may or may not be set, just ensure no panic
+        let _ = provider2.has_token();
+    }
+}

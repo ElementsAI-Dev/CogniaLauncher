@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { AppearanceSettings } from "./appearance-settings";
 
 jest.mock("@/lib/stores/appearance", () => ({
@@ -86,6 +86,22 @@ const defaultProps = {
       "settings.densityCompact": "Compact",
       "settings.densityComfortable": "Comfortable",
       "settings.densitySpacious": "Spacious",
+      "settings.backgroundImage": "Background Image",
+      "settings.backgroundImageDesc": "Set a custom background image",
+      "settings.backgroundEnabled": "Enable Background",
+      "settings.backgroundEnabledDesc": "Show background image",
+      "settings.backgroundOpacity": "Image Opacity",
+      "settings.backgroundOpacityDesc": "Adjust visibility",
+      "settings.backgroundBlur": "Blur Amount",
+      "settings.backgroundBlurDesc": "Apply blur effect",
+      "settings.backgroundFit": "Image Fit",
+      "settings.backgroundFitDesc": "How the image fills the screen",
+      "settings.backgroundFitCover": "Cover",
+      "settings.backgroundFitContain": "Contain",
+      "settings.backgroundFitFill": "Stretch",
+      "settings.backgroundFitTile": "Tile",
+      "settings.backgroundSelect": "Select Image",
+      "settings.backgroundClear": "Clear Image",
     };
     return translations[key] || key;
   },
@@ -131,5 +147,47 @@ describe("AppearanceSettings", () => {
   it("renders reduced motion toggle", () => {
     render(<AppearanceSettings {...defaultProps} />);
     expect(screen.getByText("Reduced Motion")).toBeInTheDocument();
+  });
+
+  it("calls setReducedMotion when reduced motion is toggled", () => {
+    const setReducedMotion = jest.fn();
+    render(
+      <AppearanceSettings {...defaultProps} setReducedMotion={setReducedMotion} />,
+    );
+
+    const switches = screen.getAllByRole("switch");
+    // Reduced motion is the only switch in AppearanceSettings (background has its own)
+    fireEvent.click(switches[0]);
+
+    expect(setReducedMotion).toHaveBeenCalledWith(true);
+  });
+
+  it("renders background settings section embedded", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+
+    expect(screen.getByText("Background Image")).toBeInTheDocument();
+  });
+
+  it("renders interface density options", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+
+    expect(screen.getByText("Interface Density")).toBeInTheDocument();
+  });
+
+  it("renders all border radius options", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+
+    expect(screen.getByText("Border Radius")).toBeInTheDocument();
+    // Check that radius toggle items are present
+    const radioItems = screen.getAllByRole("radio");
+    // 6 accent colors + 6 border radius options = 12 radios
+    expect(radioItems.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it("renders theme select with current value", () => {
+    render(<AppearanceSettings {...defaultProps} theme="dark" />);
+
+    // The theme label should still be present
+    expect(screen.getByText("Theme")).toBeInTheDocument();
   });
 });

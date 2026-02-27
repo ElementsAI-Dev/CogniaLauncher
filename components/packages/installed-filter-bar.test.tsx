@@ -131,6 +131,20 @@ describe("InstalledFilterBar", () => {
 
     expect(screen.queryByText("Clear Filters")).not.toBeInTheDocument();
   });
+
+  it("clears all filters when clear button is clicked", () => {
+    render(
+      <InstalledFilterBar
+        packages={mockPackages}
+        providers={mockProviders}
+        filter={{ query: "test", provider: "npm" }}
+        onFilterChange={mockOnFilterChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Clear Filters"));
+    expect(mockOnFilterChange).toHaveBeenCalledWith({ query: "", provider: null });
+  });
 });
 
 describe("useInstalledFilter", () => {

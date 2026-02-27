@@ -9,6 +9,7 @@ jest.mock('next/link', () => {
   return MockLink;
 });
 
+let mockLocale = 'en';
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
     t: (key: string) => {
@@ -18,7 +19,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
       };
       return translations[key] || key;
     },
-    locale: 'en',
+    locale: mockLocale,
   }),
 }));
 
@@ -29,6 +30,10 @@ jest.mock('@/components/ui/button', () => ({
 }));
 
 describe('DocsNavFooter', () => {
+  beforeEach(() => {
+    mockLocale = 'en';
+  });
+
   it('renders nothing when no prev or next', () => {
     const { container } = render(<DocsNavFooter />);
     expect(container.firstChild).toBeNull();
@@ -70,18 +75,14 @@ describe('DocsNavFooter', () => {
   });
 
   it('uses Chinese title when locale is zh', () => {
-    // Re-mock with zh locale
-    jest.resetModules();
-    jest.doMock('@/components/providers/locale-provider', () => ({
-      useLocale: () => ({
-        t: (key: string) => key,
-        locale: 'zh',
-      }),
-    }));
-
-    // The current mock is en, so titles show titleEn
-    // In the default test setup locale='en', so it shows English
+    mockLocale = 'zh';
     render(<DocsNavFooter prev={{ title: '首页', titleEn: 'Home', slug: 'index' }} />);
-    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.getByText('首页')).toBeInTheDocument();
+  });
+
+  it('falls back to title when titleEn is missing and locale is en', () => {
+    mockLocale = 'en';
+    render(<DocsNavFooter prev={{ title: '首页', slug: 'index' }} />);
+    expect(screen.getByText('首页')).toBeInTheDocument();
   });
 });

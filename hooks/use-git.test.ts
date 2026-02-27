@@ -334,7 +334,7 @@ describe('useGit', () => {
     await act(async () => {
       msg = await result.current.cloneRepo('https://github.com/user/repo', '/dest');
     });
-    expect(tauri.gitClone).toHaveBeenCalledWith('https://github.com/user/repo', '/dest');
+    expect(tauri.gitClone).toHaveBeenCalledWith('https://github.com/user/repo', '/dest', undefined);
     expect(msg!).toBe('Repository cloned');
   });
 

@@ -617,4 +617,45 @@ mod tests {
         // major_version is lazily initialized, default state is unset
         assert!(provider.major_version.get().is_none());
     }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = YarnProvider::new();
+        assert_eq!(provider.id(), "yarn");
+        assert_eq!(provider.display_name(), "Yarn (Node.js Package Manager)");
+        assert_eq!(provider.priority(), 84);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = YarnProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::Upgrade));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = YarnProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_yarn_no_registry() {
+        let provider = YarnProvider::new();
+        let args = provider.build_yarn_args(&["add", "lodash"]);
+        assert_eq!(args, vec!["add".to_string(), "lodash".to_string()]);
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = YarnProvider::default();
+    }
 }

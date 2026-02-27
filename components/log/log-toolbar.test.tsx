@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -30,6 +30,8 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "logs.regex": "Regex",
         "logs.maxLogs": "Max logs",
         "logs.clear": "Clear logs",
+        "logs.clearSearch": "Clear search",
+        "logs.advanced": "Advanced",
         "logs.total": "Total",
         "logs.paused": "Paused",
         "logs.entries": "entries",
@@ -206,6 +208,166 @@ describe("LogToolbar", () => {
       expect(
         screen.getByRole("button", { name: /resume/i }),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe("prop variations", () => {
+    it("hides realtime controls when showRealtimeControls=false", () => {
+      render(<LogToolbar showRealtimeControls={false} />);
+      expect(screen.queryByRole("button", { name: /pause/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /clear/i })).not.toBeInTheDocument();
+    });
+
+    it("hides max logs input when showMaxLogs=false", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar showMaxLogs={false} />);
+      // Open advanced panel
+      await user.click(screen.getByText("Advanced"));
+      expect(screen.queryByLabelText(/max logs/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("export with custom onExport", () => {
+    it("calls custom onExport callback for txt", async () => {
+      const user = userEvent.setup();
+      const onExport = jest.fn();
+      render(<LogToolbar onExport={onExport} />);
+
+      await user.click(screen.getByRole("button", { name: /export/i }));
+      await user.click(screen.getByText("Export TXT"));
+
+      expect(onExport).toHaveBeenCalledWith("txt");
+    });
+
+    it("calls custom onExport callback for json", async () => {
+      const user = userEvent.setup();
+      const onExport = jest.fn();
+      render(<LogToolbar onExport={onExport} />);
+
+      await user.click(screen.getByRole("button", { name: /export/i }));
+      await user.click(screen.getByText("Export JSON"));
+
+      expect(onExport).toHaveBeenCalledWith("json");
+    });
+  });
+
+  describe("default export (blob download)", () => {
+    it("creates and triggers download when no onExport provided", async () => {
+      const user = userEvent.setup();
+      useLogStore.getState().addLogs([
+        { timestamp: Date.now(), level: "info", message: "Export test" },
+      ]);
+
+      const origCreate = global.URL.createObjectURL;
+      const origRevoke = global.URL.revokeObjectURL;
+      const mockCreate = jest.fn(() => "blob:mock-url");
+      const mockRevoke = jest.fn();
+      global.URL.createObjectURL = mockCreate;
+      global.URL.revokeObjectURL = mockRevoke;
+
+      render(<LogToolbar />);
+      await user.click(screen.getByRole("button", { name: /export/i }));
+      await user.click(screen.getByText("Export TXT"));
+
+      expect(mockCreate).toHaveBeenCalled();
+      expect(mockRevoke).toHaveBeenCalled();
+
+      global.URL.createObjectURL = origCreate;
+      global.URL.revokeObjectURL = origRevoke;
+    });
+  });
+
+  describe("advanced filters", () => {
+    it("toggles regex switch", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      const regexSwitch = screen.getByRole("switch");
+      await user.click(regexSwitch);
+      expect(useLogStore.getState().filter.useRegex).toBe(true);
+    });
+
+    it("changes max logs input value", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      const maxLogsInput = screen.getByLabelText(/max logs/i);
+      // Use fireEvent.change for controlled number inputs
+      fireEvent.change(maxLogsInput, { target: { value: "500" } });
+      expect(useLogStore.getState().maxLogs).toBe(500);
+    });
+
+    it("enforces minimum max logs of 100", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      const maxLogsInput = screen.getByLabelText(/max logs/i);
+      fireEvent.change(maxLogsInput, { target: { value: "50" } });
+      expect(useLogStore.getState().maxLogs).toBe(100);
+    });
+
+    it("renders time range select inside advanced panel", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      // The time range label and select trigger should be visible
+      expect(screen.getByText(/Time range/)).toBeInTheDocument();
+      expect(screen.getByText("All time")).toBeInTheDocument();
+    });
+
+    it("renders custom time range inputs when preset is custom", async () => {
+      // Set time range to trigger custom preset detection
+      useLogStore.getState().setTimeRange(Date.now() - 3600_000, Date.now());
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      // Custom time range inputs should appear
+      expect(screen.getByLabelText("Start time")).toBeInTheDocument();
+      expect(screen.getByLabelText("End time")).toBeInTheDocument();
+    });
+
+    it("updates custom start time via datetime input", async () => {
+      useLogStore.getState().setTimeRange(Date.now() - 3600_000, Date.now());
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      const startInput = screen.getByLabelText("Start time");
+      fireEvent.change(startInput, { target: { value: "2026-01-01T12:00" } });
+      const state = useLogStore.getState();
+      // The time range should have been updated
+      expect(state.filter.startTime).toBeDefined();
+    });
+
+    it("updates custom end time via datetime input", async () => {
+      useLogStore.getState().setTimeRange(Date.now() - 3600_000, Date.now());
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      const endInput = screen.getByLabelText("End time");
+      fireEvent.change(endInput, { target: { value: "2026-12-31T23:59" } });
+      const state = useLogStore.getState();
+      expect(state.filter.endTime).toBeDefined();
+    });
+  });
+
+  describe("clear search button", () => {
+    it("shows X button when search has text and clears on click", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+
+      const searchInput = screen.getByPlaceholderText("Search logs...");
+      await user.type(searchInput, "error");
+
+      const clearBtn = screen.getByRole("button", { name: /clear search/i });
+      expect(clearBtn).toBeInTheDocument();
+
+      await user.click(clearBtn);
+      expect(useLogStore.getState().filter.search).toBe("");
+    });
+
+    it("does not show X button when search is empty", () => {
+      render(<LogToolbar />);
+      expect(screen.queryByRole("button", { name: /clear search/i })).not.toBeInTheDocument();
     });
   });
 });

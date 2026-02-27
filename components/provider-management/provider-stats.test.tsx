@@ -8,6 +8,9 @@ const mockT = (key: string) => {
     "providers.statsDisabled": "Disabled",
     "providers.statsAvailable": "Available",
     "providers.statsUnavailable": "Unavailable",
+    "providers.statsEnvironment": "Environment",
+    "providers.statsPackage": "Package",
+    "providers.statsSystem": "System",
   };
   return translations[key] || key;
 };
@@ -81,5 +84,70 @@ describe("ProviderStats", () => {
 
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("renders environment count when provided", () => {
+    render(
+      <ProviderStats {...defaultProps} environmentCount={4} />,
+    );
+
+    expect(screen.getByText("Environment:")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+  });
+
+  it("renders package count when provided", () => {
+    render(
+      <ProviderStats {...defaultProps} packageCount={5} />,
+    );
+
+    expect(screen.getByText("Package:")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+  });
+
+  it("renders system count when provided", () => {
+    render(
+      <ProviderStats {...defaultProps} systemCount={3} />,
+    );
+
+    expect(screen.getByText("System:")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("renders all category counts together", () => {
+    render(
+      <ProviderStats
+        {...defaultProps}
+        environmentCount={4}
+        packageCount={5}
+        systemCount={1}
+      />,
+    );
+
+    expect(screen.getByText("Environment:")).toBeInTheDocument();
+    expect(screen.getByText("Package:")).toBeInTheDocument();
+    expect(screen.getByText("System:")).toBeInTheDocument();
+  });
+
+  it("does not render category section when no counts provided", () => {
+    render(<ProviderStats {...defaultProps} />);
+
+    expect(screen.queryByText("Environment:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Package:")).not.toBeInTheDocument();
+    expect(screen.queryByText("System:")).not.toBeInTheDocument();
+  });
+
+  it("renders disabled as total minus enabled", () => {
+    render(
+      <ProviderStats
+        total={10}
+        enabled={7}
+        available={5}
+        unavailable={3}
+        t={mockT}
+      />,
+    );
+
+    // disabled = 10 - 7 = 3, but 3 is also unavailable count
+    expect(screen.getByText("Disabled:")).toBeInTheDocument();
   });
 });

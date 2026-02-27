@@ -461,4 +461,174 @@ mod tests {
         let cargo_home = PlatformPaths::cargo_home();
         assert!(cargo_home.is_some());
     }
+
+    #[test]
+    fn test_current_arch() {
+        let arch = PlatformPaths::current_arch();
+        #[cfg(target_arch = "x86_64")]
+        assert_eq!(arch, Architecture::X86_64);
+        #[cfg(target_arch = "aarch64")]
+        assert_eq!(arch, Architecture::Aarch64);
+        #[cfg(target_arch = "x86")]
+        assert_eq!(arch, Architecture::X86);
+    }
+
+    #[test]
+    fn test_data_dir() {
+        assert!(PlatformPaths::data_dir().is_some());
+    }
+
+    #[test]
+    fn test_config_dir() {
+        assert!(PlatformPaths::config_dir().is_some());
+    }
+
+    #[test]
+    fn test_npm_global_dir() {
+        // Should return Some on all platforms
+        let dir = PlatformPaths::npm_global_dir();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_npm_cache_dir() {
+        let dir = PlatformPaths::npm_cache_dir();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_pip_user_site() {
+        let dir = PlatformPaths::pip_user_site();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_pip_user_bin() {
+        let dir = PlatformPaths::pip_user_bin();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_cargo_bin() {
+        let dir = PlatformPaths::cargo_bin();
+        assert!(dir.is_some());
+        // Should end with "bin"
+        assert!(dir.unwrap().ends_with("bin"));
+    }
+
+    #[test]
+    fn test_version_manager_paths() {
+        // These should all return Some (from env or fallback to home dir)
+        assert!(PlatformPaths::nvm_dir().is_some());
+        assert!(PlatformPaths::fnm_dir().is_some());
+        assert!(PlatformPaths::pyenv_root().is_some());
+        assert!(PlatformPaths::rbenv_root().is_some());
+        assert!(PlatformPaths::rustup_home().is_some());
+        assert!(PlatformPaths::sdkman_dir().is_some());
+        assert!(PlatformPaths::goenv_root().is_some());
+        assert!(PlatformPaths::deno_dir().is_some());
+    }
+
+    #[test]
+    fn test_other_pkg_manager_paths() {
+        assert!(PlatformPaths::composer_home().is_some());
+        assert!(PlatformPaths::poetry_home().is_some());
+        assert!(PlatformPaths::gem_home().is_some());
+        assert!(PlatformPaths::bun_install().is_some());
+        assert!(PlatformPaths::pnpm_home().is_some());
+        assert!(PlatformPaths::yarn_global().is_some());
+        assert!(PlatformPaths::uv_cache().is_some());
+    }
+
+    #[test]
+    fn test_dotnet_tools() {
+        let dir = PlatformPaths::dotnet_tools();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("tools"));
+    }
+
+    #[test]
+    fn test_nuget_packages() {
+        let dir = PlatformPaths::nuget_packages();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("packages"));
+    }
+
+    #[test]
+    fn test_powershell_modules() {
+        let dir = PlatformPaths::powershell_modules();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("Modules"));
+    }
+
+    #[test]
+    fn test_vcpkg_root() {
+        let dir = PlatformPaths::vcpkg_root();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_docker_data_dir() {
+        let dir = PlatformPaths::docker_data_dir();
+        assert!(dir.is_some());
+    }
+
+    #[test]
+    fn test_static_linux_paths() {
+        assert_eq!(PlatformPaths::system_pkg_dir(), PathBuf::from("/usr"));
+        assert_eq!(PlatformPaths::snap_dir(), PathBuf::from("/snap"));
+        assert_eq!(
+            PlatformPaths::flatpak_dir(),
+            PathBuf::from("/var/lib/flatpak")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_specific_paths() {
+        assert!(PlatformPaths::winget_install_dir().is_some());
+        assert!(PlatformPaths::scoop_dir().is_some());
+        assert!(PlatformPaths::chocolatey_dir().is_some());
+        assert!(PlatformPaths::scoop_apps().is_some());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_windows_paths_on_nonwindows() {
+        assert!(PlatformPaths::winget_install_dir().is_none());
+        assert!(PlatformPaths::scoop_dir().is_none());
+        assert!(PlatformPaths::chocolatey_dir().is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_brew_prefix_macos() {
+        let prefix = PlatformPaths::brew_prefix();
+        assert!(prefix.is_some());
+        let p = prefix.unwrap();
+        // Either /opt/homebrew (ARM) or /usr/local (Intel)
+        assert!(p == PathBuf::from("/opt/homebrew") || p == PathBuf::from("/usr/local"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_brew_prefix_windows_none() {
+        assert!(PlatformPaths::brew_prefix().is_none());
+        assert!(PlatformPaths::brew_cellar().is_none());
+    }
+
+    #[test]
+    fn test_brew_cellar_derived_from_prefix() {
+        if let Some(prefix) = PlatformPaths::brew_prefix() {
+            let cellar = PlatformPaths::brew_cellar();
+            assert!(cellar.is_some());
+            assert_eq!(cellar.unwrap(), prefix.join("Cellar"));
+        }
+    }
+
+    #[test]
+    fn test_base_dirs() {
+        // Internal helper should return Some
+        assert!(PlatformPaths::base_dirs().is_some());
+    }
 }

@@ -85,6 +85,13 @@ impl Resolver {
                     for sub_dep in &pkg.dependencies {
                         if !visited.contains(&sub_dep.name) {
                             pending.push(sub_dep.clone());
+                        } else if let Some(resolved) = solution.get(&sub_dep.name) {
+                            if !sub_dep.constraint.matches(resolved) {
+                                return Err(CogniaError::Conflict(format!(
+                                    "Version conflict for '{}': {} required but {} already selected",
+                                    sub_dep.name, sub_dep.constraint, resolved
+                                )));
+                            }
                         }
                     }
                 }
@@ -223,6 +230,300 @@ mod tests {
         }];
         let result = resolver.resolve(&deps).unwrap();
 
+        assert_eq!(result.get("a"), Some(&"1.0.0".parse().unwrap()));
+    }
+
+    // --- Resolver basics ---
+
+    #[test]
+    fn test_resolver_default() {
+        let resolver = Resolver::default();
+        let result = resolver.resolve(&[]).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_add_packages_batch() {
+        let mut resolver = Resolver::new();
+        resolver.add_packages(vec![
+            make_pkg("a", "1.0.0", vec![]),
+            make_pkg("a", "2.0.0", vec![]),
+            make_pkg("b", "1.0.0", vec![]),
+        ]);
+
+        let deps = vec![
+            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
+            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+        ];
+        let result = resolver.resolve(&deps).unwrap();
+        assert!(result.get("a").is_some());
+        assert!(result.get("b").is_some());
+    }
+
+    #[test]
+    fn test_empty_root_deps() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+
+        let result = resolver.resolve(&[]).unwrap();
+        assert!(result.is_empty());
+        assert_eq!(result.len(), 0);
+    }
+
+    // --- Resolution: multiple root deps ---
+
+    #[test]
+    fn test_multiple_root_deps() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("b", "2.0.0", vec![]));
+
+        let deps = vec![
+            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
+            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+        ];
+        let result = resolver.resolve(&deps).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("a"), Some(&"1.0.0".parse().unwrap()));
+        assert_eq!(result.get("b"), Some(&"2.0.0".parse().unwrap()));
+    }
+
+    // --- Diamond dependency ---
+
+    #[test]
+    fn test_diamond_dependency() {
+        // A -> B, A -> C, B -> D ^1.0, C -> D ^1.0
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![("b", "^1.0.0"), ("c", "^1.0.0")]));
+        resolver.add_package(make_pkg("b", "1.0.0", vec![("d", "^1.0.0")]));
+        resolver.add_package(make_pkg("c", "1.0.0", vec![("d", "^1.0.0")]));
+        resolver.add_package(make_pkg("d", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("d", "1.5.0", vec![]));
+
+        let deps = vec![Dependency { name: "a".into(), constraint: "*".parse().unwrap() }];
+        let result = resolver.resolve(&deps).unwrap();
+        assert!(result.get("a").is_some());
+        assert!(result.get("b").is_some());
+        assert!(result.get("c").is_some());
+        assert!(result.get("d").is_some());
+    }
+
+    // --- Conflict detection ---
+
+    #[test]
+    fn test_version_conflict() {
+        let mut resolver = Resolver::new();
+        // a@1.0 requires b ^1.0, c@1.0 requires b ^2.0  -> conflict on b
+        resolver.add_package(make_pkg("a", "1.0.0", vec![("b", "^1.0.0")]));
+        resolver.add_package(make_pkg("c", "1.0.0", vec![("b", "^2.0.0")]));
+        resolver.add_package(make_pkg("b", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("b", "2.0.0", vec![]));
+
+        let deps = vec![
+            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
+            Dependency { name: "c".into(), constraint: "*".parse().unwrap() },
+        ];
+        let result = resolver.resolve(&deps);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("conflict") || err_msg.contains("Conflict") || err_msg.contains("b"));
+    }
+
+    #[test]
+    fn test_package_not_found() {
+        let resolver = Resolver::new();
+        let deps = vec![Dependency {
+            name: "nonexistent".into(),
+            constraint: "*".parse().unwrap(),
+        }];
+        let result = resolver.resolve(&deps);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("nonexistent") || err_msg.contains("not found"));
+    }
+
+    #[test]
+    fn test_no_matching_version() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+
+        let deps = vec![Dependency {
+            name: "a".into(),
+            constraint: "^5.0.0".parse().unwrap(),
+        }];
+        let result = resolver.resolve(&deps);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("a") || err_msg.contains("version"));
+    }
+
+    // --- Locked version edge cases ---
+
+    #[test]
+    fn test_locked_version_not_matching_constraint() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("a", "2.0.0", vec![]));
+        // Lock to 1.0.0 but require ^2.0.0 -> locked doesn't match, should pick from available
+        resolver.lock_version("a", "1.0.0".parse().unwrap());
+
+        let deps = vec![Dependency {
+            name: "a".into(),
+            constraint: "^2.0.0".parse().unwrap(),
+        }];
+        let result = resolver.resolve(&deps).unwrap();
+        assert_eq!(result.get("a"), Some(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_locked_version_matches_constraint() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("a", "1.5.0", vec![]));
+        resolver.add_package(make_pkg("a", "2.0.0", vec![]));
+        resolver.lock_version("a", "1.0.0".parse().unwrap());
+
+        let deps = vec![Dependency {
+            name: "a".into(),
+            constraint: "^1.0.0".parse().unwrap(),
+        }];
+        let result = resolver.resolve(&deps).unwrap();
+        // Should prefer locked version over newer 1.5.0
+        assert_eq!(result.get("a"), Some(&"1.0.0".parse().unwrap()));
+    }
+
+    // --- Selects best (highest matching) version ---
+
+    #[test]
+    fn test_selects_highest_matching_version() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("a", "1.5.0", vec![]));
+        resolver.add_package(make_pkg("a", "1.9.0", vec![]));
+        resolver.add_package(make_pkg("a", "2.0.0", vec![]));
+
+        let deps = vec![Dependency {
+            name: "a".into(),
+            constraint: "^1.0.0".parse().unwrap(),
+        }];
+        let result = resolver.resolve(&deps).unwrap();
+        assert_eq!(result.get("a"), Some(&"1.9.0".parse().unwrap()));
+    }
+
+    // --- Resolution struct methods ---
+
+    #[test]
+    fn test_resolution_is_empty() {
+        let r = Resolution { packages: HashMap::new() };
+        assert!(r.is_empty());
+        assert_eq!(r.len(), 0);
+    }
+
+    #[test]
+    fn test_resolution_len() {
+        let mut pkgs = HashMap::new();
+        pkgs.insert("a".to_string(), "1.0.0".parse().unwrap());
+        pkgs.insert("b".to_string(), "2.0.0".parse().unwrap());
+        let r = Resolution { packages: pkgs };
+        assert_eq!(r.len(), 2);
+        assert!(!r.is_empty());
+    }
+
+    #[test]
+    fn test_resolution_get_hit_and_miss() {
+        let mut pkgs = HashMap::new();
+        pkgs.insert("a".to_string(), "1.0.0".parse().unwrap());
+        let r = Resolution { packages: pkgs };
+        assert!(r.get("a").is_some());
+        assert!(r.get("z").is_none());
+    }
+
+    #[test]
+    fn test_resolution_iter() {
+        let mut pkgs = HashMap::new();
+        pkgs.insert("a".to_string(), "1.0.0".parse().unwrap());
+        pkgs.insert("b".to_string(), "2.0.0".parse().unwrap());
+        let r = Resolution { packages: pkgs };
+        assert_eq!(r.iter().count(), 2);
+    }
+
+    // --- explain_conflict ---
+
+    #[test]
+    fn test_explain_conflict_single() {
+        let conflicts = vec![ConflictExplanation {
+            package: "foo".into(),
+            required_by: vec![
+                ("bar".into(), "^1.0.0".parse().unwrap()),
+                ("baz".into(), "^2.0.0".parse().unwrap()),
+            ],
+            message: "No compatible version found".into(),
+        }];
+        let msg = explain_conflict(&conflicts);
+        assert!(msg.contains("foo"));
+        assert!(msg.contains("bar"));
+        assert!(msg.contains("baz"));
+        assert!(msg.contains("No compatible version found"));
+    }
+
+    #[test]
+    fn test_explain_conflict_multiple() {
+        let conflicts = vec![
+            ConflictExplanation {
+                package: "x".into(),
+                required_by: vec![("a".into(), "^1.0.0".parse().unwrap())],
+                message: "conflict 1".into(),
+            },
+            ConflictExplanation {
+                package: "y".into(),
+                required_by: vec![("b".into(), "^2.0.0".parse().unwrap())],
+                message: "conflict 2".into(),
+            },
+        ];
+        let msg = explain_conflict(&conflicts);
+        assert!(msg.contains("x"));
+        assert!(msg.contains("y"));
+        assert!(msg.contains("conflict 1"));
+        assert!(msg.contains("conflict 2"));
+    }
+
+    #[test]
+    fn test_explain_conflict_empty() {
+        let msg = explain_conflict(&[]);
+        assert!(msg.contains("Dependency resolution failed"));
+    }
+
+    // --- Transitive dep conflict ---
+
+    #[test]
+    fn test_transitive_dep_already_resolved_compatible() {
+        // root -> a, root -> b; a -> c ^1.0, b -> c ^1.0 (compatible)
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![("c", "^1.0.0")]));
+        resolver.add_package(make_pkg("b", "1.0.0", vec![("c", "^1.0.0")]));
+        resolver.add_package(make_pkg("c", "1.0.0", vec![]));
+        resolver.add_package(make_pkg("c", "1.5.0", vec![]));
+
+        let deps = vec![
+            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
+            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+        ];
+        let result = resolver.resolve(&deps).unwrap();
+        assert!(result.get("c").is_some());
+    }
+
+    // --- Duplicate dep in pending (visited check) ---
+
+    #[test]
+    fn test_duplicate_root_deps_same_package() {
+        let mut resolver = Resolver::new();
+        resolver.add_package(make_pkg("a", "1.0.0", vec![]));
+
+        let deps = vec![
+            Dependency { name: "a".into(), constraint: "^1.0.0".parse().unwrap() },
+            Dependency { name: "a".into(), constraint: "^1.0.0".parse().unwrap() },
+        ];
+        let result = resolver.resolve(&deps).unwrap();
         assert_eq!(result.get("a"), Some(&"1.0.0".parse().unwrap()));
     }
 }

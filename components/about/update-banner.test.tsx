@@ -116,4 +116,34 @@ describe("UpdateBanner", () => {
     render(<UpdateBanner {...defaultProps} isDesktop={false} />);
     expect(screen.getByText("Update").closest("button")).toBeDisabled();
   });
+
+  it("does not render release notes area when release_notes is null", () => {
+    render(
+      <UpdateBanner
+        {...defaultProps}
+        updateInfo={{ ...updateInfo, release_notes: null }}
+      />,
+    );
+    expect(screen.queryByTestId("markdown-renderer")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Release Notes")).not.toBeInTheDocument();
+  });
+
+  it("shows ellipsis when progress is 0 during download", () => {
+    render(
+      <UpdateBanner
+        {...defaultProps}
+        updating={true}
+        updateProgress={0}
+        updateStatus="downloading"
+      />,
+    );
+    expect(screen.getByText(/\.\.\./)).toBeInTheDocument();
+  });
+
+  it("renders description text", () => {
+    render(<UpdateBanner {...defaultProps} />);
+    expect(
+      screen.getByText("A new version is available for download"),
+    ).toBeInTheDocument();
+  });
 });

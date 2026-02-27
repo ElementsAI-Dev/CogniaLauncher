@@ -481,3 +481,103 @@ impl EnvironmentProvider for MiseProvider {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ls_json_normal() {
+        let json = r#"{"node":[{"version":"20.10.0","install_path":"/home/user/.local/share/mise/installs/node/20.10.0","active":true}],"python":[{"version":"3.12.1","install_path":"/home/user/.local/share/mise/installs/python/3.12.1","active":false}]}"#;
+        let result = MiseProvider::parse_ls_json(json);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|(t, v, _, _)| t == "node" && v == "20.10.0"));
+        assert!(result.iter().any(|(t, v, _, a)| t == "python" && v == "3.12.1" && !a));
+    }
+
+    #[test]
+    fn test_parse_ls_json_multiple_versions() {
+        let json = r#"{"node":[{"version":"18.19.0","install_path":"/a","active":false},{"version":"20.10.0","install_path":"/b","active":true}]}"#;
+        let result = MiseProvider::parse_ls_json(json);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1, "18.19.0");
+        assert_eq!(result[1].1, "20.10.0");
+        assert!(result[1].3); // active
+    }
+
+    #[test]
+    fn test_parse_ls_json_empty_object() {
+        let result = MiseProvider::parse_ls_json("{}");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ls_json_empty_string() {
+        let result = MiseProvider::parse_ls_json("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ls_json_invalid_json() {
+        let result = MiseProvider::parse_ls_json("not json");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ls_json_empty_version_skipped() {
+        let json = r#"{"node":[{"version":"","install_path":"/a","active":false}]}"#;
+        let result = MiseProvider::parse_ls_json(json);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ls_json_missing_fields() {
+        let json = r#"{"node":[{"version":"20.0.0"}]}"#;
+        let result = MiseProvider::parse_ls_json(json);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1, "20.0.0");
+        assert!(!result[0].3); // active defaults to false
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = MiseProvider::new();
+        assert_eq!(provider.id(), "mise");
+        assert_eq!(provider.display_name(), "mise (Polyglot Runtime Manager)");
+        assert_eq!(provider.priority(), 92);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = MiseProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = MiseProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = MiseProvider::new();
+        assert_eq!(provider.version_file_name(), "mise.toml");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = MiseProvider::default();
+    }
+}

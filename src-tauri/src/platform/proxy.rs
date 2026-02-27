@@ -191,4 +191,37 @@ mod tests {
         let client = get_shared_client();
         assert!(client.get("https://example.com").build().is_ok());
     }
+
+    #[test]
+    fn test_build_proxy_https() {
+        let proxy = build_proxy(Some("https://secure-proxy.example.com:443"), None);
+        assert!(proxy.is_some());
+    }
+
+    #[test]
+    fn test_rebuild_shared_client() {
+        let settings = Settings::default();
+        rebuild_shared_client(&settings);
+        // After rebuild, get_shared_client should work
+        let client = get_shared_client();
+        assert!(client.get("https://example.com").build().is_ok());
+    }
+
+    #[test]
+    fn test_build_proxy_with_empty_no_proxy() {
+        let proxy = build_proxy(
+            Some("http://proxy.example.com:8080"),
+            Some(""),
+        );
+        assert!(proxy.is_some());
+    }
+
+    #[test]
+    fn test_build_proxy_with_whitespace_no_proxy() {
+        let proxy = build_proxy(
+            Some("http://proxy.example.com:8080"),
+            Some("   "),
+        );
+        assert!(proxy.is_some());
+    }
 }

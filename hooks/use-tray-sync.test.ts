@@ -21,6 +21,9 @@ jest.mock('@/lib/tauri', () => ({
   },
   listenNavigate: (...args: unknown[]) => mockListenNavigate(...args),
   listenCheckUpdates: (...args: unknown[]) => mockListenCheckUpdates(...args),
+  listenDownloadPauseAll: jest.fn().mockResolvedValue(() => {}),
+  listenDownloadResumeAll: jest.fn().mockResolvedValue(() => {}),
+  listenToggleAlwaysOnTop: jest.fn().mockResolvedValue(() => {}),
   traySetActiveDownloads: (...args: unknown[]) => {
     mockTraySetActiveDownloads(...args);
     return Promise.resolve();

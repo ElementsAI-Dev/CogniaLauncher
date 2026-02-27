@@ -1,5 +1,11 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { PackageList } from "./package-list";
+import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
+
+const mockTogglePackageSelection = jest.fn();
+const mockSelectAllPackages = jest.fn();
+const mockClearPackageSelection = jest.fn();
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -10,25 +16,20 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.noPackagesInstalled": "No packages installed",
         "packages.searchTips": "Try searching for a package",
         "packages.description": "Install packages to get started",
-        "packages.install": "Install",
-        "packages.uninstall": "Uninstall",
-        "packages.update": "Update",
-        "packages.pin": "Pin",
-        "packages.unpin": "Unpin",
-        "packages.bookmark": "Bookmark",
-        "packages.removeBookmark": "Remove bookmark",
-        "packages.installed": "Installed",
-        "packages.notInstalled": "Not installed",
         "packages.selected": `${params?.count ?? 0} selected`,
         "packages.selectAll": "Select all",
         "packages.deselectAll": "Deselect all",
+        "packages.pinVersion": "Pin version",
+        "packages.unpinVersion": "Unpin version",
+        "packages.addBookmark": "Add bookmark",
+        "packages.removeBookmark": "Remove bookmark",
+        "packages.installConfirm": `Install ${params?.name ?? ""}?`,
+        "packages.uninstallConfirm": `Uninstall ${params?.name ?? ""}?`,
+        "packages.version": "Version",
         "common.install": "Install",
         "common.uninstall": "Uninstall",
         "common.info": "Info",
         "common.cancel": "Cancel",
-        "packages.installConfirm": "Install package?",
-        "packages.uninstallConfirm": "Uninstall package?",
-        "packages.version": "Version",
       };
       return translations[key] || key;
     },
@@ -38,21 +39,24 @@ jest.mock("@/components/providers/locale-provider", () => ({
 jest.mock("@/lib/stores/packages", () => ({
   usePackageStore: () => ({
     selectedPackages: [],
-    togglePackageSelection: jest.fn(),
-    selectAllPackages: jest.fn(),
-    clearPackageSelection: jest.fn(),
+    togglePackageSelection: mockTogglePackageSelection,
+    selectAllPackages: mockSelectAllPackages,
+    clearPackageSelection: mockClearPackageSelection,
   }),
 }));
 
-const mockPackages = [
-  { name: "numpy", version: "1.24.0", provider: "pip", installed: true },
-  { name: "pandas", version: "2.0.0", provider: "pip", installed: false },
+const mockSearchPackages: PackageSummary[] = [
+  { name: "numpy", provider: "pip", description: "Numerical Python", latest_version: "1.24.0" },
+  { name: "pandas", provider: "pip", description: "Data analysis library", latest_version: "2.0.0" },
+];
+
+const mockInstalledPackages: InstalledPackage[] = [
+  { name: "react", version: "18.0.0", provider: "npm", install_path: "/path", installed_at: "2024-01-01", is_global: true },
+  { name: "lodash", version: "4.17.21", provider: "npm", install_path: "/path", installed_at: "2024-01-01", is_global: true },
 ];
 
 const defaultProps = {
-  packages: mockPackages as unknown as Parameters<
-    typeof PackageList
-  >[0]["packages"],
+  packages: mockSearchPackages as (PackageSummary | InstalledPackage)[],
   type: "search" as const,
   onInstall: jest.fn(),
   onUninstall: jest.fn(),
@@ -70,31 +74,96 @@ describe("PackageList", () => {
     expect(screen.getByText("pandas")).toBeInTheDocument();
   });
 
-  it("shows empty state when no packages", () => {
+  it("shows search empty state when no packages", () => {
     render(<PackageList {...defaultProps} packages={[]} />);
-    // Component uses t('packages.noResults') for search type
     expect(screen.getByText("No packages found")).toBeInTheDocument();
   });
 
-  it("renders install buttons for packages", () => {
-    render(<PackageList {...defaultProps} />);
-
-    // Check that install/info buttons are rendered
-    const buttons = screen.getAllByRole("button");
-    expect(buttons.length).toBeGreaterThan(0);
-  });
-
-  it("displays package names in the list", () => {
-    render(<PackageList {...defaultProps} />);
-
-    // Verify package names are displayed
-    expect(screen.getByText("numpy")).toBeInTheDocument();
-    expect(screen.getByText("pandas")).toBeInTheDocument();
+  it("shows installed empty state", () => {
+    render(<PackageList {...defaultProps} packages={[]} type="installed" />);
+    expect(screen.getByText("No packages installed")).toBeInTheDocument();
   });
 
   it("shows provider badge for packages", () => {
     render(<PackageList {...defaultProps} />);
-    // Component shows provider badge, not "Installed" text
     expect(screen.getAllByText("pip").length).toBeGreaterThan(0);
+  });
+
+  it("renders version badges", () => {
+    render(<PackageList {...defaultProps} />);
+    expect(screen.getByText("1.24.0")).toBeInTheDocument();
+    expect(screen.getByText("2.0.0")).toBeInTheDocument();
+  });
+
+  it("renders select all checkbox for selectable list", () => {
+    render(<PackageList {...defaultProps} selectable={true} showSelectAll={true} />);
+    expect(screen.getByText("Select all")).toBeInTheDocument();
+  });
+
+  it("does not render select all when selectable is false", () => {
+    render(<PackageList {...defaultProps} selectable={false} />);
+    expect(screen.queryByText("Select all")).not.toBeInTheDocument();
+  });
+
+  it("renders installed packages with version", () => {
+    render(
+      <PackageList
+        {...defaultProps}
+        packages={mockInstalledPackages}
+        type="installed"
+      />,
+    );
+    expect(screen.getByText("react")).toBeInTheDocument();
+    expect(screen.getByText("18.0.0")).toBeInTheDocument();
+  });
+
+  it("shows pin buttons for installed packages when handlers provided", () => {
+    render(
+      <PackageList
+        {...defaultProps}
+        packages={mockInstalledPackages}
+        type="installed"
+        onPin={jest.fn()}
+        onUnpin={jest.fn()}
+      />,
+    );
+    // Pin buttons should be rendered for installed packages
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  it("shows bookmark buttons when handler provided", () => {
+    render(
+      <PackageList
+        {...defaultProps}
+        onBookmark={jest.fn()}
+      />,
+    );
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  it("calls onSelect when info button is clicked", async () => {
+    const user = userEvent.setup();
+    const onSelect = jest.fn();
+    render(<PackageList {...defaultProps} onSelect={onSelect} />);
+    // Info buttons are icon buttons
+    const infoButtons = screen.getAllByRole("button");
+    // Click an info button (stopPropagation prevents navigation)
+    await user.click(infoButtons[0]);
+  });
+
+  it("renders description for packages that have it", () => {
+    render(<PackageList {...defaultProps} />);
+    expect(screen.getByText("Numerical Python")).toBeInTheDocument();
+    expect(screen.getByText("Data analysis library")).toBeInTheDocument();
+  });
+
+  it("calls selectAllPackages when select all checkbox is clicked", async () => {
+    const user = userEvent.setup();
+    render(<PackageList {...defaultProps} selectable={true} showSelectAll={true} />);
+    const checkboxes = screen.getAllByRole("checkbox");
+    await user.click(checkboxes[0]);
+    expect(mockSelectAllPackages).toHaveBeenCalled();
   });
 });

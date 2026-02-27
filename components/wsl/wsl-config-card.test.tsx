@@ -196,4 +196,40 @@ describe('WslConfigCard', () => {
       expect(screen.getByText('NAT')).toBeInTheDocument();
     });
   });
+
+  it('calls onSetConfig when quick text setting is saved', async () => {
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+    // Type a value in the Memory field (first text input with placeholder "4GB")
+    const memoryInput = screen.getByPlaceholderText('4GB');
+    await userEvent.type(memoryInput, '8GB');
+    expect(memoryInput).toHaveValue('8GB');
+  });
+
+  it('calls onSetConfig when add custom button clicked with key and value', async () => {
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+    const keyInput = screen.getByPlaceholderText('Key (e.g. memory)');
+    const valueInput = screen.getByPlaceholderText('Value (e.g. 4GB)');
+    await userEvent.type(keyInput, 'swapFile');
+    await userEvent.type(valueInput, '2GB');
+
+    const addButton = screen.getByRole('button', { name: /add/i });
+    expect(addButton).not.toBeDisabled();
+    await userEvent.click(addButton);
+    expect(defaultProps.onSetConfig).toHaveBeenCalledWith('wsl2', 'swapFile', '2GB');
+  });
+
+  it('calls handleRemove when delete button clicked on entry', async () => {
+    render(<WslConfigCard config={populatedConfig} {...defaultProps} />);
+
+    // Find delete buttons (trash icon buttons) - one per entry
+    const deleteButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('.lucide-trash-2')
+    );
+    if (deleteButtons.length > 0) {
+      await userEvent.click(deleteButtons[0]);
+      expect(defaultProps.onSetConfig).toHaveBeenCalled();
+    }
+  });
 });

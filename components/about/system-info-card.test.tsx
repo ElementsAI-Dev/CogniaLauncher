@@ -10,6 +10,10 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
+jest.mock("@/lib/clipboard", () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.systemInfo": "System Information",
@@ -292,5 +296,70 @@ describe("SystemInfoCard", () => {
     expect(screen.getByText("1.50 / 2.00 / 1.80")).toBeInTheDocument();
     expect(screen.getByText("CPU Usage")).toBeInTheDocument();
     expect(screen.getByText("25.3%")).toBeInTheDocument();
+  });
+
+  it("calls clipboard and shows toast on copy button click", async () => {
+    const { toast } = jest.requireMock("sonner");
+
+    render(<SystemInfoCard {...defaultProps} />);
+    const copyBtn = screen.getByLabelText("Copy");
+    await userEvent.click(copyBtn);
+    // Toast should have been called (success)
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("renders GPU VRAM in GB for large values", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    // GPU VRAM is 12288 MB = 12.0 GB
+    expect(screen.getByText("12.0 GB")).toBeInTheDocument();
+  });
+
+  it("renders GPU driver version", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    expect(screen.getByText("555.42")).toBeInTheDocument();
+  });
+
+  it("renders battery discharging state", () => {
+    const withBatteryDischarging = {
+      ...systemInfo,
+      battery: {
+        percent: 45,
+        isCharging: false,
+        isPluggedIn: false,
+        healthPercent: null,
+        cycleCount: null,
+        designCapacityMwh: null,
+        fullCapacityMwh: null,
+        voltageMv: null,
+        powerSource: "battery",
+        timeToEmptyMins: 120,
+        timeToFullMins: null,
+        technology: null,
+      },
+    };
+    render(
+      <SystemInfoCard {...defaultProps} systemInfo={withBatteryDischarging} />,
+    );
+    expect(screen.getByText("Battery")).toBeInTheDocument();
+    expect(screen.getByText("On Battery")).toBeInTheDocument();
+  });
+
+  it("renders swap section with progress bar", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    // Swap: 1 GB / 4 GB = 25%
+    expect(screen.getByText("Swap")).toBeInTheDocument();
+    expect(screen.getByText("25%")).toBeInTheDocument();
+  });
+
+  it("renders physical/logical core display", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    // physicalCoreCount=4, cpuCores=8 → "4P / 8L cores"
+    expect(screen.getByText("4P / 8L cores")).toBeInTheDocument();
+  });
+
+  it("renders memory percentage", () => {
+    render(<SystemInfoCard {...defaultProps} />);
+    // 8 GB / 16 GB = 50%
+    expect(screen.getByText("50%")).toBeInTheDocument();
   });
 });

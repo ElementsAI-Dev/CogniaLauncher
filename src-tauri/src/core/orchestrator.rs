@@ -447,3 +447,148 @@ impl Orchestrator {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_plan_serde_roundtrip() {
+        let plan = InstallPlan {
+            packages: vec![PlannedInstall {
+                name: "lodash".into(),
+                version: "4.17.21".into(),
+                provider: "npm".into(),
+                download_size: Some(1024),
+                is_upgrade: false,
+            }],
+            total_download_size: 1024,
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let deser: InstallPlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.packages.len(), 1);
+        assert_eq!(deser.packages[0].name, "lodash");
+        assert_eq!(deser.total_download_size, 1024);
+    }
+
+    #[test]
+    fn test_planned_install_serde() {
+        let planned = PlannedInstall {
+            name: "express".into(),
+            version: "4.18.2".into(),
+            provider: "npm".into(),
+            download_size: None,
+            is_upgrade: true,
+        };
+        let json = serde_json::to_string(&planned).unwrap();
+        assert!(json.contains("\"is_upgrade\":true"));
+        assert!(json.contains("\"download_size\":null"));
+
+        let deser: PlannedInstall = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.name, "express");
+        assert!(deser.is_upgrade);
+        assert!(deser.download_size.is_none());
+    }
+
+    #[test]
+    fn test_install_progress_resolving_serde() {
+        let progress = InstallProgress::Resolving;
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"resolving\""));
+    }
+
+    #[test]
+    fn test_install_progress_downloading_serde() {
+        let progress = InstallProgress::Downloading {
+            package: "lodash".into(),
+            progress: 0.5,
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"downloading\""));
+        assert!(json.contains("\"package\":\"lodash\""));
+
+        let deser: InstallProgress = serde_json::from_str(&json).unwrap();
+        match deser {
+            InstallProgress::Downloading { package, progress } => {
+                assert_eq!(package, "lodash");
+                assert!((progress - 0.5).abs() < f32::EPSILON);
+            }
+            _ => panic!("Expected Downloading variant"),
+        }
+    }
+
+    #[test]
+    fn test_install_progress_verifying_serde() {
+        let progress = InstallProgress::Verifying {
+            package: "express".into(),
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"verifying\""));
+        assert!(json.contains("\"package\":\"express\""));
+    }
+
+    #[test]
+    fn test_install_progress_installing_serde() {
+        let progress = InstallProgress::Installing {
+            package: "react".into(),
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"installing\""));
+    }
+
+    #[test]
+    fn test_install_progress_failed_serde() {
+        let progress = InstallProgress::Failed {
+            error: "network error".into(),
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"failed\""));
+        assert!(json.contains("\"error\":\"network error\""));
+    }
+
+    #[test]
+    fn test_install_progress_completed_serde() {
+        let progress = InstallProgress::Completed {
+            receipts: vec![InstallReceipt {
+                name: "lodash".into(),
+                version: "4.17.21".into(),
+                provider: "npm".into(),
+                install_path: std::path::PathBuf::new(),
+                files: vec![],
+                installed_at: String::new(),
+            }],
+        };
+        let json = serde_json::to_string(&progress).unwrap();
+        assert!(json.contains("\"type\":\"completed\""));
+        assert!(json.contains("\"lodash\""));
+    }
+
+    #[test]
+    fn test_install_plan_empty() {
+        let plan = InstallPlan {
+            packages: vec![],
+            total_download_size: 0,
+        };
+        assert!(plan.packages.is_empty());
+        assert_eq!(plan.total_download_size, 0);
+    }
+
+    #[test]
+    fn test_planned_install_with_download_size() {
+        let planned = PlannedInstall {
+            name: "big-package".into(),
+            version: "1.0.0".into(),
+            provider: "npm".into(),
+            download_size: Some(10_000_000),
+            is_upgrade: false,
+        };
+        assert_eq!(planned.download_size, Some(10_000_000));
+        assert!(!planned.is_upgrade);
+    }
+
+    #[test]
+    fn test_orchestrator_constants() {
+        assert_eq!(Orchestrator::VERSION_VERIFY_RETRIES, 3);
+        assert_eq!(Orchestrator::VERSION_VERIFY_DELAY_MS, 500);
+    }
+}

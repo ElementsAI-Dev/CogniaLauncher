@@ -43,4 +43,19 @@ describe('GitRemoteCard', () => {
     render(<GitRemoteCard remotes={[]} />);
     expect(screen.getByText('No remotes configured')).toBeInTheDocument();
   });
+
+  it('hides push URL when push URL matches fetch URL', () => {
+    const sameUrlRemotes = [
+      { name: 'origin', fetchUrl: 'https://github.com/user/repo.git', pushUrl: 'https://github.com/user/repo.git' },
+    ];
+    render(<GitRemoteCard remotes={sameUrlRemotes} />);
+    // push URL section should not appear when same as fetch
+    expect(screen.queryByText(/git\.repo\.pushUrl/)).not.toBeInTheDocument();
+  });
+
+  it('renders fetch URL labels for each remote', () => {
+    render(<GitRemoteCard remotes={remotes} />);
+    const fetchLabels = screen.getAllByText(/git\.repo\.fetchUrl/);
+    expect(fetchLabels.length).toBe(2);
+  });
 });

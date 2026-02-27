@@ -598,4 +598,24 @@ mod tests {
         let provider = NvmProvider::new();
         assert!(!provider.requires_elevation("install"));
     }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = NvmProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = NvmProvider::new();
+        assert_eq!(provider.version_file_name(), ".node-version");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = NvmProvider::default();
+    }
 }

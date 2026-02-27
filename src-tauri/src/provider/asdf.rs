@@ -423,3 +423,84 @@ impl EnvironmentProvider for AsdfProvider {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_tool_versions_normal() {
+        let content = "nodejs 18.17.0\npython 3.11.4\nruby 3.2.2\n";
+        let result = AsdfProvider::parse_tool_versions(content);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], ("nodejs".to_string(), "18.17.0".to_string()));
+        assert_eq!(result[1], ("python".to_string(), "3.11.4".to_string()));
+        assert_eq!(result[2], ("ruby".to_string(), "3.2.2".to_string()));
+    }
+
+    #[test]
+    fn test_parse_tool_versions_with_comments() {
+        let content = "# This is a comment\nnodejs 18.17.0\n# Another comment\npython 3.11.4\n";
+        let result = AsdfProvider::parse_tool_versions(content);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "nodejs");
+        assert_eq!(result[1].0, "python");
+    }
+
+    #[test]
+    fn test_parse_tool_versions_blank_lines() {
+        let content = "\nnodejs 18.17.0\n\n\npython 3.11.4\n\n";
+        let result = AsdfProvider::parse_tool_versions(content);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_tool_versions_empty() {
+        let result = AsdfProvider::parse_tool_versions("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tool_versions_single_word_line() {
+        let content = "nodejs\n";
+        let result = AsdfProvider::parse_tool_versions(content);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = AsdfProvider::new();
+        assert_eq!(provider.id(), "asdf");
+        assert_eq!(
+            provider.display_name(),
+            "asdf (Multiple Runtime Version Manager)"
+        );
+        assert_eq!(provider.priority(), 88);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = AsdfProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = AsdfProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(!platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = AsdfProvider::default();
+    }
+}

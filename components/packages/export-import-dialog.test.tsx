@@ -116,4 +116,20 @@ describe("ExportImportDialog", () => {
     render(<ExportImportDialog trigger={<button>Custom Trigger</button>} />);
     expect(screen.getByText("Custom Trigger")).toBeInTheDocument();
   });
+
+  it("shows file input button on import tab", async () => {
+    const user = userEvent.setup();
+    render(<ExportImportDialog />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    expect(screen.getByText("Select JSON File")).toBeInTheDocument();
+  });
+
+  it("shows import file selection description", async () => {
+    const user = userEvent.setup();
+    render(<ExportImportDialog />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    expect(screen.getByText(/previously exported JSON/)).toBeInTheDocument();
+  });
 });

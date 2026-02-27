@@ -705,6 +705,71 @@ mod tests {
     }
 
     #[test]
+    fn test_download_task_builder_with_header() {
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_header("Authorization", "Bearer token123")
+        .build();
+
+        assert_eq!(
+            task.headers.get("Authorization"),
+            Some(&"Bearer token123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_download_task_builder_with_headers() {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("X-Custom".to_string(), "value1".to_string());
+        headers.insert("Accept".to_string(), "application/octet-stream".to_string());
+
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_headers(headers)
+        .build();
+
+        assert_eq!(task.headers.len(), 2);
+        assert_eq!(task.headers.get("X-Custom"), Some(&"value1".to_string()));
+        assert_eq!(
+            task.headers.get("Accept"),
+            Some(&"application/octet-stream".to_string())
+        );
+    }
+
+    #[test]
+    fn test_download_progress_total_human_none() {
+        let progress = DownloadProgress::new(1024, None, 100.0);
+        assert!(progress.total_human().is_none());
+    }
+
+    #[test]
+    fn test_download_task_filename_root_path() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/"),
+            "Test".to_string(),
+        );
+        // Root path has no file_name component
+        assert_eq!(task.filename(), "unknown");
+    }
+
+    #[test]
+    fn test_download_task_headers_default_empty() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        assert!(task.headers.is_empty());
+    }
+
+    #[test]
     fn test_download_task_serde_server_filename() {
         let mut task = DownloadTask::new(
             "https://example.com/file.zip".to_string(),

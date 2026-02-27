@@ -150,4 +150,23 @@ describe("LogDrawer", () => {
       expect(useLogStore.getState().drawerOpen).toBe(false);
     });
   });
+
+  it("renders with side=bottom", () => {
+    useLogStore.setState({ ...useLogStore.getState(), drawerOpen: true });
+    render(<LogDrawer side="bottom" />);
+    expect(screen.getByText("Logs")).toBeInTheDocument();
+  });
+
+  it("displays correct entry count in badge", () => {
+    useLogStore.getState().addLogs([
+      { timestamp: Date.now(), level: "info", message: "msg1" },
+      { timestamp: Date.now(), level: "warn", message: "msg2" },
+      { timestamp: Date.now(), level: "error", message: "msg3" },
+    ]);
+    useLogStore.setState({ ...useLogStore.getState(), drawerOpen: true });
+
+    render(<LogDrawer />);
+    // Badge text is "{count} {entries}" e.g. "3 entries"
+    expect(screen.getByText(/3 entries/)).toBeInTheDocument();
+  });
 });

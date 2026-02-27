@@ -511,3 +511,55 @@ impl SystemPackageProvider for GemProvider {
         Ok(self.query_installed_version(name).await.is_ok())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = GemProvider::new();
+        assert_eq!(provider.id(), "gem");
+        assert_eq!(provider.display_name(), "RubyGems (Ruby Package Manager)");
+        assert_eq!(provider.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = GemProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+        assert!(caps.contains(&Capability::MultiVersion));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = GemProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = GemProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_get_gem_home() {
+        // Should not panic regardless of env state
+        let _ = GemProvider::get_gem_home();
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = GemProvider::default();
+    }
+}

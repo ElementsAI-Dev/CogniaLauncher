@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { getDocContent, getAllDocSlugs, getDocBasePath } from '@/lib/docs/content';
+import { getDocContentBilingual, getAllDocSlugs, getDocBasePath } from '@/lib/docs/content';
 import { DocsPageClient } from './docs-page-client';
 
 export function generateStaticParams() {
@@ -13,8 +13,8 @@ export default async function DocsPage({
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug } = await params;
-  const content = getDocContent(slug);
-  if (!content) notFound();
+  const { zh, en } = getDocContentBilingual(slug);
+  if (!zh && !en) notFound();
   const basePath = getDocBasePath(slug);
-  return <DocsPageClient content={content} slug={slug} basePath={basePath} />;
+  return <DocsPageClient contentZh={zh} contentEn={en} slug={slug} basePath={basePath} />;
 }

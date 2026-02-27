@@ -17,4 +17,10 @@ test.describe('Cache Pages', () => {
     await expect(appPage).toHaveURL(/\/cache\/metadata/);
     await expect(appPage.locator('main')).toBeVisible();
   });
+
+  test('sub-route /cache/external renders', async ({ appPage }) => {
+    await navigateTo(appPage, '/cache/external');
+    await expect(appPage).toHaveURL(/\/cache\/external/);
+    await expect(appPage.locator('main')).toBeVisible();
+  });
 });

@@ -740,18 +740,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_nonexistent_backup() {
-        let result = validate_backup(Path::new("/nonexistent/path"))
-            .await
-            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist");
+        let result = validate_backup(&nonexistent).await.unwrap();
         assert!(!result.valid);
         assert!(!result.errors.is_empty());
     }
 
     #[tokio::test]
     async fn test_delete_nonexistent_backup() {
-        let result = delete_backup(Path::new("/nonexistent/path"))
-            .await
-            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist");
+        let result = delete_backup(&nonexistent).await.unwrap();
         assert!(!result);
     }
 
@@ -778,5 +778,241 @@ mod tests {
         let result = validate_backup(dir.path()).await.unwrap();
         assert!(result.valid);
         assert!(result.manifest.is_some());
+    }
+
+    #[test]
+    fn test_backup_content_type_from_str_all_variants() {
+        let cases = vec![
+            ("config", Some(BackupContentType::Config)),
+            ("terminal_profiles", Some(BackupContentType::TerminalProfiles)),
+            ("environment_profiles", Some(BackupContentType::EnvironmentProfiles)),
+            ("cache_database", Some(BackupContentType::CacheDatabase)),
+            ("download_history", Some(BackupContentType::DownloadHistory)),
+            ("cleanup_history", Some(BackupContentType::CleanupHistory)),
+            ("custom_detection_rules", Some(BackupContentType::CustomDetectionRules)),
+            ("environment_settings", Some(BackupContentType::EnvironmentSettings)),
+            ("unknown_type", None),
+            ("", None),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(BackupContentType::from_str(input), expected, "Failed for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_backup_content_type_filename_all_variants() {
+        assert_eq!(BackupContentType::TerminalProfiles.filename(), "terminal-profiles.json");
+        assert_eq!(BackupContentType::EnvironmentProfiles.filename(), "env-profiles.json");
+        assert_eq!(BackupContentType::DownloadHistory.filename(), "download-history.json");
+        assert_eq!(BackupContentType::CleanupHistory.filename(), "cleanup-history.json");
+        assert_eq!(BackupContentType::CustomDetectionRules.filename(), "custom-rules.json");
+        assert_eq!(BackupContentType::EnvironmentSettings.filename(), "env-settings");
+    }
+
+    #[test]
+    fn test_backup_manifest_serde_roundtrip() {
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.2.3".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            platform: "windows".to_string(),
+            hostname: "my-pc".to_string(),
+            contents: vec![BackupContentType::Config, BackupContentType::CacheDatabase],
+            file_checksums: {
+                let mut m = HashMap::new();
+                m.insert("config.toml".to_string(), "sha256hash".to_string());
+                m
+            },
+            total_size: 4096,
+            note: Some("Test backup".to_string()),
+        };
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(json.contains("\"formatVersion\":1"));
+        assert!(json.contains("\"appVersion\":\"1.2.3\""));
+
+        let deser: BackupManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.format_version, 1);
+        assert_eq!(deser.app_version, "1.2.3");
+        assert_eq!(deser.contents.len(), 2);
+        assert_eq!(deser.total_size, 4096);
+        assert_eq!(deser.note, Some("Test backup".to_string()));
+    }
+
+    #[test]
+    fn test_backup_info_serde_roundtrip() {
+        let info = BackupInfo {
+            path: "/tmp/backups/cognia-backup-20240101".to_string(),
+            name: "cognia-backup-20240101".to_string(),
+            manifest: BackupManifest {
+                format_version: 1,
+                app_version: "1.0.0".to_string(),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                platform: "linux".to_string(),
+                hostname: "host".to_string(),
+                contents: vec![],
+                file_checksums: HashMap::new(),
+                total_size: 0,
+                note: None,
+            },
+            size: 1024,
+            size_human: "1.00 KB".to_string(),
+        };
+
+        let json = serde_json::to_string(&info).unwrap();
+        let deser: BackupInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.name, "cognia-backup-20240101");
+        assert_eq!(deser.size, 1024);
+        assert_eq!(deser.size_human, "1.00 KB");
+    }
+
+    #[test]
+    fn test_backup_result_serde_roundtrip() {
+        let result = BackupResult {
+            success: true,
+            path: "/tmp/backup".to_string(),
+            manifest: BackupManifest {
+                format_version: 1,
+                app_version: "1.0.0".to_string(),
+                created_at: "2024-01-01T00:00:00Z".to_string(),
+                platform: "test".to_string(),
+                hostname: "test".to_string(),
+                contents: vec![],
+                file_checksums: HashMap::new(),
+                total_size: 0,
+                note: None,
+            },
+            duration_ms: 150,
+            error: None,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: BackupResult = serde_json::from_str(&json).unwrap();
+        assert!(deser.success);
+        assert_eq!(deser.duration_ms, 150);
+        assert!(deser.error.is_none());
+    }
+
+    #[test]
+    fn test_restore_result_serde_roundtrip() {
+        let result = RestoreResult {
+            success: false,
+            restored: vec!["config".to_string()],
+            skipped: vec![RestoreSkipped {
+                content_type: "cache_database".to_string(),
+                reason: "file missing".to_string(),
+            }],
+            error: Some("partial restore".to_string()),
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: RestoreResult = serde_json::from_str(&json).unwrap();
+        assert!(!deser.success);
+        assert_eq!(deser.restored.len(), 1);
+        assert_eq!(deser.skipped.len(), 1);
+        assert_eq!(deser.skipped[0].content_type, "cache_database");
+    }
+
+    #[test]
+    fn test_backup_validation_result_serde_roundtrip() {
+        let result = BackupValidationResult {
+            valid: false,
+            manifest: None,
+            missing_files: vec!["config.toml".to_string()],
+            checksum_mismatches: vec!["cache.db".to_string()],
+            errors: vec!["checksum mismatch".to_string()],
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: BackupValidationResult = serde_json::from_str(&json).unwrap();
+        assert!(!deser.valid);
+        assert!(deser.manifest.is_none());
+        assert_eq!(deser.missing_files.len(), 1);
+        assert_eq!(deser.checksum_mismatches.len(), 1);
+    }
+
+    #[test]
+    fn test_dir_size_sync_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(dir_size_sync(dir.path()), 0);
+    }
+
+    #[test]
+    fn test_dir_size_sync_with_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "world!").unwrap();
+
+        let size = dir_size_sync(dir.path());
+        assert!(size > 0);
+        assert_eq!(size, 5 + 6); // "hello" + "world!"
+    }
+
+    #[test]
+    fn test_dir_size_sync_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("file.txt"), "abc").unwrap();
+
+        let size = dir_size_sync(dir.path());
+        assert_eq!(size, 3);
+    }
+
+    #[test]
+    fn test_dir_size_sync_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let nonexistent = dir.path().join("does_not_exist");
+        let size = dir_size_sync(&nonexistent);
+        assert_eq!(size, 0);
+    }
+
+    #[tokio::test]
+    async fn test_validate_backup_invalid_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        tokio::fs::write(dir.path().join("manifest.json"), "not valid json")
+            .await
+            .unwrap();
+
+        let result = validate_backup(dir.path()).await.unwrap();
+        assert!(!result.valid);
+        assert!(result.manifest.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_validate_backup_wrong_format_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = BackupManifest {
+            format_version: 99,
+            app_version: "1.0.0".to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![],
+            file_checksums: HashMap::new(),
+            total_size: 0,
+            note: None,
+        };
+        let json = serde_json::to_string(&manifest).unwrap();
+        tokio::fs::write(dir.path().join("manifest.json"), &json)
+            .await
+            .unwrap();
+
+        let result = validate_backup(dir.path()).await.unwrap();
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("Unsupported backup format")));
+    }
+
+    #[tokio::test]
+    async fn test_delete_backup_no_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a directory without manifest.json
+        let fake_backup = dir.path().join("fake-backup");
+        tokio::fs::create_dir(&fake_backup).await.unwrap();
+
+        let result = delete_backup(&fake_backup).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no manifest.json"));
     }
 }

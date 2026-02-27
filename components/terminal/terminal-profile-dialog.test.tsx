@@ -120,4 +120,116 @@ describe('TerminalProfileDialog', () => {
     const createButton = screen.getByRole('button', { name: 'terminal.create' });
     expect(createButton).toBeDisabled();
   });
+
+  it('adds and removes env var rows', () => {
+    render(
+      <TerminalProfileDialog
+        open
+        onOpenChange={jest.fn()}
+        profile={null}
+        shells={[shellBash]}
+        onSave={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.addEnvVar/i }));
+    const keyInputs = screen.getAllByPlaceholderText('KEY');
+    expect(keyInputs.length).toBeGreaterThanOrEqual(1);
+
+    const removeButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('svg.lucide-trash-2') || btn.classList.contains('text-destructive'),
+    );
+    fireEvent.click(removeButtons[removeButtons.length - 1]);
+    expect(screen.queryAllByPlaceholderText('KEY').length).toBe(0);
+  });
+
+  it('saves profile with edited env vars', () => {
+    const onSave = jest.fn();
+    render(
+      <TerminalProfileDialog
+        open
+        onOpenChange={jest.fn()}
+        profile={null}
+        shells={[shellBash]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('terminal.profileName'), {
+      target: { value: 'WithEnv' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /terminal\.addEnvVar/i }));
+    const keyInputs = screen.getAllByPlaceholderText('KEY');
+    const valueInputs = screen.getAllByPlaceholderText('value');
+    fireEvent.change(keyInputs[0], { target: { value: 'MY_VAR' } });
+    fireEvent.change(valueInputs[0], { target: { value: 'hello' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'terminal.create' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ envVars: { MY_VAR: 'hello' } }),
+    );
+  });
+
+  it('splits args string into array on save', () => {
+    const onSave = jest.fn();
+    render(
+      <TerminalProfileDialog
+        open
+        onOpenChange={jest.fn()}
+        profile={null}
+        shells={[shellBash]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('terminal.profileName'), {
+      target: { value: 'WithArgs' },
+    });
+    fireEvent.change(screen.getByLabelText('terminal.shellArgs'), {
+      target: { value: 'arg1 arg2 arg3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'terminal.create' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ args: ['arg1', 'arg2', 'arg3'] }),
+    );
+  });
+
+  it('calls onOpenChange(false) when cancel clicked', () => {
+    const onOpenChange = jest.fn();
+    render(
+      <TerminalProfileDialog
+        open
+        onOpenChange={onOpenChange}
+        profile={null}
+        shells={[shellBash]}
+        onSave={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'terminal.cancel' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('falls back to first shell when profile shellId not in list', () => {
+    const onSave = jest.fn();
+    const profileBadShell = makeProfile({ id: 'p1', name: 'Bad Shell', shellId: 'nonexistent' });
+
+    render(
+      <TerminalProfileDialog
+        key="fallback"
+        open
+        onOpenChange={jest.fn()}
+        profile={profileBadShell}
+        shells={[shellBash, shellPowerShell]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'terminal.save' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ shellId: 'bash' }),
+    );
+  });
 });

@@ -121,4 +121,56 @@ describe("SystemInfo", () => {
     const unknownElements = screen.getAllByText("Unknown");
     expect(unknownElements.length).toBeGreaterThanOrEqual(1);
   });
+
+  it("should display hostname", () => {
+    render(<SystemInfo {...defaultProps} />);
+
+    expect(screen.getByText("DESKTOP-TEST")).toBeInTheDocument();
+  });
+
+  it("should display CPU model with cores", () => {
+    render(<SystemInfo {...defaultProps} />);
+
+    expect(
+      screen.getByText("Intel Core i7 (8 cores)"),
+    ).toBeInTheDocument();
+  });
+
+  it("should display app version", () => {
+    render(<SystemInfo {...defaultProps} />);
+
+    expect(screen.getByText("v0.1.0")).toBeInTheDocument();
+  });
+
+  it("should display data directory", () => {
+    render(<SystemInfo {...defaultProps} />);
+
+    expect(
+      screen.getByText("C:\\Users\\test\\.cognia"),
+    ).toBeInTheDocument();
+  });
+
+  it("should display GPU name", () => {
+    render(<SystemInfo {...defaultProps} />);
+
+    expect(
+      screen.getByText("NVIDIA GeForce RTX 4070"),
+    ).toBeInTheDocument();
+  });
+
+  it("should fallback to os + osVersion when osLongVersion is missing", () => {
+    render(
+      <SystemInfo
+        {...defaultProps}
+        platformInfo={{
+          ...mockPlatformInfo,
+          osLongVersion: "",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByText("Windows 11 10.0.22631"),
+    ).toBeInTheDocument();
+  });
 });

@@ -139,4 +139,100 @@ describe("GeneralSettings", () => {
     expect(inputs[1]).toHaveValue(100); // default min install space
     expect(inputs[2]).toHaveValue(3600); // default cache TTL
   });
+
+  it("should render cache max size setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText(mockT("settings.cacheMaxSize"))).toBeInTheDocument();
+  });
+
+  it("should render cache max age days setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText(mockT("settings.cacheMaxAgeDays"))).toBeInTheDocument();
+  });
+
+  it("should render auto clean cache toggle", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText(mockT("settings.autoCleanCache"))).toBeInTheDocument();
+  });
+
+  it("should render cache auto clean threshold setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(
+      screen.getByText(mockT("settings.cacheAutoCleanThreshold")),
+    ).toBeInTheDocument();
+  });
+
+  it("should render cache monitor interval setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(
+      screen.getByText(mockT("settings.cacheMonitorInterval")),
+    ).toBeInTheDocument();
+  });
+
+  it("should render cache monitor external toggle", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(
+      screen.getByText(mockT("settings.cacheMonitorExternal")),
+    ).toBeInTheDocument();
+  });
+
+  it("should render download speed limit setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(
+      screen.getByText(mockT("settings.downloadSpeedLimit")),
+    ).toBeInTheDocument();
+  });
+
+  it("should call onValueChange when auto clean cache toggles", () => {
+    const onValueChange = jest.fn();
+    render(
+      <GeneralSettings
+        {...defaultProps}
+        localConfig={{
+          ...defaultProps.localConfig,
+          "general.auto_clean_cache": "true",
+        }}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const switches = screen.getAllByRole("switch");
+    // auto_update_metadata is first, auto_clean_cache is second, cache_monitor_external is third
+    fireEvent.click(switches[1]);
+
+    expect(onValueChange).toHaveBeenCalledWith(
+      "general.auto_clean_cache",
+      "false",
+    );
+  });
+
+  it("should call onValueChange when cache monitor external toggles", () => {
+    const onValueChange = jest.fn();
+    render(
+      <GeneralSettings
+        {...defaultProps}
+        localConfig={{
+          ...defaultProps.localConfig,
+          "general.cache_monitor_external": "false",
+        }}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    const switches = screen.getAllByRole("switch");
+    // cache_monitor_external is the last switch
+    fireEvent.click(switches[switches.length - 1]);
+
+    expect(onValueChange).toHaveBeenCalledWith(
+      "general.cache_monitor_external",
+      "true",
+    );
+  });
 });

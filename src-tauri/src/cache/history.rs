@@ -318,4 +318,103 @@ mod tests {
         assert_eq!(format_size(1048576), "1.00 MB");
         assert_eq!(format_size(1073741824), "1.00 GB");
     }
+
+    #[test]
+    fn test_cleanup_record_builder_empty() {
+        let builder = CleanupRecordBuilder::new("test", false);
+        let record = builder.build();
+
+        assert_eq!(record.clean_type, "test");
+        assert!(!record.use_trash);
+        assert_eq!(record.freed_bytes, 0);
+        assert_eq!(record.file_count, 0);
+        assert!(record.files.is_empty());
+        assert!(!record.files_truncated);
+        assert!(!record.id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_history_list_with_limit() {
+        let dir = tempdir().unwrap();
+        let mut history = CleanupHistory::open(dir.path()).await.unwrap();
+
+        for i in 0..5 {
+            let mut builder = CleanupRecordBuilder::new("downloads", false);
+            builder.add_file(format!("/file{}", i), 100, "download");
+            history.add(builder.build()).await.unwrap();
+        }
+
+        // List with limit
+        let limited = history.list(Some(3));
+        assert_eq!(limited.len(), 3);
+
+        // List without limit
+        let all = history.list(None);
+        assert_eq!(all.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_history_get_nonexistent() {
+        let dir = tempdir().unwrap();
+        let history = CleanupHistory::open(dir.path()).await.unwrap();
+
+        let result = history.get("nonexistent-id");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_record_files_truncation() {
+        let dir = tempdir().unwrap();
+        let mut history = CleanupHistory::open(dir.path()).await.unwrap();
+
+        let mut builder = CleanupRecordBuilder::new("all", false);
+        // Add more files than MAX_FILES_PER_RECORD (50)
+        for i in 0..60 {
+            builder.add_file(format!("/file{}", i), 100, "download");
+        }
+        let record = builder.build();
+        assert_eq!(record.file_count, 60);
+        assert!(!record.files_truncated); // Not truncated yet (build doesn't truncate)
+
+        history.add(record).await.unwrap();
+
+        // After add(), the record should be truncated
+        let stored = history.list(None);
+        assert_eq!(stored[0].files.len(), MAX_FILES_PER_RECORD);
+        assert!(stored[0].files_truncated);
+        assert_eq!(stored[0].file_count, 60); // Original count preserved
+    }
+
+    #[test]
+    fn test_cleanup_summary_empty() {
+        let history_index = HistoryIndex {
+            version: 1,
+            records: Vec::new(),
+        };
+        // Create a CleanupHistory-like summary manually
+        let total_freed: u64 = history_index.records.iter().map(|r| r.freed_bytes).sum();
+        let total_files: usize = history_index.records.iter().map(|r| r.file_count).sum();
+
+        assert_eq!(total_freed, 0);
+        assert_eq!(total_files, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_history_most_recent_first() {
+        let dir = tempdir().unwrap();
+        let mut history = CleanupHistory::open(dir.path()).await.unwrap();
+
+        let mut builder1 = CleanupRecordBuilder::new("first", false);
+        builder1.add_file("/first", 100, "download");
+        history.add(builder1.build()).await.unwrap();
+
+        let mut builder2 = CleanupRecordBuilder::new("second", false);
+        builder2.add_file("/second", 200, "download");
+        history.add(builder2.build()).await.unwrap();
+
+        let records = history.list(None);
+        // Most recent should be first
+        assert_eq!(records[0].clean_type, "second");
+        assert_eq!(records[1].clean_type, "first");
+    }
 }

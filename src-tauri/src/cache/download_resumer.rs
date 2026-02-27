@@ -350,4 +350,84 @@ mod tests {
         // Keys should be 16 hex characters
         assert_eq!(key1.len(), 16);
     }
+
+    #[tokio::test]
+    async fn test_cancel_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("downloads");
+
+        let mut resumer = DownloadResumer::new(&cache_dir).await.unwrap();
+        let partial = resumer
+            .get_or_create("https://example.com/trash-cancel.zip")
+            .await
+            .unwrap();
+
+        fs::write_file_string(&partial.file_path, "trash content")
+            .await
+            .unwrap();
+        assert!(fs::exists(&partial.file_path).await);
+
+        resumer
+            .cancel_with_option("https://example.com/trash-cancel.zip", true)
+            .await
+            .unwrap();
+
+        assert!(resumer.partials.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_stale_none() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("downloads");
+
+        let mut resumer = DownloadResumer::new(&cache_dir).await.unwrap();
+        resumer
+            .get_or_create("https://example.com/fresh.zip")
+            .await
+            .unwrap();
+
+        // With a very long max_age, nothing should be stale
+        let stale = resumer.get_stale(Duration::from_secs(86400));
+        assert!(stale.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_clean_stale_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("downloads");
+
+        let mut resumer = DownloadResumer::new(&cache_dir).await.unwrap();
+
+        for i in 0..2 {
+            let url = format!("https://example.com/stale-trash-{}.zip", i);
+            resumer.get_or_create(&url).await.unwrap();
+        }
+
+        // Set old timestamps
+        for partial in resumer.partials.values_mut() {
+            partial.last_updated = chrono::Utc::now().timestamp() - 7200;
+        }
+        resumer.save().await.unwrap();
+
+        let cleaned = resumer
+            .clean_stale_with_option(Duration::from_secs(3600), true)
+            .await
+            .unwrap();
+        assert_eq!(cleaned, 2);
+        assert!(resumer.partials.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cancel_nonexistent_url() {
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("downloads");
+
+        let mut resumer = DownloadResumer::new(&cache_dir).await.unwrap();
+        // Should not error when cancelling a URL that was never tracked
+        resumer
+            .cancel("https://example.com/never-existed.zip")
+            .await
+            .unwrap();
+        assert!(resumer.partials.is_empty());
+    }
 }

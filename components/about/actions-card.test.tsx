@@ -96,4 +96,45 @@ describe("ActionsCard", () => {
     await userEvent.click(screen.getByText("Export Diagnostics"));
     expect(defaultProps.onExportDiagnostics).toHaveBeenCalledTimes(1);
   });
+
+  it("renders description text", () => {
+    render(<ActionsCard {...defaultProps} />);
+    expect(
+      screen.getByText("Quick links and common operations"),
+    ).toBeInTheDocument();
+  });
+
+  it("calls openExternal when GitHub button is clicked", async () => {
+    const { openExternal } = jest.requireMock("@/lib/tauri");
+    render(<ActionsCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("GitHub"));
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://github.com/ElementAstro/CogniaLauncher",
+    );
+  });
+
+  it("calls openExternal when Documentation button is clicked", async () => {
+    const { openExternal } = jest.requireMock("@/lib/tauri");
+    render(<ActionsCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Documentation"));
+    expect(openExternal).toHaveBeenCalledWith("https://cognia.dev/docs");
+  });
+
+  it("calls openExternal when Report Bug button is clicked", async () => {
+    const { openExternal } = jest.requireMock("@/lib/tauri");
+    render(<ActionsCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Report Bug"));
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md",
+    );
+  });
+
+  it("calls openExternal when Feature Request button is clicked", async () => {
+    const { openExternal } = jest.requireMock("@/lib/tauri");
+    render(<ActionsCard {...defaultProps} />);
+    await userEvent.click(screen.getByText("Feature Request"));
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas",
+    );
+  });
 });

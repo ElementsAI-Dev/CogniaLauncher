@@ -1591,6 +1591,208 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_download_manager_set_priority() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        manager.set_priority(&task_id, 99).await.unwrap();
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(task.priority, 99);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_set_priority_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        let result = manager.set_priority("nonexistent", 5).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_retry_task() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Cancel first to make terminal
+        manager.cancel(&task_id).await.unwrap();
+        assert_eq!(
+            manager.get_task(&task_id).await.unwrap().state,
+            DownloadState::Cancelled
+        );
+
+        // Retry should reset to Queued
+        manager.retry_task(&task_id).await.unwrap();
+        assert_eq!(
+            manager.get_task(&task_id).await.unwrap().state,
+            DownloadState::Queued
+        );
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_retry_task_nonexistent() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        let result = manager.retry_task("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_set_event_sender() {
+        let mut manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        manager.set_event_sender(tx);
+
+        manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        // Should receive TaskAdded event
+        let event = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await;
+        assert!(event.is_ok());
+        assert!(matches!(
+            event.unwrap().unwrap(),
+            DownloadEvent::TaskAdded { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_with_proxy() {
+        let manager = DownloadManager::new(
+            DownloadManagerConfig::default(),
+            Some("http://proxy.example.com:8080".to_string()),
+        );
+        // Should not panic; just verify constructor works
+        assert!(!manager.is_running());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_with_empty_proxy() {
+        let manager =
+            DownloadManager::new(DownloadManagerConfig::default(), Some("".to_string()));
+        // Empty proxy should be ignored
+        assert!(!manager.is_running());
+    }
+
+    #[test]
+    fn test_download_manager_config_serde_roundtrip() {
+        let config = DownloadManagerConfig {
+            max_concurrent: 8,
+            speed_limit: 1024 * 1024,
+            partials_dir: PathBuf::from("/custom/dir"),
+            auto_start: false,
+            default_task_config: DownloadConfig {
+                max_retries: 5,
+                ..Default::default()
+            },
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: DownloadManagerConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.max_concurrent, 8);
+        assert_eq!(deserialized.speed_limit, 1024 * 1024);
+        assert!(!deserialized.auto_start);
+        assert_eq!(deserialized.partials_dir, PathBuf::from("/custom/dir"));
+        assert_eq!(deserialized.default_task_config.max_retries, 5);
+    }
+
+    #[test]
+    fn test_download_event_serde_all_variants() {
+        let events = vec![
+            DownloadEvent::TaskAdded {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskStarted {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskProgress {
+                task_id: "t1".into(),
+                progress: DownloadProgress::new(50, Some(100), 10.0),
+            },
+            DownloadEvent::TaskCompleted {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskFailed {
+                task_id: "t1".into(),
+                error: "err".into(),
+            },
+            DownloadEvent::TaskPaused {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskResumed {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskCancelled {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskExtracting {
+                task_id: "t1".into(),
+            },
+            DownloadEvent::TaskExtracted {
+                task_id: "t1".into(),
+                files: vec!["a.txt".into()],
+            },
+            DownloadEvent::QueueUpdated {
+                stats: QueueStats::default(),
+            },
+        ];
+
+        for event in events {
+            let json = serde_json::to_string(&event).unwrap();
+            let deserialized: DownloadEvent = serde_json::from_str(&json).unwrap();
+            // Verify serialization roundtrip doesn't panic
+            let json2 = serde_json::to_string(&deserialized).unwrap();
+            assert_eq!(json, json2);
+        }
+    }
+
+    #[test]
+    fn test_task_control_operations() {
+        let control = TaskControl::new();
+        assert!(!control.is_paused());
+        assert!(!control.is_cancelled());
+
+        control.pause();
+        assert!(control.is_paused());
+        assert!(!control.is_cancelled());
+
+        control.resume();
+        assert!(!control.is_paused());
+
+        control.cancel();
+        assert!(control.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_resume_all_empty() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        let resumed = manager.resume_all().await;
+        assert_eq!(resumed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_retry_all_failed_none() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        let retried = manager.retry_all_failed().await;
+        assert_eq!(retried, 0);
+    }
+
+    #[tokio::test]
     async fn test_download_manager_task_with_auto_extract() {
         let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
 

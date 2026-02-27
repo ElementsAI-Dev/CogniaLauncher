@@ -211,4 +211,179 @@ mod tests {
             .with_build("abc");
         assert_eq!(v.to_string(), "1.2.3-beta+abc");
     }
+
+    // --- Parsing edge cases ---
+
+    #[test]
+    fn test_parse_uppercase_v_prefix() {
+        let v: Version = "V2.3.4".parse().unwrap();
+        assert_eq!(v, Version::new(2, 3, 4));
+    }
+
+    #[test]
+    fn test_parse_two_part_version() {
+        let v: Version = "1.2".parse().unwrap();
+        assert_eq!(v, Version::new(1, 2, 0));
+    }
+
+    #[test]
+    fn test_parse_single_part_version() {
+        let v: Version = "5".parse().unwrap();
+        assert_eq!(v, Version::new(5, 0, 0));
+    }
+
+    #[test]
+    fn test_parse_prerelease_and_build() {
+        let v: Version = "1.0.0-rc.1+build.5".parse().unwrap();
+        assert_eq!(v.major, 1);
+        assert_eq!(v.minor, 0);
+        assert_eq!(v.patch, 0);
+        assert_eq!(v.prerelease, Some("rc.1".into()));
+        assert_eq!(v.build, Some("build.5".into()));
+    }
+
+    #[test]
+    fn test_parse_whitespace_trimming() {
+        let v: Version = "  1.2.3  ".parse().unwrap();
+        assert_eq!(v, Version::new(1, 2, 3));
+    }
+
+    #[test]
+    fn test_parse_invalid_empty() {
+        let r = "".parse::<Version>();
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_letters() {
+        let r = "abc".parse::<Version>();
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_parse_v_only() {
+        let r = "v".parse::<Version>();
+        assert!(r.is_err());
+    }
+
+    // --- Builder / accessor methods ---
+
+    #[test]
+    fn test_is_prerelease_true() {
+        let v = Version::new(1, 0, 0).with_prerelease("alpha");
+        assert!(v.is_prerelease());
+    }
+
+    #[test]
+    fn test_is_prerelease_false() {
+        let v = Version::new(1, 0, 0);
+        assert!(!v.is_prerelease());
+    }
+
+    #[test]
+    fn test_bump_major() {
+        let v = Version::new(1, 2, 3);
+        let bumped = v.bump_major();
+        assert_eq!(bumped, Version::new(2, 0, 0));
+    }
+
+    #[test]
+    fn test_bump_minor() {
+        let v = Version::new(1, 2, 3);
+        let bumped = v.bump_minor();
+        assert_eq!(bumped, Version::new(1, 3, 0));
+    }
+
+    #[test]
+    fn test_bump_patch() {
+        let v = Version::new(1, 2, 3);
+        let bumped = v.bump_patch();
+        assert_eq!(bumped, Version::new(1, 2, 4));
+    }
+
+    // --- Ordering edge cases ---
+
+    #[test]
+    fn test_ordering_equal() {
+        let v1: Version = "1.2.3".parse().unwrap();
+        let v2: Version = "1.2.3".parse().unwrap();
+        assert_eq!(v1.cmp(&v2), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_ordering_prerelease_numeric() {
+        let v1: Version = "1.0.0-alpha.1".parse().unwrap();
+        let v2: Version = "1.0.0-alpha.2".parse().unwrap();
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn test_ordering_prerelease_numeric_vs_string() {
+        // Numeric identifiers sort before string identifiers per semver
+        let v1: Version = "1.0.0-1".parse().unwrap();
+        let v2: Version = "1.0.0-alpha".parse().unwrap();
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn test_ordering_prerelease_different_lengths() {
+        let v1: Version = "1.0.0-alpha".parse().unwrap();
+        let v2: Version = "1.0.0-alpha.1".parse().unwrap();
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn test_ordering_major_dominates() {
+        let v1: Version = "1.9.9".parse().unwrap();
+        let v2: Version = "2.0.0".parse().unwrap();
+        assert!(v1 < v2);
+    }
+
+    #[test]
+    fn test_ordering_minor_dominates() {
+        let v1: Version = "1.2.9".parse().unwrap();
+        let v2: Version = "1.3.0".parse().unwrap();
+        assert!(v1 < v2);
+    }
+
+    // --- Display edge cases ---
+
+    #[test]
+    fn test_display_simple() {
+        let v = Version::new(1, 2, 3);
+        assert_eq!(v.to_string(), "1.2.3");
+    }
+
+    #[test]
+    fn test_display_prerelease_only() {
+        let v = Version::new(1, 0, 0).with_prerelease("beta.2");
+        assert_eq!(v.to_string(), "1.0.0-beta.2");
+    }
+
+    #[test]
+    fn test_display_build_only() {
+        let v = Version::new(1, 0, 0).with_build("20260101");
+        assert_eq!(v.to_string(), "1.0.0+20260101");
+    }
+
+    // --- Serialization roundtrip ---
+
+    #[test]
+    fn test_version_clone_eq_hash() {
+        let v1 = Version::new(1, 2, 3).with_prerelease("rc.1");
+        let v2 = v1.clone();
+        assert_eq!(v1, v2);
+
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(v1.clone());
+        assert!(set.contains(&v2));
+    }
+
+    #[test]
+    fn test_partial_ord_consistent_with_ord() {
+        let v1: Version = "1.0.0".parse().unwrap();
+        let v2: Version = "2.0.0".parse().unwrap();
+        assert_eq!(v1.partial_cmp(&v2), Some(Ordering::Less));
+    }
 }

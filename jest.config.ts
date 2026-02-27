@@ -22,12 +22,15 @@ const config: Config = {
   collectCoverageFrom: [
     "app/**/*.{js,jsx,ts,tsx}",
     "components/**/*.{js,jsx,ts,tsx}",
+    "hooks/**/*.{js,jsx,ts,tsx}",
     "lib/**/*.{js,jsx,ts,tsx}",
     "!**/*.d.ts",
     "!**/node_modules/**",
     "!**/.next/**",
     "!**/coverage/**",
     "!**/out/**",
+    "!lib/tauri.ts",
+    "!**/index.ts",
   ],
 
   // The directory where Jest should output its coverage files

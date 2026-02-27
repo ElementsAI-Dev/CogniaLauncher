@@ -81,4 +81,43 @@ describe('GitSearchCommits', () => {
     });
     expect(mockOnSelectCommit).toHaveBeenCalledWith('abc1234567890');
   });
+
+  it('triggers search on Enter key', async () => {
+    render(<GitSearchCommits onSearch={mockOnSearch} />);
+    const input = screen.getByPlaceholderText('git.search.placeholder');
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => {
+      expect(mockOnSearch).toHaveBeenCalledWith('test', 'message', 50);
+    });
+  });
+
+  it('shows results count badge', async () => {
+    render(<GitSearchCommits onSearch={mockOnSearch} />);
+    const input = screen.getByPlaceholderText('git.search.placeholder');
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => {
+      expect(screen.getByText('2')).toBeInTheDocument();
+      expect(screen.getByText('git.search.results')).toBeInTheDocument();
+    });
+  });
+
+  it('does not search when query is empty', () => {
+    render(<GitSearchCommits onSearch={mockOnSearch} />);
+    const input = screen.getByPlaceholderText('git.search.placeholder');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockOnSearch).not.toHaveBeenCalled();
+  });
+
+  it('renders short hashes in results', async () => {
+    render(<GitSearchCommits onSearch={mockOnSearch} />);
+    const input = screen.getByPlaceholderText('git.search.placeholder');
+    fireEvent.change(input, { target: { value: 'test' } });
+    fireEvent.click(screen.getByRole('button'));
+    await waitFor(() => {
+      expect(screen.getByText('abc1234')).toBeInTheDocument();
+      expect(screen.getByText('def5678')).toBeInTheDocument();
+    });
+  });
 });

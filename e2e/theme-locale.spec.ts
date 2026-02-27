@@ -1,9 +1,14 @@
 import { test, expect, navigateTo, SIDEBAR } from './fixtures/app-fixture';
 
+// Theme and language toggles are in the header bar (app-shell.tsx), NOT inside the sidebar.
+// They use sr-only text: "Toggle theme" / "Toggle language".
+const themeToggleSelector = 'button:has(.sr-only:text-is("Toggle theme"))';
+const langToggleSelector = 'button:has(.sr-only:text-is("Toggle language"))';
+
 test.describe('Theme Switching', () => {
   test('switch to dark mode adds .dark class to html', async ({ appPage }) => {
-    // Click theme toggle button (has sr-only text)
-    const themeToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle theme/i }) }).first();
+    // Click theme toggle button in the header bar
+    const themeToggle = appPage.locator(themeToggleSelector).first();
     await themeToggle.click();
 
     // Select "Dark" from dropdown
@@ -15,7 +20,7 @@ test.describe('Theme Switching', () => {
 
   test('switch to light mode removes .dark class', async ({ appPage }) => {
     // First set dark
-    const themeToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle theme/i }) }).first();
+    const themeToggle = appPage.locator(themeToggleSelector).first();
     await themeToggle.click();
     await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
@@ -28,7 +33,7 @@ test.describe('Theme Switching', () => {
 
   test('theme persists across navigation', async ({ appPage }) => {
     // Set dark theme
-    const themeToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle theme/i }) }).first();
+    const themeToggle = appPage.locator(themeToggleSelector).first();
     await themeToggle.click();
     await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
@@ -40,7 +45,7 @@ test.describe('Theme Switching', () => {
 
   test('theme persists across page reload', async ({ appPage }) => {
     // Set dark theme
-    const themeToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle theme/i }) }).first();
+    const themeToggle = appPage.locator(themeToggleSelector).first();
     await themeToggle.click();
     await appPage.getByRole('menuitemradio', { name: /dark/i }).click();
     await expect(appPage.locator('html')).toHaveClass(/dark/);
@@ -54,8 +59,8 @@ test.describe('Theme Switching', () => {
 
 test.describe('Locale Switching', () => {
   test('switch to Chinese changes sidebar labels', async ({ appPage }) => {
-    // Click language toggle button
-    const langToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle language/i }) }).first();
+    // Click language toggle button in the header bar
+    const langToggle = appPage.locator(langToggleSelector).first();
     await langToggle.click();
 
     // Select Chinese (中文)
@@ -67,7 +72,7 @@ test.describe('Locale Switching', () => {
 
   test('switch back to English reverts labels', async ({ appPage }) => {
     // Switch to Chinese first
-    const langToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle language/i }) }).first();
+    const langToggle = appPage.locator(langToggleSelector).first();
     await langToggle.click();
     await appPage.getByRole('menuitemradio', { name: '中文' }).click();
     await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();
@@ -80,7 +85,7 @@ test.describe('Locale Switching', () => {
 
   test('locale persists across navigation', async ({ appPage }) => {
     // Switch to Chinese
-    const langToggle = appPage.locator(SIDEBAR).locator('button').filter({ has: appPage.locator('.sr-only', { hasText: /toggle language/i }) }).first();
+    const langToggle = appPage.locator(langToggleSelector).first();
     await langToggle.click();
     await appPage.getByRole('menuitemradio', { name: '中文' }).click();
     await expect(appPage.locator(SIDEBAR).getByText('仪表板').first()).toBeVisible();

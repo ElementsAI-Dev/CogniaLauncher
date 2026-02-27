@@ -584,4 +584,58 @@ mod tests {
 
         assert_eq!(args, vec!["install".to_string(), "requests".to_string()]);
     }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = PipProvider::new();
+        assert_eq!(provider.id(), "pip");
+        assert_eq!(provider.display_name(), "pip (Python Package Installer)");
+        assert_eq!(provider.priority(), 82);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = PipProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = PipProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = PipProvider::default();
+    }
+
+    #[test]
+    fn test_builder_chain() {
+        let provider = PipProvider::new()
+            .with_index_url("https://a.com/simple")
+            .with_extra_index_url("https://b.com/simple")
+            .with_extra_index_url("https://c.com/simple")
+            .with_trusted_host("a.com")
+            .with_trusted_host("b.com");
+
+        assert_eq!(provider.extra_index_urls.len(), 2);
+        assert_eq!(provider.trusted_hosts.len(), 2);
+
+        let args = provider.build_pip_args(&["install", "pkg"]);
+        // Should have two --extra-index-url and two --trusted-host entries
+        assert_eq!(
+            args.iter().filter(|a| *a == "--extra-index-url").count(),
+            2
+        );
+        assert_eq!(args.iter().filter(|a| *a == "--trusted-host").count(), 2);
+    }
 }

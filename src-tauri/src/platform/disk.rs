@@ -264,4 +264,75 @@ mod tests {
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(0), "0s");
+        assert_eq!(format_duration(1), "1s");
+        assert_eq!(format_duration(59), "59s");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(format_duration(60), "1m 0s");
+        assert_eq!(format_duration(90), "1m 30s");
+        assert_eq!(format_duration(3599), "59m 59s");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        assert_eq!(format_duration(3600), "1h 0m");
+        assert_eq!(format_duration(3661), "1h 1m");
+        assert_eq!(format_duration(7200), "2h 0m");
+        assert_eq!(format_duration(86400), "24h 0m");
+    }
+
+    #[test]
+    fn test_disk_space_human_methods() {
+        let space = DiskSpace {
+            total: 1024 * 1024 * 1024,        // 1 GB
+            available: 512 * 1024 * 1024,      // 512 MB
+            used: 512 * 1024 * 1024,           // 512 MB
+            usage_percent: 50.0,
+        };
+        assert_eq!(space.total_human(), "1.00 GB");
+        assert_eq!(space.available_human(), "512.00 MB");
+        assert_eq!(space.used_human(), "512.00 MB");
+    }
+
+    #[tokio::test]
+    async fn test_ensure_space_success() {
+        // 1 byte should always be available
+        let result = ensure_space(Path::new("."), 1).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_ensure_space_failure() {
+        let result = ensure_space(Path::new("."), u64::MAX).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("Insufficient disk space"));
+    }
+
+    #[test]
+    fn test_parse_size_zero() {
+        assert_eq!(parse_size("0"), Some(0));
+        assert_eq!(parse_size("0B"), Some(0));
+        assert_eq!(parse_size("0 KB"), Some(0));
+    }
+
+    #[test]
+    fn test_parse_size_bytes_suffix() {
+        assert_eq!(parse_size("100B"), Some(100));
+        assert_eq!(parse_size("1B"), Some(1));
+    }
+
+    #[test]
+    fn test_format_size_boundary_values() {
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1024), "1.00 KB");
+        assert_eq!(format_size(1024 * 1024 - 1), "1024.00 KB");
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+    }
 }

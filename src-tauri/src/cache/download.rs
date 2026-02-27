@@ -897,4 +897,92 @@ mod tests {
         let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
+
+    #[tokio::test]
+    async fn test_integrity_check() {
+        let dir = tempdir().unwrap();
+        let cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let result = cache.integrity_check().await.unwrap();
+        assert!(result.ok);
+        assert!(result.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_backup_to_file() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("backup-test.txt");
+        fs::write_file_string(&test_file, "backup content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        let backup_path = dir.path().join("cache-backup.db");
+        let size = cache.backup_to_file(&backup_path).await.unwrap();
+        assert!(size > 0);
+        assert!(backup_path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_get_db_info() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("info-test.txt");
+        fs::write_file_string(&test_file, "info content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        let info = cache.get_db_info().await.unwrap();
+        assert!(info.db_size > 0);
+        assert!(info.page_count > 0);
+        assert!(info.table_counts.contains_key("cache_entries"));
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_with_option_trash() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("exp-trash.txt");
+        fs::write_file_string(&test_file, "expired trash content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        cache.add_file(&test_file, &checksum).await.unwrap();
+
+        // Clean with 0 duration = everything is expired, use trash
+        let freed = cache
+            .clean_expired_with_option(Duration::from_secs(0), true)
+            .await
+            .unwrap();
+        assert!(freed > 0);
+
+        let stats = cache.stats().await.unwrap();
+        assert_eq!(stats.entry_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_add_file_deduplication() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("dedup.txt");
+        fs::write_file_string(&test_file, "dedup content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+
+        // Add same file twice
+        let path1 = cache.add_file(&test_file, &checksum).await.unwrap();
+        let path2 = cache.add_file(&test_file, &checksum).await.unwrap();
+
+        // Should return same path without duplicating
+        assert_eq!(path1, path2);
+    }
 }

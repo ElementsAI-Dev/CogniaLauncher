@@ -601,6 +601,208 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_without_stats() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        let entry = CacheEntry::new(
+            "no-stats-key",
+            dir.path().join("no-stats-file"),
+            1024,
+            "ns-checksum",
+            CacheEntryType::Download,
+        );
+        db.insert(entry).await.unwrap();
+
+        // get_without_stats should not affect hit/miss counters
+        let found = db.get_without_stats("no-stats-key");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().key, "no-stats-key");
+
+        let not_found = db.get_without_stats("nonexistent");
+        assert!(not_found.is_none());
+
+        let stats = db.stats();
+        assert_eq!(stats.hits, 0);
+        assert_eq!(stats.misses, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_expired_entries() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        let expired = CacheEntry::new(
+            "exp1",
+            dir.path().join("exp1"),
+            100,
+            "e1",
+            CacheEntryType::Metadata,
+        )
+        .with_ttl(-1);
+
+        let valid = CacheEntry::new(
+            "val1",
+            dir.path().join("val1"),
+            100,
+            "v1",
+            CacheEntryType::Download,
+        )
+        .with_ttl(3600);
+
+        let no_expiry = CacheEntry::new(
+            "noexp",
+            dir.path().join("noexp"),
+            100,
+            "ne",
+            CacheEntryType::Download,
+        );
+
+        db.insert(expired).await.unwrap();
+        db.insert(valid).await.unwrap();
+        db.insert(no_expiry).await.unwrap();
+
+        let expired_list = db.get_expired();
+        assert_eq!(expired_list.len(), 1);
+        assert_eq!(expired_list[0].key, "exp1");
+    }
+
+    #[tokio::test]
+    async fn test_get_lru_entries() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        for i in 0..5 {
+            let entry = CacheEntry::new(
+                format!("lru-{}", i),
+                dir.path().join(format!("lru-{}", i)),
+                100,
+                format!("lru-c-{}", i),
+                CacheEntryType::Download,
+            );
+            db.insert(entry).await.unwrap();
+        }
+
+        // Touch some entries to make them more recently used
+        db.touch("lru-3").await.unwrap();
+        db.touch("lru-4").await.unwrap();
+
+        let lru = db.get_lru(3);
+        assert_eq!(lru.len(), 3);
+        // Entries without last_accessed should come first (sorted by created_at)
+    }
+
+    #[tokio::test]
+    async fn test_clear_all() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        for i in 0..5 {
+            let entry = CacheEntry::new(
+                format!("clear-{}", i),
+                dir.path().join(format!("clear-{}", i)),
+                100,
+                format!("cl-{}", i),
+                CacheEntryType::Download,
+            );
+            db.insert(entry).await.unwrap();
+        }
+
+        assert_eq!(db.stats().entry_count, 5);
+
+        db.clear().await.unwrap();
+        assert_eq!(db.stats().entry_count, 0);
+        assert_eq!(db.stats().total_size, 0);
+    }
+
+    #[tokio::test]
+    async fn test_list_entries() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        assert!(db.list().is_empty());
+
+        for i in 0..3 {
+            let entry = CacheEntry::new(
+                format!("list-{}", i),
+                dir.path().join(format!("list-{}", i)),
+                200,
+                format!("ls-{}", i),
+                CacheEntryType::Metadata,
+            );
+            db.insert(entry).await.unwrap();
+        }
+
+        let entries = db.list();
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_remove_nonexistent_returns_false() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        let removed = db.remove("does-not-exist").await.unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn test_insert_overwrite() {
+        let dir = tempdir().unwrap();
+        let mut db = CacheDb::open(dir.path()).await.unwrap();
+
+        let entry1 = CacheEntry::new(
+            "dup-key",
+            dir.path().join("file1"),
+            100,
+            "checksum-old",
+            CacheEntryType::Download,
+        );
+        db.insert(entry1).await.unwrap();
+
+        let entry2 = CacheEntry::new(
+            "dup-key",
+            dir.path().join("file2"),
+            200,
+            "checksum-new",
+            CacheEntryType::Download,
+        );
+        db.insert(entry2).await.unwrap();
+
+        // Should have only one entry
+        assert_eq!(db.stats().entry_count, 1);
+        assert_eq!(db.stats().total_size, 200);
+
+        // Checksum index should be updated
+        assert!(db.get_by_checksum("checksum-new").is_some());
+    }
+
+    #[test]
+    fn test_cache_entry_is_expired() {
+        let expired = CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download)
+            .with_ttl(-1);
+        assert!(expired.is_expired());
+
+        let valid = CacheEntry::new("k2", PathBuf::from("f2"), 0, "c2", CacheEntryType::Download)
+            .with_ttl(3600);
+        assert!(!valid.is_expired());
+
+        let no_expiry =
+            CacheEntry::new("k3", PathBuf::from("f3"), 0, "c3", CacheEntryType::Download);
+        assert!(!no_expiry.is_expired());
+    }
+
+    #[test]
+    fn test_cache_entry_with_expiry() {
+        let future_time = Utc::now() + chrono::Duration::hours(1);
+        let entry =
+            CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download)
+                .with_expiry(future_time);
+        assert!(!entry.is_expired());
+        assert_eq!(entry.expires_at, Some(future_time));
+    }
+
+    #[tokio::test]
     async fn test_serialization_backward_compatibility() {
         let dir = tempdir().unwrap();
         let mut db = CacheDb::open(dir.path()).await.unwrap();

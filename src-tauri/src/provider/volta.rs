@@ -469,3 +469,94 @@ impl SystemPackageProvider for VoltaProvider {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_volta_list_normal() {
+        let output = "node@20.10.0 (default)\nyarn@1.22.19\n";
+        let result = VoltaProvider::parse_volta_list(output);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "node");
+        assert_eq!(result[0].1, "20.10.0");
+        assert_eq!(result[1].0, "yarn");
+        assert_eq!(result[1].1, "1.22.19");
+    }
+
+    #[test]
+    fn test_parse_volta_list_scoped_package() {
+        let output = "@scope/pkg@2.0.0\n";
+        let result = VoltaProvider::parse_volta_list(output);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "@scope/pkg");
+        assert_eq!(result[0].1, "2.0.0");
+    }
+
+    #[test]
+    fn test_parse_volta_list_empty() {
+        let result = VoltaProvider::parse_volta_list("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_volta_list_skips_markers() {
+        let output = "⚡ Current toolchain\nNo tools installed\nnode@18.0.0\n";
+        let result = VoltaProvider::parse_volta_list(output);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "node");
+    }
+
+    #[test]
+    fn test_parse_volta_list_no_version() {
+        let output = "some-line-without-at-sign\n";
+        let result = VoltaProvider::parse_volta_list(output);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = VoltaProvider::new();
+        assert_eq!(provider.id(), "volta");
+        assert_eq!(provider.display_name(), "Volta (JavaScript Tool Manager)");
+        assert_eq!(provider.priority(), 90);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = VoltaProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = VoltaProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = VoltaProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = VoltaProvider::new();
+        assert_eq!(provider.version_file_name(), "package.json");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = VoltaProvider::default();
+    }
+}

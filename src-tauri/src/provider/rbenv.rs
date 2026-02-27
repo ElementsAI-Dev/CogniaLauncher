@@ -455,3 +455,56 @@ impl SystemPackageProvider for RbenvProvider {
         Ok(versions.iter().any(|v| v.version == name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = RbenvProvider::new();
+        assert_eq!(provider.id(), "rbenv");
+        assert_eq!(provider.display_name(), "rbenv (Ruby Version Manager)");
+        assert_eq!(provider.priority(), 80);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = RbenvProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = RbenvProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(!platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = RbenvProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = RbenvProvider::new();
+        assert_eq!(provider.version_file_name(), ".ruby-version");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = RbenvProvider::default();
+    }
+}

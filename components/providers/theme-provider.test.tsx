@@ -22,6 +22,7 @@ let mockChartColorTheme = "default";
 let mockInterfaceRadius = 0.625;
 let mockInterfaceDensity = "comfortable";
 let mockReducedMotion = false;
+let mockBackgroundEnabled = false;
 
 jest.mock("@/lib/stores/appearance", () => ({
   useAppearanceStore: jest.fn((selector) => {
@@ -32,6 +33,7 @@ jest.mock("@/lib/stores/appearance", () => ({
       interfaceDensity: mockInterfaceDensity,
       reducedMotion: mockReducedMotion,
       setReducedMotion: jest.fn(),
+      backgroundEnabled: mockBackgroundEnabled,
     };
     return typeof selector === "function" ? selector(state) : state;
   }),
@@ -54,10 +56,12 @@ describe("ThemeProvider", () => {
     mockInterfaceRadius = 0.625;
     mockInterfaceDensity = "comfortable";
     mockReducedMotion = false;
+    mockBackgroundEnabled = false;
     jest.clearAllMocks();
     document.documentElement.style.cssText = "";
     delete document.documentElement.dataset.density;
     document.documentElement.classList.remove("no-transitions");
+    delete document.documentElement.dataset.bgActive;
     Object.defineProperty(window, "matchMedia", {
       writable: true,
       value: jest.fn().mockImplementation((query: string) => ({
@@ -235,5 +239,136 @@ describe("ThemeProvider", () => {
     );
 
     expect(screen.getByTestId("next-themes-provider")).toBeInTheDocument();
+  });
+
+  it("sets data-bg-active attribute when backgroundEnabled is true", async () => {
+    mockBackgroundEnabled = true;
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.documentElement.dataset.bgActive).toBe("");
+  });
+
+  it("syncs OS prefers-reduced-motion on first mount", async () => {
+    mockReducedMotion = false;
+    const mockSetReducedMotion = jest.fn();
+
+    // Override mock to return a setReducedMotion we can track
+    const { useAppearanceStore } = jest.requireMock("@/lib/stores/appearance");
+    useAppearanceStore.mockImplementation((selector: unknown) => {
+      const state = {
+        accentColor: mockAccentColor,
+        chartColorTheme: mockChartColorTheme,
+        interfaceRadius: mockInterfaceRadius,
+        interfaceDensity: mockInterfaceDensity,
+        reducedMotion: false,
+        setReducedMotion: mockSetReducedMotion,
+        backgroundEnabled: mockBackgroundEnabled,
+      };
+      return typeof selector === "function" ? (selector as (s: typeof state) => unknown)(state) : state;
+    });
+
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: jest.fn().mockImplementation((query: string) => ({
+        matches: true, // OS prefers reduced motion
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(mockSetReducedMotion).toHaveBeenCalledWith(true);
+  });
+
+  it("listens for OS reduced-motion changes via media query", async () => {
+    let changeHandler: ((e: { matches: boolean }) => void) | undefined;
+    const mockSetReducedMotion = jest.fn();
+
+    const { useAppearanceStore } = jest.requireMock("@/lib/stores/appearance");
+    useAppearanceStore.mockImplementation((selector: unknown) => {
+      const state = {
+        accentColor: mockAccentColor,
+        chartColorTheme: mockChartColorTheme,
+        interfaceRadius: mockInterfaceRadius,
+        interfaceDensity: mockInterfaceDensity,
+        reducedMotion: false,
+        setReducedMotion: mockSetReducedMotion,
+        backgroundEnabled: mockBackgroundEnabled,
+      };
+      return typeof selector === "function" ? (selector as (s: typeof state) => unknown)(state) : state;
+    });
+
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      value: jest.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn((_event: string, handler: (e: { matches: boolean }) => void) => {
+          changeHandler = handler;
+        }),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      })),
+    });
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    // Simulate OS motion preference change
+    act(() => {
+      changeHandler?.({ matches: true });
+    });
+
+    expect(mockSetReducedMotion).toHaveBeenCalledWith(true);
+  });
+
+  it("removes data-bg-active attribute when backgroundEnabled is false", async () => {
+    mockBackgroundEnabled = false;
+    document.documentElement.dataset.bgActive = "";
+
+    render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.documentElement.dataset.bgActive).toBeUndefined();
   });
 });

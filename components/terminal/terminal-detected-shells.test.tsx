@@ -47,4 +47,33 @@ describe('TerminalDetectedShells', () => {
 
     expect(screen.queryByText('terminal.noShellsDetected')).not.toBeInTheDocument();
   });
+
+  it('renders default badge for default shell', () => {
+    render(<TerminalDetectedShells shells={shells} loading={false} />);
+
+    expect(screen.getByText('terminal.default')).toBeInTheDocument();
+  });
+
+  it('renders config files with exists indicator and size', () => {
+    const shellsWithConfig: ShellInfo[] = [
+      {
+        id: 'zsh',
+        name: 'Zsh',
+        shellType: 'zsh',
+        version: null,
+        executablePath: '/bin/zsh',
+        configFiles: [
+          { path: '/home/user/.zshrc', exists: true, sizeBytes: 512 },
+          { path: '/home/user/.zprofile', exists: false, sizeBytes: 0 },
+        ],
+        isDefault: false,
+      },
+    ];
+    render(<TerminalDetectedShells shells={shellsWithConfig} loading={false} />);
+
+    expect(screen.getByText('/home/user/.zshrc')).toBeInTheDocument();
+    expect(screen.getByText('/home/user/.zprofile')).toBeInTheDocument();
+    expect(screen.getByText('(0.5 KB)')).toBeInTheDocument();
+    expect(screen.queryByText('v')).not.toBeInTheDocument();
+  });
 });

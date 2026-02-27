@@ -133,4 +133,76 @@ describe("MirrorsSettings", () => {
 
     expect(screen.getByText("Must be a valid URL")).toBeInTheDocument();
   });
+
+  it("should render Crates registry setting", () => {
+    render(<MirrorsSettings {...defaultProps} />);
+
+    expect(screen.getByText("Crates Registry")).toBeInTheDocument();
+    expect(screen.getByLabelText("Crates Registry")).toHaveValue(
+      "https://crates.io",
+    );
+  });
+
+  it("should render advanced options (enabled/priority/verify) for each mirror", () => {
+    render(<MirrorsSettings {...defaultProps} />);
+
+    // There are 4 mirrors × 3 advanced options = 12 advanced settings
+    // "Enabled" label appears 4 times
+    const enabledLabels = screen.getAllByText("Enabled");
+    expect(enabledLabels).toHaveLength(4);
+
+    // "Priority" label appears 4 times
+    const priorityLabels = screen.getAllByText("Priority");
+    expect(priorityLabels).toHaveLength(4);
+
+    // "Verify SSL" label appears 4 times
+    const verifySslLabels = screen.getAllByText("Verify SSL");
+    expect(verifySslLabels).toHaveLength(4);
+  });
+
+  it("should toggle mirror enabled state", () => {
+    const onValueChange = jest.fn();
+    render(<MirrorsSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    // Find all switches - each mirror has 2 switches (enabled + verify SSL)
+    const switches = screen.getAllByRole("switch");
+    // First switch is npm enabled
+    fireEvent.click(switches[0]);
+
+    expect(onValueChange).toHaveBeenCalledWith(
+      "mirrors.npm.enabled",
+      "false",
+    );
+  });
+
+  it("should call onValueChange when Go proxy is changed", () => {
+    const onValueChange = jest.fn();
+    render(<MirrorsSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    fireEvent.change(screen.getByLabelText("Go Proxy"), {
+      target: { value: "https://goproxy.cn" },
+    });
+
+    expect(onValueChange).toHaveBeenCalledWith(
+      "mirrors.go",
+      "https://goproxy.cn",
+    );
+  });
+
+  it("should use default URLs when config is empty", () => {
+    render(<MirrorsSettings {...defaultProps} localConfig={{}} />);
+
+    expect(screen.getByLabelText("NPM Registry")).toHaveValue(
+      "https://registry.npmjs.org",
+    );
+    expect(screen.getByLabelText("PyPI Index")).toHaveValue(
+      "https://pypi.org/simple",
+    );
+    expect(screen.getByLabelText("Crates Registry")).toHaveValue(
+      "https://crates.io",
+    );
+    expect(screen.getByLabelText("Go Proxy")).toHaveValue(
+      "https://proxy.golang.org",
+    );
+  });
 });

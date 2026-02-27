@@ -60,4 +60,26 @@ describe('TerminalProxySettings', () => {
 
     expect(screen.queryByText('terminal.noActiveProxy')).not.toBeInTheDocument();
   });
+
+  it('shows noGlobalProxy message in default global mode', () => {
+    render(
+      <TerminalProxySettings
+        proxyEnvVars={[]}
+        onFetchProxyEnvVars={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('terminal.noGlobalProxy')).toBeInTheDocument();
+  });
+
+  it('renders no-proxy input in global mode', () => {
+    render(
+      <TerminalProxySettings
+        proxyEnvVars={[]}
+        onFetchProxyEnvVars={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText('terminal.noProxyList')).toBeInTheDocument();
+  });
 });

@@ -485,3 +485,61 @@ impl SystemPackageProvider for NixProvider {
         Ok(self.get_installed_version(name).await?.is_some())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nix_store_path() {
+        let path = NixProvider::nix_store_path();
+        assert_eq!(path, PathBuf::from("/nix/store"));
+    }
+
+    #[test]
+    fn test_profile_path() {
+        let path = NixProvider::profile_path();
+        // Should return a valid path regardless of HOME
+        assert!(!path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = NixProvider::new();
+        assert_eq!(provider.id(), "nix");
+        assert_eq!(provider.display_name(), "Nix Package Manager");
+        assert_eq!(provider.priority(), 70);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = NixProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::Update));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = NixProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+        assert!(!platforms.contains(&Platform::Windows));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = NixProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = NixProvider::default();
+    }
+}

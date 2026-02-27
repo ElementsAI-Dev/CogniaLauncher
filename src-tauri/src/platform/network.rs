@@ -372,4 +372,97 @@ mod tests {
         assert_eq!(options.max_retries, 5);
         assert_eq!(options.headers.len(), 1);
     }
+
+    #[test]
+    fn test_request_options_defaults() {
+        let opts = RequestOptions::new();
+        assert_eq!(opts.timeout, Some(Duration::from_secs(30)));
+        assert_eq!(opts.max_retries, 3);
+        assert_eq!(opts.retry_delay, Duration::from_secs(1));
+        assert!(opts.headers.is_empty());
+    }
+
+    #[test]
+    fn test_request_options_default_trait() {
+        let opts = RequestOptions::default();
+        assert_eq!(opts.timeout, None);
+        assert_eq!(opts.max_retries, 0);
+        assert!(opts.headers.is_empty());
+    }
+
+    #[test]
+    fn test_request_options_builder_chain() {
+        let opts = RequestOptions::new()
+            .with_timeout(Duration::from_secs(10))
+            .with_header("X-A", "1")
+            .with_header("X-B", "2")
+            .with_retries(0);
+        assert_eq!(opts.timeout, Some(Duration::from_secs(10)));
+        assert_eq!(opts.max_retries, 0);
+        assert_eq!(opts.headers.len(), 2);
+        assert_eq!(opts.headers[0], ("X-A".to_string(), "1".to_string()));
+        assert_eq!(opts.headers[1], ("X-B".to_string(), "2".to_string()));
+    }
+
+    #[test]
+    fn test_http_client_with_options() {
+        let opts = RequestOptions::new().with_timeout(Duration::from_secs(120));
+        let client = HttpClient::new().with_options(opts);
+        assert_eq!(
+            client.default_options.timeout,
+            Some(Duration::from_secs(120))
+        );
+    }
+
+    #[test]
+    fn test_http_client_with_proxy_empty() {
+        // Passing None or empty string should return the same client
+        let client = HttpClient::new().with_proxy(None);
+        assert!(client.client.get("https://example.com").build().is_ok());
+
+        let client2 = HttpClient::new().with_proxy(Some(""));
+        assert!(client2.client.get("https://example.com").build().is_ok());
+    }
+
+    #[test]
+    fn test_http_client_default_trait() {
+        let client = HttpClient::default();
+        assert!(client.client.get("https://example.com").build().is_ok());
+    }
+
+    #[test]
+    fn test_network_error_display() {
+        let err = NetworkError::HttpStatus(404, "Not Found".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("404"));
+        assert!(msg.contains("Not Found"));
+
+        let err = NetworkError::Timeout(Duration::from_secs(30));
+        assert!(format!("{}", err).contains("30"));
+
+        let err = NetworkError::RateLimited(60);
+        assert!(format!("{}", err).contains("60"));
+
+        let err = NetworkError::Interrupted;
+        assert!(format!("{}", err).contains("interrupted"));
+    }
+
+    #[test]
+    fn test_download_progress_fields() {
+        let progress = DownloadProgress {
+            downloaded: 1024,
+            total: Some(2048),
+            speed: 512.0,
+        };
+        assert_eq!(progress.downloaded, 1024);
+        assert_eq!(progress.total, Some(2048));
+        assert!((progress.speed - 512.0).abs() < f64::EPSILON);
+
+        let progress_no_total = DownloadProgress {
+            downloaded: 100,
+            total: None,
+            speed: 0.0,
+        };
+        assert!(progress_no_total.total.is_none());
+    }
 }

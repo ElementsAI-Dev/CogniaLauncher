@@ -66,4 +66,42 @@ describe("EnvironmentDetectionStep", () => {
       expect(screen.getByText("Running in web mode")).toBeInTheDocument();
     });
   });
+
+  it("shows Not Found badges for web mode results", async () => {
+    render(<EnvironmentDetectionStep t={mockT} />);
+    jest.advanceTimersByTime(2000);
+    await waitFor(() => {
+      const badges = screen.getAllByText("Not Found");
+      expect(badges.length).toBe(3);
+    });
+  });
+
+  it("shows detected count after detection", async () => {
+    render(<EnvironmentDetectionStep t={mockT} />);
+    jest.advanceTimersByTime(2000);
+    await waitFor(() => {
+      expect(screen.getByText("Detected environments")).toBeInTheDocument();
+    });
+  });
+
+  it("can rescan after detection completes", async () => {
+    const { unmount } = render(<EnvironmentDetectionStep t={mockT} />);
+    jest.advanceTimersByTime(2000);
+    await waitFor(() => {
+      expect(screen.getByText("Rescan")).toBeInTheDocument();
+    });
+    // Rescan button should be enabled
+    const rescanBtn = screen.getByText("Rescan").closest("button");
+    expect(rescanBtn).not.toBeDisabled();
+    unmount();
+  });
+
+  it("shows version text for detected environments", async () => {
+    render(<EnvironmentDetectionStep t={mockT} />);
+    jest.advanceTimersByTime(2000);
+    await waitFor(() => {
+      const versions = screen.getAllByText("(web mode)");
+      expect(versions.length).toBe(3);
+    });
+  });
 });

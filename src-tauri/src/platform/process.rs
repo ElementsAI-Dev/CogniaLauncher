@@ -279,4 +279,130 @@ mod tests {
 
         assert!(result.is_some());
     }
+
+    #[test]
+    fn test_process_options_defaults() {
+        let opts = ProcessOptions::default();
+        assert!(opts.cwd.is_none());
+        assert!(opts.env.is_empty());
+        assert!(opts.timeout.is_none());
+        assert!(opts.capture_output);
+    }
+
+    #[test]
+    fn test_process_options_new_equals_default() {
+        let a = ProcessOptions::new();
+        let b = ProcessOptions::default();
+        assert_eq!(a.cwd, b.cwd);
+        assert_eq!(a.env.len(), b.env.len());
+        assert_eq!(a.timeout, b.timeout);
+        assert_eq!(a.capture_output, b.capture_output);
+    }
+
+    #[test]
+    fn test_process_options_builders() {
+        let opts = ProcessOptions::new()
+            .with_cwd("/tmp")
+            .with_env("KEY", "VALUE")
+            .with_env("KEY2", "VALUE2")
+            .with_timeout(Duration::from_secs(30))
+            .with_capture(false);
+
+        assert_eq!(opts.cwd, Some("/tmp".to_string()));
+        assert_eq!(opts.env.len(), 2);
+        assert_eq!(opts.env.get("KEY"), Some(&"VALUE".to_string()));
+        assert_eq!(opts.env.get("KEY2"), Some(&"VALUE2".to_string()));
+        assert_eq!(opts.timeout, Some(Duration::from_secs(30)));
+        assert!(!opts.capture_output);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_env() {
+        #[cfg(windows)]
+        let output = execute(
+            "cmd",
+            &["/C", "echo", "%COGNIA_TEST_ENV%"],
+            Some(ProcessOptions::new().with_env("COGNIA_TEST_ENV", "hello_env")),
+        )
+        .await
+        .unwrap();
+
+        #[cfg(not(windows))]
+        let output = execute(
+            "sh",
+            &["-c", "echo $COGNIA_TEST_ENV"],
+            Some(ProcessOptions::new().with_env("COGNIA_TEST_ENV", "hello_env")),
+        )
+        .await
+        .unwrap();
+
+        assert!(output.success);
+        assert!(output.stdout.contains("hello_env"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_nonexistent_program() {
+        let result = execute("nonexistent_program_xyz_12345", &[], None).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ProcessError::StartFailed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_which_nonexistent() {
+        let result = which("nonexistent_program_xyz_12345").await;
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_is_program_available_true() {
+        // Use programs that handle --version without blocking
+        #[cfg(windows)]
+        assert!(is_program_available("where"));
+
+        #[cfg(not(windows))]
+        assert!(is_program_available("ls"));
+    }
+
+    #[test]
+    fn test_is_program_available_false() {
+        assert!(!is_program_available("nonexistent_program_xyz_12345"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_exit_code() {
+        #[cfg(windows)]
+        let output = execute("cmd", &["/C", "exit", "42"], None).await.unwrap();
+
+        #[cfg(not(windows))]
+        let output = execute("sh", &["-c", "exit 42"], None).await.unwrap();
+
+        assert!(!output.success);
+        assert_eq!(output.exit_code, 42);
+    }
+
+    #[test]
+    fn test_process_output_fields() {
+        let output = ProcessOutput {
+            exit_code: 0,
+            stdout: "out".to_string(),
+            stderr: "err".to_string(),
+            success: true,
+        };
+        assert_eq!(output.exit_code, 0);
+        assert_eq!(output.stdout, "out");
+        assert_eq!(output.stderr, "err");
+        assert!(output.success);
+    }
+
+    #[test]
+    fn test_process_error_display() {
+        let err = ProcessError::Timeout(Duration::from_secs(10));
+        assert!(format!("{}", err).contains("10"));
+
+        let err = ProcessError::ExitCode(1);
+        assert!(format!("{}", err).contains("1"));
+
+        let err = ProcessError::Signal;
+        assert!(format!("{}", err).contains("signal"));
+    }
 }

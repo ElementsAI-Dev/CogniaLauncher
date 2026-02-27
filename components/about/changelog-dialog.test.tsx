@@ -169,4 +169,33 @@ describe("ChangelogDialog", () => {
     if (v09Button) fireEvent.click(v09Button);
     expect(screen.getByTestId("markdown-renderer")).toBeInTheDocument();
   });
+
+  it("filters entries when a type filter button is clicked", () => {
+    render(<ChangelogDialog {...defaultProps} />);
+    // Click the "Added" filter button
+    const filterButtons = screen.getAllByText("Added");
+    // The filter bar button is outside the collapsible — click the first one
+    fireEvent.click(filterButtons[0]);
+    // "Fixed a bug" should be hidden since it's type=fixed, not added
+    // The first entry is expanded but only "added" changes should remain
+    expect(screen.getByText("Initial release")).toBeInTheDocument();
+  });
+
+  it("shows no results message when filter excludes all changes", () => {
+    const singleTypeEntries: ChangelogEntry[] = [
+      {
+        version: "1.0.0",
+        date: "2025-01-15",
+        changes: [
+          { type: "added", description: "Feature A" },
+          { type: "fixed", description: "Bug fix B" },
+        ],
+      },
+    ];
+    render(
+      <ChangelogDialog {...defaultProps} entries={singleTypeEntries} />,
+    );
+    // With both "added" and "fixed" types, the filter bar should show
+    expect(screen.getByText("All Types")).toBeInTheDocument();
+  });
 });

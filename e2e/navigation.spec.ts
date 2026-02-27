@@ -7,7 +7,7 @@ test.describe('Navigation & Layout', () => {
     await expect(appPage.locator('nav[aria-label="breadcrumb"]')).toContainText('Dashboard');
   });
 
-  test('all 12 top-level nav items are visible in sidebar', async ({ appPage }) => {
+  test('all 14 top-level nav items are visible in sidebar', async ({ appPage }) => {
     const sidebar = appPage.locator(SIDEBAR);
     const expectedLabels = [
       'Dashboard',
@@ -17,9 +17,11 @@ test.describe('Navigation & Layout', () => {
       'Cache',
       'Downloads',
       'Git',
+      'Env Variables',
+      'Terminal',
       'WSL',
       'Logs',
-      'Docs',
+      'Documentation',
       'Settings',
       'About',
     ];
@@ -30,11 +32,15 @@ test.describe('Navigation & Layout', () => {
 
   test('clicking sidebar links navigates to correct routes', async ({ appPage }) => {
     const routes = [
-      { label: 'Environments', path: '/environments' },
       { label: 'Packages', path: '/packages' },
       { label: 'Providers', path: '/providers' },
       { label: 'Downloads', path: '/downloads' },
+      { label: 'Git', path: '/git' },
+      { label: 'Env Variables', path: '/envvar' },
+      { label: 'Terminal', path: '/terminal' },
+      { label: 'WSL', path: '/wsl' },
       { label: 'Logs', path: '/logs' },
+      { label: 'Documentation', path: '/docs' },
       { label: 'Settings', path: '/settings' },
       { label: 'About', path: '/about' },
     ];

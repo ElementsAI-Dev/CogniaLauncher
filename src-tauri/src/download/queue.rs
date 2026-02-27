@@ -1085,4 +1085,119 @@ mod tests {
         let result = queue.retry_task("nonexistent");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_queue_default() {
+        let queue = DownloadQueue::default();
+        assert_eq!(queue.max_concurrent(), 4);
+        assert_eq!(queue.stats().total_tasks, 0);
+        assert!(queue.has_available_slots());
+    }
+
+    #[test]
+    fn test_queue_set_max_concurrent_zero_clamps() {
+        let mut queue = DownloadQueue::new(4);
+        queue.set_max_concurrent(0);
+        // Should clamp to 1
+        assert_eq!(queue.max_concurrent(), 1);
+    }
+
+    #[test]
+    fn test_queue_list_all_empty() {
+        let queue = DownloadQueue::new(4);
+        assert!(queue.list_all().is_empty());
+        assert!(queue.list_active().is_empty());
+        assert!(queue.list_pending().is_empty());
+    }
+
+    #[test]
+    fn test_queue_fail_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.fail(
+            "nonexistent",
+            DownloadError::Network {
+                message: "test".into(),
+            },
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_complete_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.complete("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_pause_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.pause("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_resume_nonexistent() {
+        let mut queue = DownloadQueue::new(4);
+        let result = queue.resume("nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_cancel_completed_fails() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+        queue.next_pending();
+        queue.complete(&id).unwrap();
+
+        // Cancel a completed task should fail
+        let result = queue.cancel(&id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_resume_queued_fails() {
+        let mut queue = DownloadQueue::new(4);
+        let task = create_test_task("task1", 0);
+        let id = task.id.clone();
+        queue.add(task);
+
+        // Resume a queued (not paused) task should fail
+        let result = queue.resume(&id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_queue_stats_bytes_tracking() {
+        let mut queue = DownloadQueue::new(4);
+
+        let mut task1 = create_test_task("task1", 0);
+        task1.progress.total_bytes = Some(1000);
+        task1.progress.downloaded_bytes = 500;
+        let id1 = task1.id.clone();
+        queue.add(task1);
+
+        let mut task2 = create_test_task("task2", 0);
+        task2.progress.total_bytes = Some(2000);
+        task2.progress.downloaded_bytes = 1000;
+        queue.add(task2);
+
+        let stats = queue.stats();
+        assert_eq!(stats.total_bytes, 3000);
+        assert_eq!(stats.downloaded_bytes, 1500);
+
+        // Task without total_bytes should not contribute to total_bytes
+        let mut task3 = create_test_task("task3", 0);
+        task3.progress.total_bytes = None;
+        task3.progress.downloaded_bytes = 200;
+        queue.add(task3);
+
+        let stats = queue.stats();
+        assert_eq!(stats.total_bytes, 3000); // Unchanged
+        assert_eq!(stats.downloaded_bytes, 1700); // 1500 + 200
+
+        let _ = id1;
+    }
 }

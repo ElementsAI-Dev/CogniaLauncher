@@ -106,16 +106,18 @@ describe("EnvironmentList", () => {
   it("shows empty state when no environments", () => {
     render(<EnvironmentList environments={[]} />);
 
-    expect(screen.getByText("No environments detected")).toBeInTheDocument();
+    // Default filter is "available", so empty list shows "no results" message
+    expect(screen.getByText("No environments match the filter")).toBeInTheDocument();
   });
 
-  it("shows available and unavailable environments", () => {
+  it("shows only available environments by default", () => {
     render(<EnvironmentList environments={mockEnvironments} />);
 
-    // All environments should be shown by default
+    // Default filter is "available", so only available environments are shown
     expect(screen.getByText("node")).toBeInTheDocument();
-    expect(screen.getByText("python")).toBeInTheDocument();
     expect(screen.getByText("rust")).toBeInTheDocument();
+    // python is unavailable and should NOT be shown
+    expect(screen.queryByText("python")).not.toBeInTheDocument();
   });
 
   it("navigates to environment details when clicked", () => {
@@ -136,17 +138,18 @@ describe("EnvironmentList", () => {
   });
 
   it("limits displayed environments based on initialLimit", () => {
+    // Default filter is "available": node and rust are available (2 items)
+    // With initialLimit=1, we should see "Show more"
     render(
-      <EnvironmentList environments={mockEnvironments} initialLimit={2} />,
+      <EnvironmentList environments={mockEnvironments} initialLimit={1} />,
     );
 
-    // Should show "Show more" button since there are 3 environments but limit is 2
     expect(screen.getByText("Show more")).toBeInTheDocument();
   });
 
   it("expands list when Show more is clicked", () => {
     render(
-      <EnvironmentList environments={mockEnvironments} initialLimit={2} />,
+      <EnvironmentList environments={mockEnvironments} initialLimit={1} />,
     );
 
     const showMoreButton = screen.getByText("Show more");

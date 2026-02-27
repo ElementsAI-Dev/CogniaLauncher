@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { GitConfigCard } from './git-config-card';
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -46,9 +46,93 @@ describe('GitConfigCard', () => {
     const { container } = render(
       <GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />,
     );
-    // Each entry should have a delete button (Trash2 icon)
     const deleteButtons = container.querySelectorAll('button');
     // 3 delete buttons + 1 add button = at least 4 buttons
     expect(deleteButtons.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('calls onSet when adding a new entry', async () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    const inputs = screen.getAllByRole('textbox');
+    const keyInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.keyPlaceholder')!;
+    const valueInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.valuePlaceholder')!;
+    fireEvent.change(keyInput, { target: { value: 'core.editor' } });
+    fireEvent.change(valueInput, { target: { value: 'vim' } });
+    fireEvent.click(screen.getByText('git.config.add'));
+    await waitFor(() => {
+      expect(mockOnSet).toHaveBeenCalledWith('core.editor', 'vim');
+    });
+  });
+
+  it('clears inputs after adding entry', async () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    const inputs = screen.getAllByRole('textbox');
+    const keyInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.keyPlaceholder')!;
+    const valueInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.valuePlaceholder')!;
+    fireEvent.change(keyInput, { target: { value: 'core.editor' } });
+    fireEvent.change(valueInput, { target: { value: 'vim' } });
+    fireEvent.click(screen.getByText('git.config.add'));
+    await waitFor(() => {
+      expect(keyInput).toHaveValue('');
+      expect(valueInput).toHaveValue('');
+    });
+  });
+
+  it('does not call onSet when key is empty', () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    fireEvent.click(screen.getByText('git.config.add'));
+    expect(mockOnSet).not.toHaveBeenCalled();
+  });
+
+  it('calls onRemove when delete button clicked', () => {
+    const { container } = render(
+      <GitConfigCard config={[{ key: 'user.name', value: 'John' }]} onSet={mockOnSet} onRemove={mockOnRemove} />,
+    );
+    // First button is the delete button for the single entry (add button is last)
+    const buttons = container.querySelectorAll('button');
+    // Delete button is the one within the config entry row
+    fireEvent.click(buttons[0]);
+    expect(mockOnRemove).toHaveBeenCalledWith('user.name');
+  });
+
+  it('enters edit mode when value is clicked', () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    fireEvent.click(screen.getByText('John Doe'));
+    // In edit mode, an input with the current value should appear
+    const editInput = screen.getAllByRole('textbox').find(
+      i => (i as HTMLInputElement).value === 'John Doe'
+    );
+    expect(editInput).toBeInTheDocument();
+  });
+
+  it('saves edit on Enter key in edit mode', async () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    fireEvent.click(screen.getByText('John Doe'));
+    const editInput = screen.getAllByRole('textbox').find(
+      i => (i as HTMLInputElement).value === 'John Doe'
+    )!;
+    fireEvent.change(editInput, { target: { value: 'Jane Doe' } });
+    fireEvent.keyDown(editInput, { key: 'Enter' });
+    await waitFor(() => {
+      expect(mockOnSet).toHaveBeenCalledWith('user.name', 'Jane Doe');
+    });
+  });
+
+  it('adds entry on Enter key in value input', async () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    const inputs = screen.getAllByRole('textbox');
+    const keyInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.keyPlaceholder')!;
+    const valueInput = inputs.find(i => (i as HTMLInputElement).placeholder === 'git.config.valuePlaceholder')!;
+    fireEvent.change(keyInput, { target: { value: 'core.pager' } });
+    fireEvent.change(valueInput, { target: { value: 'less' } });
+    fireEvent.keyDown(valueInput, { key: 'Enter' });
+    await waitFor(() => {
+      expect(mockOnSet).toHaveBeenCalledWith('core.pager', 'less');
+    });
+  });
+
+  it('renders config title', () => {
+    render(<GitConfigCard config={config} onSet={mockOnSet} onRemove={mockOnRemove} />);
+    expect(screen.getByText('git.config.title')).toBeInTheDocument();
   });
 });

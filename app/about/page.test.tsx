@@ -97,6 +97,14 @@ jest.mock("@/lib/tauri", () => ({
     externalCaches: [],
   }),
   logGetTotalSize: jest.fn().mockResolvedValue(512000),
+  getComponentsInfo: jest.fn().mockResolvedValue({
+    frameworks: [],
+    runtimes: [],
+    databases: [],
+  }),
+  getBatteryInfo: jest.fn().mockResolvedValue(null),
+  getDiskInfo: jest.fn().mockResolvedValue([]),
+  getNetworkInterfaces: jest.fn().mockResolvedValue([]),
 }));
 
 // Mock sonner toast

@@ -54,4 +54,85 @@ describe("ProviderSettings", () => {
       "brew",
     );
   });
+
+  it("should normalize JSON array to comma-separated string", () => {
+    render(
+      <ProviderSettings
+        {...defaultProps}
+        localConfig={{
+          "provider_settings.disabled_providers": '["brew", "apt", "snap"]',
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Disabled Providers")).toHaveValue(
+      "brew, apt, snap",
+    );
+  });
+
+  it("should pass through plain comma-separated values unchanged", () => {
+    render(
+      <ProviderSettings
+        {...defaultProps}
+        localConfig={{
+          "provider_settings.disabled_providers": "brew, apt",
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Disabled Providers")).toHaveValue(
+      "brew, apt",
+    );
+  });
+
+  it("should handle empty string gracefully", () => {
+    render(
+      <ProviderSettings
+        {...defaultProps}
+        localConfig={{ "provider_settings.disabled_providers": "" }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Disabled Providers")).toHaveValue("");
+  });
+
+  it("should handle invalid JSON by returning raw value", () => {
+    render(
+      <ProviderSettings
+        {...defaultProps}
+        localConfig={{
+          "provider_settings.disabled_providers": "[invalid json",
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Disabled Providers")).toHaveValue(
+      "[invalid json",
+    );
+  });
+
+  it("should render hint alert", () => {
+    render(<ProviderSettings {...defaultProps} />);
+
+    expect(
+      screen.getByText("Changes apply after restarting the app"),
+    ).toBeInTheDocument();
+  });
+
+  it("should display validation errors", () => {
+    render(
+      <ProviderSettings
+        {...defaultProps}
+        errors={{ "provider_settings.disabled_providers": "Invalid provider" }}
+      />,
+    );
+
+    expect(screen.getByText("Invalid provider")).toBeInTheDocument();
+  });
+
+  it("should handle missing config key", () => {
+    render(<ProviderSettings {...defaultProps} localConfig={{}} />);
+
+    expect(screen.getByLabelText("Disabled Providers")).toHaveValue("");
+  });
 });

@@ -487,4 +487,198 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
+
+    #[tokio::test]
+    async fn test_read_file_not_found() {
+        let result = read_file("/nonexistent/file.txt").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_read_file_string_not_found() {
+        let result = read_file_string("/nonexistent/file.txt").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_write_file_creates_parents() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("a").join("b").join("c").join("deep.txt");
+        write_file(&path, b"deep content").await.unwrap();
+        let content = read_file(&path).await.unwrap();
+        assert_eq!(content, b"deep content");
+    }
+
+    #[tokio::test]
+    async fn test_move_file_success() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("move_src.txt");
+        let dst = dir.path().join("move_dst.txt");
+        write_file_string(&src, "move me").await.unwrap();
+        move_file(&src, &dst).await.unwrap();
+        assert!(!exists(&src).await);
+        let content = read_file_string(&dst).await.unwrap();
+        assert_eq!(content, "move me");
+    }
+
+    #[tokio::test]
+    async fn test_move_file_not_found() {
+        let dir = tempdir().unwrap();
+        let result = move_file(
+            dir.path().join("nonexistent.txt"),
+            dir.path().join("dst.txt"),
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_remove_file_not_found() {
+        let result = remove_file("/nonexistent/remove_me.txt").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_remove_dir_not_found() {
+        let result = remove_dir("/nonexistent/dir").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_remove_dir_all_not_found() {
+        let result = remove_dir_all("/nonexistent/dir_all").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_create_dir_already_exists() {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        create_dir(&sub).await.unwrap();
+        let result = create_dir(&sub).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::AlreadyExists(_)));
+    }
+
+    #[tokio::test]
+    async fn test_create_dir_all_idempotent() {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("a").join("b");
+        create_dir_all(&sub).await.unwrap();
+        // Should not error when called again
+        create_dir_all(&sub).await.unwrap();
+        assert!(is_dir(&sub).await);
+    }
+
+    #[tokio::test]
+    async fn test_is_file_and_is_dir() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_file.txt");
+        write_file_string(&file_path, "content").await.unwrap();
+
+        assert!(is_file(&file_path).await);
+        assert!(!is_dir(&file_path).await);
+        assert!(is_dir(dir.path()).await);
+        assert!(!is_file(dir.path()).await);
+        let nonexistent = dir.path().join("no_such_entry");
+        assert!(!is_file(&nonexistent).await);
+        assert!(!is_dir(&nonexistent).await);
+    }
+
+    #[tokio::test]
+    async fn test_file_size_success() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("sized.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let size = file_size(&path).await.unwrap();
+        assert_eq!(size, 5);
+    }
+
+    #[tokio::test]
+    async fn test_file_size_not_found() {
+        let result = file_size("/nonexistent/file.txt").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_calculate_sha256_success() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("hash_me.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_sha256(&path).await.unwrap();
+        // SHA-256 of "hello"
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_sha256_not_found() {
+        let result = calculate_sha256("/nonexistent/file.txt").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
+    }
+
+    #[test]
+    fn test_get_home_dir() {
+        assert!(get_home_dir().is_some());
+    }
+
+    #[test]
+    fn test_get_cognia_dir() {
+        let dir = get_cognia_dir();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with(".CogniaLauncher"));
+    }
+
+    #[test]
+    fn test_get_config_dir() {
+        let dir = get_config_dir();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("config"));
+    }
+
+    #[test]
+    fn test_get_cache_dir() {
+        let dir = get_cache_dir();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("cache"));
+    }
+
+    #[test]
+    fn test_get_environments_dir() {
+        let dir = get_environments_dir();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("environments"));
+    }
+
+    #[test]
+    fn test_get_bin_dir() {
+        let dir = get_bin_dir();
+        assert!(dir.is_some());
+        assert!(dir.unwrap().ends_with("bin"));
+    }
+
+    #[test]
+    fn test_fs_error_display() {
+        let err = FsError::NotFound(PathBuf::from("/test"));
+        assert!(format!("{}", err).contains("/test"));
+
+        let err = FsError::PermissionDenied(PathBuf::from("/root"));
+        assert!(format!("{}", err).contains("/root"));
+
+        let err = FsError::AlreadyExists(PathBuf::from("/dup"));
+        assert!(format!("{}", err).contains("/dup"));
+
+        let err = FsError::InvalidPath("bad".to_string());
+        assert!(format!("{}", err).contains("bad"));
+    }
 }

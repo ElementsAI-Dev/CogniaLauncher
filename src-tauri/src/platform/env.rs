@@ -1700,4 +1700,284 @@ mod tests {
         assert_eq!(deduped[0], "C:\\Windows");
         assert_eq!(deduped[1], "C:\\Users");
     }
+
+    #[test]
+    fn test_env_modifications_append_path() {
+        let mods = EnvModifications::new()
+            .append_path("/opt/bin")
+            .append_path("/usr/local/bin");
+        assert_eq!(mods.path_append.len(), 2);
+        assert_eq!(mods.path_append[0], PathBuf::from("/opt/bin"));
+        assert_eq!(mods.path_append[1], PathBuf::from("/usr/local/bin"));
+    }
+
+    #[test]
+    fn test_env_modifications_unset_var() {
+        let mods = EnvModifications::new()
+            .unset_var("OLD_VAR")
+            .unset_var("ANOTHER");
+        assert_eq!(mods.unset_variables.len(), 2);
+        assert_eq!(mods.unset_variables[0], "OLD_VAR");
+        assert_eq!(mods.unset_variables[1], "ANOTHER");
+    }
+
+    #[test]
+    fn test_shell_type_from_id_all() {
+        assert_eq!(ShellType::from_id("bash"), Some(ShellType::Bash));
+        assert_eq!(ShellType::from_id("zsh"), Some(ShellType::Zsh));
+        assert_eq!(ShellType::from_id("fish"), Some(ShellType::Fish));
+        assert_eq!(ShellType::from_id("powershell"), Some(ShellType::PowerShell));
+        assert_eq!(ShellType::from_id("pwsh"), Some(ShellType::PowerShell));
+        assert_eq!(ShellType::from_id("cmd"), Some(ShellType::Cmd));
+        assert_eq!(ShellType::from_id("nushell"), Some(ShellType::Nushell));
+        assert_eq!(ShellType::from_id("nu"), Some(ShellType::Nushell));
+        assert_eq!(ShellType::from_id("unknown"), None);
+        assert_eq!(ShellType::from_id(""), None);
+    }
+
+    #[test]
+    fn test_shell_type_id_display_roundtrip() {
+        let shells = [
+            (ShellType::Bash, "bash", "Bash"),
+            (ShellType::Zsh, "zsh", "Zsh"),
+            (ShellType::Fish, "fish", "Fish"),
+            (ShellType::PowerShell, "powershell", "PowerShell"),
+            (ShellType::Cmd, "cmd", "Command Prompt"),
+            (ShellType::Nushell, "nushell", "Nushell"),
+        ];
+        for (shell, expected_id, expected_name) in &shells {
+            assert_eq!(shell.id(), *expected_id);
+            assert_eq!(shell.display_name(), *expected_name);
+        }
+    }
+
+    #[test]
+    fn test_shell_type_config_files_bash() {
+        let files = ShellType::Bash.config_files();
+        assert!(!files.is_empty());
+        // Should contain .bashrc
+        assert!(files.iter().any(|p| p.ends_with(".bashrc")));
+    }
+
+    #[test]
+    fn test_shell_type_config_files_cmd_empty() {
+        let files = ShellType::Cmd.config_files();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_shell_type_config_file_returns_first() {
+        // config_file() should return the first entry from config_files()
+        let files = ShellType::Zsh.config_files();
+        let first = ShellType::Zsh.config_file();
+        if !files.is_empty() {
+            assert_eq!(first, Some(files[0].clone()));
+        }
+    }
+
+    #[test]
+    fn test_to_shell_commands_cmd_set_var() {
+        let mods = EnvModifications::new().set_var("FOO", "bar");
+        let cmd = mods.to_shell_commands(ShellType::Cmd);
+        assert!(cmd.contains("set FOO=bar"));
+    }
+
+    #[test]
+    fn test_to_shell_commands_cmd_unset_var() {
+        let mods = EnvModifications::new().unset_var("FOO");
+        let cmd = mods.to_shell_commands(ShellType::Cmd);
+        assert!(cmd.contains("set FOO="));
+    }
+
+    #[test]
+    fn test_to_shell_commands_powershell_set_var() {
+        let mods = EnvModifications::new().set_var("FOO", "bar");
+        let cmd = mods.to_shell_commands(ShellType::PowerShell);
+        assert!(cmd.contains("$env:FOO = \"bar\""));
+    }
+
+    #[test]
+    fn test_to_shell_commands_powershell_unset_var() {
+        let mods = EnvModifications::new().unset_var("FOO");
+        let cmd = mods.to_shell_commands(ShellType::PowerShell);
+        assert!(cmd.contains("Remove-Item Env:FOO"));
+    }
+
+    #[test]
+    fn test_to_shell_commands_powershell_path() {
+        let mods = EnvModifications::new()
+            .prepend_path("C:\\tools")
+            .append_path("C:\\extra");
+        let cmd = mods.to_shell_commands(ShellType::PowerShell);
+        assert!(cmd.contains("$env:PATH"));
+        assert!(cmd.contains("C:\\tools"));
+        assert!(cmd.contains("C:\\extra"));
+    }
+
+    #[test]
+    fn test_to_shell_commands_cmd_path() {
+        let mods = EnvModifications::new()
+            .prepend_path("C:\\tools")
+            .append_path("C:\\extra");
+        let cmd = mods.to_shell_commands(ShellType::Cmd);
+        assert!(cmd.contains("set PATH="));
+        assert!(cmd.contains("%PATH%"));
+        assert!(cmd.contains("C:\\tools"));
+        assert!(cmd.contains("C:\\extra"));
+    }
+
+    #[test]
+    fn test_to_shell_commands_fish_path() {
+        let mods = EnvModifications::new()
+            .prepend_path("/usr/local/bin")
+            .append_path("/opt/bin");
+        let cmd = mods.to_shell_commands(ShellType::Fish);
+        assert!(cmd.contains("fish_add_path --prepend \"/usr/local/bin\""));
+        assert!(cmd.contains("fish_add_path --append \"/opt/bin\""));
+    }
+
+    #[test]
+    fn test_platform_as_str() {
+        assert_eq!(Platform::Windows.as_str(), "windows");
+        assert_eq!(Platform::MacOS.as_str(), "macos");
+        assert_eq!(Platform::Linux.as_str(), "linux");
+        assert_eq!(Platform::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn test_architecture_as_str() {
+        assert_eq!(Architecture::X86_64.as_str(), "x86_64");
+        assert_eq!(Architecture::Aarch64.as_str(), "aarch64");
+        assert_eq!(Architecture::X86.as_str(), "x86");
+        assert_eq!(Architecture::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn test_libc_type_as_str() {
+        assert_eq!(LibcType::Glibc.as_str(), "glibc");
+        assert_eq!(LibcType::Musl.as_str(), "musl");
+        assert_eq!(LibcType::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn test_current_arch() {
+        let arch = current_arch();
+        #[cfg(target_arch = "x86_64")]
+        assert_eq!(arch, Architecture::X86_64);
+        #[cfg(target_arch = "aarch64")]
+        assert_eq!(arch, Architecture::Aarch64);
+        #[cfg(target_arch = "x86")]
+        assert_eq!(arch, Architecture::X86);
+    }
+
+    #[test]
+    fn test_detect_libc() {
+        let libc = detect_libc();
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(libc, LibcType::Unknown);
+        #[cfg(target_os = "linux")]
+        assert!(libc == LibcType::Glibc || libc == LibcType::Musl);
+    }
+
+    #[test]
+    fn test_get_set_remove_var() {
+        let key = "COGNIA_TEST_VAR_12345";
+        // Initially not set
+        assert!(get_var(key).is_none());
+        // Set it
+        set_var(key, "test_value");
+        assert_eq!(get_var(key), Some("test_value".to_string()));
+        // Remove it
+        remove_var(key);
+        assert!(get_var(key).is_none());
+    }
+
+    #[test]
+    fn test_get_path_nonempty() {
+        let paths = get_path();
+        assert!(!paths.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_persistent_var_process_scope() {
+        let key = "COGNIA_PERSIST_TEST_67890";
+        // Get — initially None
+        let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
+        assert!(val.is_none());
+        // Set
+        set_persistent_var(key, "hello", EnvVarScope::Process).await.unwrap();
+        let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
+        assert_eq!(val, Some("hello".to_string()));
+        // Remove
+        remove_persistent_var(key, EnvVarScope::Process).await.unwrap();
+        let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
+        assert!(val.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_persistent_vars_process() {
+        set_var("COGNIA_LIST_TEST_99", "present");
+        let vars = list_persistent_vars(EnvVarScope::Process).await.unwrap();
+        assert!(!vars.is_empty());
+        // Should be sorted
+        for i in 1..vars.len() {
+            assert!(vars[i - 1].0 <= vars[i].0);
+        }
+        // Cleanup
+        remove_var("COGNIA_LIST_TEST_99");
+    }
+
+    #[tokio::test]
+    async fn test_get_set_persistent_path_process() {
+        let original = get_persistent_path(EnvVarScope::Process).await.unwrap();
+        assert!(!original.is_empty());
+
+        // set_persistent_path for Process scope sets PATH env var
+        let test_entries = vec!["/test/a".to_string(), "/test/b".to_string()];
+        set_persistent_path(&test_entries, EnvVarScope::Process).await.unwrap();
+        let new_path = get_persistent_path(EnvVarScope::Process).await.unwrap();
+        assert!(new_path.contains(&"/test/a".to_string()));
+        assert!(new_path.contains(&"/test/b".to_string()));
+
+        // Restore original
+        let original_strs: Vec<String> = original.into_iter().collect();
+        set_persistent_path(&original_strs, EnvVarScope::Process).await.unwrap();
+    }
+
+    #[test]
+    fn test_read_shell_profile_security_reject() {
+        let result = read_shell_profile("/etc/passwd");
+        assert!(result.is_err());
+        let err = format!("{}", result.unwrap_err());
+        assert!(err.contains("Only known shell configuration files"));
+    }
+
+    #[test]
+    fn test_read_shell_profile_nonexistent() {
+        // A valid filename but non-existent path should return empty string
+        let result = read_shell_profile("/nonexistent/path/.bashrc");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[test]
+    fn test_generate_env_file_escaping() {
+        let vars = vec![
+            ("KEY".to_string(), "value with \"quotes\"".to_string()),
+        ];
+        let dotenv = generate_env_file(&vars, EnvFileFormat::Dotenv);
+        assert!(dotenv.contains("KEY=\"value with \\\"quotes\\\"\""));
+
+        let ps = generate_env_file(&vars, EnvFileFormat::PowerShell);
+        assert!(ps.contains("`\"quotes`\""));
+    }
+
+    #[test]
+    fn test_env_var_scope_variants() {
+        // Ensure all variants exist and are distinct
+        let scopes = [EnvVarScope::Process, EnvVarScope::User, EnvVarScope::System];
+        assert_ne!(scopes[0], scopes[1]);
+        assert_ne!(scopes[1], scopes[2]);
+        assert_ne!(scopes[0], scopes[2]);
+    }
 }

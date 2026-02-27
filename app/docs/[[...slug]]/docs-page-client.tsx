@@ -7,18 +7,22 @@ import { getDocTitle, getAdjacentDocs, arrayToSlug } from '@/lib/docs/navigation
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface DocsPageClientProps {
-  content: string;
+  contentZh: string | null;
+  contentEn: string | null;
   slug?: string[];
   basePath?: string;
 }
 
-export function DocsPageClient({ content, slug, basePath }: DocsPageClientProps) {
+export function DocsPageClient({ contentZh, contentEn, slug, basePath }: DocsPageClientProps) {
   const { t, locale } = useLocale();
   const currentSlug = arrayToSlug(slug);
   const title = getDocTitle(currentSlug, locale) ?? t('docs.title');
   const adjacent = getAdjacentDocs(currentSlug);
   const prev = adjacent.prev?.slug ? { title: adjacent.prev.title, titleEn: adjacent.prev.titleEn, slug: adjacent.prev.slug } : undefined;
   const next = adjacent.next?.slug ? { title: adjacent.next.title, titleEn: adjacent.next.titleEn, slug: adjacent.next.slug } : undefined;
+
+  // Select content based on locale, with fallback to the other language
+  const content = (locale === 'en' ? (contentEn ?? contentZh) : (contentZh ?? contentEn)) ?? '';
 
   return (
     <div className="flex h-full">

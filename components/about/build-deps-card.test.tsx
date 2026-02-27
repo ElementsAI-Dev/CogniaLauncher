@@ -90,4 +90,23 @@ describe("BuildDepsCard", () => {
     render(<BuildDepsCard t={mockT} />);
     expect(screen.getByRole("region")).toBeInTheDocument();
   });
+
+  it("renders description text", () => {
+    render(<BuildDepsCard t={mockT} />);
+    expect(
+      screen.getByText(
+        "Core frameworks and libraries used to build this application",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders all dependency links with noopener noreferrer", () => {
+    render(<BuildDepsCard t={mockT} />);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(4);
+    for (const link of links) {
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      expect(link).toHaveAttribute("target", "_blank");
+    }
+  });
 });

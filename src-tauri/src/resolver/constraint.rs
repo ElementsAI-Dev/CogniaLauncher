@@ -277,4 +277,419 @@ mod tests {
         assert!(c.matches(&"1.9.9".parse().unwrap()));
         assert!(!c.matches(&"2.0.0".parse().unwrap()));
     }
+
+    // --- Constructor helpers ---
+
+    #[test]
+    fn test_constructor_any() {
+        let c = VersionConstraint::any();
+        assert!(c.matches(&"0.0.1".parse().unwrap()));
+        assert!(c.matches(&"99.99.99".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_exact() {
+        let c = VersionConstraint::exact("1.2.3".parse().unwrap());
+        assert!(c.matches(&"1.2.3".parse().unwrap()));
+        assert!(!c.matches(&"1.2.4".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_gte() {
+        let c = VersionConstraint::gte("1.0.0".parse().unwrap());
+        assert!(c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"2.0.0".parse().unwrap()));
+        assert!(!c.matches(&"0.9.9".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_gt() {
+        let c = VersionConstraint::gt("1.0.0".parse().unwrap());
+        assert!(!c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"1.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_lte() {
+        let c = VersionConstraint::lte("2.0.0".parse().unwrap());
+        assert!(c.matches(&"2.0.0".parse().unwrap()));
+        assert!(c.matches(&"1.9.9".parse().unwrap()));
+        assert!(!c.matches(&"2.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_lt() {
+        let c = VersionConstraint::lt("2.0.0".parse().unwrap());
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+        assert!(c.matches(&"1.9.9".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_caret() {
+        let c = VersionConstraint::caret("1.2.0".parse().unwrap());
+        assert!(c.matches(&"1.2.0".parse().unwrap()));
+        assert!(c.matches(&"1.9.9".parse().unwrap()));
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_constructor_tilde() {
+        let c = VersionConstraint::tilde("1.2.0".parse().unwrap());
+        assert!(c.matches(&"1.2.0".parse().unwrap()));
+        assert!(c.matches(&"1.2.9".parse().unwrap()));
+        assert!(!c.matches(&"1.3.0".parse().unwrap()));
+    }
+
+    // --- Caret zero-major edge cases ---
+
+    #[test]
+    fn test_caret_zero_major_nonzero_minor() {
+        // ^0.2.3 should match 0.2.x but not 0.3.x
+        let c: VersionConstraint = "^0.2.3".parse().unwrap();
+        assert!(c.matches(&"0.2.3".parse().unwrap()));
+        assert!(c.matches(&"0.2.9".parse().unwrap()));
+        assert!(!c.matches(&"0.3.0".parse().unwrap()));
+        assert!(!c.matches(&"0.2.2".parse().unwrap()));
+        assert!(!c.matches(&"1.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_caret_zero_major_zero_minor() {
+        // ^0.0.3 should match only 0.0.3
+        let c: VersionConstraint = "^0.0.3".parse().unwrap();
+        assert!(c.matches(&"0.0.3".parse().unwrap()));
+        assert!(!c.matches(&"0.0.4".parse().unwrap()));
+        assert!(!c.matches(&"0.1.0".parse().unwrap()));
+    }
+
+    // --- matches() for And / Or ---
+
+    #[test]
+    fn test_and_both_match() {
+        let c = VersionConstraint::And(vec![
+            VersionConstraint::gte("1.0.0".parse().unwrap()),
+            VersionConstraint::lt("2.0.0".parse().unwrap()),
+        ]);
+        assert!(c.matches(&"1.5.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_and_one_fails() {
+        let c = VersionConstraint::And(vec![
+            VersionConstraint::gte("1.0.0".parse().unwrap()),
+            VersionConstraint::lt("2.0.0".parse().unwrap()),
+        ]);
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+        assert!(!c.matches(&"0.9.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_or_one_matches() {
+        let c = VersionConstraint::Or(vec![
+            VersionConstraint::exact("1.0.0".parse().unwrap()),
+            VersionConstraint::exact("2.0.0".parse().unwrap()),
+        ]);
+        assert!(c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_or_none_match() {
+        let c = VersionConstraint::Or(vec![
+            VersionConstraint::exact("1.0.0".parse().unwrap()),
+            VersionConstraint::exact("2.0.0".parse().unwrap()),
+        ]);
+        assert!(!c.matches(&"3.0.0".parse().unwrap()));
+    }
+
+    // --- Range edge cases ---
+
+    #[test]
+    fn test_range_exclusive_min() {
+        let c = VersionConstraint::Range {
+            min: Some("1.0.0".parse().unwrap()),
+            max: Some("2.0.0".parse().unwrap()),
+            min_inclusive: false,
+            max_inclusive: false,
+        };
+        assert!(!c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"1.0.1".parse().unwrap()));
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_range_inclusive_max() {
+        let c = VersionConstraint::Range {
+            min: Some("1.0.0".parse().unwrap()),
+            max: Some("2.0.0".parse().unwrap()),
+            min_inclusive: true,
+            max_inclusive: true,
+        };
+        assert!(c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"2.0.0".parse().unwrap()));
+        assert!(!c.matches(&"2.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_range_open_min() {
+        let c = VersionConstraint::Range {
+            min: None,
+            max: Some("2.0.0".parse().unwrap()),
+            min_inclusive: true,
+            max_inclusive: false,
+        };
+        assert!(c.matches(&"0.0.1".parse().unwrap()));
+        assert!(c.matches(&"1.9.9".parse().unwrap()));
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_range_open_max() {
+        let c = VersionConstraint::Range {
+            min: Some("1.0.0".parse().unwrap()),
+            max: None,
+            min_inclusive: true,
+            max_inclusive: true,
+        };
+        assert!(c.matches(&"1.0.0".parse().unwrap()));
+        assert!(c.matches(&"99.0.0".parse().unwrap()));
+        assert!(!c.matches(&"0.9.9".parse().unwrap()));
+    }
+
+    // --- Utility methods ---
+
+    #[test]
+    fn test_is_satisfied_by_true() {
+        let c: VersionConstraint = "^1.0.0".parse().unwrap();
+        let versions: Vec<Version> = vec![
+            "0.9.0".parse().unwrap(),
+            "1.2.0".parse().unwrap(),
+            "2.0.0".parse().unwrap(),
+        ];
+        assert!(c.is_satisfied_by(&versions));
+    }
+
+    #[test]
+    fn test_is_satisfied_by_false() {
+        let c: VersionConstraint = "^3.0.0".parse().unwrap();
+        let versions: Vec<Version> = vec![
+            "1.0.0".parse().unwrap(),
+            "2.0.0".parse().unwrap(),
+        ];
+        assert!(!c.is_satisfied_by(&versions));
+    }
+
+    #[test]
+    fn test_select_best() {
+        let c: VersionConstraint = "^1.0.0".parse().unwrap();
+        let versions: Vec<Version> = vec![
+            "1.0.0".parse().unwrap(),
+            "1.5.0".parse().unwrap(),
+            "1.9.0".parse().unwrap(),
+            "2.0.0".parse().unwrap(),
+        ];
+        assert_eq!(c.select_best(&versions), Some(&"1.9.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_select_best_none() {
+        let c: VersionConstraint = "^3.0.0".parse().unwrap();
+        let versions: Vec<Version> = vec![
+            "1.0.0".parse().unwrap(),
+            "2.0.0".parse().unwrap(),
+        ];
+        assert_eq!(c.select_best(&versions), None);
+    }
+
+    // --- Parsing variants ---
+
+    #[test]
+    fn test_parse_empty_string() {
+        let c: VersionConstraint = "".parse().unwrap();
+        assert_eq!(c, VersionConstraint::Any);
+    }
+
+    #[test]
+    fn test_parse_star() {
+        let c: VersionConstraint = "*".parse().unwrap();
+        assert_eq!(c, VersionConstraint::Any);
+    }
+
+    #[test]
+    fn test_parse_latest() {
+        let c: VersionConstraint = "latest".parse().unwrap();
+        assert_eq!(c, VersionConstraint::Any);
+    }
+
+    #[test]
+    fn test_parse_or() {
+        let c: VersionConstraint = "1.0.0 || 2.0.0".parse().unwrap();
+        if let VersionConstraint::Or(parts) = &c {
+            assert_eq!(parts.len(), 2);
+        } else {
+            panic!("Expected Or variant");
+        }
+    }
+
+    #[test]
+    fn test_parse_and_space_separated() {
+        let c: VersionConstraint = ">=1.0.0 <2.0.0".parse().unwrap();
+        if let VersionConstraint::And(parts) = &c {
+            assert_eq!(parts.len(), 2);
+        } else {
+            panic!("Expected And variant");
+        }
+    }
+
+    #[test]
+    fn test_parse_gte() {
+        let c: VersionConstraint = ">=1.2.3".parse().unwrap();
+        assert_eq!(c, VersionConstraint::GreaterThanOrEqual("1.2.3".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_gt() {
+        let c: VersionConstraint = ">1.2.3".parse().unwrap();
+        assert_eq!(c, VersionConstraint::GreaterThan("1.2.3".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_lte() {
+        let c: VersionConstraint = "<=1.2.3".parse().unwrap();
+        assert_eq!(c, VersionConstraint::LessThanOrEqual("1.2.3".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_lt() {
+        let c: VersionConstraint = "<1.2.3".parse().unwrap();
+        assert_eq!(c, VersionConstraint::LessThan("1.2.3".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_equals_prefix() {
+        let c: VersionConstraint = "=1.2.3".parse().unwrap();
+        assert_eq!(c, VersionConstraint::Exact("1.2.3".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_wildcard_uppercase_x() {
+        let c: VersionConstraint = "1.X".parse().unwrap();
+        assert!(c.matches(&"1.5.0".parse().unwrap()));
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_wildcard_star() {
+        let c: VersionConstraint = "1.*".parse().unwrap();
+        assert!(c.matches(&"1.5.0".parse().unwrap()));
+        assert!(!c.matches(&"2.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_parse_wildcard_minor_patch() {
+        let c: VersionConstraint = "1.2.x".parse().unwrap();
+        assert!(c.matches(&"1.2.0".parse().unwrap()));
+        assert!(c.matches(&"1.2.9".parse().unwrap()));
+        assert!(!c.matches(&"1.3.0".parse().unwrap()));
+    }
+
+    // --- Display roundtrip ---
+
+    #[test]
+    fn test_display_any() {
+        assert_eq!(VersionConstraint::Any.to_string(), "*");
+    }
+
+    #[test]
+    fn test_display_exact() {
+        let c = VersionConstraint::exact("1.2.3".parse().unwrap());
+        assert_eq!(c.to_string(), "=1.2.3");
+    }
+
+    #[test]
+    fn test_display_gt() {
+        let c = VersionConstraint::gt("1.0.0".parse().unwrap());
+        assert_eq!(c.to_string(), ">1.0.0");
+    }
+
+    #[test]
+    fn test_display_gte() {
+        let c = VersionConstraint::gte("1.0.0".parse().unwrap());
+        assert_eq!(c.to_string(), ">=1.0.0");
+    }
+
+    #[test]
+    fn test_display_lt() {
+        let c = VersionConstraint::lt("2.0.0".parse().unwrap());
+        assert_eq!(c.to_string(), "<2.0.0");
+    }
+
+    #[test]
+    fn test_display_lte() {
+        let c = VersionConstraint::lte("2.0.0".parse().unwrap());
+        assert_eq!(c.to_string(), "<=2.0.0");
+    }
+
+    #[test]
+    fn test_display_caret() {
+        let c = VersionConstraint::caret("1.2.3".parse().unwrap());
+        assert_eq!(c.to_string(), "^1.2.3");
+    }
+
+    #[test]
+    fn test_display_tilde() {
+        let c = VersionConstraint::tilde("1.2.3".parse().unwrap());
+        assert_eq!(c.to_string(), "~1.2.3");
+    }
+
+    #[test]
+    fn test_display_range_both() {
+        let c = VersionConstraint::Range {
+            min: Some("1.0.0".parse().unwrap()),
+            max: Some("2.0.0".parse().unwrap()),
+            min_inclusive: true,
+            max_inclusive: false,
+        };
+        assert_eq!(c.to_string(), ">=1.0.0 <2.0.0");
+    }
+
+    #[test]
+    fn test_display_range_min_only() {
+        let c = VersionConstraint::Range {
+            min: Some("1.0.0".parse().unwrap()),
+            max: None,
+            min_inclusive: true,
+            max_inclusive: false,
+        };
+        assert_eq!(c.to_string(), ">=1.0.0");
+    }
+
+    #[test]
+    fn test_display_range_max_only() {
+        let c = VersionConstraint::Range {
+            min: None,
+            max: Some("2.0.0".parse().unwrap()),
+            min_inclusive: false,
+            max_inclusive: false,
+        };
+        assert_eq!(c.to_string(), "<2.0.0");
+    }
+
+    #[test]
+    fn test_display_and() {
+        let c = VersionConstraint::And(vec![
+            VersionConstraint::gte("1.0.0".parse().unwrap()),
+            VersionConstraint::lt("2.0.0".parse().unwrap()),
+        ]);
+        assert_eq!(c.to_string(), ">=1.0.0 <2.0.0");
+    }
+
+    #[test]
+    fn test_display_or() {
+        let c = VersionConstraint::Or(vec![
+            VersionConstraint::exact("1.0.0".parse().unwrap()),
+            VersionConstraint::exact("2.0.0".parse().unwrap()),
+        ]);
+        assert_eq!(c.to_string(), "=1.0.0 || =2.0.0");
+    }
 }

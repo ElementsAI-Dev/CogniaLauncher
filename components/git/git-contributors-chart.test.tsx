@@ -45,4 +45,19 @@ describe('GitContributorsChart', () => {
     const bars = container.querySelectorAll('.bg-primary');
     expect(bars.length).toBe(3);
   });
+
+  it('calculates correct percentages', () => {
+    render(<GitContributorsChart contributors={contributors} />);
+    // 150/(150+42+5) = 76.1%, 42/(150+42+5) = 21.3%, 5/(150+42+5) = 2.5%
+    expect(screen.getByText(/76\.1%/)).toBeInTheDocument();
+    expect(screen.getByText(/21\.3%/)).toBeInTheDocument();
+    expect(screen.getByText(/2\.5%/)).toBeInTheDocument();
+  });
+
+  it('renders single contributor correctly', () => {
+    const single = [{ name: 'Solo Dev', email: 'solo@e.com', commitCount: 10 }];
+    render(<GitContributorsChart contributors={single} />);
+    expect(screen.getByText('Solo Dev')).toBeInTheDocument();
+    expect(screen.getByText(/100\.0%/)).toBeInTheDocument();
+  });
 });

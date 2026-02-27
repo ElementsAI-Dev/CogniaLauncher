@@ -527,3 +527,56 @@ impl SystemPackageProvider for FnmProvider {
         Ok(versions.iter().any(|v| v.version == name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_provider_metadata() {
+        let provider = FnmProvider::new();
+        assert_eq!(provider.id(), "fnm");
+        assert_eq!(provider.display_name(), "fnm (Fast Node Manager)");
+        assert_eq!(provider.priority(), 88);
+    }
+
+    #[test]
+    fn test_capabilities() {
+        let provider = FnmProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::Install));
+        assert!(caps.contains(&Capability::Uninstall));
+        assert!(caps.contains(&Capability::Search));
+        assert!(caps.contains(&Capability::List));
+        assert!(caps.contains(&Capability::VersionSwitch));
+        assert!(caps.contains(&Capability::MultiVersion));
+        assert!(caps.contains(&Capability::ProjectLocal));
+    }
+
+    #[test]
+    fn test_supported_platforms() {
+        let provider = FnmProvider::new();
+        let platforms = provider.supported_platforms();
+        assert!(platforms.contains(&Platform::Windows));
+        assert!(platforms.contains(&Platform::MacOS));
+        assert!(platforms.contains(&Platform::Linux));
+    }
+
+    #[test]
+    fn test_requires_elevation() {
+        let provider = FnmProvider::new();
+        assert!(!provider.requires_elevation("install"));
+        assert!(!provider.requires_elevation("uninstall"));
+    }
+
+    #[test]
+    fn test_version_file_name() {
+        let provider = FnmProvider::new();
+        assert_eq!(provider.version_file_name(), ".node-version");
+    }
+
+    #[test]
+    fn test_default_impl() {
+        let _provider = FnmProvider::default();
+    }
+}

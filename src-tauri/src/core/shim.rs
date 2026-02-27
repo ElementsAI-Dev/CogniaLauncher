@@ -422,4 +422,217 @@ mod tests {
         assert_eq!(config.env_type, "node");
         assert_eq!(config.version, Some("18.0.0".into()));
     }
+
+    #[test]
+    fn test_shim_config_no_version() {
+        let config = ShimConfig {
+            env_type: "python".into(),
+            binary_name: "python3".into(),
+            version: None,
+            target_path: PathBuf::from("/usr/bin/python3"),
+        };
+
+        assert_eq!(config.binary_name, "python3");
+        assert!(config.version.is_none());
+    }
+
+    #[test]
+    fn test_shim_config_serde_roundtrip() {
+        let config = ShimConfig {
+            env_type: "node".into(),
+            binary_name: "node".into(),
+            version: Some("20.10.0".into()),
+            target_path: PathBuf::from("/home/user/.fnm/node"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deser: ShimConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deser.env_type, "node");
+        assert_eq!(deser.binary_name, "node");
+        assert_eq!(deser.version, Some("20.10.0".into()));
+    }
+
+    #[test]
+    fn test_shim_config_serde_no_version() {
+        let config = ShimConfig {
+            env_type: "go".into(),
+            binary_name: "go".into(),
+            version: None,
+            target_path: PathBuf::from("/usr/local/go/bin/go"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("\"version\":null"));
+
+        let deser: ShimConfig = serde_json::from_str(&json).unwrap();
+        assert!(deser.version.is_none());
+    }
+
+    #[test]
+    fn test_path_manager_new() {
+        let pm = PathManager::new(PathBuf::from("/tmp/shims"));
+        assert!(!pm.is_in_path());
+    }
+
+    #[test]
+    fn test_path_manager_get_add_to_path_command() {
+        let pm = PathManager::new(PathBuf::from("/tmp/test-shims"));
+        let cmd = pm.get_add_to_path_command();
+        assert!(!cmd.is_empty());
+        // Should contain the shim dir path
+        assert!(cmd.contains("test-shims"));
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = ShimManager::new(dir.path()).await.unwrap();
+
+        assert!(manager.list_shims().is_empty());
+        assert!(manager.shim_dir().exists());
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_create_and_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        let config = ShimConfig {
+            env_type: "node".into(),
+            binary_name: "node".into(),
+            version: Some("20.0.0".into()),
+            target_path: PathBuf::from("/usr/local/bin/node"),
+        };
+
+        let shim_path = manager.create_shim(config).await.unwrap();
+        assert!(!shim_path.to_string_lossy().is_empty());
+
+        let shims = manager.list_shims();
+        assert_eq!(shims.len(), 1);
+        assert_eq!(shims[0].binary_name, "node");
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_remove() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        let config = ShimConfig {
+            env_type: "node".into(),
+            binary_name: "node".into(),
+            version: Some("20.0.0".into()),
+            target_path: PathBuf::from("/usr/local/bin/node"),
+        };
+
+        manager.create_shim(config).await.unwrap();
+        assert_eq!(manager.list_shims().len(), 1);
+
+        let removed = manager.remove_shim("node").await.unwrap();
+        assert!(removed);
+        assert!(manager.list_shims().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_remove_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        let removed = manager.remove_shim("nonexistent").await.unwrap();
+        assert!(!removed);
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_update_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        let config = ShimConfig {
+            env_type: "node".into(),
+            binary_name: "node".into(),
+            version: Some("18.0.0".into()),
+            target_path: PathBuf::from("/usr/local/bin/node"),
+        };
+
+        manager.create_shim(config).await.unwrap();
+        manager
+            .update_shim_version("node", Some("20.0.0".into()))
+            .await
+            .unwrap();
+
+        let shims = manager.list_shims();
+        assert_eq!(shims[0].version, Some("20.0.0".into()));
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_update_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        let result = manager
+            .update_shim_version("nonexistent", Some("1.0.0".into()))
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_regenerate_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = ShimManager::new(dir.path()).await.unwrap();
+
+        for name in &["node", "npm", "npx"] {
+            manager
+                .create_shim(ShimConfig {
+                    env_type: "node".into(),
+                    binary_name: (*name).into(),
+                    version: Some("20.0.0".into()),
+                    target_path: PathBuf::from(format!("/usr/local/bin/{}", name)),
+                })
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(manager.list_shims().len(), 3);
+
+        // Regenerate should succeed without errors
+        manager.regenerate_all().await.unwrap();
+        assert_eq!(manager.list_shims().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_shim_manager_configs_persist() {
+        let dir = tempfile::tempdir().unwrap();
+
+        {
+            let mut manager = ShimManager::new(dir.path()).await.unwrap();
+            manager
+                .create_shim(ShimConfig {
+                    env_type: "node".into(),
+                    binary_name: "node".into(),
+                    version: Some("20.0.0".into()),
+                    target_path: PathBuf::from("/usr/local/bin/node"),
+                })
+                .await
+                .unwrap();
+        }
+
+        // Recreating manager should load saved configs
+        let manager2 = ShimManager::new(dir.path()).await.unwrap();
+        assert_eq!(manager2.list_shims().len(), 1);
+        assert_eq!(manager2.list_shims()[0].binary_name, "node");
+    }
+
+    #[test]
+    fn test_shim_manager_get_shim_path() {
+        // Test the path construction
+        let shim_dir = PathBuf::from("/tmp/test-shims/shims");
+        let manager = ShimManager {
+            shim_dir,
+            configs: HashMap::new(),
+        };
+
+        let path = manager.get_shim_path("node");
+        assert!(path.to_string_lossy().contains("node"));
+        assert!(path.to_string_lossy().contains("shims"));
+    }
 }

@@ -85,4 +85,145 @@ describe("BubbleHint", () => {
     document.body.removeChild(target);
     window.IntersectionObserver = originalIO;
   });
+
+  it("renders hint title and description when target is visible", async () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-hint", "test-target");
+    target.style.width = "100px";
+    target.style.height = "50px";
+    document.body.appendChild(target);
+
+    const mockObserve = jest.fn();
+    const mockDisconnect = jest.fn();
+    const originalIO = window.IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      setTimeout(() => {
+        callback(
+          [{ isIntersecting: true }] as IntersectionObserverEntry[],
+          {} as IntersectionObserver,
+        );
+      }, 0);
+      return {
+        observe: mockObserve,
+        disconnect: mockDisconnect,
+        unobserve: jest.fn(),
+        root: null,
+        rootMargin: "",
+        thresholds: [],
+        takeRecords: () => [],
+      };
+    }) as unknown as typeof IntersectionObserver;
+
+    render(<BubbleHint hint={mockHint} onDismiss={jest.fn()} />);
+
+    await screen.findByText("Customize Dashboard", {}, { timeout: 2000 });
+    expect(screen.getByText("Click to customize widgets")).toBeInTheDocument();
+
+    document.body.removeChild(target);
+    window.IntersectionObserver = originalIO;
+  });
+
+  it("renders with role=status for accessibility", async () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-hint", "test-target");
+    target.style.width = "100px";
+    target.style.height = "50px";
+    document.body.appendChild(target);
+
+    const originalIO = window.IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      setTimeout(() => {
+        callback(
+          [{ isIntersecting: true }] as IntersectionObserverEntry[],
+          {} as IntersectionObserver,
+        );
+      }, 0);
+      return {
+        observe: jest.fn(),
+        disconnect: jest.fn(),
+        unobserve: jest.fn(),
+        root: null,
+        rootMargin: "",
+        thresholds: [],
+        takeRecords: () => [],
+      };
+    }) as unknown as typeof IntersectionObserver;
+
+    render(<BubbleHint hint={mockHint} onDismiss={jest.fn()} />);
+
+    await screen.findByText("Customize Dashboard", {}, { timeout: 2000 });
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    document.body.removeChild(target);
+    window.IntersectionObserver = originalIO;
+  });
+
+  it("does not render when target is not intersecting", () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-hint", "test-target");
+    document.body.appendChild(target);
+
+    const originalIO = window.IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      setTimeout(() => {
+        callback(
+          [{ isIntersecting: false }] as IntersectionObserverEntry[],
+          {} as IntersectionObserver,
+        );
+      }, 0);
+      return {
+        observe: jest.fn(),
+        disconnect: jest.fn(),
+        unobserve: jest.fn(),
+        root: null,
+        rootMargin: "",
+        thresholds: [],
+        takeRecords: () => [],
+      };
+    }) as unknown as typeof IntersectionObserver;
+
+    const { container } = render(
+      <BubbleHint hint={mockHint} onDismiss={jest.fn()} />,
+    );
+    // Not visible since isIntersecting is false
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
+    document.body.removeChild(target);
+    window.IntersectionObserver = originalIO;
+  });
+
+  it("accepts different side prop values", async () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-hint", "test-target");
+    target.style.width = "100px";
+    target.style.height = "50px";
+    document.body.appendChild(target);
+
+    const originalIO = window.IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      setTimeout(() => {
+        callback(
+          [{ isIntersecting: true }] as IntersectionObserverEntry[],
+          {} as IntersectionObserver,
+        );
+      }, 0);
+      return {
+        observe: jest.fn(),
+        disconnect: jest.fn(),
+        unobserve: jest.fn(),
+        root: null,
+        rootMargin: "",
+        thresholds: [],
+        takeRecords: () => [],
+      };
+    }) as unknown as typeof IntersectionObserver;
+
+    const topHint = { ...mockHint, side: "top" as const };
+    render(<BubbleHint hint={topHint} onDismiss={jest.fn()} />);
+    await screen.findByText("Customize Dashboard", {}, { timeout: 2000 });
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    document.body.removeChild(target);
+    window.IntersectionObserver = originalIO;
+  });
 });

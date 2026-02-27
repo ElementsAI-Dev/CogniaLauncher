@@ -6,6 +6,14 @@ jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
 
+jest.mock("@/lib/clipboard", () => ({
+  writeClipboard: jest.fn(),
+}));
+
+jest.mock("@/lib/platform", () => ({
+  isWindows: () => true,
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "onboarding.shellTitle": "Shell Integration",
@@ -51,5 +59,47 @@ describe("ShellInitStep", () => {
   it("renders hint text", () => {
     render(<ShellInitStep t={mockT} />);
     expect(screen.getByText("You can do this later in settings")).toBeInTheDocument();
+  });
+
+  it("shows success toast after successful copy", async () => {
+    const { writeClipboard } = jest.requireMock("@/lib/clipboard");
+    const { toast } = jest.requireMock("sonner");
+    (writeClipboard as jest.Mock).mockResolvedValueOnce(undefined);
+
+    render(<ShellInitStep t={mockT} />);
+    await userEvent.click(screen.getByText("Copy"));
+
+    expect(writeClipboard).toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Copied!");
+  });
+
+  it("shows error toast when copy fails", async () => {
+    const { writeClipboard } = jest.requireMock("@/lib/clipboard");
+    const { toast } = jest.requireMock("sonner");
+    (writeClipboard as jest.Mock).mockRejectedValueOnce(new Error("fail"));
+
+    render(<ShellInitStep t={mockT} />);
+    await userEvent.click(screen.getByText("Copy"));
+
+    expect(toast.error).toHaveBeenCalledWith("Copy failed");
+  });
+
+  it("resets copied state when switching shell", async () => {
+    const { writeClipboard } = jest.requireMock("@/lib/clipboard");
+    (writeClipboard as jest.Mock).mockResolvedValue(undefined);
+
+    render(<ShellInitStep t={mockT} />);
+    // Copy on current shell
+    await userEvent.click(screen.getByText("Copy"));
+    // Switch shell
+    await userEvent.click(screen.getByText("Bash"));
+    // Should show copy button (not copied)
+    expect(screen.getByText("Copy")).toBeInTheDocument();
+  });
+
+  it("shows PowerShell command by default on Windows", () => {
+    render(<ShellInitStep t={mockT} />);
+    expect(screen.getByText("$PROFILE")).toBeInTheDocument();
+    expect(screen.getByText(/\$env:PATH/)).toBeInTheDocument();
   });
 });

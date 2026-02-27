@@ -272,4 +272,61 @@ describe("QuickSearch", () => {
       expect(screen.queryByText("Recent Searches")).not.toBeInTheDocument();
     });
   });
+
+  it("clears history when clear recent is clicked", async () => {
+    localStorage.setItem(
+      "cognia-dashboard-search-history",
+      JSON.stringify(["prev-search"]),
+    );
+
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("Clear recent")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("Clear recent"));
+
+    expect(localStorage.getItem("cognia-dashboard-search-history")).toBeNull();
+  });
+
+  it("shows quick actions when focused with history", async () => {
+    localStorage.setItem(
+      "cognia-dashboard-search-history",
+      JSON.stringify(["test"]),
+    );
+
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
+      expect(screen.getByText("Add Environment")).toBeInTheDocument();
+    });
+  });
+
+  it("accepts className prop", () => {
+    const { container } = render(
+      <QuickSearch
+        environments={mockEnvironments}
+        packages={mockPackages}
+        className="custom-search"
+      />,
+    );
+    expect(container.firstChild).toHaveClass("custom-search");
+  });
+
 });

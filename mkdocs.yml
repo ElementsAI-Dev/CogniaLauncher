@@ -3,6 +3,7 @@ site_description: 跨平台环境与包管理器 — 完整技术文档
 site_url: https://cognialauncher.dev/
 repo_url: https://github.com/AstroAir/CogniaLauncher
 repo_name: AstroAir/CogniaLauncher
+docs_dir: docs/zh
 
 theme:
   name: material

@@ -108,4 +108,76 @@ describe('TerminalPsModulesTable', () => {
     fireEvent.click(screen.getByText('PSReadLine'));
     expect(screen.getByText('terminal.moduleDetail')).toBeInTheDocument();
   });
+
+  it('calls both fetch callbacks when refresh clicked', () => {
+    const onFetchModules = jest.fn().mockResolvedValue(undefined);
+    const onFetchScripts = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalPsModulesTable
+        modules={modules}
+        scripts={scripts}
+        onFetchModules={onFetchModules}
+        onFetchScripts={onFetchScripts}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /common\.refresh/i }));
+    expect(onFetchModules).toHaveBeenCalledTimes(1);
+    expect(onFetchScripts).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onUninstallModule when uninstall button clicked', () => {
+    const onUninstallModule = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalPsModulesTable
+        modules={modules}
+        scripts={scripts}
+        onFetchModules={jest.fn()}
+        onFetchScripts={jest.fn()}
+        onUninstallModule={onUninstallModule}
+      />,
+    );
+
+    const uninstallButtons = screen.getAllByTitle('terminal.uninstallModule');
+    expect(uninstallButtons.length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(uninstallButtons[0]);
+    expect(onUninstallModule).toHaveBeenCalledWith('PSReadLine');
+  });
+
+  it('calls onUpdateModule when update button clicked', () => {
+    const onUpdateModule = jest.fn().mockResolvedValue(undefined);
+
+    render(
+      <TerminalPsModulesTable
+        modules={modules}
+        scripts={scripts}
+        onFetchModules={jest.fn()}
+        onFetchScripts={jest.fn()}
+        onUpdateModule={onUpdateModule}
+      />,
+    );
+
+    const updateButtons = screen.getAllByTitle('terminal.updateModule');
+    expect(updateButtons.length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(updateButtons[0]);
+    expect(onUpdateModule).toHaveBeenCalledWith('PSReadLine');
+  });
+
+  it('shows noSearchResults when search matches nothing', () => {
+    render(
+      <TerminalPsModulesTable
+        modules={modules}
+        scripts={scripts}
+        onFetchModules={jest.fn()}
+        onFetchScripts={jest.fn()}
+      />,
+    );
+
+    const searchInput = screen.getByPlaceholderText('terminal.searchModules');
+    fireEvent.change(searchInput, { target: { value: 'nonexistent-xyz' } });
+
+    expect(screen.getByText('terminal.noSearchResults')).toBeInTheDocument();
+  });
 });

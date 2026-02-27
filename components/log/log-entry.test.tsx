@@ -172,4 +172,101 @@ describe("LogEntry", () => {
     expect(screen.getByText(/Line 1/)).toBeInTheDocument();
     expect(screen.getByText(/Line 2/)).toBeInTheDocument();
   });
+
+  describe("prop variations", () => {
+    it("hides timestamp when showTimestamp=false", () => {
+      render(<LogEntry entry={mockEntry} showTimestamp={false} />);
+      expect(screen.queryByText(/\d{2}:\d{2}:\d{2}/)).not.toBeInTheDocument();
+    });
+
+    it("hides target when showTarget=false", () => {
+      render(<LogEntry entry={mockEntry} showTarget={false} />);
+      expect(screen.queryByText("app")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("regex highlight", () => {
+    it("highlights with regex pattern when highlightRegex=true", () => {
+      render(
+        <LogEntry
+          entry={mockEntry}
+          highlightText="log"
+          highlightRegex
+        />,
+      );
+      expect(screen.getByText("log", { selector: "mark" })).toBeInTheDocument();
+    });
+
+    it("falls back to plain text when regex is invalid", () => {
+      render(
+        <LogEntry
+          entry={mockEntry}
+          highlightText="[invalid"
+          highlightRegex
+        />,
+      );
+      // Should still render the message without highlighting
+      expect(screen.getByText("Test log message")).toBeInTheDocument();
+    });
+
+    it("does not highlight when highlightText is empty", () => {
+      render(
+        <LogEntry entry={mockEntry} highlightText="" />,
+      );
+      expect(screen.queryByRole("mark")).not.toBeInTheDocument();
+      expect(screen.getByText("Test log message")).toBeInTheDocument();
+    });
+  });
+
+  describe("expand/collapse cycle", () => {
+    it("toggles expand then collapse for long messages", async () => {
+      const user = userEvent.setup();
+      const longMessage = "A".repeat(200);
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: longMessage }}
+          allowCollapse
+        />,
+      );
+
+      const expandButton = screen.getByRole("button", { name: /expand/i });
+      await user.click(expandButton);
+      expect(screen.getByRole("button", { name: /collapse/i })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /collapse/i }));
+      expect(screen.getByRole("button", { name: /expand/i })).toBeInTheDocument();
+    });
+
+    it("shows expand button for multiline messages with allowCollapse", () => {
+      const multiline = "Line1\nLine2\nLine3\nLine4\nLine5\nLine6\nLine7\nLine8\nLine9\nLine10";
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: multiline }}
+          allowCollapse
+        />,
+      );
+      expect(screen.getByRole("button", { name: /expand/i })).toBeInTheDocument();
+    });
+
+    it("does not show expand button when allowCollapse=false even for long messages", () => {
+      const longMessage = "A".repeat(200);
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: longMessage }}
+          allowCollapse={false}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /expand/i })).not.toBeInTheDocument();
+    });
+
+    it("does not show expand button for short messages even with allowCollapse", () => {
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: "short" }}
+          allowCollapse
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /expand/i })).not.toBeInTheDocument();
+    });
+  });
 });

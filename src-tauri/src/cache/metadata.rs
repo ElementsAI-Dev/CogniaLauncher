@@ -426,4 +426,139 @@ mod tests {
         let stats = cache.stats().await.unwrap();
         assert_eq!(stats.entry_count, 0);
     }
+
+    #[tokio::test]
+    async fn test_set_with_custom_ttl() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        let data = TestData {
+            name: "ttl-test".to_string(),
+            value: 99,
+        };
+
+        // Set with very short TTL (already expired)
+        cache.set_with_ttl("ttl-key", &data, -1).await.unwrap();
+
+        let cached = cache.get::<TestData>("ttl-key").await.unwrap().unwrap();
+        assert!(cached.is_stale);
+        assert_eq!(cached.data, data);
+
+        // Set with long TTL
+        cache.set_with_ttl("ttl-key-long", &data, 86400).await.unwrap();
+
+        let cached = cache.get::<TestData>("ttl-key-long").await.unwrap().unwrap();
+        assert!(!cached.is_stale);
+    }
+
+    #[tokio::test]
+    async fn test_stats_fields() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        // Add 3 entries (all expired due to TTL=-1)
+        for i in 0..3 {
+            cache
+                .set(&format!("stats-{}", i), &format!("value-{}", i))
+                .await
+                .unwrap();
+        }
+
+        let stats = cache.stats().await.unwrap();
+        assert_eq!(stats.entry_count, 3);
+        assert!(stats.total_size > 0);
+        assert_eq!(stats.expired_count, 3);
+        assert!(stats.location.to_string_lossy().contains("metadata"));
+    }
+
+    #[tokio::test]
+    async fn test_get_missing_file_on_disk() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        let data = TestData {
+            name: "orphan".to_string(),
+            value: 42,
+        };
+        cache.set("orphan-key", &data).await.unwrap();
+
+        // Manually delete the metadata file from disk
+        let metadata_dir = dir.path().join("metadata");
+        let mut entries = tokio::fs::read_dir(&metadata_dir).await.unwrap();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            tokio::fs::remove_file(entry.path()).await.unwrap();
+        }
+
+        // get() should return None and clean up the DB entry
+        let result = cache.get::<TestData>("orphan-key").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_fresh_cache() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        let data = TestData {
+            name: "cached".to_string(),
+            value: 1,
+        };
+        cache.set("fetch-key", &data).await.unwrap();
+
+        // Should return cached data without calling fetch
+        let result = cache
+            .get_or_fetch::<TestData, _, _>("fetch-key", || async {
+                panic!("fetch should not be called when cache is fresh");
+            })
+            .await
+            .unwrap();
+        assert_eq!(result.name, "cached");
+    }
+
+    #[tokio::test]
+    async fn test_get_or_fetch_stale_cache() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        let stale_data = TestData {
+            name: "stale".to_string(),
+            value: 1,
+        };
+        cache.set("stale-key", &stale_data).await.unwrap();
+
+        // Fetch should be called because cache is stale
+        let result = cache
+            .get_or_fetch::<TestData, _, _>("stale-key", || async {
+                Ok(TestData {
+                    name: "fresh".to_string(),
+                    value: 2,
+                })
+            })
+            .await
+            .unwrap();
+        assert_eq!(result.name, "fresh");
+        assert_eq!(result.value, 2);
+    }
+
+    #[tokio::test]
+    async fn test_clean_expired_wrapper() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open_with_ttl(dir.path(), -1).await.unwrap();
+
+        cache.set("exp-wrap", &"value").await.unwrap();
+
+        let count = cache.clean_expired().await.unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_clean_all_wrapper() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        cache.set("all-wrap", &"value").await.unwrap();
+
+        let count = cache.clean_all().await.unwrap();
+        assert_eq!(count, 1);
+    }
 }

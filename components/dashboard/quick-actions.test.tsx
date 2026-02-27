@@ -140,4 +140,32 @@ describe("QuickActionsInline", () => {
 
     expect(container.firstChild).toHaveClass("custom-class");
   });
+
+  it("navigates to packages on Install Package click", async () => {
+    const user = userEvent.setup();
+    render(<QuickActionsInline />);
+
+    await user.click(screen.getByRole("button", { name: /install package/i }));
+
+    expect(mockPush).toHaveBeenCalledWith("/packages");
+  });
+
+  it("disables refresh button when isRefreshing is true", () => {
+    render(<QuickActionsInline isRefreshing={true} />);
+
+    const refreshButton = screen.getByRole("button", { name: /refresh all/i });
+    expect(refreshButton).toBeDisabled();
+  });
+
+  it("shows dropdown secondary actions", async () => {
+    const user = userEvent.setup();
+    render(<QuickActionsInline />);
+
+    const moreButton = screen.getByRole("button", { name: /more actions/i });
+    await user.click(moreButton);
+
+    expect(screen.getByText("Clear Cache")).toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("View Logs")).toBeInTheDocument();
+  });
 });
