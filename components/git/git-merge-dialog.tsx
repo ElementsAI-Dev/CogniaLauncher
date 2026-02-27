@@ -13,13 +13,7 @@ import {
 } from '@/components/ui/select';
 import { GitMerge, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitBranchInfo } from '@/types/tauri';
-
-interface GitMergeDialogProps {
-  branches: GitBranchInfo[];
-  currentBranch: string;
-  onMerge: (branch: string, noFf?: boolean) => Promise<string>;
-}
+import type { GitMergeDialogProps } from '@/types/git';
 
 export function GitMergeDialog({ branches, currentBranch, onMerge }: GitMergeDialogProps) {
   const { t } = useLocale();

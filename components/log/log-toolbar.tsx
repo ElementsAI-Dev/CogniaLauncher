@@ -32,7 +32,9 @@ import {
   CollapsibleContent,
 } from "@/components/ui/collapsible";
 import { Toggle } from "@/components/ui/toggle";
-import { useLogStore, ALL_LEVELS, type LogLevel } from "@/lib/stores/log";
+import { useLogStore } from "@/lib/stores/log";
+import { ALL_LEVELS, LEVEL_COLORS } from "@/lib/constants/log";
+import { formatDateTimeInput, parseDateTimeInput } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
   Search,
@@ -47,14 +49,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useCallback, useMemo, useState } from "react";
 
-const LEVEL_COLORS: Record<LogLevel, string> = {
-  trace: "text-slate-500",
-  debug: "text-blue-500",
-  info: "text-green-500",
-  warn: "text-yellow-600 dark:text-yellow-400",
-  error: "text-red-500",
-};
-
 interface LogToolbarProps {
   onExport?: (format: "txt" | "json") => void;
   showRealtimeControls?: boolean;
@@ -64,19 +58,6 @@ interface LogToolbarProps {
 type TimeRangePreset = "all" | "1h" | "24h" | "7d" | "custom";
 
 const PRESET_ORDER: TimeRangePreset[] = ["all", "1h", "24h", "7d", "custom"];
-
-function formatDateTimeInput(value: number | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  const tzOffset = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
-}
-
-function parseDateTimeInput(value: string) {
-  if (!value) return null;
-  const parsed = new Date(value).getTime();
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 export function LogToolbar({
   onExport,

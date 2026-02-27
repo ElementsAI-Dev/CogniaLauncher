@@ -20,6 +20,24 @@ jest.mock('@/lib/clipboard', () => ({
   writeClipboard: (...args: unknown[]) => mockWriteClipboard(...args),
 }));
 
+// Mock the extracted scroll utility — replicate behavior for integration tests
+jest.mock('@/lib/docs/scroll', () => ({
+  handleAnchorClick: jest.fn((e: React.MouseEvent<HTMLAnchorElement>) => {
+    const href = e.currentTarget.getAttribute('href');
+    if (!href?.startsWith('#')) return;
+    e.preventDefault();
+    const id = href.slice(1);
+    const target = document.getElementById(id);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      history.replaceState(null, '', href);
+    }
+  }),
+}));
+
+// Use the real resolveDocLink implementation for integration-level tests
+jest.mock('@/lib/docs/resolve-link', () => jest.requireActual('@/lib/docs/resolve-link'));
+
 // Mock react-markdown to render children as HTML-like structure
 jest.mock('react-markdown', () => {
   function MockMarkdown({ children, components }: { children: string; components: Record<string, React.FC<Record<string, unknown>>> }) {

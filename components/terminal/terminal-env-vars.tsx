@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Search, Copy, RefreshCw } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
+import { categorizeVar, ENV_VAR_CATEGORY_LABELS, type EnvVarCategory } from '@/lib/constants/terminal';
 
 interface TerminalEnvVarsProps {
   shellEnvVars: [string, string][];
@@ -17,35 +18,6 @@ interface TerminalEnvVarsProps {
   loading?: boolean;
 }
 
-type Category = 'path' | 'language' | 'system' | 'other';
-
-function categorizeVar(key: string): Category {
-  const k = key.toUpperCase();
-  if (k === 'PATH' || k === 'PNPM_HOME' || k === 'NVM_DIR' || k === 'VOLTA_HOME'
-    || k === 'BUN_INSTALL' || k === 'DENO_DIR' || k === 'PYENV_ROOT'
-    || k === 'SDKMAN_DIR' || k === 'GEM_HOME') {
-    return 'path';
-  }
-  if (k.startsWith('NODE_') || k.startsWith('NPM_') || k.startsWith('PYTHON')
-    || k.startsWith('VIRTUAL_ENV') || k.startsWith('CONDA_') || k.startsWith('JAVA_')
-    || k.startsWith('GO') || k.startsWith('RUBY') || k.startsWith('GEM_')
-    || k.startsWith('CARGO_') || k.startsWith('RUST')) {
-    return 'language';
-  }
-  if (k === 'HOME' || k === 'SHELL' || k === 'TERM' || k === 'EDITOR' || k === 'VISUAL'
-    || k === 'LANG' || k === 'LC_ALL' || k.startsWith('XDG_') || k === 'COMSPEC'
-    || k === 'USERPROFILE' || k === 'APPDATA' || k === 'LOCALAPPDATA') {
-    return 'system';
-  }
-  return 'other';
-}
-
-const CATEGORY_LABELS: Record<Category, string> = {
-  path: 'PATH & Tools',
-  language: 'Language Runtimes',
-  system: 'System',
-  other: 'Other',
-};
 
 export function TerminalEnvVars({
   shellEnvVars,
@@ -65,7 +37,7 @@ export function TerminalEnvVars({
   }, [shellEnvVars, search]);
 
   const grouped = useMemo(() => {
-    const groups: Record<Category, [string, string][]> = {
+    const groups: Record<EnvVarCategory, [string, string][]> = {
       path: [],
       language: [],
       system: [],
@@ -135,12 +107,12 @@ export function TerminalEnvVars({
         ) : (
           <ScrollArea className="max-h-[500px]">
             <div className="space-y-4">
-              {(Object.entries(grouped) as [Category, [string, string][]][])
+              {(Object.entries(grouped) as [EnvVarCategory, [string, string][]][])
                 .filter(([, vars]) => vars.length > 0)
                 .map(([category, vars]) => (
                   <div key={category}>
                     <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                      {CATEGORY_LABELS[category]}
+                      {ENV_VAR_CATEGORY_LABELS[category]}
                       <Badge variant="secondary">{vars.length}</Badge>
                     </h4>
                     <div className="rounded-md border divide-y">

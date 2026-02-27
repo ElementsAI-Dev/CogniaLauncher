@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,9 +22,8 @@ import {
   X,
   SkipForward,
 } from "lucide-react";
-import type { GlobalPackageInfo, EnvMigrateResult } from "@/lib/tauri";
-import * as tauri from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { useMigratePackages } from "@/hooks/use-migrate-packages";
 
 interface MigratePackagesDialogProps {
   envType: string;
@@ -44,76 +42,17 @@ export function MigratePackagesDialog({
   onOpenChange,
   t,
 }: MigratePackagesDialogProps) {
-  const [packages, setPackages] = useState<GlobalPackageInfo[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [loadingPackages, setLoadingPackages] = useState(false);
-  const [migrating, setMigrating] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number; package: string } | null>(null);
-  const [result, setResult] = useState<EnvMigrateResult | null>(null);
-
-  useEffect(() => {
-    if (!open || !tauri.isTauri()) return;
-
-    let cancelled = false;
-    setLoadingPackages(true);
-    setResult(null);
-    setProgress(null);
-
-    tauri.envListGlobalPackages(envType, fromVersion)
-      .then((pkgs) => {
-        if (!cancelled) {
-          setPackages(pkgs);
-          setSelected(new Set(pkgs.map((p) => p.name)));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setPackages([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingPackages(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [open, envType, fromVersion]);
-
-  const togglePackage = useCallback((name: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  }, []);
-
-  const handleMigrate = useCallback(async () => {
-    if (selected.size === 0) return;
-    setMigrating(true);
-    setResult(null);
-
-    let unlisten: (() => void) | null = null;
-    try {
-      unlisten = await tauri.listenEnvMigrateProgress((p) => {
-        setProgress(p);
-      });
-
-      const res = await tauri.envMigratePackages(
-        envType,
-        fromVersion,
-        toVersion,
-        Array.from(selected),
-      );
-      setResult(res);
-    } catch {
-      // Error handled by result
-    } finally {
-      setMigrating(false);
-      unlisten?.();
-    }
-  }, [selected, envType, fromVersion, toVersion]);
-
-  const progressPercent = progress && progress.total > 0
-    ? Math.round((progress.current / progress.total) * 100)
-    : 0;
+  const {
+    packages,
+    selected,
+    loadingPackages,
+    migrating,
+    progress,
+    progressPercent,
+    result,
+    togglePackage,
+    handleMigrate,
+  } = useMigratePackages(envType, fromVersion, open);
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !migrating && onOpenChange(isOpen)}>
@@ -232,7 +171,7 @@ export function MigratePackagesDialog({
           </Button>
           {!result && (
             <Button
-              onClick={handleMigrate}
+              onClick={() => handleMigrate(toVersion)}
               disabled={selected.size === 0 || migrating || loadingPackages}
               className="gap-2"
             >

@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Archive } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitStashEntry } from '@/types/tauri';
-
-interface GitStashListProps {
-  stashes: GitStashEntry[];
-}
+import type { GitStashListProps } from '@/types/git';
 
 export function GitStashList({ stashes }: GitStashListProps) {
   const { t } = useLocale();

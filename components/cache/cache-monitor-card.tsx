@@ -14,11 +14,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { AlertTriangle, ChevronDown, HardDrive, Activity, RefreshCw } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 import type { CacheSizeMonitor } from '@/lib/tauri';
-
-interface CacheMonitorCardProps {
-  refreshTrigger?: number;
-  autoRefreshInterval?: number; // in seconds, 0 = disabled
-}
+import { usageColor, progressColor } from '@/lib/constants/cache';
+import type { CacheMonitorCardProps } from '@/types/cache';
 
 export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: CacheMonitorCardProps) {
   const { t } = useLocale();
@@ -53,18 +50,6 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
     }, intervalMs);
     return () => clearInterval(timer);
   }, [autoRefreshInterval, fetchMonitor]);
-
-  const usageColor = (percent: number) => {
-    if (percent >= 90) return 'text-destructive';
-    if (percent >= 70) return 'text-yellow-600 dark:text-yellow-500';
-    return 'text-green-600 dark:text-green-500';
-  };
-
-  const progressColor = (percent: number) => {
-    if (percent >= 90) return '[&>div]:bg-destructive';
-    if (percent >= 70) return '[&>div]:bg-yellow-500';
-    return '[&>div]:bg-green-500';
-  };
 
   return (
     <Card>

@@ -13,11 +13,8 @@ import type {
   UseSettingsSearchReturn,
 } from "@/hooks/use-settings-search";
 import type { SettingsSection } from "@/lib/constants/settings-registry";
-
-type TranslateFunction = (
-  key: string,
-  params?: Record<string, string | number>,
-) => string;
+import type { TranslateFunction } from "@/types/settings";
+import { isInputFocused } from "@/lib/utils/dom";
 
 interface SettingsSearchProps {
   search: UseSettingsSearchReturn;
@@ -201,13 +198,3 @@ function HighlightedText({ text, highlightText }: HighlightedTextProps) {
   );
 }
 
-function isInputFocused(): boolean {
-  const activeElement = document.activeElement;
-  if (!activeElement) return false;
-  const tagName = activeElement.tagName.toLowerCase();
-  return (
-    tagName === "input" ||
-    tagName === "textarea" ||
-    (activeElement as HTMLElement).isContentEditable
-  );
-}

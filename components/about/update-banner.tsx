@@ -8,12 +8,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download } from "lucide-react";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import type { SelfUpdateInfo } from "@/lib/tauri";
+import type { UpdateStatus } from "@/types/about";
 
 interface UpdateBannerProps {
   updateInfo: SelfUpdateInfo | null;
   updating: boolean;
   updateProgress: number;
-  updateStatus: "idle" | "downloading" | "installing" | "done" | "error";
+  updateStatus: UpdateStatus;
   isDesktop: boolean;
   onUpdate: () => void;
   t: (key: string) => string;

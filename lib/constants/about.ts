@@ -62,6 +62,17 @@ export type ChangelogChangeType =
   | 'performance'
   | 'breaking';
 
+export const ALL_CHANGE_TYPES: ChangelogChangeType[] = [
+  'added',
+  'changed',
+  'fixed',
+  'removed',
+  'deprecated',
+  'security',
+  'performance',
+  'breaking',
+];
+
 export interface ChangelogChange {
   type: ChangelogChangeType;
   description: string;

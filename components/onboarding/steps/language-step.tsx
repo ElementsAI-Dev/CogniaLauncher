@@ -4,18 +4,9 @@ import { Globe, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
+import { LANGUAGES } from '@/lib/constants/onboarding';
 import type { Locale } from '@/lib/i18n';
-
-interface LanguageStepProps {
-  locale: Locale;
-  setLocale: (locale: Locale) => void;
-  t: (key: string) => string;
-}
-
-const LANGUAGES: { value: Locale; label: string; nativeLabel: string; flag: string }[] = [
-  { value: 'en', label: 'English', nativeLabel: 'English', flag: '🇺🇸' },
-  { value: 'zh', label: 'Chinese (Simplified)', nativeLabel: '简体中文', flag: '🇨🇳' },
-];
+import type { LanguageStepProps } from '@/types/onboarding';
 
 export function LanguageStep({ locale, setLocale, t }: LanguageStepProps) {
   return (

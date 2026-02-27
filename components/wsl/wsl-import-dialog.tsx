@@ -21,14 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Upload, Loader2 } from 'lucide-react';
-import type { WslImportOptions } from '@/types/tauri';
-
-interface WslImportDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onImport: (options: WslImportOptions) => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslImportDialogProps } from '@/types/wsl';
 
 export function WslImportDialog({
   open,

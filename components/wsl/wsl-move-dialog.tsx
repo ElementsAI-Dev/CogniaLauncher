@@ -14,14 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FolderOpen, AlertTriangle } from 'lucide-react';
-
-interface WslMoveDialogProps {
-  open: boolean;
-  distroName: string;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: (location: string) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslMoveDialogProps } from '@/types/wsl';
 
 export function WslMoveDialog({
   open,

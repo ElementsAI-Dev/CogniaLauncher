@@ -8,14 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Globe, Download, Search } from 'lucide-react';
-
-interface WslOnlineListProps {
-  distros: [string, string][];
-  installedNames: string[];
-  loading: boolean;
-  onInstall: (name: string) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslOnlineListProps } from '@/types/wsl';
 
 export function WslOnlineList({
   distros,

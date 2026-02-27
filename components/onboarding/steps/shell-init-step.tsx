@@ -9,46 +9,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { isWindows as isWindowsOS } from '@/lib/platform';
-
-interface ShellInitStepProps {
-  t: (key: string) => string;
-}
-
-type ShellType = 'powershell' | 'bash' | 'zsh' | 'fish';
-
-interface ShellOption {
-  value: ShellType;
-  label: string;
-  configFile: string;
-  command: string;
-}
-
-const SHELL_OPTIONS: ShellOption[] = [
-  {
-    value: 'powershell',
-    label: 'PowerShell',
-    configFile: '$PROFILE',
-    command: '# Add CogniaLauncher shim directory to PATH\n$env:PATH = "$env:LOCALAPPDATA\\CogniaLauncher\\shims;$env:PATH"',
-  },
-  {
-    value: 'bash',
-    label: 'Bash',
-    configFile: '~/.bashrc',
-    command: '# Add CogniaLauncher shim directory to PATH\nexport PATH="$HOME/.cognia/shims:$PATH"',
-  },
-  {
-    value: 'zsh',
-    label: 'Zsh',
-    configFile: '~/.zshrc',
-    command: '# Add CogniaLauncher shim directory to PATH\nexport PATH="$HOME/.cognia/shims:$PATH"',
-  },
-  {
-    value: 'fish',
-    label: 'Fish',
-    configFile: '~/.config/fish/config.fish',
-    command: '# Add CogniaLauncher shim directory to PATH\nfish_add_path $HOME/.cognia/shims',
-  },
-];
+import { SHELL_OPTIONS } from '@/lib/constants/onboarding';
+import type { ShellInitStepProps, ShellType } from '@/types/onboarding';
 
 export function ShellInitStep({ t }: ShellInitStepProps) {
   const [selectedShell, setSelectedShell] = useState<ShellType>(isWindowsOS() ? 'powershell' : 'bash');

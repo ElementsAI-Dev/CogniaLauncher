@@ -6,12 +6,7 @@ import { Button } from '@/components/ui/button';
 import { FolderOpen } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
-
-interface GitRepoSelectorProps {
-  repoPath: string | null;
-  onSelect: (path: string) => Promise<void>;
-  loading: boolean;
-}
+import type { GitRepoSelectorProps } from '@/types/git';
 
 export function GitRepoSelector({ repoPath, onSelect, loading }: GitRepoSelectorProps) {
   const { t } = useLocale();

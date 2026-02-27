@@ -1,44 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
-import { isTauri } from '@/lib/tauri';
+import { useWslStatus } from '@/hooks/use-wsl-status';
 import { Terminal, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
-import type { WslDistroStatus, WslStatus } from '@/types/tauri';
 
 export function WslStatusWidget() {
   const { t } = useLocale();
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const [distros, setDistros] = useState<WslDistroStatus[]>([]);
-  const [status, setStatus] = useState<WslStatus | null>(null);
-
-  useEffect(() => {
-    if (!isTauri()) {
-      setAvailable(false);
-      return;
-    }
-
-    const load = async () => {
-      try {
-        const { wslIsAvailable, wslListDistros, wslGetStatus } = await import('@/lib/tauri');
-        const isAvail = await wslIsAvailable();
-        setAvailable(isAvail);
-        if (isAvail) {
-          const [d, s] = await Promise.allSettled([wslListDistros(), wslGetStatus()]);
-          if (d.status === 'fulfilled') setDistros(d.value);
-          if (s.status === 'fulfilled') setStatus(s.value);
-        }
-      } catch {
-        setAvailable(false);
-      }
-    };
-    load();
-  }, []);
+  const { available, distros, status, runningCount } = useWslStatus();
 
   if (available === false) {
     return (
@@ -52,8 +25,6 @@ export function WslStatusWidget() {
       </Card>
     );
   }
-
-  const runningCount = distros.filter((d) => d.state.toLowerCase() === 'running').length;
 
   return (
     <Card>

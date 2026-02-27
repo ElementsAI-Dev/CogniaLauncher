@@ -20,14 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { HardDrive } from 'lucide-react';
-
-interface WslResizeDialogProps {
-  open: boolean;
-  distroName: string;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: (size: string) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslResizeDialogProps } from '@/types/wsl';
 
 export function WslResizeDialog({
   open,

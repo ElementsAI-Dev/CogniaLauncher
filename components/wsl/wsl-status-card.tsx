@@ -8,16 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Activity, RefreshCw, Power, Info, Network } from 'lucide-react';
-import type { WslStatus } from '@/types/tauri';
-
-interface WslStatusCardProps {
-  status: WslStatus | null;
-  loading: boolean;
-  onRefresh: () => void;
-  onShutdownAll: () => void;
-  getIpAddress?: () => Promise<string>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslStatusCardProps } from '@/types/wsl';
 
 export function WslStatusCard({
   status,

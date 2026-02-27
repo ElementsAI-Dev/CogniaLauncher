@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardHeader, CardTitle, CardDescription, CardAction, CardContent } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -31,10 +31,12 @@ import {
   Database,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatBytes, formatUptime } from "@/lib/utils";
-import type { SystemInfo } from "@/hooks/use-about-data";
-import type { SelfUpdateInfo } from "@/lib/tauri";
+import { useSystemInfoDisplay } from "@/hooks/use-system-info-display";
+import { buildSystemInfoText } from "@/lib/about-utils";
+import { formatUptime } from "@/lib/utils";
 import { APP_VERSION } from "@/lib/app-version";
+import type { SystemInfo } from "@/types/about";
+import type { SelfUpdateInfo } from "@/lib/tauri";
 
 interface InfoRowProps {
   label: string;
@@ -99,79 +101,27 @@ export function SystemInfoCard({
 
   const unknownText = t("common.unknown");
 
-  const osDisplayName = useMemo(() => {
-    if (!systemInfo) return undefined;
-    if (systemInfo.osLongVersion) return systemInfo.osLongVersion;
-    if (systemInfo.osVersion) return `${systemInfo.os} ${systemInfo.osVersion}`;
-    return systemInfo.os;
-  }, [systemInfo]);
-
-  const memoryDisplay = useMemo(() => {
-    if (!systemInfo || systemInfo.totalMemory === 0) return undefined;
-    return `${formatBytes(systemInfo.usedMemory)} / ${formatBytes(systemInfo.totalMemory)}`;
-  }, [systemInfo]);
-
-  const memoryPercent = useMemo(() => {
-    if (!systemInfo || systemInfo.totalMemory === 0) return 0;
-    return Math.round(
-      (systemInfo.usedMemory / systemInfo.totalMemory) * 100
-    );
-  }, [systemInfo]);
-
-  const swapDisplay = useMemo(() => {
-    if (!systemInfo || systemInfo.totalSwap === 0) return undefined;
-    return `${formatBytes(systemInfo.usedSwap)} / ${formatBytes(systemInfo.totalSwap)}`;
-  }, [systemInfo]);
-
-  const swapPercent = useMemo(() => {
-    if (!systemInfo || systemInfo.totalSwap === 0) return 0;
-    return Math.round(
-      (systemInfo.usedSwap / systemInfo.totalSwap) * 100
-    );
-  }, [systemInfo]);
-
-  const cpuCoresDisplay = useMemo(() => {
-    if (!systemInfo || !systemInfo.cpuCores) return undefined;
-    const logical = systemInfo.cpuCores;
-    const physical = systemInfo.physicalCoreCount;
-    if (physical && physical !== logical) {
-      return `${physical}P / ${logical}L`;
-    }
-    return `${logical}`;
-  }, [systemInfo]);
-
-  const gpuDisplay = useMemo(() => {
-    if (!systemInfo?.gpus?.length) return undefined;
-    return systemInfo.gpus
-      .map((g) => {
-        let s = g.name;
-        if (g.vramMb) s += ` (${g.vramMb >= 1024 ? `${(g.vramMb / 1024).toFixed(1)} GB` : `${g.vramMb} MB`})`;
-        return s;
-      })
-      .join(", ");
-  }, [systemInfo]);
+  const {
+    osDisplayName,
+    memoryDisplay,
+    memoryPercent,
+    swapDisplay,
+    swapPercent,
+    cpuCoresDisplay,
+    gpuDisplay,
+  } = useSystemInfoDisplay(systemInfo);
 
   const copySystemInfo = async () => {
-    const lines = [
-      `${t("about.systemInfoTitle")}`,
-      "================================",
-      `${t("about.version")}: v${updateInfo?.current_version || systemInfo?.appVersion || APP_VERSION}`,
-      `${t("about.operatingSystem")}: ${osDisplayName || unknownText}`,
-      `${t("about.architecture")}: ${systemInfo?.cpuArch || systemInfo?.arch || unknownText}`,
-      `${t("about.kernelVersion")}: ${systemInfo?.kernelVersion || unknownText}`,
-      `${t("about.hostname")}: ${systemInfo?.hostname || unknownText}`,
-      `${t("about.cpu")}: ${systemInfo?.cpuModel || unknownText} (${cpuCoresDisplay || 0} ${t("about.cores")})`,
-      `${t("about.cpuFrequency")}: ${systemInfo?.cpuFrequency ? `${systemInfo.cpuFrequency} MHz` : unknownText}`,
-      `${t("about.memory")}: ${memoryDisplay || unknownText}`,
-      `${t("about.swap")}: ${swapDisplay || unknownText}`,
-      `${t("about.gpu")}: ${gpuDisplay || unknownText}`,
-      `${t("about.uptime")}: ${systemInfo?.uptime ? formatUptime(systemInfo.uptime) : unknownText}`,
-      `${t("about.homeDirectory")}: ${systemInfo?.homeDir || "~/.cognia"}`,
-      `${t("about.locale")}: ${systemInfo?.locale || "en-US"}`,
-    ];
+    const text = buildSystemInfoText({
+      systemInfo,
+      updateInfo,
+      display: { osDisplayName, cpuCoresDisplay, memoryDisplay, swapDisplay, gpuDisplay },
+      unknownText,
+      t,
+    });
 
     try {
-      await writeClipboard(lines.join("\n"));
+      await writeClipboard(text);
       setCopied(true);
       toast.success(t("about.copiedToClipboard"));
       setTimeout(() => setCopied(false), 2000);

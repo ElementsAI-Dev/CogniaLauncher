@@ -19,40 +19,8 @@ import {
 } from '@/components/ui/select';
 import { Settings2, Save, RefreshCw, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslConfig } from '@/types/tauri';
-
-interface WslConfigCardProps {
-  config: WslConfig | null;
-  loading: boolean;
-  onRefresh: () => Promise<void>;
-  onSetConfig: (section: string, key: string, value?: string) => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-type SettingType = 'text' | 'bool' | 'select';
-
-interface WslSettingDef {
-  key: string;
-  label: string;
-  placeholder: string;
-  description: string;
-  type: SettingType;
-  options?: string[];
-}
-
-const COMMON_WSL2_SETTINGS: WslSettingDef[] = [
-  { key: 'memory', label: 'Memory', placeholder: '4GB', description: 'wsl.config.memoryDesc', type: 'text' },
-  { key: 'processors', label: 'Processors', placeholder: '2', description: 'wsl.config.processorsDesc', type: 'text' },
-  { key: 'swap', label: 'Swap', placeholder: '8GB', description: 'wsl.config.swapDesc', type: 'text' },
-  { key: 'localhostForwarding', label: 'Localhost Forwarding', placeholder: 'true', description: 'wsl.config.localhostForwardingDesc', type: 'bool' },
-  { key: 'nestedVirtualization', label: 'Nested Virtualization', placeholder: 'true', description: 'wsl.config.nestedVirtualizationDesc', type: 'bool' },
-  { key: 'guiApplications', label: 'GUI Applications', placeholder: 'true', description: 'wsl.config.guiApplicationsDesc', type: 'bool' },
-  { key: 'networkingMode', label: 'Networking Mode', placeholder: 'NAT', description: 'wsl.config.networkingModeDesc', type: 'select', options: ['NAT', 'mirrored', 'virtioproxy'] },
-  { key: 'autoMemoryReclaim', label: 'Auto Memory Reclaim', placeholder: 'disabled', description: 'wsl.config.autoMemoryReclaimDesc', type: 'select', options: ['disabled', 'gradual', 'dropcache'] },
-  { key: 'sparseVhd', label: 'Sparse VHD', placeholder: 'true', description: 'wsl.config.sparseVhdDesc', type: 'bool' },
-  { key: 'dnsTunneling', label: 'DNS Tunneling', placeholder: 'true', description: 'wsl.config.dnsTunnelingDesc', type: 'bool' },
-  { key: 'firewall', label: 'Firewall', placeholder: 'true', description: 'wsl.config.firewallDesc', type: 'bool' },
-];
+import { COMMON_WSL2_SETTINGS } from '@/lib/constants/wsl';
+import type { WslConfigCardProps } from '@/types/wsl';
 
 export function WslConfigCard({
   config,

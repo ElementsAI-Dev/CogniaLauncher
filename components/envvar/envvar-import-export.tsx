@@ -22,6 +22,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Upload, Download, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadEnvFile } from '@/lib/envvar';
 import type { EnvVarScope, EnvFileFormat, EnvVarImportResult } from '@/types/tauri';
 
 interface EnvVarImportExportProps {
@@ -86,16 +87,7 @@ export function EnvVarImportExport({
   };
 
   const handleDownloadExport = () => {
-    const ext = exportFormat === 'dotenv' ? '.env' : exportFormat === 'powershell' ? '.ps1' : '.sh';
-    const blob = new Blob([exportContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `environment${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadEnvFile(exportContent, exportFormat);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

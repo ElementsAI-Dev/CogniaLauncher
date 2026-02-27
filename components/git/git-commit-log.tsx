@@ -15,19 +15,7 @@ import {
 import { History, Search, ChevronDown } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
-import type { GitCommitEntry } from '@/types/tauri';
-
-interface GitCommitLogProps {
-  commits: GitCommitEntry[];
-  onLoadMore?: (options?: {
-    limit?: number;
-    author?: string;
-    since?: string;
-    until?: string;
-  }) => void;
-  onSelectCommit?: (hash: string) => void;
-  selectedHash?: string | null;
-}
+import type { GitCommitLogProps } from '@/types/git';
 
 export function GitCommitLog({ commits, onLoadMore, onSelectCommit, selectedHash }: GitCommitLogProps) {
   const { t } = useLocale();

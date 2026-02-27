@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -8,8 +7,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ShieldCheck, ShieldAlert, ShieldX, Shield } from "lucide-react";
-import type { EolCycleInfo } from "@/lib/tauri";
-import * as tauri from "@/lib/tauri";
+import { useEol } from "@/hooks/use-eol";
 
 interface EolBadgeProps {
   envType: string;
@@ -19,34 +17,7 @@ interface EolBadgeProps {
 }
 
 export function EolBadge({ envType, version, compact = false, t }: EolBadgeProps) {
-  const [result, setResult] = useState<{
-    envType: string;
-    version: string;
-    info: EolCycleInfo | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!version || !tauri.isTauri()) return;
-
-    let cancelled = false;
-
-    tauri.envGetVersionEol(envType, version)
-      .then((info) => {
-        if (!cancelled) {
-          setResult({ envType, version, info: info ?? null });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ envType, version, info: null });
-      });
-
-    return () => { cancelled = true; };
-  }, [envType, version]);
-
-  const eolInfo =
-    result && result.envType === envType && result.version === version
-      ? result.info
-      : null;
+  const { eolInfo } = useEol(envType, version);
 
   if (!eolInfo) return null;
 

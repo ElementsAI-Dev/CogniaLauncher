@@ -17,13 +17,7 @@ import { cn } from '@/lib/utils';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri, listenGitCloneProgress } from '@/lib/tauri';
 import type { GitCloneOptions, GitCloneProgress } from '@/types/tauri';
-
-interface GitCloneDialogProps {
-  onClone: (url: string, destPath: string, options?: GitCloneOptions) => Promise<string>;
-  onExtractRepoName?: (url: string) => Promise<string | null>;
-  onValidateUrl?: (url: string) => Promise<boolean>;
-  onOpenRepo?: (path: string) => void;
-}
+import type { GitCloneDialogProps } from '@/types/git';
 
 export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOpenRepo }: GitCloneDialogProps) {
   const { t } = useLocale();

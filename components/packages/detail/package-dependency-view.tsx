@@ -18,13 +18,7 @@ import {
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatSize } from '@/lib/utils';
-import type { ResolutionResult } from '@/lib/tauri';
-
-interface PackageDependencyViewProps {
-  resolution: ResolutionResult | null;
-  loading: boolean;
-  onResolve: () => Promise<void>;
-}
+import type { PackageDependencyViewProps } from '@/types/packages';
 
 export function PackageDependencyView({
   resolution,

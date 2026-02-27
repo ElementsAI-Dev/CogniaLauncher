@@ -24,7 +24,7 @@ jest.mock("next/navigation", () => ({
   }),
 }));
 
-jest.mock("./tour-steps", () => ({
+jest.mock("@/lib/constants/onboarding", () => ({
   TOUR_STEPS: [
     {
       id: "sidebar",
@@ -43,6 +43,8 @@ jest.mock("./tour-steps", () => ({
       route: "/",
     },
   ],
+  TOUR_PADDING: 8,
+  POPOVER_OFFSET: 12,
 }));
 
 const defaultProps = {

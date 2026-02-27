@@ -14,3 +14,8 @@ export { WslDistroTerminal } from './wsl-distro-terminal';
 export { WslDistroFilesystem } from './wsl-distro-filesystem';
 export { WslDistroNetwork } from './wsl-distro-network';
 export { WslDistroServices } from './wsl-distro-services';
+export { WslChangeUserDialog } from './wsl-change-user-dialog';
+export { WslImportInPlaceDialog } from './wsl-import-in-place-dialog';
+export { WslMountDialog } from './wsl-mount-dialog';
+export { WslMoveDialog } from './wsl-move-dialog';
+export { WslResizeDialog } from './wsl-resize-dialog';

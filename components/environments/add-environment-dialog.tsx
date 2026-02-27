@@ -28,11 +28,9 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { X, Check, RefreshCw, Globe } from "lucide-react";
 import { LANGUAGES, DEFAULT_PROVIDERS } from "@/lib/constants/environments";
+import type { AddEnvironmentOptions } from "@/types/environments";
 
-export interface AddEnvironmentOptions {
-  autoSwitch: boolean;
-  setAsDefault: boolean;
-}
+export type { AddEnvironmentOptions };
 
 interface AddEnvironmentDialogProps {
   onAdd?: (

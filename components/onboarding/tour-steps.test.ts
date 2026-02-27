@@ -1,4 +1,4 @@
-import { TOUR_STEPS } from "./tour-steps";
+import { TOUR_STEPS } from "@/lib/constants/onboarding";
 
 describe("TOUR_STEPS", () => {
   it("exports a non-empty array", () => {

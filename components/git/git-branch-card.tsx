@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { GitBranch } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitBranchInfo } from '@/types/tauri';
-
-interface GitBranchCardProps {
-  branches: GitBranchInfo[];
-}
+import type { GitBranchCardProps } from '@/types/git';
 
 export function GitBranchCard({ branches }: GitBranchCardProps) {
   const { t } = useLocale();

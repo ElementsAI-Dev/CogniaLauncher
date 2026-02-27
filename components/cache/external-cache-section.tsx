@@ -50,11 +50,8 @@ import { isTauri } from "@/lib/tauri";
 import type { ExternalCacheInfo } from "@/lib/tauri";
 import * as tauri from "@/lib/tauri";
 import { formatBytes } from "@/lib/utils";
-
-interface ExternalCacheSectionProps {
-  useTrash: boolean;
-  setUseTrash: (value: boolean) => void;
-}
+import { getCategoryLabel, groupCachesByCategory, CACHE_CATEGORY_ORDER } from "@/lib/constants/cache";
+import type { ExternalCacheSectionProps } from "@/types/cache";
 
 export function ExternalCacheSection({
   useTrash,
@@ -149,31 +146,8 @@ export function ExternalCacheSection({
   const totalExternalSize = externalCaches.reduce((acc, c) => acc + c.size, 0);
   const canCleanCount = externalCaches.filter((c) => c.canClean).length;
 
-
-  const getCategoryLabel = (category: string) => {
-    switch (category) {
-      case "system":
-        return t("cache.categorySystem");
-      case "devtools":
-        return t("cache.categoryDevtools");
-      case "package_manager":
-        return t("cache.categoryPackageManager");
-      default:
-        return category;
-    }
-  };
-
-  const groupedCaches = externalCaches.reduce<Record<string, ExternalCacheInfo[]>>(
-    (acc, cache) => {
-      const cat = cache.category || "package_manager";
-      if (!acc[cat]) acc[cat] = [];
-      acc[cat].push(cache);
-      return acc;
-    },
-    {},
-  );
-
-  const categoryOrder = ["system", "package_manager", "devtools"];
+  const groupedCaches = groupCachesByCategory(externalCaches, "package_manager");
+  const categoryOrder = CACHE_CATEGORY_ORDER;
 
   return (
     <Card>
@@ -292,7 +266,7 @@ export function ExternalCacheSection({
                   .map((cat) => (
                     <div key={cat} className="space-y-2">
                       <h4 className="text-sm font-medium text-muted-foreground px-1">
-                        {getCategoryLabel(cat)}
+                        {getCategoryLabel(cat, t)}
                       </h4>
                       {groupedCaches[cat].map((cache) => (
                         <div

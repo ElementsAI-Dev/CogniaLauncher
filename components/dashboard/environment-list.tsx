@@ -37,8 +37,7 @@ import { LanguageIcon, ProviderIcon } from "@/components/provider-management/pro
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
-
-type FilterType = "all" | "available" | "unavailable";
+import type { EnvironmentFilterType } from "@/types/dashboard";
 
 interface EnvironmentListProps {
   environments: EnvironmentInfo[];
@@ -54,7 +53,7 @@ export function EnvironmentList({
   const router = useRouter();
   const { t } = useLocale();
 
-  const [filter, setFilter] = useState<FilterType>("available");
+  const [filter, setFilter] = useState<EnvironmentFilterType>("available");
   const [expanded, setExpanded] = useState(false);
 
   const filteredEnvironments = useMemo(() => {
@@ -97,7 +96,7 @@ export function EnvironmentList({
           <div className="flex items-center gap-2">
             <Select
               value={filter}
-              onValueChange={(v) => setFilter(v as FilterType)}
+              onValueChange={(v) => setFilter(v as EnvironmentFilterType)}
             >
               <SelectTrigger className="h-8 w-[120px]">
                 <SelectValue />

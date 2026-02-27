@@ -1,21 +1,11 @@
 'use client';
 
-import { Palette, Sun, Moon, Monitor, Check } from 'lucide-react';
+import { Palette, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
-
-interface ThemeStepProps {
-  theme: string | undefined;
-  setTheme: (theme: string) => void;
-  t: (key: string) => string;
-}
-
-const THEMES = [
-  { value: 'light', icon: Sun, preview: 'bg-white border-gray-200 text-gray-900' },
-  { value: 'dark', icon: Moon, preview: 'bg-gray-900 border-gray-700 text-gray-100' },
-  { value: 'system', icon: Monitor, preview: 'bg-gradient-to-r from-white to-gray-900 border-gray-400' },
-];
+import { THEMES } from '@/lib/constants/onboarding';
+import type { ThemeStepProps } from '@/types/onboarding';
 
 export function ThemeStep({ theme, setTheme, t }: ThemeStepProps) {
   return (

@@ -6,30 +6,8 @@ import { useState } from 'react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-interface MirrorsStepProps {
-  t: (key: string) => string;
-}
-
-type MirrorPreset = 'default' | 'china' | 'custom';
-
-const MIRROR_PRESETS: { value: MirrorPreset; labelKey: string; descKey: string }[] = [
-  {
-    value: 'default',
-    labelKey: 'onboarding.mirrorsDefault',
-    descKey: 'onboarding.mirrorsDefaultDesc',
-  },
-  {
-    value: 'china',
-    labelKey: 'onboarding.mirrorsChinaPreset',
-    descKey: 'onboarding.mirrorsChinaPresetDesc',
-  },
-  {
-    value: 'custom',
-    labelKey: 'onboarding.mirrorsCustom',
-    descKey: 'onboarding.mirrorsCustomDesc',
-  },
-];
+import { MIRROR_PRESETS } from '@/lib/constants/onboarding';
+import type { MirrorsStepProps, MirrorPreset } from '@/types/onboarding';
 
 export function MirrorsStep({ t }: MirrorsStepProps) {
   const [preset, setPreset] = useState<MirrorPreset>('default');

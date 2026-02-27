@@ -9,27 +9,17 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { useHealthCheck } from '@/hooks/use-health-check';
 import { isTauri } from '@/lib/tauri';
 import {
-  ShieldCheck,
-  ShieldAlert,
-  ShieldX,
-  ShieldQuestion,
   RefreshCw,
   ExternalLink,
   Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { HEALTH_STATUS_CONFIG } from '@/lib/constants/dashboard';
 import type { HealthStatus } from '@/types/tauri';
 
 interface HealthCheckWidgetProps {
   className?: string;
 }
-
-const STATUS_CONFIG: Record<HealthStatus, { icon: typeof ShieldCheck; color: string }> = {
-  healthy: { icon: ShieldCheck, color: 'text-green-600' },
-  warning: { icon: ShieldAlert, color: 'text-yellow-600' },
-  error: { icon: ShieldX, color: 'text-red-600' },
-  unknown: { icon: ShieldQuestion, color: 'text-muted-foreground' },
-};
 
 export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const { t } = useLocale();
@@ -42,7 +32,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   }, [checkAll]);
 
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
-  const config = STATUS_CONFIG[overallStatus];
+  const config = HEALTH_STATUS_CONFIG[overallStatus];
   const StatusIcon = config.icon;
 
   const envCount = systemHealth?.environments.length ?? 0;

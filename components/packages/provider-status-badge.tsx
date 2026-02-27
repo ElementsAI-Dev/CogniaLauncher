@@ -20,16 +20,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
-import type { ProviderInfo } from "@/lib/tauri";
 import * as tauri from "@/lib/tauri";
 import { toast } from "sonner";
 import Link from "next/link";
-
-interface ProviderStatusBadgeProps {
-  providers: ProviderInfo[];
-  onProviderToggle?: (providerId: string, enabled: boolean) => void;
-  onRefresh?: () => void;
-}
+import type { ProviderStatusBadgeProps } from "@/types/packages";
 
 export function ProviderStatusBadge({
   providers,

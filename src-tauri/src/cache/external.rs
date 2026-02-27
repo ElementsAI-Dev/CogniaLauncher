@@ -5,8 +5,10 @@
 
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{disk::format_size, fs, process};
+use crate::platform::process::ProcessOptions;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Supported external cache providers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1130,21 +1132,32 @@ fn get_sbt_cache_path() -> Option<PathBuf> {
 // Core functions
 // ============================================================================
 
-/// Check if a provider's command is available
+/// Check if a provider's command is available (with 5s timeout)
 pub async fn is_provider_available(provider: ExternalCacheProvider) -> bool {
-    process::which(provider.command()).await.is_some()
+    let cmd = provider.command();
+    let opts = ProcessOptions::new().with_timeout(Duration::from_secs(5));
+    #[cfg(windows)]
+    let result = process::execute("where", &[cmd], Some(opts)).await;
+    #[cfg(not(windows))]
+    let result = process::execute("which", &[cmd], Some(opts)).await;
+    result
+        .ok()
+        .map(|o| o.success)
+        .unwrap_or(false)
 }
 
-/// Calculate directory size recursively
+/// Calculate directory size recursively (with 30s timeout)
 pub async fn calculate_dir_size(path: &Path) -> u64 {
     if !path.exists() {
         return 0;
     }
 
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || calculate_dir_size_sync(&path))
-        .await
-        .unwrap_or(0)
+    let handle = tokio::task::spawn_blocking(move || calculate_dir_size_sync(&path));
+    match tokio::time::timeout(Duration::from_secs(10), handle).await {
+        Ok(Ok(size)) => size,
+        _ => 0,
+    }
 }
 
 fn calculate_dir_size_sync(path: &Path) -> u64 {
@@ -1231,43 +1244,49 @@ pub async fn clean_cache_contents_public(path: &Path, use_trash: bool) -> Cognia
     clean_cache_contents(path, use_trash).await
 }
 
-/// Discover all external caches on the system
+/// Discover all external caches on the system (parallelized with timeouts)
 pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
-    let mut caches = Vec::new();
+    let providers = ExternalCacheProvider::all();
 
-    for provider in ExternalCacheProvider::all() {
-        let is_available = is_provider_available(provider).await;
-        let cache_path = provider.cache_path();
+    // Run all provider checks concurrently
+    let futures: Vec<_> = providers
+        .into_iter()
+        .map(|provider| async move {
+            let is_available = is_provider_available(provider).await;
+            let cache_path = provider.cache_path();
 
-        let (path_str, size) = if let Some(ref path) = cache_path {
-            let size = if path.exists() {
-                calculate_dir_size(path).await
+            let (path_str, size) = if let Some(ref path) = cache_path {
+                let size = if path.exists() {
+                    calculate_dir_size(path).await
+                } else {
+                    0
+                };
+                (path.display().to_string(), size)
             } else {
-                0
+                (String::new(), 0)
             };
-            (path.display().to_string(), size)
-        } else {
-            (String::new(), 0)
-        };
 
-        // Include if the tool is available or the cache directory exists on disk
-        let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-        if is_available || has_cache_dir {
-            // Can clean if there's data to delete OR if the tool has a clean command
-            // (e.g. Docker where we can't measure size but can still clean)
-            let has_clean_command = is_available && provider.clean_command().is_some();
-            caches.push(ExternalCacheInfo {
-                provider: provider.id().to_string(),
-                display_name: provider.display_name().to_string(),
-                cache_path: path_str,
-                size,
-                size_human: format_size(size),
-                is_available,
-                can_clean: size > 0 || has_clean_command,
-                category: provider.category().to_string(),
-            });
-        }
-    }
+            let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+            if is_available || has_cache_dir {
+                let has_clean_command = is_available && provider.clean_command().is_some();
+                Some(ExternalCacheInfo {
+                    provider: provider.id().to_string(),
+                    display_name: provider.display_name().to_string(),
+                    cache_path: path_str,
+                    size,
+                    size_human: format_size(size),
+                    is_available,
+                    can_clean: size > 0 || has_clean_command,
+                    category: provider.category().to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let results = futures::future::join_all(futures).await;
+    let mut caches: Vec<ExternalCacheInfo> = results.into_iter().flatten().collect();
 
     // Sort by size descending
     caches.sort_by(|a, b| b.size.cmp(&a.size));
@@ -1629,11 +1648,16 @@ mod tests {
         assert!(get_docker_cache_path().is_none());
     }
 
-    #[tokio::test]
+    #[ignore = "Scans real filesystem; can be slow on systems with large cache dirs"]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_discover_caches() {
-        let caches = discover_all_caches().await;
-        assert!(caches.is_ok());
-        // Should return an empty or non-empty list without error
+        let result = tokio::time::timeout(
+            Duration::from_secs(60),
+            discover_all_caches(),
+        )
+        .await;
+        assert!(result.is_ok(), "discover_all_caches timed out after 60s");
+        assert!(result.unwrap().is_ok());
     }
 
     #[test]

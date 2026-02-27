@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Users } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitContributor } from '@/types/tauri';
-
-interface GitContributorsChartProps {
-  contributors: GitContributor[];
-}
+import type { GitContributorsChartProps } from '@/types/git';
 
 export function GitContributorsChart({ contributors }: GitContributorsChartProps) {
   const { t } = useLocale();

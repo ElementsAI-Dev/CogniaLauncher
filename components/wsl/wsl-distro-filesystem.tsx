@@ -38,60 +38,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslExecResult } from '@/types/tauri';
-
-interface FileEntry {
-  name: string;
-  type: 'dir' | 'file' | 'link' | 'other';
-  permissions: string;
-  size: string;
-  modified: string;
-  linkTarget?: string;
-}
-
-interface WslDistroFilesystemProps {
-  distroName: string;
-  isRunning?: boolean;
-  onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-function parseFileEntries(output: string): FileEntry[] {
-  const lines = output.split('\n').filter((l) => l.trim() && !l.startsWith('total'));
-  return lines.map((line) => {
-    // Parse ls -la output: permissions links owner group size month day time name [-> target]
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 9) {
-      return { name: parts[parts.length - 1] || line, type: 'other' as const, permissions: '', size: '', modified: '' };
-    }
-
-    const permissions = parts[0];
-    const size = parts[4];
-    const month = parts[5];
-    const day = parts[6];
-    const timeOrYear = parts[7];
-    const modified = `${month} ${day} ${timeOrYear}`;
-
-    // Handle filenames with spaces and symlinks
-    const nameStartIdx = line.indexOf(timeOrYear) + timeOrYear.length;
-    const nameStr = line.substring(nameStartIdx).trim();
-
-    let name = nameStr;
-    let linkTarget: string | undefined;
-    const arrowIdx = nameStr.indexOf(' -> ');
-    if (arrowIdx !== -1) {
-      name = nameStr.substring(0, arrowIdx);
-      linkTarget = nameStr.substring(arrowIdx + 4);
-    }
-
-    let type: FileEntry['type'] = 'file';
-    if (permissions.startsWith('d')) type = 'dir';
-    else if (permissions.startsWith('l')) type = 'link';
-    else if (!permissions.startsWith('-')) type = 'other';
-
-    return { name, type, permissions, size, modified, linkTarget };
-  }).filter((f) => f.name !== '.' && f.name !== '..');
-}
+import { parseFileEntries } from '@/lib/wsl';
+import type { FileEntry, WslDistroFilesystemProps } from '@/types/wsl';
 
 export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesystemProps) {
   const [currentPath, setCurrentPath] = useState('/');

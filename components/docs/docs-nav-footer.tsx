@@ -5,10 +5,11 @@ import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-provider';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { slugToArray } from '@/lib/docs/navigation';
+import type { DocNavLink } from '@/types/docs';
 
 interface DocsNavFooterProps {
-  prev?: { title: string; titleEn?: string; slug: string };
-  next?: { title: string; titleEn?: string; slug: string };
+  prev?: DocNavLink;
+  next?: DocNavLink;
 }
 
 export function DocsNavFooter({ prev, next }: DocsNavFooterProps) {

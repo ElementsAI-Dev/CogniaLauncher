@@ -5,30 +5,13 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { SettingItem } from "./setting-item";
+import { normalizeProviderList } from "@/lib/utils/provider";
 
 interface ProviderSettingsProps {
   localConfig: Record<string, string>;
   errors: Record<string, string | null>;
   onValueChange: (key: string, value: string) => void;
   t: (key: string) => string;
-}
-
-function normalizeProviderList(rawValue: string): string {
-  const trimmed = rawValue.trim();
-  if (!trimmed) return "";
-
-  if (trimmed.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(trimmed) as string[];
-      if (Array.isArray(parsed)) {
-        return parsed.filter(Boolean).join(", ");
-      }
-    } catch {
-      return rawValue;
-    }
-  }
-
-  return rawValue;
 }
 
 export function ProviderSettings({

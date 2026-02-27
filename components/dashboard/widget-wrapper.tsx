@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/providers/locale-provider";
+import { WIDGET_SIZE_CLASSES } from "@/lib/constants/dashboard";
+import { nextWidgetSize, prevWidgetSize } from "@/lib/dashboard-utils";
 import type { WidgetConfig, WidgetSize } from "@/lib/stores/dashboard";
 
 interface WidgetWrapperProps {
@@ -21,13 +23,6 @@ interface WidgetWrapperProps {
   onResize: (id: string, size: WidgetSize) => void;
   children: React.ReactNode;
 }
-
-const SIZE_CLASSES: Record<WidgetSize, string> = {
-  sm: "col-span-1",
-  md: "col-span-1 lg:col-span-1",
-  lg: "col-span-1 lg:col-span-2",
-  full: "col-span-1 lg:col-span-2",
-};
 
 export function WidgetWrapper({
   widget,
@@ -56,24 +51,12 @@ export function WidgetWrapper({
     return null;
   }
 
-  const nextSize = (current: WidgetSize): WidgetSize => {
-    const sizes: WidgetSize[] = ["sm", "md", "lg", "full"];
-    const idx = sizes.indexOf(current);
-    return sizes[(idx + 1) % sizes.length];
-  };
-
-  const prevSize = (current: WidgetSize): WidgetSize => {
-    const sizes: WidgetSize[] = ["sm", "md", "lg", "full"];
-    const idx = sizes.indexOf(current);
-    return sizes[(idx - 1 + sizes.length) % sizes.length];
-  };
-
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        SIZE_CLASSES[widget.size],
+        WIDGET_SIZE_CLASSES[widget.size],
         "relative group/widget transition-all duration-200 [&>*]:h-full",
         isDragging && "z-50 opacity-80 scale-[1.02] shadow-xl",
         !widget.visible && isEditMode && "opacity-50",
@@ -105,7 +88,7 @@ export function WidgetWrapper({
                 variant="ghost"
                 size="icon"
                 className="h-5 w-5"
-                onClick={() => onResize(widget.id, prevSize(widget.size))}
+                onClick={() => onResize(widget.id, prevWidgetSize(widget.size))}
               >
                 <Minimize2 className="h-3 w-3" />
               </Button>
@@ -121,7 +104,7 @@ export function WidgetWrapper({
                 variant="ghost"
                 size="icon"
                 className="h-5 w-5"
-                onClick={() => onResize(widget.id, nextSize(widget.size))}
+                onClick={() => onResize(widget.id, nextWidgetSize(widget.size))}
               >
                 <Maximize2 className="h-3 w-3" />
               </Button>

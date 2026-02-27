@@ -9,11 +9,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
 import { isTauri } from '@/lib/tauri';
 import type { GitCommitEntry } from '@/types/tauri';
-
-interface GitFileHistoryProps {
-  repoPath: string | null;
-  onGetHistory: (file: string, limit?: number) => Promise<GitCommitEntry[]>;
-}
+import type { GitFileHistoryProps } from '@/types/git';
 
 export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) {
   const { t } = useLocale();

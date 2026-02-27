@@ -30,11 +30,7 @@ import {
   ExportedPackageList,
 } from "@/hooks/use-package-export";
 import { toast } from "sonner";
-
-interface ExportImportDialogProps {
-  trigger?: React.ReactNode;
-  onImport?: (data: ExportedPackageList) => Promise<void>;
-}
+import type { ExportImportDialogProps } from "@/types/packages";
 
 export function ExportImportDialog({
   trigger,

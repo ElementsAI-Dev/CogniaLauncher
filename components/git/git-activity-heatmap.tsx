@@ -14,23 +14,10 @@ import {
 import { CalendarDays, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useLocale } from '@/components/providers/locale-provider';
+import { HEATMAP_CELL_SIZE, HEATMAP_CELL_GAP } from '@/lib/constants/git';
+import { getHeatColor } from '@/lib/utils/git';
 import type { GitDayActivity } from '@/types/tauri';
-
-interface GitActivityHeatmapProps {
-  onGetActivity: (days?: number) => Promise<GitDayActivity[]>;
-}
-
-const CELL_SIZE = 12;
-const CELL_GAP = 2;
-
-function getHeatColor(count: number, maxCount: number): string {
-  if (count === 0) return 'var(--muted)';
-  const ratio = count / Math.max(maxCount, 1);
-  if (ratio > 0.75) return '#166534';
-  if (ratio > 0.5) return '#16a34a';
-  if (ratio > 0.25) return '#4ade80';
-  return '#bbf7d0';
-}
+import type { GitActivityHeatmapProps } from '@/types/git';
 
 export function GitActivityHeatmap({ onGetActivity }: GitActivityHeatmapProps) {
   const { t } = useLocale();
@@ -130,17 +117,17 @@ export function GitActivityHeatmap({ onGetActivity }: GitActivityHeatmapProps) {
           <TooltipProvider delayDuration={100}>
             <div className="overflow-x-auto">
               <svg
-                width={(weeks + 1) * (CELL_SIZE + CELL_GAP)}
-                height={7 * (CELL_SIZE + CELL_GAP) + CELL_GAP}
+                width={(weeks + 1) * (HEATMAP_CELL_SIZE + HEATMAP_CELL_GAP)}
+                height={7 * (HEATMAP_CELL_SIZE + HEATMAP_CELL_GAP) + HEATMAP_CELL_GAP}
               >
                 {grid.map((cell) => (
                   <Tooltip key={cell.date}>
                     <TooltipTrigger asChild>
                       <rect
-                        x={cell.weekIndex * (CELL_SIZE + CELL_GAP) + CELL_GAP}
-                        y={cell.dayOfWeek * (CELL_SIZE + CELL_GAP) + CELL_GAP}
-                        width={CELL_SIZE}
-                        height={CELL_SIZE}
+                        x={cell.weekIndex * (HEATMAP_CELL_SIZE + HEATMAP_CELL_GAP) + HEATMAP_CELL_GAP}
+                        y={cell.dayOfWeek * (HEATMAP_CELL_SIZE + HEATMAP_CELL_GAP) + HEATMAP_CELL_GAP}
+                        width={HEATMAP_CELL_SIZE}
+                        height={HEATMAP_CELL_SIZE}
                         rx={2}
                         fill={getHeatColor(cell.count, maxCount)}
                         className="cursor-pointer hover:stroke-foreground hover:stroke-1"

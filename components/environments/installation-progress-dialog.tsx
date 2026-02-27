@@ -18,22 +18,10 @@ import {
 import { useEnvironments } from "@/hooks/use-environments";
 import { cn } from "@/lib/utils";
 import { Download, Check, Loader2, AlertCircle, Minimize2 } from "lucide-react";
-
-const STEP_LABELS: Record<InstallationProgress["step"], string> = {
-  fetching: "progress.fetchingInfo",
-  downloading: "progress.downloadingBinaries",
-  extracting: "progress.extracting",
-  configuring: "progress.configuring",
-  done: "progress.configuring",
-  error: "progress.configuring",
-};
-
-const STEPS: InstallationProgress["step"][] = [
-  "fetching",
-  "downloading",
-  "extracting",
-  "configuring",
-];
+import {
+  INSTALLATION_STEP_LABELS as STEP_LABELS,
+  INSTALLATION_ACTIVE_STEPS as STEPS,
+} from "@/lib/constants/environments";
 
 export function InstallationProgressDialog() {
   const { t } = useLocale();

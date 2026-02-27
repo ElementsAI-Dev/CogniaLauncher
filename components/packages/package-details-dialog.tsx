@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { PackageInfo, PackageSummary } from "@/lib/tauri";
+import type { PackageInfo } from "@/lib/tauri";
 import {
   ExternalLink,
   Download,
@@ -33,21 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/components/providers/locale-provider";
-
-interface PackageDetailsDialogProps {
-  pkg: PackageSummary | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onInstall: (name: string, version?: string) => Promise<void>;
-  onRollback?: (name: string, version: string) => Promise<void>;
-  onPin?: (name: string, version: string) => Promise<void>;
-  fetchPackageInfo: (
-    name: string,
-    provider?: string,
-  ) => Promise<PackageInfo | null>;
-  isInstalled?: boolean;
-  currentVersion?: string;
-}
+import type { PackageDetailsDialogProps } from "@/types/packages";
 
 export function PackageDetailsDialog({
   pkg,

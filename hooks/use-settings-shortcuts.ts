@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback } from 'react';
 import type { SettingsSection } from '@/lib/constants/settings-registry';
+import { isInputFocused } from '@/lib/utils/dom';
 
 interface UseSettingsShortcutsOptions {
   onSave?: () => void;
@@ -13,19 +14,6 @@ interface UseSettingsShortcutsOptions {
   enabled?: boolean;
   hasChanges?: boolean;
   isLoading?: boolean;
-}
-
-/**
- * Check if an input element is currently focused
- */
-function isInputFocused(): boolean {
-  const target = document.activeElement as HTMLElement | null;
-  if (!target) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.isContentEditable
-  );
 }
 
 /**

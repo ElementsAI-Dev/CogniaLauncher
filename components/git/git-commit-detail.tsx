@@ -6,14 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, X, GitCommit, FileText, Plus, Minus } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
-import type { GitCommitDetail as GitCommitDetailType } from '@/types/tauri';
-
-interface GitCommitDetailProps {
-  hash: string | null;
-  detail: GitCommitDetailType | null;
-  loading: boolean;
-  onClose: () => void;
-}
+import type { GitCommitDetailProps } from '@/types/git';
 
 export function GitCommitDetail({ hash, detail, loading, onClose }: GitCommitDetailProps) {
   const { t } = useLocale();

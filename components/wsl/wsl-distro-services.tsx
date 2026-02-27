@@ -31,55 +31,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslExecResult } from '@/types/tauri';
-
-interface ServiceInfo {
-  name: string;
-  status: 'running' | 'stopped' | 'failed' | 'exited' | 'inactive' | 'other';
-  description: string;
-  pid?: string;
-  activeState: string;
-  subState: string;
-}
-
-interface WslDistroServicesProps {
-  distroName: string;
-  isRunning: boolean;
-  onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-function parseServices(output: string): ServiceInfo[] {
-  const services: ServiceInfo[] = [];
-  const lines = output.split('\n').filter((l) => l.trim());
-
-  for (const line of lines) {
-    // Parse systemctl list-units --type=service --no-pager --no-legend output
-    // Format: UNIT LOAD ACTIVE SUB DESCRIPTION...
-    const match = line.trim().match(/^(\S+\.service)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)/);
-    if (!match) continue;
-
-    const [, unit, , active, sub, description] = match;
-    const name = unit.replace('.service', '');
-
-    let status: ServiceInfo['status'] = 'other';
-    if (sub === 'running') status = 'running';
-    else if (active === 'inactive' || sub === 'dead') status = 'inactive';
-    else if (active === 'failed') status = 'failed';
-    else if (sub === 'exited') status = 'exited';
-    else if (active === 'active' && sub !== 'running') status = 'stopped';
-
-    services.push({
-      name,
-      status,
-      description: description.trim(),
-      activeState: active,
-      subState: sub,
-    });
-  }
-
-  return services;
-}
+import { parseServices, getStatusVariant } from '@/lib/wsl';
+import type { ServiceInfo, WslDistroServicesProps } from '@/types/wsl';
 
 function getStatusIcon(status: ServiceInfo['status']) {
   switch (status) {
@@ -94,15 +47,6 @@ function getStatusIcon(status: ServiceInfo['status']) {
       return <Square className="h-3.5 w-3.5 text-muted-foreground" />;
     default:
       return <Cog className="h-3.5 w-3.5 text-muted-foreground" />;
-  }
-}
-
-function getStatusVariant(status: ServiceInfo['status']): 'default' | 'secondary' | 'destructive' | 'outline' {
-  switch (status) {
-    case 'running': return 'default';
-    case 'failed': return 'destructive';
-    case 'exited': return 'outline';
-    default: return 'secondary';
   }
 }
 

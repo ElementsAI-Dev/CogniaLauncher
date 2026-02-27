@@ -31,7 +31,9 @@ import {
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { getTypeColor, getTypeLabel } from "@/lib/constants/changelog-utils";
+import { ALL_CHANGE_TYPES } from "@/lib/constants/about";
 import type { ChangelogEntry, ChangelogChangeType } from "@/lib/constants/about";
+import { formatCompactRelativeDate } from "@/lib/utils/date";
 
 export interface ChangelogDialogProps {
   open: boolean;
@@ -41,31 +43,6 @@ export interface ChangelogDialogProps {
   error?: string | null;
   onRetry?: () => void;
   t: (key: string) => string;
-}
-
-const ALL_CHANGE_TYPES: ChangelogChangeType[] = [
-  "added",
-  "changed",
-  "fixed",
-  "removed",
-  "deprecated",
-  "security",
-  "performance",
-  "breaking",
-];
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "today";
-  if (diffDays === 1) return "1d";
-  if (diffDays < 7) return `${diffDays}d`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`;
-  return `${Math.floor(diffDays / 365)}y`;
 }
 
 function ChangelogSkeleton() {
@@ -145,7 +122,7 @@ function VersionEntry({
                 <Calendar className="h-3 w-3" aria-hidden="true" />
                 <time dateTime={entry.date}>{entry.date}</time>
                 <span className="text-muted-foreground/60">
-                  ({formatRelativeDate(entry.date)})
+                  ({formatCompactRelativeDate(entry.date)})
                 </span>
               </div>
             </div>

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { ProviderInfo, PackageManagerHealthResult, EnvironmentProviderInfo } from "@/types/tauri";
 import { cn } from "@/lib/utils";
-import { getCapabilityColor, getCapabilityLabel } from "../provider-icons";
+import { getCapabilityColor, getCapabilityLabel } from "@/lib/constants/provider-capability";
 import { PlatformIcon } from "../provider-icon";
 
 interface ProviderOverviewTabProps {

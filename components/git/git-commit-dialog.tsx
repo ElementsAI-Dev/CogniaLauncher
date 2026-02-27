@@ -8,12 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { GitCommit, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-
-interface GitCommitDialogProps {
-  stagedCount: number;
-  onCommit: (message: string, amend?: boolean) => Promise<string>;
-  disabled?: boolean;
-}
+import type { GitCommitDialogProps } from '@/types/git';
 
 export function GitCommitDialog({ stagedCount, onCommit, disabled }: GitCommitDialogProps) {
   const { t } = useLocale();

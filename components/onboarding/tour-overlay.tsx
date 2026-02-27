@@ -5,28 +5,10 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
-import { TOUR_STEPS, type TourStepDef } from './tour-steps';
+import { TOUR_STEPS, TOUR_PADDING, POPOVER_OFFSET } from '@/lib/constants/onboarding';
 import { ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-
-interface TourOverlayProps {
-  active: boolean;
-  currentStep: number;
-  onNext: () => void;
-  onPrev: () => void;
-  onComplete: () => void;
-  onStop: () => void;
-}
-
-interface TargetRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-const PADDING = 8;
-const POPOVER_OFFSET = 12;
+import type { TourOverlayProps, TourStepDef, TargetRect } from '@/types/onboarding';
 
 export function TourOverlay({
   active,
@@ -79,16 +61,16 @@ export function TourOverlay({
       const spotlight = document.getElementById('tour-spotlight-rect');
       const ring = document.getElementById('tour-spotlight-ring');
       if (spotlight) {
-        spotlight.setAttribute('x', String(tr.left - PADDING));
-        spotlight.setAttribute('y', String(tr.top - PADDING));
-        spotlight.setAttribute('width', String(tr.width + PADDING * 2));
-        spotlight.setAttribute('height', String(tr.height + PADDING * 2));
+        spotlight.setAttribute('x', String(tr.left - TOUR_PADDING));
+        spotlight.setAttribute('y', String(tr.top - TOUR_PADDING));
+        spotlight.setAttribute('width', String(tr.width + TOUR_PADDING * 2));
+        spotlight.setAttribute('height', String(tr.height + TOUR_PADDING * 2));
       }
       if (ring) {
-        ring.style.top = `${tr.top - PADDING}px`;
-        ring.style.left = `${tr.left - PADDING}px`;
-        ring.style.width = `${tr.width + PADDING * 2}px`;
-        ring.style.height = `${tr.height + PADDING * 2}px`;
+        ring.style.top = `${tr.top - TOUR_PADDING}px`;
+        ring.style.left = `${tr.left - TOUR_PADDING}px`;
+        ring.style.width = `${tr.width + TOUR_PADDING * 2}px`;
+        ring.style.height = `${tr.height + TOUR_PADDING * 2}px`;
         ring.style.display = 'block';
       }
 
@@ -106,21 +88,21 @@ export function TourOverlay({
         switch (step.side) {
           case 'right':
             pStyle.top = `${tr.top + tr.height / 2}px`;
-            pStyle.left = `${tr.left + tr.width + PADDING + POPOVER_OFFSET}px`;
+            pStyle.left = `${tr.left + tr.width + TOUR_PADDING + POPOVER_OFFSET}px`;
             pStyle.transform = 'translateY(-50%)';
             break;
           case 'left':
             pStyle.top = `${tr.top + tr.height / 2}px`;
-            pStyle.right = `${window.innerWidth - tr.left + PADDING + POPOVER_OFFSET}px`;
+            pStyle.right = `${window.innerWidth - tr.left + TOUR_PADDING + POPOVER_OFFSET}px`;
             pStyle.transform = 'translateY(-50%)';
             break;
           case 'bottom':
-            pStyle.top = `${tr.top + tr.height + PADDING + POPOVER_OFFSET}px`;
+            pStyle.top = `${tr.top + tr.height + TOUR_PADDING + POPOVER_OFFSET}px`;
             pStyle.left = `${tr.left + tr.width / 2}px`;
             pStyle.transform = 'translateX(-50%)';
             break;
           case 'top':
-            pStyle.bottom = `${window.innerHeight - tr.top + PADDING + POPOVER_OFFSET}px`;
+            pStyle.bottom = `${window.innerHeight - tr.top + TOUR_PADDING + POPOVER_OFFSET}px`;
             pStyle.left = `${tr.left + tr.width / 2}px`;
             pStyle.transform = 'translateX(-50%)';
             break;

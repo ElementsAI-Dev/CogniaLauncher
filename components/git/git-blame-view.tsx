@@ -7,43 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Eye, FolderOpen, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeTimestamp } from '@/lib/utils/git-date';
+import { getAuthorColor, getHeatmapColor } from '@/lib/utils/git';
 import { isTauri } from '@/lib/tauri';
 import type { GitBlameEntry } from '@/types/tauri';
-
-interface GitBlameViewProps {
-  repoPath: string | null;
-  onGetBlame: (file: string) => Promise<GitBlameEntry[]>;
-}
-
-const AUTHOR_COLORS = [
-  'bg-blue-500',
-  'bg-green-500',
-  'bg-purple-500',
-  'bg-orange-500',
-  'bg-pink-500',
-  'bg-cyan-500',
-  'bg-yellow-500',
-  'bg-red-500',
-  'bg-indigo-500',
-  'bg-teal-500',
-  'bg-emerald-500',
-  'bg-rose-500',
-];
-
-function getAuthorColor(authorIndex: number): string {
-  return AUTHOR_COLORS[authorIndex % AUTHOR_COLORS.length];
-}
-
-function getHeatmapColor(timestamp: number, minTs: number, maxTs: number): string {
-  if (maxTs === minTs) return 'bg-blue-400/30';
-  const ratio = (timestamp - minTs) / (maxTs - minTs);
-  if (ratio > 0.8) return 'bg-red-400/40';
-  if (ratio > 0.6) return 'bg-orange-400/35';
-  if (ratio > 0.4) return 'bg-yellow-400/30';
-  if (ratio > 0.2) return 'bg-green-400/25';
-  return 'bg-blue-400/20';
-}
-
+import type { GitBlameViewProps } from '@/types/git';
 
 export function GitBlameView({ repoPath, onGetBlame }: GitBlameViewProps) {
   const { t } = useLocale();

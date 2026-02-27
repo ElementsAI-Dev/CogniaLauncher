@@ -64,6 +64,10 @@ jest.mock('@/hooks/use-terminal', () => ({
     fetchProxyEnvVars: jest.fn(),
     fetchShellEnvVars: jest.fn(),
     clearLaunchResult: jest.fn(),
+    loadProxyConfig: jest.fn(),
+    updateProxyMode: jest.fn(),
+    updateCustomProxy: jest.fn(),
+    saveCustomProxy: jest.fn(),
   }),
 }));
 

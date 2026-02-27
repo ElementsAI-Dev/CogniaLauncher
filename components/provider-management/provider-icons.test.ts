@@ -2,7 +2,7 @@ import {
   CAPABILITY_COLORS,
   getCapabilityColor,
   getCapabilityLabel,
-} from "./provider-icons";
+} from "@/lib/constants/provider-capability";
 
 describe("provider-icons", () => {
   describe("CAPABILITY_COLORS", () => {

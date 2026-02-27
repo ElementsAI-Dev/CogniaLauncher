@@ -32,23 +32,9 @@ import {
 } from "lucide-react";
 import { usePackageStore } from "@/lib/stores/packages";
 import { useLocale } from "@/components/providers/locale-provider";
-import type { PackageSummary, InstalledPackage } from "@/lib/tauri";
-
-interface PackageListProps {
-  packages: (PackageSummary | InstalledPackage)[];
-  type: "search" | "installed";
-  installing?: string[];
-  pinnedPackages?: string[];
-  bookmarkedPackages?: string[];
-  onInstall?: (name: string) => void;
-  onUninstall?: (name: string) => void;
-  onSelect?: (pkg: PackageSummary | InstalledPackage) => void;
-  onPin?: (name: string) => void;
-  onUnpin?: (name: string) => void;
-  onBookmark?: (name: string) => void;
-  selectable?: boolean;
-  showSelectAll?: boolean;
-}
+import { getPackageKey } from "@/lib/packages";
+import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
+import type { PackageListProps } from "@/types/packages";
 
 export function PackageList({
   packages,
@@ -73,9 +59,6 @@ export function PackageList({
     clearPackageSelection,
   } = usePackageStore();
   const { t } = useLocale();
-
-  const getPackageKey = (pkg: PackageSummary | InstalledPackage) =>
-    pkg.provider ? `${pkg.provider}:${pkg.name}` : pkg.name;
 
   const allSelected =
     packages.length > 0 &&

@@ -3,10 +3,7 @@
 import { Layers, Sparkles, Globe, Package, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-
-interface WelcomeStepProps {
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WelcomeStepProps } from '@/types/onboarding';
 
 export function WelcomeStep({ t }: WelcomeStepProps) {
   return (

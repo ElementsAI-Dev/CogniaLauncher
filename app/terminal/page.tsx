@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
 import { useTerminal } from '@/hooks/use-terminal';
@@ -37,6 +37,11 @@ export default function TerminalPage() {
     setEditingProfile(profile);
     setProfileDialogOpen(true);
   }, []);
+
+  useEffect(() => {
+    terminal.loadProxyConfig();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [terminal.loadProxyConfig]);
 
   const handleSaveProfile = useCallback(async (profile: TerminalProfile) => {
     if (profile.id) {
@@ -167,7 +172,16 @@ export default function TerminalPage() {
         <TabsContent value="proxy">
           <TerminalProxySettings
             proxyEnvVars={terminal.proxyEnvVars}
-            onFetchProxyEnvVars={terminal.fetchProxyEnvVars}
+            proxyMode={terminal.proxyMode}
+            globalProxy={terminal.globalProxy}
+            customProxy={terminal.customProxy}
+            noProxy={terminal.noProxy}
+            saving={terminal.proxyConfigSaving}
+            onProxyModeChange={terminal.updateProxyMode}
+            onCustomProxyChange={terminal.updateCustomProxy}
+            onCustomProxyBlur={terminal.saveCustomProxy}
+            onNoProxyChange={terminal.updateNoProxy}
+            onNoProxyBlur={terminal.saveNoProxy}
             loading={terminal.loading}
           />
         </TabsContent>

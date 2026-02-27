@@ -17,7 +17,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
-import { ONBOARDING_STEPS, type OnboardingStepId } from '@/lib/stores/onboarding';
+import { ONBOARDING_STEPS } from '@/lib/stores/onboarding';
+import { STEP_ICONS } from '@/lib/constants/onboarding';
 import { WelcomeStep } from './steps/welcome-step';
 import { LanguageStep } from './steps/language-step';
 import { ThemeStep } from './steps/theme-step';
@@ -25,47 +26,8 @@ import { EnvironmentDetectionStep } from './steps/environment-detection-step';
 import { MirrorsStep } from './steps/mirrors-step';
 import { ShellInitStep } from './steps/shell-init-step';
 import { CompleteStep } from './steps/complete-step';
-import {
-  ChevronLeft,
-  ChevronRight,
-  SkipForward,
-  Check,
-  Globe,
-  Palette,
-  Layers,
-  Server,
-  Terminal,
-  PartyPopper,
-  Sparkles,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-
-interface OnboardingWizardProps {
-  open: boolean;
-  currentStep: number;
-  totalSteps: number;
-  progress: number;
-  isFirstStep: boolean;
-  isLastStep: boolean;
-  tourCompleted: boolean;
-  onNext: () => void;
-  onPrev: () => void;
-  onGoTo: (step: number) => void;
-  onComplete: () => void;
-  onSkip: () => void;
-  onStartTour: () => void;
-  onClose: () => void;
-}
-
-const STEP_ICONS: Record<OnboardingStepId, LucideIcon> = {
-  welcome: Sparkles,
-  language: Globe,
-  theme: Palette,
-  'environment-detection': Layers,
-  mirrors: Server,
-  'shell-init': Terminal,
-  complete: PartyPopper,
-};
+import { ChevronLeft, ChevronRight, SkipForward, Check } from 'lucide-react';
+import type { OnboardingWizardProps } from '@/types/onboarding';
 
 export function OnboardingWizard({
   open,

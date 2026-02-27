@@ -16,3 +16,6 @@ export * from './github';
 
 // GitLab types
 export * from './gitlab';
+
+// Git component types
+export * from './git';

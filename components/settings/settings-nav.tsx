@@ -14,9 +14,10 @@ import {
 import { Settings2 } from "lucide-react";
 import {
   SETTINGS_SECTIONS,
+  SECTION_ICONS,
   type SettingsSection,
 } from "@/lib/constants/settings-registry";
-import { SECTION_ICONS, type TranslateFunction } from "./shared";
+import type { TranslateFunction } from "@/types/settings";
 
 interface SettingsNavProps {
   activeSection: SettingsSection | null;

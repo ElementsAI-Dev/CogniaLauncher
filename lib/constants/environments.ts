@@ -231,3 +231,21 @@ export const INSTALLATION_STEPS = [
   'error'
 ] as const;
 export type InstallationStep = typeof INSTALLATION_STEPS[number];
+
+// Ordered active installation steps (excludes terminal states)
+export const INSTALLATION_ACTIVE_STEPS: InstallationStep[] = [
+  'fetching',
+  'downloading',
+  'extracting',
+  'configuring',
+];
+
+// i18n key mapping for each installation step
+export const INSTALLATION_STEP_LABELS: Record<InstallationStep, string> = {
+  fetching: 'progress.fetchingInfo',
+  downloading: 'progress.downloadingBinaries',
+  extracting: 'progress.extracting',
+  configuring: 'progress.configuring',
+  done: 'progress.configuring',
+  error: 'progress.configuring',
+};

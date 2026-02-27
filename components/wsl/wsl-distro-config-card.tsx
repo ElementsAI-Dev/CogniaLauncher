@@ -10,29 +10,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Settings, Plus, Trash2, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { QUICK_SETTINGS } from '@/lib/constants/wsl';
+import type { WslDistroConfigCardProps } from '@/types/wsl';
 import type { WslDistroConfig } from '@/types/tauri';
-
-interface WslDistroConfigCardProps {
-  distroName: string;
-  getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
-  setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-interface QuickSetting {
-  section: string;
-  key: string;
-  labelKey: string;
-  descKey: string;
-  type: 'boolean';
-  defaultValue: string;
-}
-
-const QUICK_SETTINGS: QuickSetting[] = [
-  { section: 'boot', key: 'systemd', labelKey: 'wsl.distroConfig.systemd', descKey: 'wsl.distroConfig.systemdDesc', type: 'boolean', defaultValue: 'false' },
-  { section: 'automount', key: 'enabled', labelKey: 'wsl.distroConfig.automount', descKey: 'wsl.distroConfig.automountDesc', type: 'boolean', defaultValue: 'true' },
-  { section: 'interop', key: 'enabled', labelKey: 'wsl.distroConfig.interop', descKey: 'wsl.distroConfig.interopDesc', type: 'boolean', defaultValue: 'true' },
-];
 
 export function WslDistroConfigCard({
   distroName,

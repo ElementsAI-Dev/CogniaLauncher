@@ -33,15 +33,15 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   WslExportDialog,
+  WslChangeUserDialog,
+  WslMoveDialog,
+  WslResizeDialog,
+  WslDistroOverview,
+  WslDistroTerminal,
+  WslDistroFilesystem,
+  WslDistroNetwork,
+  WslDistroServices,
 } from '@/components/wsl';
-import { WslChangeUserDialog } from '@/components/wsl/wsl-change-user-dialog';
-import { WslMoveDialog } from '@/components/wsl/wsl-move-dialog';
-import { WslResizeDialog } from '@/components/wsl/wsl-resize-dialog';
-import { WslDistroOverview } from '@/components/wsl/wsl-distro-overview';
-import { WslDistroTerminal } from '@/components/wsl/wsl-distro-terminal';
-import { WslDistroFilesystem } from '@/components/wsl/wsl-distro-filesystem';
-import { WslDistroNetwork } from '@/components/wsl/wsl-distro-network';
-import { WslDistroServices } from '@/components/wsl/wsl-distro-services';
 import {
   RefreshCw,
   Play,
@@ -62,11 +62,8 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { WslDistroDetailPageProps } from '@/types/wsl';
 import type { WslDistroStatus } from '@/types/tauri';
-
-interface WslDistroDetailPageProps {
-  distroName: string;
-}
 
 export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const { t } = useLocale();

@@ -8,11 +8,7 @@ import { History, Loader2, RotateCcw } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
 import type { GitReflogEntry } from '@/types/tauri';
-
-interface GitReflogCardProps {
-  onGetReflog: (limit?: number) => Promise<GitReflogEntry[]>;
-  onResetTo?: (hash: string, mode?: string) => Promise<string>;
-}
+import type { GitReflogCardProps } from '@/types/git';
 
 export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
   const { t } = useLocale();

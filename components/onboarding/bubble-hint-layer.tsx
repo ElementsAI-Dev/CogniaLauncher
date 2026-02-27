@@ -4,12 +4,8 @@ import { useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
 import { BubbleHint } from './bubble-hint';
-import { BUBBLE_HINTS } from './bubble-hints';
-
-interface BubbleHintLayerProps {
-  /** Maximum number of hints to show simultaneously */
-  maxConcurrent?: number;
-}
+import { BUBBLE_HINTS } from '@/lib/constants/onboarding';
+import type { BubbleHintLayerProps } from '@/types/onboarding';
 
 export function BubbleHintLayer({ maxConcurrent = 1 }: BubbleHintLayerProps) {
   const pathname = usePathname();

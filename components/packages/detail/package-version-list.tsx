@@ -20,18 +20,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { VersionInfo } from '@/lib/tauri';
-
-interface PackageVersionListProps {
-  versions: VersionInfo[];
-  currentVersion: string | null;
-  isInstalled: boolean;
-  isInstalling: boolean;
-  onInstall: (version: string) => Promise<void>;
-  onRollback: (version: string) => Promise<void>;
-}
-
-const VERSIONS_PER_PAGE = 30;
+import { VERSIONS_PER_PAGE } from '@/lib/constants/packages';
+import type { PackageVersionListProps } from '@/types/packages';
 
 export function PackageVersionList({
   versions,

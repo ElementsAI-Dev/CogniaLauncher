@@ -29,11 +29,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PackageInfo, ResolutionResult, InstallHistoryEntry } from '@/lib/tauri';
-
-interface PackageDetailPageProps {
-  packageName: string;
-  providerId?: string;
-}
+import type { PackageDetailPageProps } from '@/types/packages';
 
 export function PackageDetailPage({ packageName, providerId }: PackageDetailPageProps) {
   const router = useRouter();

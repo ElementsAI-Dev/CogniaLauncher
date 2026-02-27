@@ -14,12 +14,8 @@ import { ChevronDown, FolderOpen, FolderInput, Link2, RotateCcw, Save } from 'lu
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { CachePathInfo } from '@/lib/tauri';
+import type { CachePathCardProps } from '@/types/cache';
 import { CacheMigrationDialog } from './cache-migration-dialog';
-
-interface CachePathCardProps {
-  refreshTrigger?: number;
-  onPathChanged?: () => void;
-}
 
 export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardProps) {
   const { t } = useLocale();

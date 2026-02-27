@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { PathsSettings } from "./paths-settings";
 
 jest.mock("@/lib/tauri", () => ({
@@ -121,7 +121,7 @@ describe("PathsSettings", () => {
     expect(screen.getByText("Invalid root path")).toBeInTheDocument();
   });
 
-  it("should show validation error for relative path", () => {
+  it("should show validation error for relative path", async () => {
     const onValueChange = jest.fn();
     render(
       <PathsSettings
@@ -131,12 +131,14 @@ describe("PathsSettings", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Path must be absolute"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Path must be absolute"),
+      ).toBeInTheDocument();
+    });
   });
 
-  it("should show validation error for dangerous characters", () => {
+  it("should show validation error for dangerous characters", async () => {
     render(
       <PathsSettings
         {...defaultProps}
@@ -144,12 +146,14 @@ describe("PathsSettings", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Path contains dangerous characters"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Path contains dangerous characters"),
+      ).toBeInTheDocument();
+    });
   });
 
-  it("should show validation error for shell injection patterns", () => {
+  it("should show validation error for shell injection patterns", async () => {
     render(
       <PathsSettings
         {...defaultProps}
@@ -157,9 +161,11 @@ describe("PathsSettings", () => {
       />,
     );
 
-    expect(
-      screen.getByText("Path contains dangerous characters"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Path contains dangerous characters"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("should not show error for empty path (uses default)", () => {

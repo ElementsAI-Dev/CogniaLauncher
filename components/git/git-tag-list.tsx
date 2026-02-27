@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tag } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitTagInfo } from '@/types/tauri';
-
-interface GitTagListProps {
-  tags: GitTagInfo[];
-}
+import type { GitTagListProps } from '@/types/git';
 
 export function GitTagList({ tags }: GitTagListProps) {
   const { t } = useLocale();

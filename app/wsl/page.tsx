@@ -16,10 +16,10 @@ import {
   WslConfigCard,
   WslDistroConfigCard,
   WslExecTerminal,
+  WslChangeUserDialog,
+  WslMountDialog,
+  WslImportInPlaceDialog,
 } from '@/components/wsl';
-import { WslChangeUserDialog } from '@/components/wsl/wsl-change-user-dialog';
-import { WslMountDialog } from '@/components/wsl/wsl-mount-dialog';
-import { WslImportInPlaceDialog } from '@/components/wsl/wsl-import-in-place-dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';

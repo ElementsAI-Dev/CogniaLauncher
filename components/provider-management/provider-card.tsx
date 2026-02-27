@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import { writeClipboard } from '@/lib/clipboard';
 import Link from "next/link";
 import {
@@ -29,7 +28,8 @@ import { toast } from "sonner";
 import {
   getCapabilityColor,
   getCapabilityLabel,
-} from "./provider-icons";
+} from "@/lib/constants/provider-capability";
+import { useProviderStatus } from "@/hooks/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
 
 export interface ProviderCardProps {
@@ -51,22 +51,8 @@ export function ProviderCard({
   onCheckStatus,
   t,
 }: ProviderCardProps) {
-  const [isChecking, setIsChecking] = useState(false);
-  const [localAvailable, setLocalAvailable] = useState<boolean | undefined>(
-    isAvailable,
-  );
-
-  const handleCheckStatus = useCallback(async () => {
-    setIsChecking(true);
-    try {
-      const available = await onCheckStatus(provider.id);
-      setLocalAvailable(available);
-    } finally {
-      setIsChecking(false);
-    }
-  }, [onCheckStatus, provider.id]);
-
-  const availabilityStatus = localAvailable ?? isAvailable;
+  const { isChecking, availabilityStatus, handleCheckStatus } =
+    useProviderStatus(provider.id, isAvailable, onCheckStatus);
 
   return (
     <Card

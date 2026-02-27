@@ -54,7 +54,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
-import { BUBBLE_HINTS } from '@/components/onboarding/bubble-hints';
+import { BUBBLE_HINTS } from '@/lib/constants/onboarding';
 import { toast } from 'sonner';
 import { type SettingsSection } from '@/lib/constants/settings-registry';
 

@@ -3,6 +3,34 @@
  * Used for search functionality and navigation
  */
 
+import {
+  Settings2,
+  Network,
+  Shield,
+  Server,
+  Palette,
+  RefreshCw,
+  Monitor,
+  FolderOpen,
+  Package,
+  Info,
+  type LucideIcon,
+} from "lucide-react";
+
+/** Icon map for settings sections, keyed by icon name string */
+export const SECTION_ICONS: Record<string, LucideIcon> = {
+  Settings2,
+  Network,
+  Shield,
+  Server,
+  Palette,
+  RefreshCw,
+  Monitor,
+  FolderOpen,
+  Package,
+  Info,
+};
+
 export type SettingsSection =
   | 'general'
   | 'network'

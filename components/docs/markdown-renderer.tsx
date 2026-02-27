@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, type ComponentPropsWithoutRef, type MouseEvent } from 'react';
+import { useCallback, type ComponentPropsWithoutRef } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,23 +11,13 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { handleAnchorClick } from '@/lib/docs/scroll';
+import { resolveDocLink } from '@/lib/docs/resolve-link';
 
 interface MarkdownRendererProps {
   content: string;
   className?: string;
   basePath?: string;
-}
-
-function handleAnchorClick(e: MouseEvent<HTMLAnchorElement>) {
-  const href = e.currentTarget.getAttribute('href');
-  if (!href?.startsWith('#')) return;
-  e.preventDefault();
-  const id = href.slice(1);
-  const target = document.getElementById(id);
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    history.replaceState(null, '', href);
-  }
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -152,45 +142,33 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
             if (!href) {
               return <a {...props}>{children}</a>;
             }
-            if (href.startsWith('#')) {
-              return (
-                <a href={href} onClick={handleAnchorClick} {...props}>
-                  {children}
-                </a>
-              );
+            const link = resolveDocLink(href, basePath);
+            switch (link.type) {
+              case 'anchor':
+                return (
+                  <a href={link.resolved} onClick={handleAnchorClick} {...props}>
+                    {children}
+                  </a>
+                );
+              case 'internal':
+                return (
+                  <Link href={link.resolved} {...props}>
+                    {children}
+                  </Link>
+                );
+              case 'external':
+                return (
+                  <a href={link.resolved} target="_blank" rel="noopener noreferrer" {...props}>
+                    {children}
+                  </a>
+                );
+              default:
+                return (
+                  <a href={link.resolved} {...props}>
+                    {children}
+                  </a>
+                );
             }
-            if (href.endsWith('.md') || href.startsWith('../') || href.startsWith('./')) {
-              let resolved = href.replace(/\.md$/, '');
-              if (resolved.startsWith('../')) {
-                // Go up one directory from basePath, then append rest
-                const parentDir = basePath?.split('/').slice(0, -1).join('/') ?? '';
-                resolved = resolved.replace(/^\.\.\//, '');
-                resolved = parentDir ? `${parentDir}/${resolved}` : resolved;
-              } else if (resolved.startsWith('./')) {
-                resolved = resolved.replace(/^\.\//, '');
-                resolved = basePath ? `${basePath}/${resolved}` : resolved;
-              } else if (!resolved.includes('/') && basePath) {
-                // Bare filename like "configuration" — resolve relative to basePath
-                resolved = `${basePath}/${resolved}`;
-              }
-              return (
-                <Link href={`/docs/${resolved}`} {...props}>
-                  {children}
-                </Link>
-              );
-            }
-            if (href.startsWith('http://') || href.startsWith('https://')) {
-              return (
-                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
-                  {children}
-                </a>
-              );
-            }
-            return (
-              <a href={href} {...props}>
-                {children}
-              </a>
-            );
           },
           img: ({ alt, ...props }: ComponentPropsWithoutRef<'img'>) => (
             // eslint-disable-next-line @next/next/no-img-element

@@ -39,24 +39,7 @@ import {
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
-import type { PackageInfo, InstalledPackage } from '@/lib/tauri';
-
-interface PackageOverviewCardProps {
-  packageInfo: PackageInfo | null;
-  installedPkg: InstalledPackage | null;
-  isInstalled: boolean;
-  isPinned: boolean;
-  isBookmarked: boolean;
-  isInstalling: boolean;
-  hasUpdate: boolean;
-  latestVersion: string | null;
-  onInstall: (version?: string) => Promise<void>;
-  onUninstall: () => Promise<void>;
-  onPin: () => Promise<void>;
-  onUnpin: () => Promise<void>;
-  onBookmark: () => void;
-  onRollback: (version: string) => Promise<void>;
-}
+import type { PackageOverviewCardProps } from '@/types/packages';
 
 export function PackageOverviewCard({
   packageInfo,

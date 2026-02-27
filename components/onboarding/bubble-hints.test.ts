@@ -1,4 +1,4 @@
-import { BUBBLE_HINTS } from "./bubble-hints";
+import { BUBBLE_HINTS } from "@/lib/constants/onboarding";
 
 describe("BUBBLE_HINTS", () => {
   it("exports a non-empty array", () => {

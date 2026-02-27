@@ -13,13 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Import, Loader2 } from 'lucide-react';
-
-interface WslImportInPlaceDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: (name: string, vhdxPath: string) => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslImportInPlaceDialogProps } from '@/types/wsl';
 
 export function WslImportInPlaceDialog({
   open,

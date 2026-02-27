@@ -1,33 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { ALL_LEVELS } from '@/lib/constants/log';
 
-export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
-
-export interface LogEntry {
-  id: string;
-  timestamp: number;
-  level: LogLevel;
-  message: string;
-  target?: string;
-  file?: string;
-  line?: number;
-}
-
-export interface LogFilter {
-  levels: LogLevel[];
-  search: string;
-  target?: string;
-  useRegex?: boolean;
-  startTime?: number | null;
-  endTime?: number | null;
-}
-
-export interface LogFileInfo {
-  name: string;
-  path: string;
-  size: number;
-  modified: number;
-}
+export type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
+import type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
 
 interface LogState {
   logs: LogEntry[];
@@ -61,8 +37,6 @@ interface LogState {
   getFilteredLogs: () => LogEntry[];
   getLogStats: () => { total: number; byLevel: Record<LogLevel, number> };
 }
-
-const ALL_LEVELS: LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error'];
 
 let logIdCounter = 0;
 
@@ -244,3 +218,4 @@ export const useLogStore = create<LogState>()(
 );
 
 export { ALL_LEVELS };
+export type { LogLevel as LogLevelType } from '@/types/log';

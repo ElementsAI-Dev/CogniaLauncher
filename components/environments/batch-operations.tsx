@@ -23,24 +23,13 @@ import {
   X,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
-
-interface SelectedVersion {
-  envType: string;
-  version: string;
-}
+import type { SelectedVersion, OperationType, OperationResult } from "@/types/environments";
 
 interface BatchOperationsProps {
   selectedVersions: SelectedVersion[];
   onBatchInstall: (versions: SelectedVersion[]) => Promise<void>;
   onBatchUninstall: (versions: SelectedVersion[]) => Promise<void>;
   onClearSelection: () => void;
-}
-
-type OperationType = "install" | "uninstall";
-
-interface OperationResult {
-  successful: SelectedVersion[];
-  failed: { version: SelectedVersion; error: string }[];
 }
 
 export function EnvironmentBatchOperations({

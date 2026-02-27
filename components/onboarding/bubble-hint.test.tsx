@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BubbleHint } from "./bubble-hint";
-import type { BubbleHintDef } from "./bubble-hints";
+import type { BubbleHintDef } from "@/types/onboarding";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({

@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRef } from "react";
 import {
   Command,
   CommandEmpty,
@@ -12,22 +11,16 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import {
-  Layers,
-  Package,
-  Settings,
   Clock,
   ArrowRight,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { Kbd } from "@/components/ui/kbd";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
+import { useDashboardSearch } from "@/hooks/use-dashboard-search";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
-
-const SEARCH_HISTORY_KEY = "cognia-dashboard-search-history";
-const MAX_HISTORY = 5;
 
 interface QuickSearchProps {
   environments: EnvironmentInfo[];
@@ -35,184 +28,29 @@ interface QuickSearchProps {
   className?: string;
 }
 
-interface SearchResult {
-  type: "environment" | "package" | "action";
-  id: string;
-  title: string;
-  subtitle?: string;
-  icon: React.ReactNode;
-  href?: string;
-  action?: () => void;
-}
-
-const getInitialHistory = (): string[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const saved = localStorage.getItem(SEARCH_HISTORY_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
-};
-
 export function QuickSearch({
   environments,
   packages,
   className,
 }: QuickSearchProps) {
-  const router = useRouter();
   const { t } = useLocale();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const [searchHistory, setSearchHistory] =
-    useState<string[]>(getInitialHistory);
-
-  const quickActions: SearchResult[] = useMemo(
-    () => [
-      {
-        type: "action",
-        id: "add-environment",
-        title: t("dashboard.quickActions.addEnvironment"),
-        icon: <Layers className="h-4 w-4" />,
-        href: "/environments",
-      },
-      {
-        type: "action",
-        id: "install-package",
-        title: t("dashboard.quickActions.installPackage"),
-        icon: <Package className="h-4 w-4" />,
-        href: "/packages",
-      },
-      {
-        type: "action",
-        id: "settings",
-        title: t("dashboard.quickActions.openSettings"),
-        icon: <Settings className="h-4 w-4" />,
-        href: "/settings",
-      },
-    ],
-    [t],
-  );
-
-  const envResults = useMemo((): SearchResult[] => {
-    if (!query.trim()) return [];
-    const lowerQuery = query.toLowerCase();
-    return environments
-      .filter(
-        (env) =>
-          env.env_type.toLowerCase().includes(lowerQuery) ||
-          env.provider.toLowerCase().includes(lowerQuery),
-      )
-      .slice(0, 3)
-      .map((env) => ({
-        type: "environment" as const,
-        id: `env-${env.env_type}`,
-        title: env.env_type,
-        subtitle: `${env.provider} • ${env.current_version || t("common.none")}`,
-        icon: <LanguageIcon languageId={env.env_type} size={16} />,
-        href: "/environments",
-      }));
-  }, [query, environments, t]);
-
-  const pkgResults = useMemo((): SearchResult[] => {
-    if (!query.trim()) return [];
-    const lowerQuery = query.toLowerCase();
-    return packages
-      .filter(
-        (pkg) =>
-          pkg.name.toLowerCase().includes(lowerQuery) ||
-          pkg.provider.toLowerCase().includes(lowerQuery),
-      )
-      .slice(0, 3)
-      .map((pkg) => ({
-        type: "package" as const,
-        id: `pkg-${pkg.provider}-${pkg.name}`,
-        title: pkg.name,
-        subtitle: `${pkg.provider} • ${pkg.version}`,
-        icon: <Package className="h-4 w-4" />,
-        href: "/packages",
-      }));
-  }, [query, packages]);
-
-  const actionResults = useMemo((): SearchResult[] => {
-    if (!query.trim()) return [];
-    const lowerQuery = query.toLowerCase();
-    return quickActions.filter((action) =>
-      action.title.toLowerCase().includes(lowerQuery),
-    );
-  }, [query, quickActions]);
-
-  const hasResults = envResults.length > 0 || pkgResults.length > 0 || actionResults.length > 0;
-  const showDropdown = open && (query.trim() || searchHistory.length > 0);
-
-  const saveToHistory = useCallback((searchQuery: string) => {
-    if (!searchQuery.trim()) return;
-
-    setSearchHistory((prev) => {
-      const filtered = prev.filter((h) => h !== searchQuery);
-      const updated = [searchQuery, ...filtered].slice(0, MAX_HISTORY);
-      localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  const clearHistory = useCallback(() => {
-    setSearchHistory([]);
-    localStorage.removeItem(SEARCH_HISTORY_KEY);
-  }, []);
-
-  const handleSelect = useCallback(
-    (result: SearchResult) => {
-      if (query.trim()) {
-        saveToHistory(query);
-      }
-
-      if (result.action) {
-        result.action();
-      } else if (result.href) {
-        router.push(result.href);
-      }
-
-      setQuery("");
-      setOpen(false);
-    },
-    [query, router, saveToHistory],
-  );
-
-  // Global keyboard shortcut
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey) {
-        const target = e.target as HTMLElement;
-        if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") {
-          e.preventDefault();
-          inputRef.current?.focus();
-          setOpen(true);
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleGlobalKeyDown);
-    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
-  }, []);
-
-  // Click outside to close
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  const {
+    query,
+    setQuery,
+    setOpen,
+    searchHistory,
+    quickActions,
+    envResults,
+    pkgResults,
+    actionResults,
+    hasResults,
+    showDropdown,
+    clearHistory,
+    handleSelect,
+  } = useDashboardSearch({ environments, packages, containerRef, inputRef });
 
   return (
     <div className={cn("relative", className)} ref={containerRef}>

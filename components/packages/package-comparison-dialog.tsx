@@ -32,28 +32,9 @@ import {
 import type { PackageComparison } from "@/lib/tauri";
 import { formatSize } from "@/lib/utils";
 import { useLocale } from "@/components/providers/locale-provider";
-
-interface PackageComparisonDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  packageIds: string[];
-  onCompare: (packageIds: string[]) => Promise<PackageComparison>;
-}
-
-const COMPARISON_FEATURE_KEYS = [
-  { nameKey: "featureVersion", key: "version", type: "string" as const },
-  { nameKey: "featureProvider", key: "provider", type: "string" as const },
-  { nameKey: "featureLicense", key: "license", type: "string" as const },
-  { nameKey: "featureSize", key: "size", type: "size" as const },
-  { nameKey: "featureLastUpdated", key: "updated_at", type: "string" as const },
-  { nameKey: "featureHomepage", key: "homepage", type: "string" as const },
-  {
-    nameKey: "featureDependencies",
-    key: "dependencies",
-    type: "array" as const,
-  },
-  { nameKey: "featurePlatforms", key: "platforms", type: "array" as const },
-];
+import { COMPARISON_FEATURE_KEYS } from "@/lib/constants/packages";
+import { getHighlightClass } from "@/lib/packages";
+import type { PackageComparisonDialogProps } from "@/types/packages";
 
 export function PackageComparisonDialog({
   open,
@@ -163,19 +144,6 @@ export function PackageComparisonDialog({
         }
         return <span className="truncate max-w-[150px]">{String(value)}</span>;
     }
-  };
-
-  const getHighlightClass = (
-    featureKey: string,
-    value: unknown,
-    allValues: unknown[],
-  ) => {
-    // Highlight differences
-    const uniqueValues = new Set(allValues.map((v) => JSON.stringify(v)));
-    if (uniqueValues.size > 1) {
-      return "bg-yellow-500/5";
-    }
-    return "";
   };
 
   return (

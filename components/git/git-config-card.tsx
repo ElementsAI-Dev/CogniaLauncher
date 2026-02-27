@@ -7,12 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Settings2, Plus, Trash2, Save } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { GitConfigEntry } from '@/types/tauri';
-
-interface GitConfigCardProps {
-  config: GitConfigEntry[];
-  onSet: (key: string, value: string) => Promise<void>;
-  onRemove: (key: string) => Promise<void>;
-}
+import type { GitConfigCardProps } from '@/types/git';
 
 export function GitConfigCard({ config, onSet, onRemove }: GitConfigCardProps) {
   const { t } = useLocale();

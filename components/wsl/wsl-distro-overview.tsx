@@ -25,51 +25,14 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBytes } from '@/lib/utils';
+import { formatPmLabel, formatKb } from '@/lib/wsl';
 import { WslDistroConfigCard } from '@/components/wsl/wsl-distro-config-card';
+import type { WslDistroOverviewProps } from '@/types/wsl';
 import type {
-  WslDistroStatus,
   WslDiskUsage,
-  WslDistroConfig,
   WslDistroEnvironment,
   WslDistroResources,
-  WslPackageUpdateResult,
 } from '@/types/tauri';
-
-interface WslDistroOverviewProps {
-  distroName: string;
-  distro: WslDistroStatus | null;
-  getDiskUsage: (name: string) => Promise<WslDiskUsage | null>;
-  getIpAddress: (distro?: string) => Promise<string>;
-  getDistroConfig: (distro: string) => Promise<WslDistroConfig | null>;
-  setDistroConfigValue: (distro: string, section: string, key: string, value?: string) => Promise<void>;
-  detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
-  getDistroResources?: (distro: string) => Promise<WslDistroResources | null>;
-  updateDistroPackages?: (distro: string, mode: string) => Promise<WslPackageUpdateResult>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-/** Map distro ID to a display-friendly package manager label */
-function formatPmLabel(pm: string): string {
-  const labels: Record<string, string> = {
-    apt: 'APT (dpkg)',
-    pacman: 'Pacman',
-    dnf: 'DNF (rpm)',
-    yum: 'YUM (rpm)',
-    zypper: 'Zypper (rpm)',
-    apk: 'APK',
-    'xbps-install': 'XBPS',
-    emerge: 'Portage',
-    nix: 'Nix',
-    swupd: 'swupd',
-    eopkg: 'eopkg',
-  };
-  return labels[pm] ?? pm;
-}
-
-/** Format KB to human-readable */
-function formatKb(kb: number): string {
-  return formatBytes(kb * 1024);
-}
 
 export function WslDistroOverview({
   distroName,

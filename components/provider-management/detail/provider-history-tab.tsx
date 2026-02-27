@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import type { InstallHistoryEntry } from "@/types/tauri";
 import { cn } from "@/lib/utils";
+import { getActionColor } from "@/lib/provider-utils";
 
 const PAGE_SIZE = 20;
 
@@ -83,23 +84,6 @@ function getActionIcon(action: string) {
       return <RotateCcw className="h-3.5 w-3.5" />;
     default:
       return <History className="h-3.5 w-3.5" />;
-  }
-}
-
-function getActionColor(action: string) {
-  switch (action.toLowerCase()) {
-    case "install":
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
-    case "uninstall":
-    case "remove":
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
-    case "update":
-    case "upgrade":
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
-    case "rollback":
-      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300";
-    default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
   }
 }
 

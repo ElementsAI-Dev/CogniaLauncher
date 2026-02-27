@@ -27,22 +27,13 @@ import {
   Power,
   PowerOff,
 } from "lucide-react";
-
-export type CategoryFilter = "all" | "environment" | "package" | "system";
-export type StatusFilter =
-  | "all"
-  | "available"
-  | "unavailable"
-  | "enabled"
-  | "disabled";
-export type SortOption =
-  | "name-asc"
-  | "name-desc"
-  | "priority-asc"
-  | "priority-desc"
-  | "status";
-export type ViewMode = "grid" | "list";
-export type PlatformFilter = "all" | "windows" | "linux" | "macos";
+import type {
+  CategoryFilter,
+  StatusFilter,
+  SortOption,
+  ViewMode,
+  PlatformFilter,
+} from "@/types/provider";
 
 export interface ProviderToolbarProps {
   searchQuery: string;

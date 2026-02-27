@@ -8,16 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isTauri } from '@/lib/tauri';
-
-interface DetectedEnv {
-  name: string;
-  version: string;
-  available: boolean;
-}
-
-interface EnvironmentDetectionStepProps {
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
 
 export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
   const [detecting, setDetecting] = useState(false);

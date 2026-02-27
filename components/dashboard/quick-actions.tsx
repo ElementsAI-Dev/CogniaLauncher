@@ -22,16 +22,7 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
-
-interface QuickAction {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  href?: string;
-  action?: () => void;
-  variant?: "default" | "secondary" | "outline";
-  shortcut?: string;
-}
+import type { QuickAction } from "@/types/dashboard";
 
 interface QuickActionsProps {
   onRefreshAll?: () => void;

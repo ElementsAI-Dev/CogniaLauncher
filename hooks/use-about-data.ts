@@ -5,47 +5,16 @@ import * as tauri from '@/lib/tauri';
 import { isTauri } from '@/lib/platform';
 import { APP_VERSION } from '@/lib/app-version';
 import { toast } from 'sonner';
+import type { SystemInfo, UpdateStatus } from '@/types/about';
 
-export interface SystemInfo {
-  os: string;
-  arch: string;
-  osVersion: string;
-  osLongVersion: string;
-  kernelVersion: string;
-  hostname: string;
-  osName: string;
-  distributionId: string;
-  cpuArch: string;
-  cpuModel: string;
-  cpuVendorId: string;
-  cpuFrequency: number;
-  cpuCores: number;
-  physicalCoreCount: number | null;
-  globalCpuUsage: number;
-  totalMemory: number;
-  availableMemory: number;
-  usedMemory: number;
-  totalSwap: number;
-  usedSwap: number;
-  uptime: number;
-  bootTime: number;
-  loadAverage: [number, number, number];
-  gpus: tauri.GpuInfo[];
-  appVersion: string;
-  homeDir: string;
-  locale: string;
-  components: tauri.ComponentInfo[];
-  battery: tauri.BatteryInfo | null;
-  disks: tauri.DiskInfo[];
-  networks: tauri.NetworkInterfaceInfo[];
-}
+export type { SystemInfo, UpdateStatus };
 
 export interface UseAboutDataReturn {
   updateInfo: tauri.SelfUpdateInfo | null;
   loading: boolean;
   updating: boolean;
   updateProgress: number;
-  updateStatus: 'idle' | 'downloading' | 'installing' | 'done' | 'error';
+  updateStatus: UpdateStatus;
   error: string | null;
   systemError: string | null;
   systemInfo: SystemInfo | null;
@@ -63,7 +32,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState(0);
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'downloading' | 'installing' | 'done' | 'error'>('idle');
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [systemError, setSystemError] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);

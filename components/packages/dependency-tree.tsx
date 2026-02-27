@@ -33,43 +33,9 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { formatSize } from "@/lib/utils";
-
-interface DependencyNode {
-  name: string;
-  version: string;
-  constraint?: string;
-  provider?: string | null;
-  is_installed: boolean;
-  is_conflict: boolean;
-  conflict_reason?: string | null;
-  dependencies: DependencyNode[];
-  depth: number;
-  is_direct?: boolean;
-}
-
-interface ResolutionResult {
-  success: boolean;
-  tree: DependencyNode[];
-  packages: { name: string; version: string; provider: string }[];
-  conflicts: ConflictInfo[];
-  install_order: string[];
-  total_packages: number;
-  total_size: number | null;
-}
-
-interface ConflictInfo {
-  package_name: string;
-  required_by: string[];
-  versions: string[];
-  resolution?: string;
-}
-
-interface DependencyTreeProps {
-  packageId?: string;
-  resolution?: ResolutionResult;
-  loading: boolean;
-  onResolve: (packageId: string) => Promise<ResolutionResult>;
-}
+import { DEPTH_COLORS } from "@/lib/constants/packages";
+import type { DependencyNode } from "@/lib/tauri";
+import type { DependencyTreeProps } from "@/types/packages";
 
 function DependencyNodeItem({
   node,
@@ -87,16 +53,7 @@ function DependencyNodeItem({
   const isMatch =
     searchTerm && node.name.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const depthColors = [
-    "border-l-primary",
-    "border-l-blue-500",
-    "border-l-green-500",
-    "border-l-yellow-500",
-    "border-l-purple-500",
-    "border-l-pink-500",
-  ];
-
-  const borderColor = depthColors[node.depth % depthColors.length];
+  const borderColor = DEPTH_COLORS[node.depth % DEPTH_COLORS.length];
 
   return (
     <div

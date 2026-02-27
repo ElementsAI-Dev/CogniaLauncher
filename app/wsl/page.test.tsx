@@ -173,19 +173,11 @@ jest.mock('@/components/wsl', () => ({
       {onExec && <button data-testid="exec-cmd" onClick={() => onExec('Ubuntu', 'ls')}>Exec</button>}
     </div>
   ),
-}));
-
-jest.mock('@/components/wsl/wsl-change-user-dialog', () => ({
   WslChangeUserDialog: () => null,
-}));
-
-jest.mock('@/components/wsl/wsl-mount-dialog', () => ({
   WslMountDialog: () => null,
-}));
-
-jest.mock('@/components/wsl/wsl-import-in-place-dialog', () => ({
   WslImportInPlaceDialog: () => null,
 }));
+
 
 describe('WslPage', () => {
   beforeEach(() => {

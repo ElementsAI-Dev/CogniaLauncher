@@ -3,28 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, FileCode } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-
-interface GitDiffViewerProps {
-  diff: string;
-  loading?: boolean;
-  title?: string;
-}
-
-function parseDiffLine(line: string) {
-  if (line.startsWith('+') && !line.startsWith('+++')) {
-    return { type: 'add' as const, content: line };
-  }
-  if (line.startsWith('-') && !line.startsWith('---')) {
-    return { type: 'del' as const, content: line };
-  }
-  if (line.startsWith('@@')) {
-    return { type: 'hunk' as const, content: line };
-  }
-  if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
-    return { type: 'meta' as const, content: line };
-  }
-  return { type: 'ctx' as const, content: line };
-}
+import { parseDiffLine } from '@/lib/utils/git';
+import type { GitDiffViewerProps } from '@/types/git';
 
 export function GitDiffViewer({ diff, loading, title }: GitDiffViewerProps) {
   const { t } = useLocale();

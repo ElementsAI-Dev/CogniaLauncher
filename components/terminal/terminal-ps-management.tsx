@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Shield, FileText, Pencil, RefreshCw, Save, Eye } from 'lucide-react';
 import type { PSProfileInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
+import { PS_VALID_POLICIES, PS_ALLOWED_SCOPES } from '@/lib/constants/terminal';
 
 interface TerminalPsManagementProps {
   psProfiles: PSProfileInfo[];
@@ -22,8 +23,6 @@ interface TerminalPsManagementProps {
   loading?: boolean;
 }
 
-const VALID_POLICIES = ['Restricted', 'AllSigned', 'RemoteSigned', 'Unrestricted', 'Bypass'];
-const ALLOWED_SCOPES = ['CurrentUser', 'Process'];
 
 export function TerminalPsManagement({
   psProfiles,
@@ -223,7 +222,7 @@ export function TerminalPsManagement({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ALLOWED_SCOPES.map((scope) => (
+                {PS_ALLOWED_SCOPES.map((scope) => (
                   <SelectItem key={scope} value={scope}>
                     {scope}
                   </SelectItem>
@@ -235,7 +234,7 @@ export function TerminalPsManagement({
                 <SelectValue placeholder={t('terminal.selectPolicy')} />
               </SelectTrigger>
               <SelectContent>
-                {VALID_POLICIES.map((policy) => (
+                {PS_VALID_POLICIES.map((policy) => (
                   <SelectItem key={policy} value={policy}>
                     {policy}
                   </SelectItem>

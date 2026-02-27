@@ -17,20 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslDistroStatus, WslExecResult } from '@/types/tauri';
-
-interface ExecHistoryEntry {
-  command: string;
-  distro: string;
-  result: WslExecResult;
-  timestamp: number;
-}
-
-interface WslExecTerminalProps {
-  distros: WslDistroStatus[];
-  onExec: (distro: string, command: string, user?: string) => Promise<WslExecResult>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { ExecHistoryEntry, WslExecTerminalProps } from '@/types/wsl';
 
 export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
   const [selectedDistro, setSelectedDistro] = useState('');

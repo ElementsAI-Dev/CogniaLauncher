@@ -25,7 +25,7 @@ jest.mock("./bubble-hint", () => ({
   ),
 }));
 
-jest.mock("./bubble-hints", () => ({
+jest.mock("@/lib/constants/onboarding", () => ({
   BUBBLE_HINTS: [
     {
       id: "hint-home",

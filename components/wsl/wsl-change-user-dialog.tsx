@@ -21,16 +21,8 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserCog, Loader2 } from 'lucide-react';
+import type { WslChangeUserDialogProps } from '@/types/wsl';
 import type { WslUser } from '@/types/tauri';
-
-interface WslChangeUserDialogProps {
-  open: boolean;
-  distroName: string;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: (distro: string, username: string) => Promise<void>;
-  listUsers: (distro: string) => Promise<WslUser[]>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
 
 export function WslChangeUserDialog({
   open,

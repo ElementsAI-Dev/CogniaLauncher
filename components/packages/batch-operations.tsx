@@ -31,23 +31,9 @@ import {
   Info,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
+import { parsePackageSpec } from "@/lib/packages";
 import type { BatchResult } from "@/lib/tauri";
-
-interface BatchOperationsProps {
-  selectedPackages: string[];
-  onBatchInstall: (
-    packages: string[],
-    options?: { dryRun?: boolean; force?: boolean },
-  ) => Promise<BatchResult>;
-  onBatchUninstall: (
-    packages: string[],
-    force?: boolean,
-  ) => Promise<BatchResult>;
-  onBatchUpdate: (packages?: string[]) => Promise<BatchResult>;
-  onClearSelection: () => void;
-}
-
-type OperationType = "install" | "uninstall" | "update";
+import type { BatchOperationsProps, OperationType } from "@/types/packages";
 
 export function BatchOperations({
   selectedPackages,
@@ -64,17 +50,6 @@ export function BatchOperations({
   const [force, setForce] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const { t } = useLocale();
-
-  const parsePackageSpec = (pkg: string) => {
-    const colonIndex = pkg.indexOf(":");
-    if (colonIndex > 0 && !pkg.slice(0, colonIndex).includes("@")) {
-      return {
-        provider: pkg.slice(0, colonIndex),
-        name: pkg.slice(colonIndex + 1),
-      };
-    }
-    return { provider: null, name: pkg };
-  };
 
   const handleOperation = useCallback(async () => {
     setIsProcessing(true);

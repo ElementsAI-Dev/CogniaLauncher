@@ -42,8 +42,8 @@ describe("VersionPinningSection", () => {
   const mockOnSetLocal = jest.fn();
 
   const installedVersions = [
-    { version: "18.0.0", is_current: true },
-    { version: "20.0.0", is_current: false },
+    { version: "18.0.0", is_current: true, install_path: "/usr/local/node/18.0.0", size: null, installed_at: null },
+    { version: "20.0.0", is_current: false, install_path: "/usr/local/node/20.0.0", size: null, installed_at: null },
   ];
 
   const defaultProps = {

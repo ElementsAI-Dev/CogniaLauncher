@@ -12,12 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Check, FolderOpen } from "lucide-react";
 import { isTauri } from "@/lib/tauri";
+import type { InstalledVersion } from "@/lib/tauri";
 import { toast } from "sonner";
-
-interface InstalledVersion {
-  version: string;
-  is_current: boolean;
-}
 
 interface VersionPinningSectionProps {
   installedVersions: InstalledVersion[];

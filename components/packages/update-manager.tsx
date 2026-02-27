@@ -31,28 +31,7 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { BatchResult } from "@/lib/tauri";
-
-interface UpdateInfo {
-  package_id: string;
-  name: string;
-  provider: string;
-  current_version: string;
-  latest_version: string;
-  is_pinned: boolean;
-  is_breaking: boolean;
-  change_type: "major" | "minor" | "patch" | "unknown";
-  changelog_url?: string;
-}
-
-interface UpdateManagerProps {
-  updates: UpdateInfo[];
-  loading: boolean;
-  onCheckUpdates: () => Promise<void>;
-  onUpdateSelected: (packageIds: string[]) => Promise<BatchResult>;
-  onUpdateAll: () => Promise<BatchResult>;
-  onPinPackage: (packageId: string) => Promise<void>;
-  onUnpinPackage: (packageId: string) => Promise<void>;
-}
+import type { PackageUpdateInfo, UpdateManagerProps } from "@/types/packages";
 
 export function UpdateManager({
   updates,
@@ -132,7 +111,7 @@ export function UpdateManager({
     }
   }, [onUpdateAll]);
 
-  const getChangeTypeBadge = (type: UpdateInfo["change_type"]) => {
+  const getChangeTypeBadge = (type: PackageUpdateInfo["change_type"]) => {
     switch (type) {
       case "major":
         return (

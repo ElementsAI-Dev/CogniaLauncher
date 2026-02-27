@@ -16,11 +16,7 @@ import { Search, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
 import type { GitCommitEntry } from '@/types/tauri';
-
-interface GitSearchCommitsProps {
-  onSearch: (query: string, searchType?: string, limit?: number) => Promise<GitCommitEntry[]>;
-  onSelectCommit?: (hash: string) => void;
-}
+import type { GitSearchCommitsProps } from '@/types/git';
 
 export function GitSearchCommits({ onSearch, onSelectCommit }: GitSearchCommitsProps) {
   const { t } = useLocale();

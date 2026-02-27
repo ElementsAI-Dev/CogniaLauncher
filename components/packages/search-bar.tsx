@@ -30,12 +30,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
-import type {
-  ProviderInfo,
-  SearchSuggestion,
-  SearchFilters,
-} from "@/lib/tauri";
+import type { SearchFilters, SearchSuggestion } from "@/lib/tauri";
 import { useDebounce } from "@/hooks/use-mobile";
+import { useSearchHistory } from "@/hooks/use-search-history";
+import type { SearchBarProps } from "@/types/packages";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,35 +48,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-interface SearchBarProps {
-  providers: ProviderInfo[];
-  onSearch: (
-    query: string,
-    options: {
-      providers?: string[];
-      installedOnly?: boolean;
-      notInstalled?: boolean;
-      hasUpdates?: boolean;
-      sortBy?: string;
-    },
-  ) => void;
-  onGetSuggestions: (query: string) => Promise<SearchSuggestion[]>;
-  loading?: boolean;
-}
-
-const SEARCH_HISTORY_KEY = "cognia-search-history";
-const MAX_HISTORY = 10;
-
-const getInitialHistory = (): string[] => {
-  if (typeof window === "undefined") return [];
-  try {
-    const saved = localStorage.getItem(SEARCH_HISTORY_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
-};
-
 export function SearchBar({
   providers,
   onSearch,
@@ -87,8 +56,7 @@ export function SearchBar({
 }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
-  const [searchHistory, setSearchHistory] =
-    useState<string[]>(getInitialHistory);
+  const { searchHistory, saveToHistory, clearHistory } = useSearchHistory();
   const [showDropdown, setShowDropdown] = useState(false);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [filters, setFilters] = useState<SearchFilters>({});
@@ -123,22 +91,6 @@ export function SearchBar({
     return undefined;
   }, [debouncedQuery, onGetSuggestions]);
 
-
-  const saveToHistory = useCallback(
-    (searchQuery: string) => {
-      try {
-        const newHistory = [
-          searchQuery,
-          ...searchHistory.filter((h) => h !== searchQuery),
-        ].slice(0, MAX_HISTORY);
-        setSearchHistory(newHistory);
-        localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
-      } catch {
-        // Ignore localStorage errors
-      }
-    },
-    [searchHistory],
-  );
 
   const handleSearch = useCallback(() => {
     const trimmed = query.trim();
@@ -183,15 +135,6 @@ export function SearchBar({
     },
     [selectedProviders, onSearch],
   );
-
-  const clearHistory = useCallback(() => {
-    setSearchHistory([]);
-    try {
-      localStorage.removeItem(SEARCH_HISTORY_KEY);
-    } catch {
-      // Ignore
-    }
-  }, []);
 
   const toggleProvider = useCallback((providerId: string) => {
     setSelectedProviders((prev) =>

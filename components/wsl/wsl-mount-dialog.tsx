@@ -14,15 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { HardDrive, Loader2 } from 'lucide-react';
-import type { WslMountOptions, WslCapabilities } from '@/types/tauri';
-
-interface WslMountDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  capabilities: WslCapabilities | null;
-  onConfirm: (options: WslMountOptions) => Promise<string>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslMountDialogProps } from '@/types/wsl';
+import type { WslMountOptions } from '@/types/tauri';
 
 export function WslMountDialog({
   open,

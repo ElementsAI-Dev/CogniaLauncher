@@ -7,30 +7,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   History,
   Download,
-  Trash2,
-  ArrowUp,
-  RotateCcw,
-  Pin,
-  PinOff,
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { InstallHistoryEntry } from '@/lib/tauri';
-
-interface PackageHistoryListProps {
-  history: InstallHistoryEntry[];
-  loading: boolean;
-}
-
-const ACTION_ICONS: Record<string, typeof Download> = {
-  install: Download,
-  uninstall: Trash2,
-  update: ArrowUp,
-  rollback: RotateCcw,
-  pin: Pin,
-  unpin: PinOff,
-};
+import { ACTION_ICONS } from '@/lib/constants/packages';
+import type { PackageHistoryListProps } from '@/types/packages';
 
 export function PackageHistoryList({
   history,

@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -9,86 +8,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Globe, ShieldCheck } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import { isTauri } from '@/lib/platform';
-import * as tauri from '@/lib/tauri';
+import type { ProxyMode } from '@/types/terminal';
 
 interface TerminalProxySettingsProps {
   proxyEnvVars: [string, string][];
-  onFetchProxyEnvVars: () => Promise<void>;
+  proxyMode: ProxyMode;
+  globalProxy: string;
+  customProxy: string;
+  noProxy: string;
+  saving: boolean;
+  onProxyModeChange: (mode: ProxyMode) => void;
+  onCustomProxyChange: (value: string) => void;
+  onCustomProxyBlur: () => void;
+  onNoProxyChange: (value: string) => void;
+  onNoProxyBlur: () => void;
   loading?: boolean;
 }
 
 export function TerminalProxySettings({
   proxyEnvVars,
-  onFetchProxyEnvVars,
+  proxyMode,
+  globalProxy,
+  customProxy,
+  noProxy,
+  saving,
+  onProxyModeChange,
+  onCustomProxyChange,
+  onCustomProxyBlur,
+  onNoProxyChange,
+  onNoProxyBlur,
   loading,
 }: TerminalProxySettingsProps) {
   const { t } = useLocale();
-  const [proxyMode, setProxyMode] = useState<string>('global');
-  const [customProxy, setCustomProxy] = useState('');
-  const [noProxy, setNoProxy] = useState('');
-  const [globalProxy, setGlobalProxy] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  // Load settings from backend
-  useEffect(() => {
-    if (!isTauri()) return;
-    const load = async () => {
-      try {
-        const config = await tauri.configList();
-        const configMap: Record<string, string> = {};
-        for (const [k, v] of config) {
-          configMap[k] = v;
-        }
-        setProxyMode(configMap['terminal.proxy_mode'] || 'global');
-        setCustomProxy(configMap['terminal.custom_proxy'] || '');
-        setNoProxy(configMap['terminal.no_proxy'] || '');
-        setGlobalProxy(configMap['network.proxy'] || '');
-      } catch {
-        // fallback to defaults
-      }
-    };
-    load();
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) return;
-    void onFetchProxyEnvVars();
-  }, [onFetchProxyEnvVars]);
-
-  const handleProxyModeChange = useCallback(async (mode: string) => {
-    setProxyMode(mode);
-    if (!isTauri()) return;
-    setSaving(true);
-    try {
-      await tauri.configSet('terminal.proxy_mode', mode);
-      await onFetchProxyEnvVars();
-    } finally {
-      setSaving(false);
-    }
-  }, [onFetchProxyEnvVars]);
-
-  const handleCustomProxyBlur = useCallback(async () => {
-    if (!isTauri()) return;
-    setSaving(true);
-    try {
-      await tauri.configSet('terminal.custom_proxy', customProxy);
-      await onFetchProxyEnvVars();
-    } finally {
-      setSaving(false);
-    }
-  }, [customProxy, onFetchProxyEnvVars]);
-
-  const handleNoProxyBlur = useCallback(async () => {
-    if (!isTauri()) return;
-    setSaving(true);
-    try {
-      await tauri.configSet('terminal.no_proxy', noProxy);
-      await onFetchProxyEnvVars();
-    } finally {
-      setSaving(false);
-    }
-  }, [noProxy, onFetchProxyEnvVars]);
 
   if (loading) {
     return (
@@ -117,7 +68,7 @@ export function TerminalProxySettings({
       <CardContent className="space-y-4">
         <div className="grid gap-2">
           <Label>{t('terminal.proxyMode')}</Label>
-          <Select value={proxyMode} onValueChange={handleProxyModeChange} disabled={saving}>
+          <Select value={proxyMode} onValueChange={(v) => onProxyModeChange(v as ProxyMode)} disabled={saving}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -157,8 +108,8 @@ export function TerminalProxySettings({
               <Input
                 id="custom-proxy"
                 value={customProxy}
-                onChange={(e) => setCustomProxy(e.target.value)}
-                onBlur={handleCustomProxyBlur}
+                onChange={(e) => onCustomProxyChange(e.target.value)}
+                onBlur={onCustomProxyBlur}
                 placeholder="http://proxy.example.com:8080"
                 className="font-mono text-sm"
               />
@@ -172,8 +123,8 @@ export function TerminalProxySettings({
             <Input
               id="no-proxy"
               value={noProxy}
-              onChange={(e) => setNoProxy(e.target.value)}
-              onBlur={handleNoProxyBlur}
+              onChange={(e) => onNoProxyChange(e.target.value)}
+              onBlur={onNoProxyBlur}
               placeholder="localhost,127.0.0.1,.internal.com"
               className="font-mono text-sm"
             />

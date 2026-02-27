@@ -5,36 +5,14 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, FilePlus, FileX, FileQuestion, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitStatusFile } from '@/types/tauri';
-
-interface GitStatusFilesProps {
-  files: GitStatusFile[];
-  loading?: boolean;
-  onRefresh?: () => void;
-}
+import { getStatusLabel, getStatusColor } from '@/lib/utils/git';
+import type { GitStatusFilesProps } from '@/types/git';
 
 function getStatusIcon(indexStatus: string, worktreeStatus: string) {
   if (indexStatus === '?' && worktreeStatus === '?') return <FileQuestion className="h-3 w-3 text-muted-foreground" />;
   if (indexStatus === 'A' || worktreeStatus === 'A') return <FilePlus className="h-3 w-3 text-green-600" />;
   if (indexStatus === 'D' || worktreeStatus === 'D') return <FileX className="h-3 w-3 text-red-600" />;
   return <FileText className="h-3 w-3 text-yellow-600" />;
-}
-
-function getStatusLabel(indexStatus: string, worktreeStatus: string): string {
-  if (indexStatus === '?' && worktreeStatus === '?') return 'Untracked';
-  if (indexStatus === 'A') return 'Added';
-  if (indexStatus === 'D' || worktreeStatus === 'D') return 'Deleted';
-  if (indexStatus === 'R') return 'Renamed';
-  if (indexStatus === 'M' || worktreeStatus === 'M') return 'Modified';
-  if (indexStatus === 'C') return 'Copied';
-  return `${indexStatus}${worktreeStatus}`.trim();
-}
-
-function getStatusColor(indexStatus: string, worktreeStatus: string): string {
-  if (indexStatus === '?' && worktreeStatus === '?') return 'text-muted-foreground';
-  if (indexStatus === 'A') return 'text-green-600';
-  if (indexStatus === 'D' || worktreeStatus === 'D') return 'text-red-600';
-  return 'text-yellow-600';
 }
 
 export function GitStatusFiles({ files, loading, onRefresh }: GitStatusFilesProps) {

@@ -2,16 +2,17 @@ export { ProviderCard } from "./provider-card";
 export type { ProviderCardProps } from "./provider-card";
 
 export { ProviderToolbar } from "./provider-toolbar";
+export type { ProviderToolbarProps } from "./provider-toolbar";
+
 export type {
-  ProviderToolbarProps,
   CategoryFilter,
   StatusFilter,
   SortOption,
   ViewMode,
   PlatformFilter,
-} from "./provider-toolbar";
+} from "@/types/provider";
 
-export { getCapabilityLabel } from "./provider-icons";
+export { getCapabilityLabel, getCapabilityColor } from "@/lib/constants/provider-capability";
 
 export { ProviderIcon, PlatformIcon, LanguageIcon, CacheProviderIcon } from "./provider-icon";
 

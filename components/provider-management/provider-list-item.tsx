@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import { writeClipboard } from '@/lib/clipboard';
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -30,9 +29,8 @@ import {
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  getCapabilityLabel,
-} from "./provider-icons";
+import { getCapabilityLabel } from "@/lib/constants/provider-capability";
+import { useProviderStatus } from "@/hooks/use-provider-status";
 import { ProviderIcon, PlatformIcon } from "./provider-icon";
 
 export interface ProviderListItemProps {
@@ -54,22 +52,8 @@ export function ProviderListItem({
   onCheckStatus,
   t,
 }: ProviderListItemProps) {
-  const [isChecking, setIsChecking] = useState(false);
-  const [localAvailable, setLocalAvailable] = useState<boolean | undefined>(
-    isAvailable,
-  );
-
-  const handleCheckStatus = useCallback(async () => {
-    setIsChecking(true);
-    try {
-      const available = await onCheckStatus(provider.id);
-      setLocalAvailable(available);
-    } finally {
-      setIsChecking(false);
-    }
-  }, [onCheckStatus, provider.id]);
-
-  const availabilityStatus = localAvailable ?? isAvailable;
+  const { isChecking, availabilityStatus, handleCheckStatus } =
+    useProviderStatus(provider.id, isAvailable, onCheckStatus);
 
   return (
     <div

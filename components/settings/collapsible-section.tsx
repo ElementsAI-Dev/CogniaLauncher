@@ -28,8 +28,8 @@ import {
   Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SettingsSection } from "@/lib/constants/settings-registry";
-import { SECTION_ICONS, type TranslateFunction } from "./shared";
+import { SECTION_ICONS, type SettingsSection } from "@/lib/constants/settings-registry";
+import type { TranslateFunction } from "@/types/settings";
 
 interface CollapsibleSectionProps {
   id: SettingsSection;

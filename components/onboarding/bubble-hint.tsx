@@ -6,86 +6,9 @@ import { Button } from '@/components/ui/button';
 import { useLocale } from '@/components/providers/locale-provider';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { BubbleHintDef } from './bubble-hints';
-
-interface BubbleHintProps {
-  hint: BubbleHintDef;
-  onDismiss: (hintId: string) => void;
-}
-
-const POPOVER_OFFSET = 12;
-
-/**
- * Compute the CSS position of the popover relative to a target rect.
- * Falls back to viewport-safe positioning if the preferred side overflows.
- */
-function computePosition(
-  target: DOMRect,
-  popover: HTMLElement,
-  side: BubbleHintDef['side'],
-): { top: string; left: string; transform: string; actualSide: string } {
-  const pw = popover.offsetWidth;
-  const ph = popover.offsetHeight;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  const sides: BubbleHintDef['side'][] = [side, 'bottom', 'top', 'right', 'left'];
-  for (const s of sides) {
-    let top = 0;
-    let left = 0;
-    let transform = '';
-
-    switch (s) {
-      case 'bottom':
-        top = target.bottom + POPOVER_OFFSET;
-        left = target.left + target.width / 2;
-        transform = 'translateX(-50%)';
-        if (top + ph <= vh && left - pw / 2 >= 0 && left + pw / 2 <= vw) {
-          return { top: `${top}px`, left: `${left}px`, transform, actualSide: s };
-        }
-        break;
-      case 'top':
-        top = target.top - ph - POPOVER_OFFSET;
-        left = target.left + target.width / 2;
-        transform = 'translateX(-50%)';
-        if (top >= 0 && left - pw / 2 >= 0 && left + pw / 2 <= vw) {
-          return { top: `${top}px`, left: `${left}px`, transform, actualSide: s };
-        }
-        break;
-      case 'right':
-        top = target.top + target.height / 2;
-        left = target.right + POPOVER_OFFSET;
-        transform = 'translateY(-50%)';
-        if (left + pw <= vw && top - ph / 2 >= 0 && top + ph / 2 <= vh) {
-          return { top: `${top}px`, left: `${left}px`, transform, actualSide: s };
-        }
-        break;
-      case 'left':
-        top = target.top + target.height / 2;
-        left = target.left - pw - POPOVER_OFFSET;
-        transform = 'translateY(-50%)';
-        if (left >= 0 && top - ph / 2 >= 0 && top + ph / 2 <= vh) {
-          return { top: `${top}px`, left: `${left}px`, transform, actualSide: s };
-        }
-        break;
-    }
-  }
-
-  // Final fallback: bottom center
-  return {
-    top: `${target.bottom + POPOVER_OFFSET}px`,
-    left: `${target.left + target.width / 2}px`,
-    transform: 'translateX(-50%)',
-    actualSide: 'bottom',
-  };
-}
-
-const ARROW_CLASS: Record<string, string> = {
-  top: 'left-1/2 -translate-x-1/2 -bottom-[5px] rotate-45',
-  bottom: 'left-1/2 -translate-x-1/2 -top-[5px] rotate-45',
-  left: 'top-1/2 -translate-y-1/2 -right-[5px] rotate-45',
-  right: 'top-1/2 -translate-y-1/2 -left-[5px] rotate-45',
-};
+import { computePosition } from '@/lib/onboarding';
+import { ARROW_CLASS } from '@/lib/constants/onboarding';
+import type { BubbleHintProps, BubbleHintDef } from '@/types/onboarding';
 
 export function BubbleHint({ hint, onDismiss }: BubbleHintProps) {
   const { t } = useLocale();

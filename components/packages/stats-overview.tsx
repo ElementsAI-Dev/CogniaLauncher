@@ -19,24 +19,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
-import type { InstalledPackage, ProviderInfo, UpdateInfo } from "@/lib/tauri";
-
-interface StatsOverviewProps {
-  installedPackages: InstalledPackage[];
-  providers: ProviderInfo[];
-  updates: UpdateInfo[];
-  pinnedCount: number;
-  bookmarkedCount: number;
-  defaultExpanded?: boolean;
-}
-
-interface StatCardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  subLabel?: string;
-  variant?: "default" | "success" | "warning" | "info";
-}
+import type { StatCardProps, StatsOverviewProps } from "@/types/packages";
 
 function StatCard({
   icon,

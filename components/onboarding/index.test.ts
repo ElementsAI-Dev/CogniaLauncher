@@ -7,6 +7,20 @@ import {
   BUBBLE_HINTS,
 } from "./index";
 
+jest.mock("@/components/providers/locale-provider", () => ({
+  useLocale: () => ({ t: (key: string) => key, locale: "en", setLocale: jest.fn() }),
+}));
+jest.mock("next-themes", () => ({
+  useTheme: () => ({ theme: "system", setTheme: jest.fn() }),
+}));
+jest.mock("@/lib/stores/onboarding", () => ({
+  ONBOARDING_STEPS: ["welcome"],
+  useOnboardingStore: () => ({
+    completed: false, skipped: false, wizardOpen: false, tourActive: false,
+    dismissedHints: [], hintsEnabled: false, dismissHint: jest.fn(),
+  }),
+}));
+
 describe("onboarding barrel exports", () => {
   it("exports OnboardingWizard", () => {
     expect(OnboardingWizard).toBeDefined();

@@ -2,10 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Terminal } from 'lucide-react';
-
-interface WslEmptyStateProps {
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslEmptyStateProps } from '@/types/wsl';
 
 export function WslEmptyState({ t }: WslEmptyStateProps) {
   return (

@@ -1,7 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import GithubSlugger from 'github-slugger';
+import { useMemo, useState } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Collapsible,
@@ -11,47 +10,14 @@ import {
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/components/providers/locale-provider';
 import { List } from 'lucide-react';
-
-interface TocItem {
-  id: string;
-  text: string;
-  level: number;
-}
+import type { TocItem, DocsTocMode } from '@/types/docs';
+import { extractHeadings } from '@/lib/docs/headings';
+import { useActiveHeading } from '@/hooks/use-active-heading';
 
 interface DocsTocProps {
   content: string;
   className?: string;
-  mode?: 'desktop' | 'mobile' | 'both';
-}
-
-export function extractHeadings(markdown: string): TocItem[] {
-  const headings: TocItem[] = [];
-  const slugger = new GithubSlugger();
-  const lines = markdown.split('\n');
-  let inCodeBlock = false;
-
-  for (const line of lines) {
-    if (line.startsWith('```')) {
-      inCodeBlock = !inCodeBlock;
-      continue;
-    }
-    if (inCodeBlock) continue;
-
-    // Match h2 and h3 only (## and ###)
-    const match = line.match(/^(#{2,3})\s+(.+)$/);
-    if (match) {
-      const level = match[1].length;
-      const text = match[2]
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/`(.+?)`/g, '$1')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .trim();
-      const id = slugger.slug(text);
-      headings.push({ id, text, level });
-    }
-  }
-
-  return headings;
+  mode?: DocsTocMode;
 }
 
 function TocNav({
@@ -91,65 +57,17 @@ function TocNav({
 export function DocsToc({ content, className, mode = 'both' }: DocsTocProps) {
   const { t } = useLocale();
   const headings = useMemo(() => extractHeadings(content), [content]);
-  const [activeId, setActiveId] = useState<string>('');
-  const isScrollingRef = useRef(false);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headingIds = useMemo(() => headings.map((h) => h.id), [headings]);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
-    if (isScrollingRef.current) return;
-    for (const entry of entries) {
-      if (entry.isIntersecting) {
-        setActiveId(entry.target.id);
-        break;
-      }
-    }
-  }, []);
+  const { activeId, scrollToId } = useActiveHeading(headingIds, {
+    enabled: mode !== 'mobile',
+  });
 
-  useEffect(() => {
-    // Only track active heading for desktop mode (mobile collapses after click)
-    if (mode === 'mobile') return;
-
-    const observer = new IntersectionObserver(handleObserver, {
-      rootMargin: '-80px 0px -70% 0px',
-      threshold: 0,
-    });
-
-    for (const heading of headings) {
-      const element = document.getElementById(heading.id);
-      if (element) {
-        observer.observe(element);
-      }
-    }
-
-    return () => observer.disconnect();
-  }, [headings, handleObserver, mode]);
-
-  const handleItemClick = useCallback((id: string) => {
-    const element = document.getElementById(id);
-    if (!element) return;
-
-    // Suppress observer updates during programmatic scroll
-    isScrollingRef.current = true;
-    setActiveId(id);
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    history.replaceState(null, '', `#${id}`);
-
-    // Re-enable observer after scroll settles
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    scrollTimerRef.current = setTimeout(() => {
-      isScrollingRef.current = false;
-    }, 1000);
-
+  const handleItemClick = (id: string) => {
+    scrollToId(id);
     setMobileOpen(false);
-  }, []);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    };
-  }, []);
+  };
 
   if (headings.length === 0) {
     return null;

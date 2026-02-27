@@ -13,11 +13,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LogToolbar } from "./log-toolbar";
 import { LogEntry } from "./log-entry";
 import { useLogs } from "@/hooks/use-logs";
-import {
-  useLogStore,
-  type LogEntry as UiLogEntry,
-  type LogLevel,
-} from "@/lib/stores/log";
+import { useLogStore } from "@/lib/stores/log";
+import type { LogEntry as UiLogEntry } from "@/types/log";
+import { normalizeLevel, parseTimestamp } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileText, Loader2, RefreshCw } from "lucide-react";
@@ -30,32 +28,6 @@ interface LogFileViewerProps {
 }
 
 const PAGE_SIZE = 200;
-
-function normalizeLevel(level: string): LogLevel {
-  const normalized = level.toLowerCase();
-  if (
-    normalized === "trace" ||
-    normalized === "debug" ||
-    normalized === "info" ||
-    normalized === "warn" ||
-    normalized === "error"
-  ) {
-    return normalized as LogLevel;
-  }
-  return "info";
-}
-
-function parseTimestamp(value: string): number {
-  const parsed = Date.parse(value);
-  if (!Number.isNaN(parsed)) {
-    return parsed;
-  }
-  const numeric = Number.parseInt(value, 10);
-  if (!Number.isNaN(numeric)) {
-    return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-  }
-  return Date.now();
-}
 
 export function LogFileViewer({
   open,

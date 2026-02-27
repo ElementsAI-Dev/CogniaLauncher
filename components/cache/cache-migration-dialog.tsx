@@ -16,12 +16,7 @@ import { AlertTriangle, ArrowRight, Check, CheckCircle2, FolderInput, Link2, Loa
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { MigrationValidation, MigrationResult } from '@/lib/tauri';
-
-interface CacheMigrationDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onMigrationComplete?: () => void;
-}
+import type { CacheMigrationDialogProps } from '@/types/cache';
 
 export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }: CacheMigrationDialogProps) {
   const { t } = useLocale();

@@ -5,11 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface WslNotAvailableProps {
-  t: (key: string, params?: Record<string, string | number>) => string;
-  onInstallWsl?: () => Promise<string>;
-}
+import type { WslNotAvailableProps } from '@/types/wsl';
 
 export function WslNotAvailable({ t, onInstallWsl }: WslNotAvailableProps) {
   const [installing, setInstalling] = useState(false);

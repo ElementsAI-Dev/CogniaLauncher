@@ -4,12 +4,7 @@ import { PartyPopper, Map, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-interface CompleteStepProps {
-  t: (key: string) => string;
-  onStartTour: () => void;
-  tourCompleted: boolean;
-}
+import type { CompleteStepProps } from '@/types/onboarding';
 
 export function CompleteStep({ t, onStartTour, tourCompleted }: CompleteStepProps) {
   return (

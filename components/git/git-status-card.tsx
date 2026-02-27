@@ -6,16 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { GitBranch, Download, RefreshCw, ArrowUpCircle } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-
-interface GitStatusCardProps {
-  available: boolean | null;
-  version: string | null;
-  executablePath: string | null;
-  loading: boolean;
-  onInstall: () => void;
-  onUpdate: () => void;
-  onRefresh: () => void;
-}
+import type { GitStatusCardProps } from '@/types/git';
 
 export function GitStatusCard({
   available,

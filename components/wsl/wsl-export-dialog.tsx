@@ -14,14 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Download, Loader2 } from 'lucide-react';
-
-interface WslExportDialogProps {
-  open: boolean;
-  distroName: string;
-  onOpenChange: (open: boolean) => void;
-  onExport: (name: string, filePath: string, asVhd: boolean) => Promise<void>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslExportDialogProps } from '@/types/wsl';
 
 export function WslExportDialog({
   open,

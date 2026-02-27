@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown } from "lucide-react";
 import { SettingItem, SwitchSettingItem } from "./setting-item";
+import { MIRROR_PRESETS, type MirrorPresetKey } from "@/lib/constants/mirrors";
 
 interface MirrorsSettingsProps {
   localConfig: Record<string, string>;
@@ -20,47 +21,13 @@ interface MirrorsSettingsProps {
   t: (key: string) => string;
 }
 
-// Mirror presets for different regions
-const MIRROR_PRESETS = {
-  default: {
-    labelKey: "settings.mirrorPresetDefault",
-    npm: "https://registry.npmjs.org",
-    pypi: "https://pypi.org/simple",
-    crates: "https://crates.io",
-    go: "https://proxy.golang.org",
-  },
-  china: {
-    labelKey: "settings.mirrorPresetChina",
-    npm: "https://registry.npmmirror.com",
-    pypi: "https://pypi.tuna.tsinghua.edu.cn/simple",
-    crates: "https://rsproxy.cn",
-    go: "https://goproxy.cn",
-  },
-  aliyun: {
-    labelKey: "settings.mirrorPresetAliyun",
-    npm: "https://registry.npmmirror.com",
-    pypi: "https://mirrors.aliyun.com/pypi/simple",
-    crates: "https://rsproxy.cn",
-    go: "https://mirrors.aliyun.com/goproxy/",
-  },
-  ustc: {
-    labelKey: "settings.mirrorPresetUstc",
-    npm: "https://registry.npmmirror.com",
-    pypi: "https://pypi.mirrors.ustc.edu.cn/simple",
-    crates: "https://rsproxy.cn",
-    go: "https://goproxy.cn",
-  },
-} as const;
-
-type PresetKey = keyof typeof MIRROR_PRESETS;
-
 export function MirrorsSettings({
   localConfig,
   errors,
   onValueChange,
   t,
 }: MirrorsSettingsProps) {
-  const applyPreset = (presetKey: PresetKey) => {
+  const applyPreset = (presetKey: MirrorPresetKey) => {
     const preset = MIRROR_PRESETS[presetKey];
     onValueChange("mirrors.npm", preset.npm);
     onValueChange("mirrors.pypi", preset.pypi);
@@ -123,7 +90,7 @@ export function MirrorsSettings({
               {Object.entries(MIRROR_PRESETS).map(([key, preset]) => (
                 <DropdownMenuItem
                   key={key}
-                  onClick={() => applyPreset(key as PresetKey)}
+                  onClick={() => applyPreset(key as MirrorPresetKey)}
                 >
                   {t(preset.labelKey)}
                 </DropdownMenuItem>

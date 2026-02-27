@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import type { PackageManagerHealthResult, HealthStatus, Severity, HealthIssue } from "@/types/tauri";
 import { cn } from "@/lib/utils";
+import { getStatusColor, getAlertVariant } from "@/lib/provider-utils";
 import { toast } from "sonner";
 
 interface ProviderHealthTabProps {
@@ -49,29 +50,6 @@ function getStatusIcon(status: HealthStatus) {
       return <AlertCircle className="h-5 w-5 text-red-600" />;
     default:
       return <HelpCircle className="h-5 w-5 text-gray-400" />;
-  }
-}
-
-function getStatusColor(status: HealthStatus) {
-  switch (status) {
-    case "healthy":
-      return "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950";
-    case "warning":
-      return "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950";
-    case "error":
-      return "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950";
-    default:
-      return "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950";
-  }
-}
-
-function getAlertVariant(severity: Severity): "default" | "destructive" {
-  switch (severity) {
-    case "critical":
-    case "error":
-      return "destructive";
-    default:
-      return "default";
   }
 }
 

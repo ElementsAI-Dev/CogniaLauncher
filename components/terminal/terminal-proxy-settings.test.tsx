@@ -5,19 +5,29 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
-jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
-}));
+const defaultProps = {
+  proxyEnvVars: [] as [string, string][],
+  proxyMode: 'global' as const,
+  globalProxy: '',
+  customProxy: '',
+  noProxy: '',
+  saving: false,
+  onProxyModeChange: jest.fn(),
+  onCustomProxyChange: jest.fn(),
+  onCustomProxyBlur: jest.fn(),
+  onNoProxyChange: jest.fn(),
+  onNoProxyBlur: jest.fn(),
+};
 
 describe('TerminalProxySettings', () => {
   it('renders proxy settings card', () => {
     render(
       <TerminalProxySettings
+        {...defaultProps}
         proxyEnvVars={[
           ['HTTP_PROXY', 'http://proxy:8080'],
           ['HTTPS_PROXY', 'http://proxy:8080'],
         ]}
-        onFetchProxyEnvVars={jest.fn()}
       />,
     );
 
@@ -27,10 +37,10 @@ describe('TerminalProxySettings', () => {
   it('shows active proxy variables', () => {
     render(
       <TerminalProxySettings
+        {...defaultProps}
         proxyEnvVars={[
           ['HTTP_PROXY', 'http://proxy:8080'],
         ]}
-        onFetchProxyEnvVars={jest.fn()}
       />,
     );
 
@@ -40,10 +50,7 @@ describe('TerminalProxySettings', () => {
 
   it('shows no proxy message when empty', () => {
     render(
-      <TerminalProxySettings
-        proxyEnvVars={[]}
-        onFetchProxyEnvVars={jest.fn()}
-      />,
+      <TerminalProxySettings {...defaultProps} />,
     );
 
     expect(screen.getByText('terminal.noActiveProxy')).toBeInTheDocument();
@@ -51,11 +58,7 @@ describe('TerminalProxySettings', () => {
 
   it('shows loading skeleton', () => {
     render(
-      <TerminalProxySettings
-        proxyEnvVars={[]}
-        onFetchProxyEnvVars={jest.fn()}
-        loading
-      />,
+      <TerminalProxySettings {...defaultProps} loading />,
     );
 
     expect(screen.queryByText('terminal.noActiveProxy')).not.toBeInTheDocument();
@@ -63,10 +66,7 @@ describe('TerminalProxySettings', () => {
 
   it('shows noGlobalProxy message in default global mode', () => {
     render(
-      <TerminalProxySettings
-        proxyEnvVars={[]}
-        onFetchProxyEnvVars={jest.fn()}
-      />,
+      <TerminalProxySettings {...defaultProps} />,
     );
 
     expect(screen.getByText('terminal.noGlobalProxy')).toBeInTheDocument();
@@ -74,10 +74,7 @@ describe('TerminalProxySettings', () => {
 
   it('renders no-proxy input in global mode', () => {
     render(
-      <TerminalProxySettings
-        proxyEnvVars={[]}
-        onFetchProxyEnvVars={jest.fn()}
-      />,
+      <TerminalProxySettings {...defaultProps} />,
     );
 
     expect(screen.getByLabelText('terminal.noProxyList')).toBeInTheDocument();

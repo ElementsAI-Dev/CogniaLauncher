@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -17,17 +16,12 @@ import {
   Check,
   ArrowRight,
 } from "lucide-react";
-import type { EnvironmentInfo, VersionInfo } from "@/lib/tauri";
-import { useEnvironments } from "@/hooks/use-environments";
+import type { EnvironmentInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import { useUpdateChecker } from "@/hooks/use-update-checker";
+import type { EnvUpdateInfo } from "@/types/environments";
 
-export interface EnvUpdateInfo {
-  envType: string;
-  currentVersion: string;
-  latestVersion: string;
-  latestStable: string | null;
-  availableCount: number;
-}
+export type { EnvUpdateInfo };
 
 interface UpdateCheckerCardProps {
   env: EnvironmentInfo;
@@ -40,47 +34,8 @@ export function UpdateCheckerCard({
   compact = false,
   t,
 }: UpdateCheckerCardProps) {
-  const { fetchAvailableVersions } = useEnvironments();
-  const [checking, setChecking] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState<EnvUpdateInfo | null>(null);
-  const [checked, setChecked] = useState(false);
-
-  const checkForUpdates = useCallback(async () => {
-    if (!env.current_version) return;
-    setChecking(true);
-    try {
-      const versions = await fetchAvailableVersions(env.env_type);
-      if (versions.length > 0) {
-        const stableVersions = versions.filter(
-          (v) => !v.deprecated && !v.yanked
-        );
-        const latestVersion = stableVersions[0]?.version || versions[0].version;
-        const latestStable = findLatestStable(stableVersions);
-
-        const newerCount = stableVersions.filter(
-          (v) => compareVersions(v.version, env.current_version!) > 0
-        ).length;
-
-        setUpdateInfo({
-          envType: env.env_type,
-          currentVersion: env.current_version,
-          latestVersion,
-          latestStable,
-          availableCount: newerCount,
-        });
-      }
-      setChecked(true);
-    } catch {
-      setChecked(true);
-    } finally {
-      setChecking(false);
-    }
-  }, [env, fetchAvailableVersions]);
-
-  const hasUpdate =
-    updateInfo &&
-    updateInfo.latestVersion !== updateInfo.currentVersion &&
-    updateInfo.availableCount > 0;
+  const { checking, updateInfo, checked, hasUpdate, checkForUpdates } =
+    useUpdateChecker();
 
   if (compact) {
     return (
@@ -89,7 +44,7 @@ export function UpdateCheckerCard({
           <Button
             variant="ghost"
             size="sm"
-            onClick={checkForUpdates}
+            onClick={() => checkForUpdates(env)}
             disabled={checking || !env.current_version}
             className="gap-1.5 h-7 text-xs"
           >
@@ -106,7 +61,7 @@ export function UpdateCheckerCard({
             className="gap-1 text-xs border-yellow-300 dark:border-yellow-700 text-yellow-700 dark:text-yellow-300 bg-yellow-50/50 dark:bg-yellow-950/30"
           >
             <ArrowUpCircle className="h-3 w-3" />
-            {updateInfo.latestVersion}
+            {updateInfo!.latestVersion}
           </Badge>
         ) : (
           <Badge
@@ -142,7 +97,7 @@ export function UpdateCheckerCard({
           <Button
             variant="outline"
             size="sm"
-            onClick={checkForUpdates}
+            onClick={() => checkForUpdates(env)}
             disabled={checking || !env.current_version}
             className="gap-1.5"
           >
@@ -216,40 +171,4 @@ export function UpdateCheckerCard({
       </CardContent>
     </Card>
   );
-}
-
-function findLatestStable(versions: VersionInfo[]): string | null {
-  for (const v of versions) {
-    if (!v.deprecated && !v.yanked && isStableVersion(v.version)) {
-      return v.version;
-    }
-  }
-  return null;
-}
-
-function isStableVersion(version: string): boolean {
-  const lower = version.toLowerCase();
-  return (
-    !lower.includes("alpha") &&
-    !lower.includes("beta") &&
-    !lower.includes("rc") &&
-    !lower.includes("dev") &&
-    !lower.includes("preview") &&
-    !lower.includes("nightly") &&
-    !lower.includes("canary")
-  );
-}
-
-function compareVersions(a: string, b: string): number {
-  const aParts = a.replace(/^v/, "").split(".").map(Number);
-  const bParts = b.replace(/^v/, "").split(".").map(Number);
-  const len = Math.max(aParts.length, bParts.length);
-  for (let i = 0; i < len; i++) {
-    const aVal = aParts[i] || 0;
-    const bVal = bParts[i] || 0;
-    if (isNaN(aVal) || isNaN(bVal)) return 0;
-    if (aVal > bVal) return 1;
-    if (aVal < bVal) return -1;
-  }
-  return 0;
 }

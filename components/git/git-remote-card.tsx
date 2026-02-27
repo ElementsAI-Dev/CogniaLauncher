@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Globe } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitRemoteInfo } from '@/types/tauri';
-
-interface GitRemoteCardProps {
-  remotes: GitRemoteInfo[];
-}
+import type { GitRemoteCardProps } from '@/types/git';
 
 export function GitRemoteCard({ remotes }: GitRemoteCardProps) {
   const { t } = useLocale();

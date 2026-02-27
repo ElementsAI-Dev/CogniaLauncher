@@ -26,20 +26,8 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
-import type { WslDistroStatus, WslDiskUsage } from '@/types/tauri';
-
-interface WslDistroCardProps {
-  distro: WslDistroStatus;
-  onLaunch: (name: string) => void;
-  onTerminate: (name: string) => void;
-  onSetDefault: (name: string) => void;
-  onSetVersion: (name: string, version: number) => void;
-  onExport: (name: string) => void;
-  onUnregister: (name: string) => void;
-  onChangeDefaultUser?: (name: string) => void;
-  getDiskUsage?: (name: string) => Promise<WslDiskUsage | null>;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
+import type { WslDistroCardProps } from '@/types/wsl';
+import type { WslDiskUsage } from '@/types/tauri';
 
 export function WslDistroCard({
   distro,

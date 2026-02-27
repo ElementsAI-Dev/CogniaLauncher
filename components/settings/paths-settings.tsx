@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,9 +22,9 @@ import {
   Info,
 } from "lucide-react";
 import { isTauri, validatePath } from "@/lib/tauri";
-import type { PathValidationResult } from "@/types/tauri";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { usePathValidation } from "@/hooks/use-path-validation";
 
 interface PathsSettingsProps {
   localConfig: Record<string, string>;
@@ -122,51 +122,8 @@ export function PathsSettings({
 }
 
 // ---------------------------------------------------------------------------
-// Frontend-only path pre-validation (fast, no backend call needed)
+// PathInputItem — path input with debounced validation
 // ---------------------------------------------------------------------------
-
-const MAX_PATH_LENGTH = 4096;
-
-const DANGEROUS_CHARS_RE = /[\0`${}|><;]/;
-const SHELL_INJECTION_RE = /\$\(|&&|\|\|/;
-
-/** Quick client-side check before hitting the backend */
-function preValidatePath(
-  value: string,
-  t: (key: string) => string,
-): { ok: boolean; error?: string } {
-  if (!value.trim()) return { ok: true }; // empty = default
-
-  if (value.length > MAX_PATH_LENGTH) {
-    return { ok: false, error: t("settings.pathValidation.tooLong") };
-  }
-
-  if (DANGEROUS_CHARS_RE.test(value) || SHELL_INJECTION_RE.test(value)) {
-    return {
-      ok: false,
-      error: t("settings.pathValidation.dangerousChars"),
-    };
-  }
-
-  // Basic absolute-path check (cross-platform)
-  const isAbsolute =
-    /^[a-zA-Z]:[\\/]/.test(value) || // Windows: C:\, D:/
-    value.startsWith("/"); // Unix: /home/...
-  if (!isAbsolute) {
-    return {
-      ok: false,
-      error: t("settings.pathValidation.mustBeAbsolute"),
-    };
-  }
-
-  return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
-// Validation state type
-// ---------------------------------------------------------------------------
-
-type ValidationStatus = "idle" | "validating" | "valid" | "warning" | "error";
 
 interface PathInputItemProps {
   id: string;
@@ -191,81 +148,20 @@ function PathInputItem({
   externalError,
   t,
 }: PathInputItemProps) {
-  const [status, setStatus] = useState<ValidationStatus>("idle");
-  const [validation, setValidation] = useState<PathValidationResult | null>(
-    null,
-  );
-  const [clientError, setClientError] = useState<string | null>(null);
+  const {
+    status,
+    validation,
+    displayError: hookDisplayError,
+    displayWarnings,
+    setStatus,
+    setValidation,
+    setClientError,
+  } = usePathValidation({ value, t });
+
   const [isBrowsing, setIsBrowsing] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef(0); // monotonic counter to cancel stale validations
 
-  // Debounced backend validation
-  const triggerValidation = useCallback(
-    (pathValue: string) => {
-      // Clear pending debounce
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-
-      // Client-side pre-check
-      const pre = preValidatePath(pathValue, t);
-      if (!pre.ok) {
-        setClientError(pre.error ?? null);
-        setStatus("error");
-        setValidation(null);
-        return;
-      }
-      setClientError(null);
-
-      // Empty path = use default, no backend call needed
-      if (!pathValue.trim()) {
-        setStatus("idle");
-        setValidation(null);
-        return;
-      }
-
-      // Only call backend in Tauri environment
-      if (!isTauri()) {
-        setStatus("idle");
-        setValidation(null);
-        return;
-      }
-
-      setStatus("validating");
-
-      const callId = ++abortRef.current;
-
-      debounceRef.current = setTimeout(async () => {
-        try {
-          const result = await validatePath(pathValue, true);
-          // Ignore if a newer call has been triggered
-          if (callId !== abortRef.current) return;
-
-          setValidation(result);
-          if (!result.isValid) {
-            setStatus("error");
-          } else if (result.warnings.length > 0) {
-            setStatus("warning");
-          } else {
-            setStatus("valid");
-          }
-        } catch {
-          if (callId !== abortRef.current) return;
-          setStatus("error");
-          setValidation(null);
-          setClientError(t("settings.pathValidation.backendError"));
-        }
-      }, 600);
-    },
-    [t],
-  );
-
-  // Validate when value changes
-  useEffect(() => {
-    triggerValidation(value);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [value, triggerValidation]);
+  // Determine displayed error: external (from parent) > hook error
+  const displayError = externalError || hookDisplayError;
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,27 +197,14 @@ function PathInputItem({
     } finally {
       setIsBrowsing(false);
     }
-  }, [onBrowse]);
+  }, [onBrowse, setStatus, setValidation, setClientError]);
 
   const handleClear = useCallback(() => {
     onChange("");
     setStatus("idle");
     setValidation(null);
     setClientError(null);
-  }, [onChange]);
-
-  // Determine displayed error: external (from parent) > client > backend
-  const displayError =
-    externalError ||
-    clientError ||
-    (validation && !validation.isValid
-      ? validation.errors.map((e) => t(`settings.pathValidation.be.${e}`) !== `settings.pathValidation.be.${e}` ? t(`settings.pathValidation.be.${e}`) : e).join("; ")
-      : null);
-
-  const displayWarnings =
-    validation && validation.isValid && validation.warnings.length > 0
-      ? validation.warnings
-      : [];
+  }, [onChange, setStatus, setValidation, setClientError]);
 
   // Status icon
   const StatusIcon = () => {

@@ -9,11 +9,7 @@ import { BarChart3, FolderOpen, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import type { GitFileStatEntry } from '@/types/tauri';
-
-interface GitVisualFileHistoryProps {
-  repoPath: string | null;
-  onGetFileStats: (file: string, limit?: number) => Promise<GitFileStatEntry[]>;
-}
+import type { GitVisualFileHistoryProps } from '@/types/git';
 
 export function GitVisualFileHistory({ repoPath, onGetFileStats }: GitVisualFileHistoryProps) {
   const { t } = useLocale();

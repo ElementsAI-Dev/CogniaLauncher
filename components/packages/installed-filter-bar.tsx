@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,19 +18,9 @@ import {
 } from "@/components/ui/tooltip";
 import { Search, X, Server } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
-import type { InstalledPackage, ProviderInfo } from "@/lib/tauri";
-
-export interface InstalledFilterState {
-  query: string;
-  provider: string | null;
-}
-
-interface InstalledFilterBarProps {
-  packages: InstalledPackage[];
-  providers: ProviderInfo[];
-  filter: InstalledFilterState;
-  onFilterChange: (filter: InstalledFilterState) => void;
-}
+import type { InstalledFilterBarProps } from "@/types/packages";
+export type { InstalledFilterState } from "@/types/packages";
+export { useInstalledFilter } from "@/hooks/use-installed-filter";
 
 export function InstalledFilterBar({
   packages,
@@ -144,36 +134,4 @@ export function InstalledFilterBar({
       </div>
     </div>
   );
-}
-
-export function useInstalledFilter(packages: InstalledPackage[]) {
-  const [filter, setFilter] = useState<InstalledFilterState>({
-    query: "",
-    provider: null,
-  });
-
-  const filteredPackages = useMemo(() => {
-    let result = packages;
-
-    if (filter.provider) {
-      result = result.filter((pkg) => pkg.provider === filter.provider);
-    }
-
-    if (filter.query) {
-      const query = filter.query.toLowerCase();
-      result = result.filter(
-        (pkg) =>
-          pkg.name.toLowerCase().includes(query) ||
-          pkg.version.toLowerCase().includes(query),
-      );
-    }
-
-    return result;
-  }, [packages, filter]);
-
-  return {
-    filter,
-    setFilter,
-    filteredPackages,
-  };
 }

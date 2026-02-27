@@ -15,5 +15,5 @@ export { AccentColorPicker } from "./accent-color-picker";
 export { SettingsSearch } from "./settings-search";
 export { SettingsNav } from "./settings-nav";
 export { CollapsibleSection } from "./collapsible-section";
-export { SECTION_ICONS } from "./shared";
-export type { TranslateFunction } from "./shared";
+export { SECTION_ICONS } from "@/lib/constants/settings-registry";
+export type { TranslateFunction } from "@/types/settings";

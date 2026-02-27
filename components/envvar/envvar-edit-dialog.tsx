@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
+import { validateEnvVarKey } from '@/lib/envvar';
 import type { EnvVarScope } from '@/types/tauri';
 
 interface EnvVarEditDialogProps {
@@ -59,12 +60,12 @@ export function EnvVarEditDialog({
 
   const handleSave = () => {
     const trimmedKey = key.trim();
-    if (!trimmedKey) {
-      setKeyError(t('envvar.errors.keyEmpty') || 'Key cannot be empty');
-      return;
-    }
-    if (/[\s=\0]/.test(trimmedKey)) {
-      setKeyError(t('envvar.errors.keyInvalid') || 'Key contains invalid characters');
+    const validation = validateEnvVarKey(trimmedKey);
+    if (!validation.valid) {
+      const msg = validation.error === 'empty'
+        ? (t('envvar.errors.keyEmpty') || 'Key cannot be empty')
+        : (t('envvar.errors.keyInvalid') || 'Key contains invalid characters');
+      setKeyError(msg);
       return;
     }
     setKeyError(null);

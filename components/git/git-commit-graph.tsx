@@ -7,70 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, GitBranch, ChevronDown } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
+import { assignLanes } from '@/lib/utils/git';
+import { LANE_COLORS, LANE_WIDTH, ROW_HEIGHT, NODE_RADIUS, GRAPH_LEFT_PADDING } from '@/lib/constants/git';
 import type { GitGraphEntry } from '@/types/tauri';
-
-interface GitCommitGraphProps {
-  onLoadGraph: (limit?: number, allBranches?: boolean) => Promise<GitGraphEntry[]>;
-  onSelectCommit?: (hash: string) => void;
-  selectedHash?: string | null;
-}
-
-const LANE_COLORS = [
-  '#3b82f6', '#22c55e', '#a855f7', '#f97316', '#ec4899',
-  '#06b6d4', '#eab308', '#ef4444', '#6366f1', '#14b8a6',
-];
-const LANE_WIDTH = 16;
-const ROW_HEIGHT = 28;
-const NODE_RADIUS = 4;
-const LEFT_PADDING = 8;
-
-interface LaneAssignment {
-  lane: number;
-  maxLane: number;
-}
-
-function assignLanes(entries: GitGraphEntry[]): Map<string, LaneAssignment> {
-  const assignments = new Map<string, LaneAssignment>();
-  const activeLanes: (string | null)[] = [];
-  let maxLane = 0;
-
-  for (const entry of entries) {
-    let lane = activeLanes.indexOf(entry.hash);
-    if (lane === -1) {
-      lane = activeLanes.indexOf(null);
-      if (lane === -1) {
-        lane = activeLanes.length;
-        activeLanes.push(entry.hash);
-      } else {
-        activeLanes[lane] = entry.hash;
-      }
-    }
-
-    activeLanes[lane] = null;
-
-    for (let i = 0; i < entry.parents.length; i++) {
-      const parent = entry.parents[i];
-      if (!activeLanes.includes(parent)) {
-        if (i === 0 && activeLanes[lane] === null) {
-          activeLanes[lane] = parent;
-        } else {
-          let freeLane = activeLanes.indexOf(null);
-          if (freeLane === -1) {
-            freeLane = activeLanes.length;
-            activeLanes.push(parent);
-          } else {
-            activeLanes[freeLane] = parent;
-          }
-        }
-      }
-    }
-
-    if (lane > maxLane) maxLane = lane;
-    assignments.set(entry.hash, { lane, maxLane });
-  }
-
-  return assignments;
-}
+import type { GitCommitGraphProps } from '@/types/git';
 
 export function GitCommitGraph({ onLoadGraph, onSelectCommit, selectedHash }: GitCommitGraphProps) {
   const { t } = useLocale();
@@ -108,7 +48,7 @@ export function GitCommitGraph({ onLoadGraph, onSelectCommit, selectedHash }: Gi
     return max;
   }, [laneMap]);
 
-  const svgWidth = (maxLane + 2) * LANE_WIDTH + LEFT_PADDING;
+  const svgWidth = (maxLane + 2) * LANE_WIDTH + GRAPH_LEFT_PADDING;
   const svgHeight = entries.length * ROW_HEIGHT;
 
   const handleLoadMore = async () => {
@@ -146,7 +86,7 @@ export function GitCommitGraph({ onLoadGraph, onSelectCommit, selectedHash }: Gi
                 {entries.map((entry, rowIdx) => {
                   const assignment = laneMap.get(entry.hash);
                   if (!assignment) return null;
-                  const cx = LEFT_PADDING + assignment.lane * LANE_WIDTH + LANE_WIDTH / 2;
+                  const cx = GRAPH_LEFT_PADDING + assignment.lane * LANE_WIDTH + LANE_WIDTH / 2;
                   const cy = rowIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                   const color = LANE_COLORS[assignment.lane % LANE_COLORS.length];
 
@@ -157,7 +97,7 @@ export function GitCommitGraph({ onLoadGraph, onSelectCommit, selectedHash }: Gi
                         if (parentIdx === undefined) return null;
                         const parentAssignment = laneMap.get(parentHash);
                         if (!parentAssignment) return null;
-                        const px = LEFT_PADDING + parentAssignment.lane * LANE_WIDTH + LANE_WIDTH / 2;
+                        const px = GRAPH_LEFT_PADDING + parentAssignment.lane * LANE_WIDTH + LANE_WIDTH / 2;
                         const py = parentIdx * ROW_HEIGHT + ROW_HEIGHT / 2;
                         const parentColor = LANE_COLORS[parentAssignment.lane % LANE_COLORS.length];
 

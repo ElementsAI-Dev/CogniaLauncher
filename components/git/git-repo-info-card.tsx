@@ -4,11 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { GitBranch, CheckCircle2, XCircle } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
-import type { GitRepoInfo } from '@/types/tauri';
-
-interface GitRepoInfoCardProps {
-  repoInfo: GitRepoInfo;
-}
+import type { GitRepoInfoCardProps } from '@/types/git';
 
 export function GitRepoInfoCard({ repoInfo }: GitRepoInfoCardProps) {
   const { t } = useLocale();

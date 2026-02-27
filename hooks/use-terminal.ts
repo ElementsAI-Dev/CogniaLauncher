@@ -5,37 +5,10 @@ import * as tauri from '@/lib/tauri';
 import { isTauri } from '@/lib/platform';
 import { toast } from 'sonner';
 import type {
-  LaunchResult,
   ShellType,
-  ShellInfo,
   TerminalProfile,
-  PSProfileInfo,
-  PSModuleInfo,
-  PSScriptInfo,
-  ShellFrameworkInfo,
-  ShellPlugin,
 } from '@/types/tauri';
-
-interface UseTerminalState {
-  shells: ShellInfo[];
-  profiles: TerminalProfile[];
-  psProfiles: PSProfileInfo[];
-  psModules: PSModuleInfo[];
-  psScripts: PSScriptInfo[];
-  executionPolicy: [string, string][];
-  frameworks: ShellFrameworkInfo[];
-  plugins: ShellPlugin[];
-  shellEnvVars: [string, string][];
-  proxyEnvVars: [string, string][];
-  selectedShellId: string | null;
-  launchingProfileId: string | null;
-  lastLaunchResult: {
-    profileId: string;
-    result: LaunchResult;
-  } | null;
-  loading: boolean;
-  error: string | null;
-}
+import type { UseTerminalState, ProxyMode } from '@/types/terminal';
 
 export function useTerminal() {
   const [state, setState] = useState<UseTerminalState>({
@@ -50,6 +23,11 @@ export function useTerminal() {
     shellEnvVars: [],
     proxyEnvVars: [],
     selectedShellId: null,
+    proxyMode: 'global',
+    customProxy: '',
+    noProxy: '',
+    globalProxy: '',
+    proxyConfigSaving: false,
     launchingProfileId: null,
     lastLaunchResult: null,
     loading: false,
@@ -434,6 +412,75 @@ export function useTerminal() {
     }
   }, []);
 
+  // Proxy Config Management
+  const loadProxyConfig = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const config = await tauri.configList();
+      const configMap: Record<string, string> = {};
+      for (const [k, v] of config) {
+        configMap[k] = v;
+      }
+      setState((prev) => ({
+        ...prev,
+        proxyMode: (configMap['terminal.proxy_mode'] || 'global') as ProxyMode,
+        customProxy: configMap['terminal.custom_proxy'] || '',
+        noProxy: configMap['terminal.no_proxy'] || '',
+        globalProxy: configMap['network.proxy'] || '',
+      }));
+    } catch {
+      // fallback to defaults
+    }
+  }, []);
+
+  const updateProxyMode = useCallback(async (mode: ProxyMode) => {
+    setState((prev) => ({ ...prev, proxyMode: mode }));
+    if (!isTauri()) return;
+    setState((prev) => ({ ...prev, proxyConfigSaving: true }));
+    try {
+      await tauri.configSet('terminal.proxy_mode', mode);
+      const proxyEnvVars = await tauri.terminalGetProxyEnvVars();
+      setState((prev) => ({ ...prev, proxyEnvVars, proxyConfigSaving: false }));
+    } catch (e) {
+      setState((prev) => ({ ...prev, proxyConfigSaving: false }));
+      toast.error(`Failed to set proxy mode: ${e}`);
+    }
+  }, []);
+
+  const updateCustomProxy = useCallback(async (value: string) => {
+    setState((prev) => ({ ...prev, customProxy: value }));
+  }, []);
+
+  const saveCustomProxy = useCallback(async () => {
+    if (!isTauri()) return;
+    setState((prev) => ({ ...prev, proxyConfigSaving: true }));
+    try {
+      await tauri.configSet('terminal.custom_proxy', state.customProxy);
+      const proxyEnvVars = await tauri.terminalGetProxyEnvVars();
+      setState((prev) => ({ ...prev, proxyEnvVars, proxyConfigSaving: false }));
+    } catch (e) {
+      setState((prev) => ({ ...prev, proxyConfigSaving: false }));
+      toast.error(`Failed to save custom proxy: ${e}`);
+    }
+  }, [state.customProxy]);
+
+  const updateNoProxy = useCallback(async (value: string) => {
+    setState((prev) => ({ ...prev, noProxy: value }));
+  }, []);
+
+  const saveNoProxy = useCallback(async () => {
+    if (!isTauri()) return;
+    setState((prev) => ({ ...prev, proxyConfigSaving: true }));
+    try {
+      await tauri.configSet('terminal.no_proxy', state.noProxy);
+      const proxyEnvVars = await tauri.terminalGetProxyEnvVars();
+      setState((prev) => ({ ...prev, proxyEnvVars, proxyConfigSaving: false }));
+    } catch (e) {
+      setState((prev) => ({ ...prev, proxyConfigSaving: false }));
+      toast.error(`Failed to save no-proxy list: ${e}`);
+    }
+  }, [state.noProxy]);
+
   // Initial load
   useEffect(() => {
     let cancelled = false;
@@ -495,5 +542,11 @@ export function useTerminal() {
     uninstallPSModule,
     updatePSModule,
     searchPSModules,
+    loadProxyConfig,
+    updateProxyMode,
+    updateCustomProxy,
+    saveCustomProxy,
+    updateNoProxy,
+    saveNoProxy,
   };
 }
