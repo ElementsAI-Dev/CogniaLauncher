@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   HardDrive,
   Network,
@@ -346,9 +347,16 @@ export function WslDistroOverview({
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                {t('wsl.detail.envDetectFailed')}
-              </p>
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Server />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('wsl.detail.envDetectFailed')}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             )}
           </CardContent>
         </Card>
@@ -357,12 +365,12 @@ export function WslDistroOverview({
       {/* Resource Usage (only when running and prop provided) */}
       {isRunning && getDistroResources && (
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <MemoryStick className="h-4 w-4 text-muted-foreground" />
-                {t('wsl.detail.resources')}
-              </CardTitle>
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <MemoryStick className="h-4 w-4 text-muted-foreground" />
+              {t('wsl.detail.resources')}
+            </CardTitle>
+            <CardAction>
               <Button
                 variant="ghost"
                 size="icon"
@@ -372,7 +380,7 @@ export function WslDistroOverview({
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${!resourcesFetched ? 'animate-spin' : ''}`} />
               </Button>
-            </div>
+            </CardAction>
           </CardHeader>
           <CardContent>
             {!resourcesFetched ? (
@@ -429,7 +437,16 @@ export function WslDistroOverview({
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('wsl.detail.resourcesFailed')}</p>
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <MemoryStick />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('wsl.detail.resourcesFailed')}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             )}
           </CardContent>
         </Card>

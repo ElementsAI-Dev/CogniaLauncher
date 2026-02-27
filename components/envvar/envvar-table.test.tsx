@@ -23,6 +23,10 @@ const mockT = (key: string) => {
     'envvar.scopes.system': 'System',
     'envvar.actions.edit': 'Edit',
     'envvar.actions.delete': 'Delete',
+    'envvar.table.copy': 'Copy value',
+    'envvar.confirm.deleteTitle': 'Delete Environment Variable',
+    'envvar.confirm.deleteDesc': 'Are you sure?',
+    'common.cancel': 'Cancel',
   };
   return translations[key] || key;
 };
@@ -99,7 +103,7 @@ describe('EnvVarTable', () => {
     expect(screen.queryByText('PATH')).not.toBeInTheDocument();
   });
 
-  it('calls onDelete when delete button clicked', async () => {
+  it('calls onDelete when delete button clicked and confirmed', async () => {
     const onDelete = jest.fn();
     render(<EnvVarTable {...defaultProps} onDelete={onDelete} />);
     // There are 3 delete buttons (one per row)
@@ -108,6 +112,9 @@ describe('EnvVarTable', () => {
     );
     expect(deleteButtons.length).toBe(3);
     await userEvent.click(deleteButtons[0]);
+    // AlertDialog confirmation appears
+    const confirmBtn = screen.getByRole('button', { name: /delete/i });
+    await userEvent.click(confirmBtn);
     expect(onDelete).toHaveBeenCalled();
   });
 

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { GitCommit, Loader2 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -38,6 +39,9 @@ export function GitCommitDialog({ stagedCount, onCommit, disabled }: GitCommitDi
             <Badge variant="secondary">{stagedCount} staged</Badge>
           )}
         </CardTitle>
+        <CardDescription className="text-xs">
+          {t('git.commit.description')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -56,9 +60,9 @@ export function GitCommitDialog({ stagedCount, onCommit, disabled }: GitCommitDi
                 onCheckedChange={(checked) => setAmend(checked === true)}
                 disabled={loading}
               />
-              <label htmlFor="amend" className="text-xs text-muted-foreground cursor-pointer">
+              <Label htmlFor="amend" className="text-xs text-muted-foreground cursor-pointer">
                 {t('git.commit.amend')}
-              </label>
+              </Label>
             </div>
             <Button
               size="sm"

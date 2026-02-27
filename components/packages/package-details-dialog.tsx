@@ -5,6 +5,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -281,7 +282,7 @@ export function PackageDetailsDialog({
           )}
         </ScrollArea>
 
-        <div className="flex justify-end gap-2 pt-4">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
@@ -326,7 +327,7 @@ export function PackageDetailsDialog({
                   version: selectedVersion || t("packages.latest"),
                 })}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

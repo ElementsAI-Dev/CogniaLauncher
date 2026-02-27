@@ -22,13 +22,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   ArrowLeft,
-  ChevronDown,
   Globe,
   HardDrive,
   Package,
@@ -184,8 +185,15 @@ export function CacheDetailExternalView() {
         </div>
       ) : caches.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {t('cache.noExternalCaches')}
+          <CardContent className="py-8">
+            <Empty className="border-none">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Globe />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('cache.noExternalCaches')}</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           </CardContent>
         </Card>
       ) : (
@@ -200,18 +208,14 @@ export function CacheDetailExternalView() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="max-h-[500px]">
-                <div className="space-y-2">
+                <Accordion type="multiple" className="space-y-2">
                   {items.map((cache) => {
                     const pathInfo = getPathInfo(cache.provider);
                     return (
-                      <Collapsible key={cache.provider}>
-                        <div className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                      <AccordionItem key={cache.provider} value={cache.provider} className="rounded-lg border last:border-b">
+                        <div className="flex items-center justify-between p-3 hover:bg-muted/50 transition-colors">
                           <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <CollapsibleTrigger asChild>
-                              <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8">
-                                <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                              </Button>
-                            </CollapsibleTrigger>
+                            <AccordionTrigger className="p-0 hover:no-underline [&>svg]:size-4 shrink-0 h-8 w-8 items-center justify-center" />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium text-sm">{cache.displayName}</span>
@@ -234,7 +238,7 @@ export function CacheDetailExternalView() {
                                   variant="outline"
                                   size="sm"
                                   disabled={!cache.canClean || cleaning === cache.provider}
-                                  onClick={() => setCleanTarget(cache.provider)}
+                                  onClick={(e) => { e.stopPropagation(); setCleanTarget(cache.provider); }}
                                 >
                                   {cleaning === cache.provider ? (
                                     <RefreshCw className="h-3 w-3 animate-spin mr-1" />
@@ -248,8 +252,8 @@ export function CacheDetailExternalView() {
                             </Tooltip>
                           </div>
                         </div>
-                        <CollapsibleContent>
-                          <div className="ml-11 mt-2 mb-3 p-3 rounded-lg bg-muted/30 space-y-2 text-sm">
+                        <AccordionContent>
+                          <div className="ml-11 px-3 pb-3 p-3 rounded-lg bg-muted/30 space-y-2 text-sm">
                             {cache.cachePath && (
                               <div className="flex gap-2">
                                 <span className="text-muted-foreground shrink-0">{t('cache.detail.externalCachePath')}:</span>
@@ -277,11 +281,11 @@ export function CacheDetailExternalView() {
                               <span>{cache.canClean ? t('cache.yes') : t('cache.no')}</span>
                             </div>
                           </div>
-                        </CollapsibleContent>
-                      </Collapsible>
+                        </AccordionContent>
+                      </AccordionItem>
                     );
                   })}
-                </div>
+                </Accordion>
               </ScrollArea>
             </CardContent>
           </Card>

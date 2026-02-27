@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -107,12 +107,15 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
           <Download className="h-4 w-4" />
           {t('git.cloneAction.title')}
         </CardTitle>
+        <CardDescription className="text-xs">
+          {t('git.cloneAction.description')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
           {/* URL Input */}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.url')}</label>
+            <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.url')}</Label>
             <div className="relative">
               <Input
                 placeholder={t('git.cloneAction.urlPlaceholder')}
@@ -139,7 +142,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
 
           {/* Destination Input */}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.destination')}</label>
+            <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.destination')}</Label>
             <div className="flex items-center gap-2">
               <Input
                 value={destPath}
@@ -165,7 +168,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
               {/* Branch & Depth */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.branch')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.branch')}</Label>
                   <Input
                     placeholder={t('git.cloneAction.branchPlaceholder')}
                     value={options.branch ?? ''}
@@ -175,7 +178,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.depth')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.depth')}</Label>
                   <Input
                     type="number"
                     min={1}
@@ -191,7 +194,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
               {/* Filter & Jobs */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.filter')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.filter')}</Label>
                   <Input
                     placeholder={t('git.cloneAction.filterPlaceholder')}
                     value={options.filter ?? ''}
@@ -201,7 +204,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.remoteName')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.remoteName')}</Label>
                   <Input
                     placeholder={t('git.cloneAction.remoteNamePlaceholder')}
                     value={options.remoteName ?? ''}

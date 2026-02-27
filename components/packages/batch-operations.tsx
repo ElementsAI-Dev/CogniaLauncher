@@ -14,7 +14,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Progress } from "@/components/ui/progress";
 import {
   Download,
   Trash2,
@@ -246,9 +248,9 @@ export function BatchOperations({
                     checked={dryRun}
                     onCheckedChange={(checked) => setDryRun(checked === true)}
                   />
-                  <label htmlFor="dryRun" className="text-sm cursor-pointer">
+                  <Label htmlFor="dryRun">
                     {t("packages.dryRun")}
-                  </label>
+                  </Label>
                 </div>
                 <div className="flex items-center gap-2">
                   <Checkbox
@@ -256,9 +258,9 @@ export function BatchOperations({
                     checked={force}
                     onCheckedChange={(checked) => setForce(checked === true)}
                   />
-                  <label htmlFor="force" className="text-sm cursor-pointer">
+                  <Label htmlFor="force">
                     {t("packages.forceOption")}
-                  </label>
+                  </Label>
                 </div>
               </div>
             )}
@@ -276,6 +278,7 @@ export function BatchOperations({
                       {t("packages.processingDesc")}
                     </div>
                   </div>
+                  <Progress className="w-full max-w-xs animate-pulse" />
                 </div>
               </div>
             )}

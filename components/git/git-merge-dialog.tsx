@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -43,6 +44,11 @@ export function GitMergeDialog({ branches, currentBranch, onMerge }: GitMergeDia
           <GitMerge className="h-4 w-4" />
           {t('git.mergeAction.title')}
         </CardTitle>
+        {currentBranch && (
+          <CardDescription className="text-xs">
+            {t('git.mergeAction.currentBranch')}: <code className="font-mono">{currentBranch}</code>
+          </CardDescription>
+        )}
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -66,9 +72,9 @@ export function GitMergeDialog({ branches, currentBranch, onMerge }: GitMergeDia
                 onCheckedChange={(checked) => setNoFf(checked === true)}
                 disabled={loading}
               />
-              <label htmlFor="no-ff" className="text-xs text-muted-foreground cursor-pointer">
+              <Label htmlFor="no-ff" className="text-xs text-muted-foreground cursor-pointer">
                 {t('git.mergeAction.noFf')}
-              </label>
+              </Label>
             </div>
             <Button
               size="sm"

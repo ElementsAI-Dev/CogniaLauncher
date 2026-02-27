@@ -1,9 +1,28 @@
 'use client';
 
+import { useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -40,6 +59,7 @@ export function TerminalProfileList({
   onClearLaunchResult,
 }: TerminalProfileListProps) {
   const { t } = useLocale();
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
@@ -123,16 +143,39 @@ export function TerminalProfileList({
         </Card>
       )}
 
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('terminal.confirmDelete')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('terminal.confirmDeleteDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('terminal.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { if (deleteId) { onDelete(deleteId); setDeleteId(null); } }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('terminal.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {profiles.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <p className="text-muted-foreground">{t('terminal.noProfiles')}</p>
-            <Button variant="outline" className="mt-4" onClick={onCreateNew}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('terminal.createFirst')}
-            </Button>
-          </CardContent>
-        </Card>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Terminal />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">
+              {t('terminal.noProfiles')}
+            </EmptyTitle>
+          </EmptyHeader>
+          <Button variant="outline" onClick={onCreateNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t('terminal.createFirst')}
+          </Button>
+        </Empty>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {profiles.map((profile) => {
@@ -170,22 +213,40 @@ export function TerminalProfileList({
                       )}
                       {isLaunching ? t('terminal.launching') : t('terminal.launch')}
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => onEdit(profile)}>
-                      <Pencil className="h-3 w-3" />
-                    </Button>
-                    {onDuplicate && (
-                      <Button size="sm" variant="outline" onClick={() => onDuplicate(profile.id)}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    )}
-                    {!profile.isDefault && (
-                      <Button size="sm" variant="outline" onClick={() => onSetDefault(profile.id)}>
-                        <Star className="h-3 w-3" />
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => onDelete(profile.id)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onEdit(profile)}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          {t('terminal.edit')}
+                        </DropdownMenuItem>
+                        {onDuplicate && (
+                          <DropdownMenuItem onClick={() => onDuplicate(profile.id)}>
+                            <Copy className="h-4 w-4 mr-2" />
+                            {t('terminal.duplicate')}
+                          </DropdownMenuItem>
+                        )}
+                        {!profile.isDefault && (
+                          <DropdownMenuItem onClick={() => onSetDefault(profile.id)}>
+                            <Star className="h-4 w-4 mr-2" />
+                            {t('terminal.setDefault')}
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => setDeleteId(profile.id)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          {t('terminal.delete')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </CardContent>
               </Card>

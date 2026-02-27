@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   GitBranch,
@@ -16,6 +17,12 @@ import {
   ArrowRight,
   Layers,
 } from 'lucide-react';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatSize } from '@/lib/utils';
 import type { PackageDependencyViewProps } from '@/types/packages';
@@ -67,44 +74,54 @@ export function PackageDependencyView({
           <div className="space-y-4">
             {/* Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 border rounded-lg text-center">
-                <div className="text-2xl font-bold">{resolution.total_packages}</div>
-                <div className="text-xs text-muted-foreground">{t('packages.detail.totalDependencies')}</div>
-              </div>
-              <div className="p-3 border rounded-lg text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {resolution.tree.filter((n) => n.is_installed).length}
-                </div>
-                <div className="text-xs text-muted-foreground">{t('packages.installed')}</div>
-              </div>
-              <div className="p-3 border rounded-lg text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {resolution.tree.filter((n) => !n.is_installed).length}
-                </div>
-                <div className="text-xs text-muted-foreground">{t('packages.toInstall')}</div>
-              </div>
-              <div className="p-3 border rounded-lg text-center">
-                <div className="text-2xl font-bold text-destructive">{resolution.conflicts.length}</div>
-                <div className="text-xs text-muted-foreground">{t('packages.detail.conflictsFound')}</div>
-              </div>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold">{resolution.total_packages}</div>
+                  <div className="text-xs text-muted-foreground">{t('packages.detail.totalDependencies')}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    {resolution.tree.filter((n) => n.is_installed).length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t('packages.installed')}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {resolution.tree.filter((n) => !n.is_installed).length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t('packages.toInstall')}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-2xl font-bold text-destructive">{resolution.conflicts.length}</div>
+                  <div className="text-xs text-muted-foreground">{t('packages.detail.conflictsFound')}</div>
+                </CardContent>
+              </Card>
             </div>
 
             {/* Status banner */}
             {resolution.success ? (
-              <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-700 dark:text-green-400">
-                <Check className="h-5 w-5" />
-                <span>{t('packages.resolutionSuccessful')}</span>
-                {resolution.total_size != null && resolution.total_size > 0 && (
-                  <span className="ml-auto text-sm">
-                    {t('packages.totalDownload')} {formatSize(resolution.total_size)}
-                  </span>
-                )}
-              </div>
+              <Alert className="bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400 [&>svg]:text-green-600">
+                <Check className="h-4 w-4" />
+                <AlertDescription className="flex items-center justify-between">
+                  <span>{t('packages.resolutionSuccessful')}</span>
+                  {resolution.total_size != null && resolution.total_size > 0 && (
+                    <span className="text-sm">
+                      {t('packages.totalDownload')} {formatSize(resolution.total_size)}
+                    </span>
+                  )}
+                </AlertDescription>
+              </Alert>
             ) : (
-              <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-700 dark:text-red-400">
-                <AlertCircle className="h-5 w-5" />
-                <span>{t('packages.resolutionFailed')}</span>
-              </div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{t('packages.resolutionFailed')}</AlertDescription>
+              </Alert>
             )}
 
             {/* Conflicts */}
@@ -189,10 +206,16 @@ export function PackageDependencyView({
 
         {/* Empty state */}
         {!resolution && !loading && (
-          <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-            <Layers className="h-12 w-12 mb-4 opacity-50" />
-            <span>{t('packages.detail.noDependencies')}</span>
-          </div>
+          <Empty className="border-none py-12">
+            <EmptyHeader>
+              <EmptyMedia>
+                <Layers className="h-12 w-12 opacity-50" />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('packages.detail.noDependencies')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
       </CardContent>
     </Card>

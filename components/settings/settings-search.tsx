@@ -114,9 +114,9 @@ export function SettingsSearch({
               >
                 {results.slice(0, 8).map((result) => (
                   <li key={result.setting.key}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus:outline-none"
+                    <Button
+                      variant="ghost"
+                      className="flex w-full items-center justify-between h-auto px-3 py-2 font-normal"
                       onClick={() => handleResultClick(result)}
                     >
                       <div className="min-w-0 flex-1">
@@ -149,7 +149,7 @@ export function SettingsSearch({
                         </Badge>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                       </div>
-                    </button>
+                    </Button>
                   </li>
                 ))}
                 {totalResults > 8 && (

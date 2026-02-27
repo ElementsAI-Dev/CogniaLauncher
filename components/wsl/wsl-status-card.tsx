@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -50,12 +50,12 @@ export function WslStatusCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Info className="h-4 w-4 text-muted-foreground" />
           {t('wsl.status')}
         </CardTitle>
-        <div className="flex items-center gap-2">
+        <CardAction>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -70,7 +70,7 @@ export function WslStatusCard({
             </TooltipTrigger>
             <TooltipContent>{t('common.refresh')}</TooltipContent>
           </Tooltip>
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">

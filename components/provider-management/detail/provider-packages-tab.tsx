@@ -14,6 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
@@ -431,10 +437,16 @@ export function ProviderPackagesTab({
               ))}
             </div>
           ) : filteredInstalled.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Package className="h-10 w-10 mx-auto mb-3 opacity-50" />
-              <p>{t("providerDetail.noInstalledPackages")}</p>
-            </div>
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Package />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t("providerDetail.noInstalledPackages")}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <ScrollArea className="max-h-[500px]">
               <Table>

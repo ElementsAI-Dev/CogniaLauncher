@@ -11,18 +11,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
 import {
+  Command,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
   Search,
   X,
   Loader2,
   Clock,
-  Sparkles,
   Filter,
   ArrowUpDown,
   Package,
@@ -210,77 +215,77 @@ export function SearchBar({
             sideOffset={4}
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <ScrollArea className="max-h-[400px]">
-              {/* Suggestions */}
-              {isPending && (
-                <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {t("packages.loadingSuggestions")}
-                </div>
-              )}
-
-              {suggestions.length > 0 && (
-                <div className="border-b">
-                  <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" />
-                    {t("packages.suggestions")}
-                  </div>
-                  {suggestions.map((suggestion, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleSuggestionClick(suggestion)}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-                    >
-                      {suggestion.suggestion_type === "package" ? (
-                        <Package className="h-3 w-3 text-muted-foreground" />
-                      ) : (
-                        <Server className="h-3 w-3 text-muted-foreground" />
-                      )}
-                      <span className="flex-1">{suggestion.text}</span>
-                      {suggestion.provider && (
-                        <Badge variant="outline" className="text-xs">
-                          {suggestion.provider}
-                        </Badge>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Search History */}
-              {searchHistory.length > 0 &&
-                !isPending &&
-                suggestions.length === 0 && (
-                  <div>
-                    <div className="flex items-center justify-between px-3 py-2 border-b">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {t("packages.recentSearches")}
-                      </span>
-                      <Button
-                        variant="link"
-                        size="sm"
-                        onClick={clearHistory}
-                        className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {t("common.clear")}
-                      </Button>
-                    </div>
-                    <div className="py-1">
-                      {searchHistory.map((item, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleHistoryClick(item)}
-                          className="w-full px-3 py-2 text-left text-sm hover:bg-accent flex items-center gap-2"
-                        >
-                          <Clock className="h-3 w-3 text-muted-foreground" />
-                          {item}
-                        </button>
-                      ))}
-                    </div>
+            <Command>
+              <CommandList className="max-h-[400px]">
+                {/* Loading */}
+                {isPending && (
+                  <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t("packages.loadingSuggestions")}
                   </div>
                 )}
-            </ScrollArea>
+
+                {/* Suggestions */}
+                {suggestions.length > 0 && (
+                  <CommandGroup heading={t("packages.suggestions")}>
+                    {suggestions.map((suggestion, index) => (
+                      <CommandItem
+                        key={index}
+                        onSelect={() => handleSuggestionClick(suggestion)}
+                        className="flex items-center gap-2"
+                      >
+                        {suggestion.suggestion_type === "package" ? (
+                          <Package className="h-3 w-3 text-muted-foreground" />
+                        ) : (
+                          <Server className="h-3 w-3 text-muted-foreground" />
+                        )}
+                        <span className="flex-1">{suggestion.text}</span>
+                        {suggestion.provider && (
+                          <Badge variant="outline" className="text-xs">
+                            {suggestion.provider}
+                          </Badge>
+                        )}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+
+                {/* Search History */}
+                {searchHistory.length > 0 &&
+                  !isPending &&
+                  suggestions.length === 0 && (
+                    <>
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {t("packages.recentSearches")}
+                        </span>
+                        <Button
+                          variant="link"
+                          size="sm"
+                          onClick={clearHistory}
+                          className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {t("common.clear")}
+                        </Button>
+                      </div>
+                      <CommandSeparator />
+                      <CommandGroup>
+                        {searchHistory.map((item, index) => (
+                          <CommandItem
+                            key={index}
+                            onSelect={() => handleHistoryClick(item)}
+                            className="flex items-center gap-2"
+                          >
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            {item}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </>
+                  )}
+              </CommandList>
+            </Command>
           </PopoverContent>
         </Popover>
 

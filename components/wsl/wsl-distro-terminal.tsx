@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
+import { Kbd } from '@/components/ui/kbd';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty';
 import { toast } from 'sonner';
 import type { ExecHistoryEntry, WslDistroTerminalProps } from '@/types/wsl';
 
@@ -91,7 +93,7 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <TerminalSquare className="h-4 w-4 text-muted-foreground" />
           {t('wsl.detail.terminal')} — {distroName}
@@ -102,10 +104,12 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
           )}
         </CardTitle>
         {history.length > 0 && (
-          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={clearHistory}>
-            <Trash2 className="h-3 w-3" />
-            {t('common.clear')}
-          </Button>
+          <CardAction>
+            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={clearHistory}>
+              <Trash2 className="h-3 w-3" />
+              {t('common.clear')}
+            </Button>
+          </CardAction>
         )}
       </CardHeader>
       <CardContent className="space-y-3">
@@ -145,6 +149,7 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
           >
             <Play className="h-3 w-3" />
             {t('wsl.exec.run')}
+            <Kbd>↵</Kbd>
           </Button>
         </div>
 
@@ -205,9 +210,19 @@ export function WslDistroTerminal({ distroName, isRunning, onExec, t }: WslDistr
         )}
 
         {history.length === 0 && (
-          <div className="rounded-md border bg-zinc-950 text-zinc-500 p-6 text-center text-xs font-mono">
-            {t('wsl.detail.terminalEmpty')}
-          </div>
+          <Empty className="border-none py-6 bg-zinc-950 rounded-md">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <TerminalSquare className="text-zinc-500" />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-zinc-500 font-mono">
+                {t('wsl.detail.terminalEmpty')}
+              </EmptyTitle>
+              <EmptyDescription className="text-zinc-600 text-xs">
+                <Kbd>↑</Kbd> <Kbd>↓</Kbd> {t('wsl.detail.terminalHistoryHint') ?? 'command history'}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
       </CardContent>
     </Card>

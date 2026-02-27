@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageLoadingSkeleton } from '@/components/layout/page-loading-skeleton';
 import {
@@ -166,18 +167,18 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             <Package className="h-4 w-4" />
             {t('providerDetail.tabPackages')}
             {installedPackages.length > 0 && (
-              <span className="ml-1 text-xs bg-muted-foreground/20 rounded-full px-1.5">
+              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">
                 {installedPackages.length}
-              </span>
+              </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="updates" className="gap-1.5">
             <ArrowUpCircle className="h-4 w-4" />
             {t('providerDetail.tabUpdates')}
             {availableUpdates.length > 0 && (
-              <span className="ml-1 text-xs bg-orange-500/20 text-orange-700 dark:text-orange-300 rounded-full px-1.5">
+              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5 bg-orange-500/20 text-orange-700 dark:text-orange-300">
                 {availableUpdates.length}
-              </span>
+              </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="health" className="gap-1.5">
@@ -188,9 +189,9 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             <History className="h-4 w-4" />
             {t('providerDetail.tabHistory')}
             {installHistory.length > 0 && (
-              <span className="ml-1 text-xs bg-muted-foreground/20 rounded-full px-1.5">
+              <Badge variant="secondary" className="ml-1 text-xs h-5 px-1.5">
                 {installHistory.length}
-              </span>
+              </Badge>
             )}
           </TabsTrigger>
           {isEnvironmentProvider && (

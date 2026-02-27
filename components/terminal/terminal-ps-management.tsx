@@ -5,7 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Shield, FileText, Pencil, RefreshCw, Save, Eye } from 'lucide-react';
 import type { PSProfileInfo } from '@/types/tauri';
@@ -106,42 +115,70 @@ export function TerminalPsManagement({
               {t('terminal.noPsProfiles')}
             </p>
           ) : (
-            <div className="rounded-md border divide-y">
-              {psProfiles.map((profile) => (
-                <div
-                  key={profile.scope}
-                  className="flex items-center justify-between px-3 py-2.5"
-                >
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <span className="text-sm font-medium">{profile.scope}</span>
-                      <p className="text-xs text-muted-foreground font-mono truncate max-w-[300px]">
-                        {profile.path}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={profile.exists ? 'default' : 'outline'}>
-                      {profile.exists ? t('terminal.exists') : t('terminal.notExists')}
-                    </Badge>
-                    {profile.exists && (
-                      <span className="text-xs text-muted-foreground">
-                        {(profile.sizeBytes / 1024).toFixed(1)} KB
-                      </span>
-                    )}
-                    {profile.exists && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleLoadProfile(profile.scope)}
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('terminal.scope')}</TableHead>
+                    <TableHead>{t('terminal.path')}</TableHead>
+                    <TableHead className="w-[100px]">{t('terminal.status')}</TableHead>
+                    <TableHead className="w-[80px] text-right" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {psProfiles.map((profile) => (
+                    <TableRow key={profile.scope}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="text-sm font-medium">{profile.scope}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-xs text-muted-foreground font-mono truncate max-w-[300px] inline-block">
+                              {profile.path}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                            {profile.path}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={profile.exists ? 'default' : 'outline'}>
+                            {profile.exists ? t('terminal.exists') : t('terminal.notExists')}
+                          </Badge>
+                          {profile.exists && (
+                            <span className="text-xs text-muted-foreground">
+                              {(profile.sizeBytes / 1024).toFixed(1)} KB
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {profile.exists && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                onClick={() => handleLoadProfile(profile.scope)}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">{t('terminal.viewProfile')}</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
 
@@ -195,24 +232,33 @@ export function TerminalPsManagement({
         </CardHeader>
         <CardContent className="space-y-4">
           {executionPolicy.length > 0 && (
-            <div className="rounded-md border divide-y">
-              {executionPolicy.map(([scope, policy]) => (
-                <div
-                  key={scope}
-                  className="flex items-center justify-between px-3 py-2"
-                >
-                  <span className="text-sm">{scope}</span>
-                  <Badge
-                    variant={
-                      policy === 'Undefined' ? 'outline'
-                        : policy === 'Restricted' ? 'destructive'
-                          : 'default'
-                    }
-                  >
-                    {policy}
-                  </Badge>
-                </div>
-              ))}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('terminal.scope')}</TableHead>
+                    <TableHead className="text-right">{t('terminal.policy')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {executionPolicy.map(([scope, policy]) => (
+                    <TableRow key={scope}>
+                      <TableCell className="text-sm">{scope}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge
+                          variant={
+                            policy === 'Undefined' ? 'outline'
+                              : policy === 'Restricted' ? 'destructive'
+                                : 'default'
+                          }
+                        >
+                          {policy}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
 

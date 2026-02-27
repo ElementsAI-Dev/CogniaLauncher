@@ -1,7 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from "@/components/ui/empty";
 import { Server, SearchX, FilterX } from "lucide-react";
 
 export interface ProviderEmptyStateProps {
@@ -17,39 +24,33 @@ export function ProviderEmptyState({
 }: ProviderEmptyStateProps) {
   if (hasFilters) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="rounded-full bg-muted p-4 mb-4">
-            <SearchX className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-semibold mb-2">
-            {t("providers.noResults")}
-          </h3>
-          <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-            {t("providers.noResultsDesc")}
-          </p>
+      <Empty className="border-dashed border">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <SearchX />
+          </EmptyMedia>
+          <EmptyTitle>{t("providers.noResults")}</EmptyTitle>
+          <EmptyDescription>{t("providers.noResultsDesc")}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
           <Button variant="outline" onClick={onClearFilters} className="gap-2">
             <FilterX className="h-4 w-4" />
             {t("providers.clearFilters")}
           </Button>
-        </CardContent>
-      </Card>
+        </EmptyContent>
+      </Empty>
     );
   }
 
   return (
-    <Card className="border-dashed">
-      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <Server className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold mb-2">
-          {t("providers.noProviders")}
-        </h3>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          {t("providers.noProvidersDesc")}
-        </p>
-      </CardContent>
-    </Card>
+    <Empty className="border-dashed border">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Server />
+        </EmptyMedia>
+        <EmptyTitle>{t("providers.noProviders")}</EmptyTitle>
+        <EmptyDescription>{t("providers.noProvidersDesc")}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }

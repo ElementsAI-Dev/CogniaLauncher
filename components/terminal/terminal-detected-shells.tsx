@@ -2,6 +2,9 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Terminal, Star } from 'lucide-react';
 import type { ShellInfo } from '@/types/tauri';
@@ -19,14 +22,14 @@ export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShel
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 3 }).map((_, i) => (
-          <Card key={i} className="animate-pulse">
+          <Card key={i}>
             <CardHeader className="pb-3">
-              <div className="h-5 w-24 rounded bg-muted" />
+              <Skeleton className="h-5 w-24" />
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <div className="h-4 w-32 rounded bg-muted" />
-                <div className="h-4 w-48 rounded bg-muted" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-48" />
               </div>
             </CardContent>
           </Card>
@@ -37,12 +40,16 @@ export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShel
 
   if (shells.length === 0) {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center py-12">
-          <Terminal className="mb-4 h-12 w-12 text-muted-foreground" />
-          <p className="text-muted-foreground">{t('terminal.noShellsDetected')}</p>
-        </CardContent>
-      </Card>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Terminal />
+          </EmptyMedia>
+          <EmptyTitle className="text-sm font-normal text-muted-foreground">
+            {t('terminal.noShellsDetected')}
+          </EmptyTitle>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -70,9 +77,16 @@ export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShel
           <CardContent className="space-y-2 text-sm">
             <div>
               <span className="text-muted-foreground">{t('terminal.path')}: </span>
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">
-                {shell.executablePath}
-              </code>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs truncate max-w-[200px] inline-block align-bottom">
+                    {shell.executablePath}
+                  </code>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                  {shell.executablePath}
+                </TooltipContent>
+              </Tooltip>
             </div>
             {shell.configFiles.length > 0 && (
               <div>
@@ -84,9 +98,16 @@ export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShel
                         'h-1.5 w-1.5 rounded-full',
                         cf.exists ? 'bg-green-500' : 'bg-muted-foreground/30'
                       )} />
-                      <code className="truncate rounded bg-muted px-1 py-0.5">
-                        {cf.path}
-                      </code>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <code className="truncate rounded bg-muted px-1 py-0.5 max-w-[200px] inline-block align-bottom">
+                            {cf.path}
+                          </code>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                          {cf.path}
+                        </TooltipContent>
+                      </Tooltip>
                       {cf.exists && cf.sizeBytes > 0 && (
                         <span className="text-muted-foreground">
                           ({(cf.sizeBytes / 1024).toFixed(1)} KB)

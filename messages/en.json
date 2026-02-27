@@ -868,6 +868,11 @@
     "importCompleted": "Successfully imported {count} package(s)",
     "importFailed": "Import failed: {error}",
     "installSelected": "Install {count} selected",
+    "quickView": "Quick View",
+    "copyName": "Copy Package Name",
+    "copiedName": "Package name copied",
+    "select": "Select",
+    "deselect": "Deselect",
     "addBookmark": "Add to bookmarks",
     "removeBookmark": "Remove from bookmarks",
     "bookmarkAdded": "Added {name} to bookmarks",
@@ -2518,7 +2523,8 @@
       "uninstall": "Uninstall Git",
       "uninstallConfirm": "Are you sure you want to uninstall Git?",
       "uninstallSuccess": "Git uninstalled successfully",
-      "checkingUpdates": "Checking for updates..."
+      "checkingUpdates": "Checking for updates...",
+      "refresh": "Refresh status"
     },
     "config": {
       "title": "Global Configuration",
@@ -2531,7 +2537,11 @@
       "removed": "Configuration key removed",
       "empty": "No global configuration set",
       "keyPlaceholder": "e.g. user.name",
-      "valuePlaceholder": "e.g. John Doe"
+      "valuePlaceholder": "e.g. John Doe",
+      "confirmRemoveTitle": "Remove Configuration",
+      "confirmRemoveDesc": "Are you sure you want to remove the configuration key \"{key}\"?",
+      "cancel": "Cancel",
+      "confirmRemove": "Remove"
     },
     "repo": {
       "title": "Repository",
@@ -2657,6 +2667,7 @@
     "commit": {
       "title": "Create Commit",
       "messagePlaceholder": "Enter commit message...",
+      "description": "Create a new commit with staged changes",
       "amend": "Amend last commit",
       "noStagedFiles": "No staged files to commit",
       "success": "Commit created successfully"
@@ -2675,6 +2686,7 @@
     "mergeAction": {
       "title": "Merge Branch",
       "selectBranch": "Select branch to merge",
+      "currentBranch": "Current branch",
       "noFf": "No fast-forward",
       "success": "Merge completed",
       "conflicts": "Merge conflicts detected"
@@ -2699,6 +2711,7 @@
       "urlPlaceholder": "https://github.com/user/repo.git",
       "destination": "Destination Path",
       "cloning": "Cloning...",
+      "description": "Clone a remote repository to your local machine",
       "success": "Repository cloned successfully",
       "advancedOptions": "Advanced Options",
       "branch": "Branch",
@@ -2775,7 +2788,10 @@
       "title": "Reflog",
       "load": "Load Reflog",
       "resetTo": "Reset to this point",
-      "empty": "No reflog entries"
+      "empty": "No reflog entries",
+      "resetSoft": "Soft Reset (keep staged)",
+      "resetMixed": "Mixed Reset (unstage changes)",
+      "resetHard": "Hard Reset (discard all)"
     },
     "cleanAction": {
       "success": "Untracked files removed"
@@ -2993,7 +3009,19 @@
     "moduleUninstalled": "Module uninstalled.",
     "moduleUpdated": "Module updated.",
     "galleryResults": "Gallery Results",
-    "searchGalleryPlaceholder": "Search PSGallery..."
+    "searchGalleryPlaceholder": "Search PSGallery...",
+    "confirmDelete": "Delete Profile",
+    "confirmDeleteDesc": "Are you sure you want to delete this profile? This action cannot be undone.",
+    "delete": "Delete",
+    "duplicate": "Duplicate",
+    "setDefault": "Set as Default",
+    "confirmUninstallDesc": "Are you sure you want to uninstall \"{name}\"? This action cannot be undone.",
+    "scope": "Scope",
+    "status": "Status",
+    "policy": "Policy",
+    "viewProfile": "View Profile",
+    "name": "Name",
+    "author": "Author"
   },
   "wsl": {
     "title": "WSL Management",

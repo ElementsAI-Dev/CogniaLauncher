@@ -4,6 +4,14 @@ import { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { History, Loader2, RotateCcw } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
@@ -57,7 +65,8 @@ export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
             {t('git.reflog.empty')}
           </p>
         ) : (
-          <div className="space-y-1 max-h-[400px] overflow-y-auto">
+          <ScrollArea className="max-h-[400px]">
+          <div className="space-y-1">
             {entries.map((entry, i) => (
               <div
                 key={`${entry.selector}-${i}`}
@@ -74,19 +83,45 @@ export function GitReflogCard({ onGetReflog, onResetTo }: GitReflogCardProps) {
                   {formatRelativeDate(entry.date)}
                 </span>
                 {onResetTo && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 shrink-0"
-                    onClick={() => onResetTo(entry.hash, 'mixed')}
-                    title={t('git.reflog.resetTo')}
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                  </Button>
+                  <DropdownMenu>
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 shrink-0"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          <p className="text-xs">{t('git.reflog.resetTo')}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onResetTo(entry.hash, 'soft')}>
+                        {t('git.reflog.resetSoft')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onResetTo(entry.hash, 'mixed')}>
+                        {t('git.reflog.resetMixed')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => onResetTo(entry.hash, 'hard')}
+                      >
+                        {t('git.reflog.resetHard')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             ))}
           </div>
+          </ScrollArea>
         )}
       </CardContent>
     </Card>

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +16,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
+import { Kbd } from '@/components/ui/kbd';
 import { toast } from 'sonner';
 import type { ExecHistoryEntry, WslExecTerminalProps } from '@/types/wsl';
 
@@ -75,21 +76,23 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <TerminalSquare className="h-4 w-4 text-muted-foreground" />
           {t('wsl.exec.title')}
         </CardTitle>
         {history.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-xs"
-            onClick={clearHistory}
-          >
-            <Trash2 className="h-3 w-3" />
-            {t('common.clear')}
-          </Button>
+          <CardAction>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 text-xs"
+              onClick={clearHistory}
+            >
+              <Trash2 className="h-3 w-3" />
+              {t('common.clear')}
+            </Button>
+          </CardAction>
         )}
       </CardHeader>
       <CardContent className="space-y-3">
@@ -145,6 +148,7 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
           >
             <Play className="h-3 w-3" />
             {t('wsl.exec.run')}
+            <Kbd>↵</Kbd>
           </Button>
         </div>
 

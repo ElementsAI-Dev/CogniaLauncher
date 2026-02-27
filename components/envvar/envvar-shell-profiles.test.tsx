@@ -3,6 +3,25 @@ import userEvent from '@testing-library/user-event';
 import { EnvVarShellProfiles } from './envvar-shell-profiles';
 import type { ShellProfileInfo } from '@/types/tauri';
 
+import React from 'react';
+
+const CollapsibleCtx = React.createContext(false);
+
+jest.mock('@/components/ui/collapsible', () => ({
+  Collapsible: ({ children, open }: { children: React.ReactNode; open: boolean }) => (
+    <CollapsibleCtx.Provider value={open}>
+      <div data-testid="collapsible" data-open={String(open)}>{children}</div>
+    </CollapsibleCtx.Provider>
+  ),
+  CollapsibleTrigger: ({ children }: { children: React.ReactNode; asChild?: boolean }) => (
+    <div data-testid="collapsible-trigger">{children}</div>
+  ),
+  CollapsibleContent: ({ children }: { children: React.ReactNode }) => {
+    const open = React.useContext(CollapsibleCtx);
+    return open ? <div data-testid="collapsible-content">{children}</div> : null;
+  },
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     'envvar.shellProfiles.current': 'Current',

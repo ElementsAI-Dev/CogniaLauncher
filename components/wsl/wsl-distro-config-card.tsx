@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Settings, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Settings, Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { QUICK_SETTINGS } from '@/lib/constants/wsl';
 import type { WslDistroConfigCardProps } from '@/types/wsl';
@@ -96,11 +96,27 @@ export function WslDistroConfigCard({
 
   return (
     <Card>
-      <CardHeader className="pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Settings className="h-4 w-4 text-muted-foreground" />
           {t('wsl.distroConfig.title')} — {distroName}
         </CardTitle>
+        <CardAction>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={refresh}
+                disabled={loading}
+                className="h-8 w-8"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('common.refresh')}</TooltipContent>
+          </Tooltip>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         <Alert variant="default" className="bg-muted/50">

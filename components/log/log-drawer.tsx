@@ -3,6 +3,7 @@
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -39,6 +40,9 @@ export function LogDrawer({ side = "right" }: LogDrawerProps) {
               {stats.total} {t("logs.entries")}
             </Badge>
           </SheetTitle>
+          <SheetDescription className="sr-only">
+            {t("logs.description")}
+          </SheetDescription>
         </SheetHeader>
 
         <div className="h-[calc(100%-60px)] pt-4">

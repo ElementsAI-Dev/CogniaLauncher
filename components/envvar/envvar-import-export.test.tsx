@@ -42,6 +42,9 @@ const mockT = (key: string) => {
     'envvar.scopes.user': 'User',
     'envvar.scopes.system': 'System',
     'common.loading': 'Loading',
+    'common.file': 'File',
+    'common.copy': 'Copy',
+    'common.download': 'Download',
   };
   return translations[key] || key;
 };

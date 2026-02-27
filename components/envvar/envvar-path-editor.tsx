@@ -22,7 +22,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown, Copy, Route } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { EnvVarScope, PathEntryInfo } from '@/types/tauri';
@@ -109,17 +121,18 @@ export function EnvVarPathEditor({
         </Select>
         <span className="text-sm text-muted-foreground">
           {pathEntries.length} {t('envvar.pathEditor.title').toLowerCase()}
-          {missingCount > 0 && (
-            <span className="text-red-500 ml-2">
-              · {t('envvar.pathEditor.missingCount', { count: missingCount })}
-            </span>
-          )}
-          {duplicateCount > 0 && (
-            <span className="text-amber-500 ml-2">
-              · {t('envvar.pathEditor.duplicateCount', { count: duplicateCount })}
-            </span>
-          )}
         </span>
+        {missingCount > 0 && (
+          <Badge variant="destructive" className="text-[10px] gap-1">
+            <XCircle className="h-3 w-3" />
+            {t('envvar.pathEditor.missingCount', { count: missingCount })}
+          </Badge>
+        )}
+        {duplicateCount > 0 && (
+          <Badge variant="outline" className="text-[10px] gap-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+            {t('envvar.pathEditor.duplicateCount', { count: duplicateCount })}
+          </Badge>
+        )}
         {duplicateCount > 0 && (
           <Button variant="outline" size="sm" onClick={handleDeduplicate} disabled={loading} className="gap-1.5 ml-auto">
             <Copy className="h-3.5 w-3.5" />
@@ -147,90 +160,114 @@ export function EnvVarPathEditor({
 
       {/* Entries list */}
       {pathEntries.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground text-sm">
-          {t('envvar.pathEditor.empty')}
-        </div>
+        <Empty className="border-none py-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Route />
+            </EmptyMedia>
+            <EmptyTitle className="text-sm font-normal text-muted-foreground">
+              {t('envvar.pathEditor.empty')}
+            </EmptyTitle>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <div className="space-y-1">
-          {pathEntries.map((entry, index) => (
-            <div
-              key={`${entry.path}-${index}`}
-              className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 group hover:bg-muted"
-            >
-              <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
-
-              <span className="font-mono text-xs flex-1 break-all min-w-0">{entry.path}</span>
-
-              <Badge
-                variant="outline"
-                className={cn(
-                  'shrink-0 text-[10px]',
-                  entry.exists && entry.isDirectory
-                    ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
-                    : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
-                )}
+        <ScrollArea className="max-h-[480px]">
+          <div className="space-y-1">
+            {pathEntries.map((entry, index) => (
+              <div
+                key={`${entry.path}-${index}`}
+                className="flex items-center gap-2 px-3 py-2 rounded-md bg-muted/50 group hover:bg-muted"
               >
-                {entry.exists && entry.isDirectory ? (
-                  <><CheckCircle2 className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.exists')}</>
-                ) : (
-                  <><XCircle className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.missing')}</>
-                )}
-              </Badge>
+                <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
 
-              {entry.isDuplicate && (
+                <span className="font-mono text-xs flex-1 break-all min-w-0">{entry.path}</span>
+
                 <Badge
                   variant="outline"
-                  className="shrink-0 text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                  className={cn(
+                    'shrink-0 text-[10px]',
+                    entry.exists && entry.isDirectory
+                      ? 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'
+                      : 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20',
+                  )}
                 >
-                  {t('envvar.pathEditor.duplicate')}
+                  {entry.exists && entry.isDirectory ? (
+                    <><CheckCircle2 className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.exists')}</>
+                  ) : (
+                    <><XCircle className="h-3 w-3 mr-0.5" />{t('envvar.pathEditor.missing')}</>
+                  )}
                 </Badge>
-              )}
 
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  disabled={index === 0}
-                  onClick={() => handleMove(index, 'up')}
-                >
-                  <ArrowUp className="h-3 w-3" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  disabled={index === pathEntries.length - 1}
-                  onClick={() => handleMove(index, 'down')}
-                >
-                  <ArrowDown className="h-3 w-3" />
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive">
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t('envvar.confirm.pathChangeTitle')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('envvar.confirm.pathChangeDesc')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => handleRemove(entry.path)}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                {entry.isDuplicate && (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                  >
+                    {t('envvar.pathEditor.duplicate')}
+                  </Badge>
+                )}
+
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={index === 0}
+                        onClick={() => handleMove(index, 'up')}
                       >
-                        {t('envvar.actions.delete')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                        <ArrowUp className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t('envvar.pathEditor.moveUp')}</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        disabled={index === pathEntries.length - 1}
+                        onClick={() => handleMove(index, 'down')}
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t('envvar.pathEditor.moveDown')}</TooltipContent>
+                  </Tooltip>
+                  <AlertDialog>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive">
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </AlertDialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{t('envvar.pathEditor.remove')}</TooltipContent>
+                    </Tooltip>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('envvar.confirm.pathChangeTitle')}</AlertDialogTitle>
+                        <AlertDialogDescription>{t('envvar.confirm.pathChangeDesc')}</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleRemove(entry.path)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {t('envvar.actions.delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </ScrollArea>
       )}
     </div>
   );

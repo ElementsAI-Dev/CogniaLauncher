@@ -29,10 +29,28 @@ import {
   Package,
   Pin,
   Star,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 import { usePackageStore } from "@/lib/stores/packages";
 import { useLocale } from "@/components/providers/locale-provider";
 import { getPackageKey } from "@/lib/packages";
+import { writeClipboard } from "@/lib/clipboard";
+import { toast } from "sonner";
 import type { InstalledPackage, PackageSummary } from "@/lib/tauri";
 import type { PackageListProps } from "@/types/packages";
 
@@ -77,21 +95,23 @@ export function PackageList({
 
   if (packages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="p-3 bg-muted rounded-full mb-4">
-          <Package className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="font-medium mb-1">
-          {type === "search"
-            ? t("packages.noResults")
-            : t("packages.noPackagesInstalled")}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {type === "search"
-            ? t("packages.searchTips")
-            : t("packages.description")}
-        </p>
-      </div>
+      <Empty className="border-none py-12">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Package />
+          </EmptyMedia>
+          <EmptyTitle>
+            {type === "search"
+              ? t("packages.noResults")
+              : t("packages.noPackagesInstalled")}
+          </EmptyTitle>
+          <EmptyDescription>
+            {type === "search"
+              ? t("packages.searchTips")
+              : t("packages.description")}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     );
   }
 
@@ -136,8 +156,9 @@ export function PackageList({
             const isPinned = pinnedPackages.includes(pkg.name);
 
             return (
+              <ContextMenu key={uniqueKey}>
+                <ContextMenuTrigger asChild>
               <div
-                key={uniqueKey}
                 className={`
                 flex items-center justify-between p-4 
                 bg-card border rounded-lg cursor-pointer 
@@ -353,6 +374,80 @@ export function PackageList({
                   )}
                 </div>
               </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem
+                    onClick={() => {
+                      const params = new URLSearchParams({ name: pkg.name });
+                      if (pkg.provider) params.set('provider', pkg.provider);
+                      router.push(`/packages/detail?${params.toString()}`);
+                    }}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    {t("common.info")}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => onSelect?.(pkg)}
+                  >
+                    <Info className="h-4 w-4" />
+                    {t("packages.quickView")}
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  {isInstalled ? (
+                    <ContextMenuItem
+                      variant="destructive"
+                      onClick={() => onUninstall?.(packageKey)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {t("common.uninstall")}
+                    </ContextMenuItem>
+                  ) : (
+                    <ContextMenuItem
+                      onClick={() => onInstall?.(packageKey)}
+                      disabled={isInstalling}
+                    >
+                      <Download className="h-4 w-4" />
+                      {t("common.install")}
+                    </ContextMenuItem>
+                  )}
+                  {isInstalled && onPin && onUnpin && (
+                    <ContextMenuItem
+                      onClick={() => isPinned ? onUnpin(pkg.name) : onPin(pkg.name)}
+                    >
+                      <Pin className="h-4 w-4" />
+                      {isPinned ? t("packages.unpinVersion") : t("packages.pinVersion")}
+                    </ContextMenuItem>
+                  )}
+                  {onBookmark && (
+                    <ContextMenuItem
+                      onClick={() => onBookmark(pkg.name)}
+                    >
+                      <Star className="h-4 w-4" />
+                      {bookmarkedPackages.includes(pkg.name)
+                        ? t("packages.removeBookmark")
+                        : t("packages.addBookmark")}
+                    </ContextMenuItem>
+                  )}
+                  <ContextMenuSeparator />
+                  {selectable && (
+                    <ContextMenuItem
+                      onClick={() => togglePackageSelection(packageKey)}
+                    >
+                      <Package className="h-4 w-4" />
+                      {isSelected ? t("packages.deselect") : t("packages.select")}
+                    </ContextMenuItem>
+                  )}
+                  <ContextMenuItem
+                    onClick={() => {
+                      writeClipboard(pkg.name);
+                      toast.success(t("packages.copiedName"));
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                    {t("packages.copyName")}
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
             );
           })}
         </div>

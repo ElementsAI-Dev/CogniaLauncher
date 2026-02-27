@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardDescription } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Breadcrumb as BreadcrumbRoot,
@@ -452,9 +452,9 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
       )}
 
       <Card>
-        <CardHeader className="pb-3">
-          <h3 className="text-sm font-semibold">{t('wsl.manageOps')}</h3>
-          <p className="text-xs text-muted-foreground">{t('wsl.manageOpsDesc')}</p>
+        <CardHeader>
+          <div className="text-sm font-semibold">{t('wsl.manageOps')}</div>
+          <CardDescription>{t('wsl.manageOpsDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

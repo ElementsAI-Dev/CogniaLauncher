@@ -30,6 +30,7 @@ import {
 import {
   Collapsible,
   CollapsibleContent,
+  CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Toggle } from "@/components/ui/toggle";
 import { useLogStore } from "@/lib/stores/log";
@@ -211,6 +212,7 @@ export function LogToolbar({
   );
 
   return (
+    <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
     <div className="flex flex-col gap-2 p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       {/* Primary row - Search and main actions */}
       <div className="flex items-center gap-2">
@@ -279,21 +281,22 @@ export function LogToolbar({
         </DropdownMenu>
 
         {/* Advanced filters toggle */}
-        <Button
-          variant={
-            showAdvanced || activeFiltersCount > 0 ? "secondary" : "outline"
-          }
-          size="sm"
-          className="h-9 gap-1.5 shrink-0"
-          onClick={() => setShowAdvanced(!showAdvanced)}
-        >
-          <span className="hidden sm:inline">{t("logs.advanced")}</span>
-          {activeFiltersCount > 0 && (
-            <Badge className="h-5 w-5 p-0 text-[10px]">
-              {activeFiltersCount}
-            </Badge>
-          )}
-        </Button>
+        <CollapsibleTrigger asChild>
+          <Button
+            variant={
+              showAdvanced || activeFiltersCount > 0 ? "secondary" : "outline"
+            }
+            size="sm"
+            className="h-9 gap-1.5 shrink-0"
+          >
+            <span className="hidden sm:inline">{t("logs.advanced")}</span>
+            {activeFiltersCount > 0 && (
+              <Badge className="h-5 w-5 p-0 text-[10px]">
+                {activeFiltersCount}
+              </Badge>
+            )}
+          </Button>
+        </CollapsibleTrigger>
 
         {/* Separator */}
         <Separator orientation="vertical" className="hidden sm:block h-6" />
@@ -407,14 +410,13 @@ export function LogToolbar({
       </div>
 
       {/* Advanced filters row - collapsible */}
-      <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
         <CollapsibleContent>
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-dashed">
             {/* Time range */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground shrink-0">
+              <Label className="text-xs text-muted-foreground shrink-0">
                 {t("logs.timeRange")}:
-              </span>
+              </Label>
               <Select value={timeRangePreset} onValueChange={handlePresetChange}>
                 <SelectTrigger className="h-8 w-[120px]" size="sm">
                   <SelectValue />
@@ -497,7 +499,7 @@ export function LogToolbar({
             )}
           </div>
         </CollapsibleContent>
-      </Collapsible>
     </div>
+    </Collapsible>
   );
 }

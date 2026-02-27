@@ -4,6 +4,18 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Settings2, Plus, Trash2, Save } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { GitConfigEntry } from '@/types/tauri';
@@ -77,21 +89,39 @@ export function GitConfigCard({ config, onSet, onRemove }: GitConfigCardProps) {
                     >
                       {entry.value}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
-                      onClick={() => onRemove(entry.key)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{t('git.config.confirmRemoveTitle')}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t('git.config.confirmRemoveDesc', { key: entry.key })}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t('git.config.cancel')}</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => onRemove(entry.key)}>
+                            {t('git.config.confirmRemove')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </>
                 )}
               </div>
             ))}
           </div>
         )}
-        <div className="flex items-center gap-2 pt-2 border-t">
+        <Separator className="my-2" />
+        <div className="flex items-center gap-2">
           <Input
             placeholder={t('git.config.keyPlaceholder')}
             value={newKey}

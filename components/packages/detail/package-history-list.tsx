@@ -10,6 +10,12 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { useLocale } from '@/components/providers/locale-provider';
 import { ACTION_ICONS } from '@/lib/constants/packages';
 import type { PackageHistoryListProps } from '@/types/packages';
@@ -63,10 +69,16 @@ export function PackageHistoryList({
       </CardHeader>
       <CardContent>
         {history.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>{t('packages.detail.noHistoryForPackage')}</p>
-          </div>
+          <Empty className="border-none py-12">
+            <EmptyHeader>
+              <EmptyMedia>
+                <History className="h-12 w-12 opacity-50" />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('packages.detail.noHistoryForPackage')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <ScrollArea className="h-[500px]">
             <div className="space-y-2 pr-4">

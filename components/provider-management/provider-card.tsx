@@ -21,6 +21,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Loader2, CheckCircle2, XCircle, Activity, ExternalLink, MoreHorizontal, Copy } from "lucide-react";
 import type { ProviderInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -144,14 +149,17 @@ export function ProviderCard({
           </Label>
           <div className="flex flex-wrap gap-2">
             {provider.platforms.map((platform) => (
-              <span
-                key={platform}
-                className="text-sm inline-flex items-center gap-1"
-                title={platform}
-              >
-                <PlatformIcon platform={platform} size={16} />
-                <span>{platform}</span>
-              </span>
+              <Tooltip key={platform}>
+                <TooltipTrigger asChild>
+                  <span className="text-sm inline-flex items-center gap-1 cursor-default">
+                    <PlatformIcon platform={platform} size={16} />
+                    <span>{platform}</span>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{platform}</p>
+                </TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </div>

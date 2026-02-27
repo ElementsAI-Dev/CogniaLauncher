@@ -29,6 +29,13 @@ import {
   Loader2,
   Pin,
 } from "lucide-react";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { BatchResult } from "@/lib/tauri";
 import type { PackageUpdateInfo, UpdateManagerProps } from "@/types/packages";
@@ -192,17 +199,19 @@ export function UpdateManager({
 
         {/* No Updates */}
         {!loading && updates.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="p-3 bg-green-500/10 rounded-full mb-4">
-              <CheckCircle className="h-8 w-8 text-green-500" />
-            </div>
-            <h3 className="font-medium mb-1">
-              {t("packages.allPackagesUpToDate")}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {t("packages.lastChecked", { time: t("packages.justNow") })}
-            </p>
-          </div>
+          <Empty className="border-none py-12">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <CheckCircle className="text-green-500" />
+              </EmptyMedia>
+              <EmptyTitle>
+                {t("packages.allPackagesUpToDate")}
+              </EmptyTitle>
+              <EmptyDescription>
+                {t("packages.lastChecked", { time: t("packages.justNow") })}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
 
         {/* Update Result */}

@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { Blocks, Puzzle, RefreshCw } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellFrameworkInfo, ShellPlugin } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -88,9 +90,10 @@ export function TerminalShellFramework({
             {frameworks.map((fw) => (
               <div
                 key={`${fw.name}-${fw.shellType}`}
-                className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent/50 ${
-                  selectedFramework?.name === fw.name ? 'border-primary bg-accent/30' : ''
-                }`}
+                className={cn(
+                  'flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors hover:bg-accent/50',
+                  selectedFramework?.name === fw.name && 'border-primary bg-accent/30'
+                )}
                 onClick={() => handleSelectFramework(fw)}
               >
                 <div className="flex items-center gap-3">
@@ -106,9 +109,16 @@ export function TerminalShellFramework({
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground font-mono truncate max-w-[300px]">
-                      {fw.path}
-                    </p>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-xs text-muted-foreground font-mono truncate max-w-[300px]">
+                          {fw.path}
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                        {fw.path}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 <Badge variant="secondary">{fw.shellType}</Badge>

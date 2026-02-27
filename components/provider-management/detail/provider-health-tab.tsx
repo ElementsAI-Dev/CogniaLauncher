@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
+import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
@@ -194,11 +201,15 @@ export function ProviderHealthTab({
             <Skeleton className="h-16 w-full" />
           </div>
         ) : !healthResult ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <ShieldCheck className="h-10 w-10 mx-auto mb-3 opacity-50" />
-            <p>{t("providerDetail.noHealthData")}</p>
-            <p className="text-xs mt-1">{t("providerDetail.noHealthDataDesc")}</p>
-          </div>
+          <Empty className="border-none py-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ShieldCheck />
+              </EmptyMedia>
+              <EmptyTitle>{t("providerDetail.noHealthData")}</EmptyTitle>
+              <EmptyDescription>{t("providerDetail.noHealthDataDesc")}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="space-y-4">
             {/* Overall Status */}

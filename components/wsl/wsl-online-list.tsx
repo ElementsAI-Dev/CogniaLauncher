@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Globe, Download, Search } from 'lucide-react';
 import type { WslOnlineListProps } from '@/types/wsl';
 
@@ -43,12 +44,14 @@ export function WslOnlineList({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Globe className="h-4 w-4 text-muted-foreground" />
           {t('wsl.available')}
         </CardTitle>
-        <Badge variant="secondary">{distros.length}</Badge>
+        <CardAction>
+          <Badge variant="secondary">{distros.length}</Badge>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="relative">
@@ -64,9 +67,16 @@ export function WslOnlineList({
         <ScrollArea className="h-[320px]">
           <div className="space-y-1.5 pr-3">
             {filtered.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                {t('common.noResults')}
-              </p>
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Search />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t('common.noResults')}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               filtered.map(([id, name]) => {
                 const isInstalled = installedSet.has(id.toLowerCase());

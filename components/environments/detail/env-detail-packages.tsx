@@ -30,6 +30,11 @@ import {
   RefreshCw,
   ArrowUpCircle,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { usePackages } from "@/hooks/use-packages";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -343,19 +348,24 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                             </Badge>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
-                          onClick={() => handleUninstall(pkg.name)}
-                          disabled={installing.includes(pkg.name)}
-                        >
-                          {installing.includes(pkg.name) ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                              onClick={() => handleUninstall(pkg.name)}
+                              disabled={installing.includes(pkg.name)}
+                            >
+                              {installing.includes(pkg.name) ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("common.uninstall")}</TooltipContent>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>

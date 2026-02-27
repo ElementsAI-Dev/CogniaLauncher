@@ -29,6 +29,9 @@ const mockT = (key: string) => {
     'envvar.confirm.pathChangeTitle': 'Confirm Removal',
     'envvar.confirm.pathChangeDesc': 'Are you sure you want to remove this path entry?',
     'envvar.actions.delete': 'Delete',
+    'envvar.pathEditor.moveUp': 'Move up',
+    'envvar.pathEditor.moveDown': 'Move down',
+    'envvar.pathEditor.remove': 'Remove entry',
     'common.cancel': 'Cancel',
   };
   return translations[key] || key;

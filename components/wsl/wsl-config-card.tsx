@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
@@ -17,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Settings2, Save, RefreshCw, Plus, Trash2 } from 'lucide-react';
+import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { COMMON_WSL2_SETTINGS } from '@/lib/constants/wsl';
 import type { WslConfigCardProps } from '@/types/wsl';
@@ -89,25 +90,27 @@ export function WslConfigCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+      <CardHeader>
         <CardTitle className="text-base font-semibold flex items-center gap-2">
           <Settings2 className="h-4 w-4 text-muted-foreground" />
           {t('wsl.config.title')}
         </CardTitle>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onRefresh}
-              disabled={loading}
-              className="h-8 w-8"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.refresh')}</TooltipContent>
-        </Tooltip>
+        <CardAction>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onRefresh}
+                disabled={loading}
+                className="h-8 w-8"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('common.refresh')}</TooltipContent>
+          </Tooltip>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
         {allEntries.length === 0 ? (
@@ -150,9 +153,13 @@ export function WslConfigCard({
         )}
 
         <Separator />
-        <div className="space-y-3">
-          <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.quickSettings')}</p>
-          <div className="grid grid-cols-2 gap-3">
+        <Collapsible defaultOpen>
+          <CollapsibleTrigger className="flex items-center justify-between w-full group">
+            <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.quickSettings')}</p>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+          <div className="grid grid-cols-2 gap-3 mt-3">
             {COMMON_WSL2_SETTINGS.map((setting) => {
               const currentValue = wsl2Config[setting.key];
               return (
@@ -215,11 +222,16 @@ export function WslConfigCard({
               );
             })}
           </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         <Separator />
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.addCustom')}</p>
+        <Collapsible defaultOpen>
+          <CollapsibleTrigger className="flex items-center justify-between w-full group">
+            <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.addCustom')}</p>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
           <div className="flex gap-2">
             <Select value={editSection} onValueChange={setEditSection}>
               <SelectTrigger className="w-[110px] h-8 text-xs">
@@ -260,7 +272,8 @@ export function WslConfigCard({
               {t('common.add')}
             </Button>
           </div>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         <p className="text-[10px] text-muted-foreground">
           {t('wsl.config.restartNote')}

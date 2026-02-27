@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { LogEntry } from "./log-entry";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -13,19 +13,15 @@ import { FileText } from "lucide-react";
 function EmptyState() {
   const { t } = useLocale();
   return (
-    <Card className="border-dashed">
-      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="rounded-full bg-muted p-4 mb-4">
-          <FileText className="h-8 w-8 text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold mb-2">
-          {t("logs.noLogs")}
-        </h3>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          {t("logs.noLogsDescription")}
-        </p>
-      </CardContent>
-    </Card>
+    <Empty className="border-none">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FileText />
+        </EmptyMedia>
+        <EmptyTitle>{t("logs.noLogs")}</EmptyTitle>
+        <EmptyDescription>{t("logs.noLogsDescription")}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 

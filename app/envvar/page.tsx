@@ -15,6 +15,13 @@ import {
 import { useEnvVar } from '@/hooks/use-envvar';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from '@/components/ui/empty';
 import { AlertCircle, Variable, Route, Terminal } from 'lucide-react';
 import { toast } from 'sonner';
 import type { EnvVarScope } from '@/types/tauri';
@@ -125,13 +132,15 @@ export default function EnvVarPage() {
           title={t('envvar.title')}
           description={t('envvar.description')}
         />
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Variable className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium mb-1">{t('envvar.emptyState.title')}</h3>
-          <p className="text-sm text-muted-foreground max-w-md">
-            {t('envvar.emptyState.description')}
-          </p>
-        </div>
+        <Empty className="border-none py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Variable />
+            </EmptyMedia>
+            <EmptyTitle>{t('envvar.emptyState.title')}</EmptyTitle>
+            <EmptyDescription>{t('envvar.emptyState.description')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </div>
     );
   }

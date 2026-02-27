@@ -1,13 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileText, Copy, RefreshCw, Pencil, Save } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellConfigEntries } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -143,71 +146,110 @@ export function TerminalShellConfig({
         )}
 
         {entries && !loading && (
-          <div className="space-y-4">
+          <Accordion type="multiple" defaultValue={['aliases', 'exports', 'sources']}>
             {entries.aliases.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  {t('terminal.aliases')}
-                  <Badge variant="secondary">{entries.aliases.length}</Badge>
-                </h4>
-                <div className="rounded-md border">
-                  <ScrollArea className="max-h-[200px]">
-                    <div className="p-2 space-y-1">
-                      {entries.aliases.map(([name, value], i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs font-mono">
-                          <span className="text-primary font-semibold min-w-[100px]">{name}</span>
-                          <span className="text-muted-foreground">=</span>
-                          <span className="truncate">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-              </div>
+              <AccordionItem value="aliases">
+                <AccordionTrigger className="py-3">
+                  <span className="flex items-center gap-2 text-sm">
+                    {t('terminal.aliases')}
+                    <Badge variant="secondary">{entries.aliases.length}</Badge>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="rounded-md border">
+                    <ScrollArea className="max-h-[200px]">
+                      <div className="p-2 space-y-1">
+                        {entries.aliases.map(([name, value], i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                            <span className="text-primary font-semibold min-w-[100px]">{name}</span>
+                            <span className="text-muted-foreground">=</span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate cursor-default">{value}</span>
+                              </TooltipTrigger>
+                              {value.length > 40 && (
+                                <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                                  {value}
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
             )}
 
             {entries.exports.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  {t('terminal.envExports')}
-                  <Badge variant="secondary">{entries.exports.length}</Badge>
-                </h4>
-                <div className="rounded-md border">
-                  <ScrollArea className="max-h-[200px]">
-                    <div className="p-2 space-y-1">
-                      {entries.exports.map(([key, value], i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs font-mono">
-                          <span className="text-primary font-semibold min-w-[100px]">{key}</span>
-                          <span className="text-muted-foreground">=</span>
-                          <span className="truncate">{value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-              </div>
+              <AccordionItem value="exports">
+                <AccordionTrigger className="py-3">
+                  <span className="flex items-center gap-2 text-sm">
+                    {t('terminal.envExports')}
+                    <Badge variant="secondary">{entries.exports.length}</Badge>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="rounded-md border">
+                    <ScrollArea className="max-h-[200px]">
+                      <div className="p-2 space-y-1">
+                        {entries.exports.map(([key, value], i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                            <span className="text-primary font-semibold min-w-[100px]">{key}</span>
+                            <span className="text-muted-foreground">=</span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="truncate cursor-default">{value}</span>
+                              </TooltipTrigger>
+                              {value.length > 40 && (
+                                <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                                  {value}
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
             )}
 
             {entries.sources.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                  {t('terminal.sources')}
-                  <Badge variant="secondary">{entries.sources.length}</Badge>
-                </h4>
-                <div className="rounded-md border p-2 space-y-1">
-                  {entries.sources.map((src, i) => (
-                    <div key={i} className="text-xs font-mono flex items-center gap-2">
-                      <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="truncate">{src}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <AccordionItem value="sources">
+                <AccordionTrigger className="py-3">
+                  <span className="flex items-center gap-2 text-sm">
+                    {t('terminal.sources')}
+                    <Badge variant="secondary">{entries.sources.length}</Badge>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="rounded-md border p-2 space-y-1">
+                    {entries.sources.map((src, i) => (
+                      <div key={i} className="text-xs font-mono flex items-center gap-2">
+                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="truncate cursor-default">{src}</span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                            {src}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
             )}
-          </div>
+          </Accordion>
         )}
 
         {configContent && !loading && (
+          <>
+          <Separator />
           <div className="space-y-3">
             {editing ? (
               <Textarea
@@ -258,6 +300,7 @@ export function TerminalShellConfig({
               )}
             </div>
           </div>
+          </>
         )}
       </CardContent>
     </Card>

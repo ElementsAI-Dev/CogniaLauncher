@@ -20,7 +20,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, Download, Copy, Check } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { Upload, Download, Copy, Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadEnvFile } from '@/lib/envvar';
 import type { EnvVarScope, EnvFileFormat, EnvVarImportResult } from '@/types/tauri';
@@ -149,7 +150,7 @@ export function EnvVarImportExport({
                 />
                 <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => fileInputRef.current?.click()}>
                   <Upload className="h-3 w-3" />
-                  File
+                  {t('common.file')}
                 </Button>
               </div>
               <Textarea
@@ -162,7 +163,8 @@ export function EnvVarImportExport({
 
             <DialogFooter>
               <Button onClick={handleImport} disabled={!importContent.trim() || importing}>
-                {importing ? t('common.loading') + '...' : t('envvar.importExport.import')}
+                {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {importing ? t('common.loading') : t('envvar.importExport.import')}
               </Button>
             </DialogFooter>
           </TabsContent>
@@ -200,12 +202,13 @@ export function EnvVarImportExport({
             </div>
 
             <Button variant="outline" onClick={handleExport} disabled={exporting} className="w-full gap-1.5">
-              <Download className="h-3.5 w-3.5" />
-              {exporting ? t('common.loading') + '...' : t('envvar.importExport.export')}
+              {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {exporting ? t('common.loading') : t('envvar.importExport.export')}
             </Button>
 
             {exportContent && (
               <>
+                <Separator />
                 <Textarea
                   value={exportContent}
                   readOnly
@@ -214,11 +217,11 @@ export function EnvVarImportExport({
                 <DialogFooter className="gap-2">
                   <Button variant="outline" onClick={handleCopyExport} className="gap-1.5">
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? t('envvar.table.copied') : 'Copy'}
+                    {copied ? t('envvar.table.copied') : t('common.copy')}
                   </Button>
                   <Button onClick={handleDownloadExport} className="gap-1.5">
                     <Download className="h-3.5 w-3.5" />
-                    Download
+                    {t('common.download')}
                   </Button>
                 </DialogFooter>
               </>

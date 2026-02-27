@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { AlertTriangle, ChevronDown, HardDrive, Activity, RefreshCw } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
@@ -181,9 +182,14 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                {t('cache.noCacheData')}
-              </p>
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Activity />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('cache.noCacheData')}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             )}
           </CardContent>
         </CollapsibleContent>

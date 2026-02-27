@@ -19,6 +19,12 @@ import {
   Layers,
   Loader2,
 } from 'lucide-react';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { useLocale } from '@/components/providers/locale-provider';
 import { VERSIONS_PER_PAGE } from '@/lib/constants/packages';
 import type { PackageVersionListProps } from '@/types/packages';
@@ -71,9 +77,15 @@ export function PackageVersionList({
   if (versions.length === 0) {
     return (
       <Card>
-        <CardContent className="py-12 text-center">
-          <Layers className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-          <h3 className="font-medium mb-1">{t('packages.detail.noVersionsAvailable')}</h3>
+        <CardContent className="py-12">
+          <Empty className="border-none">
+            <EmptyHeader>
+              <EmptyMedia>
+                <Layers className="h-12 w-12 opacity-50" />
+              </EmptyMedia>
+              <EmptyTitle>{t('packages.detail.noVersionsAvailable')}</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         </CardContent>
       </Card>
     );

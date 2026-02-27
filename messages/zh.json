@@ -868,6 +868,11 @@
     "importCompleted": "成功导入 {count} 个包",
     "importFailed": "导入失败：{error}",
     "installSelected": "安装选中的 {count} 个",
+    "quickView": "快速查看",
+    "copyName": "复制包名",
+    "copiedName": "包名已复制",
+    "select": "选择",
+    "deselect": "取消选择",
     "addBookmark": "添加到收藏",
     "removeBookmark": "从收藏移除",
     "bookmarkAdded": "已将 {name} 添加到收藏",
@@ -2518,7 +2523,8 @@
       "uninstall": "卸载 Git",
       "uninstallConfirm": "确定要卸载 Git 吗？",
       "uninstallSuccess": "Git 卸载成功",
-      "checkingUpdates": "正在检查更新..."
+      "checkingUpdates": "正在检查更新...",
+      "refresh": "刷新状态"
     },
     "config": {
       "title": "全局配置",
@@ -2531,7 +2537,11 @@
       "removed": "配置键已删除",
       "empty": "未设置全局配置",
       "keyPlaceholder": "例如 user.name",
-      "valuePlaceholder": "例如 张三"
+      "valuePlaceholder": "例如 张三",
+      "confirmRemoveTitle": "删除配置",
+      "confirmRemoveDesc": "确定要删除配置键 \"{key}\" 吗？",
+      "cancel": "取消",
+      "confirmRemove": "删除"
     },
     "repo": {
       "title": "仓库",
@@ -2657,6 +2667,7 @@
     "commit": {
       "title": "创建提交",
       "messagePlaceholder": "输入提交信息...",
+      "description": "使用已暂存的更改创建新提交",
       "amend": "修改上次提交",
       "noStagedFiles": "没有已暂存的文件可提交",
       "success": "提交创建成功"
@@ -2675,6 +2686,7 @@
     "mergeAction": {
       "title": "合并分支",
       "selectBranch": "选择要合并的分支",
+      "currentBranch": "当前分支",
       "noFf": "非快进合并",
       "success": "合并完成",
       "conflicts": "检测到合并冲突"
@@ -2699,6 +2711,7 @@
       "urlPlaceholder": "https://github.com/user/repo.git",
       "destination": "目标路径",
       "cloning": "正在克隆...",
+      "description": "将远程仓库克隆到本地",
       "success": "仓库克隆成功",
       "advancedOptions": "高级选项",
       "branch": "分支",
@@ -2775,7 +2788,10 @@
       "title": "引用日志",
       "load": "加载引用日志",
       "resetTo": "重置到此处",
-      "empty": "没有引用日志条目"
+      "empty": "没有引用日志条目",
+      "resetSoft": "软重置（保留暂存）",
+      "resetMixed": "混合重置（取消暂存）",
+      "resetHard": "硬重置（丢弃所有更改）"
     },
     "cleanAction": {
       "success": "未跟踪文件已删除"
@@ -2993,7 +3009,19 @@
     "moduleUninstalled": "模块已卸载。",
     "moduleUpdated": "模块已更新。",
     "galleryResults": "库搜索结果",
-    "searchGalleryPlaceholder": "搜索 PSGallery..."
+    "searchGalleryPlaceholder": "搜索 PSGallery...",
+    "confirmDelete": "删除配置",
+    "confirmDeleteDesc": "确定要删除此配置吗？此操作无法撤销。",
+    "delete": "删除",
+    "duplicate": "复制",
+    "setDefault": "设为默认",
+    "confirmUninstallDesc": "确定要卸载 \"{name}\" 吗？此操作无法撤销。",
+    "scope": "作用域",
+    "status": "状态",
+    "policy": "策略",
+    "viewProfile": "查看配置",
+    "name": "名称",
+    "author": "作者"
   },
   "wsl": {
     "title": "WSL 管理",

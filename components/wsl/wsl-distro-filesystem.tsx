@@ -26,6 +26,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   FolderOpen,
   File,
@@ -204,9 +205,16 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
 
         {/* File list */}
         {!loading && loaded && entries.length === 0 && !error && (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            {t('wsl.detail.emptyDir')}
-          </p>
+          <Empty className="border-none py-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FolderOpen />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('wsl.detail.emptyDir')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
 
         {!loading && entries.length > 0 && (
@@ -305,10 +313,16 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
 
         {/* Not loaded yet */}
         {!loaded && !loading && (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>{t('wsl.detail.filesystemHint')}</p>
-          </div>
+          <Empty className="border-none py-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FolderOpen />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('wsl.detail.filesystemHint')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         )}
       </CardContent>
     </Card>

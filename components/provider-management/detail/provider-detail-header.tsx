@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -12,7 +12,14 @@ import {
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import {
-  ArrowLeft,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
   Activity,
   CheckCircle2,
   XCircle,
@@ -44,100 +51,111 @@ export function ProviderDetailHeader({
   onRefresh,
   t,
 }: ProviderDetailHeaderProps) {
-  const router = useRouter();
   return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.push("/providers")}
-          className="shrink-0"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <ProviderIcon providerId={provider.id} size={40} />
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{provider.display_name}</h1>
-            {isAvailable !== null && (
-              <Badge
-                variant={isAvailable ? "default" : "destructive"}
-                className={cn(
-                  "gap-1",
-                  isAvailable && "bg-green-600 hover:bg-green-700",
-                )}
-              >
-                {isAvailable ? (
-                  <>
-                    <CheckCircle2 className="h-3 w-3" />
-                    {t("providers.statusAvailable")}
-                  </>
-                ) : (
-                  <>
-                    <XCircle className="h-3 w-3" />
-                    {t("providers.statusUnavailable")}
-                  </>
-                )}
-              </Badge>
-            )}
-            {provider.is_environment_provider && (
-              <Badge variant="outline">
-                {t("providers.filterEnvironment")}
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground font-mono mt-1">
-            {provider.id}
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4">
+      {/* Breadcrumb */}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/providers">
+                {t("nav.providers")}
+              </Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{provider.display_name}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
 
-      <div className="flex items-center gap-3 ml-14 sm:ml-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onCheckStatus}
-              disabled={isCheckingStatus}
-            >
-              {isCheckingStatus ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Activity className="h-4 w-4 mr-2" />
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <ProviderIcon providerId={provider.id} size={40} />
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold">{provider.display_name}</h1>
+              {isAvailable !== null && (
+                <Badge
+                  variant={isAvailable ? "default" : "destructive"}
+                  className={cn(
+                    "gap-1",
+                    isAvailable && "bg-green-600 hover:bg-green-700",
+                  )}
+                >
+                  {isAvailable ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      {t("providers.statusAvailable")}
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      {t("providers.statusUnavailable")}
+                    </>
+                  )}
+                </Badge>
               )}
-              {t("providers.checkStatus")}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t("providers.checkStatusDesc")}</p>
-          </TooltipContent>
-        </Tooltip>
+              {provider.is_environment_provider && (
+                <Badge variant="outline">
+                  {t("providers.filterEnvironment")}
+                </Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground font-mono mt-1">
+              {provider.id}
+            </p>
+          </div>
+        </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onRefresh}
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          {t("providers.refresh")}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCheckStatus}
+                disabled={isCheckingStatus}
+              >
+                {isCheckingStatus ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Activity className="h-4 w-4 mr-2" />
+                )}
+                {t("providers.checkStatus")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t("providers.checkStatusDesc")}</p>
+            </TooltipContent>
+          </Tooltip>
 
-        <Separator orientation="vertical" className="h-6" />
-        <div className="flex items-center gap-2">
-          <Label htmlFor="provider-enabled" className="text-sm">
-            {t("providers.enabled")}
-          </Label>
-          {isToggling && (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          )}
-          <Switch
-            id="provider-enabled"
-            checked={provider.enabled}
-            onCheckedChange={onToggle}
-            disabled={isToggling}
-          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            {t("providers.refresh")}
+          </Button>
+
+          <Separator orientation="vertical" className="h-6" />
+          <div className="flex items-center gap-2">
+            <Label htmlFor="provider-enabled" className="text-sm">
+              {t("providers.enabled")}
+            </Label>
+            {isToggling && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            )}
+            <Switch
+              id="provider-enabled"
+              checked={provider.enabled}
+              onCheckedChange={onToggle}
+              disabled={isToggling}
+            />
+          </div>
         </div>
       </div>
     </div>

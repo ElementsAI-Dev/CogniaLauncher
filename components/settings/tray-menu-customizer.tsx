@@ -2,6 +2,8 @@
 
 import { GripVertical, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { TrayMenuItemId } from "@/lib/tauri";
@@ -43,7 +45,7 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
   if (loading) {
     return (
       <div className="px-1 py-3">
-        <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+        <Skeleton className="h-4 w-32" />
       </div>
     );
   }
@@ -52,7 +54,7 @@ export function TrayMenuCustomizer({ t }: TrayMenuCustomizerProps) {
     <div className="px-1 py-3 space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium">{t("settings.trayMenuCustomize")}</p>
+          <Label className="text-sm">{t("settings.trayMenuCustomize")}</Label>
           <p className="text-xs text-muted-foreground">
             {t("settings.trayMenuCustomizeDesc")}
           </p>

@@ -1,10 +1,11 @@
 "use client";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { SettingItem } from "./setting-item";
 import { isTauri } from "@/lib/platform";
-import { Loader2, Search, Wifi } from "lucide-react";
+import { Info, Loader2, Search, Wifi } from "lucide-react";
 import { useProxyTools } from "@/hooks/use-proxy-tools";
 
 interface NetworkSettingsProps {
@@ -98,10 +99,13 @@ export function NetworkSettings({
               </Button>
             </div>
             {(detectResult || testResult) && (
-              <div className="px-1 text-xs text-muted-foreground">
-                {detectResult && <p>{detectResult}</p>}
-                {testResult && <p>{testResult}</p>}
-              </div>
+              <Alert className="py-2">
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  {detectResult && <p>{detectResult}</p>}
+                  {testResult && <p>{testResult}</p>}
+                </AlertDescription>
+              </Alert>
             )}
           </>
         )}

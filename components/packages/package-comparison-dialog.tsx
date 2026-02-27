@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -171,10 +172,10 @@ export function PackageComparisonDialog({
         )}
 
         {error && (
-          <div className="flex items-center gap-2 text-destructive py-8 justify-center">
-            <AlertCircle className="h-5 w-5" />
-            <span>{error}</span>
-          </div>
+          <Alert variant="destructive" className="my-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {comparison && !loading && (
@@ -210,19 +211,19 @@ export function PackageComparisonDialog({
 
               {/* Differences Summary */}
               {comparison.differences && comparison.differences.length > 0 && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                  <h4 className="font-medium flex items-center gap-2 mb-2">
-                    <Scale className="h-4 w-4 text-yellow-600" />
-                    {t("packages.keyDifferences")}
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {comparison.differences.map((diff, i) => (
-                      <Badge key={i} variant="secondary">
-                        {diff}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+                <Alert className="bg-yellow-500/10 border-yellow-500/20 [&>svg]:text-yellow-600">
+                  <Scale className="h-4 w-4" />
+                  <AlertTitle>{t("packages.keyDifferences")}</AlertTitle>
+                  <AlertDescription>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {comparison.differences.map((diff, i) => (
+                        <Badge key={i} variant="secondary">
+                          {diff}
+                        </Badge>
+                      ))}
+                    </div>
+                  </AlertDescription>
+                </Alert>
               )}
 
               {/* Comparison Table */}
@@ -273,35 +274,33 @@ export function PackageComparisonDialog({
               {/* Common Features */}
               {comparison.common_features &&
                 comparison.common_features.length > 0 && (
-                  <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                    <h4 className="font-medium flex items-center gap-2 mb-2">
-                      <Check className="h-4 w-4 text-green-600" />
-                      {t("packages.commonFeatures")}
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {comparison.common_features.map((feature, i) => (
-                        <Badge
-                          key={i}
-                          variant="outline"
-                          className="border-green-500/30"
-                        >
-                          {feature}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
+                  <Alert className="bg-green-500/10 border-green-500/20 [&>svg]:text-green-600">
+                    <Check className="h-4 w-4" />
+                    <AlertTitle>{t("packages.commonFeatures")}</AlertTitle>
+                    <AlertDescription>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {comparison.common_features.map((feature, i) => (
+                          <Badge
+                            key={i}
+                            variant="outline"
+                            className="border-green-500/30"
+                          >
+                            {feature}
+                          </Badge>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
                 )}
 
               {/* Recommendation */}
               {comparison.recommendation && (
-                <div className="bg-primary/10 border border-primary/20 rounded-lg p-4">
-                  <h4 className="font-medium mb-2">
-                    {t("packages.recommendation")}
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
+                <Alert className="bg-primary/10 border-primary/20">
+                  <AlertTitle>{t("packages.recommendation")}</AlertTitle>
+                  <AlertDescription>
                     {comparison.recommendation}
-                  </p>
-                </div>
+                  </AlertDescription>
+                </Alert>
               )}
             </div>
           </ScrollArea>

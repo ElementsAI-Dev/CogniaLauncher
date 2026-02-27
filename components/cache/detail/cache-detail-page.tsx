@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   Select,
@@ -372,8 +373,15 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
                   </>
                 ) : entries.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      {t('cache.detail.noEntriesForType')}
+                    <TableCell colSpan={6} className="py-4">
+                      <Empty className="border-none">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <Package />
+                          </EmptyMedia>
+                          <EmptyTitle className="text-sm font-normal text-muted-foreground">{t('cache.detail.noEntriesForType')}</EmptyTitle>
+                        </EmptyHeader>
+                      </Empty>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -550,7 +558,11 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClean} disabled={cleaning}>
+            <AlertDialogAction
+              onClick={handleClean}
+              disabled={cleaning}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               {cleaning ? t('cache.clearing') : t('cache.confirmClean')}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -570,7 +582,10 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteSelected}>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               {t('common.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -9,7 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Plus, Upload, Download } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Separator } from '@/components/ui/separator';
+import { RefreshCw, Plus, Upload, Download, Search } from 'lucide-react';
 import type { EnvVarScope } from '@/types/tauri';
 
 interface EnvVarToolbarProps {
@@ -39,12 +45,15 @@ export function EnvVarToolbar({
 }: EnvVarToolbarProps) {
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-      <Input
-        placeholder={t('envvar.table.search')}
-        value={searchQuery}
-        onChange={(e) => onSearchChange(e.target.value)}
-        className="max-w-xs h-9"
-      />
+      <div className="relative max-w-xs w-full">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          placeholder={t('envvar.table.search')}
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="h-9 pl-8"
+        />
+      </div>
       <Select
         value={scopeFilter}
         onValueChange={(v) => onScopeFilterChange(v as EnvVarScope | 'all')}
@@ -60,19 +69,36 @@ export function EnvVarToolbar({
         </SelectContent>
       </Select>
 
+      <Separator orientation="vertical" className="hidden sm:block h-6 mx-1" />
+
       <div className="flex items-center gap-1 ml-auto">
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading} className="gap-1.5">
-          <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          {t('envvar.actions.refresh')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={onImport} className="gap-1.5">
-          <Upload className="h-3.5 w-3.5" />
-          {t('envvar.importExport.import')}
-        </Button>
-        <Button variant="outline" size="sm" onClick={onExport} className="gap-1.5">
-          <Download className="h-3.5 w-3.5" />
-          {t('envvar.importExport.export')}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="sm" onClick={onRefresh} disabled={isLoading} className="gap-1.5">
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              {t('envvar.actions.refresh')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('envvar.actions.refresh')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="sm" onClick={onImport} className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              {t('envvar.importExport.import')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('envvar.importExport.import')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="sm" onClick={onExport} className="gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              {t('envvar.importExport.export')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('envvar.importExport.export')}</TooltipContent>
+        </Tooltip>
         <Button size="sm" onClick={onAdd} className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
           {t('envvar.actions.add')}

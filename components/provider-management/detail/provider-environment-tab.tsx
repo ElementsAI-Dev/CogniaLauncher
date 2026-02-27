@@ -14,6 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -182,9 +188,16 @@ export function ProviderEnvironmentTab({
               <Skeleton className="h-12 w-full" />
             </div>
           ) : !environmentInfo ? (
-            <p className="text-sm text-muted-foreground">
-              {t("providerDetail.noEnvironmentData")}
-            </p>
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Layers />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t("providerDetail.noEnvironmentData")}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -382,11 +395,18 @@ export function ProviderEnvironmentTab({
               ))}
             </div>
           ) : filteredAvailable.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              {versionFilter
-                ? t("providerDetail.noMatchingVersions")
-                : t("providerDetail.noAvailableVersions")}
-            </p>
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Download />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {versionFilter
+                    ? t("providerDetail.noMatchingVersions")
+                    : t("providerDetail.noAvailableVersions")}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <ScrollArea className="max-h-[400px]">
               <Table>

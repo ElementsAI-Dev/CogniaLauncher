@@ -168,7 +168,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                             {t('cache.changePath')}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{t('cache.changePath')}</TooltipContent>
+                        <TooltipContent>{t('cache.pathManagementDesc')}</TooltipContent>
                       </Tooltip>
                       {pathInfo.isCustom && (
                         <Tooltip>
@@ -178,7 +178,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                               {t('cache.resetPath')}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>{t('cache.resetPath')}</TooltipContent>
+                          <TooltipContent>{t('cache.defaultPath')}</TooltipContent>
                         </Tooltip>
                       )}
                       <Tooltip>
@@ -188,7 +188,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                             {t('cache.migration')}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>{t('cache.migration')}</TooltipContent>
+                        <TooltipContent>{t('cache.migrationDesc')}</TooltipContent>
                       </Tooltip>
                     </div>
                   )}

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -22,7 +22,9 @@ import {
   Globe,
   Server,
   Copy,
+  Unplug,
 } from 'lucide-react';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { toast } from 'sonner';
 import { parseListeningPorts, parseInterfaces } from '@/lib/wsl';
 import type { NetworkInfo, ListeningPort, NetworkInterface, WslDistroNetworkProps } from '@/types/wsl';
@@ -104,31 +106,40 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
     <div className="space-y-4">
       {/* Overview card */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardHeader>
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <Network className="h-4 w-4 text-muted-foreground" />
             {t('wsl.detail.networkInfo')}
           </CardTitle>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={refresh}
-                disabled={loading}
-                className="h-8 w-8"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('common.refresh')}</TooltipContent>
-          </Tooltip>
+          <CardAction>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={refresh}
+                  disabled={loading}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.refresh')}</TooltipContent>
+            </Tooltip>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {!isRunning && !loaded && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              {t('wsl.detail.networkNotRunning')}
-            </p>
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Unplug />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t('wsl.detail.networkNotRunning')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
 
           {loading && (
@@ -287,8 +298,17 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
       {/* No ports */}
       {info && info.listeningPorts.length === 0 && loaded && (
         <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-sm text-muted-foreground">{t('wsl.detail.noPorts')}</p>
+          <CardContent className="pt-6">
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Network />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t('wsl.detail.noPorts')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           </CardContent>
         </Card>
       )}

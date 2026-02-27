@@ -25,6 +25,13 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -201,16 +208,24 @@ export function ProviderHistoryTab({
             ))}
           </div>
         ) : installHistory.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <History className="h-10 w-10 mx-auto mb-3 opacity-50" />
-            <p>{t("providerDetail.noHistory")}</p>
-            <p className="text-xs mt-1">{t("providerDetail.noHistoryDesc")}</p>
-          </div>
+          <Empty className="border-none py-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <History />
+              </EmptyMedia>
+              <EmptyTitle>{t("providerDetail.noHistory")}</EmptyTitle>
+              <EmptyDescription>{t("providerDetail.noHistoryDesc")}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Search className="h-10 w-10 mx-auto mb-3 opacity-50" />
-            <p>{t("providerDetail.noSearchResults")}</p>
-          </div>
+          <Empty className="border-none py-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Search />
+              </EmptyMedia>
+              <EmptyTitle>{t("providerDetail.noSearchResults")}</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <>
             <ScrollArea className="max-h-[600px]">
@@ -261,8 +276,10 @@ export function ProviderHistoryTab({
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <CollapsibleTrigger asChild>
-                                  <button
-                                    className="flex items-center gap-1 text-red-600 hover:underline"
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="flex items-center gap-1 text-red-600 hover:text-red-600 h-auto p-0"
                                   >
                                     <XCircle className="h-4 w-4" />
                                     <span className="text-xs">
@@ -271,7 +288,7 @@ export function ProviderHistoryTab({
                                     {entry.error_message && (
                                       <AlertCircle className="h-3 w-3 ml-1" />
                                     )}
-                                  </button>
+                                  </Button>
                                 </CollapsibleTrigger>
                               </TooltipTrigger>
                               <TooltipContent>

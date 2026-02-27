@@ -18,6 +18,7 @@ import type { LogEntry as UiLogEntry } from "@/types/log";
 import { normalizeLevel, parseTimestamp } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { FileText, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -197,10 +198,16 @@ export function LogFileViewer({
                 ))}
               </div>
             ) : entries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-                <FileText className="mb-3 h-10 w-10 opacity-50" />
-                <p className="text-sm">{t("logs.noFileEntries")}</p>
-              </div>
+              <Empty className="h-full border-none">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <FileText />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t("logs.noFileEntries")}
+                  </EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="divide-y divide-border/50">
                 {hasMore && (

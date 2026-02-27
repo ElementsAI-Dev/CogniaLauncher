@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { parseServices, getStatusVariant } from '@/lib/wsl';
 import type { ServiceInfo, WslDistroServicesProps } from '@/types/wsl';
 
@@ -135,7 +136,7 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardHeader>
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <Cog className="h-4 w-4 text-muted-foreground" />
             {t('wsl.detail.services')}
@@ -152,27 +153,36 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
               </div>
             )}
           </CardTitle>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={refresh}
-                disabled={loading}
-                className="h-8 w-8"
-              >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('common.refresh')}</TooltipContent>
-          </Tooltip>
+          <CardAction>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={refresh}
+                  disabled={loading}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.refresh')}</TooltipContent>
+            </Tooltip>
+          </CardAction>
         </CardHeader>
         <CardContent className="space-y-3">
           {/* Not running */}
           {!isRunning && !loaded && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              {t('wsl.detail.servicesNotRunning')}
-            </p>
+            <Empty className="border-none py-4">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Cog />
+                </EmptyMedia>
+                <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                  {t('wsl.detail.servicesNotRunning')}
+                </EmptyTitle>
+              </EmptyHeader>
+            </Empty>
           )}
 
           {/* Loading */}
@@ -209,9 +219,16 @@ export function WslDistroServices({ distroName, isRunning, onExec, t }: WslDistr
               </div>
 
               {filteredServices.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  {search ? t('wsl.detail.noServicesMatch') : t('wsl.detail.noServices')}
-                </p>
+                <Empty className="border-none py-4">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      {search ? <Search /> : <Cog />}
+                    </EmptyMedia>
+                    <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                      {search ? t('wsl.detail.noServicesMatch') : t('wsl.detail.noServices')}
+                    </EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
               ) : (
                 <ScrollArea className="max-h-[500px]">
                   <Table>

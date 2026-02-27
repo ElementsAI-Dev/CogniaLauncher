@@ -1,12 +1,14 @@
 'use client';
 
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Globe, ShieldCheck } from 'lucide-react';
+import { Globe, ShieldCheck, Info } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import type { ProxyMode } from '@/types/terminal';
 
@@ -91,14 +93,18 @@ export function TerminalProxySettings({
         </div>
 
         {proxyMode === 'global' && globalProxy && (
-          <div className="rounded-md bg-muted/50 px-3 py-2">
-            <span className="text-xs text-muted-foreground">{t('terminal.globalProxyActive')}</span>
-            <p className="text-sm font-mono mt-0.5">{globalProxy}</p>
-          </div>
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>{t('terminal.globalProxyActive')}</AlertTitle>
+            <AlertDescription className="font-mono text-sm">{globalProxy}</AlertDescription>
+          </Alert>
         )}
 
         {proxyMode === 'global' && !globalProxy && (
-          <p className="text-xs text-muted-foreground">{t('terminal.noGlobalProxy')}</p>
+          <Alert variant="destructive">
+            <Info className="h-4 w-4" />
+            <AlertTitle>{t('terminal.noGlobalProxy')}</AlertTitle>
+          </Alert>
         )}
 
         {proxyMode === 'custom' && (
@@ -133,6 +139,8 @@ export function TerminalProxySettings({
         )}
 
         {proxyEnvVars.length > 0 && (
+          <>
+          <Separator />
           <div>
             <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
               {t('terminal.activeProxyVars')}
@@ -148,6 +156,7 @@ export function TerminalProxySettings({
               ))}
             </div>
           </div>
+          </>
         )}
 
         {proxyEnvVars.length === 0 && proxyMode !== 'none' && (

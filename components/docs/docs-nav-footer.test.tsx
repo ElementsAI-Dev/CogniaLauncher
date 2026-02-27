@@ -24,7 +24,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 jest.mock('@/components/ui/button', () => ({
-  Button: ({ children, ...props }: { children: React.ReactNode }) => (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  Button: ({ children, asChild, ...props }: { children: React.ReactNode; asChild?: boolean; [key: string]: unknown }) => (
     <button {...props}>{children}</button>
   ),
 }));

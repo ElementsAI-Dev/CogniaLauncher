@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Search, Copy, RefreshCw } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -126,18 +127,32 @@ export function TerminalEnvVars({
                               {key}
                             </span>
                             <span className="text-xs text-muted-foreground">=</span>
-                            <span className="text-xs font-mono truncate text-muted-foreground">
-                              {value}
-                            </span>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-xs font-mono truncate text-muted-foreground cursor-default">
+                                  {value}
+                                </span>
+                              </TooltipTrigger>
+                              {value.length > 50 && (
+                                <TooltipContent side="bottom" className="max-w-md font-mono text-xs break-all">
+                                  {value}
+                                </TooltipContent>
+                              )}
+                            </Tooltip>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                            onClick={() => handleCopy(key, value)}
-                          >
-                            <Copy className="h-3 w-3" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                onClick={() => handleCopy(key, value)}
+                              >
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">{t('terminal.copyValue')}</TooltipContent>
+                          </Tooltip>
                         </div>
                       ))}
                     </div>

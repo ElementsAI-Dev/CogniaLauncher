@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -256,9 +257,14 @@ export function ExternalCacheSection({
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : externalCaches.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                {t("cache.noExternalCaches")}
-              </p>
+              <Empty className="border-none py-4">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Package />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">{t("cache.noExternalCaches")}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <div className="space-y-4">
                 {categoryOrder

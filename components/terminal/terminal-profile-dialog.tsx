@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Plus, Trash2 } from 'lucide-react';
 import type { TerminalProfile, ShellInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
@@ -151,6 +152,8 @@ export function TerminalProfileDialog({
               <Input id="envVersion" value={envVersion} onChange={(e) => setEnvVersion(e.target.value)} placeholder="20.11.0" />
             </div>
           </div>
+
+          <Separator />
 
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
