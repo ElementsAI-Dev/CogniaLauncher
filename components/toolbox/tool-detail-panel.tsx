@@ -13,7 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale } from '@/components/providers/locale-provider';
 import { getToolById } from '@/lib/constants/toolbox';
 import { PluginToolRunner } from '@/components/toolbox/plugin-tool-runner';
-import { Plug } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Plug, Maximize2 } from 'lucide-react';
+import Link from 'next/link';
 import type { ToolComponentProps } from '@/types/toolbox';
 import type { UnifiedTool } from '@/hooks/use-toolbox';
 
@@ -81,6 +83,14 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
               </SheetTitle>
               <SheetDescription>{tool.description}</SheetDescription>
             </SheetHeader>
+            <div className="mt-2">
+              <Button variant="outline" size="sm" className="gap-1.5" asChild onClick={() => onOpenChange(false)}>
+                <Link href={`/toolbox/${tool.isBuiltIn && tool.builtInDef ? tool.builtInDef.id : encodeURIComponent(tool.id)}`}>
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  {t('toolbox.actions.openFullPage')}
+                </Link>
+              </Button>
+            </div>
             <div className="mt-6">
               {tool.isBuiltIn && tool.builtInDef ? (
                 <Suspense fallback={<ToolLoadingFallback />}>

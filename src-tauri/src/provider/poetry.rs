@@ -297,6 +297,13 @@ impl Provider for PoetryProvider {
         Ok(vec![])
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_pkg_version(name).await {
+            Ok(v) => Ok(Some(v)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
         let pkg = if let Some(v) = &req.version {
             format!("{}=={}", req.name, v)

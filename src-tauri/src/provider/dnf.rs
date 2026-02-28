@@ -4,10 +4,15 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+const DNF_TIMEOUT: u64 = 120;
+const DNF_SUDO_TIMEOUT: u64 = 300;
+const DNF_LONG_TIMEOUT: u64 = 600;
 
 /// DNF - Dandified YUM package manager for Fedora, RHEL, CentOS Stream
 pub struct DnfProvider;
@@ -17,9 +22,20 @@ impl DnfProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(DNF_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(DNF_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(DNF_LONG_TIMEOUT))
+    }
+
     async fn run_dnf(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("dnf", args, Some(opts)).await?;
+        let out = process::execute("dnf", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -27,12 +43,19 @@ impl DnfProvider {
         }
     }
 
+    /// Run dnf and return stdout regardless of exit code.
+    /// `dnf check-update` returns exit code 100 when updates are available (not an error).
+    async fn run_dnf_lenient(&self, args: &[&str]) -> CogniaResult<String> {
+        let out = process::execute("dnf", args, Some(Self::make_opts())).await?;
+        Ok(out.stdout)
+    }
+
     /// Get the installed version of a package using rpm (more reliable than dnf info)
     async fn query_installed_version_rpm(&self, name: &str) -> CogniaResult<String> {
         let out = process::execute(
             "rpm",
             &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name],
-            None,
+            Some(Self::make_opts()),
         )
         .await?;
         if out.success {
@@ -197,7 +220,13 @@ impl Provider for DnfProvider {
             req.name.clone()
         };
 
-        let out = process::execute("sudo", &["dnf", "install", "-y", &pkg], None).await?;
+        let mut args = vec!["dnf", "install", "-y"];
+        if req.force {
+            args.push("--allowerasing");
+        }
+        args.push(&pkg);
+
+        let out = process::execute("sudo", &args, Some(DnfProvider::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -226,7 +255,7 @@ impl Provider for DnfProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "remove", "-y", &req.name], None).await?;
+        let out = process::execute("sudo", &["dnf", "remove", "-y", &req.name], Some(DnfProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -271,12 +300,13 @@ impl Provider for DnfProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_dnf(&["check-update"]).await;
+        // dnf check-update returns exit code 100 when updates are available (not an error)
+        let out = self.run_dnf_lenient(&["check-update"]).await;
 
         if let Ok(output) = out {
-            return Ok(output
+            let mut updates: Vec<UpdateInfo> = output
                 .lines()
-                .filter(|l| !l.is_empty() && !l.starts_with("Last metadata"))
+                .filter(|l| !l.is_empty() && !l.starts_with("Last metadata") && !l.starts_with('='))
                 .filter_map(|line| {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 2 {
@@ -297,10 +327,37 @@ impl Provider for DnfProvider {
                         None
                     }
                 })
-                .collect());
+                .collect();
+
+            // Populate current_version from rpm query
+            for update in &mut updates {
+                if let Ok(ver) = self.query_installed_version_rpm(&update.name).await {
+                    update.current_version = ver;
+                }
+            }
+
+            return Ok(updates);
         }
 
         Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_dnf(&["repoquery", "--requires", name]).await?;
+        let deps: Vec<Dependency> = out
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|line| {
+                let dep = line.trim();
+                // Dependency lines can be "name >= version" or just "name"
+                let dep_name = dep.split_whitespace().next().unwrap_or(dep).to_string();
+                Dependency {
+                    name: dep_name,
+                    constraint: VersionConstraint::Any,
+                }
+            })
+            .collect();
+        Ok(deps)
     }
 }
 
@@ -331,7 +388,7 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "makecache"], None).await?;
+        let out = process::execute("sudo", &["dnf", "makecache"], Some(DnfProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -340,7 +397,7 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "upgrade", "-y", name], None).await?;
+        let out = process::execute("sudo", &["dnf", "upgrade", "-y", name], Some(DnfProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -349,7 +406,7 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["dnf", "upgrade", "-y"], None).await?;
+        let out = process::execute("sudo", &["dnf", "upgrade", "-y"], Some(DnfProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

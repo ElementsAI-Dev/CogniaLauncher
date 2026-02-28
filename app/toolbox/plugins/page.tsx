@@ -16,6 +16,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { usePlugins } from '@/hooks/use-plugins';
@@ -68,11 +78,12 @@ export default function PluginsPage() {
   const [permDialogPlugin, setPermDialogPlugin] = useState<string | null>(null);
   const [permState, setPermState] = useState<PluginPermissionState | null>(null);
   const [detailPlugin, setDetailPlugin] = useState<PluginInfo | null>(null);
+  const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
   const [scaffoldOpen, setScaffoldOpen] = useState(false);
   const [scaffolding, setScaffolding] = useState(false);
   const [scaffoldForm, setScaffoldForm] = useState({
     name: '', id: '', description: '', author: '', outputDir: '',
-    language: 'rust' as PluginLanguage,
+    language: 'typescript' as PluginLanguage,
     permConfigRead: true, permEnvRead: true, permPkgSearch: false,
     permClipboard: false, permNotification: false, permProcessExec: false,
     permFsRead: false, permFsWrite: false,
@@ -227,7 +238,7 @@ export default function PluginsPage() {
               onToggleEnabled={(enabled) =>
                 enabled ? disablePlugin(plugin.id) : enablePlugin(plugin.id)
               }
-              onUninstall={() => uninstallPlugin(plugin.id)}
+              onUninstall={() => setUninstallTarget(plugin)}
               onReload={() => reloadPlugin(plugin.id)}
               onPermissions={() => handleOpenPermissions(plugin.id)}
               onDetails={() => setDetailPlugin(plugin)}
@@ -235,6 +246,32 @@ export default function PluginsPage() {
           ))}
         </div>
       )}
+
+      {/* Uninstall Confirmation */}
+      <AlertDialog open={uninstallTarget !== null} onOpenChange={(open) => { if (!open) setUninstallTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('toolbox.plugin.uninstallConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('toolbox.plugin.uninstallConfirmDesc', { name: uninstallTarget?.name ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (uninstallTarget) {
+                  uninstallPlugin(uninstallTarget.id);
+                  setUninstallTarget(null);
+                }
+              }}
+            >
+              {t('toolbox.plugin.uninstall')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Install Dialog */}
       <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
@@ -320,6 +357,7 @@ export default function PluginsPage() {
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="typescript">{t('toolbox.plugin.scaffoldLanguageTs')}</SelectItem>
                       <SelectItem value="rust">{t('toolbox.plugin.scaffoldLanguageRust')}</SelectItem>
                       <SelectItem value="javascript">{t('toolbox.plugin.scaffoldLanguageJs')}</SelectItem>
                     </SelectContent>

@@ -14,6 +14,7 @@ pub struct LoadedPlugin {
     pub plugin_dir: PathBuf,
     pub enabled: bool,
     pub installed_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
     pub source: PluginSource,
 }
 
@@ -39,6 +40,8 @@ pub struct PluginInfo {
     pub tool_count: usize,
     pub enabled: bool,
     pub installed_at: String,
+    pub updated_at: Option<String>,
+    pub update_url: Option<String>,
     pub source: PluginSource,
 }
 
@@ -138,6 +141,7 @@ impl PluginRegistry {
                         plugin_dir: path.clone(),
                         enabled: true,
                         installed_at: Utc::now(),
+                        updated_at: None,
                         source: PluginSource::Local {
                             path: path.display().to_string(),
                         },
@@ -177,6 +181,7 @@ impl PluginRegistry {
                 plugin_dir,
                 enabled: true,
                 installed_at: Utc::now(),
+                updated_at: None,
                 source,
             },
         );
@@ -210,6 +215,8 @@ impl PluginRegistry {
                 tool_count: p.manifest.tools.len(),
                 enabled: p.enabled,
                 installed_at: p.installed_at.to_rfc3339(),
+                updated_at: p.updated_at.map(|d| d.to_rfc3339()),
+                update_url: p.manifest.plugin.update_url.clone(),
                 source: p.source.clone(),
             })
             .collect()
@@ -276,6 +283,7 @@ mod tests {
                 homepage: None,
                 min_cognia_version: None,
                 icon: None,
+                update_url: None,
             },
             tools,
             permissions: PluginPermissions::default(),

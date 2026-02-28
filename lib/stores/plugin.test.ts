@@ -11,6 +11,8 @@ const mockPlugin: PluginInfo = {
   toolCount: 1,
   enabled: true,
   installedAt: '2025-01-01T00:00:00Z',
+  updatedAt: null,
+  updateUrl: null,
   source: { type: 'builtIn' },
 };
 

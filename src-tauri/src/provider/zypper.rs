@@ -4,10 +4,15 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+const ZYPPER_TIMEOUT: u64 = 120;
+const ZYPPER_SUDO_TIMEOUT: u64 = 300;
+const ZYPPER_LONG_TIMEOUT: u64 = 600;
 
 /// Zypper - Package manager for openSUSE and SUSE Linux Enterprise
 pub struct ZypperProvider;
@@ -17,9 +22,20 @@ impl ZypperProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(ZYPPER_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(ZYPPER_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(ZYPPER_LONG_TIMEOUT))
+    }
+
     async fn run_zypper(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("zypper", args, Some(opts)).await?;
+        let out = process::execute("zypper", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -32,7 +48,7 @@ impl ZypperProvider {
         let out = process::execute(
             "rpm",
             &["-q", "--queryformat", "%{VERSION}-%{RELEASE}", name],
-            None,
+            Some(Self::make_opts()),
         )
         .await?;
         if out.success {
@@ -182,10 +198,16 @@ impl Provider for ZypperProvider {
             req.name.clone()
         };
 
+        let mut args = vec!["zypper", "--non-interactive", "install"];
+        if req.force {
+            args.push("--force");
+        }
+        args.push(&pkg);
+
         let out = process::execute(
             "sudo",
-            &["zypper", "--non-interactive", "install", &pkg],
-            None,
+            &args,
+            Some(ZypperProvider::make_long_opts()),
         )
         .await?;
         if !out.success {
@@ -226,10 +248,16 @@ impl Provider for ZypperProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        let mut args = vec!["zypper", "--non-interactive", "remove"];
+        if req.force {
+            args.push("--force");
+        }
+        args.push(&req.name);
+
         let out = process::execute(
             "sudo",
-            &["zypper", "--non-interactive", "remove", &req.name],
-            None,
+            &args,
+            Some(ZypperProvider::make_sudo_opts()),
         )
         .await?;
         if out.success {
@@ -309,6 +337,34 @@ impl Provider for ZypperProvider {
 
         Ok(vec![])
     }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_zypper(&["info", "--requires", name]).await?;
+        let mut deps = Vec::new();
+        let mut in_requires = false;
+
+        for line in out.lines() {
+            if line.starts_with("Requires:") || line.contains("Requires :") {
+                in_requires = true;
+                continue;
+            }
+            if in_requires {
+                let dep = line.trim();
+                if dep.is_empty() || dep.contains(':') {
+                    break;
+                }
+                let dep_name = dep.split_whitespace().next().unwrap_or(dep).to_string();
+                if !dep_name.is_empty() {
+                    deps.push(Dependency {
+                        name: dep_name,
+                        constraint: VersionConstraint::Any,
+                    });
+                }
+            }
+        }
+
+        Ok(deps)
+    }
 }
 
 #[async_trait]
@@ -339,7 +395,7 @@ impl SystemPackageProvider for ZypperProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["zypper", "refresh"], None).await?;
+        let out = process::execute("sudo", &["zypper", "refresh"], Some(ZypperProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -351,7 +407,7 @@ impl SystemPackageProvider for ZypperProvider {
         let out = process::execute(
             "sudo",
             &["zypper", "--non-interactive", "update", name],
-            None,
+            Some(ZypperProvider::make_sudo_opts()),
         )
         .await?;
         if out.success {
@@ -363,7 +419,7 @@ impl SystemPackageProvider for ZypperProvider {
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
         let out =
-            process::execute("sudo", &["zypper", "--non-interactive", "update"], None).await?;
+            process::execute("sudo", &["zypper", "--non-interactive", "update"], Some(ZypperProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

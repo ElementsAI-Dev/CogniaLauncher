@@ -1,10 +1,15 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+const APT_TIMEOUT: u64 = 120;
+const APT_SUDO_TIMEOUT: u64 = 300;
+const APT_LONG_TIMEOUT: u64 = 600;
 
 pub struct AptProvider;
 
@@ -13,9 +18,20 @@ impl AptProvider {
         Self
     }
 
+    fn make_opts() -> process::ProcessOptions {
+        process::ProcessOptions::new().with_timeout(Duration::from_secs(APT_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> process::ProcessOptions {
+        process::ProcessOptions::new().with_timeout(Duration::from_secs(APT_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> process::ProcessOptions {
+        process::ProcessOptions::new().with_timeout(Duration::from_secs(APT_LONG_TIMEOUT))
+    }
+
     async fn run_apt(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("apt-cache", args, Some(opts)).await?;
+        let out = process::execute("apt-cache", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -25,7 +41,7 @@ impl AptProvider {
 
     /// Get the installed version of a package using dpkg
     async fn query_installed_version_dpkg(&self, name: &str) -> CogniaResult<String> {
-        let out = process::execute("dpkg", &["-s", name], None).await?;
+        let out = process::execute("dpkg", &["-s", name], Some(Self::make_opts())).await?;
         if !out.success {
             return Err(CogniaError::Provider(format!(
                 "Package {} not installed",
@@ -87,7 +103,8 @@ impl Provider for AptProvider {
         }
     }
 
-    async fn search(&self, query: &str, _: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(&self, query: &str, options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+        let limit = options.limit.unwrap_or(20);
         let out = self.run_apt(&["search", query]).await?;
         Ok(out
             .lines()
@@ -105,7 +122,7 @@ impl Provider for AptProvider {
                     None
                 }
             })
-            .take(20)
+            .take(limit)
             .collect())
     }
 
@@ -113,20 +130,25 @@ impl Provider for AptProvider {
         let out = self.run_apt(&["show", name]).await?;
         let mut desc = None;
         let mut version = None;
+        let mut homepage = None;
+        let mut section = None;
         for line in out.lines() {
             if let Some(stripped) = line.strip_prefix("Description:") {
                 desc = Some(stripped.trim().into());
-            }
-            if let Some(stripped) = line.strip_prefix("Version:") {
+            } else if let Some(stripped) = line.strip_prefix("Version:") {
                 version = Some(stripped.trim().into());
+            } else if let Some(stripped) = line.strip_prefix("Homepage:") {
+                homepage = Some(stripped.trim().into());
+            } else if let Some(stripped) = line.strip_prefix("Section:") {
+                section = Some(stripped.trim().into());
             }
         }
         Ok(PackageInfo {
             name: name.into(),
             display_name: Some(name.into()),
             description: desc,
-            homepage: None,
-            license: None,
+            homepage,
+            license: section,
             repository: None,
             versions: version
                 .map(|v| {
@@ -169,7 +191,13 @@ impl Provider for AptProvider {
         } else {
             req.name.clone()
         };
-        let out = process::execute("sudo", &["apt-get", "install", "-y", &pkg], None).await?;
+        let mut args = vec!["apt-get", "install", "-y"];
+        if req.force {
+            args.push("--reinstall");
+        }
+        args.push(&pkg);
+
+        let out = process::execute("sudo", &args, Some(AptProvider::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -198,7 +226,16 @@ impl Provider for AptProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apt-get", "remove", "-y", &req.name], None).await?;
+        let mut args = vec!["apt-get"];
+        if req.force {
+            args.push("purge");
+        } else {
+            args.push("remove");
+        }
+        args.push("-y");
+        args.push(&req.name);
+
+        let out = process::execute("sudo", &args, Some(AptProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -276,6 +313,27 @@ impl Provider for AptProvider {
 
         Ok(vec![])
     }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_apt(&["depends", name]).await?;
+        let deps: Vec<Dependency> = out
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if let Some(dep) = line.strip_prefix("Depends:") {
+                    let dep_name = dep.trim().to_string();
+                    if !dep_name.is_empty() && !dep_name.starts_with('<') {
+                        return Some(Dependency {
+                            name: dep_name,
+                            constraint: VersionConstraint::Any,
+                        });
+                    }
+                }
+                None
+            })
+            .collect();
+        Ok(deps)
+    }
 }
 
 #[async_trait]
@@ -308,7 +366,7 @@ impl SystemPackageProvider for AptProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apt-get", "update"], None).await?;
+        let out = process::execute("sudo", &["apt-get", "update"], Some(AptProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -320,7 +378,7 @@ impl SystemPackageProvider for AptProvider {
         let out = process::execute(
             "sudo",
             &["apt-get", "install", "--only-upgrade", "-y", name],
-            None,
+            Some(AptProvider::make_sudo_opts()),
         )
         .await?;
         if out.success {
@@ -331,7 +389,7 @@ impl SystemPackageProvider for AptProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["apt-get", "upgrade", "-y"], None).await?;
+        let out = process::execute("sudo", &["apt-get", "upgrade", "-y"], Some(AptProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

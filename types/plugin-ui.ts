@@ -149,6 +149,36 @@ export interface ActionButton {
 }
 
 // ============================================================================
+// Extended Blocks
+// ============================================================================
+
+export interface UiTabsBlock {
+  type: 'tabs';
+  tabs: { id: string; label: string; children: UiBlock[] }[];
+  defaultTab?: string;
+}
+
+export interface UiAccordionBlock {
+  type: 'accordion';
+  items: { id: string; title: string; children: UiBlock[] }[];
+  collapsible?: boolean;
+}
+
+export interface UiCopyButtonBlock {
+  type: 'copy-button';
+  content: string;
+  label?: string;
+}
+
+export interface UiFileInputBlock {
+  type: 'file-input';
+  id: string;
+  label: string;
+  accept?: string;
+  multiple?: boolean;
+}
+
+// ============================================================================
 // Layout Block
 // ============================================================================
 
@@ -177,6 +207,10 @@ export type UiBlock =
   | UiKeyValueBlock
   | UiFormBlock
   | UiActionsBlock
+  | UiTabsBlock
+  | UiAccordionBlock
+  | UiCopyButtonBlock
+  | UiFileInputBlock
   | UiGroupBlock;
 
 // ============================================================================
@@ -189,9 +223,12 @@ export interface PluginUiResponse {
 }
 
 export interface PluginUiAction {
-  action: 'button_click' | 'form_submit';
+  action: 'button_click' | 'form_submit' | 'file_selected' | 'tab_change';
   buttonId?: string;
   formId?: string;
   formData?: Record<string, string | boolean | number>;
+  fileInputId?: string;
+  files?: { name: string; size: number; type: string; dataUrl: string }[];
+  tabId?: string;
   state?: Record<string, unknown>;
 }

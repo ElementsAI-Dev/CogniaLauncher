@@ -1,4 +1,4 @@
-use crate::plugin::manager::PluginManager;
+use crate::plugin::manager::{PluginManager, PluginUpdateInfo};
 use crate::plugin::manifest::PluginManifest;
 use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::permissions::PluginPermissionState;
@@ -214,6 +214,30 @@ pub async fn plugin_validate(
     path: String,
 ) -> Result<ValidationResult, String> {
     crate::plugin::scaffold::validate_plugin(&PathBuf::from(path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check if an update is available for a plugin
+#[tauri::command]
+pub async fn plugin_check_update(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<Option<PluginUpdateInfo>, String> {
+    let mgr = manager.read().await;
+    mgr.check_update(&plugin_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Update a plugin to its latest version
+#[tauri::command]
+pub async fn plugin_update(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<(), String> {
+    let mut mgr = manager.write().await;
+    mgr.update_plugin(&plugin_id)
         .await
         .map_err(|e| e.to_string())
 }

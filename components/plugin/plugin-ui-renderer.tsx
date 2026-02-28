@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,9 +27,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { MarkdownRenderer } from '@/components/docs/markdown-renderer';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { writeClipboard } from '@/lib/clipboard';
 import * as LucideIcons from 'lucide-react';
-import { Wrench } from 'lucide-react';
+import { Wrench, Copy, Check, Upload } from 'lucide-react';
 import type {
   UiBlock,
   UiTextBlock,
@@ -45,6 +53,10 @@ import type {
   UiProgressBlock,
   UiImageBlock,
   UiMarkdownBlock,
+  UiTabsBlock,
+  UiAccordionBlock,
+  UiCopyButtonBlock,
+  UiFileInputBlock,
   FormField,
   PluginUiAction,
 } from '@/types/plugin-ui';
@@ -119,6 +131,14 @@ function BlockRenderer({ block, onAction, state }: BlockRendererProps) {
       return <FormBlock block={block} onAction={onAction} state={state} />;
     case 'actions':
       return <ActionsBlock block={block} onAction={onAction} state={state} />;
+    case 'tabs':
+      return <TabsBlock block={block} onAction={onAction} state={state} />;
+    case 'accordion':
+      return <AccordionBlock block={block} onAction={onAction} state={state} />;
+    case 'copy-button':
+      return <CopyButtonBlock block={block} />;
+    case 'file-input':
+      return <FileInputBlock block={block} onAction={onAction} state={state} />;
     case 'group':
       return <GroupBlock block={block} onAction={onAction} state={state} />;
     default:
@@ -404,6 +424,140 @@ function ActionsBlock({
           {btn.label}
         </Button>
       ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// Extended Blocks
+// ============================================================================
+
+function TabsBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiTabsBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const defaultTab = block.defaultTab ?? block.tabs[0]?.id;
+  return (
+    <Tabs defaultValue={defaultTab} onValueChange={(tabId) => {
+      onAction({ action: 'tab_change', tabId, state });
+    }}>
+      <TabsList>
+        {block.tabs.map((tab) => (
+          <TabsTrigger key={tab.id} value={tab.id}>{tab.label}</TabsTrigger>
+        ))}
+      </TabsList>
+      {block.tabs.map((tab) => (
+        <TabsContent key={tab.id} value={tab.id} className="space-y-4 pt-2">
+          {tab.children.map((child, i) => (
+            <BlockRenderer key={i} block={child} onAction={onAction} state={state} />
+          ))}
+        </TabsContent>
+      ))}
+    </Tabs>
+  );
+}
+
+function AccordionBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiAccordionBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  return (
+    <Accordion type="multiple" className="w-full">
+      {block.items.map((item) => (
+        <AccordionItem key={item.id} value={item.id}>
+          <AccordionTrigger>{item.title}</AccordionTrigger>
+          <AccordionContent className="space-y-4">
+            {item.children.map((child, i) => (
+              <BlockRenderer key={i} block={child} onAction={onAction} state={state} />
+            ))}
+          </AccordionContent>
+        </AccordionItem>
+      ))}
+    </Accordion>
+  );
+}
+
+function CopyButtonBlock({ block }: { block: UiCopyButtonBlock }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(async () => {
+    try {
+      await writeClipboard(block.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      await navigator.clipboard.writeText(block.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [block.content]);
+  return (
+    <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopy}>
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {block.label ?? (copied ? 'Copied!' : 'Copy')}
+    </Button>
+  );
+}
+
+function FileInputBlock({
+  block,
+  onAction,
+  state,
+}: {
+  block: UiFileInputBlock;
+  onAction: (action: PluginUiAction) => void;
+  state?: Record<string, unknown>;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const handleChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const fileList = e.target.files;
+      if (!fileList || fileList.length === 0) return;
+      const files: { name: string; size: number; type: string; dataUrl: string }[] = [];
+      for (const file of Array.from(fileList)) {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        files.push({ name: file.name, size: file.size, type: file.type, dataUrl });
+      }
+      onAction({ action: 'file_selected', fileInputId: block.id, files, state });
+    },
+    [block.id, onAction, state],
+  );
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm">{block.label}</Label>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => inputRef.current?.click()}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Choose File
+        </Button>
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          accept={block.accept}
+          multiple={block.multiple}
+          onChange={handleChange}
+        />
+      </div>
     </div>
   );
 }

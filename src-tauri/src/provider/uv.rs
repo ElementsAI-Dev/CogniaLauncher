@@ -76,10 +76,10 @@ impl UvProvider {
             let lib_dir = if cfg!(windows) {
                 PathBuf::from(&venv).join("Lib").join("site-packages")
             } else {
-                PathBuf::from(&venv)
-                    .join("lib")
-                    .join("python3")
-                    .join("site-packages")
+                // Scan lib/ for pythonX.Y directory instead of hardcoding
+                let lib_path = PathBuf::from(&venv).join("lib");
+                Self::find_python_site_packages(&lib_path)
+                    .unwrap_or_else(|| lib_path.join("python3").join("site-packages"))
             };
             if lib_dir.exists() {
                 return Some(lib_dir);
@@ -91,14 +91,31 @@ impl UvProvider {
                 .ok()
                 .map(|p| PathBuf::from(p).join("Python").join("site-packages"))
         } else {
-            std::env::var("HOME").ok().map(|h| {
-                PathBuf::from(h)
+            std::env::var("HOME").ok().and_then(|h| {
+                let lib_path = PathBuf::from(&h)
                     .join(".local")
-                    .join("lib")
-                    .join("python3")
-                    .join("site-packages")
+                    .join("lib");
+                Self::find_python_site_packages(&lib_path).or_else(|| {
+                    Some(lib_path.join("python3").join("site-packages"))
+                })
             })
         }
+    }
+
+    /// Scan a lib/ directory for a pythonX.Y/site-packages subdirectory
+    fn find_python_site_packages(lib_path: &Path) -> Option<PathBuf> {
+        if let Ok(entries) = std::fs::read_dir(lib_path) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("python") && entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    let sp = entry.path().join("site-packages");
+                    if sp.exists() {
+                        return Some(sp);
+                    }
+                }
+            }
+        }
+        None
     }
 
     async fn run_uv(&self, args: &[&str]) -> CogniaResult<String> {
@@ -427,7 +444,12 @@ impl Provider for UvProvider {
             req.name.clone()
         };
 
-        self.run_uv(&["pip", "install", &pkg]).await?;
+        let mut args = vec!["pip", "install"];
+        if req.force {
+            args.push("--reinstall");
+        }
+        args.push(&pkg);
+        self.run_uv(&args).await?;
 
         // Get the actual installed version and location
         let (actual_version, install_path) = self

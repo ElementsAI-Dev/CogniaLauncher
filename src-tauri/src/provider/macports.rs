@@ -4,6 +4,7 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -23,7 +24,30 @@ impl MacPortsProvider {
         if out.success {
             Ok(out.stdout)
         } else {
-            Err(CogniaError::Provider(out.stderr))
+            let msg = if out.stderr.trim().is_empty() {
+                out.stdout
+            } else {
+                out.stderr
+            };
+            Err(CogniaError::Provider(msg))
+        }
+    }
+
+    /// Run a port command with sudo and a long timeout (300s)
+    async fn run_sudo_port(&self, args: &[&str]) -> CogniaResult<String> {
+        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(300));
+        let mut cmd_args = vec!["port"];
+        cmd_args.extend_from_slice(args);
+        let out = process::execute("sudo", &cmd_args, Some(opts)).await?;
+        if out.success {
+            Ok(out.stdout)
+        } else {
+            let msg = if out.stderr.trim().is_empty() {
+                out.stdout
+            } else {
+                out.stderr
+            };
+            Err(CogniaError::Provider(msg))
         }
     }
 
@@ -173,16 +197,16 @@ impl Provider for MacPortsProvider {
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
-        let pkg = if let Some(v) = &req.version {
-            format!("{}@{}", req.name, v)
-        } else {
-            req.name.clone()
-        };
-
-        let out = process::execute("sudo", &["port", "install", &pkg], None).await?;
-        if !out.success {
-            return Err(CogniaError::Installation(out.stderr));
+        let mut args = vec!["install", &*req.name];
+        let version_arg;
+        if let Some(v) = &req.version {
+            version_arg = format!("@{}", v);
+            args.push(&version_arg);
         }
+
+        self.run_sudo_port(&args).await.map_err(|e| {
+            CogniaError::Installation(format!("Failed to install {}: {}", req.name, e))
+        })?;
 
         // Get the actual installed version
         let actual_version = self
@@ -208,12 +232,33 @@ impl Provider for MacPortsProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["port", "uninstall", &req.name], None).await?;
-        if out.success {
-            Ok(())
-        } else {
-            Err(CogniaError::Provider(out.stderr))
+        self.run_sudo_port(&["uninstall", &req.name]).await?;
+        Ok(())
+    }
+
+    async fn get_dependencies(
+        &self,
+        name: &str,
+        _version: &str,
+    ) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_port(&["deps", name]).await?;
+        // Output format: "name has build dependencies: dep1 dep2\nname has library dependencies: dep3 dep4"
+        let mut deps = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for line in out.lines() {
+            if let Some(dep_list) = line.split("dependencies:").nth(1) {
+                for dep in dep_list.split_whitespace() {
+                    let dep = dep.trim().trim_end_matches(',');
+                    if !dep.is_empty() && seen.insert(dep.to_string()) {
+                        deps.push(Dependency {
+                            name: dep.to_string(),
+                            constraint: VersionConstraint::Any,
+                        });
+                    }
+                }
+            }
         }
+        Ok(deps)
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
@@ -317,29 +362,27 @@ impl SystemPackageProvider for MacPortsProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["port", "selfupdate"], None).await?;
-        if out.success {
-            Ok(())
-        } else {
-            Err(CogniaError::Provider(out.stderr))
-        }
+        self.run_sudo_port(&["selfupdate"]).await?;
+        Ok(())
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["port", "upgrade", name], None).await?;
-        if out.success {
-            Ok(())
-        } else {
-            Err(CogniaError::Provider(out.stderr))
-        }
+        self.run_sudo_port(&["upgrade", name]).await?;
+        Ok(())
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["port", "upgrade", "outdated"], None).await?;
-        if out.success {
-            Ok(vec!["All ports upgraded".into()])
+        let out = self.run_sudo_port(&["upgrade", "outdated"]).await?;
+        let upgraded: Vec<String> = out
+            .lines()
+            .filter(|l| l.contains("->"))
+            .filter_map(|l| l.split_whitespace().next())
+            .map(|s| s.to_string())
+            .collect();
+        if upgraded.is_empty() {
+            Ok(vec!["All ports are up to date".into()])
         } else {
-            Err(CogniaError::Provider(out.stderr))
+            Ok(upgraded)
         }
     }
 
@@ -574,5 +617,55 @@ mod tests {
     fn test_default_impl() {
         let p = MacPortsProvider::default();
         assert_eq!(p.id(), "macports");
+    }
+
+    #[test]
+    fn test_parse_port_deps_output() {
+        let output = "curl has build dependencies: pkgconfig\ncurl has library dependencies: openssl zlib libidn2\n";
+        let mut deps = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for line in output.lines() {
+            if let Some(dep_list) = line.split("dependencies:").nth(1) {
+                for dep in dep_list.split_whitespace() {
+                    let dep = dep.trim().trim_end_matches(',');
+                    if !dep.is_empty() && seen.insert(dep.to_string()) {
+                        deps.push(dep.to_string());
+                    }
+                }
+            }
+        }
+        assert_eq!(deps.len(), 4);
+        assert_eq!(deps[0], "pkgconfig");
+        assert_eq!(deps[1], "openssl");
+        assert_eq!(deps[2], "zlib");
+        assert_eq!(deps[3], "libidn2");
+    }
+
+    #[test]
+    fn test_parse_port_deps_no_deps() {
+        let output = "curl has no dependencies\n";
+        let mut deps = Vec::new();
+        for line in output.lines() {
+            if let Some(dep_list) = line.split("dependencies:").nth(1) {
+                for dep in dep_list.split_whitespace() {
+                    let dep = dep.trim().trim_end_matches(',');
+                    if !dep.is_empty() {
+                        deps.push(dep.to_string());
+                    }
+                }
+            }
+        }
+        assert!(deps.is_empty());
+    }
+
+    #[test]
+    fn test_install_version_format() {
+        // MacPorts uses `port install name @version` as separate args
+        let name = "curl";
+        let version = "8.4.0";
+        let mut args = vec!["install", name];
+        let version_arg = format!("@{}", version);
+        args.push(&version_arg);
+        assert_eq!(args, vec!["install", "curl", "@8.4.0"]);
     }
 }

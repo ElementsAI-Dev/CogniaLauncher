@@ -3,7 +3,6 @@
  * These types are used across multiple components in components/environments/.
  */
 
-import type { VersionInfo } from './tauri';
 
 // ============================================================================
 // Batch Operations Types

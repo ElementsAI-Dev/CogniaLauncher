@@ -198,6 +198,17 @@ export type {
   DiagnosticExportResult,
   DiagnosticErrorContext,
   CrashInfo,
+  BrewTap,
+  BrewService,
+  BrewDoctorResult,
+  BrewCleanupResult,
+  BrewPinnedPackage,
+  BrewConfigEntry,
+  BrewConfigInfo,
+  PortVariant,
+  PortDependent,
+  PortFileEntry,
+  PortSelectGroup,
 } from '@/types/tauri';
 
 import type {
@@ -2617,6 +2628,14 @@ export const pluginValidate = (path: string) =>
 export const pluginGetUiEntry = (pluginId: string) =>
   invoke<import('@/types/plugin').PluginUiEntry>('plugin_get_ui_entry', { pluginId });
 
+/** Check if an update is available for a plugin */
+export const pluginCheckUpdate = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginUpdateInfo | null>('plugin_check_update', { pluginId });
+
+/** Update a plugin to its latest version */
+export const pluginUpdate = (pluginId: string) =>
+  invoke<void>('plugin_update', { pluginId });
+
 /** Get a static asset from a plugin's UI directory */
 export const pluginGetUiAsset = (pluginId: string, assetPath: string) =>
   invoke<number[]>('plugin_get_ui_asset', { pluginId, assetPath });
@@ -2718,3 +2737,205 @@ export const xmakeImportPackage = (inputDir: string) =>
   invoke<void>('xmake_import_package', { inputDir });
 export const xmakeDownloadSource = (name: string, outputDir?: string) =>
   invoke<void>('xmake_download_source', { name, outputDir });
+
+// ============================================================================
+// Homebrew Commands
+// ============================================================================
+
+// Tap management
+export const brewListTaps = () =>
+  invoke<import('@/types/tauri').BrewTap[]>('brew_list_taps');
+export const brewAddTap = (name: string) =>
+  invoke<string>('brew_add_tap', { name });
+export const brewRemoveTap = (name: string) =>
+  invoke<string>('brew_remove_tap', { name });
+
+// Services management
+export const brewListServices = () =>
+  invoke<import('@/types/tauri').BrewService[]>('brew_list_services');
+export const brewServiceStart = (name: string) =>
+  invoke<string>('brew_service_start', { name });
+export const brewServiceStop = (name: string) =>
+  invoke<string>('brew_service_stop', { name });
+export const brewServiceRestart = (name: string) =>
+  invoke<string>('brew_service_restart', { name });
+
+// Maintenance
+export const brewCleanup = (dryRun: boolean = false) =>
+  invoke<import('@/types/tauri').BrewCleanupResult>('brew_cleanup', { dryRun });
+export const brewDoctor = () =>
+  invoke<import('@/types/tauri').BrewDoctorResult>('brew_doctor');
+export const brewAutoremove = () =>
+  invoke<string[]>('brew_autoremove');
+
+// Pin management
+export const brewListPinned = () =>
+  invoke<import('@/types/tauri').BrewPinnedPackage[]>('brew_list_pinned');
+export const brewPin = (name: string) =>
+  invoke<string>('brew_pin', { name });
+export const brewUnpin = (name: string) =>
+  invoke<string>('brew_unpin', { name });
+
+// Config & analytics
+export const brewGetConfig = () =>
+  invoke<import('@/types/tauri').BrewConfigInfo>('brew_get_config');
+export const brewAnalyticsStatus = () =>
+  invoke<boolean>('brew_analytics_status');
+export const brewAnalyticsToggle = (enabled: boolean) =>
+  invoke<string>('brew_analytics_toggle', { enabled });
+
+// ============================================================================
+// MacPorts Commands
+// ============================================================================
+
+// Variant management
+export const macportsListVariants = (name: string) =>
+  invoke<import('@/types/tauri').PortVariant[]>('macports_list_variants', { name });
+
+// Contents & dependents
+export const macportsPortContents = (name: string) =>
+  invoke<import('@/types/tauri').PortFileEntry[]>('macports_port_contents', { name });
+export const macportsPortDependents = (name: string) =>
+  invoke<import('@/types/tauri').PortDependent[]>('macports_port_dependents', { name });
+
+// Cleanup
+export const macportsPortClean = (name: string) =>
+  invoke<string>('macports_port_clean', { name });
+export const macportsCleanAll = () =>
+  invoke<string>('macports_clean_all');
+
+// Self-update
+export const macportsSelfupdate = () =>
+  invoke<string>('macports_selfupdate');
+
+// Select (alternative versions)
+export const macportsListSelectGroups = () =>
+  invoke<import('@/types/tauri').PortSelectGroup[]>('macports_list_select_groups');
+export const macportsSelectOptions = (group: string) =>
+  invoke<import('@/types/tauri').PortSelectGroup>('macports_select_options', { group });
+export const macportsSelectSet = (group: string, option: string) =>
+  invoke<string>('macports_select_set', { group, option });
+
+// Reclaim disk space
+export const macportsReclaim = () =>
+  invoke<string>('macports_reclaim');
+
+// ============================================================================
+// uv Project Management Commands
+// ============================================================================
+
+export const uvInit = (path: string, name?: string) =>
+  invoke<string>('uv_init', { path, name });
+export const uvAdd = (path: string, packages: string[], dev: boolean = false, optional?: string) =>
+  invoke<string>('uv_add', { path, packages, dev, optional });
+export const uvRemove = (path: string, packages: string[], dev: boolean = false) =>
+  invoke<string>('uv_remove', { path, packages, dev });
+export const uvSync = (path: string, frozen: boolean = false) =>
+  invoke<string>('uv_sync', { path, frozen });
+export const uvLock = (path: string, upgrade: boolean = false) =>
+  invoke<string>('uv_lock', { path, upgrade });
+export const uvRun = (path: string, command: string[]) =>
+  invoke<import('@/types/tauri').UvRunResult>('uv_run', { path, command });
+export const uvTree = (path: string) =>
+  invoke<string>('uv_tree', { path });
+export const uvVenvCreate = (path: string, python?: string) =>
+  invoke<string>('uv_venv_create', { path, python });
+export const uvPythonInstall = (version: string) =>
+  invoke<string>('uv_python_install', { version });
+export const uvPythonUninstall = (version: string) =>
+  invoke<string>('uv_python_uninstall', { version });
+export const uvPythonList = (onlyInstalled: boolean = false) =>
+  invoke<import('@/types/tauri').UvPythonEntry[]>('uv_python_list', { onlyInstalled });
+export const uvPythonPin = (path: string, version: string) =>
+  invoke<string>('uv_python_pin', { path, version });
+export const uvPipCompile = (path: string, input: string, output?: string) =>
+  invoke<string>('uv_pip_compile', { path, input, output });
+export const uvSelfUpdate = () =>
+  invoke<string>('uv_self_update');
+export const uvVersion = () =>
+  invoke<string>('uv_version');
+export const uvCacheClean = () =>
+  invoke<string>('uv_cache_clean');
+export const uvCacheDir = () =>
+  invoke<string>('uv_cache_dir');
+export const uvToolInstall = (name: string, python?: string) =>
+  invoke<string>('uv_tool_install', { name, python });
+export const uvToolUninstall = (name: string) =>
+  invoke<string>('uv_tool_uninstall', { name });
+export const uvToolList = () =>
+  invoke<string>('uv_tool_list');
+export const uvToolRun = (name: string, toolArgs: string[]) =>
+  invoke<import('@/types/tauri').UvRunResult>('uv_tool_run', { name, toolArgs });
+
+// ============================================================================
+// Conda Environment Management Commands
+// ============================================================================
+
+export const condaEnvList = () =>
+  invoke<import('@/types/tauri').CondaEnvInfo[]>('conda_env_list');
+export const condaEnvCreate = (name: string, pythonVersion?: string, packages: string[] = []) =>
+  invoke<string>('conda_env_create', { name, pythonVersion, packages });
+export const condaEnvRemove = (name: string) =>
+  invoke<string>('conda_env_remove', { name });
+export const condaEnvClone = (source: string, target: string) =>
+  invoke<string>('conda_env_clone', { source, target });
+export const condaEnvExport = (name: string, noBuilds: boolean = false) =>
+  invoke<import('@/types/tauri').CondaExportResult>('conda_env_export', { name, noBuilds });
+export const condaEnvImport = (filePath: string, name?: string) =>
+  invoke<string>('conda_env_import', { filePath, name });
+export const condaEnvRename = (oldName: string, newName: string) =>
+  invoke<string>('conda_env_rename', { oldName, newName });
+export const condaGetInfo = () =>
+  invoke<import('@/types/tauri').CondaInfo>('conda_info');
+export const condaClean = (all: boolean = false, packages: boolean = false, tarballs: boolean = false) =>
+  invoke<string>('conda_clean', { all, packages, tarballs });
+export const condaConfigShow = () =>
+  invoke<string>('conda_config_show');
+export const condaConfigSet = (key: string, value: string) =>
+  invoke<string>('conda_config_set', { key, value });
+export const condaChannelAdd = (channel: string) =>
+  invoke<string>('conda_channel_add', { channel });
+export const condaChannelRemove = (channel: string) =>
+  invoke<string>('conda_channel_remove', { channel });
+
+// ============================================================================
+// Poetry Project Management Commands
+// ============================================================================
+
+export const poetryLock = (path: string, noUpdate: boolean = false) =>
+  invoke<string>('poetry_lock', { path, noUpdate });
+export const poetryUpdate = (path: string, packages: string[] = []) =>
+  invoke<string>('poetry_update', { path, packages });
+export const poetryRun = (path: string, command: string[]) =>
+  invoke<import('@/types/tauri').PoetryRunResult>('poetry_run', { path, command });
+export const poetryEnvList = (path: string) =>
+  invoke<import('@/types/tauri').PoetryEnvInfo[]>('poetry_env_list', { path });
+export const poetryEnvRemove = (path: string, python: string) =>
+  invoke<string>('poetry_env_remove', { path, python });
+export const poetryEnvUse = (path: string, python: string) =>
+  invoke<string>('poetry_env_use', { path, python });
+export const poetryExport = (path: string, format?: string, withHashes: boolean = false) =>
+  invoke<string>('poetry_export', { path, format, withHashes });
+export const poetryCheck = (path: string) =>
+  invoke<string>('poetry_check', { path });
+export const poetryVersion = (path: string) =>
+  invoke<string>('poetry_version', { path });
+
+// ============================================================================
+// pipx Commands
+// ============================================================================
+
+export const pipxInject = (appName: string, packages: string[]) =>
+  invoke<string>('pipx_inject', { appName, packages });
+export const pipxRun = (packageName: string, runArgs: string[] = []) =>
+  invoke<import('@/types/tauri').PipxRunResult>('pipx_run', { package: packageName, runArgs });
+export const pipxUpgrade = (packageName: string) =>
+  invoke<string>('pipx_upgrade', { package: packageName });
+export const pipxUpgradeAll = () =>
+  invoke<string>('pipx_upgrade_all');
+export const pipxEnsurepath = () =>
+  invoke<string>('pipx_ensurepath');
+export const pipxReinstallAll = () =>
+  invoke<string>('pipx_reinstall_all');
+export const pipxListJson = () =>
+  invoke<string>('pipx_list_json');

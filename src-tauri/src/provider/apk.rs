@@ -4,10 +4,15 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+const APK_TIMEOUT: u64 = 120;
+const APK_SUDO_TIMEOUT: u64 = 300;
+const APK_LONG_TIMEOUT: u64 = 600;
 
 /// APK - Alpine Package Keeper for Alpine Linux
 pub struct ApkProvider;
@@ -17,9 +22,20 @@ impl ApkProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(APK_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(APK_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(APK_LONG_TIMEOUT))
+    }
+
     async fn run_apk(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("apk", args, Some(opts)).await?;
+        let out = process::execute("apk", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -27,14 +43,27 @@ impl ApkProvider {
         }
     }
 
-    /// Get the installed version of a package
+    /// Run apk and return stdout regardless of exit code
+    async fn run_apk_lenient(&self, args: &[&str]) -> CogniaResult<String> {
+        let out = process::execute("apk", args, Some(Self::make_opts())).await?;
+        Ok(out.stdout)
+    }
+
+    /// Get the installed version of a package using `apk info -v`.
+    /// Output lines look like `curl-8.4.0-r0` — we strip the known package name prefix.
     async fn get_pkg_version(&self, name: &str) -> CogniaResult<String> {
         let out = self.run_apk(&["info", "-v", name]).await?;
-        // Output format: package-version
-        if let Some(line) = out.lines().next() {
+        for line in out.lines() {
             let line = line.trim();
-            if let Some(pos) = line.rfind('-') {
-                return Ok(line[pos + 1..].to_string());
+            if line.is_empty() {
+                continue;
+            }
+            // The output is "name-version". Strip the name prefix + the dash.
+            let prefix = format!("{}-", name);
+            if let Some(version) = line.strip_prefix(&prefix) {
+                if !version.is_empty() {
+                    return Ok(version.to_string());
+                }
             }
         }
         Err(CogniaError::Provider(format!(
@@ -105,26 +134,15 @@ impl Provider for ApkProvider {
             .take(limit)
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(2, " - ").collect();
-                let name_version = parts[0];
-                let description = parts.get(1).map(|s| s.to_string());
+                let name_version = parts[0].trim();
+                let description = parts.get(1).map(|s| s.trim().to_string());
 
-                let name = name_version
-                    .rsplit('-')
-                    .skip(1)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("-");
-
-                if name.is_empty() {
-                    return None;
-                }
+                let (name, version) = parse_apk_name_version(name_version)?;
 
                 Some(PackageSummary {
                     name,
                     description,
-                    latest_version: None,
+                    latest_version: Some(version),
                     provider: self.id().into(),
                 })
             })
@@ -140,18 +158,27 @@ impl Provider for ApkProvider {
         let mut homepage = None;
 
         for line in out.lines() {
-            if line.starts_with(name) && line.contains(" description:") {
-                description = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.starts_with(name) && line.contains(" webpage:") {
-                homepage = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.starts_with(name) && line.contains(" license:") {
-                license = line.split(':').nth(1).map(|s| s.trim().into());
-            } else if line.contains("-r") && line.contains(name) {
-                version = line
-                    .split_whitespace()
-                    .next()
-                    .and_then(|s| s.strip_prefix(&format!("{}-", name)))
-                    .map(|s| s.into());
+            // apk info -a lines: "pkgname-ver description: ..." or "pkgname-ver webpage: ..."
+            if line.contains(" description:") {
+                // Use splitn(2, ':') to avoid truncating values
+                let parts: Vec<&str> = line.splitn(2, " description:").collect();
+                description = parts.get(1).map(|s| s.trim().into());
+            } else if line.contains(" webpage:") {
+                // Use splitn(2, " webpage:") to preserve full URL
+                let parts: Vec<&str> = line.splitn(2, " webpage:").collect();
+                homepage = parts.get(1).map(|s| s.trim().into());
+            } else if line.contains(" license:") {
+                let parts: Vec<&str> = line.splitn(2, " license:").collect();
+                license = parts.get(1).map(|s| s.trim().into());
+            }
+            // Extract version from lines like "curl-8.4.0-r0 description:..."
+            if version.is_none() {
+                let first_word = line.split_whitespace().next().unwrap_or("");
+                if let Some(v) = first_word.strip_prefix(&format!("{}-", name)) {
+                    if !v.is_empty() {
+                        version = Some(v.to_string());
+                    }
+                }
             }
         }
 
@@ -188,7 +215,14 @@ impl Provider for ApkProvider {
             req.name.clone()
         };
 
-        let out = process::execute("sudo", &["apk", "add", &pkg], None).await?;
+        let mut args = vec!["apk", "add"];
+        if req.force {
+            args.push("--force");
+        }
+        args.push(&pkg);
+
+        let out =
+            process::execute("sudo", &args, Some(Self::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -217,7 +251,14 @@ impl Provider for ApkProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apk", "del", &req.name], None).await?;
+        let mut args = vec!["apk", "del"];
+        if req.force {
+            args.push("--force");
+        }
+        args.push(&req.name);
+
+        let out =
+            process::execute("sudo", &args, Some(Self::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -232,15 +273,9 @@ impl Provider for ApkProvider {
             .lines()
             .filter(|l| !l.is_empty())
             .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.is_empty() {
-                    return None;
-                }
-
-                let name_version = parts[0];
-                let dash_pos = name_version.rfind('-')?;
-                let name = name_version[..dash_pos].to_string();
-                let version = name_version[dash_pos + 1..].to_string();
+                // Format: "name-version arch {origin} (license)"
+                let first_token = line.split_whitespace().next()?;
+                let (name, version) = parse_apk_name_version(first_token)?;
 
                 if let Some(ref name_filter) = filter.name_filter {
                     if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
@@ -261,35 +296,75 @@ impl Provider for ApkProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_apk(&["version", "-l", "<"]).await;
+        // `apk version -v -l '<'` outputs lines like:
+        // "curl-8.3.0-r0 < 8.4.0-r0"
+        let out = self.run_apk_lenient(&["version", "-v", "-l", "<"]).await;
 
         if let Ok(output) = out {
             return Ok(output
                 .lines()
                 .filter(|l| !l.is_empty() && l.contains('<'))
                 .filter_map(|line| {
+                    // Format: "name-current_version < new_version"
                     let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 3 {
-                        let name = parts[0].to_string();
-
-                        if !packages.is_empty() && !packages.contains(&name) {
-                            return None;
-                        }
-
-                        Some(UpdateInfo {
-                            name,
-                            current_version: parts[1].into(),
-                            latest_version: parts[2].into(),
-                            provider: self.id().into(),
-                        })
-                    } else {
-                        None
+                    // Expect: ["name-ver", "<", "new_ver"] or more tokens
+                    if parts.len() < 3 {
+                        return None;
                     }
+
+                    let name_ver = parts[0];
+                    let (name, current_version) = parse_apk_name_version(name_ver)?;
+
+                    if !packages.is_empty() && !packages.contains(&name) {
+                        return None;
+                    }
+
+                    // The new version is after the '<' sign
+                    let latest_version = parts[2].to_string();
+
+                    Some(UpdateInfo {
+                        name,
+                        current_version,
+                        latest_version,
+                        provider: self.id().into(),
+                    })
                 })
                 .collect());
         }
 
         Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_apk(&["info", "-R", name]).await?;
+        let mut deps = Vec::new();
+        let mut in_depends = false;
+
+        for line in out.lines() {
+            if line.contains("depends on:") {
+                in_depends = true;
+                continue;
+            }
+            if in_depends {
+                let dep = line.trim();
+                if dep.is_empty() {
+                    break;
+                }
+                // Dependency lines can be "name" or "name>=version"
+                let dep_name = dep.split(|c| c == '>' || c == '<' || c == '=' || c == '~')
+                    .next()
+                    .unwrap_or(dep)
+                    .to_string();
+                if !dep_name.is_empty() {
+                    deps.push(Dependency {
+                        name: dep_name,
+                        constraint: VersionConstraint::Any,
+                    });
+                }
+            }
+        }
+
+        Ok(deps)
     }
 }
 
@@ -324,7 +399,7 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apk", "update"], None).await?;
+        let out = process::execute("sudo", &["apk", "update"], Some(ApkProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -333,7 +408,7 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apk", "upgrade", name], None).await?;
+        let out = process::execute("sudo", &["apk", "upgrade", name], Some(ApkProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -342,7 +417,7 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["apk", "upgrade"], None).await?;
+        let out = process::execute("sudo", &["apk", "upgrade"], Some(ApkProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {
@@ -354,6 +429,34 @@ impl SystemPackageProvider for ApkProvider {
         let out = self.run_apk(&["info", "-e", name]).await;
         Ok(out.is_ok())
     }
+}
+
+/// Parse an Alpine package name-version string like "curl-8.4.0-r0" into ("curl", "8.4.0-r0").
+/// Alpine versions always end with `-rN` (revision number). We find the version boundary
+/// by looking for the pattern `-<digit>` that precedes the version portion.
+pub fn parse_apk_name_version(s: &str) -> Option<(String, String)> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Find the last occurrence of "-<digit>" which starts the version.
+    // We scan from the end to find the version start.
+    // Version in Alpine always matches: digit...  (e.g., "8.4.0-r0", "1.36.1-r2", "2.42.0-r0")
+    let bytes = s.as_bytes();
+    let mut split_pos = None;
+    for i in (1..bytes.len()).rev() {
+        if bytes[i - 1] == b'-' && bytes[i].is_ascii_digit() {
+            split_pos = Some(i - 1);
+            break;
+        }
+    }
+    let pos = split_pos?;
+    let name = s[..pos].to_string();
+    let version = s[pos + 1..].to_string();
+    if name.is_empty() || version.is_empty() {
+        return None;
+    }
+    Some((name, version))
 }
 
 #[cfg(test)]
@@ -409,8 +512,41 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_apk_name_version_basic() {
+        assert_eq!(
+            parse_apk_name_version("curl-8.4.0-r0"),
+            Some(("curl".into(), "8.4.0-r0".into()))
+        );
+        assert_eq!(
+            parse_apk_name_version("git-2.42.0-r0"),
+            Some(("git".into(), "2.42.0-r0".into()))
+        );
+        assert_eq!(
+            parse_apk_name_version("busybox-1.36.1-r2"),
+            Some(("busybox".into(), "1.36.1-r2".into()))
+        );
+    }
+
+    #[test]
+    fn test_parse_apk_name_version_hyphenated_name() {
+        assert_eq!(
+            parse_apk_name_version("curl-dev-8.4.0-r0"),
+            Some(("curl-dev".into(), "8.4.0-r0".into()))
+        );
+        assert_eq!(
+            parse_apk_name_version("linux-firmware-20231111-r0"),
+            Some(("linux-firmware".into(), "20231111-r0".into()))
+        );
+    }
+
+    #[test]
+    fn test_parse_apk_name_version_edge_cases() {
+        assert_eq!(parse_apk_name_version(""), None);
+        assert_eq!(parse_apk_name_version("noversion"), None);
+    }
+
+    #[test]
     fn test_parse_apk_search_output() {
-        // apk search -v output: name-version - description
         let output = "curl-8.4.0-r0 - A URL retrieval utility and library\ngit-2.42.0-r0 - Distributed version control system\ncurl-dev-8.4.0-r0 - A URL retrieval utility (dev)\n";
 
         let results: Vec<PackageSummary> = output
@@ -418,57 +554,39 @@ mod tests {
             .filter(|l| !l.is_empty())
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(2, " - ").collect();
-                let name_version = parts[0];
-                let description = parts.get(1).map(|s| s.to_string());
-
-                let name = name_version
-                    .rsplit('-')
-                    .skip(1)
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("-");
-
-                if name.is_empty() {
-                    return None;
-                }
-
+                let name_version = parts[0].trim();
+                let description = parts.get(1).map(|s| s.trim().to_string());
+                let (name, version) = parse_apk_name_version(name_version)?;
                 Some(PackageSummary {
                     name,
                     description,
-                    latest_version: None,
+                    latest_version: Some(version),
                     provider: "apk".into(),
                 })
             })
             .collect();
 
         assert_eq!(results.len(), 3);
-        assert_eq!(results[0].name, "curl-8.4.0");
+        assert_eq!(results[0].name, "curl");
+        assert_eq!(results[0].latest_version, Some("8.4.0-r0".into()));
         assert_eq!(
             results[0].description,
             Some("A URL retrieval utility and library".into())
         );
+        assert_eq!(results[2].name, "curl-dev");
+        assert_eq!(results[2].latest_version, Some("8.4.0-r0".into()));
     }
 
     #[test]
     fn test_parse_apk_list_installed_output() {
-        // apk list --installed output
         let output = "curl-8.4.0-r0 x86_64 {curl} (MIT)\ngit-2.42.0-r0 x86_64 {git} (GPL-2.0-only)\nbusybox-1.36.1-r2 x86_64 {busybox} (GPL-2.0-only)\n";
 
         let packages: Vec<InstalledPackage> = output
             .lines()
             .filter(|l| !l.is_empty())
             .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.is_empty() {
-                    return None;
-                }
-                let name_version = parts[0];
-                let dash_pos = name_version.rfind('-')?;
-                let name = name_version[..dash_pos].to_string();
-                let version = name_version[dash_pos + 1..].to_string();
-
+                let first_token = line.split_whitespace().next()?;
+                let (name, version) = parse_apk_name_version(first_token)?;
                 Some(InstalledPackage {
                     name,
                     version,
@@ -481,14 +599,16 @@ mod tests {
             .collect();
 
         assert_eq!(packages.len(), 3);
-        assert_eq!(packages[0].name, "curl-8.4.0");
-        assert_eq!(packages[0].version, "r0");
-        assert_eq!(packages[2].name, "busybox-1.36.1");
+        assert_eq!(packages[0].name, "curl");
+        assert_eq!(packages[0].version, "8.4.0-r0");
+        assert_eq!(packages[1].name, "git");
+        assert_eq!(packages[1].version, "2.42.0-r0");
+        assert_eq!(packages[2].name, "busybox");
+        assert_eq!(packages[2].version, "1.36.1-r2");
     }
 
     #[test]
     fn test_parse_apk_version_output() {
-        // apk version -l < output
         let output = "curl-8.3.0-r0 < 8.4.0-r0\ngit-2.41.0-r0 < 2.42.0-r0\n";
 
         let updates: Vec<UpdateInfo> = output
@@ -496,33 +616,66 @@ mod tests {
             .filter(|l| !l.is_empty() && l.contains('<'))
             .filter_map(|line| {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    Some(UpdateInfo {
-                        name: parts[0].to_string(),
-                        current_version: parts[1].into(),
-                        latest_version: parts[2].into(),
-                        provider: "apk".into(),
-                    })
-                } else {
-                    None
+                if parts.len() < 3 {
+                    return None;
                 }
+                let (name, current_version) = parse_apk_name_version(parts[0])?;
+                Some(UpdateInfo {
+                    name,
+                    current_version,
+                    latest_version: parts[2].to_string(),
+                    provider: "apk".into(),
+                })
             })
             .collect();
 
         assert_eq!(updates.len(), 2);
-        assert_eq!(updates[0].name, "curl-8.3.0-r0");
-        assert_eq!(updates[0].current_version, "<");
+        assert_eq!(updates[0].name, "curl");
+        assert_eq!(updates[0].current_version, "8.3.0-r0");
         assert_eq!(updates[0].latest_version, "8.4.0-r0");
+        assert_eq!(updates[1].name, "git");
+        assert_eq!(updates[1].current_version, "2.41.0-r0");
     }
 
     #[test]
     fn test_parse_apk_pkg_version() {
-        // apk info -v output: package-version
+        // Using the new prefix-stripping approach
         let line = "curl-8.4.0-r0";
-        if let Some(pos) = line.rfind('-') {
-            let version = &line[pos + 1..];
-            assert_eq!(version, "r0");
+        let prefix = "curl-";
+        let version = line.strip_prefix(prefix).unwrap();
+        assert_eq!(version, "8.4.0-r0");
+    }
+
+    #[test]
+    fn test_parse_apk_dependencies_output() {
+        let output = "curl-8.4.0-r0 depends on:\nca-certificates-bundle\nlibc.musl-x86_64.so.1\nlibcurl.so.4\n\ncurl-8.4.0-r0 has:\n";
+
+        let mut deps = Vec::new();
+        let mut in_depends = false;
+        for line in output.lines() {
+            if line.contains("depends on:") {
+                in_depends = true;
+                continue;
+            }
+            if in_depends {
+                let dep = line.trim();
+                if dep.is_empty() {
+                    break;
+                }
+                let dep_name = dep.split(|c| c == '>' || c == '<' || c == '=' || c == '~')
+                    .next()
+                    .unwrap_or(dep)
+                    .to_string();
+                if !dep_name.is_empty() {
+                    deps.push(dep_name);
+                }
+            }
         }
+
+        assert_eq!(deps.len(), 3);
+        assert_eq!(deps[0], "ca-certificates-bundle");
+        assert_eq!(deps[1], "libc.musl-x86_64.so.1");
+        assert_eq!(deps[2], "libcurl.so.4");
     }
 
     #[test]

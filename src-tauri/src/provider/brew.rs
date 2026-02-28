@@ -1,6 +1,7 @@
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -45,6 +46,63 @@ impl BrewProvider {
             "Version not found for {}",
             name
         )))
+    }
+
+    /// Check if a package name refers to a cask (GUI app) rather than a formula
+    async fn is_cask(&self, name: &str) -> bool {
+        if let Ok(out) = self.run_brew(&["info", "--json=v2", name]).await {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+                // If formulae array is empty but casks has entries, it's a cask
+                let formulae_empty = json["formulae"]
+                    .as_array()
+                    .map(|a| a.is_empty())
+                    .unwrap_or(true);
+                let cask_present = json["casks"]
+                    .as_array()
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+                return formulae_empty && cask_present;
+            }
+        }
+        false
+    }
+
+    /// Parse search output preserving formulae/cask section labels
+    fn parse_search_output(output: &str) -> Vec<PackageSummary> {
+        let mut results = Vec::new();
+        let mut current_section = "";
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with("==> Formulae") {
+                current_section = "formula";
+                continue;
+            }
+            if line.starts_with("==> Casks") {
+                current_section = "cask";
+                continue;
+            }
+            if line.starts_with("==>") {
+                continue;
+            }
+
+            let desc = if current_section == "cask" {
+                Some("(cask)".to_string())
+            } else {
+                None
+            };
+
+            results.push(PackageSummary {
+                name: line.to_string(),
+                description: desc,
+                latest_version: None,
+                provider: "brew".into(),
+            });
+        }
+        results
     }
 }
 
@@ -91,19 +149,11 @@ impl Provider for BrewProvider {
         }
     }
 
-    async fn search(&self, query: &str, _: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(&self, query: &str, options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+        let limit = options.limit.unwrap_or(20);
         let out = self.run_brew(&["search", query]).await?;
-        Ok(out
-            .lines()
-            .filter(|l| !l.is_empty() && !l.starts_with('='))
-            .map(|name| PackageSummary {
-                name: name.trim().into(),
-                description: None,
-                latest_version: None,
-                provider: self.id().into(),
-            })
-            .take(20)
-            .collect())
+        let results = Self::parse_search_output(&out);
+        Ok(results.into_iter().take(limit).collect())
     }
 
     async fn get_package_info(&self, name: &str) -> CogniaResult<PackageInfo> {
@@ -183,7 +233,12 @@ impl Provider for BrewProvider {
         } else {
             req.name.clone()
         };
-        let mut args = vec!["install", &*pkg];
+        let mut args = vec!["install"];
+        // Auto-detect cask and add --cask flag
+        if self.is_cask(&req.name).await {
+            args.push("--cask");
+        }
+        args.push(&*pkg);
         if req.force {
             args.push("--force");
         }
@@ -226,59 +281,151 @@ impl Provider for BrewProvider {
     }
 
     async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        let out = self.run_brew(&["list", "--versions"]).await?;
         let brew_prefix = self
             .run_brew(&["--prefix"])
             .await
             .map(|s| PathBuf::from(s.trim()))
             .unwrap_or_else(|_| PathBuf::from("/opt/homebrew"));
 
-        Ok(out
-            .lines()
-            .filter_map(|l| {
+        let mut packages = Vec::new();
+
+        // List formulae
+        if let Ok(out) = self.run_brew(&["list", "--formula", "--versions"]).await {
+            for l in out.lines() {
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 if parts.len() >= 2 {
                     let name = parts[0].to_string();
-
                     if let Some(ref name_filter) = filter.name_filter {
                         if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
-                            return None;
+                            continue;
                         }
                     }
-
-                    Some(InstalledPackage {
+                    packages.push(InstalledPackage {
                         name: name.clone(),
                         version: parts[1].into(),
                         provider: self.id().into(),
                         install_path: brew_prefix.join("Cellar").join(&name),
                         installed_at: String::new(),
                         is_global: true,
-                    })
-                } else {
-                    None
+                    });
                 }
-            })
-            .collect())
+            }
+        }
+
+        // List casks
+        if let Ok(out) = self.run_brew(&["list", "--cask", "--versions"]).await {
+            for l in out.lines() {
+                let parts: Vec<&str> = l.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let name = parts[0].to_string();
+                    if let Some(ref name_filter) = filter.name_filter {
+                        if !name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                            continue;
+                        }
+                    }
+                    packages.push(InstalledPackage {
+                        name: name.clone(),
+                        version: parts[1].into(),
+                        provider: self.id().into(),
+                        install_path: brew_prefix.join("Caskroom").join(&name),
+                        installed_at: String::new(),
+                        is_global: true,
+                    });
+                }
+            }
+        }
+
+        Ok(packages)
     }
 
     async fn check_updates(&self, _: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let out = self.run_brew(&["outdated", "--json=v2"]).await?;
+        let mut updates = Vec::new();
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            // Parse outdated formulae
             if let Some(formulae) = json["formulae"].as_array() {
-                return Ok(formulae
-                    .iter()
-                    .filter_map(|f| {
-                        Some(UpdateInfo {
-                            name: f["name"].as_str()?.into(),
-                            current_version: f["installed_versions"][0].as_str()?.into(),
-                            latest_version: f["current_version"].as_str()?.into(),
+                for f in formulae {
+                    if let (Some(name), Some(current), Some(latest)) = (
+                        f["name"].as_str(),
+                        f["installed_versions"][0].as_str(),
+                        f["current_version"].as_str(),
+                    ) {
+                        updates.push(UpdateInfo {
+                            name: name.into(),
+                            current_version: current.into(),
+                            latest_version: latest.into(),
                             provider: self.id().into(),
-                        })
-                    })
-                    .collect());
+                        });
+                    }
+                }
+            }
+            // Parse outdated casks
+            if let Some(casks) = json["casks"].as_array() {
+                for c in casks {
+                    if let (Some(name), Some(current), Some(latest)) = (
+                        c["name"].as_str(),
+                        c["installed_versions"].as_str(),
+                        c["current_version"].as_str(),
+                    ) {
+                        updates.push(UpdateInfo {
+                            name: name.into(),
+                            current_version: current.into(),
+                            latest_version: latest.into(),
+                            provider: self.id().into(),
+                        });
+                    }
+                }
             }
         }
-        Ok(vec![])
+        Ok(updates)
+    }
+
+    async fn get_dependencies(
+        &self,
+        name: &str,
+        _version: &str,
+    ) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_brew(&["info", "--json=v2", name]).await?;
+        let mut deps = Vec::new();
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {
+            let pkg = json["formulae"].get(0).or_else(|| json["casks"].get(0));
+            if let Some(pkg) = pkg {
+                // Runtime dependencies
+                if let Some(arr) = pkg["dependencies"].as_array() {
+                    for d in arr {
+                        if let Some(name) = d.as_str() {
+                            deps.push(Dependency {
+                                name: name.to_string(),
+                                constraint: VersionConstraint::Any,
+                            });
+                        }
+                    }
+                }
+                // Build dependencies
+                if let Some(arr) = pkg["build_dependencies"].as_array() {
+                    for d in arr {
+                        if let Some(name) = d.as_str() {
+                            deps.push(Dependency {
+                                name: name.to_string(),
+                                constraint: VersionConstraint::Any,
+                            });
+                        }
+                    }
+                }
+                // Optional dependencies
+                if let Some(arr) = pkg["optional_dependencies"].as_array() {
+                    for d in arr {
+                        if let Some(name) = d.as_str() {
+                            deps.push(Dependency {
+                                name: name.to_string(),
+                                constraint: VersionConstraint::Any,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(deps)
     }
 }
 
@@ -326,8 +473,17 @@ impl SystemPackageProvider for BrewProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        self.run_brew(&["upgrade"]).await?;
-        Ok(vec!["All packages upgraded".into()])
+        let out = self.run_brew(&["upgrade"]).await?;
+        let upgraded: Vec<String> = out
+            .lines()
+            .filter(|l| l.contains("Upgrading") || l.contains("->"))
+            .map(|l| l.trim().to_string())
+            .collect();
+        if upgraded.is_empty() {
+            Ok(vec!["All packages are up to date".into()])
+        } else {
+            Ok(upgraded)
+        }
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
@@ -391,25 +547,34 @@ mod tests {
 
     #[test]
     fn test_parse_search_output() {
-        // brew search returns simple list of names
         let output = "==> Formulae\nnginx\nnginx-full\nnginx-unit\n\n==> Casks\nnginx\n";
-        let results: Vec<PackageSummary> = output
-            .lines()
-            .filter(|l| !l.is_empty() && !l.starts_with('='))
-            .map(|name| PackageSummary {
-                name: name.trim().into(),
-                description: None,
-                latest_version: None,
-                provider: "brew".into(),
-            })
-            .take(20)
-            .collect();
+        let results = BrewProvider::parse_search_output(output);
 
         assert_eq!(results.len(), 4);
         assert_eq!(results[0].name, "nginx");
+        assert_eq!(results[0].description, None); // formula has no (cask) tag
         assert_eq!(results[1].name, "nginx-full");
         assert_eq!(results[3].name, "nginx");
+        assert_eq!(results[3].description, Some("(cask)".into())); // cask section
         assert_eq!(results[0].provider, "brew");
+    }
+
+    #[test]
+    fn test_parse_search_output_no_sections() {
+        let output = "nginx\nnginx-full\n";
+        let results = BrewProvider::parse_search_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "nginx");
+        assert_eq!(results[0].description, None);
+    }
+
+    #[test]
+    fn test_parse_search_output_cask_only() {
+        let output = "==> Casks\nfirefox\ngoogle-chrome\n";
+        let results = BrewProvider::parse_search_output(output);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].description, Some("(cask)".into()));
+        assert_eq!(results[1].description, Some("(cask)".into()));
     }
 
     #[test]

@@ -9,6 +9,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
+const SNAP_TIMEOUT: u64 = 120;
+const SNAP_SUDO_TIMEOUT: u64 = 300;
+const SNAP_LONG_TIMEOUT: u64 = 600;
+
 /// Snap - Universal Linux package manager by Canonical
 pub struct SnapProvider;
 
@@ -17,9 +21,20 @@ impl SnapProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(SNAP_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(SNAP_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(SNAP_LONG_TIMEOUT))
+    }
+
     async fn run_snap(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("snap", args, Some(opts)).await?;
+        let out = process::execute("snap", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -204,7 +219,7 @@ impl Provider for SnapProvider {
             args.push(&channel);
         }
 
-        let out = process::execute("sudo", &[&["snap"][..], &args[..]].concat(), None).await?;
+        let out = process::execute("sudo", &[&["snap"][..], &args[..]].concat(), Some(Self::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -239,7 +254,7 @@ impl Provider for SnapProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["snap", "remove", &req.name], None).await?;
+        let out = process::execute("sudo", &["snap", "remove", &req.name], Some(Self::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -286,7 +301,7 @@ impl Provider for SnapProvider {
         let out = self.run_snap(&["refresh", "--list"]).await;
 
         if let Ok(output) = out {
-            return Ok(output
+            let mut updates: Vec<UpdateInfo> = output
                 .lines()
                 .skip(1)
                 .filter(|l| !l.is_empty())
@@ -309,7 +324,18 @@ impl Provider for SnapProvider {
                         None
                     }
                 })
-                .collect());
+                .collect();
+
+            // Populate current_version from snap list
+            for update in &mut updates {
+                if let Ok(ver) = self.get_installed_version(&update.name).await {
+                    if let Some(v) = ver {
+                        update.current_version = v;
+                    }
+                }
+            }
+
+            return Ok(updates);
         }
 
         Ok(vec![])
@@ -352,7 +378,7 @@ impl SystemPackageProvider for SnapProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["snap", "refresh", name], None).await?;
+        let out = process::execute("sudo", &["snap", "refresh", name], Some(SnapProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -361,7 +387,7 @@ impl SystemPackageProvider for SnapProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["snap", "refresh"], None).await?;
+        let out = process::execute("sudo", &["snap", "refresh"], Some(SnapProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["All snaps refreshed".into()])
         } else {

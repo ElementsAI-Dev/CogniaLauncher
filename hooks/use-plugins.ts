@@ -16,8 +16,10 @@ import {
   pluginGetLocales,
   pluginScaffold,
   pluginValidate,
+  pluginCheckUpdate,
+  pluginUpdate,
 } from '@/lib/tauri';
-import type { ScaffoldConfig, ScaffoldResult, ValidationResult } from '@/types/plugin';
+import type { ScaffoldConfig, ScaffoldResult, ValidationResult, PluginUpdateInfo } from '@/types/plugin';
 import { isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
 
@@ -205,6 +207,32 @@ export function usePlugins() {
     }
   }, []);
 
+  const checkUpdate = useCallback(async (pluginId: string): Promise<PluginUpdateInfo | null> => {
+    if (!isTauri()) return null;
+    try {
+      return await pluginCheckUpdate(pluginId);
+    } catch (e) {
+      toast.error(`Update check failed: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, []);
+
+  const updatePlugin = useCallback(async (pluginId: string) => {
+    if (!isTauri()) return;
+    store.setLoading(true);
+    try {
+      await pluginUpdate(pluginId);
+      toast.success(`Plugin updated: ${pluginId}`);
+      await fetchPlugins();
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      toast.error(`Update failed: ${msg}`);
+      store.setError(msg);
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store, fetchPlugins]);
+
   return {
     plugins: store.installedPlugins,
     pluginTools: store.pluginTools,
@@ -225,5 +253,7 @@ export function usePlugins() {
     translatePluginKey,
     scaffoldPlugin,
     validatePlugin,
+    checkUpdate,
+    updatePlugin,
   };
 }

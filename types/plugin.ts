@@ -77,7 +77,17 @@ export interface PluginInfo {
   toolCount: number;
   enabled: boolean;
   installedAt: string;
+  updatedAt: string | null;
+  updateUrl: string | null;
   source: PluginSource;
+}
+
+export interface PluginUpdateInfo {
+  pluginId: string;
+  currentVersion: string;
+  latestVersion: string;
+  downloadUrl: string;
+  changelog: string | null;
 }
 
 export type PluginSource =

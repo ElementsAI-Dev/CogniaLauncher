@@ -110,6 +110,25 @@ impl PluginLoader {
         self.load(plugin_id, wasm_path)
     }
 
+    /// Call a function on a plugin if it exists, ignoring if the function is not exported.
+    /// Used for optional lifecycle hooks (cognia_on_install, cognia_on_enable, etc.)
+    pub fn call_if_exists(&mut self, plugin_id: &str, function_name: &str, input: &str) -> Option<String> {
+        let plugin = self.instances.get_mut(plugin_id)?;
+        if !plugin.function_exists(function_name) {
+            return None;
+        }
+        match plugin.call::<&str, &str>(function_name, input) {
+            Ok(result) => Some(result.to_string()),
+            Err(e) => {
+                log::warn!(
+                    "Plugin '{}' lifecycle hook '{}' failed: {}",
+                    plugin_id, function_name, e
+                );
+                None
+            }
+        }
+    }
+
     /// Get list of loaded plugin IDs
     pub fn loaded_plugins(&self) -> Vec<String> {
         self.instances.keys().cloned().collect()

@@ -9,6 +9,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
+const FLATPAK_TIMEOUT: u64 = 120;
+const FLATPAK_SUDO_TIMEOUT: u64 = 300;
+const FLATPAK_LONG_TIMEOUT: u64 = 600;
+
 /// Flatpak - Universal Linux application sandboxing and distribution
 pub struct FlatpakProvider;
 
@@ -17,9 +21,20 @@ impl FlatpakProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(FLATPAK_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(FLATPAK_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(FLATPAK_LONG_TIMEOUT))
+    }
+
     async fn run_flatpak(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("flatpak", args, Some(opts)).await?;
+        let out = process::execute("flatpak", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
@@ -192,10 +207,43 @@ impl Provider for FlatpakProvider {
         Ok(versions)
     }
 
+    async fn get_installed_version(&self, name: &str) -> CogniaResult<Option<String>> {
+        match self.get_app_version(name).await {
+            Ok(version) => Ok(Some(version)),
+            Err(_) => Ok(None),
+        }
+    }
+
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
-        let _out = self
-            .run_flatpak(&["install", "-y", "flathub", &req.name])
-            .await?;
+        let mut args = vec!["flatpak", "install", "-y"];
+        if req.force {
+            args.push("--reinstall");
+        }
+        if !req.global {
+            args.push("--user");
+        }
+        args.push("flathub");
+        args.push(&req.name);
+
+        let opts = if req.global {
+            Self::make_long_opts()
+        } else {
+            Self::make_long_opts()
+        };
+
+        if req.global {
+            let out = process::execute("sudo", &args, Some(opts)).await?;
+            if !out.success {
+                return Err(CogniaError::Installation(out.stderr));
+            }
+        } else {
+            // User install doesn't need sudo
+            let user_args: Vec<&str> = args[1..].to_vec(); // Skip "flatpak" from sudo args
+            let out = process::execute("flatpak", &user_args, Some(opts)).await?;
+            if !out.success {
+                return Err(CogniaError::Installation(out.stderr));
+            }
+        }
 
         // Get the actual installed version
         let actual_version = self
@@ -214,7 +262,12 @@ impl Provider for FlatpakProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let _out = self.run_flatpak(&["uninstall", "-y", &req.name]).await?;
+        let mut args = vec!["uninstall", "-y"];
+        if req.force {
+            args.push("--force-remove");
+        }
+        args.push(&req.name);
+        let _out = self.run_flatpak(&args).await?;
         Ok(())
     }
 
@@ -263,7 +316,7 @@ impl Provider for FlatpakProvider {
             .await;
 
         if let Ok(output) = out {
-            return Ok(output
+            let mut updates: Vec<UpdateInfo> = output
                 .lines()
                 .filter(|l| !l.is_empty())
                 .filter_map(|line| {
@@ -288,7 +341,16 @@ impl Provider for FlatpakProvider {
                         provider: self.id().into(),
                     })
                 })
-                .collect());
+                .collect();
+
+            // Populate current_version from flatpak info
+            for update in &mut updates {
+                if let Ok(ver) = self.get_app_version(&update.name).await {
+                    update.current_version = ver;
+                }
+            }
+
+            return Ok(updates);
         }
 
         Ok(vec![])
@@ -302,7 +364,7 @@ impl SystemPackageProvider for FlatpakProvider {
     }
 
     fn requires_elevation(&self, op: &str) -> bool {
-        matches!(op, "install" | "uninstall" | "update")
+        matches!(op, "install" | "uninstall" | "update" | "upgrade")
     }
 
     async fn get_version(&self) -> CogniaResult<String> {
@@ -327,13 +389,21 @@ impl SystemPackageProvider for FlatpakProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let _out = self.run_flatpak(&["update", "-y", name]).await?;
-        Ok(())
+        let out = process::execute("sudo", &["flatpak", "update", "-y", name], Some(FlatpakProvider::make_sudo_opts())).await?;
+        if out.success {
+            Ok(())
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let _out = self.run_flatpak(&["update", "-y"]).await?;
-        Ok(vec!["All flatpaks updated".into()])
+        let out = process::execute("sudo", &["flatpak", "update", "-y"], Some(FlatpakProvider::make_long_opts())).await?;
+        if out.success {
+            Ok(vec!["All flatpaks updated".into()])
+        } else {
+            Err(CogniaError::Provider(out.stderr))
+        }
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
@@ -379,6 +449,7 @@ mod tests {
         assert!(provider.requires_elevation("install"));
         assert!(provider.requires_elevation("uninstall"));
         assert!(provider.requires_elevation("update"));
+        assert!(provider.requires_elevation("upgrade"));
         assert!(!provider.requires_elevation("search"));
         assert!(!provider.requires_elevation("list"));
     }
@@ -389,6 +460,131 @@ mod tests {
         let instructions = provider.get_install_instructions();
         assert!(instructions.is_some());
         assert!(instructions.unwrap().contains("flatpak"));
+    }
+
+    #[test]
+    fn test_parse_flatpak_search_output() {
+        // flatpak search output: tab-separated
+        let output = "Name\tDescription\tApplication ID\tVersion\tBranch\tRemotes\nFirefox\tFast, Private & Safe Web Browser\torg.mozilla.firefox\t120.0\tstable\tflathub\nVLC\tMedia player\torg.videolan.VLC\t3.0.18\tstable\tflathub\n";
+
+        let results: Vec<PackageSummary> = output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.len() >= 3 {
+                    let name = parts[0].trim().to_string();
+                    let description = parts[1].trim().to_string();
+                    let app_id = parts[2].trim().to_string();
+                    Some(PackageSummary {
+                        name: app_id,
+                        description: if description.is_empty() {
+                            Some(name)
+                        } else {
+                            Some(description)
+                        },
+                        latest_version: parts.get(3).map(|s| s.trim().to_string()),
+                        provider: "flatpak".into(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "org.mozilla.firefox");
+        assert_eq!(results[0].description, Some("Fast, Private & Safe Web Browser".into()));
+        assert_eq!(results[0].latest_version, Some("120.0".into()));
+        assert_eq!(results[1].name, "org.videolan.VLC");
+    }
+
+    #[test]
+    fn test_parse_flatpak_list_installed_output() {
+        let output = "org.mozilla.firefox\t120.0\norg.videolan.VLC\t3.0.18\norg.gnome.Calculator\t45.0\n";
+
+        let packages: Vec<InstalledPackage> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name = parts[0].trim().to_string();
+                let version = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                Some(InstalledPackage {
+                    name,
+                    version,
+                    provider: "flatpak".into(),
+                    install_path: PathBuf::from("/var/lib/flatpak"),
+                    installed_at: String::new(),
+                    is_global: true,
+                })
+            })
+            .collect();
+
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].name, "org.mozilla.firefox");
+        assert_eq!(packages[0].version, "120.0");
+        assert_eq!(packages[1].name, "org.videolan.VLC");
+        assert_eq!(packages[2].name, "org.gnome.Calculator");
+    }
+
+    #[test]
+    fn test_parse_flatpak_updates_output() {
+        let output = "org.mozilla.firefox\t121.0\norg.videolan.VLC\t3.0.19\n";
+
+        let updates: Vec<UpdateInfo> = output
+            .lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split('\t').collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let name = parts[0].trim().to_string();
+                Some(UpdateInfo {
+                    name,
+                    current_version: String::new(),
+                    latest_version: parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    provider: "flatpak".into(),
+                })
+            })
+            .collect();
+
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0].name, "org.mozilla.firefox");
+        assert_eq!(updates[0].latest_version, "121.0");
+        assert_eq!(updates[1].name, "org.videolan.VLC");
+    }
+
+    #[test]
+    fn test_parse_flatpak_info_output() {
+        let output = "Ref: app/org.mozilla.firefox/x86_64/stable\nVersion: 120.0\nSubject: Update to 120.0\nLicense: MPL-2.0\nHomepage: https://www.mozilla.org/firefox/\n";
+
+        let mut version = None;
+        let mut license = None;
+        let mut homepage = None;
+
+        for line in output.lines() {
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                let value = parts[1].trim();
+                match key {
+                    "Version" => version = Some(value.to_string()),
+                    "License" => license = Some(value.to_string()),
+                    "Homepage" => homepage = Some(value.to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        assert_eq!(version, Some("120.0".into()));
+        assert_eq!(license, Some("MPL-2.0".into()));
+        assert_eq!(homepage, Some("https://www.mozilla.org/firefox/".into()));
     }
 
     #[test]

@@ -4,10 +4,15 @@ use crate::platform::{
     env::Platform,
     process::{self, ProcessOptions},
 };
+use crate::resolver::{Dependency, VersionConstraint};
 use async_trait::async_trait;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+const PACMAN_TIMEOUT: u64 = 120;
+const PACMAN_SUDO_TIMEOUT: u64 = 300;
+const PACMAN_LONG_TIMEOUT: u64 = 600;
 
 /// Pacman - Package manager for Arch Linux and derivatives
 pub struct PacmanProvider;
@@ -17,14 +22,32 @@ impl PacmanProvider {
         Self
     }
 
+    fn make_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(PACMAN_TIMEOUT))
+    }
+
+    fn make_sudo_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(PACMAN_SUDO_TIMEOUT))
+    }
+
+    fn make_long_opts() -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(PACMAN_LONG_TIMEOUT))
+    }
+
     async fn run_pacman(&self, args: &[&str]) -> CogniaResult<String> {
-        let opts = ProcessOptions::new().with_timeout(Duration::from_secs(120));
-        let out = process::execute("pacman", args, Some(opts)).await?;
+        let out = process::execute("pacman", args, Some(Self::make_opts())).await?;
         if out.success {
             Ok(out.stdout)
         } else {
             Err(CogniaError::Provider(out.stderr))
         }
+    }
+
+    /// Run pacman and return stdout regardless of exit code.
+    /// `pacman -Qu` returns exit code 1 when no updates are available.
+    async fn run_pacman_lenient(&self, args: &[&str]) -> CogniaResult<String> {
+        let out = process::execute("pacman", args, Some(Self::make_opts())).await?;
+        Ok(out.stdout)
     }
 
     /// Get the installed version of a package using pacman -Q
@@ -187,8 +210,21 @@ impl Provider for PacmanProvider {
     }
 
     async fn install(&self, req: InstallRequest) -> CogniaResult<InstallReceipt> {
+        let pkg = if let Some(v) = &req.version {
+            format!("{}={}", req.name, v)
+        } else {
+            req.name.clone()
+        };
+
+        let mut args = vec!["pacman", "-S", "--noconfirm"];
+        if req.force {
+            args.push("--overwrite");
+            args.push("*");
+        }
+        args.push(&pkg);
+
         let out =
-            process::execute("sudo", &["pacman", "-S", "--noconfirm", &req.name], None).await?;
+            process::execute("sudo", &args, Some(PacmanProvider::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -217,8 +253,17 @@ impl Provider for PacmanProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
+        let mut args = vec!["pacman"];
+        if req.force {
+            args.push("-Rdd");
+        } else {
+            args.push("-R");
+        }
+        args.push("--noconfirm");
+        args.push(&req.name);
+
         let out =
-            process::execute("sudo", &["pacman", "-R", "--noconfirm", &req.name], None).await?;
+            process::execute("sudo", &args, Some(PacmanProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -261,7 +306,8 @@ impl Provider for PacmanProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_pacman(&["-Qu"]).await;
+        // pacman -Qu returns exit code 1 when no updates are available
+        let out = self.run_pacman_lenient(&["-Qu"]).await;
 
         if let Ok(output) = out {
             return Ok(output
@@ -290,6 +336,40 @@ impl Provider for PacmanProvider {
         }
 
         Ok(vec![])
+    }
+
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
+        let out = self.run_pacman(&["-Si", name]).await?;
+        let mut deps = Vec::new();
+
+        for line in out.lines() {
+            let parts: Vec<&str> = line.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let key = parts[0].trim();
+                if key == "Depends On" {
+                    let value = parts[1].trim();
+                    if value != "None" {
+                        for dep_str in value.split_whitespace() {
+                            // Dependencies can be "name>=version" or just "name"
+                            let dep_name = dep_str
+                                .split(|c| c == '>' || c == '<' || c == '=')
+                                .next()
+                                .unwrap_or(dep_str)
+                                .to_string();
+                            if !dep_name.is_empty() {
+                                deps.push(Dependency {
+                                    name: dep_name,
+                                    constraint: VersionConstraint::Any,
+                                });
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        Ok(deps)
     }
 }
 
@@ -326,7 +406,7 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["pacman", "-Sy"], None).await?;
+        let out = process::execute("sudo", &["pacman", "-Sy"], Some(PacmanProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -335,7 +415,7 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["pacman", "-S", "--noconfirm", name], None).await?;
+        let out = process::execute("sudo", &["pacman", "-S", "--noconfirm", name], Some(PacmanProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -344,7 +424,7 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["pacman", "-Syu", "--noconfirm"], None).await?;
+        let out = process::execute("sudo", &["pacman", "-Syu", "--noconfirm"], Some(PacmanProvider::make_long_opts())).await?;
         if out.success {
             Ok(vec!["System upgraded".into()])
         } else {

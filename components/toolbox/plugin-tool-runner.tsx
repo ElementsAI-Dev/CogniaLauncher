@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -141,9 +141,10 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
   }, [callTool, tool.pluginId, tool.entry]);
 
   // Load on mount
-  useState(() => {
+  useEffect(() => {
     loadInitialUi();
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Handle actions from UI blocks (button clicks, form submissions)
   const handleAction = useCallback(

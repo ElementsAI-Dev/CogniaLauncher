@@ -35,6 +35,9 @@ pub struct PluginMeta {
     #[serde(alias = "min_cognia_version")]
     pub min_cognia_version: Option<String>,
     pub icon: Option<PluginIcon>,
+    /// URL to check for updates (returns JSON with latest version + download URL)
+    #[serde(alias = "update_url")]
+    pub update_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

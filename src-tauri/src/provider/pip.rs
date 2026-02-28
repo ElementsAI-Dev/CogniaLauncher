@@ -135,6 +135,7 @@ impl PipProvider {
     }
 
     /// Get the installation location of a package
+    #[allow(dead_code)]
     async fn get_package_location(&self, name: &str) -> CogniaResult<PathBuf> {
         self.get_package_info_raw(name).await.map(|(_, p)| p)
     }
@@ -144,6 +145,22 @@ impl PipProvider {
             .ok()
             .map(|p| PathBuf::from(p).join("lib").join("site-packages"))
             .unwrap_or_else(|| PathBuf::from("site-packages"))
+    }
+
+    /// Get global site-packages path once (O(1) instead of per-package O(n))
+    async fn get_global_site_packages(&self) -> Option<PathBuf> {
+        // Query pip's own location as a proxy for the site-packages directory
+        if let Ok(output) = self.run_pip_raw(&["show", "pip"]).await {
+            for line in output.lines() {
+                if let Some(loc) = line.strip_prefix("Location:") {
+                    let path = PathBuf::from(loc.trim());
+                    if !path.as_os_str().is_empty() {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -401,7 +418,12 @@ impl Provider for PipProvider {
             req.name.clone()
         };
 
-        self.run_pip(&["install", &pkg]).await?;
+        let mut args = vec!["install"];
+        if req.force {
+            args.push("--force-reinstall");
+        }
+        args.push(&pkg);
+        self.run_pip(&args).await?;
 
         // Get the actual installed version and location
         let (actual_version, install_path) = self
@@ -434,6 +456,12 @@ impl Provider for PipProvider {
         let output = self.run_pip_raw(&["list", "--format", "json"]).await?;
 
         if let Ok(packages) = serde_json::from_str::<Vec<serde_json::Value>>(&output) {
+            // Get site-packages path once for all packages instead of per-package O(n²)
+            let site_packages = self
+                .get_global_site_packages()
+                .await
+                .unwrap_or_else(|| Self::default_site_packages());
+
             let mut results = Vec::new();
             for pkg in packages {
                 let name = match pkg["name"].as_str() {
@@ -448,16 +476,12 @@ impl Provider for PipProvider {
                 }
 
                 let version = pkg["version"].as_str().unwrap_or("").to_string();
-                let install_path = self
-                    .get_package_location(&name)
-                    .await
-                    .unwrap_or_else(|_| Self::default_site_packages());
 
                 results.push(InstalledPackage {
                     name,
                     version,
                     provider: self.id().into(),
-                    install_path,
+                    install_path: site_packages.clone(),
                     installed_at: String::new(),
                     is_global: true,
                 });

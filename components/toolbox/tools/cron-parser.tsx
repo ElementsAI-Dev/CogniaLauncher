@@ -61,15 +61,15 @@ function getNextRuns(expression: string, count: number): Date[] {
 
 function matchesCron(date: Date, parts: string[]): boolean {
   return (
-    matchesField(date.getMinutes(), parts[0], 0, 59) &&
-    matchesField(date.getHours(), parts[1], 0, 23) &&
-    matchesField(date.getDate(), parts[2], 1, 31) &&
-    matchesField(date.getMonth() + 1, parts[3], 1, 12) &&
-    matchesField(date.getDay(), parts[4], 0, 6)
+    matchesField(date.getMinutes(), parts[0]) &&
+    matchesField(date.getHours(), parts[1]) &&
+    matchesField(date.getDate(), parts[2]) &&
+    matchesField(date.getMonth() + 1, parts[3]) &&
+    matchesField(date.getDay(), parts[4])
   );
 }
 
-function matchesField(value: number, pattern: string, _min: number, _max: number): boolean {
+function matchesField(value: number, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.startsWith('*/')) {
     const step = parseInt(pattern.slice(2));

@@ -60,6 +60,26 @@ impl PersistedPluginState {
     }
 }
 
+/// Response from a plugin's update_url endpoint
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginUpdateResponse {
+    pub version: String,
+    pub download_url: String,
+    pub changelog: Option<String>,
+}
+
+/// Information about an available plugin update
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUpdateInfo {
+    pub plugin_id: String,
+    pub current_version: String,
+    pub latest_version: String,
+    pub download_url: String,
+    pub changelog: Option<String>,
+}
+
 /// Shared state references needed by the plugin system
 pub struct PluginDeps {
     pub registry: Arc<RwLock<ProviderRegistry>>,
@@ -270,6 +290,9 @@ impl PluginManager {
         // Load WASM
         self.loader.load(&plugin_id, &wasm_path)?;
 
+        // Call optional lifecycle hook
+        self.loader.call_if_exists(&plugin_id, "cognia_on_install", "{}");
+
         // Persist state
         let _ = self.save_state().await;
 
@@ -324,6 +347,9 @@ impl PluginManager {
 
     /// Uninstall a plugin
     pub async fn uninstall(&mut self, plugin_id: &str) -> CogniaResult<()> {
+        // Call optional lifecycle hook before unload
+        self.loader.call_if_exists(plugin_id, "cognia_on_uninstall", "{}");
+
         // Unload WASM
         self.loader.unload(plugin_id);
 
@@ -372,6 +398,9 @@ impl PluginManager {
             self.loader.load(plugin_id, &wasm_path)?;
         }
 
+        // Call optional lifecycle hook
+        self.loader.call_if_exists(plugin_id, "cognia_on_enable", "{}");
+
         // Persist state
         let _ = self.save_state().await;
 
@@ -387,6 +416,9 @@ impl PluginManager {
             })?;
             plugin.enabled = false;
         }
+
+        // Call optional lifecycle hook before unload
+        self.loader.call_if_exists(plugin_id, "cognia_on_disable", "{}");
 
         // Unload WASM
         self.loader.unload(plugin_id);
@@ -556,6 +588,142 @@ impl PluginManager {
         let reg = self.registry.read().await;
         reg.get(plugin_id)
             .and_then(|p| p.manifest.ui.clone())
+    }
+
+    /// Check if an update is available for a plugin
+    pub async fn check_update(&self, plugin_id: &str) -> CogniaResult<Option<PluginUpdateInfo>> {
+        let reg = self.registry.read().await;
+        let plugin = reg.get(plugin_id).ok_or_else(|| {
+            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
+        })?;
+
+        let update_url = match &plugin.manifest.plugin.update_url {
+            Some(url) => url.clone(),
+            None => return Ok(None),
+        };
+
+        let current_version = plugin.manifest.plugin.version.clone();
+        drop(reg);
+
+        // Fetch update info from URL
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&update_url)
+            .timeout(std::time::Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to check update: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(CogniaError::Plugin(format!(
+                "Update check failed: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let info: PluginUpdateResponse = response
+            .json()
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Invalid update response: {}", e)))?;
+
+        // Compare versions (simple string comparison; plugins should use semver)
+        if info.version != current_version && info.version > current_version {
+            Ok(Some(PluginUpdateInfo {
+                plugin_id: plugin_id.to_string(),
+                current_version,
+                latest_version: info.version,
+                download_url: info.download_url,
+                changelog: info.changelog,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Update a plugin to the latest version from its update URL
+    pub async fn update_plugin(&mut self, plugin_id: &str) -> CogniaResult<()> {
+        let update_info = self
+            .check_update(plugin_id)
+            .await?
+            .ok_or_else(|| CogniaError::Plugin("No update available".to_string()))?;
+
+        // Unload current WASM
+        self.loader.unload(plugin_id);
+
+        // Download and install the update
+        let temp_dir = tempfile::tempdir()
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create temp dir: {}", e)))?;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&update_info.download_url)
+            .send()
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to download update: {}", e)))?;
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to read update: {}", e)))?;
+
+        // Extract to temp dir
+        if update_info.download_url.ends_with(".zip") {
+            let cursor = std::io::Cursor::new(&bytes);
+            let mut archive = zip::ZipArchive::new(cursor)
+                .map_err(|e| CogniaError::Plugin(format!("Invalid zip: {}", e)))?;
+            archive
+                .extract(temp_dir.path())
+                .map_err(|e| CogniaError::Plugin(format!("Failed to extract: {}", e)))?;
+        } else {
+            tokio::fs::write(temp_dir.path().join("plugin.wasm"), &bytes)
+                .await
+                .map_err(|e| CogniaError::Plugin(format!("Failed to write wasm: {}", e)))?;
+        }
+
+        // Get the plugin's install directory
+        let dest_dir = {
+            let reg = self.registry.read().await;
+            let plugin = reg.get(plugin_id).ok_or_else(|| {
+                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
+            })?;
+            plugin.plugin_dir.clone()
+        };
+
+        // Copy new files over existing installation
+        copy_dir_recursive(temp_dir.path(), &dest_dir).await?;
+
+        // Re-read manifest and update registry
+        let manifest_path = dest_dir.join("plugin.toml");
+        let manifest = PluginManifest::from_file(&manifest_path)?;
+        let wasm_path = dest_dir.join("plugin.wasm");
+
+        {
+            let mut reg = self.registry.write().await;
+            if let Some(plugin) = reg.get_mut(plugin_id) {
+                plugin.manifest = manifest.clone();
+                plugin.wasm_path = wasm_path.clone();
+                plugin.updated_at = Some(chrono::Utc::now());
+            }
+        }
+
+        // Update permissions
+        let mut perms = self.permissions.write().await;
+        perms.register_plugin(plugin_id, manifest.permissions);
+        drop(perms);
+
+        // Reload WASM
+        self.loader.load(plugin_id, &wasm_path)?;
+
+        // Persist state
+        let _ = self.save_state().await;
+
+        log::info!(
+            "Updated plugin '{}' from {} to {}",
+            plugin_id,
+            update_info.current_version,
+            update_info.latest_version
+        );
+        Ok(())
     }
 
     /// Get the granted permissions list for a plugin (for iframe bridge)

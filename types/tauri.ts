@@ -1898,3 +1898,153 @@ export interface XmakeRepo {
   url: string;
   branch?: string;
 }
+
+// ============================================================================
+// Homebrew Types
+// ============================================================================
+
+/** A Homebrew tap (third-party repository) */
+export interface BrewTap {
+  name: string;
+  remote: string;
+  formulaCount: number;
+  caskCount: number;
+}
+
+/** A Homebrew-managed background service */
+export interface BrewService {
+  name: string;
+  status: string;
+  user: string | null;
+  file: string | null;
+}
+
+/** Result of `brew doctor` health check */
+export interface BrewDoctorResult {
+  healthy: boolean;
+  warnings: string[];
+}
+
+/** Result of `brew cleanup` */
+export interface BrewCleanupResult {
+  freedBytes: number;
+  removedItems: string[];
+}
+
+/** A pinned (version-locked) Homebrew package */
+export interface BrewPinnedPackage {
+  name: string;
+  version: string;
+}
+
+/** A key-value entry from `brew config` */
+export interface BrewConfigEntry {
+  key: string;
+  value: string;
+}
+
+/** Homebrew configuration info from `brew config` */
+export interface BrewConfigInfo {
+  homebrewVersion: string;
+  origin: string;
+  coreTap: string;
+  homebrewPrefix: string;
+  homebrewCellar: string;
+  homebrewCaskroom: string;
+  entries: BrewConfigEntry[];
+}
+
+// ============================================================================
+// MacPorts Types
+// ============================================================================
+
+/** A MacPorts port variant */
+export interface PortVariant {
+  name: string;
+  description: string;
+  isDefault: boolean;
+}
+
+/** A port that depends on a given port */
+export interface PortDependent {
+  name: string;
+  depType: string;
+}
+
+/** A file installed by a port */
+export interface PortFileEntry {
+  path: string;
+}
+
+/** A MacPorts select group (e.g., python, ruby) */
+export interface PortSelectGroup {
+  group: string;
+  options: string[];
+  selected: string | null;
+}
+
+// ============================================================================
+// Python Ecosystem Types (uv, conda, poetry, pipx)
+// ============================================================================
+
+/** uv Python entry from `uv python list` */
+export interface UvPythonEntry {
+  key: string;
+  version: string;
+  path: string | null;
+  managed: boolean;
+}
+
+/** uv command run result */
+export interface UvRunResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Conda environment info */
+export interface CondaEnvInfo {
+  name: string;
+  prefix: string;
+  isActive: boolean;
+  isBase: boolean;
+  pythonVersion: string | null;
+}
+
+/** Conda system info */
+export interface CondaInfo {
+  condaVersion: string | null;
+  pythonVersion: string | null;
+  platform: string | null;
+  activePrefix: string | null;
+  rootPrefix: string | null;
+  envsDirs: string[];
+  channels: string[];
+}
+
+/** Conda env export result */
+export interface CondaExportResult {
+  content: string;
+  envName: string;
+}
+
+/** Poetry virtual environment info */
+export interface PoetryEnvInfo {
+  path: string;
+  pythonVersion: string | null;
+  isActive: boolean;
+}
+
+/** Poetry command run result */
+export interface PoetryRunResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** pipx command run result */
+export interface PipxRunResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}

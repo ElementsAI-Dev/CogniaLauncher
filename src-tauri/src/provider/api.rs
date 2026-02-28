@@ -139,44 +139,118 @@ impl PackageApiClient {
             .unwrap_or_else(|_| DEFAULT_CRATES_REGISTRY.into())
     }
 
-    /// Search PyPI packages using JSON API
-    pub async fn search_pypi(&self, query: &str, _limit: usize) -> CogniaResult<Vec<PyPIPackage>> {
-        // PyPI doesn't have a search API, but we can query packages directly
-        // For search functionality, we'll use the XML-RPC API or simple index
-        // Here we implement a direct package lookup that works well for exact matches
-
+    /// Search PyPI packages — exact match via JSON API, then fuzzy via search page
+    pub async fn search_pypi(&self, query: &str, limit: usize) -> CogniaResult<Vec<PyPIPackage>> {
         let base_url = self.get_pypi_url();
+
+        // 1. Try exact match first (fast, returns full metadata)
         let url = format!("{}/pypi/{}/json", base_url, query);
+        let exact_match = match self.get_client().get(&url).send().await {
+            Ok(response) if response.status().is_success() => {
+                let data: PyPIResponse = response.json().await.map_err(|e| {
+                    CogniaError::Provider(format!("Failed to parse PyPI response: {}", e))
+                })?;
+                Some(PyPIPackage {
+                    name: data.info.name,
+                    version: data.info.version,
+                    summary: data.info.summary,
+                    homepage: data.info.home_page,
+                    license: data.info.license,
+                    author: data.info.author,
+                    releases: data.releases.keys().cloned().collect(),
+                })
+            }
+            _ => None,
+        };
 
-        match self.get_client().get(&url).send().await {
-            Ok(response) => {
+        // 2. Try fuzzy search via PyPI search HTML page
+        let mut results = Vec::new();
+        if let Some(exact) = exact_match {
+            results.push(exact);
+        }
+
+        // Only do fuzzy search if we need more results
+        if results.len() < limit {
+            let search_url = format!("{}/search/?q={}", base_url, query);
+            if let Ok(response) = self.get_client().get(&search_url).send().await {
                 if response.status().is_success() {
-                    let data: PyPIResponse = response.json().await.map_err(|e| {
-                        CogniaError::Provider(format!("Failed to parse PyPI response: {}", e))
-                    })?;
-
-                    Ok(vec![PyPIPackage {
-                        name: data.info.name,
-                        version: data.info.version,
-                        summary: data.info.summary,
-                        homepage: data.info.home_page,
-                        license: data.info.license,
-                        author: data.info.author,
-                        releases: data.releases.keys().cloned().collect(),
-                    }])
-                } else {
-                    // Package not found, return empty
-                    Ok(vec![])
+                    if let Ok(html) = response.text().await {
+                        let fuzzy = Self::parse_pypi_search_html(&html, limit);
+                        for pkg in fuzzy {
+                            // Avoid duplicating the exact match
+                            if !results.iter().any(|r| r.name.eq_ignore_ascii_case(&pkg.name)) {
+                                results.push(pkg);
+                                if results.len() >= limit {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            Err(e) => {
-                // Network error or timeout
-                Err(CogniaError::Provider(format!(
-                    "PyPI API request failed: {}",
-                    e
-                )))
+        }
+
+        if results.is_empty() {
+            // Network issue or truly no results
+            return Ok(vec![]);
+        }
+
+        Ok(results)
+    }
+
+    /// Parse PyPI search HTML page to extract package name, version, description
+    fn parse_pypi_search_html(html: &str, limit: usize) -> Vec<PyPIPackage> {
+        let mut packages = Vec::new();
+
+        // PyPI search results are in <a class="package-snippet"> blocks
+        // Each contains: <span class="package-snippet__name">name</span>
+        //                <span class="package-snippet__version">version</span>
+        //                <p class="package-snippet__description">desc</p>
+        for snippet in html.split("package-snippet__name") {
+            if packages.len() >= limit {
+                break;
+            }
+            // Extract name: content between > and <
+            let name = Self::extract_html_text(snippet);
+            if name.is_empty() {
+                continue;
+            }
+
+            // Find version in the remainder of this snippet block
+            let version = snippet
+                .find("package-snippet__version")
+                .and_then(|pos| Self::extract_html_text(&snippet[pos..]).into())
+                .filter(|v: &String| !v.is_empty());
+
+            // Find description
+            let description = snippet
+                .find("package-snippet__description")
+                .and_then(|pos| Self::extract_html_text(&snippet[pos..]).into())
+                .filter(|d: &String| !d.is_empty());
+
+            packages.push(PyPIPackage {
+                name,
+                version: version.unwrap_or_default(),
+                summary: description,
+                homepage: None,
+                license: None,
+                author: None,
+                releases: vec![],
+            });
+        }
+
+        packages
+    }
+
+    /// Extract text content between the first > and < after a class marker
+    fn extract_html_text(s: &str) -> String {
+        if let Some(start) = s.find('>') {
+            let rest = &s[start + 1..];
+            if let Some(end) = rest.find('<') {
+                return rest[..end].trim().to_string();
             }
         }
+        String::new()
     }
 
     /// Get detailed package info from PyPI

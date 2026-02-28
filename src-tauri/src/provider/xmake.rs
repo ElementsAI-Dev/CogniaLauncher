@@ -506,6 +506,7 @@ impl XmakeProvider {
     /// xmake-repo https://github.com/xmake-io/xmake-repo.git master
     /// myrepo https://github.com/mygroup/myrepo.git
     /// ```
+    #[allow(dead_code)]
     fn parse_list_repo_output(output: &str) -> Vec<(String, String, Option<String>)> {
         let mut repos = Vec::new();
         for line in output.lines() {
@@ -548,6 +549,7 @@ struct XmakePackageInfo {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct XmakeConfig {
     name: String,
     description: String,

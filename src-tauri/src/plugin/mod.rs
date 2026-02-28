@@ -6,6 +6,6 @@ pub mod permissions;
 pub mod registry;
 pub mod scaffold;
 
-pub use manager::{PluginDeps, PluginManager};
+pub use manager::{PluginDeps, PluginManager, PluginUpdateInfo};
 pub use manifest::PluginManifest;
 pub use registry::{PluginInfo, PluginSource, PluginToolInfo};

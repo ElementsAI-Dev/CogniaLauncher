@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod batch;
+pub mod brew;
 pub mod cache;
 pub mod config;
 pub mod custom_detection;
@@ -15,6 +16,7 @@ pub mod gitlab;
 pub mod health_check;
 pub mod launch;
 pub mod log;
+pub mod macports;
 pub mod manifest;
 pub mod package;
 pub mod profiles;
@@ -23,6 +25,10 @@ pub mod shim;
 pub mod terminal;
 pub mod updater;
 pub mod plugin;
+pub mod uv;
+pub mod conda;
+pub mod poetry;
+pub mod pipx;
 pub mod winget;
 pub mod wsl;
 pub mod xmake;
@@ -200,4 +206,33 @@ pub use wsl::{
     wsl_list_running, wsl_mount, wsl_move_distro, wsl_resize_distro, wsl_set_config,
     wsl_set_default, wsl_set_default_version, wsl_set_distro_config, wsl_set_sparse,
     wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_unmount, wsl_update,
+};
+pub use uv::{
+    uv_init, uv_add, uv_remove, uv_sync, uv_lock, uv_run, uv_tree,
+    uv_venv_create, uv_python_install, uv_python_uninstall, uv_python_list, uv_python_pin,
+    uv_pip_compile, uv_self_update, uv_version, uv_cache_clean, uv_cache_dir,
+    uv_tool_install, uv_tool_uninstall, uv_tool_list, uv_tool_run,
+};
+pub use conda::{
+    conda_env_list, conda_env_create, conda_env_remove, conda_env_clone,
+    conda_env_export, conda_env_import, conda_env_rename, conda_info, conda_clean,
+    conda_config_show, conda_config_set, conda_channel_add, conda_channel_remove,
+};
+pub use poetry::{
+    poetry_lock, poetry_update, poetry_run, poetry_env_list, poetry_env_remove,
+    poetry_env_use, poetry_export, poetry_check, poetry_version,
+};
+pub use pipx::{
+    pipx_inject, pipx_run, pipx_upgrade, pipx_upgrade_all, pipx_ensurepath,
+    pipx_reinstall_all, pipx_list_json,
+};
+pub use brew::{
+    brew_add_tap, brew_analytics_status, brew_analytics_toggle, brew_autoremove, brew_cleanup,
+    brew_doctor, brew_get_config, brew_list_pinned, brew_list_services, brew_list_taps, brew_pin,
+    brew_remove_tap, brew_service_restart, brew_service_start, brew_service_stop, brew_unpin,
+};
+pub use macports::{
+    macports_clean_all, macports_list_select_groups, macports_list_variants,
+    macports_port_clean, macports_port_contents, macports_port_dependents, macports_reclaim,
+    macports_select_options, macports_select_set, macports_selfupdate,
 };
