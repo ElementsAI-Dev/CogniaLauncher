@@ -1,10 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import { DocsSidebar } from './docs-sidebar';
 
+// Mock DocsSearch to avoid useRouter dependency in sidebar tests
+jest.mock('./docs-search', () => ({
+  DocsSearch: () => <div data-testid="docs-search" />,
+}));
+
 // Control usePathname return value per test
 let mockPathname = '/docs';
 jest.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
+  useRouter: () => ({ push: jest.fn(), back: jest.fn() }),
 }));
 
 jest.mock('next/link', () => {

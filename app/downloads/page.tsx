@@ -39,7 +39,7 @@ import {
   Gauge,
   History,
   Github,
-  Archive,
+  Gitlab,
   FolderOpen,
   ExternalLink,
 } from 'lucide-react';
@@ -91,6 +91,8 @@ export default function DownloadsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [detailTask, setDetailTask] = useState<DownloadTask | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragUrl, setDragUrl] = useState<string | null>(null);
 
   const {
     tasks,
@@ -201,6 +203,33 @@ export default function DownloadsPage() {
     setStatusFilter('all');
   }, []);
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const url = e.dataTransfer.getData('text/uri-list')
+      || e.dataTransfer.getData('text/plain')
+      || e.dataTransfer.getData('text');
+
+    if (url && /^https?:\/\//i.test(url.trim())) {
+      setDragUrl(url.trim());
+      setAddDialogOpen(true);
+    }
+  }, []);
+
   const handleAdd = useCallback(
     async (request: DownloadRequest) => {
       try {
@@ -298,7 +327,21 @@ export default function DownloadsPage() {
   }, [historyStats, t]);
 
   return (
-    <div className="p-6 space-y-6" data-hint="downloads-concurrent">
+    <div
+      className="p-6 space-y-6 relative"
+      data-hint="downloads-concurrent"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg pointer-events-none">
+          <div className="text-center">
+            <ArrowDownToLine className="h-12 w-12 mx-auto mb-2 text-primary animate-bounce" />
+            <p className="text-lg font-medium text-primary">{t('downloads.dropUrl')}</p>
+          </div>
+        </div>
+      )}
       <PageHeader
         title={t('downloads.title')}
         description={t('downloads.description')}
@@ -313,7 +356,7 @@ export default function DownloadsPage() {
               {t('downloads.fromGitHub')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setGitlabDialogOpen(true)}>
-              <Archive className="h-4 w-4 mr-2" />
+              <Gitlab className="h-4 w-4 mr-2" />
               {t('downloads.fromGitLab')}
             </Button>
             <Button
@@ -710,8 +753,12 @@ export default function DownloadsPage() {
 
       <AddDownloadDialog
         open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
+        onOpenChange={(open) => {
+          setAddDialogOpen(open);
+          if (!open) setDragUrl(null);
+        }}
         onSubmit={handleAdd}
+        initialUrl={dragUrl ?? undefined}
       />
 
       <GitHubDownloadDialog

@@ -125,7 +125,7 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
                 outerRadius={70}
                 paddingAngle={3}
                 strokeWidth={2}
-                stroke="hsl(var(--background))"
+                stroke="var(--background)"
                 dataKey="value"
                 nameKey="name"
               >
@@ -153,7 +153,7 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
                 </linearGradient>
               </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-              <RadialBar dataKey="value" cornerRadius={10} background={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
+              <RadialBar dataKey="value" cornerRadius={10} background={{ fill: "var(--muted)", opacity: 0.3 }} />
               <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="text-2xl font-bold fill-foreground">
                 {t("dashboard.widgets.empty")}
               </text>

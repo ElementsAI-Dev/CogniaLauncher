@@ -56,6 +56,9 @@ pub enum CogniaError {
     #[error("Operation cancelled")]
     Cancelled,
 
+    #[error("Plugin error: {0}")]
+    Plugin(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }

@@ -1,5 +1,35 @@
 import type { LogLevel } from '@/types/log';
 
+/**
+ * Parse session start time from a log file name like "2026-02-28_14-27-30.log".
+ * Returns null if the file name doesn't match the session pattern.
+ */
+export function parseSessionTimeFromFileName(fileName: string): Date | null {
+  const match = fileName.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})\.log$/);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(
+    parseInt(year, 10),
+    parseInt(month, 10) - 1,
+    parseInt(day, 10),
+    parseInt(hour, 10),
+    parseInt(minute, 10),
+    parseInt(second, 10),
+  );
+  return isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Format a log file name as a human-readable session label.
+ * e.g. "2026-02-28_14-27-30.log" → "2026-02-28 14:27:30"
+ */
+export function formatSessionLabel(fileName: string): string | null {
+  const date = parseSessionTimeFromFileName(fileName);
+  if (!date) return null;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

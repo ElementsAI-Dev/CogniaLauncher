@@ -205,7 +205,7 @@ describe("WslDistroOverview", () => {
             Promise.resolve({
               distroId: "ubuntu", distroIdLike: ["debian"], prettyName: "Ubuntu 22.04",
               architecture: "x86_64", kernelVersion: "5.15", packageManager: "apt",
-              initSystem: "systemd",
+              initSystem: "systemd", dockerAvailable: false,
             }),
           )}
         />,

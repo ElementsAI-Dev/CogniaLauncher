@@ -21,6 +21,11 @@ jest.mock("@tauri-apps/plugin-opener", () => ({
   revealItemInDir: jest.fn(),
 }));
 
+const mockOpenDialog = jest.fn();
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({ openDialog: mockOpenDialog }),
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "diagnostic.crashDetected": "Application Crash Detected",
@@ -28,6 +33,7 @@ const mockT = (key: string) => {
     "diagnostic.crashReportSaved": "Report saved to",
     "diagnostic.dismiss": "Dismiss",
     "diagnostic.openFolder": "Open Folder",
+    "feedback.reportCrash": "Report Crash",
   };
   return translations[key] || key;
 };

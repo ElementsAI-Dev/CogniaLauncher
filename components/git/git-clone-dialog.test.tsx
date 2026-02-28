@@ -10,6 +10,10 @@ jest.mock('@/lib/tauri', () => ({
   listenGitCloneProgress: jest.fn().mockResolvedValue(() => {}),
 }));
 
+jest.mock('@/lib/clipboard', () => ({
+  readClipboard: jest.fn().mockResolvedValue('https://github.com/clip/repo.git'),
+}));
+
 describe('GitCloneDialog', () => {
   const mockOnClone = jest.fn().mockResolvedValue('Cloned successfully');
 
@@ -101,5 +105,46 @@ describe('GitCloneDialog', () => {
     await waitFor(() => {
       expect(screen.getByText('git.cloneAction.openCloned')).toBeInTheDocument();
     });
+  });
+
+  it('shows error message when clone fails', async () => {
+    const failingClone = jest.fn().mockRejectedValue(new Error('Authentication failed'));
+    render(<GitCloneDialog onClone={failingClone} />);
+    const urlInput = screen.getByPlaceholderText('git.cloneAction.urlPlaceholder');
+    fireEvent.change(urlInput, { target: { value: 'https://github.com/user/repo.git' } });
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.change(inputs[1], { target: { value: 'C:\\repos\\repo' } });
+    fireEvent.click(screen.getByRole('button', { name: /git\.actions\.clone/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Authentication failed/)).toBeInTheDocument();
+    });
+  });
+
+  it('renders paste URL button', () => {
+    render(<GitCloneDialog onClone={mockOnClone} />);
+    expect(screen.getByTitle('git.cloneAction.pasteUrl')).toBeInTheDocument();
+  });
+
+  it('shows jobs and filter inputs in advanced options', () => {
+    render(<GitCloneDialog onClone={mockOnClone} />);
+    fireEvent.click(screen.getByText('git.cloneAction.advancedOptions'));
+    expect(screen.getByText('git.cloneAction.jobs')).toBeInTheDocument();
+    expect(screen.getByText('git.cloneAction.filter')).toBeInTheDocument();
+    expect(screen.getByText('git.cloneAction.blobless')).toBeInTheDocument();
+    expect(screen.getByText('git.cloneAction.treeless')).toBeInTheDocument();
+  });
+
+  it('renders clone history when provided', () => {
+    const history = [
+      { url: 'https://github.com/a/b.git', destPath: 'C:\\repos\\b', timestamp: Date.now(), status: 'success' as const },
+      { url: 'https://github.com/c/d.git', destPath: 'C:\\repos\\d', timestamp: Date.now() - 100000, status: 'failed' as const, errorMessage: 'Network error' },
+    ];
+    render(<GitCloneDialog onClone={mockOnClone} cloneHistory={history} />);
+    expect(screen.getByText(/git\.cloneAction\.recentClones/)).toBeInTheDocument();
+  });
+
+  it('does not render clone history when empty', () => {
+    render(<GitCloneDialog onClone={mockOnClone} cloneHistory={[]} />);
+    expect(screen.queryByText(/git\.cloneAction\.recentClones/)).not.toBeInTheDocument();
   });
 });

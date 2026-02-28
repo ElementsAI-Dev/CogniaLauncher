@@ -42,3 +42,6 @@ export const LANE_WIDTH = 16;
 export const ROW_HEIGHT = 28;
 export const NODE_RADIUS = 4;
 export const GRAPH_LEFT_PADDING = 8;
+export const MERGE_NODE_SIZE = 5;
+export const OVERSCAN_COUNT = 15;
+export const MAX_VISIBLE_REFS = 3;

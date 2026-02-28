@@ -56,6 +56,8 @@ const mockEnvironments: EnvironmentInfo[] = [
         is_current: true,
       },
     ],
+    total_size: 0,
+    version_count: 2,
   },
   {
     env_type: "python",
@@ -79,6 +81,8 @@ const mockEnvironments: EnvironmentInfo[] = [
         is_current: true,
       },
     ],
+    total_size: 0,
+    version_count: 2,
   },
 ];
 

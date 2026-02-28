@@ -115,6 +115,8 @@ describe("EnvironmentDetailsPanel", () => {
         installed_at: "2024-02-01",
       },
     ],
+    total_size: 110000000,
+    version_count: 2,
   };
 
   const defaultEnvSettings = {

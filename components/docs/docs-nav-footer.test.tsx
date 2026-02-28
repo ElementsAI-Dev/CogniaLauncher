@@ -16,6 +16,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
       const translations: Record<string, string> = {
         'docs.previousPage': 'Previous',
         'docs.nextPage': 'Next',
+        'docs.editOnGithub': 'Edit this page',
       };
       return translations[key] || key;
     },
@@ -35,9 +36,20 @@ describe('DocsNavFooter', () => {
     mockLocale = 'en';
   });
 
-  it('renders nothing when no prev or next', () => {
+  it('renders no nav links or edit link when no props', () => {
     const { container } = render(<DocsNavFooter />);
-    expect(container.firstChild).toBeNull();
+    expect(screen.queryByText('Previous')).not.toBeInTheDocument();
+    expect(screen.queryByText('Next')).not.toBeInTheDocument();
+    expect(screen.queryByText('Edit this page')).not.toBeInTheDocument();
+    expect(container.querySelector('a[target="_blank"]')).not.toBeInTheDocument();
+  });
+
+  it('renders edit on github link when slug is provided', () => {
+    render(<DocsNavFooter slug="guide/dashboard" />);
+    const editLink = screen.getByText('Edit this page');
+    expect(editLink).toBeInTheDocument();
+    expect(editLink.closest('a')).toHaveAttribute('href', expect.stringContaining('guide/dashboard.md'));
+    expect(editLink.closest('a')).toHaveAttribute('target', '_blank');
   });
 
   it('renders previous link', () => {

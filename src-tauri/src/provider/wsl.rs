@@ -241,6 +241,12 @@ pub struct WslDistroEnvironment {
     pub hostname: Option<String>,
     /// Number of installed packages (via the detected package manager)
     pub installed_packages: Option<u64>,
+    /// Whether Docker CLI is available inside the distro
+    pub docker_available: bool,
+    /// GPU name detected via nvidia-smi (if GPU passthrough is active)
+    pub gpu_name: Option<String>,
+    /// GPU total memory (e.g. "8192 MiB")
+    pub gpu_memory: Option<String>,
 }
 
 impl WslProvider {
@@ -1542,7 +1548,13 @@ impl WslProvider {
                 "; echo '{d}'",
                 "; hostname 2>/dev/null || echo ''",
                 "; echo '{d}'",
-                "; cat /proc/uptime 2>/dev/null | cut -d' ' -f1 || echo ''"
+                "; cat /proc/uptime 2>/dev/null | cut -d' ' -f1 || echo ''",
+                "; echo '{d}'",
+                // Docker availability check
+                "; command -v docker >/dev/null 2>&1 && echo 'yes' || echo 'no'",
+                "; echo '{d}'",
+                // GPU detection via nvidia-smi (WSL2 GPU passthrough path or system path)
+                "; (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || /usr/lib/wsl/lib/nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null) | head -1 || echo ''"
             ),
             d = delim
         );
@@ -1557,9 +1569,9 @@ impl WslProvider {
         }
 
         let parts: Vec<&str> = stdout.split(delim).collect();
-        if parts.len() < 9 {
+        if parts.len() < 11 {
             return Err(CogniaError::Provider(format!(
-                "Unexpected detection output from '{}': got {} sections, expected 9",
+                "Unexpected detection output from '{}': got {} sections, expected 11",
                 distro,
                 parts.len()
             )));
@@ -1654,6 +1666,26 @@ impl WslProvider {
                 None
             };
 
+        // 11. Docker availability
+        let docker_available = parts[9].trim() == "yes";
+
+        // 12. GPU detection (nvidia-smi output: "GPU Name, Memory MiB")
+        let (gpu_name, gpu_memory) = {
+            let gpu_line = parts[10].trim();
+            if gpu_line.is_empty() || gpu_line.contains("command not found") {
+                (None, None)
+            } else if let Some((name, mem)) = gpu_line.split_once(',') {
+                let name = name.trim().to_string();
+                let mem = mem.trim().to_string();
+                (
+                    if name.is_empty() { None } else { Some(name) },
+                    if mem.is_empty() { None } else { Some(mem) },
+                )
+            } else {
+                (Some(gpu_line.to_string()), None)
+            }
+        };
+
         Ok(WslDistroEnvironment {
             distro_id,
             distro_id_like,
@@ -1669,6 +1701,9 @@ impl WslProvider {
             uptime_seconds,
             hostname,
             installed_packages,
+            docker_available,
+            gpu_name,
+            gpu_memory,
         })
     }
 
@@ -2304,8 +2339,11 @@ impl Provider for WslProvider {
     }
 
     /// Check for WSL updates non-destructively.
-    /// Uses `winget list Microsoft.WSL` to compare installed vs available version.
-    /// Does NOT use `wsl --update` which would actually perform an update.
+    ///
+    /// Strategy (ordered by preference):
+    /// 1. `wsl --update --check` — available on modern WSL, returns update info without installing.
+    /// 2. `winget list Microsoft.WSL` — compares installed vs available version via winget.
+    /// 3. Return empty if neither method is available (no false positives).
     async fn check_updates(&self, _packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
         let mut updates = Vec::new();
 
@@ -2315,7 +2353,43 @@ impl Provider for WslProvider {
             Err(_) => return Ok(updates),
         };
 
-        // Use winget to check for available updates (non-destructive)
+        // Strategy 1: Try `wsl --update --check` (modern WSL, non-destructive)
+        if let Ok(out) = execute_wsl(&["--update", "--check"], WSL_TIMEOUT).await {
+            let combined = format!("{} {}", out.stdout, out.stderr);
+            let lower = combined.to_lowercase();
+            // If it says "no update" or "already up to date", no update available
+            if lower.contains("no update")
+                || lower.contains("already")
+                || lower.contains("up to date")
+                || lower.contains("最新")
+            {
+                return Ok(updates);
+            }
+            // If it contains a version number that differs from current, report it
+            if !Self::is_unsupported_option_error(&combined) {
+                // Look for version-like patterns in the output
+                for word in combined.split_whitespace() {
+                    if word.contains('.')
+                        && word.chars().next().is_some_and(|c| c.is_ascii_digit())
+                        && word != current_version
+                    {
+                        updates.push(UpdateInfo {
+                            name: "wsl".into(),
+                            current_version: current_version.clone(),
+                            latest_version: word.to_string(),
+                            provider: self.id().into(),
+                        });
+                        return Ok(updates);
+                    }
+                }
+                // If we got output but couldn't parse a version, still return empty
+                // rather than a false positive
+                return Ok(updates);
+            }
+            // If --check is unsupported, fall through to winget strategy
+        }
+
+        // Strategy 2: Use winget to check for available updates (non-destructive)
         let winget_result = process::execute(
             "winget",
             &[
@@ -2329,17 +2403,12 @@ impl Provider for WslProvider {
         .await;
 
         if let Ok(out) = winget_result {
-            // winget list output is fixed-width columns:
-            // Name                        Id            Version Available Source
-            // Windows Subsystem for Linux  Microsoft.WSL 2.6.1.0 2.6.3     winget
             let stdout = &out.stdout;
             for line in stdout.lines() {
                 if !line.contains("Microsoft.WSL") {
                     continue;
                 }
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                // Find version fields: look for two adjacent version-like strings
-                // where the second (Available) differs from the first (Installed)
                 let mut found_installed = false;
                 for (i, part) in parts.iter().enumerate() {
                     if part.contains('.')
@@ -2348,7 +2417,6 @@ impl Provider for WslProvider {
                         if !found_installed {
                             found_installed = true;
                         } else {
-                            // This is the "Available" column
                             let available = *part;
                             if available != current_version && available != parts[i - 1] {
                                 updates.push(UpdateInfo {
@@ -2364,7 +2432,6 @@ impl Provider for WslProvider {
                 }
             }
         }
-        // If winget is not available, return empty (no false positive)
 
         Ok(updates)
     }
@@ -2412,21 +2479,24 @@ impl SystemPackageProvider for WslProvider {
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
         if name == "wsl-kernel" || name == "wsl" {
-            // Update WSL kernel itself
             self.update_wsl().await?;
         } else {
-            // For individual distros, we can't directly upgrade them via wsl.exe
-            // Users must update packages within the distro itself (e.g., apt upgrade)
-            // But we can suggest running the update inside the distro
-            let out = execute_wsl(
-                &["-d", name, "--exec", "sh", "-c", "apt update && apt upgrade -y 2>/dev/null || dnf upgrade -y 2>/dev/null || pacman -Syu --noconfirm 2>/dev/null || zypper update -y 2>/dev/null || apk upgrade 2>/dev/null || echo 'Update completed'"],
-                WSL_LONG_TIMEOUT,
-            ).await?;
-            if !out.success {
+            // Detect the distro's package manager, then run the correct upgrade command
+            let env = self.detect_distro_environment(name).await?;
+            let commands = Self::get_distro_update_command(&env.package_manager).ok_or_else(|| {
+                CogniaError::Provider(format!(
+                    "No upgrade command known for package manager '{}' in '{}'",
+                    env.package_manager, name
+                ))
+            })?;
+            // Run update (refresh index) then upgrade (install upgrades)
+            let full_cmd = format!("{} && {}", commands.0, commands.1);
+            let (_, stderr, code) = self.exec_command(name, &full_cmd, Some("root")).await?;
+            if code != 0 {
                 return Err(CogniaError::Provider(format!(
                     "Failed to upgrade packages in '{}': {}",
                     name,
-                    out.stderr.trim()
+                    stderr.trim()
                 )));
             }
         }

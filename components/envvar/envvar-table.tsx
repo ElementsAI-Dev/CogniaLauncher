@@ -35,9 +35,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { Copy, Pencil, Trash2, Check, X, Variable } from 'lucide-react';
+import { Copy, Pencil, Trash2, Check, X, Variable, FolderOpen, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isTauri } from '@/lib/tauri';
 
 import type { EnvVarScope } from '@/types/tauri';
 
@@ -62,6 +63,36 @@ export function EnvVarTable({
 }: EnvVarTableProps) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+
+  const looksLikePath = useCallback((value: string): boolean => {
+    if (!value || value.length < 2) return false;
+    if (/^[A-Za-z]:[/\\]/.test(value)) return true;
+    if (value.startsWith('/') && !value.startsWith('//')) return true;
+    if (value.startsWith('~/')  || value.startsWith('~\\')) return true;
+    return false;
+  }, []);
+
+  const handleOpenPath = useCallback(async (path: string) => {
+    if (!isTauri()) return;
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener');
+      await openPath(path);
+    } catch (err) {
+      console.error('Failed to open path:', err);
+      toast.error(String(err));
+    }
+  }, []);
+
+  const handleRevealPath = useCallback(async (path: string) => {
+    if (!isTauri()) return;
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(path);
+    } catch (err) {
+      console.error('Failed to reveal path:', err);
+      toast.error(String(err));
+    }
+  }, []);
 
   const isPersistentScope = scope === 'user' || scope === 'system';
 
@@ -191,6 +222,26 @@ export function EnvVarTable({
                 </TableCell>
                 <TableCell className="py-2 text-right">
                   <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {looksLikePath(value) && (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRevealPath(value)}>
+                              <FolderOpen className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">{t('envvar.table.openPath')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenPath(value)}>
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">{t('envvar.table.openFile')}</TooltipContent>
+                        </Tooltip>
+                      </>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(value)}>

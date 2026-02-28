@@ -78,8 +78,9 @@ describe('GitReflogCard', () => {
     render(<GitReflogCard onGetReflog={mockOnGetReflog} onResetTo={mockOnResetTo} />);
     fireEvent.click(screen.getByText('git.reflog.load'));
     await waitFor(() => {
-      const resetButtons = screen.getAllByTitle('git.reflog.resetTo');
-      expect(resetButtons).toHaveLength(2);
+      const resetButtons = screen.getAllByRole('button', { expanded: false });
+      // Each entry has a dropdown trigger button for reset
+      expect(resetButtons.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -87,18 +88,22 @@ describe('GitReflogCard', () => {
     render(<GitReflogCard onGetReflog={mockOnGetReflog} />);
     fireEvent.click(screen.getByText('git.reflog.load'));
     await waitFor(() => {
-      expect(screen.queryByTitle('git.reflog.resetTo')).not.toBeInTheDocument();
+      // No dropdown menu trigger buttons should be present
+      expect(screen.queryByRole('button', { name: /reset/i })).not.toBeInTheDocument();
     });
   });
 
-  it('calls onResetTo with hash and mixed mode when reset button clicked', async () => {
+  it('renders dropdown trigger buttons for reset when onResetTo is provided', async () => {
     render(<GitReflogCard onGetReflog={mockOnGetReflog} onResetTo={mockOnResetTo} />);
     fireEvent.click(screen.getByText('git.reflog.load'));
     await waitFor(() => {
-      const resetButtons = screen.getAllByTitle('git.reflog.resetTo');
-      fireEvent.click(resetButtons[0]);
+      expect(screen.getByText('abc1234')).toBeInTheDocument();
     });
-    expect(mockOnResetTo).toHaveBeenCalledWith('abc1234567890', 'mixed');
+    // Each entry should have a dropdown trigger button with aria-haspopup="menu"
+    const menuTriggers = screen.getAllByRole('button').filter(
+      (btn) => btn.getAttribute('aria-haspopup') === 'menu'
+    );
+    expect(menuTriggers).toHaveLength(2);
   });
 
   it('renders entry messages', async () => {

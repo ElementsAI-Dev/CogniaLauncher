@@ -34,9 +34,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown, Copy, Route } from 'lucide-react';
+import { GripVertical, Plus, Trash2, CheckCircle2, XCircle, ArrowUp, ArrowDown, Copy, Route, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { isTauri } from '@/lib/tauri';
 import type { EnvVarScope, PathEntryInfo } from '@/types/tauri';
 
 interface EnvVarPathEditorProps {
@@ -93,6 +94,17 @@ export function EnvVarPathEditor({
 
   const missingCount = pathEntries.filter((e) => !e.exists || !e.isDirectory).length;
   const duplicateCount = pathEntries.filter((e) => e.isDuplicate).length;
+
+  const handleOpenFolder = useCallback(async (path: string) => {
+    if (!isTauri()) return;
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(path);
+    } catch (err) {
+      console.error('Failed to open folder:', err);
+      toast.error(String(err));
+    }
+  }, []);
 
   const handleMove = useCallback(async (index: number, direction: 'up' | 'down') => {
     const entries = pathEntries.map((e) => e.path);
@@ -208,6 +220,21 @@ export function EnvVarPathEditor({
                 )}
 
                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  {entry.exists && entry.isDirectory && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => handleOpenFolder(entry.path)}
+                        >
+                          <FolderOpen className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">{t('envvar.pathEditor.openFolder')}</TooltipContent>
+                    </Tooltip>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button

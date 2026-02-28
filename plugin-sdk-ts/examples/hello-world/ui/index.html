@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugin Custom UI Demo</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #3b82f6;
+      --primary-fg: #ffffff;
+      --card-bg: #f8fafc;
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+    .dark {
+      --bg: #0f172a;
+      --fg: #f1f5f9;
+      --muted: #94a3b8;
+      --border: #334155;
+      --primary: #60a5fa;
+      --primary-fg: #0f172a;
+      --card-bg: #1e293b;
+      --success: #4ade80;
+      --error: #f87171;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .card-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+    td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .badge-ok { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+    .badge-no { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--fg);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: var(--border); }
+    button.primary {
+      background: var(--primary);
+      color: var(--primary-fg);
+      border-color: var(--primary);
+    }
+    button.primary:hover { opacity: 0.9; }
+    .log-area {
+      max-height: 150px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-top: 8px;
+    }
+    .log-entry { padding: 2px 0; color: var(--muted); }
+    .log-entry.info { color: var(--primary); }
+    .log-entry.error { color: var(--error); }
+    #loading { text-align: center; padding: 40px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading plugin UI...</div>
+  <div id="app" style="display:none">
+    <h1>🔌 Plugin Custom UI Demo</h1>
+    <p class="subtitle">This is an iframe-based plugin UI communicating via postMessage bridge</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Theme</div>
+        <div class="stat">
+          <div class="stat-value" id="theme-mode">—</div>
+          <div class="stat-label">Current Mode</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Locale</div>
+        <div class="stat">
+          <div class="stat-value" id="locale-value">—</div>
+          <div class="stat-label">Language</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Bridge API Test</div>
+      <table>
+        <thead><tr><th>API</th><th>Status</th><th>Result</th></tr></thead>
+        <tbody id="api-results"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Actions</div>
+      <div class="actions">
+        <button class="primary" onclick="runAllTests()">🔄 Run Tests</button>
+        <button onclick="sendToast()">💬 Toast</button>
+        <button onclick="callWasm()">⚡ Call WASM</button>
+        <button onclick="clearLog()">🧹 Clear Log</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Activity Log</div>
+      <div class="log-area" id="log-area"></div>
+    </div>
+  </div>
+
+  <script>
+    var logArea = null;
+
+    function addLog(msg, type) {
+      if (!logArea) logArea = document.getElementById('log-area');
+      var entry = document.createElement('div');
+      entry.className = 'log-entry ' + (type || '');
+      entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+      logArea.prepend(entry);
+    }
+
+    function clearLog() {
+      if (!logArea) logArea = document.getElementById('log-area');
+      logArea.innerHTML = '';
+      addLog('Log cleared', 'info');
+    }
+
+    function setResult(id, ok, text) {
+      var tbody = document.getElementById('api-results');
+      var existing = document.getElementById('row-' + id);
+      var row = existing || document.createElement('tr');
+      row.id = 'row-' + id;
+      row.innerHTML =
+        '<td>' + id + '</td>' +
+        '<td><span class="badge ' + (ok ? 'badge-ok' : 'badge-no') + '">' +
+        (ok ? '✓ OK' : '✗ Fail') + '</span></td>' +
+        '<td style="font-family:monospace;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+        (text || '') + '</td>';
+      if (!existing) tbody.appendChild(row);
+    }
+
+    async function runAllTests() {
+      addLog('Running bridge API tests...', 'info');
+      document.getElementById('api-results').innerHTML = '';
+
+      // 1. Theme
+      try {
+        var theme = await window.cognia.theme.current();
+        document.getElementById('theme-mode').textContent = theme.mode;
+        if (theme.mode === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+        setResult('theme.current', true, JSON.stringify(theme));
+        addLog('Theme: ' + theme.mode);
+      } catch (e) { setResult('theme.current', false, e.message); addLog('Theme failed: ' + e.message, 'error'); }
+
+      // 2. Locale
+      try {
+        var locale = await window.cognia.i18n.getLocale();
+        document.getElementById('locale-value').textContent = locale.locale;
+        setResult('i18n.getLocale', true, JSON.stringify(locale));
+        addLog('Locale: ' + locale.locale);
+      } catch (e) { setResult('i18n.getLocale', false, e.message); addLog('Locale failed: ' + e.message, 'error'); }
+
+      // 3. i18n translate
+      try {
+        var translated = await window.cognia.i18n.translate('greeting', { name: 'Plugin' });
+        setResult('i18n.translate', true, JSON.stringify(translated));
+        addLog('Translate: ' + translated.text);
+      } catch (e) { setResult('i18n.translate', false, e.message); }
+
+      // 4. Logging
+      try {
+        await window.cognia.log.info('Test log from iframe');
+        setResult('log.info', true, 'sent');
+        addLog('Log.info sent');
+      } catch (e) { setResult('log.info', false, e.message); }
+
+      // 5. Toast
+      try {
+        await window.cognia.ui.showToast('Hello from iframe!');
+        setResult('ui.showToast', true, 'sent');
+        addLog('Toast sent');
+      } catch (e) { setResult('ui.showToast', false, e.message); }
+
+      addLog('All tests complete', 'info');
+    }
+
+    async function sendToast() {
+      try {
+        await window.cognia.ui.showToast('Notification from plugin iframe 🎉');
+        addLog('Toast sent', 'info');
+      } catch (e) {
+        addLog('Toast failed: ' + e.message, 'error');
+      }
+    }
+
+    async function callWasm() {
+      try {
+        addLog('Calling WASM function...', 'info');
+        var result = await window.cognia.callTool('hello', 'World');
+        setResult('callTool', true, JSON.stringify(result).substring(0, 80));
+        addLog('WASM result: ' + JSON.stringify(result).substring(0, 60));
+      } catch (e) {
+        setResult('callTool', false, e.message);
+        addLog('WASM call failed: ' + e.message, 'error');
+      }
+    }
+
+    // Auto-init
+    (async function init() {
+      // Wait for bridge to be ready
+      if (!window.cognia) {
+        addLog('Waiting for bridge...');
+        await new Promise(function(r) { setTimeout(r, 100); });
+      }
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      addLog('Plugin UI initialized', 'info');
+      runAllTests();
+    })();
+  </script>
+</body>
+</html>

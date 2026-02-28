@@ -1,11 +1,16 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   Collapsible,
   CollapsibleContent,
@@ -17,7 +22,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { FileCode, Eye, EyeOff, Terminal } from 'lucide-react';
+import { FileCode, Eye, EyeOff, Terminal, ExternalLink, FolderOpen } from 'lucide-react';
+import { highlightShellConfig } from '@/lib/highlight-shell';
+import { isTauri } from '@/lib/tauri';
+import { toast } from 'sonner';
 import type { ShellProfileInfo } from '@/types/tauri';
 
 interface EnvVarShellProfilesProps {
@@ -35,6 +43,28 @@ export function EnvVarShellProfiles({
   const [profileContent, setProfileContent] = useState<string>('');
   const [loadingProfile, setLoadingProfile] = useState(false);
 
+  const handleOpenFile = useCallback(async (path: string) => {
+    if (!isTauri()) return;
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener');
+      await openPath(path);
+    } catch (err) {
+      console.error('Failed to open file:', err);
+      toast.error(String(err));
+    }
+  }, []);
+
+  const handleRevealInFolder = useCallback(async (path: string) => {
+    if (!isTauri()) return;
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(path);
+    } catch (err) {
+      console.error('Failed to reveal file:', err);
+      toast.error(String(err));
+    }
+  }, []);
+
   const handleToggle = useCallback(async (configPath: string) => {
     if (expandedProfile === configPath) {
       setExpandedProfile(null);
@@ -48,6 +78,12 @@ export function EnvVarShellProfiles({
     setProfileContent(content || t('envvar.shellProfiles.noContent'));
     setLoadingProfile(false);
   }, [expandedProfile, onReadProfile, t]);
+
+  const expandedShell = profiles.find((p) => p.configPath === expandedProfile)?.shell ?? 'bash';
+  const highlightedHtml = useMemo(
+    () => (profileContent ? highlightShellConfig(profileContent, expandedShell) : ''),
+    [profileContent, expandedShell],
+  );
 
   if (profiles.length === 0) {
     return (
@@ -92,20 +128,48 @@ export function EnvVarShellProfiles({
                       {profile.configPath}
                     </code>
                     {profile.exists && (
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1.5"
-                          onClick={() => handleToggle(profile.configPath)}
-                        >
-                          {isExpanded ? (
-                            <><EyeOff className="h-3 w-3" />{t('common.close')}</>
-                          ) : (
-                            <><Eye className="h-3 w-3" />{t('envvar.shellProfiles.viewConfig')}</>
-                          )}
-                        </Button>
-                      </CollapsibleTrigger>
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleOpenFile(profile.configPath)}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('envvar.shellProfiles.openFile')}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleRevealInFolder(profile.configPath)}
+                            >
+                              <FolderOpen className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('envvar.shellProfiles.openFolder')}</TooltipContent>
+                        </Tooltip>
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1.5"
+                            onClick={() => handleToggle(profile.configPath)}
+                          >
+                            {isExpanded ? (
+                              <><EyeOff className="h-3 w-3" />{t('common.close')}</>
+                            ) : (
+                              <><Eye className="h-3 w-3" />{t('envvar.shellProfiles.viewConfig')}</>
+                            )}
+                          </Button>
+                        </CollapsibleTrigger>
+                      </>
                     )}
                   </div>
                 </div>
@@ -122,9 +186,12 @@ export function EnvVarShellProfiles({
                         <Skeleton className="h-4 w-full" />
                       </div>
                     ) : (
-                      <pre className="text-xs font-mono whitespace-pre-wrap break-all">
-                        {profileContent}
-                      </pre>
+                      <pre
+                        className="hljs text-xs font-mono whitespace-pre-wrap break-all"
+                        dangerouslySetInnerHTML={{
+                          __html: highlightedHtml,
+                        }}
+                      />
                     )}
                   </ScrollArea>
                 </CardContent>

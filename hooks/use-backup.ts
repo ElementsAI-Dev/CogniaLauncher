@@ -7,6 +7,9 @@ import {
   backupList,
   backupDelete,
   backupValidate,
+  backupExport,
+  backupImport,
+  backupCleanup,
   dbIntegrityCheck,
   dbGetInfo,
   isTauri,
@@ -32,6 +35,9 @@ interface UseBackupReturn {
   restore: (backupPath: string, contents: BackupContentType[]) => Promise<RestoreResult | null>;
   remove: (backupPath: string) => Promise<boolean>;
   validate: (backupPath: string) => Promise<BackupValidationResult | null>;
+  exportBackup: (backupPath: string, destPath: string) => Promise<number>;
+  importBackup: (zipPath: string) => Promise<BackupInfo | null>;
+  cleanup: (maxCount: number, maxAgeDays: number) => Promise<number>;
   checkIntegrity: () => Promise<IntegrityCheckResult | null>;
   getDatabaseInfo: () => Promise<DatabaseInfo | null>;
 }
@@ -139,6 +145,49 @@ export function useBackup(): UseBackupReturn {
     }
   }, []);
 
+  const exportBackupFn = useCallback(
+    async (backupPath: string, destPath: string): Promise<number> => {
+      if (!isTauri()) return 0;
+      try {
+        return await backupExport(backupPath, destPath);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return 0;
+      }
+    },
+    [],
+  );
+
+  const importBackupFn = useCallback(
+    async (zipPath: string): Promise<BackupInfo | null> => {
+      if (!isTauri()) return null;
+      try {
+        const result = await backupImport(zipPath);
+        await refresh();
+        return result;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return null;
+      }
+    },
+    [refresh],
+  );
+
+  const cleanup = useCallback(
+    async (maxCount: number, maxAgeDays: number): Promise<number> => {
+      if (!isTauri()) return 0;
+      try {
+        const deleted = await backupCleanup(maxCount, maxAgeDays);
+        if (deleted > 0) await refresh();
+        return deleted;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return 0;
+      }
+    },
+    [refresh],
+  );
+
   const getDatabaseInfo = useCallback(async (): Promise<DatabaseInfo | null> => {
     if (!isTauri()) return null;
     try {
@@ -160,6 +209,9 @@ export function useBackup(): UseBackupReturn {
     restore,
     remove,
     validate: validateBackup,
+    exportBackup: exportBackupFn,
+    importBackup: importBackupFn,
+    cleanup,
     checkIntegrity,
     getDatabaseInfo,
   };

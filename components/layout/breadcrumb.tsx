@@ -20,6 +20,7 @@ const NAV_LABELS: Record<string, string> = {
   providers: "nav.providers",
   cache: "nav.cache",
   downloads: "nav.downloads",
+  toolbox: "nav.toolbox",
   logs: "nav.logs",
   settings: "nav.settings",
   about: "nav.about",

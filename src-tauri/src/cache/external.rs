@@ -61,6 +61,12 @@ pub enum ExternalCacheProvider {
     Electron,
     Vcpkg,
     Sbt,
+    // Terminal framework caches
+    OhMyPosh,
+    Starship,
+    OhMyZsh,
+    Zinit,
+    Powerlevel10k,
 }
 
 impl ExternalCacheProvider {
@@ -113,6 +119,12 @@ impl ExternalCacheProvider {
             Self::Electron,
             Self::Vcpkg,
             Self::Sbt,
+            // Terminal framework caches
+            Self::OhMyPosh,
+            Self::Starship,
+            Self::OhMyZsh,
+            Self::Zinit,
+            Self::Powerlevel10k,
         ]
     }
 
@@ -164,6 +176,12 @@ impl ExternalCacheProvider {
             Self::Electron => "electron",
             Self::Vcpkg => "vcpkg",
             Self::Sbt => "sbt",
+            // Terminal framework caches
+            Self::OhMyPosh => "oh_my_posh",
+            Self::Starship => "starship",
+            Self::OhMyZsh => "oh_my_zsh",
+            Self::Zinit => "zinit",
+            Self::Powerlevel10k => "powerlevel10k",
         }
     }
 
@@ -215,6 +233,12 @@ impl ExternalCacheProvider {
             Self::Electron => "Electron",
             Self::Vcpkg => "vcpkg (C++)",
             Self::Sbt => "sbt/Ivy (Scala)",
+            // Terminal framework caches
+            Self::OhMyPosh => "Oh My Posh",
+            Self::Starship => "Starship",
+            Self::OhMyZsh => "Oh My Zsh",
+            Self::Zinit => "Zinit",
+            Self::Powerlevel10k => "Powerlevel10k",
         }
     }
 
@@ -266,6 +290,12 @@ impl ExternalCacheProvider {
             Self::Electron => "electron",
             Self::Vcpkg => "vcpkg",
             Self::Sbt => "sbt",
+            // Terminal framework caches
+            Self::OhMyPosh => "oh-my-posh",
+            Self::Starship => "starship",
+            Self::OhMyZsh => "zsh",
+            Self::Zinit => "zsh",
+            Self::Powerlevel10k => "zsh",
         }
     }
 
@@ -317,6 +347,12 @@ impl ExternalCacheProvider {
             Self::Electron => get_electron_cache_path(),
             Self::Vcpkg => get_vcpkg_cache_path(),
             Self::Sbt => get_sbt_cache_path(),
+            // Terminal framework caches
+            Self::OhMyPosh => get_oh_my_posh_ext_cache_path(),
+            Self::Starship => get_starship_ext_cache_path(),
+            Self::OhMyZsh => get_oh_my_zsh_ext_cache_path(),
+            Self::Zinit => get_zinit_ext_cache_path(),
+            Self::Powerlevel10k => get_powerlevel10k_ext_cache_path(),
         }
     }
 
@@ -368,6 +404,12 @@ impl ExternalCacheProvider {
             Self::Electron => None, // Direct delete
             Self::Vcpkg => None,    // Direct delete of binary cache
             Self::Sbt => None,      // Direct delete of ivy cache
+            // Terminal framework caches - all direct delete (clean contents)
+            Self::OhMyPosh => None,
+            Self::Starship => None,
+            Self::OhMyZsh => None,
+            Self::Zinit => None,
+            Self::Powerlevel10k => None,
         }
     }
 
@@ -419,6 +461,12 @@ impl ExternalCacheProvider {
             "electron" => Some(Self::Electron),
             "vcpkg" => Some(Self::Vcpkg),
             "sbt" | "ivy" | "ivy2" => Some(Self::Sbt),
+            // Terminal framework caches
+            "oh_my_posh" | "oh-my-posh" | "ohmyposh" => Some(Self::OhMyPosh),
+            "starship" => Some(Self::Starship),
+            "oh_my_zsh" | "oh-my-zsh" | "ohmyzsh" => Some(Self::OhMyZsh),
+            "zinit" => Some(Self::Zinit),
+            "powerlevel10k" | "p10k" => Some(Self::Powerlevel10k),
             _ => None,
         }
     }
@@ -443,6 +491,12 @@ impl ExternalCacheProvider {
             | Self::Sbt => "devtools",
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "devtools",
+            // Terminal framework caches
+            Self::OhMyPosh
+            | Self::Starship
+            | Self::OhMyZsh
+            | Self::Zinit
+            | Self::Powerlevel10k => "terminal",
             // Package managers
             _ => "package_manager",
         }
@@ -457,6 +511,12 @@ impl ExternalCacheProvider {
             Self::MacOsCache | Self::MacOsLogs => true,
             #[cfg(target_os = "linux")]
             Self::LinuxCache => true,
+            // Terminal framework caches - preserve the cache dir
+            Self::OhMyPosh
+            | Self::Starship
+            | Self::OhMyZsh
+            | Self::Zinit
+            | Self::Powerlevel10k => true,
             _ => false,
         }
     }
@@ -1129,6 +1189,81 @@ fn get_sbt_cache_path() -> Option<PathBuf> {
 }
 
 // ============================================================================
+// Terminal framework cache path functions
+// ============================================================================
+
+fn get_oh_my_posh_ext_cache_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("oh-my-posh"))
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".cache")))
+            .map(|p| p.join("oh-my-posh"))
+    }
+}
+
+fn get_starship_ext_cache_path() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|p| PathBuf::from(p).join("starship"))
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(".cache")))
+            .map(|p| p.join("starship"))
+    }
+}
+
+fn get_oh_my_zsh_ext_cache_path() -> Option<PathBuf> {
+    if let Ok(cache_dir) = std::env::var("ZSH_CACHE_DIR") {
+        return Some(PathBuf::from(cache_dir));
+    }
+    dirs::home_dir().map(|h| h.join(".oh-my-zsh").join("cache"))
+}
+
+fn get_zinit_ext_cache_path() -> Option<PathBuf> {
+    if let Ok(zinit_home) = std::env::var("ZINIT_HOME") {
+        return Some(PathBuf::from(zinit_home));
+    }
+    std::env::var("XDG_DATA_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("share")))
+        .map(|p| p.join("zinit"))
+}
+
+fn get_powerlevel10k_ext_cache_path() -> Option<PathBuf> {
+    // Powerlevel10k stores cache in XDG_CACHE_HOME as p10k-* files
+    // We return the p10k subdirectory if it exists, or the parent cache dir
+    let xdg_cache = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".cache")));
+
+    if let Some(ref base) = xdg_cache {
+        let p10k_dir = base.join("p10k");
+        if p10k_dir.exists() {
+            return Some(p10k_dir);
+        }
+    }
+
+    // Fall back to gitstatus cache dir (used by p10k)
+    xdg_cache.map(|p| p.join("gitstatus"))
+}
+
+// ============================================================================
 // Core functions
 // ============================================================================
 
@@ -1312,7 +1447,8 @@ pub async fn clean_cache(
 
     // Try to clean using the provider's command first, fall back to direct delete
     let result: Result<(), CogniaError> = if let Some((cmd, args)) = provider.clean_command() {
-        match process::execute(cmd, args, None).await {
+        let opts = Some(ProcessOptions::new().with_timeout(Duration::from_secs(120)));
+        match process::execute(cmd, args, opts).await {
             Ok(output) if output.success => Ok(()),
             // Command failed or not found → fall back to directory clean
             _ => {
@@ -1730,5 +1866,121 @@ mod tests {
     fn test_parse_str_unknown() {
         assert!(ExternalCacheProvider::parse_str("nonexistent_tool").is_none());
         assert!(ExternalCacheProvider::parse_str("").is_none());
+    }
+
+    // ── Terminal framework cache provider tests ──
+
+    #[test]
+    fn test_terminal_provider_ids() {
+        assert_eq!(ExternalCacheProvider::OhMyPosh.id(), "oh_my_posh");
+        assert_eq!(ExternalCacheProvider::Starship.id(), "starship");
+        assert_eq!(ExternalCacheProvider::OhMyZsh.id(), "oh_my_zsh");
+        assert_eq!(ExternalCacheProvider::Zinit.id(), "zinit");
+        assert_eq!(ExternalCacheProvider::Powerlevel10k.id(), "powerlevel10k");
+    }
+
+    #[test]
+    fn test_terminal_provider_display_names() {
+        assert_eq!(ExternalCacheProvider::OhMyPosh.display_name(), "Oh My Posh");
+        assert_eq!(ExternalCacheProvider::Starship.display_name(), "Starship");
+        assert_eq!(ExternalCacheProvider::OhMyZsh.display_name(), "Oh My Zsh");
+        assert_eq!(ExternalCacheProvider::Zinit.display_name(), "Zinit");
+        assert_eq!(ExternalCacheProvider::Powerlevel10k.display_name(), "Powerlevel10k");
+    }
+
+    #[test]
+    fn test_terminal_provider_commands() {
+        assert_eq!(ExternalCacheProvider::OhMyPosh.command(), "oh-my-posh");
+        assert_eq!(ExternalCacheProvider::Starship.command(), "starship");
+        assert_eq!(ExternalCacheProvider::OhMyZsh.command(), "zsh");
+        assert_eq!(ExternalCacheProvider::Zinit.command(), "zsh");
+        assert_eq!(ExternalCacheProvider::Powerlevel10k.command(), "zsh");
+    }
+
+    #[test]
+    fn test_terminal_provider_categories() {
+        assert_eq!(ExternalCacheProvider::OhMyPosh.category(), "terminal");
+        assert_eq!(ExternalCacheProvider::Starship.category(), "terminal");
+        assert_eq!(ExternalCacheProvider::OhMyZsh.category(), "terminal");
+        assert_eq!(ExternalCacheProvider::Zinit.category(), "terminal");
+        assert_eq!(ExternalCacheProvider::Powerlevel10k.category(), "terminal");
+    }
+
+    #[test]
+    fn test_terminal_provider_should_preserve_dir() {
+        assert!(ExternalCacheProvider::OhMyPosh.should_preserve_dir());
+        assert!(ExternalCacheProvider::Starship.should_preserve_dir());
+        assert!(ExternalCacheProvider::OhMyZsh.should_preserve_dir());
+        assert!(ExternalCacheProvider::Zinit.should_preserve_dir());
+        assert!(ExternalCacheProvider::Powerlevel10k.should_preserve_dir());
+    }
+
+    #[test]
+    fn test_terminal_provider_no_clean_command() {
+        assert!(ExternalCacheProvider::OhMyPosh.clean_command().is_none());
+        assert!(ExternalCacheProvider::Starship.clean_command().is_none());
+        assert!(ExternalCacheProvider::OhMyZsh.clean_command().is_none());
+        assert!(ExternalCacheProvider::Zinit.clean_command().is_none());
+        assert!(ExternalCacheProvider::Powerlevel10k.clean_command().is_none());
+    }
+
+    #[test]
+    fn test_terminal_provider_from_str() {
+        assert_eq!(
+            ExternalCacheProvider::parse_str("oh_my_posh"),
+            Some(ExternalCacheProvider::OhMyPosh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("oh-my-posh"),
+            Some(ExternalCacheProvider::OhMyPosh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("ohmyposh"),
+            Some(ExternalCacheProvider::OhMyPosh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("starship"),
+            Some(ExternalCacheProvider::Starship)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("oh_my_zsh"),
+            Some(ExternalCacheProvider::OhMyZsh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("oh-my-zsh"),
+            Some(ExternalCacheProvider::OhMyZsh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("ohmyzsh"),
+            Some(ExternalCacheProvider::OhMyZsh)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("zinit"),
+            Some(ExternalCacheProvider::Zinit)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("powerlevel10k"),
+            Some(ExternalCacheProvider::Powerlevel10k)
+        );
+        assert_eq!(
+            ExternalCacheProvider::parse_str("p10k"),
+            Some(ExternalCacheProvider::Powerlevel10k)
+        );
+    }
+
+    #[test]
+    fn test_terminal_cache_paths_not_panic() {
+        let _ = get_oh_my_posh_ext_cache_path();
+        let _ = get_starship_ext_cache_path();
+        let _ = get_oh_my_zsh_ext_cache_path();
+        let _ = get_zinit_ext_cache_path();
+        let _ = get_powerlevel10k_ext_cache_path();
+    }
+
+    #[test]
+    fn test_terminal_providers_in_all() {
+        let all = ExternalCacheProvider::all();
+        let terminal_providers: Vec<_> = all.iter().filter(|p| p.category() == "terminal").collect();
+        assert_eq!(terminal_providers.len(), 5, "Expected 5 terminal framework providers");
     }
 }

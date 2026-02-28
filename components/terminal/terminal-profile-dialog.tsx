@@ -18,6 +18,7 @@ interface TerminalProfileDialogProps {
   profile?: TerminalProfile | null;
   shells: ShellInfo[];
   onSave: (profile: TerminalProfile) => void;
+  fromTemplate?: TerminalProfile | null;
 }
 
 export function TerminalProfileDialog({
@@ -26,24 +27,26 @@ export function TerminalProfileDialog({
   profile,
   shells,
   onSave,
+  fromTemplate,
 }: TerminalProfileDialogProps) {
   const { t } = useLocale();
+  const source = profile ?? fromTemplate ?? null;
   const isEdit = !!profile?.id;
   const fallbackShellId = shells[0]?.id ?? '';
   const resolvedShellId =
-    profile?.shellId && shells.some((shell) => shell.id === profile.shellId)
-      ? profile.shellId
+    source?.shellId && shells.some((shell) => shell.id === source.shellId)
+      ? source.shellId
       : fallbackShellId;
 
-  const [name, setName] = useState(profile?.name ?? '');
+  const [name, setName] = useState(source?.name ?? '');
   const [shellId, setShellId] = useState(resolvedShellId);
-  const [args, setArgs] = useState(profile?.args?.join(' ') ?? '');
-  const [cwd, setCwd] = useState(profile?.cwd ?? '');
-  const [startupCommand, setStartupCommand] = useState(profile?.startupCommand ?? '');
-  const [envType, setEnvType] = useState(profile?.envType ?? '');
-  const [envVersion, setEnvVersion] = useState(profile?.envVersion ?? '');
+  const [args, setArgs] = useState(source?.args?.join(' ') ?? '');
+  const [cwd, setCwd] = useState(source?.cwd ?? '');
+  const [startupCommand, setStartupCommand] = useState(source?.startupCommand ?? '');
+  const [envType, setEnvType] = useState(source?.envType ?? '');
+  const [envVersion, setEnvVersion] = useState(source?.envVersion ?? '');
   const [envVars, setEnvVars] = useState<[string, string][]>(
-    Object.entries(profile?.envVars ?? {}) as [string, string][]
+    Object.entries(source?.envVars ?? {}) as [string, string][]
   );
 
   const handleAddEnvVar = () => {

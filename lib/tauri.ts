@@ -102,6 +102,7 @@ export type {
   LogQueryResult,
   LogExportOptions,
   LogExportResult,
+  LogCleanupResult,
   CommandOutputEvent,
   DownloadProgress,
   DownloadTask,
@@ -184,11 +185,13 @@ export type {
   ShellConfigFile,
   ShellInfo,
   TerminalProfile,
+  TerminalProfileTemplate,
   PSProfileInfo,
   PSModuleInfo,
   PSScriptInfo,
   ShellFrameworkInfo,
   ShellPlugin,
+  FrameworkCacheInfo,
   ShellConfigEntries,
   DiagnosticExportOptions,
   DiagnosticCaptureFrontendCrashOptions,
@@ -271,6 +274,7 @@ import type {
   LogQueryResult,
   LogExportOptions,
   LogExportResult,
+  LogCleanupResult,
   CommandOutputEvent,
   DownloadProgress,
   DownloadTask,
@@ -345,17 +349,25 @@ import type {
   ShellType,
   ShellInfo,
   TerminalProfile,
+  TerminalProfileTemplate,
   PSProfileInfo,
   PSModuleInfo,
   PSScriptInfo,
   ShellFrameworkInfo,
   ShellPlugin,
+  FrameworkCacheInfo,
   ShellConfigEntries,
   DiagnosticExportOptions,
   DiagnosticCaptureFrontendCrashOptions,
   DiagnosticExportResult,
   CrashInfo,
 } from '@/types/tauri';
+
+import type {
+  FeedbackItem,
+  FeedbackSaveResult,
+  FeedbackListResult,
+} from '@/types/feedback';
 
 // Re-export so existing `import { isTauri } from '@/lib/tauri'` call-sites keep working.
 export { isTauri };
@@ -392,6 +404,40 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
+export async function openLocalPath(path: string): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!isTauri()) {
+    return;
+  }
+
+  try {
+    const { openPath: tauriOpenPath } = await import('@tauri-apps/plugin-opener');
+    await tauriOpenPath(path);
+  } catch (error) {
+    console.error('Failed to open local path:', error);
+  }
+}
+
+export async function revealPath(path: string): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!isTauri()) {
+    return;
+  }
+
+  try {
+    const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+    await revealItemInDir(path);
+  } catch (error) {
+    console.error('Failed to reveal path:', error);
+  }
+}
+
 // Listen for environment install progress events
 export async function listenEnvInstallProgress(
   callback: (progress: EnvInstallProgressEvent) => void
@@ -418,7 +464,7 @@ export const envUseGlobal = (envType: string, version: string) => invoke<void>('
 export const envUseLocal = (envType: string, version: string, projectPath: string) => invoke<void>('env_use_local', { envType, version, projectPath });
 export const envDetect = (envType: string, startPath: string) => invoke<DetectedEnvironment | null>('env_detect', { envType, startPath });
 export const envDetectAll = (startPath: string) => invoke<DetectedEnvironment[]>('env_detect_all', { startPath });
-export const envAvailableVersions = (envType: string) => invoke<VersionInfo[]>('env_available_versions', { envType });
+export const envAvailableVersions = (envType: string, providerId?: string, force?: boolean) => invoke<VersionInfo[]>('env_available_versions', { envType, providerId, force });
 export const envListProviders = () => invoke<EnvironmentProviderInfo[]>('env_list_providers');
 
 // Environment settings commands
@@ -427,6 +473,10 @@ export const envSaveSettings = (settings: EnvironmentSettingsConfig) =>
 
 export const envLoadSettings = (envType: string) => 
   invoke<EnvironmentSettingsConfig | null>('env_load_settings', { envType });
+
+// Detection source commands
+export const envGetDetectionSources = (envType: string) => invoke<string[]>('env_get_detection_sources', { envType });
+export const envGetAllDetectionSources = () => invoke<Record<string, string[]>>('env_get_all_detection_sources');
 
 // System environment detection commands
 export const envDetectSystemAll = () => 
@@ -766,22 +816,6 @@ export interface ExternalCachePathInfo {
 export const getExternalCachePaths = () =>
   invoke<ExternalCachePathInfo[]>('get_external_cache_paths');
 
-// Enhanced cache settings
-export interface EnhancedCacheSettings {
-  maxSize: number;
-  maxAgeDays: number;
-  metadataCacheTtl: number;
-  autoClean: boolean;
-  autoCleanThreshold: number;
-  monitorInterval: number;
-  monitorExternal: boolean;
-}
-
-export const getEnhancedCacheSettings = () =>
-  invoke<EnhancedCacheSettings>('get_enhanced_cache_settings');
-export const setEnhancedCacheSettings = (newSettings: EnhancedCacheSettings) =>
-  invoke<void>('set_enhanced_cache_settings', { newSettings });
-
 // Database optimization & size history
 export const cacheOptimize = () =>
   invoke<CacheOptimizeResult>('cache_optimize');
@@ -799,6 +833,12 @@ export const backupDelete = (backupPath: string) =>
   invoke<boolean>('backup_delete', { backupPath });
 export const backupValidate = (backupPath: string) =>
   invoke<BackupValidationResult>('backup_validate', { backupPath });
+export const backupExport = (backupPath: string, destPath: string) =>
+  invoke<number>('backup_export', { backupPath, destPath });
+export const backupImport = (zipPath: string) =>
+  invoke<BackupInfo>('backup_import', { zipPath });
+export const backupCleanup = (maxCount: number, maxAgeDays: number) =>
+  invoke<number>('backup_cleanup', { maxCount, maxAgeDays });
 export const dbIntegrityCheck = () =>
   invoke<IntegrityCheckResult>('db_integrity_check');
 export const dbGetInfo = () =>
@@ -930,6 +970,9 @@ export const logClear = (fileName?: string) => invoke<void>('log_clear', { fileN
 export const logGetDir = () => invoke<string>('log_get_dir');
 export const logExport = (options: LogExportOptions) => invoke<LogExportResult>('log_export', { options });
 export const logGetTotalSize = () => invoke<number>('log_get_total_size');
+export const logCleanup = () => invoke<LogCleanupResult>('log_cleanup');
+export const logDeleteFile = (fileName: string) => invoke<void>('log_delete_file', { fileName });
+export const logDeleteBatch = (fileNames: string[]) => invoke<LogCleanupResult>('log_delete_batch', { fileNames });
 
 // Diagnostic commands
 export const diagnosticExportBundle = (options: DiagnosticExportOptions) =>
@@ -1131,6 +1174,22 @@ export async function listenDownloadTaskCancelled(
 ): Promise<UnlistenFn> {
   return listen<{ task_id: string }>('download-task-cancelled', (event) => {
     callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskExtracting(
+  callback: (taskId: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string }>('download-task-extracting', (event) => {
+    callback(event.payload.task_id);
+  });
+}
+
+export async function listenDownloadTaskExtracted(
+  callback: (taskId: string, files: string[]) => void
+): Promise<UnlistenFn> {
+  return listen<{ task_id: string; files: string[] }>('download-task-extracted', (event) => {
+    callback(event.payload.task_id, event.payload.files);
   });
 }
 
@@ -1473,6 +1532,11 @@ import type {
   GitLabAssetInfo,
   GitLabParsedProject,
   GitLabProjectInfo,
+  GitLabSearchResult,
+  GitLabPipelineInfo,
+  GitLabJobInfo,
+  GitLabPackageInfo,
+  GitLabPackageFileInfo,
 } from '@/types/gitlab';
 
 export type {
@@ -1482,6 +1546,11 @@ export type {
   GitLabAssetInfo,
   GitLabParsedProject,
   GitLabProjectInfo,
+  GitLabSearchResult,
+  GitLabPipelineInfo,
+  GitLabJobInfo,
+  GitLabPackageInfo,
+  GitLabPackageFileInfo,
 };
 
 /** Parse a GitLab URL or owner/repo string */
@@ -1567,6 +1636,52 @@ export const gitlabClearToken = () =>
 /** Validate a GitLab token by making an authenticated API call */
 export const gitlabValidateToken = (token: string, instanceUrl?: string) =>
   invoke<boolean>('gitlab_validate_token', { token, instanceUrl: instanceUrl || null });
+
+/** Search GitLab projects */
+export const gitlabSearchProjects = (query: string, limit?: number, token?: string, instanceUrl?: string) =>
+  invoke<GitLabSearchResult[]>('gitlab_search_projects', {
+    query, limit: limit ?? null, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** List pipelines for a GitLab project */
+export const gitlabListPipelines = (project: string, refName?: string, status?: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabPipelineInfo[]>('gitlab_list_pipelines', {
+    project, refName: refName || null, status: status || null, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** List jobs for a GitLab pipeline */
+export const gitlabListPipelineJobs = (project: string, pipelineId: number, token?: string, instanceUrl?: string) =>
+  invoke<GitLabJobInfo[]>('gitlab_list_pipeline_jobs', {
+    project, pipelineId, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** Download job artifacts from a GitLab CI job */
+export const gitlabDownloadJobArtifacts = (
+  project: string, jobId: number, jobName: string, destination: string, token?: string, instanceUrl?: string
+) =>
+  invoke<string>('gitlab_download_job_artifacts', {
+    project, jobId, jobName, destination, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** List packages in a GitLab project's package registry */
+export const gitlabListPackages = (project: string, packageType?: string, token?: string, instanceUrl?: string) =>
+  invoke<GitLabPackageInfo[]>('gitlab_list_packages', {
+    project, packageType: packageType || null, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** List files for a GitLab package */
+export const gitlabListPackageFiles = (project: string, packageId: number, token?: string, instanceUrl?: string) =>
+  invoke<GitLabPackageFileInfo[]>('gitlab_list_package_files', {
+    project, packageId, token: token || null, instanceUrl: instanceUrl || null,
+  });
+
+/** Download a file from a GitLab package */
+export const gitlabDownloadPackageFile = (
+  project: string, packageId: number, fileName: string, destination: string, token?: string, instanceUrl?: string
+) =>
+  invoke<string>('gitlab_download_package_file', {
+    project, packageId, fileName, destination, token: token || null, instanceUrl: instanceUrl || null,
+  });
 
 /** Save a custom GitLab instance URL to settings */
 export const gitlabSetInstanceUrl = (url: string) =>
@@ -1872,6 +1987,26 @@ export const gitSetConfig = (key: string, value: string) =>
 export const gitRemoveConfig = (key: string) =>
   invoke<void>('git_remove_config', { key });
 
+/** Get a single global git config value by key */
+export const gitGetConfigValue = (key: string) =>
+  invoke<string | null>('git_get_config_value', { key });
+
+/** Get the path to the global git config file */
+export const gitGetConfigFilePath = () =>
+  invoke<string | null>('git_get_config_file_path');
+
+/** List all git aliases */
+export const gitListAliases = () =>
+  invoke<GitConfigEntry[]>('git_list_aliases');
+
+/** Set a global git config value only if not already set */
+export const gitSetConfigIfUnset = (key: string, value: string) =>
+  invoke<boolean>('git_set_config_if_unset', { key, value });
+
+/** Open the global git config file in the default editor */
+export const gitOpenConfigInEditor = () =>
+  invoke<string>('git_open_config_in_editor');
+
 /** Get repository information for a given path */
 export const gitGetRepoInfo = (path: string) =>
   invoke<GitRepoInfo>('git_get_repo_info', { path });
@@ -1924,8 +2059,8 @@ export const gitGetStatus = (path: string) =>
   invoke<GitStatusFile[]>('git_get_status', { path });
 
 /** Get graph log for commit graph visualization */
-export const gitGetGraphLog = (path: string, limit?: number, allBranches?: boolean) =>
-  invoke<GitGraphEntry[]>('git_get_graph_log', { path, limit, allBranches });
+export const gitGetGraphLog = (path: string, limit?: number, allBranches?: boolean, firstParent?: boolean, branch?: string) =>
+  invoke<GitGraphEntry[]>('git_get_graph_log', { path, limit, allBranches, firstParent, branch });
 
 /** Get ahead/behind counts for a branch */
 export const gitGetAheadBehind = (path: string, branch: string, upstream?: string) =>
@@ -2020,6 +2155,10 @@ export const gitFetch = (path: string, remote?: string) =>
 export const gitClone = (url: string, destPath: string, options?: GitCloneOptions) =>
   invoke<string>('git_clone', { url, destPath, options });
 
+/** Cancel the current clone operation */
+export const gitCancelClone = () =>
+  invoke<void>('git_cancel_clone');
+
 /** Extract repository name from a git URL */
 export const gitExtractRepoName = (url: string) =>
   invoke<string | null>('git_extract_repo_name', { url });
@@ -2042,12 +2181,16 @@ export const gitInit = (path: string) =>
   invoke<string>('git_init', { path });
 
 /** Get diff output (working tree or staged changes) */
-export const gitGetDiff = (path: string, staged?: boolean, file?: string) =>
-  invoke<string>('git_get_diff', { path, staged, file });
+export const gitGetDiff = (path: string, staged?: boolean, file?: string, contextLines?: number) =>
+  invoke<string>('git_get_diff', { path, staged, file, contextLines });
 
 /** Get diff between two commits */
-export const gitGetDiffBetween = (path: string, from: string, to: string, file?: string) =>
-  invoke<string>('git_get_diff_between', { path, from, to, file });
+export const gitGetDiffBetween = (path: string, from: string, to: string, file?: string, contextLines?: number) =>
+  invoke<string>('git_get_diff_between', { path, from, to, file, contextLines });
+
+/** Get the full diff (patch) for a single commit */
+export const gitGetCommitDiff = (path: string, hash: string, file?: string, contextLines?: number) =>
+  invoke<string>('git_get_commit_diff', { path, hash, file, contextLines });
 
 /** Merge a branch into current */
 export const gitMerge = (path: string, branch: string, noFf?: boolean) =>
@@ -2253,6 +2396,10 @@ export const terminalAppendToConfig = (path: string, content: string) =>
 export const terminalGetConfigEntries = (path: string, shellType: ShellType) =>
   invoke<ShellConfigEntries>('terminal_get_config_entries', { path, shellType });
 
+/** Parse config content directly without re-reading the file */
+export const terminalParseConfigContent = (content: string, shellType: ShellType) =>
+  invoke<ShellConfigEntries>('terminal_parse_config_content', { content, shellType });
+
 /** List PowerShell profiles */
 export const terminalPsListProfiles = () =>
   invoke<PSProfileInfo[]>('terminal_ps_list_profiles');
@@ -2290,8 +2437,8 @@ export const terminalDetectFramework = (shellType: ShellType) =>
   invoke<ShellFrameworkInfo[]>('terminal_detect_framework', { shellType });
 
 /** List plugins for a detected framework */
-export const terminalListPlugins = (frameworkName: string, frameworkPath: string, shellType: ShellType) =>
-  invoke<ShellPlugin[]>('terminal_list_plugins', { frameworkName, frameworkPath, shellType });
+export const terminalListPlugins = (frameworkName: string, frameworkPath: string, shellType: ShellType, configPath?: string | null) =>
+  invoke<ShellPlugin[]>('terminal_list_plugins', { frameworkName, frameworkPath, shellType, configPath: configPath ?? null });
 
 /** Get shell-relevant environment variables */
 export const terminalGetShellEnvVars = () =>
@@ -2332,3 +2479,242 @@ export const terminalPsUpdateModule = (name: string) =>
 /** Search PSGallery for modules */
 export const terminalPsFindModule = (query: string) =>
   invoke<PSModuleInfo[]>('terminal_ps_find_module', { query });
+
+/** List all terminal profile templates (built-in + custom) */
+export const terminalListTemplates = () =>
+  invoke<TerminalProfileTemplate[]>('terminal_list_templates');
+
+/** Create a custom terminal profile template */
+export const terminalCreateCustomTemplate = (template: TerminalProfileTemplate) =>
+  invoke<string>('terminal_create_custom_template', { template });
+
+/** Delete a custom terminal profile template */
+export const terminalDeleteCustomTemplate = (id: string) =>
+  invoke<boolean>('terminal_delete_custom_template', { id });
+
+/** Save an existing profile as a reusable template */
+export const terminalSaveProfileAsTemplate = (
+  profileId: string,
+  templateName: string,
+  templateDescription: string,
+) => invoke<string>('terminal_save_profile_as_template', { profileId, templateName, templateDescription });
+
+/** Create a new profile pre-filled from a template */
+export const terminalCreateProfileFromTemplate = (templateId: string) =>
+  invoke<TerminalProfile>('terminal_create_profile_from_template', { templateId });
+
+/** Get cache stats for all detected terminal frameworks */
+export const terminalGetFrameworkCacheStats = () =>
+  invoke<FrameworkCacheInfo[]>('terminal_get_framework_cache_stats');
+
+/** Get cache info for a single framework */
+export const terminalGetSingleFrameworkCacheInfo = (frameworkName: string, frameworkPath: string, shellType: ShellType) =>
+  invoke<FrameworkCacheInfo>('terminal_get_single_framework_cache_info', { frameworkName, frameworkPath, shellType });
+
+/** Clean cache for a specific terminal framework, returns freed bytes */
+export const terminalCleanFrameworkCache = (frameworkName: string) =>
+  invoke<number>('terminal_clean_framework_cache', { frameworkName });
+
+// Feedback commands
+export const feedbackSave = (request: {
+  category: string;
+  severity?: string;
+  title: string;
+  description: string;
+  contactEmail?: string;
+  screenshot?: string;
+  includeDiagnostics: boolean;
+  appVersion: string;
+  os: string;
+  arch: string;
+  currentPage: string;
+  errorContext?: { message?: string; stack?: string; component?: string; digest?: string };
+}) => invoke<FeedbackSaveResult>('feedback_save', { request });
+export const feedbackList = () => invoke<FeedbackListResult>('feedback_list');
+export const feedbackGet = (id: string) => invoke<FeedbackItem | null>('feedback_get', { id });
+export const feedbackDelete = (id: string) => invoke<void>('feedback_delete', { id });
+export const feedbackExport = (id: string) => invoke<string>('feedback_export', { id });
+export const feedbackCount = () => invoke<number>('feedback_count');
+
+// ============================================================================
+// Plugin System Commands
+// ============================================================================
+
+export type { PluginInfo, PluginManifest, PluginToolInfo, PluginPermissionState, PluginPermissions } from '@/types/plugin';
+
+/** List all installed plugins */
+export const pluginList = () => invoke<import('@/types/plugin').PluginInfo[]>('plugin_list');
+
+/** Get detailed info about a specific plugin */
+export const pluginGetInfo = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginManifest>('plugin_get_info', { pluginId });
+
+/** List all tools from all enabled plugins */
+export const pluginListAllTools = () =>
+  invoke<import('@/types/plugin').PluginToolInfo[]>('plugin_list_all_tools');
+
+/** Get tools for a specific plugin */
+export const pluginGetTools = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginToolInfo[]>('plugin_get_tools', { pluginId });
+
+/** Install a plugin from a local directory path */
+export const pluginImportLocal = (path: string) =>
+  invoke<string>('plugin_import_local', { path });
+
+/** Install a plugin from a URL or local path */
+export const pluginInstall = (source: string) =>
+  invoke<string>('plugin_install', { source });
+
+/** Uninstall a plugin */
+export const pluginUninstall = (pluginId: string) =>
+  invoke<void>('plugin_uninstall', { pluginId });
+
+/** Enable a plugin */
+export const pluginEnable = (pluginId: string) =>
+  invoke<void>('plugin_enable', { pluginId });
+
+/** Disable a plugin */
+export const pluginDisable = (pluginId: string) =>
+  invoke<void>('plugin_disable', { pluginId });
+
+/** Reload a plugin (re-read WASM file) */
+export const pluginReload = (pluginId: string) =>
+  invoke<void>('plugin_reload', { pluginId });
+
+/** Call a tool function on a plugin */
+export const pluginCallTool = (pluginId: string, toolEntry: string, input: string) =>
+  invoke<string>('plugin_call_tool', { pluginId, toolEntry, input });
+
+/** Get permissions for a plugin */
+export const pluginGetPermissions = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginPermissionState>('plugin_get_permissions', { pluginId });
+
+/** Grant a permission to a plugin */
+export const pluginGrantPermission = (pluginId: string, permission: string) =>
+  invoke<void>('plugin_grant_permission', { pluginId, permission });
+
+/** Revoke a permission from a plugin */
+export const pluginRevokePermission = (pluginId: string, permission: string) =>
+  invoke<void>('plugin_revoke_permission', { pluginId, permission });
+
+/** Get plugin data directory path */
+export const pluginGetDataDir = (pluginId: string) =>
+  invoke<string>('plugin_get_data_dir', { pluginId });
+
+/** Get plugin locale data for i18n */
+export const pluginGetLocales = (pluginId: string) =>
+  invoke<Record<string, Record<string, string>>>('plugin_get_locales', { pluginId });
+
+/** Scaffold a new plugin project */
+export const pluginScaffold = (config: import('@/types/plugin').ScaffoldConfig) =>
+  invoke<import('@/types/plugin').ScaffoldResult>('plugin_scaffold', { config });
+
+/** Validate a plugin directory */
+export const pluginValidate = (path: string) =>
+  invoke<import('@/types/plugin').ValidationResult>('plugin_validate', { path });
+
+/** Get iframe entry HTML for a plugin's custom UI */
+export const pluginGetUiEntry = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginUiEntry>('plugin_get_ui_entry', { pluginId });
+
+/** Get a static asset from a plugin's UI directory */
+export const pluginGetUiAsset = (pluginId: string, assetPath: string) =>
+  invoke<number[]>('plugin_get_ui_asset', { pluginId, assetPath });
+
+// ============================================================================
+// Winget-specific commands
+// ============================================================================
+
+// Pin management
+export const wingetPinList = () =>
+  invoke<import('@/types/tauri').WingetPin[]>('winget_pin_list');
+export const wingetPinAdd = (id: string, version?: string, blocking?: boolean) =>
+  invoke<void>('winget_pin_add', { id, version, blocking: blocking ?? false });
+export const wingetPinRemove = (id: string) =>
+  invoke<void>('winget_pin_remove', { id });
+export const wingetPinReset = () =>
+  invoke<void>('winget_pin_reset');
+
+// Source management
+export const wingetSourceList = () =>
+  invoke<import('@/types/tauri').WingetSource[]>('winget_source_list');
+export const wingetSourceAdd = (name: string, url: string, sourceType?: string) =>
+  invoke<void>('winget_source_add', { name, url, sourceType });
+export const wingetSourceRemove = (name: string) =>
+  invoke<void>('winget_source_remove', { name });
+export const wingetSourceReset = () =>
+  invoke<void>('winget_source_reset');
+
+// Export / Import
+export const wingetExport = (outputPath: string, includeVersions?: boolean) =>
+  invoke<void>('winget_export', { outputPath, includeVersions: includeVersions ?? true });
+export const wingetImport = (inputPath: string, ignoreUnavailable?: boolean, ignoreVersions?: boolean) =>
+  invoke<string>('winget_import', { inputPath, ignoreUnavailable: ignoreUnavailable ?? false, ignoreVersions: ignoreVersions ?? false });
+
+// Repair
+export const wingetRepair = (id: string) =>
+  invoke<void>('winget_repair', { id });
+
+// Download (offline installer)
+export const wingetDownload = (id: string, version?: string, directory?: string) =>
+  invoke<string>('winget_download', { id, version, directory });
+
+// Info
+export const wingetGetInfo = () =>
+  invoke<import('@/types/tauri').WingetInfo>('winget_get_info');
+
+// Advanced install with scope/architecture/locale/location
+export const wingetInstallAdvanced = (options: {
+  id: string;
+  version?: string;
+  scope?: 'user' | 'machine';
+  architecture?: 'x64' | 'x86' | 'arm64';
+  locale?: string;
+  location?: string;
+  force?: boolean;
+}) =>
+  invoke<string>('winget_install_advanced', {
+    id: options.id,
+    version: options.version,
+    scope: options.scope,
+    architecture: options.architecture,
+    locale: options.locale,
+    location: options.location,
+    force: options.force ?? false,
+  });
+
+// ============================================================================
+// Xmake/Xrepo Commands
+// ============================================================================
+
+export type { XmakeRepo } from '@/types/tauri';
+
+// Repository management
+export const xmakeListRepos = () =>
+  invoke<import('@/types/tauri').XmakeRepo[]>('xmake_list_repos');
+export const xmakeAddRepo = (name: string, url: string, branch?: string) =>
+  invoke<void>('xmake_add_repo', { name, url, branch });
+export const xmakeRemoveRepo = (name: string) =>
+  invoke<void>('xmake_remove_repo', { name });
+export const xmakeUpdateRepos = () =>
+  invoke<void>('xmake_update_repos');
+
+// Cache management
+export const xmakeCleanCache = (packages?: string[], cacheOnly?: boolean) =>
+  invoke<string>('xmake_clean_cache', { packages, cacheOnly: cacheOnly ?? false });
+
+// Virtual environment
+export const xmakeEnvShow = (packages: string[]) =>
+  invoke<Record<string, string>>('xmake_env_show', { packages });
+export const xmakeEnvList = () =>
+  invoke<string[]>('xmake_env_list');
+export const xmakeEnvBind = (nameOrPackages: string, command: string) =>
+  invoke<string>('xmake_env_bind', { nameOrPackages, command });
+
+// Export / Import / Download
+export const xmakeExportPackage = (name: string, outputDir: string) =>
+  invoke<void>('xmake_export_package', { name, outputDir });
+export const xmakeImportPackage = (inputDir: string) =>
+  invoke<void>('xmake_import_package', { inputDir });
+export const xmakeDownloadSource = (name: string, outputDir?: string) =>
+  invoke<void>('xmake_download_source', { name, outputDir });

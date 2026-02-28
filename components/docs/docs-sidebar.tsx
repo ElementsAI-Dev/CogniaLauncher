@@ -9,10 +9,19 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/components/providers/locale-provider';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Menu } from 'lucide-react';
 import { DOC_NAV, slugToArray, type DocNavItem } from '@/lib/docs/navigation';
+import { DocsSearch } from './docs-search';
 
 interface DocsSidebarProps {
   className?: string;
@@ -86,11 +95,30 @@ function NavSection({
   );
 }
 
-export function DocsSidebar({ className }: DocsSidebarProps) {
-  const pathname = usePathname();
-  const { locale } = useLocale();
+function SidebarNav({ locale, isSectionActive }: { locale: string; isSectionActive: (item: DocNavItem) => boolean }) {
+  return (
+    <nav className="space-y-1 pr-2 py-2" aria-label="Documentation">
+      {DOC_NAV.map((item) => {
+        if (item.children) {
+          return (
+            <NavSection
+              key={item.title}
+              item={item}
+              locale={locale}
+              defaultOpen={isSectionActive(item)}
+            />
+          );
+        }
+        return <NavItem key={item.slug ?? item.title} item={item} locale={locale} />;
+      })}
+    </nav>
+  );
+}
 
-  // Determine which sections should be open by default
+function useSidebarState() {
+  const pathname = usePathname();
+  const { t, locale } = useLocale();
+
   const isSectionActive = (item: DocNavItem): boolean => {
     if (item.children) {
       return item.children.some((child) => {
@@ -103,25 +131,49 @@ export function DocsSidebar({ className }: DocsSidebarProps) {
     return false;
   };
 
+  return { t, locale, isSectionActive };
+}
+
+export function DocsSidebar({ className }: DocsSidebarProps) {
+  const { locale, isSectionActive } = useSidebarState();
+
   return (
     <aside className={cn('w-60 shrink-0', className)}>
-      <ScrollArea className="h-[calc(100vh-8rem)]">
-        <nav className="space-y-1 pr-2 py-2" aria-label="Documentation">
-          {DOC_NAV.map((item) => {
-            if (item.children) {
-              return (
-                <NavSection
-                  key={item.title}
-                  item={item}
-                  locale={locale}
-                  defaultOpen={isSectionActive(item)}
-                />
-              );
-            }
-            return <NavItem key={item.slug ?? item.title} item={item} locale={locale} />;
-          })}
-        </nav>
+      <div className="pr-2 pt-2 pb-1">
+        <DocsSearch />
+      </div>
+      <ScrollArea className="h-[calc(100vh-10rem)]">
+        <SidebarNav locale={locale} isSectionActive={isSectionActive} />
       </ScrollArea>
     </aside>
+  );
+}
+
+export function DocsMobileSidebar() {
+  const { t, locale, isSectionActive } = useSidebarState();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="outline" size="sm" className="md:hidden gap-2">
+          <Menu className="h-4 w-4" />
+          {t('docs.mobileMenu')}
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-72 p-0">
+        <SheetHeader className="border-b border-border">
+          <SheetTitle>{t('docs.title')}</SheetTitle>
+        </SheetHeader>
+        <div className="px-2 pt-2">
+          <DocsSearch />
+        </div>
+        <ScrollArea className="h-[calc(100vh-8rem)]">
+          <div className="p-2" onClick={() => setOpen(false)}>
+            <SidebarNav locale={locale} isSectionActive={isSectionActive} />
+          </div>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
   );
 }

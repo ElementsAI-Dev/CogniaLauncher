@@ -11,6 +11,7 @@
 
 mod asset_picker;
 mod manager;
+mod persistence;
 mod queue;
 mod state;
 mod task;
@@ -20,6 +21,7 @@ pub use asset_picker::{
     detect_arch, detect_platform, AssetLike, AssetMatch, AssetPicker, LibcType,
 };
 pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig};
+pub use persistence::QueuePersistence;
 pub use queue::DownloadQueue;
 pub use state::{DownloadError, DownloadState};
 pub use task::{DownloadConfig, DownloadProgress, DownloadTask};

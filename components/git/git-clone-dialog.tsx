@@ -12,14 +12,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { FolderOpen, Download, Loader2, ChevronDown, CheckCircle2, XCircle, FolderGit2 } from 'lucide-react';
+import { FolderOpen, Download, Loader2, ChevronDown, CheckCircle2, XCircle, FolderGit2, ClipboardPaste, AlertCircle, History, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri, listenGitCloneProgress } from '@/lib/tauri';
+import { readClipboard } from '@/lib/clipboard';
 import type { GitCloneOptions, GitCloneProgress } from '@/types/tauri';
 import type { GitCloneDialogProps } from '@/types/git';
 
-export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOpenRepo }: GitCloneDialogProps) {
+export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOpenRepo, onCancelClone, cloneHistory, onClearCloneHistory }: GitCloneDialogProps) {
   const { t } = useLocale();
   const [url, setUrl] = useState('');
   const [destPath, setDestPath] = useState('');
@@ -29,6 +30,8 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
   const [options, setOptions] = useState<GitCloneOptions>({});
   const [progress, setProgress] = useState<GitCloneProgress | null>(null);
   const [cloneSuccess, setCloneSuccess] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [browsedDir, setBrowsedDir] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateOption = useCallback(<K extends keyof GitCloneOptions>(key: K, value: GitCloneOptions[K]) => {
@@ -47,15 +50,24 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
         const valid = await onValidateUrl(trimmed);
         setUrlValid(valid);
       }
-      if (onExtractRepoName && !destPath.trim()) {
+      if (onExtractRepoName) {
         const name = await onExtractRepoName(trimmed);
         if (name) {
-          setDestPath(prev => prev.trim() ? prev : name);
+          if (browsedDir && destPath.trim()) {
+            const sep = destPath.includes('\\') ? '\\' : '/';
+            const base = destPath.replace(/[\\/]+$/, '');
+            const currentEnd = base.split(/[\\/]/).pop();
+            if (currentEnd !== name) {
+              setDestPath(`${base}${sep}${name}`);
+            }
+          } else if (!destPath.trim()) {
+            setDestPath(name);
+          }
         }
       }
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [url, onValidateUrl, onExtractRepoName, destPath]);
+  }, [url, onValidateUrl, onExtractRepoName, destPath, browsedDir]);
 
   const handleBrowse = async () => {
     if (!isTauri()) return;
@@ -64,9 +76,23 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
       const selected = await open({ directory: true, multiple: false });
       if (selected && typeof selected === 'string') {
         setDestPath(selected);
+        setBrowsedDir(true);
       }
     } catch {
       // Dialog cancelled
+    }
+  };
+
+  const handlePasteUrl = async () => {
+    try {
+      const text = await readClipboard();
+      if (text?.trim()) {
+        setUrl(text.trim());
+        setCloneSuccess(false);
+        setCloneError(null);
+      }
+    } catch {
+      // Clipboard not available
     }
   };
 
@@ -75,6 +101,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
     setLoading(true);
     setProgress(null);
     setCloneSuccess(false);
+    setCloneError(null);
     let unlisten: (() => void) | undefined;
     try {
       unlisten = await listenGitCloneProgress((p) => setProgress(p));
@@ -85,6 +112,8 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
       const hasOptions = Object.values(options).some(v => v !== undefined && v !== null && v !== false && v !== '');
       await onClone(url.trim(), destPath.trim(), hasOptions ? options : undefined);
       setCloneSuccess(true);
+    } catch (e) {
+      setCloneError(String(e));
     } finally {
       unlisten?.();
       setLoading(false);
@@ -98,6 +127,8 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
     setOptions({});
     setProgress(null);
     setCloneSuccess(false);
+    setCloneError(null);
+    setBrowsedDir(false);
   };
 
   return (
@@ -120,23 +151,32 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
               <Input
                 placeholder={t('git.cloneAction.urlPlaceholder')}
                 value={url}
-                onChange={(e) => { setUrl(e.target.value); setCloneSuccess(false); }}
+                onChange={(e) => { setUrl(e.target.value); setCloneSuccess(false); setCloneError(null); }}
                 className={cn(
-                  "h-8 text-xs font-mono pr-7",
+                  "h-8 text-xs font-mono pr-14",
                   urlValid === true && "border-green-500/50",
                   urlValid === false && "border-red-500/50",
                 )}
                 disabled={loading}
               />
-              {urlValid !== null && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                  {urlValid ? (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handlePasteUrl}
+                  disabled={loading}
+                  className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  title={t('git.cloneAction.pasteUrl')}
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5" />
+                </button>
+                {urlValid !== null && (
+                  urlValid ? (
                     <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                   ) : (
                     <XCircle className="h-3.5 w-3.5 text-red-500" />
-                  )}
-                </div>
-              )}
+                  )
+                )}
+              </div>
             </div>
           </div>
 
@@ -146,7 +186,7 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
             <div className="flex items-center gap-2">
               <Input
                 value={destPath}
-                onChange={(e) => setDestPath(e.target.value)}
+                onChange={(e) => { setDestPath(e.target.value); setBrowsedDir(false); }}
                 className="h-8 text-xs font-mono flex-1"
                 disabled={loading}
               />
@@ -191,24 +231,58 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
                 </div>
               </div>
 
-              {/* Filter & Jobs */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.filter')}</Label>
+              {/* Filter with presets */}
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.filter')}</Label>
+                <div className="flex items-center gap-2">
                   <Input
                     placeholder={t('git.cloneAction.filterPlaceholder')}
                     value={options.filter ?? ''}
                     onChange={(e) => updateOption('filter', e.target.value || undefined)}
-                    className="h-7 text-xs font-mono"
+                    className="h-7 text-xs font-mono flex-1"
                     disabled={loading}
                   />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px] px-2"
+                    disabled={loading}
+                    onClick={() => updateOption('filter', 'blob:none')}
+                  >
+                    {t('git.cloneAction.blobless')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[10px] px-2"
+                    disabled={loading}
+                    onClick={() => updateOption('filter', 'tree:0')}
+                  >
+                    {t('git.cloneAction.treeless')}
+                  </Button>
                 </div>
+              </div>
+
+              {/* Remote Name & Jobs */}
+              <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.remoteName')}</Label>
                   <Input
                     placeholder={t('git.cloneAction.remoteNamePlaceholder')}
                     value={options.remoteName ?? ''}
                     onChange={(e) => updateOption('remoteName', e.target.value || undefined)}
+                    className="h-7 text-xs"
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('git.cloneAction.jobs')}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder={t('git.cloneAction.jobsPlaceholder')}
+                    value={options.jobs ?? ''}
+                    onChange={(e) => updateOption('jobs', e.target.value ? Number(e.target.value) : undefined)}
                     className="h-7 text-xs"
                     disabled={loading}
                   />
@@ -248,7 +322,10 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{t(`git.cloneAction.phase.${progress.phase}`)}</span>
-                {progress.percent != null && <span>{progress.percent}%</span>}
+                <span className="flex items-center gap-2">
+                  {progress.speed && <span className="text-[10px]">{progress.speed}</span>}
+                  {progress.percent != null && <span>{progress.percent}%</span>}
+                </span>
               </div>
               <Progress value={progress.percent ?? 0} className="h-1.5" />
               {progress.current != null && progress.total != null && (
@@ -259,26 +336,47 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
             </div>
           )}
 
+          {/* Error */}
+          {cloneError && (
+            <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400 bg-red-500/10 rounded-md p-2">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span className="break-all">{cloneError}</span>
+            </div>
+          )}
+
           {/* Clone Button */}
           {!cloneSuccess ? (
-            <Button
-              size="sm"
-              onClick={handleClone}
-              disabled={loading || !url.trim() || !destPath.trim()}
-              className="w-full"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                  {t('git.cloneAction.cloning')}
-                </>
-              ) : (
-                <>
-                  <Download className="h-3.5 w-3.5 mr-1" />
-                  {t('git.actions.clone')}
-                </>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleClone}
+                disabled={loading || !url.trim() || !destPath.trim()}
+                className="flex-1"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    {t('git.cloneAction.cloning')}
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-3.5 w-3.5 mr-1" />
+                    {t('git.actions.clone')}
+                  </>
+                )}
+              </Button>
+              {loading && onCancelClone && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    try { await onCancelClone(); } catch { /* ignore */ }
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
               )}
-            </Button>
+            </div>
           ) : (
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
@@ -302,6 +400,57 @@ export function GitCloneDialog({ onClone, onExtractRepoName, onValidateUrl, onOp
                 </Button>
               </div>
             </div>
+          )}
+
+          {/* Clone History */}
+          {cloneHistory && cloneHistory.length > 0 && (
+            <Collapsible>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="w-full justify-between h-7 px-2 text-xs">
+                  <span className="flex items-center gap-1.5">
+                    <History className="h-3 w-3" />
+                    {t('git.cloneAction.recentClones')} ({cloneHistory.length})
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-1 space-y-1">
+                {cloneHistory.slice(0, 5).map((entry, i) => (
+                  <div
+                    key={`${entry.timestamp}-${i}`}
+                    className="flex items-center gap-2 text-[11px] px-1.5 py-1 rounded hover:bg-muted/50 cursor-pointer group"
+                    onClick={() => {
+                      setUrl(entry.url);
+                      setDestPath(entry.destPath);
+                      setCloneSuccess(false);
+                      setCloneError(null);
+                    }}
+                    title={`${entry.url} → ${entry.destPath}`}
+                  >
+                    {entry.status === 'success' ? (
+                      <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                    ) : (
+                      <XCircle className="h-3 w-3 text-red-500 shrink-0" />
+                    )}
+                    <span className="font-mono truncate flex-1">{entry.url}</span>
+                    <span className="text-muted-foreground shrink-0">
+                      {new Date(entry.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+                {onClearCloneHistory && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-6 text-[10px] text-muted-foreground"
+                    onClick={onClearCloneHistory}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    {t('git.cloneAction.clearHistory')}
+                  </Button>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           )}
         </div>
       </CardContent>

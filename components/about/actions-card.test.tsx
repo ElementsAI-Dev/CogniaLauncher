@@ -6,6 +6,11 @@ jest.mock("@/lib/tauri", () => ({
   openExternal: jest.fn(),
 }));
 
+const mockOpenDialog = jest.fn();
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({ openDialog: mockOpenDialog }),
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "about.actions": "Actions",
@@ -120,21 +125,15 @@ describe("ActionsCard", () => {
     expect(openExternal).toHaveBeenCalledWith("https://cognia.dev/docs");
   });
 
-  it("calls openExternal when Report Bug button is clicked", async () => {
-    const { openExternal } = jest.requireMock("@/lib/tauri");
+  it("opens feedback dialog with bug category when Report Bug is clicked", async () => {
     render(<ActionsCard {...defaultProps} />);
     await userEvent.click(screen.getByText("Report Bug"));
-    expect(openExternal).toHaveBeenCalledWith(
-      "https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md",
-    );
+    expect(mockOpenDialog).toHaveBeenCalledWith({ category: "bug" });
   });
 
-  it("calls openExternal when Feature Request button is clicked", async () => {
-    const { openExternal } = jest.requireMock("@/lib/tauri");
+  it("opens feedback dialog with feature category when Feature Request is clicked", async () => {
     render(<ActionsCard {...defaultProps} />);
     await userEvent.click(screen.getByText("Feature Request"));
-    expect(openExternal).toHaveBeenCalledWith(
-      "https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas",
-    );
+    expect(mockOpenDialog).toHaveBeenCalledWith({ category: "feature" });
   });
 });

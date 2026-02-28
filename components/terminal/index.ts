@@ -7,3 +7,4 @@ export { TerminalShellConfig } from './terminal-shell-config';
 export { TerminalShellFramework } from './terminal-shell-framework';
 export { TerminalProxySettings } from './terminal-proxy-settings';
 export { TerminalEnvVars } from './terminal-env-vars';
+export { TerminalTemplatePicker } from './terminal-template-picker';

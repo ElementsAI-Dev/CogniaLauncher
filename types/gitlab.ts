@@ -42,8 +42,8 @@ export interface GitLabSourceInfo {
 }
 
 export interface GitLabParsedProject {
-  owner: string;
-  repo: string;
+  namespace: string;
+  project: string;
   fullName: string;
 }
 
@@ -58,6 +58,50 @@ export interface GitLabProjectInfo {
   forksCount: number;
   archived: boolean;
   topics: string[];
+}
+
+export interface GitLabSearchResult {
+  fullName: string;
+  description: string | null;
+  starCount: number;
+  archived: boolean;
+  webUrl: string;
+}
+
+export interface GitLabPipelineInfo {
+  id: number;
+  refName: string | null;
+  status: string;
+  source: string | null;
+  createdAt: string | null;
+  webUrl: string | null;
+}
+
+export interface GitLabJobInfo {
+  id: number;
+  name: string;
+  stage: string | null;
+  status: string;
+  refName: string | null;
+  hasArtifacts: boolean;
+  webUrl: string | null;
+  finishedAt: string | null;
+}
+
+export interface GitLabPackageInfo {
+  id: number;
+  name: string;
+  version: string;
+  packageType: string;
+  createdAt: string | null;
+}
+
+export interface GitLabPackageFileInfo {
+  id: number;
+  fileName: string;
+  size: number;
+  fileSha256: string | null;
+  createdAt: string | null;
 }
 
 export type GitLabSourceType = 'release' | 'branch' | 'tag';

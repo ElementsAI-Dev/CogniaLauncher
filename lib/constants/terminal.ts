@@ -21,11 +21,11 @@ export function categorizeVar(key: string): EnvVarCategory {
   return 'other';
 }
 
-export const ENV_VAR_CATEGORY_LABELS: Record<EnvVarCategory, string> = {
-  path: 'PATH & Tools',
-  language: 'Language Runtimes',
-  system: 'System',
-  other: 'Other',
+export const ENV_VAR_CATEGORY_KEYS: Record<EnvVarCategory, string> = {
+  path: 'terminal.envVarCategoryPath',
+  language: 'terminal.envVarCategoryLanguage',
+  system: 'terminal.envVarCategorySystem',
+  other: 'terminal.envVarCategoryOther',
 };
 
 export const PS_VALID_POLICIES = ['Restricted', 'AllSigned', 'RemoteSigned', 'Unrestricted', 'Bypass'];

@@ -1,5 +1,6 @@
 //! Download manager - the main coordinator for all download operations
 
+use super::persistence::QueuePersistence;
 use super::queue::{DownloadQueue, QueueStats};
 use super::state::DownloadError;
 use super::task::{DownloadConfig, DownloadProgress, DownloadTask};
@@ -110,6 +111,8 @@ pub struct DownloadManagerConfig {
     pub partials_dir: PathBuf,
     /// Whether to auto-start downloads when added
     pub auto_start: bool,
+    /// Progress event throttle interval in milliseconds
+    pub progress_interval_ms: u64,
 }
 
 impl Default for DownloadManagerConfig {
@@ -120,26 +123,58 @@ impl Default for DownloadManagerConfig {
             default_task_config: DownloadConfig::default(),
             partials_dir: PathBuf::from(".downloads"),
             auto_start: true,
+            progress_interval_ms: 100,
         }
     }
 }
 
 /// Parse a Content-Disposition header value to extract the filename.
 ///
-/// Supports both `filename="quoted"` and `filename=unquoted` forms.
+/// Supports `filename*=UTF-8''encoded` (RFC 5987), `filename="quoted"`, and
+/// `filename=unquoted` forms.  `filename*` takes priority when present.
 fn parse_content_disposition(header: &str) -> Option<String> {
-    header.split(';').find_map(|part| {
+    let mut filename = None;
+    let mut filename_star = None;
+
+    for part in header.split(';') {
         let part = part.trim();
-        if part.starts_with("filename=") {
-            Some(
+        if part.starts_with("filename*=") {
+            let value = part.trim_start_matches("filename*=");
+            // RFC 5987: charset'language'value  (e.g. UTF-8''my%20file.zip)
+            if let Some(encoded) = value.split('\'').nth(2) {
+                filename_star = Some(percent_decode(encoded));
+            }
+        } else if part.starts_with("filename=") {
+            filename = Some(
                 part.trim_start_matches("filename=")
                     .trim_matches('"')
                     .to_string(),
-            )
-        } else {
-            None
+            );
         }
-    })
+    }
+
+    // filename* takes precedence per RFC 6266 §4.3
+    filename_star.or(filename)
+}
+
+/// Decode percent-encoded bytes (RFC 3986 / RFC 5987).
+fn percent_decode(input: &str) -> String {
+    let mut bytes = Vec::with_capacity(input.len());
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                bytes.push(byte);
+            } else {
+                bytes.push(b'%');
+                bytes.extend(hex.as_bytes());
+            }
+        } else {
+            bytes.push(c as u8);
+        }
+    }
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 /// The main download manager
@@ -161,6 +196,8 @@ pub struct DownloadManager {
     /// Shutdown signal (reserved for future graceful shutdown)
     #[allow(dead_code)]
     shutdown_tx: Option<mpsc::Sender<()>>,
+    /// Queue persistence for crash recovery
+    persistence: Option<Arc<QueuePersistence>>,
 }
 
 impl Default for DownloadManager {
@@ -202,6 +239,7 @@ impl DownloadManager {
             event_tx: None,
             running: Arc::new(AtomicBool::new(false)),
             shutdown_tx: None,
+            persistence: None,
         }
     }
 
@@ -215,6 +253,77 @@ impl DownloadManager {
         let (tx, rx) = mpsc::unbounded_channel();
         self.event_tx = Some(tx);
         rx
+    }
+
+    /// Enable queue persistence for crash recovery.
+    ///
+    /// `dir` is the directory where `download_queue.json` will be stored.
+    pub fn enable_persistence(&mut self, dir: &std::path::Path) {
+        self.persistence = Some(Arc::new(QueuePersistence::new(dir)));
+    }
+
+    /// Load persisted tasks from previous session and add them to the queue.
+    pub async fn load_persisted_tasks(&self) -> usize {
+        let persistence = match &self.persistence {
+            Some(p) => p.clone(),
+            None => return 0,
+        };
+
+        match persistence.load().await {
+            Ok(tasks) => {
+                let count = tasks.len();
+                for task in tasks {
+                    let task_id = task.id.clone();
+                    {
+                        let mut queue = self.queue.write().await;
+                        queue.add(task);
+                    }
+                    {
+                        let mut controls = self.task_controls.write().await;
+                        controls.insert(task_id, TaskControl::new());
+                    }
+                }
+                count
+            }
+            Err(e) => {
+                log::warn!("Failed to load persisted download queue: {}", e);
+                0
+            }
+        }
+    }
+
+    /// Persist the current queue state to disk (debounced).
+    async fn persist_queue(&self) {
+        let persistence = match &self.persistence {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        let tasks: Vec<DownloadTask> = {
+            let queue = self.queue.read().await;
+            queue.list_all().into_iter().cloned().collect()
+        };
+
+        if let Err(e) = persistence.save(&tasks, false).await {
+            log::warn!("Failed to persist download queue: {}", e);
+        }
+    }
+
+    /// Force-persist the current queue state (bypasses debounce).
+    pub async fn persist_queue_force(&self) {
+        let persistence = match &self.persistence {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        let tasks: Vec<DownloadTask> = {
+            let queue = self.queue.read().await;
+            queue.list_all().into_iter().cloned().collect()
+        };
+
+        if let Err(e) = persistence.save(&tasks, true).await {
+            log::warn!("Failed to persist download queue: {}", e);
+        }
     }
 
     /// Emit an event
@@ -251,6 +360,7 @@ impl DownloadManager {
             task_id: task_id.clone(),
         });
         self.emit_queue_stats().await;
+        self.persist_queue().await;
 
         task_id
     }
@@ -281,6 +391,7 @@ impl DownloadManager {
             task_id: task_id.to_string(),
         });
         self.emit_queue_stats().await;
+        self.persist_queue().await;
 
         Ok(())
     }
@@ -305,6 +416,7 @@ impl DownloadManager {
             task_id: task_id.to_string(),
         });
         self.emit_queue_stats().await;
+        self.persist_queue().await;
 
         Ok(())
     }
@@ -329,6 +441,7 @@ impl DownloadManager {
             task_id: task_id.to_string(),
         });
         self.emit_queue_stats().await;
+        self.persist_queue().await;
 
         Ok(())
     }
@@ -349,6 +462,7 @@ impl DownloadManager {
         }
 
         self.emit_queue_stats().await;
+        self.persist_queue().await;
         task
     }
 
@@ -581,6 +695,9 @@ impl DownloadManager {
         // Give workers a moment to clean up
         tokio::time::sleep(Duration::from_millis(500)).await;
 
+        // Force-persist remaining queue state for crash recovery
+        self.persist_queue_force().await;
+
         log::info!(
             "Download manager shutdown: cancelled {} active downloads",
             active_ids.len()
@@ -694,27 +811,114 @@ impl DownloadManager {
             });
         }
 
-        // Perform the download with per-task timeout
+        // Perform the download with per-task timeout, trying mirror URLs on failure
         let timeout_duration = Duration::from_secs(task.config.timeout_secs);
-        let download_future = Self::do_download(
-            &task,
-            &control,
-            &queue,
-            &client,
-            &speed_limiter,
-            &event_tx,
-            &config,
-        );
-        let result = match tokio::time::timeout(timeout_duration, download_future).await {
-            Ok(inner) => inner,
-            Err(_) => Err(DownloadError::Timeout {
-                seconds: task.config.timeout_secs,
-            }),
-        };
+
+        // Build list of URLs to try: primary first, then mirrors
+        let mut urls_to_try = vec![task.url.clone()];
+        urls_to_try.extend(task.mirror_urls.clone());
+
+        let mut result: Result<(), DownloadError> = Err(DownloadError::Network {
+            message: "No URLs to try".to_string(),
+        });
+
+        for (url_idx, try_url) in urls_to_try.iter().enumerate() {
+            if control.is_cancelled() {
+                result = Err(DownloadError::Interrupted);
+                break;
+            }
+
+            // Use a temporary task with the current URL
+            let mut try_task = task.clone();
+            try_task.url = try_url.clone();
+
+            let download_future = Self::do_download(
+                &try_task,
+                &control,
+                &queue,
+                &client,
+                &speed_limiter,
+                &event_tx,
+                &config,
+            );
+            result = match tokio::time::timeout(timeout_duration, download_future).await {
+                Ok(inner) => inner,
+                Err(_) => Err(DownloadError::Timeout {
+                    seconds: task.config.timeout_secs,
+                }),
+            };
+
+            if result.is_ok() {
+                if url_idx > 0 {
+                    log::info!(
+                        "Download {} succeeded with mirror URL #{}",
+                        task_id,
+                        url_idx
+                    );
+                }
+                break;
+            }
+
+            // If there are more mirrors to try and error is recoverable, log and continue
+            if url_idx < urls_to_try.len() - 1 {
+                log::warn!(
+                    "Download {} failed with URL {}, trying mirror #{}: {}",
+                    task_id,
+                    try_url,
+                    url_idx + 1,
+                    result.as_ref().unwrap_err()
+                );
+            }
+        }
 
         // Update task state based on result
         match result {
             Ok(()) => {
+                // Auto-extract if configured
+                if task.config.auto_extract {
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(DownloadEvent::TaskExtracting {
+                            task_id: task_id.clone(),
+                        });
+                    }
+
+                    let extract_dest = task
+                        .config
+                        .extract_dest
+                        .clone()
+                        .unwrap_or_else(|| {
+                            task.destination
+                                .parent()
+                                .unwrap_or(&task.destination)
+                                .to_path_buf()
+                        });
+
+                    match crate::core::installer::extract_archive(
+                        &task.destination,
+                        &extract_dest,
+                    )
+                    .await
+                    {
+                        Ok(files) => {
+                            let file_strs: Vec<String> =
+                                files.into_iter().map(|p| p.display().to_string()).collect();
+                            if let Some(ref tx) = event_tx {
+                                let _ = tx.send(DownloadEvent::TaskExtracted {
+                                    task_id: task_id.clone(),
+                                    files: file_strs,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Auto-extract failed for {}: {}",
+                                task_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
                 let mut q = queue.write().await;
                 let _ = q.complete(&task_id);
 
@@ -780,7 +984,7 @@ impl DownloadManager {
         client: &Client,
         speed_limiter: &SpeedLimiter,
         event_tx: &Option<mpsc::UnboundedSender<DownloadEvent>>,
-        _config: &Arc<RwLock<DownloadManagerConfig>>,
+        config: &Arc<RwLock<DownloadManagerConfig>>,
     ) -> Result<(), DownloadError> {
         let task_id = &task.id;
         let url = &task.url;
@@ -905,101 +1109,309 @@ impl DownloadManager {
             }
         }
 
-        // Open file
-        let mut file = if resume_from.is_some() {
-            tokio::fs::OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(dest)
-                .await
-                .map_err(|e| DownloadError::FileSystem {
-                    message: e.to_string(),
-                })?
-        } else {
-            File::create(dest)
-                .await
-                .map_err(|e| DownloadError::FileSystem {
-                    message: e.to_string(),
-                })?
+        // Read configurable progress interval
+        let progress_interval = {
+            let cfg = config.read().await;
+            Duration::from_millis(cfg.progress_interval_ms)
         };
 
-        let mut downloaded = resume_from.unwrap_or(0);
-        let start_time = Instant::now();
-        let mut last_progress_update = Instant::now();
-        let mut stream = response.bytes_stream();
+        // Minimum file size to use segmented download (10 MB)
+        const SEGMENT_THRESHOLD: u64 = 10 * 1024 * 1024;
+        let use_segments = task.config.segments > 1
+            && server_supports_resume
+            && resume_from.is_none()
+            && total_size.map(|s| s >= SEGMENT_THRESHOLD).unwrap_or(false);
 
-        while let Some(chunk_result) = stream.next().await {
-            // Check for cancellation
-            if control.is_cancelled() {
-                return Err(DownloadError::Interrupted);
+        if use_segments {
+            // Drop the initial response — we'll make per-segment Range requests
+            drop(response);
+            let total = total_size.unwrap(); // safe: checked above
+            let num_segments = (task.config.segments as u64).min(32).max(1);
+            let segment_size = total / num_segments;
+
+            // Shared progress counter
+            let downloaded_total = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let start_time = Instant::now();
+            let last_progress = Arc::new(tokio::sync::Mutex::new(Instant::now()));
+
+            // Pre-allocate file
+            {
+                let file = File::create(dest)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?;
+                file.set_len(total)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?;
             }
 
-            // Check for pause
-            while control.is_paused() {
+            let mut handles = Vec::new();
+
+            for i in 0..num_segments {
+                let range_start = i * segment_size;
+                let range_end = if i == num_segments - 1 {
+                    total - 1
+                } else {
+                    (i + 1) * segment_size - 1
+                };
+
+                let client = client.clone();
+                let url = url.clone();
+                let dest = dest.clone();
+                let headers = task.headers.clone();
+                let speed_limiter = speed_limiter.clone();
+                let control_paused = control.paused.clone();
+                let control_cancelled = control.cancelled.clone();
+                let downloaded_total = downloaded_total.clone();
+
+                let handle = tokio::spawn(async move {
+                    let mut req = client
+                        .get(&url)
+                        .header("Range", format!("bytes={}-{}", range_start, range_end));
+                    for (key, value) in &headers {
+                        req = req.header(key.as_str(), value.as_str());
+                    }
+
+                    let resp = req.send().await.map_err(|e| DownloadError::Network {
+                        message: format!("Segment {} error: {}", i, e),
+                    })?;
+
+                    if !resp.status().is_success() && resp.status().as_u16() != 206 {
+                        return Err(DownloadError::HttpError {
+                            status: resp.status().as_u16(),
+                            message: format!("Segment {}: {}", i, resp.status()),
+                        });
+                    }
+
+                    let mut file = tokio::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&dest)
+                        .await
+                        .map_err(|e| DownloadError::FileSystem {
+                            message: e.to_string(),
+                        })?;
+
+                    use tokio::io::AsyncSeekExt;
+                    file.seek(std::io::SeekFrom::Start(range_start))
+                        .await
+                        .map_err(|e| DownloadError::FileSystem {
+                            message: e.to_string(),
+                        })?;
+
+                    let mut stream = resp.bytes_stream();
+                    while let Some(chunk_result) = stream.next().await {
+                        if control_cancelled.load(Ordering::SeqCst) {
+                            return Err(DownloadError::Interrupted);
+                        }
+                        while control_paused.load(Ordering::SeqCst) {
+                            if control_cancelled.load(Ordering::SeqCst) {
+                                return Err(DownloadError::Interrupted);
+                            }
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+
+                        let chunk = chunk_result.map_err(|e| DownloadError::Network {
+                            message: e.to_string(),
+                        })?;
+
+                        let chunk_len = chunk.len() as u64;
+                        if speed_limiter.is_enabled() {
+                            let mut remaining = chunk_len;
+                            while remaining > 0 {
+                                let allowed = speed_limiter.acquire(remaining).await;
+                                remaining -= allowed;
+                            }
+                        }
+
+                        file.write_all(&chunk)
+                            .await
+                            .map_err(|e| DownloadError::FileSystem {
+                                message: e.to_string(),
+                            })?;
+
+                        downloaded_total.fetch_add(chunk_len, Ordering::Relaxed);
+                    }
+
+                    file.flush().await.map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?;
+
+                    Ok::<(), DownloadError>(())
+                });
+
+                handles.push(handle);
+            }
+
+            // Progress reporting loop
+            let progress_queue = queue.clone();
+            let progress_event_tx = event_tx.clone();
+            let progress_downloaded = downloaded_total.clone();
+            let progress_task_id = task_id.clone();
+            let progress_total = total;
+            let progress_last = last_progress.clone();
+            let progress_start = start_time;
+            let progress_control_cancelled = control.cancelled.clone();
+
+            let progress_handle = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    if progress_control_cancelled.load(Ordering::SeqCst) {
+                        break;
+                    }
+
+                    let mut last = progress_last.lock().await;
+                    if last.elapsed() < Duration::from_millis(100) {
+                        continue;
+                    }
+                    *last = Instant::now();
+                    drop(last);
+
+                    let dl = progress_downloaded.load(Ordering::Relaxed);
+                    let elapsed = progress_start.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 {
+                        dl as f64 / elapsed
+                    } else {
+                        0.0
+                    };
+
+                    let progress = DownloadProgress::new(dl, Some(progress_total), speed);
+                    {
+                        let mut q = progress_queue.write().await;
+                        if let Some(t) = q.get_mut(&progress_task_id) {
+                            t.progress = progress.clone();
+                        }
+                    }
+                    if let Some(ref tx) = progress_event_tx {
+                        let _ = tx.send(DownloadEvent::TaskProgress {
+                            task_id: progress_task_id.clone(),
+                            progress,
+                        });
+                    }
+
+                    if dl >= progress_total {
+                        break;
+                    }
+                }
+            });
+
+            // Wait for all segments to complete
+            let mut first_error: Option<DownloadError> = None;
+            for handle in handles {
+                match handle.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
+                    }
+                    Err(e) => {
+                        if first_error.is_none() {
+                            first_error = Some(DownloadError::Network {
+                                message: format!("Segment task panicked: {}", e),
+                            });
+                        }
+                    }
+                }
+            }
+
+            progress_handle.abort();
+
+            if let Some(err) = first_error {
+                let _ = tokio::fs::remove_file(dest).await;
+                return Err(err);
+            }
+        } else {
+            // Single-connection download (original logic)
+            let mut file = if resume_from.is_some() {
+                tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(dest)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?
+            } else {
+                File::create(dest)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?
+            };
+
+            let mut downloaded = resume_from.unwrap_or(0);
+            let start_time = Instant::now();
+            let mut last_progress_update = Instant::now();
+            let mut stream = response.bytes_stream();
+
+            while let Some(chunk_result) = stream.next().await {
                 if control.is_cancelled() {
                     return Err(DownloadError::Interrupted);
                 }
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
 
-            let chunk = chunk_result.map_err(|e| DownloadError::Network {
-                message: e.to_string(),
-            })?;
-
-            // Apply speed limit
-            let chunk_len = chunk.len() as u64;
-            if speed_limiter.is_enabled() {
-                let mut remaining = chunk_len;
-                while remaining > 0 {
-                    let allowed = speed_limiter.acquire(remaining).await;
-                    remaining -= allowed;
+                while control.is_paused() {
+                    if control.is_cancelled() {
+                        return Err(DownloadError::Interrupted);
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
-            }
 
-            // Write to file
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| DownloadError::FileSystem {
+                let chunk = chunk_result.map_err(|e| DownloadError::Network {
                     message: e.to_string(),
                 })?;
 
-            downloaded += chunk_len;
-
-            // Update progress (throttle to avoid too many updates)
-            if last_progress_update.elapsed() >= Duration::from_millis(100) {
-                let elapsed = start_time.elapsed().as_secs_f64();
-                let speed = if elapsed > 0.0 {
-                    (downloaded - resume_from.unwrap_or(0)) as f64 / elapsed
-                } else {
-                    0.0
-                };
-
-                let progress = DownloadProgress::new(downloaded, total_size, speed);
-
-                // Update task in queue
-                {
-                    let mut q = queue.write().await;
-                    if let Some(t) = q.get_mut(task_id) {
-                        t.progress = progress.clone();
+                let chunk_len = chunk.len() as u64;
+                if speed_limiter.is_enabled() {
+                    let mut remaining = chunk_len;
+                    while remaining > 0 {
+                        let allowed = speed_limiter.acquire(remaining).await;
+                        remaining -= allowed;
                     }
                 }
 
-                // Emit progress event
-                if let Some(ref tx) = event_tx {
-                    let _ = tx.send(DownloadEvent::TaskProgress {
-                        task_id: task_id.clone(),
-                        progress,
-                    });
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|e| DownloadError::FileSystem {
+                        message: e.to_string(),
+                    })?;
+
+                downloaded += chunk_len;
+
+                if last_progress_update.elapsed() >= progress_interval {
+                    let elapsed = start_time.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 {
+                        (downloaded - resume_from.unwrap_or(0)) as f64 / elapsed
+                    } else {
+                        0.0
+                    };
+
+                    let progress = DownloadProgress::new(downloaded, total_size, speed);
+
+                    {
+                        let mut q = queue.write().await;
+                        if let Some(t) = q.get_mut(task_id) {
+                            t.progress = progress.clone();
+                        }
+                    }
+
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(DownloadEvent::TaskProgress {
+                            task_id: task_id.clone(),
+                            progress,
+                        });
+                    }
+
+                    last_progress_update = Instant::now();
                 }
-
-                last_progress_update = Instant::now();
             }
-        }
 
-        // Flush file
-        file.flush().await.map_err(|e| DownloadError::FileSystem {
-            message: e.to_string(),
-        })?;
+            file.flush().await.map_err(|e| DownloadError::FileSystem {
+                message: e.to_string(),
+            })?;
+        }
 
         // Verify checksum if provided
         if task.config.verify_checksum {
@@ -1696,6 +2108,7 @@ mod tests {
             speed_limit: 1024 * 1024,
             partials_dir: PathBuf::from("/custom/dir"),
             auto_start: false,
+            progress_interval_ms: 200,
             default_task_config: DownloadConfig {
                 max_retries: 5,
                 ..Default::default()
@@ -1816,5 +2229,153 @@ mod tests {
             retrieved.config.extract_dest,
             Some(PathBuf::from("/tmp/extracted"))
         );
+    }
+
+    #[test]
+    fn test_parse_content_disposition_filename_star_utf8() {
+        let result = parse_content_disposition(
+            "attachment; filename*=UTF-8''my%20file%20%E4%B8%AD%E6%96%87.zip",
+        );
+        assert_eq!(result, Some("my file 中文.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_filename_star_takes_priority() {
+        let result = parse_content_disposition(
+            r#"attachment; filename="fallback.zip"; filename*=UTF-8''preferred%20name.zip"#,
+        );
+        assert_eq!(result, Some("preferred name.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_filename_star_reverse_order() {
+        let result = parse_content_disposition(
+            r#"attachment; filename*=UTF-8''star-name.zip; filename="fallback.zip""#,
+        );
+        assert_eq!(result, Some("star-name.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_only_filename_fallback() {
+        let result = parse_content_disposition(r#"attachment; filename="only-plain.zip""#);
+        assert_eq!(result, Some("only-plain.zip".to_string()));
+    }
+
+    #[test]
+    fn test_parse_content_disposition_filename_star_no_language() {
+        let result = parse_content_disposition(
+            "attachment; filename*=UTF-8''simple.zip",
+        );
+        assert_eq!(result, Some("simple.zip".to_string()));
+    }
+
+    #[test]
+    fn test_percent_decode_basic() {
+        assert_eq!(percent_decode("hello%20world"), "hello world");
+        assert_eq!(percent_decode("no%20spaces%21"), "no spaces!");
+        assert_eq!(percent_decode("plain"), "plain");
+    }
+
+    #[test]
+    fn test_percent_decode_utf8() {
+        // 中 = E4 B8 AD, 文 = E6 96 87
+        assert_eq!(percent_decode("%E4%B8%AD%E6%96%87"), "中文");
+    }
+
+    #[test]
+    fn test_percent_decode_mixed() {
+        assert_eq!(percent_decode("file%20name%20v2.zip"), "file name v2.zip");
+    }
+
+    #[test]
+    fn test_percent_decode_invalid_hex() {
+        // Invalid hex should be kept as-is
+        assert_eq!(percent_decode("%ZZ"), "%ZZ");
+    }
+
+    #[test]
+    fn test_percent_decode_empty() {
+        assert_eq!(percent_decode(""), "");
+    }
+
+    #[test]
+    fn test_download_manager_config_progress_interval_default() {
+        let config = DownloadManagerConfig::default();
+        assert_eq!(config.progress_interval_ms, 100);
+    }
+
+    #[test]
+    fn test_download_manager_config_progress_interval_custom() {
+        let config = DownloadManagerConfig {
+            progress_interval_ms: 250,
+            ..Default::default()
+        };
+        assert_eq!(config.progress_interval_ms, 250);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_task_has_mirror_urls_empty() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task_id = manager
+            .download(
+                "https://example.com/file.zip".to_string(),
+                PathBuf::from("/tmp/file.zip"),
+                "Test File".to_string(),
+            )
+            .await;
+
+        let task = manager.get_task(&task_id).await.unwrap();
+        assert!(task.mirror_urls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_task_with_mirrors() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task = crate::download::DownloadTask::builder(
+            "https://primary.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test File".to_string(),
+        )
+        .with_mirror("https://mirror1.com/file.zip".to_string())
+        .with_mirror("https://mirror2.com/file.zip".to_string())
+        .build();
+
+        let task_id = manager.add_task(task).await;
+        let retrieved = manager.get_task(&task_id).await.unwrap();
+
+        assert_eq!(retrieved.mirror_urls.len(), 2);
+        assert_eq!(retrieved.mirror_urls[0], "https://mirror1.com/file.zip");
+        assert_eq!(retrieved.mirror_urls[1], "https://mirror2.com/file.zip");
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_task_segments_preserved() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+
+        let task = crate::download::DownloadTask::builder(
+            "https://example.com/big.zip".to_string(),
+            PathBuf::from("/tmp/big.zip"),
+            "Big File".to_string(),
+        )
+        .with_config(DownloadConfig {
+            segments: 8,
+            ..Default::default()
+        })
+        .build();
+
+        let task_id = manager.add_task(task).await;
+        let retrieved = manager.get_task(&task_id).await.unwrap();
+        assert_eq!(retrieved.config.segments, 8);
+    }
+
+    #[tokio::test]
+    async fn test_download_manager_persistence_not_enabled() {
+        let manager = DownloadManager::new(DownloadManagerConfig::default(), None);
+        // persist_queue_force should be a no-op when persistence is None
+        manager.persist_queue_force().await;
+        // load should return 0 when persistence is None
+        assert_eq!(manager.load_persisted_tasks().await, 0);
     }
 }

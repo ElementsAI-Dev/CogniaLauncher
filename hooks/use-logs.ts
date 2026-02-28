@@ -8,6 +8,9 @@ import {
   logGetDir,
   logExport,
   logGetTotalSize,
+  logCleanup,
+  logDeleteFile,
+  logDeleteBatch,
 } from '@/lib/tauri';
 
 /**
@@ -167,6 +170,47 @@ export function useLogs() {
     }
   }, []);
 
+  // Run log cleanup based on configured retention policy
+  const cleanupLogs = useCallback(async () => {
+    if (!isTauri()) return null;
+
+    try {
+      const result = await logCleanup();
+      await loadLogFiles();
+      return result;
+    } catch (error) {
+      console.error('Failed to cleanup logs:', error);
+      return null;
+    }
+  }, [loadLogFiles]);
+
+  // Delete a specific log file
+  const deleteLogFile = useCallback(async (fileName: string) => {
+    if (!isTauri()) return;
+
+    try {
+      await logDeleteFile(fileName);
+      await loadLogFiles();
+    } catch (error) {
+      console.error('Failed to delete log file:', error);
+      throw error;
+    }
+  }, [loadLogFiles]);
+
+  // Delete multiple log files at once
+  const deleteLogFiles = useCallback(async (fileNames: string[]) => {
+    if (!isTauri()) return null;
+
+    try {
+      const result = await logDeleteBatch(fileNames);
+      await loadLogFiles();
+      return result;
+    } catch (error) {
+      console.error('Failed to delete log files:', error);
+      return null;
+    }
+  }, [loadLogFiles]);
+
   return {
     // State
     logs,
@@ -203,5 +247,10 @@ export function useLogs() {
     exportLogs,
     exportLogFile,
     getTotalSize,
+
+    // Log management
+    cleanupLogs,
+    deleteLogFile,
+    deleteLogFiles,
   };
 }

@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { FileText, Copy, RefreshCw, Pencil, Save } from 'lucide-react';
+import { FileText, Copy, RefreshCw, Pencil, Save, AlertCircle } from 'lucide-react';
 import type { ShellInfo, ShellType, ShellConfigEntries } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ interface TerminalShellConfigProps {
   shells: ShellInfo[];
   onReadConfig: (path: string) => Promise<string>;
   onFetchConfigEntries: (path: string, shellType: ShellType) => Promise<ShellConfigEntries | null>;
+  onParseConfigContent?: (content: string, shellType: ShellType) => Promise<ShellConfigEntries | null>;
   onBackupConfig: (path: string) => Promise<string | undefined>;
   onWriteConfig?: (path: string, content: string) => Promise<void>;
 }
@@ -28,17 +29,20 @@ export function TerminalShellConfig({
   shells,
   onReadConfig,
   onFetchConfigEntries,
+  onParseConfigContent,
   onBackupConfig,
   onWriteConfig,
 }: TerminalShellConfigProps) {
   const { t } = useLocale();
   const [selectedShellId, setSelectedShellId] = useState<string>(shells[0]?.id ?? '');
   const [selectedConfigPath, setSelectedConfigPath] = useState<string>('');
-  const [configContent, setConfigContent] = useState<string>('');
+  const [configContent, setConfigContent] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>('');
   const [editing, setEditing] = useState(false);
   const [entries, setEntries] = useState<ShellConfigEntries | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   const selectedShell = shells.find((s) => s.id === selectedShellId);
   const configFiles = selectedShell?.configFiles.filter((f) => f.exists) ?? [];
@@ -46,29 +50,39 @@ export function TerminalShellConfig({
   const handleShellChange = (shellId: string) => {
     setSelectedShellId(shellId);
     setSelectedConfigPath('');
-    setConfigContent('');
+    setConfigContent(null);
     setEditContent('');
     setEditing(false);
     setEntries(null);
+    setError(null);
+    setLoaded(false);
   };
 
   const handleLoadConfig = async () => {
     if (!selectedConfigPath || !selectedShell) return;
     setLoading(true);
+    setError(null);
     try {
-      const [content, parsed] = await Promise.all([
-        onReadConfig(selectedConfigPath),
-        onFetchConfigEntries(selectedConfigPath, selectedShell.shellType),
-      ]);
+      const content = await onReadConfig(selectedConfigPath);
       setConfigContent(content);
+      // Parse from already-read content (avoids double file read)
+      const parsed = onParseConfigContent
+        ? await onParseConfigContent(content, selectedShell.shellType)
+        : await onFetchConfigEntries(selectedConfigPath, selectedShell.shellType);
       setEntries(parsed);
+      setLoaded(true);
+    } catch (e) {
+      setError(String(e));
+      setConfigContent(null);
+      setEntries(null);
+      setLoaded(false);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCopyContent = async () => {
-    if (!configContent) return;
+    if (configContent == null) return;
     try {
       await navigator.clipboard.writeText(configContent);
       toast.success(t('terminal.configCopied'));
@@ -135,6 +149,16 @@ export function TerminalShellConfig({
 
         {configFiles.length === 0 && selectedShellId && (
           <p className="text-sm text-muted-foreground">{t('terminal.noConfigFiles')}</p>
+        )}
+
+        {error && !loading && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span className="break-all">{error}</span>
+            <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={handleLoadConfig}>
+              {t('terminal.loadConfig')}
+            </Button>
+          </div>
         )}
 
         {loading && (
@@ -247,7 +271,7 @@ export function TerminalShellConfig({
           </Accordion>
         )}
 
-        {configContent && !loading && (
+        {loaded && configContent != null && !loading && (
           <>
           <Separator />
           <div className="space-y-3">

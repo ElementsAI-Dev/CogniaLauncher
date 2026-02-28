@@ -108,13 +108,13 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
+              <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.3} />
               <XAxis
                 dataKey="provider"
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }}
+                tick={{ fontSize: 10, fill: "var(--foreground)" }}
                 interval={0}
                 angle={-30}
                 textAnchor="end"
@@ -122,7 +122,7 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
               />
               <ChartTooltip
                 content={<ChartTooltipContent />}
-                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+                cursor={{ fill: "var(--muted)", opacity: 0.3 }}
               />
               <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={45}>
                 {chartData.map((entry, index) => (

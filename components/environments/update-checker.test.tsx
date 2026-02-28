@@ -31,6 +31,8 @@ describe("UpdateCheckerCard", () => {
     available: true,
     current_version: "18.0.0",
     installed_versions: [],
+    total_size: 0,
+    version_count: 0,
   };
 
   beforeEach(() => {

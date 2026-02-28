@@ -81,6 +81,10 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "terminal.proxy_mode",
     "terminal.custom_proxy",
     "terminal.no_proxy",
+    "backup.auto_backup_enabled",
+    "backup.auto_backup_interval_hours",
+    "backup.max_backups",
+    "backup.retention_days",
 ];
 
 #[tauri::command]

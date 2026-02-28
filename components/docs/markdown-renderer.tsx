@@ -13,6 +13,7 @@ import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { handleAnchorClick } from '@/lib/docs/scroll';
 import { resolveDocLink } from '@/lib/docs/resolve-link';
+import { parseCallout, getCalloutIcon } from '@/lib/docs/remark-callout';
 
 interface MarkdownRendererProps {
   content: string;
@@ -58,6 +59,30 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function createHeading(Tag: 'h1' | 'h2' | 'h3' | 'h4') {
+  function HeadingComponent({ children, id, ...props }: ComponentPropsWithoutRef<typeof Tag>) {
+    return (
+      <Tag id={id} className="group/heading" {...props}>
+        {children}
+        {id && (
+          <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
+            #
+          </a>
+        )}
+      </Tag>
+    );
+  }
+  HeadingComponent.displayName = `Docs${Tag.toUpperCase()}`;
+  return HeadingComponent;
+}
+
+const headingComponents = {
+  h1: createHeading('h1'),
+  h2: createHeading('h2'),
+  h3: createHeading('h3'),
+  h4: createHeading('h4'),
+};
+
 export function MarkdownRenderer({ content, className, basePath }: MarkdownRendererProps) {
   return (
     <div className={cn('docs-prose', className)}>
@@ -65,46 +90,7 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight, rehypeSlug]}
         components={{
-          h1: ({ children, id, ...props }: ComponentPropsWithoutRef<'h1'>) => (
-            <h1 id={id} className="group/heading" {...props}>
-              {children}
-              {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
-                  #
-                </a>
-              )}
-            </h1>
-          ),
-          h2: ({ children, id, ...props }: ComponentPropsWithoutRef<'h2'>) => (
-            <h2 id={id} className="group/heading" {...props}>
-              {children}
-              {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
-                  #
-                </a>
-              )}
-            </h2>
-          ),
-          h3: ({ children, id, ...props }: ComponentPropsWithoutRef<'h3'>) => (
-            <h3 id={id} className="group/heading" {...props}>
-              {children}
-              {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
-                  #
-                </a>
-              )}
-            </h3>
-          ),
-          h4: ({ children, id, ...props }: ComponentPropsWithoutRef<'h4'>) => (
-            <h4 id={id} className="group/heading" {...props}>
-              {children}
-              {id && (
-                <a href={`#${id}`} className="docs-heading-anchor" aria-hidden="true" onClick={handleAnchorClick}>
-                  #
-                </a>
-              )}
-            </h4>
-          ),
+          ...headingComponents,
           pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
             let textContent = '';
             let language = '';
@@ -169,6 +155,44 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
                   </a>
                 );
             }
+          },
+          blockquote: ({ children, ...props }: ComponentPropsWithoutRef<'blockquote'>) => {
+            // Detect GitHub-style callouts: > [!NOTE] ...
+            const childArray = Array.isArray(children) ? children : [children];
+            let calloutType: ReturnType<typeof parseCallout> = null;
+
+            // Check first text content for callout marker
+            for (const child of childArray) {
+              if (child && typeof child === 'object' && 'props' in (child as React.ReactElement)) {
+                const el = child as React.ReactElement<{ children?: React.ReactNode }>;
+                const inner = el.props.children;
+                if (typeof inner === 'string') {
+                  calloutType = parseCallout(inner);
+                  break;
+                }
+                if (Array.isArray(inner)) {
+                  const first = inner[0];
+                  if (typeof first === 'string') {
+                    calloutType = parseCallout(first);
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (calloutType) {
+              return (
+                <div className={`docs-callout docs-callout-${calloutType.type}`} role="note">
+                  <div className="docs-callout-title">
+                    <span className="docs-callout-icon">{getCalloutIcon(calloutType.type)}</span>
+                    <span>{calloutType.type.charAt(0).toUpperCase() + calloutType.type.slice(1)}</span>
+                  </div>
+                  <div className="docs-callout-content">{children}</div>
+                </div>
+              );
+            }
+
+            return <blockquote {...props}>{children}</blockquote>;
           },
           img: ({ alt, ...props }: ComponentPropsWithoutRef<'img'>) => (
             // eslint-disable-next-line @next/next/no-img-element

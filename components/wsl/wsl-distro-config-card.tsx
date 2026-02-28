@@ -8,6 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Settings, Plus, Trash2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { QUICK_SETTINGS } from '@/lib/constants/wsl';
@@ -47,6 +54,15 @@ export function WslDistroConfigCard({
   const handleToggle = async (section: string, key: string, currentValue: string) => {
     const newValue = currentValue === 'true' ? 'false' : 'true';
     await setDistroConfigValue(distroName, section, key, newValue);
+    await refresh();
+  };
+
+  const handleSetText = async (section: string, key: string, value: string) => {
+    if (value.trim()) {
+      await setDistroConfigValue(distroName, section, key, value.trim());
+    } else {
+      await setDistroConfigValue(distroName, section, key);
+    }
     await refresh();
   };
 
@@ -131,15 +147,48 @@ export function WslDistroConfigCard({
           {QUICK_SETTINGS.map((setting) => {
             const value = getValue(setting.section, setting.key, setting.defaultValue);
             return (
-              <div key={`${setting.section}.${setting.key}`} className="flex items-center justify-between">
-                <div>
+              <div key={`${setting.section}.${setting.key}`} className="flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <Label className="text-sm">{t(setting.labelKey)}</Label>
                   <p className="text-xs text-muted-foreground">{t(setting.descKey)}</p>
                 </div>
-                <Switch
-                  checked={value === 'true'}
-                  onCheckedChange={() => handleToggle(setting.section, setting.key, value)}
-                />
+                {setting.type === 'boolean' ? (
+                  <Switch
+                    checked={value === 'true'}
+                    onCheckedChange={() => handleToggle(setting.section, setting.key, value)}
+                  />
+                ) : setting.type === 'select' && setting.options ? (
+                  <Select
+                    value={value || ''}
+                    onValueChange={(val) => handleSetText(setting.section, setting.key, val)}
+                  >
+                    <SelectTrigger className="h-7 w-32 text-xs">
+                      <SelectValue placeholder={setting.defaultValue} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {setting.options.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className="h-7 w-40 text-xs"
+                    placeholder={setting.defaultValue || '...'}
+                    defaultValue={config?.[setting.section]?.[setting.key] ?? ''}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSetText(setting.section, setting.key, (e.target as HTMLInputElement).value);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const current = config?.[setting.section]?.[setting.key] ?? '';
+                      if (e.target.value !== current) {
+                        handleSetText(setting.section, setting.key, e.target.value);
+                      }
+                    }}
+                  />
+                )}
               </div>
             );
           })}

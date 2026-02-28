@@ -48,6 +48,7 @@ jest.mock('@/hooks/use-terminal', () => ({
     readShellConfig: jest.fn(),
     fetchConfigEntries: jest.fn(),
     backupShellConfig: jest.fn(),
+    parseConfigContent: jest.fn(),
     writeShellConfig: jest.fn(),
     detectFrameworks: jest.fn(),
     fetchPlugins: jest.fn(),

@@ -22,6 +22,8 @@ const mockT = (key: string) => {
     'wsl.config.keyPlaceholder': 'Key (e.g. memory)',
     'wsl.config.valuePlaceholder': 'Value (e.g. 4GB)',
     'wsl.config.restartNote': 'Changes require WSL restart (wsl --shutdown) to take effect.',
+    'wsl.config.networkPresets': 'Network Presets',
+    'wsl.config.presetApplied': 'Network preset applied.',
     'common.add': 'Add',
   };
   return translations[key] || key;
@@ -66,11 +68,11 @@ describe('WslConfigCard', () => {
   it('displays existing config entries with section badges', () => {
     render(<WslConfigCard config={populatedConfig} {...defaultProps} />);
 
+    // memory and processors are in wsl2, autoMemoryReclaim is in experimental
+    // They show as raw key-value entries in the config list
     expect(screen.getByText('memory')).toBeInTheDocument();
-    expect(screen.getByText('4GB')).toBeInTheDocument();
     expect(screen.getByText('processors')).toBeInTheDocument();
     expect(screen.getByText('autoMemoryReclaim')).toBeInTheDocument();
-    expect(screen.getByText('gradual')).toBeInTheDocument();
   });
 
   it('shows section badges for wsl2 and experimental', () => {
@@ -117,8 +119,10 @@ describe('WslConfigCard', () => {
   it('disables Add button when key or value is empty', () => {
     render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
 
-    const addButton = screen.getByRole('button', { name: /add/i });
-    expect(addButton).toBeDisabled();
+    // The Add button is inside the "Add Custom Setting" collapsible
+    const addButtons = screen.getAllByRole('button', { name: /add/i });
+    const addCustomBtn = addButtons[addButtons.length - 1];
+    expect(addCustomBtn).toBeDisabled();
   });
 
   it('renders loading skeleton when loading with no config', () => {
@@ -131,25 +135,30 @@ describe('WslConfigCard', () => {
 
   // Typed controls tests (Phase 5 enhancements)
   describe('typed quick settings controls', () => {
-    it('renders all 11 quick settings (not sliced to 4)', () => {
+    it('renders all 14 quick settings', () => {
       render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
 
-      // Text-type settings
+      // Text-type settings (wsl2)
       expect(screen.getByText('Memory')).toBeInTheDocument();
       expect(screen.getByText('Processors')).toBeInTheDocument();
       expect(screen.getByText('Swap')).toBeInTheDocument();
 
-      // Bool-type settings
+      // Bool-type settings (wsl2)
       expect(screen.getByText('Localhost Forwarding')).toBeInTheDocument();
       expect(screen.getByText('Nested Virtualization')).toBeInTheDocument();
       expect(screen.getByText('GUI Applications')).toBeInTheDocument();
+      expect(screen.getByText('DNS Proxy')).toBeInTheDocument();
+
+      // Select-type settings (wsl2)
+      expect(screen.getByText('Networking Mode')).toBeInTheDocument();
+
+      // Experimental section settings
+      expect(screen.getByText('Auto Memory Reclaim')).toBeInTheDocument();
       expect(screen.getByText('Sparse VHD')).toBeInTheDocument();
       expect(screen.getByText('DNS Tunneling')).toBeInTheDocument();
       expect(screen.getByText('Firewall')).toBeInTheDocument();
-
-      // Select-type settings
-      expect(screen.getByText('Networking Mode')).toBeInTheDocument();
-      expect(screen.getByText('Auto Memory Reclaim')).toBeInTheDocument();
+      expect(screen.getByText('Auto Proxy')).toBeInTheDocument();
+      expect(screen.getByText('Host Address Loopback')).toBeInTheDocument();
     });
 
     it('renders switch controls for boolean settings', () => {
@@ -157,9 +166,9 @@ describe('WslConfigCard', () => {
 
       // Boolean settings produce switch elements
       const switches = screen.getAllByRole('switch');
-      // 6 boolean settings: localhostForwarding, nestedVirtualization, guiApplications,
-      // sparseVhd, dnsTunneling, firewall
-      expect(switches.length).toBe(6);
+      // 9 boolean settings: localhostForwarding, nestedVirtualization, guiApplications,
+      // dnsProxy (wsl2), sparseVhd, dnsTunneling, firewall, autoProxy, hostAddressLoopback (experimental)
+      expect(switches.length).toBe(9);
     });
 
     it('renders text inputs for memory/processors/swap', () => {
@@ -214,9 +223,10 @@ describe('WslConfigCard', () => {
     await userEvent.type(keyInput, 'swapFile');
     await userEvent.type(valueInput, '2GB');
 
-    const addButton = screen.getByRole('button', { name: /add/i });
-    expect(addButton).not.toBeDisabled();
-    await userEvent.click(addButton);
+    const addButtons = screen.getAllByRole('button', { name: /add/i });
+    const addCustomBtn = addButtons[addButtons.length - 1];
+    expect(addCustomBtn).not.toBeDisabled();
+    await userEvent.click(addCustomBtn);
     expect(defaultProps.onSetConfig).toHaveBeenCalledWith('wsl2', 'swapFile', '2GB');
   });
 

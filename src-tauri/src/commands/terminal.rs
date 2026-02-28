@@ -1,7 +1,8 @@
 use crate::config::Settings;
 use crate::core::terminal::{
-    self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries, ShellFrameworkInfo,
-    ShellInfo, ShellPlugin, TerminalProfile, TerminalProfileManager,
+    self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries,
+    ShellFrameworkInfo, ShellInfo, ShellPlugin, TerminalProfile, TerminalProfileManager,
+    TerminalProfileTemplate,
 };
 use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
@@ -384,6 +385,66 @@ pub async fn terminal_get_proxy_env_vars(
 }
 
 // ============================================================================
+// Profile Templates
+// ============================================================================
+
+#[tauri::command]
+pub async fn terminal_list_templates(
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<Vec<TerminalProfileTemplate>, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.list_templates())
+}
+
+#[tauri::command]
+pub async fn terminal_create_custom_template(
+    template: TerminalProfileTemplate,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<String, String> {
+    let mut mgr = manager.write().await;
+    mgr.create_custom_template(template)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_delete_custom_template(
+    id: String,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<bool, String> {
+    let mut mgr = manager.write().await;
+    mgr.delete_custom_template(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_save_profile_as_template(
+    profile_id: String,
+    template_name: String,
+    template_description: String,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<String, String> {
+    let mut mgr = manager.write().await;
+    mgr.save_profile_as_template(&profile_id, template_name, template_description)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_create_profile_from_template(
+    template_id: String,
+    manager: State<'_, SharedTerminalProfileManager>,
+) -> Result<TerminalProfile, String> {
+    let detected_shells = terminal::detect_installed_shells()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mgr = manager.read().await;
+    mgr.create_profile_from_template(&template_id, &detected_shells)
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
 // Shell Config
 // ============================================================================
 
@@ -417,6 +478,14 @@ pub async fn terminal_get_config_entries(
     let content = terminal::read_shell_config(&PathBuf::from(&path))
         .await
         .map_err(|e| e.to_string())?;
+    Ok(terminal::parse_shell_config(&content, shell_type))
+}
+
+#[tauri::command]
+pub fn terminal_parse_config_content(
+    content: String,
+    shell_type: ShellType,
+) -> Result<ShellConfigEntries, String> {
     Ok(terminal::parse_shell_config(&content, shell_type))
 }
 
@@ -488,7 +557,7 @@ pub async fn terminal_ps_list_installed_scripts() -> Result<Vec<PSScriptInfo>, S
 pub async fn terminal_detect_framework(
     shell_type: ShellType,
 ) -> Result<Vec<ShellFrameworkInfo>, String> {
-    Ok(terminal::detect_shell_framework(shell_type))
+    Ok(terminal::detect_shell_framework(shell_type).await)
 }
 
 #[tauri::command]
@@ -496,12 +565,18 @@ pub async fn terminal_list_plugins(
     framework_name: String,
     framework_path: String,
     shell_type: ShellType,
+    config_path: Option<String>,
 ) -> Result<Vec<ShellPlugin>, String> {
     let framework = ShellFrameworkInfo {
         name: framework_name,
         version: None,
         path: framework_path,
         shell_type,
+        category: terminal::FrameworkCategory::Framework,
+        description: String::new(),
+        homepage: None,
+        config_path,
+        active_theme: None,
     };
     Ok(terminal::list_shell_plugins(&framework, None))
 }
@@ -631,6 +706,55 @@ pub async fn terminal_get_shell_env_vars() -> Result<Vec<(String, String)>, Stri
         .collect();
     vars.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(vars)
+}
+
+// ============================================================================
+// Framework Cache Management
+// ============================================================================
+
+#[tauri::command]
+pub async fn terminal_get_framework_cache_stats() -> Result<Vec<terminal::FrameworkCacheInfo>, String> {
+    // Detect all shells first, then detect frameworks for each
+    let shells = terminal::detect_installed_shells()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut all_frameworks = Vec::new();
+    for shell in &shells {
+        let fws = terminal::detect_shell_framework(shell.shell_type).await;
+        all_frameworks.extend(fws);
+    }
+
+    Ok(terminal::get_all_framework_cache_stats(&all_frameworks).await)
+}
+
+#[tauri::command]
+pub async fn terminal_get_single_framework_cache_info(
+    framework_name: String,
+    framework_path: String,
+    shell_type: ShellType,
+) -> Result<terminal::FrameworkCacheInfo, String> {
+    let dummy = terminal::ShellFrameworkInfo {
+        name: framework_name.clone(),
+        version: None,
+        path: framework_path,
+        shell_type,
+        category: terminal::FrameworkCategory::Framework,
+        description: String::new(),
+        homepage: None,
+        config_path: None,
+        active_theme: None,
+    };
+    Ok(terminal::get_framework_cache_info(&dummy).await)
+}
+
+#[tauri::command]
+pub async fn terminal_clean_framework_cache(
+    framework_name: String,
+) -> Result<u64, String> {
+    terminal::clean_framework_cache(&framework_name)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

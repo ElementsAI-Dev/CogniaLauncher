@@ -12,9 +12,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { AlertTriangle, ChevronDown, HardDrive, Activity, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ChevronDown, HardDrive, Activity, RefreshCw, TrendingUp } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import { isTauri } from '@/lib/tauri';
-import type { CacheSizeMonitor } from '@/lib/tauri';
+import type { CacheSizeMonitor, CacheSizeSnapshot } from '@/lib/tauri';
 import { usageColor, progressColor } from '@/lib/constants/cache';
 import type { CacheMonitorCardProps } from '@/types/cache';
 
@@ -23,6 +24,8 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
   const [open, setOpen] = useState(true);
   const [monitor, setMonitor] = useState<CacheSizeMonitor | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sizeHistory, setSizeHistory] = useState<CacheSizeSnapshot[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const fetchMonitor = useCallback(async () => {
     if (!isTauri()) return;
@@ -38,9 +41,24 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
     }
   }, []);
 
+  const fetchSizeHistory = useCallback(async () => {
+    if (!isTauri()) return;
+    setHistoryLoading(true);
+    try {
+      const { getCacheSizeHistory } = await import('@/lib/tauri');
+      const data = await getCacheSizeHistory(30);
+      setSizeHistory(data);
+    } catch {
+      // silently fail
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMonitor();
-  }, [fetchMonitor, refreshTrigger]);
+    fetchSizeHistory();
+  }, [fetchMonitor, fetchSizeHistory, refreshTrigger]);
 
   // Auto-refresh based on monitor_interval setting
   useEffect(() => {
@@ -151,6 +169,67 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                     <p className="text-xs text-muted-foreground">{t('cache.diskAvailable')}</p>
                   </div>
                 </div>
+
+                {/* Size Trend Chart */}
+                {sizeHistory.length >= 2 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <p className="text-sm font-medium text-muted-foreground">{t('cache.sizeHistory')}</p>
+                    </div>
+                    <div className="h-40 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={sizeHistory.map(s => ({
+                            date: new Date(s.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                            size: s.internalSize,
+                            sizeHuman: s.internalSizeHuman,
+                            downloads: s.downloadCount,
+                            metadata: s.metadataCount,
+                          }))}
+                          margin={{ top: 4, right: 4, left: 4, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="cacheSizeGradient" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickLine={false}
+                            axisLine={false}
+                          />
+                          <YAxis hide />
+                          <RechartsTooltip
+                            content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null;
+                              const d = payload[0].payload;
+                              return (
+                                <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
+                                  <p className="font-medium">{d.date}</p>
+                                  <p>{d.sizeHuman}</p>
+                                  <p className="text-muted-foreground">{d.downloads} downloads, {d.metadata} metadata</p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="size"
+                            stroke="hsl(var(--primary))"
+                            fill="url(#cacheSizeGradient)"
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+                {sizeHistory.length < 2 && !historyLoading && (
+                  <p className="text-xs text-muted-foreground text-center py-2">{t('cache.noSizeHistory')}</p>
+                )}
 
                 {/* External Cache Breakdown */}
                 {monitor.externalCaches.length > 0 && (

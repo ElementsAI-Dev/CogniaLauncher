@@ -27,7 +27,7 @@ export function useAutoVersionSwitch({
   enabled = true,
   pollInterval = 5000,
 }: UseAutoVersionSwitchOptions) {
-  const { detectVersions, setGlobalVersion, environments } = useEnvironments();
+  const { detectVersions, setLocalVersion, environments } = useEnvironments();
   const { getEnvSettings } = useEnvironmentStore();
   const lastDetectedRef = useRef<Record<string, string>>({});
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -61,9 +61,10 @@ export function useAutoVersionSwitch({
         );
         
         if (isInstalled) {
-          // Auto-switch to the detected version
+          // Auto-switch to the detected version using local (project-scoped) version
+          // to avoid affecting other terminal sessions or projects
           try {
-            await setGlobalVersion(envType, detectedVersion);
+            await setLocalVersion(envType, detectedVersion, projectPath);
             lastDetectedRef.current[envType] = detectedVersion;
           } catch {
             // Silently fail - don't interrupt user workflow
@@ -73,7 +74,7 @@ export function useAutoVersionSwitch({
     } catch {
       // Silently fail detection errors
     }
-  }, [projectPath, detectVersions, setGlobalVersion, environments, getEnvSettings]);
+  }, [projectPath, detectVersions, setLocalVersion, environments, getEnvSettings]);
 
   useEffect(() => {
     if (!enabled || !projectPath) {

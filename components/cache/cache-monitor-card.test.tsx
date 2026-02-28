@@ -8,12 +8,17 @@ jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
+const mockGetCacheSizeHistory = jest.fn();
+
 jest.mock("@/lib/tauri", () => ({
   get isTauri() {
     return () => mockIsTauri;
   },
   get cacheSizeMonitor() {
     return mockCacheSizeMonitor;
+  },
+  get getCacheSizeHistory() {
+    return mockGetCacheSizeHistory;
   },
 }));
 
@@ -34,6 +39,7 @@ describe("CacheMonitorCard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri = false;
+    mockGetCacheSizeHistory.mockResolvedValue([]);
   });
 
   it("renders monitor card title", () => {
@@ -130,5 +136,38 @@ describe("CacheMonitorCard", () => {
       render(<CacheMonitorCard />);
     });
     expect(screen.getByText("1.2 GB / 5.0 GB")).toBeInTheDocument();
+  });
+
+  it("shows no size history message when fewer than 2 snapshots", async () => {
+    mockIsTauri = true;
+    mockCacheSizeMonitor.mockResolvedValue(monitorData);
+    mockGetCacheSizeHistory.mockResolvedValue([]);
+    await act(async () => {
+      render(<CacheMonitorCard />);
+    });
+    expect(screen.getByText("cache.noSizeHistory")).toBeInTheDocument();
+  });
+
+  it("shows size history title when snapshots are available", async () => {
+    mockIsTauri = true;
+    mockCacheSizeMonitor.mockResolvedValue(monitorData);
+    mockGetCacheSizeHistory.mockResolvedValue([
+      { timestamp: "2025-01-01T00:00:00Z", internalSize: 1000, internalSizeHuman: "1 KB", downloadCount: 5, metadataCount: 3 },
+      { timestamp: "2025-01-02T00:00:00Z", internalSize: 2000, internalSizeHuman: "2 KB", downloadCount: 10, metadataCount: 6 },
+    ]);
+    await act(async () => {
+      render(<CacheMonitorCard />);
+    });
+    expect(screen.getByText("cache.sizeHistory")).toBeInTheDocument();
+  });
+
+  it("calls getCacheSizeHistory on mount in Tauri environment", async () => {
+    mockIsTauri = true;
+    mockCacheSizeMonitor.mockResolvedValue(monitorData);
+    mockGetCacheSizeHistory.mockResolvedValue([]);
+    await act(async () => {
+      render(<CacheMonitorCard />);
+    });
+    expect(mockGetCacheSizeHistory).toHaveBeenCalledWith(30);
   });
 });

@@ -40,6 +40,11 @@ jest.mock("@/lib/stores/log", () => ({
   useLogStore: () => ({ toggleDrawer: mockToggleDrawer }),
 }));
 
+const mockOpenFeedback = jest.fn();
+jest.mock("@/lib/stores/feedback", () => ({
+  useFeedbackStore: () => ({ openDialog: mockOpenFeedback }),
+}));
+
 jest.mock("@/hooks/use-keyboard-shortcuts", () => ({
   useKeyboardShortcuts: jest.fn(),
 }));

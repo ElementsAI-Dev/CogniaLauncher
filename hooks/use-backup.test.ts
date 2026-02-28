@@ -6,6 +6,9 @@ const mockBackupRestore = jest.fn();
 const mockBackupList = jest.fn();
 const mockBackupDelete = jest.fn();
 const mockBackupValidate = jest.fn();
+const mockBackupExport = jest.fn();
+const mockBackupImport = jest.fn();
+const mockBackupCleanup = jest.fn();
 const mockDbIntegrityCheck = jest.fn();
 const mockDbGetInfo = jest.fn();
 
@@ -16,6 +19,9 @@ jest.mock('@/lib/tauri', () => ({
   backupList: (...args: unknown[]) => mockBackupList(...args),
   backupDelete: (...args: unknown[]) => mockBackupDelete(...args),
   backupValidate: (...args: unknown[]) => mockBackupValidate(...args),
+  backupExport: (...args: unknown[]) => mockBackupExport(...args),
+  backupImport: (...args: unknown[]) => mockBackupImport(...args),
+  backupCleanup: (...args: unknown[]) => mockBackupCleanup(...args),
   dbIntegrityCheck: (...args: unknown[]) => mockDbIntegrityCheck(...args),
   dbGetInfo: (...args: unknown[]) => mockDbGetInfo(...args),
 }));
@@ -236,6 +242,122 @@ describe('useBackup', () => {
     expect(info).toEqual(dbInfo);
   });
 
+  it('should export backup', async () => {
+    mockBackupExport.mockResolvedValue(2048);
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let size;
+    await act(async () => {
+      size = await result.current.exportBackup('/backup1', '/dest/backup.zip');
+    });
+
+    expect(size).toBe(2048);
+    expect(mockBackupExport).toHaveBeenCalledWith('/backup1', '/dest/backup.zip');
+  });
+
+  it('should handle export error', async () => {
+    mockBackupExport.mockRejectedValue(new Error('Export failed'));
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let size;
+    await act(async () => {
+      size = await result.current.exportBackup('/backup1', '/dest/backup.zip');
+    });
+
+    expect(size).toBe(0);
+    expect(result.current.error).toBe('Export failed');
+  });
+
+  it('should import backup and refresh', async () => {
+    const importedInfo = { path: '/backups/imported', name: 'imported', size: 512 };
+    mockBackupImport.mockResolvedValue(importedInfo);
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let info;
+    await act(async () => {
+      info = await result.current.importBackup('/path/to/backup.zip');
+    });
+
+    expect(info).toEqual(importedInfo);
+    expect(mockBackupImport).toHaveBeenCalledWith('/path/to/backup.zip');
+    // Should have refreshed after import
+    expect(mockBackupList).toHaveBeenCalledTimes(2); // once on mount + once after import
+  });
+
+  it('should handle import error', async () => {
+    mockBackupImport.mockRejectedValue(new Error('Invalid ZIP'));
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let info;
+    await act(async () => {
+      info = await result.current.importBackup('/bad.zip');
+    });
+
+    expect(info).toBeNull();
+    expect(result.current.error).toBe('Invalid ZIP');
+  });
+
+  it('should cleanup old backups', async () => {
+    mockBackupCleanup.mockResolvedValue(3);
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let deleted;
+    await act(async () => {
+      deleted = await result.current.cleanup(5, 30);
+    });
+
+    expect(deleted).toBe(3);
+    expect(mockBackupCleanup).toHaveBeenCalledWith(5, 30);
+    // Should have refreshed since deleted > 0
+    expect(mockBackupList).toHaveBeenCalledTimes(2);
+  });
+
+  it('should handle cleanup with zero deletions (no refresh)', async () => {
+    mockBackupCleanup.mockResolvedValue(0);
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    // Wait for initial mount refresh
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    const callsBefore = mockBackupList.mock.calls.length;
+
+    await act(async () => {
+      await result.current.cleanup(10, 0);
+    });
+
+    // Should NOT have refreshed since deleted === 0
+    expect(mockBackupList).toHaveBeenCalledTimes(callsBefore);
+  });
+
+  it('should handle cleanup error', async () => {
+    mockBackupCleanup.mockRejectedValue(new Error('Cleanup failed'));
+    mockBackupList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useBackup());
+
+    let deleted;
+    await act(async () => {
+      deleted = await result.current.cleanup(5, 30);
+    });
+
+    expect(deleted).toBe(0);
+    expect(result.current.error).toBe('Cleanup failed');
+  });
+
   it('should return null for all actions when not in Tauri', async () => {
     const tauriMock = jest.requireMock('@/lib/tauri');
     tauriMock.isTauri.mockReturnValue(false);
@@ -247,6 +369,9 @@ describe('useBackup', () => {
       const restored = await result.current.restore('/b', ['settings'] as never[]);
       const deleted = await result.current.remove('/b');
       const validated = await result.current.validate('/b');
+      const exported = await result.current.exportBackup('/b', '/out.zip');
+      const imported = await result.current.importBackup('/in.zip');
+      const cleaned = await result.current.cleanup(5, 30);
       const integrity = await result.current.checkIntegrity();
       const dbInfo = await result.current.getDatabaseInfo();
 
@@ -254,6 +379,9 @@ describe('useBackup', () => {
       expect(restored).toBeNull();
       expect(deleted).toBe(false);
       expect(validated).toBeNull();
+      expect(exported).toBe(0);
+      expect(imported).toBeNull();
+      expect(cleaned).toBe(0);
       expect(integrity).toBeNull();
       expect(dbInfo).toBeNull();
     });

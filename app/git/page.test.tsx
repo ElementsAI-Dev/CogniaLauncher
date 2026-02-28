@@ -28,6 +28,9 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'git.repo.noRepo': 'No repository selected',
         'git.diffView.unstaged': 'Unstaged',
         'git.diffView.staged': 'Staged',
+        'git.diffView.fromCommit': 'From hash',
+        'git.diffView.toCommit': 'To hash',
+        'git.diffView.compare': 'Compare',
         'git.commit.success': 'Commit created',
         'git.cloneAction.success': 'Cloned',
         'git.mergeAction.success': 'Merged',
@@ -74,6 +77,7 @@ jest.mock('@/hooks/use-git', () => ({
     setConfigValue: mockSetConfigValue,
     removeConfigKey: mockRemoveConfigKey,
     cloneRepo: jest.fn().mockResolvedValue('cloned'),
+    cancelClone: jest.fn().mockResolvedValue(undefined),
     extractRepoName: jest.fn(),
     validateGitUrl: jest.fn(),
     merge: jest.fn().mockResolvedValue('merged'),
@@ -85,9 +89,54 @@ jest.mock('@/hooks/use-git', () => ({
     getFileHistory: jest.fn(),
     getBlame: jest.fn(),
     getReflog: jest.fn(),
+    getAheadBehind: jest.fn().mockResolvedValue({ ahead: 0, behind: 0 }),
     resetHead: jest.fn().mockResolvedValue('reset'),
     commit: jest.fn().mockResolvedValue('committed'),
     getDiff: jest.fn().mockResolvedValue(''),
+    cherryPick: jest.fn().mockResolvedValue('cherry-picked'),
+    revertCommit: jest.fn().mockResolvedValue('reverted'),
+    createBranch: jest.fn().mockResolvedValue('branch created'),
+    createTag: jest.fn().mockResolvedValue('tag created'),
+    stageFiles: jest.fn().mockResolvedValue('staged'),
+    stageAll: jest.fn().mockResolvedValue('staged all'),
+    unstageFiles: jest.fn().mockResolvedValue('unstaged'),
+    discardChanges: jest.fn().mockResolvedValue('discarded'),
+    push: jest.fn().mockResolvedValue('pushed'),
+    pull: jest.fn().mockResolvedValue('pulled'),
+    fetch: jest.fn().mockResolvedValue('fetched'),
+    cleanUntracked: jest.fn().mockResolvedValue('cleaned'),
+    checkAvailability: jest.fn().mockResolvedValue(true),
+    refreshVersion: jest.fn().mockResolvedValue(undefined),
+    refreshConfig: jest.fn().mockResolvedValue(undefined),
+    refreshBranches: jest.fn().mockResolvedValue(undefined),
+    refreshRemotes: jest.fn().mockResolvedValue(undefined),
+    refreshTags: jest.fn().mockResolvedValue(undefined),
+    refreshStashes: jest.fn().mockResolvedValue(undefined),
+    refreshContributors: jest.fn().mockResolvedValue(undefined),
+    refreshRepoInfo: jest.fn().mockResolvedValue(undefined),
+    getDiffBetween: jest.fn().mockResolvedValue(''),
+    initRepo: jest.fn().mockResolvedValue('initialized'),
+    checkoutBranch: jest.fn().mockResolvedValue('checked out'),
+    deleteBranch: jest.fn().mockResolvedValue('deleted'),
+    stashApply: jest.fn().mockResolvedValue('applied'),
+    stashPop: jest.fn().mockResolvedValue('popped'),
+    stashDrop: jest.fn().mockResolvedValue('dropped'),
+    stashSave: jest.fn().mockResolvedValue('saved'),
+    deleteTag: jest.fn().mockResolvedValue('deleted'),
+    remoteAdd: jest.fn().mockResolvedValue('added'),
+    remoteRemove: jest.fn().mockResolvedValue('removed'),
+    remoteRename: jest.fn().mockResolvedValue('renamed'),
+    remoteSetUrl: jest.fn().mockResolvedValue('set url'),
+    branchRename: jest.fn().mockResolvedValue('renamed'),
+    branchSetUpstream: jest.fn().mockResolvedValue('set upstream'),
+    pushTags: jest.fn().mockResolvedValue('pushed tags'),
+    deleteRemoteBranch: jest.fn().mockResolvedValue('deleted remote'),
+    stashShowDiff: jest.fn().mockResolvedValue(''),
+    getConfigValue: jest.fn().mockResolvedValue(null),
+    getConfigFilePath: jest.fn().mockResolvedValue('/home/user/.gitconfig'),
+    listAliases: jest.fn().mockResolvedValue([]),
+    setConfigIfUnset: jest.fn().mockResolvedValue(false),
+    openConfigInEditor: jest.fn().mockResolvedValue(''),
   }),
 }));
 
@@ -114,6 +163,8 @@ jest.mock('@/components/git', () => ({
       {onRemove && <button data-testid="remove-config" onClick={() => onRemove('user.name')}>Remove</button>}
     </div>
   ),
+  GitGlobalSettingsCard: () => <div data-testid="git-global-settings">Global Settings</div>,
+  GitAliasCard: () => <div data-testid="git-alias">Aliases</div>,
   GitRepoSelector: ({ onSelect }: { onSelect?: (p: string) => void }) => (
     <div data-testid="repo-selector">
       Repo Selector
@@ -142,6 +193,7 @@ jest.mock('@/components/git', () => ({
   GitCloneDialog: () => <div data-testid="clone-dialog">Clone Dialog</div>,
   GitMergeDialog: () => <div data-testid="merge-dialog">Merge Dialog</div>,
   GitReflogCard: () => <div data-testid="reflog-card">Reflog</div>,
+  GitRepoActionBar: () => <div data-testid="repo-action-bar">Action Bar</div>,
 }));
 
 describe('GitPage', () => {
@@ -283,6 +335,39 @@ describe('GitPage - Handlers', () => {
       expect(screen.getByTestId('commit-log')).toBeInTheDocument();
       expect(screen.getByTestId('search-commits')).toBeInTheDocument();
     });
+  });
+});
+
+describe('GitPage - Changes Tab', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders diff action buttons and compare inputs on changes tab', async () => {
+    const user = userEvent.setup();
+    render(<GitPage />);
+    await user.click(screen.getByRole('tab', { name: /changes/i }));
+    // Wait for the tab content to appear
+    await waitFor(() => {
+      expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    });
+    // The Unstaged/Staged/Compare buttons and commit hash inputs are rendered
+    expect(screen.getByText('Unstaged')).toBeInTheDocument();
+    expect(screen.getByText('Staged')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('From hash')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('To hash')).toBeInTheDocument();
+    expect(screen.getByText('Compare')).toBeInTheDocument();
+  });
+
+  it('compare button is disabled when hash inputs are empty', async () => {
+    const user = userEvent.setup();
+    render(<GitPage />);
+    await user.click(screen.getByRole('tab', { name: /changes/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('diff-viewer')).toBeInTheDocument();
+    });
+    const compareBtn = screen.getByText('Compare').closest('button');
+    expect(compareBtn).toBeDisabled();
   });
 });
 

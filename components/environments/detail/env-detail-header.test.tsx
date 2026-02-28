@@ -21,6 +21,8 @@ const defaultProps = {
     current_version: "20.0.0",
     installed_versions: [{ version: "20.0.0", install_path: "/usr/local/bin/node", size: null, is_current: true, installed_at: null }],
     available: true,
+    total_size: 0,
+    version_count: 1,
   },
   detectedVersion: null,
   isRefreshing: false,

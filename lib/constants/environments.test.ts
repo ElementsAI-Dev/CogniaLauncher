@@ -265,6 +265,22 @@ describe('Environment Constants', () => {
       expect(cppProviders.find((p) => p.id === 'system-cpp')).toBeDefined();
     });
 
+    it('c and cpp both have xmake provider', () => {
+      const cProviders = DEFAULT_PROVIDERS.c;
+      const cppProviders = DEFAULT_PROVIDERS.cpp;
+      expect(cProviders.find((p) => p.id === 'xmake')).toBeDefined();
+      expect(cppProviders.find((p) => p.id === 'xmake')).toBeDefined();
+    });
+
+    it('c and cpp have vcpkg and conan providers', () => {
+      const cProviders = DEFAULT_PROVIDERS.c;
+      const cppProviders = DEFAULT_PROVIDERS.cpp;
+      expect(cProviders.find((p) => p.id === 'vcpkg')).toBeDefined();
+      expect(cProviders.find((p) => p.id === 'conan')).toBeDefined();
+      expect(cppProviders.find((p) => p.id === 'vcpkg')).toBeDefined();
+      expect(cppProviders.find((p) => p.id === 'conan')).toBeDefined();
+    });
+
     it('typescript has tsconfig.json (compilerOptions.target) detection file', () => {
       const tsFiles = DEFAULT_DETECTION_FILES.typescript;
       expect(tsFiles).toContain('tsconfig.json (compilerOptions.target)');

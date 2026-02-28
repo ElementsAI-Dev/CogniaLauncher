@@ -219,6 +219,97 @@ where
     })
 }
 
+/// Like `execute_with_streaming` but accepts a cancel signal.
+/// When `cancel_rx` receives `true`, the child process is killed and an error is returned.
+pub async fn execute_with_streaming_cancellable<F, G>(
+    program: &str,
+    args: &[&str],
+    options: Option<ProcessOptions>,
+    mut on_stdout: F,
+    mut on_stderr: G,
+    mut cancel_rx: tokio::sync::watch::Receiver<bool>,
+) -> ProcessResult<ProcessOutput>
+where
+    F: FnMut(&str),
+    G: FnMut(&str),
+{
+    let options = options.unwrap_or_default();
+
+    let mut cmd = Command::new(program);
+    cmd.args(args);
+
+    if let Some(cwd) = &options.cwd {
+        cmd.current_dir(cwd);
+    }
+
+    for (key, value) in &options.env {
+        cmd.env(key, value);
+    }
+
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = cmd.spawn()?;
+
+    let stdout = child.stdout.take().expect("stdout not captured");
+    let stderr = child.stderr.take().expect("stderr not captured");
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut stdout_output = String::new();
+    let mut stderr_output = String::new();
+
+    loop {
+        tokio::select! {
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow() {
+                    let _ = child.kill().await;
+                    return Err(ProcessError::Signal);
+                }
+            }
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        on_stdout(&line);
+                        stdout_output.push_str(&line);
+                        stdout_output.push('\n');
+                    }
+                    Ok(None) => break,
+                    Err(e) => return Err(ProcessError::StartFailed(e)),
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(line)) => {
+                        on_stderr(&line);
+                        stderr_output.push_str(&line);
+                        stderr_output.push('\n');
+                    }
+                    Ok(None) => {}
+                    Err(e) => return Err(ProcessError::StartFailed(e)),
+                }
+            }
+        }
+    }
+
+    let status = child.wait().await?;
+    let exit_code = status.code().unwrap_or(-1);
+
+    Ok(ProcessOutput {
+        exit_code,
+        stdout: stdout_output,
+        stderr: stderr_output,
+        success: status.success(),
+    })
+}
+
 pub async fn which(program: &str) -> Option<String> {
     #[cfg(windows)]
     let result = execute("where", &[program], None).await;

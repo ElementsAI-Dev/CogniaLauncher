@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type {
   ShellType,
   TerminalProfile,
+  TerminalProfileTemplate,
 } from '@/types/tauri';
 import type { UseTerminalState, ProxyMode } from '@/types/terminal';
 
@@ -14,12 +15,15 @@ export function useTerminal() {
   const [state, setState] = useState<UseTerminalState>({
     shells: [],
     profiles: [],
+    templates: [],
     psProfiles: [],
     psModules: [],
     psScripts: [],
     executionPolicy: [],
     frameworks: [],
     plugins: [],
+    frameworkCacheStats: [],
+    frameworkCacheLoading: false,
     shellEnvVars: [],
     proxyEnvVars: [],
     selectedShellId: null,
@@ -197,6 +201,16 @@ export function useTerminal() {
     }
   }, []);
 
+  const parseConfigContent = useCallback(async (content: string, shellType: ShellType) => {
+    if (!isTauri()) return null;
+    try {
+      return await tauri.terminalParseConfigContent(content, shellType);
+    } catch (e) {
+      toast.error(`Failed to parse config: ${e}`);
+      return null;
+    }
+  }, []);
+
   // PowerShell Management
   const fetchPSProfiles = useCallback(async () => {
     if (!isTauri()) return;
@@ -287,15 +301,40 @@ export function useTerminal() {
     }
   }, []);
 
-  const fetchPlugins = useCallback(async (frameworkName: string, frameworkPath: string, shellType: ShellType) => {
+  const fetchPlugins = useCallback(async (frameworkName: string, frameworkPath: string, shellType: ShellType, configPath?: string | null) => {
     if (!isTauri()) return;
     try {
-      const plugins = await tauri.terminalListPlugins(frameworkName, frameworkPath, shellType);
+      const plugins = await tauri.terminalListPlugins(frameworkName, frameworkPath, shellType, configPath);
       setState((prev) => ({ ...prev, plugins }));
     } catch (e) {
       toast.error(`Failed to load plugins: ${e}`);
     }
   }, []);
+
+  // Framework Cache Management
+  const fetchFrameworkCacheStats = useCallback(async () => {
+    if (!isTauri()) return;
+    setState((prev) => ({ ...prev, frameworkCacheLoading: true }));
+    try {
+      const frameworkCacheStats = await tauri.terminalGetFrameworkCacheStats();
+      setState((prev) => ({ ...prev, frameworkCacheStats, frameworkCacheLoading: false }));
+    } catch (e) {
+      setState((prev) => ({ ...prev, frameworkCacheLoading: false }));
+      toast.error(`Failed to load framework cache stats: ${e}`);
+    }
+  }, []);
+
+  const cleanFrameworkCache = useCallback(async (frameworkName: string) => {
+    if (!isTauri()) return;
+    try {
+      const freedBytes = await tauri.terminalCleanFrameworkCache(frameworkName);
+      const freedMB = (freedBytes / (1024 * 1024)).toFixed(1);
+      toast.success(`Cleaned ${freedMB} MB from ${frameworkName} cache`);
+      await fetchFrameworkCacheStats();
+    } catch (e) {
+      toast.error(`Failed to clean ${frameworkName} cache: ${e}`);
+    }
+  }, [fetchFrameworkCacheStats]);
 
   // Shell Environment Variables
   const fetchShellEnvVars = useCallback(async () => {
@@ -345,6 +384,66 @@ export function useTerminal() {
       return 0;
     }
   }, [fetchProfiles]);
+
+  // Templates
+  const fetchTemplates = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const templates = await tauri.terminalListTemplates();
+      setState((prev) => ({ ...prev, templates }));
+    } catch (e) {
+      toast.error(`Failed to load templates: ${e}`);
+    }
+  }, []);
+
+  const createCustomTemplate = useCallback(async (template: TerminalProfileTemplate) => {
+    if (!isTauri()) return;
+    try {
+      const id = await tauri.terminalCreateCustomTemplate(template);
+      await fetchTemplates();
+      toast.success('Template created');
+      return id;
+    } catch (e) {
+      toast.error(`Failed to create template: ${e}`);
+    }
+  }, [fetchTemplates]);
+
+  const deleteCustomTemplate = useCallback(async (id: string) => {
+    if (!isTauri()) return;
+    try {
+      await tauri.terminalDeleteCustomTemplate(id);
+      await fetchTemplates();
+      toast.success('Template deleted');
+    } catch (e) {
+      toast.error(`Failed to delete template: ${e}`);
+    }
+  }, [fetchTemplates]);
+
+  const saveProfileAsTemplate = useCallback(async (
+    profileId: string,
+    templateName: string,
+    templateDescription: string,
+  ) => {
+    if (!isTauri()) return;
+    try {
+      const id = await tauri.terminalSaveProfileAsTemplate(profileId, templateName, templateDescription);
+      await fetchTemplates();
+      toast.success('Profile saved as template');
+      return id;
+    } catch (e) {
+      toast.error(`Failed to save as template: ${e}`);
+    }
+  }, [fetchTemplates]);
+
+  const createProfileFromTemplate = useCallback(async (templateId: string) => {
+    if (!isTauri()) return undefined;
+    try {
+      return await tauri.terminalCreateProfileFromTemplate(templateId);
+    } catch (e) {
+      toast.error(`Failed to create from template: ${e}`);
+      return undefined;
+    }
+  }, []);
 
   // Shell Config Write
   const writeShellConfig = useCallback(async (path: string, content: string) => {
@@ -487,15 +586,17 @@ export function useTerminal() {
     async function load() {
       if (!isTauri()) return;
       try {
-        const [shellsResult, profilesResult] = await Promise.all([
+        const [shellsResult, profilesResult, templatesResult] = await Promise.all([
           tauri.terminalDetectShells(),
           tauri.terminalListProfiles(),
+          tauri.terminalListTemplates(),
         ]);
         if (!cancelled) {
           setState((prev) => ({
             ...prev,
             shells: shellsResult,
             profiles: profilesResult,
+            templates: templatesResult,
             loading: false,
           }));
         }
@@ -523,6 +624,7 @@ export function useTerminal() {
     backupShellConfig,
     appendToShellConfig,
     fetchConfigEntries,
+    parseConfigContent,
     fetchPSProfiles,
     readPSProfile,
     writePSProfile,
@@ -532,11 +634,18 @@ export function useTerminal() {
     fetchPSScripts,
     detectFrameworks,
     fetchPlugins,
+    fetchFrameworkCacheStats,
+    cleanFrameworkCache,
     fetchShellEnvVars,
     fetchProxyEnvVars,
     duplicateProfile,
     exportProfiles,
     importProfiles,
+    fetchTemplates,
+    createCustomTemplate,
+    deleteCustomTemplate,
+    saveProfileAsTemplate,
+    createProfileFromTemplate,
     writeShellConfig,
     installPSModule,
     uninstallPSModule,

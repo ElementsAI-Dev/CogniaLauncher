@@ -25,6 +25,8 @@ const makeEnv = (envType: string, currentVersion: string | null): EnvironmentInf
   current_version: currentVersion,
   installed_versions: [],
   available: true,
+  total_size: 0,
+  version_count: 0,
 });
 
 const makeVersion = (version: string, deprecated = false, yanked = false): VersionInfo => ({

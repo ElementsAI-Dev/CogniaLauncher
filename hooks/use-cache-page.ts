@@ -11,6 +11,8 @@ import type {
   CleanupHistorySummary,
   CacheAccessStats,
   CacheEntryItem,
+  CacheOptimizeResult,
+  DatabaseInfo,
 } from '@/lib/tauri';
 import * as tauri from '@/lib/tauri';
 import type { CleanType, OperationType } from '@/types/cache';
@@ -70,6 +72,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [forceCleanLoading, setForceCleanLoading] = useState(false);
   const [monitorRefreshTrigger, setMonitorRefreshTrigger] = useState(0);
 
+  const [optimizeResult, setOptimizeResult] = useState<CacheOptimizeResult | null>(null);
+  const [optimizeLoading, setOptimizeLoading] = useState(false);
+  const [dbInfo, setDbInfo] = useState<DatabaseInfo | null>(null);
+  const [dbInfoLoading, setDbInfoLoading] = useState(false);
+
   const fetchAccessStats = useCallback(async () => {
     if (!isTauri()) return;
     setAccessStatsLoading(true);
@@ -100,6 +107,40 @@ export function useCachePage({ t }: UseCachePageOptions) {
     fetchAccessStats();
     fetchHotFiles();
   }, [fetchCacheInfo, fetchPlatformInfo, fetchCacheSettings, fetchAccessStats, fetchHotFiles]);
+
+  // Listen to backend cache events for auto-refresh
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    const unlisteners: (() => void)[] = [];
+
+    (async () => {
+      const { listenCacheAutoCleaned, listenCacheChanged } = await import('@/lib/tauri');
+
+      if (cancelled) return;
+
+      const unlisten1 = await listenCacheAutoCleaned((event) => {
+        if (event.expiredMetadataRemoved > 0 || event.expiredDownloadsFreed > 0 || event.evictedCount > 0 || event.stalePartialsRemoved > 0) {
+          toast.info(t('cache.autoCleanEvent', { size: event.totalFreedHuman }));
+          fetchCacheInfo();
+          fetchAccessStats();
+          setMonitorRefreshTrigger(prev => prev + 1);
+        }
+      });
+      unlisteners.push(unlisten1);
+
+      const unlisten2 = await listenCacheChanged(() => {
+        fetchCacheInfo();
+        setMonitorRefreshTrigger(prev => prev + 1);
+      });
+      unlisteners.push(unlisten2);
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisteners.forEach(fn => fn());
+    };
+  }, [fetchCacheInfo, fetchAccessStats, t]);
 
   useEffect(() => {
     if (cacheSettings && !localSettings) {
@@ -293,6 +334,37 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   };
 
+  const handleOptimize = async () => {
+    if (!isTauri()) return;
+    setOptimizeLoading(true);
+    try {
+      const result = await tauri.cacheOptimize();
+      setOptimizeResult(result);
+      if (result.sizeSaved > 0) {
+        toast.success(t('cache.optimizeSuccess', { saved: result.sizeSavedHuman }));
+      } else {
+        toast.info(t('cache.optimizeNoChange'));
+      }
+    } catch (err) {
+      toast.error(`${t('cache.optimizeFailed')}: ${err}`);
+    } finally {
+      setOptimizeLoading(false);
+    }
+  };
+
+  const fetchDbInfo = async () => {
+    if (!isTauri()) return;
+    setDbInfoLoading(true);
+    try {
+      const info = await tauri.dbGetInfo();
+      setDbInfo(info);
+    } catch (err) {
+      console.error('Failed to fetch DB info:', err);
+    } finally {
+      setDbInfoLoading(false);
+    }
+  };
+
   const handleSettingsChange = (key: keyof CacheSettings, value: number | boolean) => {
     if (localSettings) {
       setLocalSettings({ ...localSettings, [key]: value });
@@ -389,6 +461,12 @@ export function useCachePage({ t }: UseCachePageOptions) {
     monitorRefreshTrigger,
     setMonitorRefreshTrigger,
 
+    // DB optimize & info
+    optimizeResult,
+    optimizeLoading,
+    dbInfo,
+    dbInfoLoading,
+
     // Computed
     maxSize,
     usagePercent,
@@ -414,6 +492,8 @@ export function useCachePage({ t }: UseCachePageOptions) {
     handleRepair,
     handleSettingsChange,
     handleSaveSettings,
+    handleOptimize,
+    fetchDbInfo,
     fetchCacheInfo,
   };
 }

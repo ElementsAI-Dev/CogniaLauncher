@@ -14,7 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { AlertTriangle, FolderOpen } from "lucide-react";
+import { AlertTriangle, FolderOpen, Bug } from "lucide-react";
+import { useFeedbackStore } from "@/lib/stores/feedback";
 
 interface CrashRecoveryDialogProps {
   t: (key: string) => string;
@@ -23,6 +24,7 @@ interface CrashRecoveryDialogProps {
 export function CrashRecoveryDialog({ t }: CrashRecoveryDialogProps) {
   const [crashInfo, setCrashInfo] = useState<CrashInfo | null>(null);
   const [open, setOpen] = useState(false);
+  const { openDialog } = useFeedbackStore();
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -94,6 +96,22 @@ export function CrashRecoveryDialog({ t }: CrashRecoveryDialogProps) {
           <AlertDialogCancel>
             {t("diagnostic.dismiss")}
           </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              openDialog({
+                category: "crash",
+                errorContext: {
+                  message: crashInfo?.message ?? undefined,
+                  component: "crash-recovery",
+                },
+              });
+              handleDismiss();
+            }}
+            className="gap-2"
+          >
+            <Bug className="h-4 w-4" />
+            {t("feedback.reportCrash")}
+          </AlertDialogAction>
           <AlertDialogAction onClick={handleOpenFolder} className="gap-2">
             <FolderOpen className="h-4 w-4" />
             {t("diagnostic.openFolder")}

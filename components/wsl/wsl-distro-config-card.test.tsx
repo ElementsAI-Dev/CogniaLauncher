@@ -11,19 +11,30 @@ const mockT = (key: string) => {
     "wsl.distroConfig.systemdDesc": "Enable systemd init",
     "wsl.distroConfig.automount": "Automount",
     "wsl.distroConfig.automountDesc": "Auto-mount Windows drives",
+    "wsl.distroConfig.automountRoot": "Mount root",
+    "wsl.distroConfig.automountRootDesc": "Root dir",
+    "wsl.distroConfig.automountOptions": "Mount options",
+    "wsl.distroConfig.automountOptionsDesc": "DrvFs options",
+    "wsl.distroConfig.generateHosts": "Generate hosts",
+    "wsl.distroConfig.generateHostsDesc": "Generate /etc/hosts",
+    "wsl.distroConfig.generateResolvConf": "Generate resolv.conf",
+    "wsl.distroConfig.generateResolvConfDesc": "Generate resolv.conf",
+    "wsl.distroConfig.hostname": "Hostname",
+    "wsl.distroConfig.hostnameDesc": "Custom hostname",
     "wsl.distroConfig.interop": "Interop",
     "wsl.distroConfig.interopDesc": "Enable Windows interop",
+    "wsl.distroConfig.appendWindowsPath": "Append Windows PATH",
+    "wsl.distroConfig.appendWindowsPathDesc": "Add Windows PATH",
+    "wsl.distroConfig.gpuEnabled": "GPU passthrough",
+    "wsl.distroConfig.gpuEnabledDesc": "GPU access",
+    "wsl.distroConfig.useWindowsTimezone": "Windows timezone",
+    "wsl.distroConfig.useWindowsTimezoneDesc": "Sync timezone",
     "wsl.config.keyPlaceholder": "Key",
     "wsl.config.valuePlaceholder": "Value",
     "common.delete": "Delete",
+    "common.refresh": "Refresh",
   };
   return translations[key] || key;
-};
-
-const mockConfigWithCustom: WslDistroConfig = {
-  boot: { systemd: "true" },
-  automount: { enabled: "true" },
-  network: { generateHosts: "false" },
 };
 
 describe("WslDistroConfigCard", () => {
@@ -77,7 +88,9 @@ describe("WslDistroConfigCard", () => {
     render(<WslDistroConfigCard {...defaultProps} />);
     await waitFor(() => {
       const switches = screen.getAllByRole("switch");
-      expect(switches).toHaveLength(3);
+      // 8 boolean quick settings: systemd, automount, generateHosts, generateResolvConf,
+      // interop, appendWindowsPath, gpuEnabled, useWindowsTimezone
+      expect(switches).toHaveLength(8);
     });
   });
 
@@ -105,7 +118,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getAllByRole("switch")).toHaveLength(3);
+      expect(screen.getAllByRole("switch")).toHaveLength(8);
     });
     // Toggle systemd (currently false → true)
     await userEvent.click(screen.getAllByRole("switch")[0]);
@@ -115,14 +128,19 @@ describe("WslDistroConfigCard", () => {
   });
 
   it("renders custom entries from config", async () => {
+    // generateHosts is now a quick setting, so use a truly custom key for testing
+    const configWithCustom: WslDistroConfig = {
+      boot: { systemd: "true" },
+      network: { customDns: "8.8.8.8" },
+    };
     const props = {
       ...defaultProps,
-      getDistroConfig: jest.fn(() => Promise.resolve(mockConfigWithCustom)),
+      getDistroConfig: jest.fn(() => Promise.resolve(configWithCustom)),
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getByText("generateHosts")).toBeInTheDocument();
-      expect(screen.getByText("false")).toBeInTheDocument();
+      expect(screen.getByText("customDns")).toBeInTheDocument();
+      expect(screen.getByText("8.8.8.8")).toBeInTheDocument();
       expect(screen.getByText("[network]")).toBeInTheDocument();
     });
   });

@@ -100,15 +100,15 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
                 <stop offset="95%" stopColor={getChartColor(1)} stopOpacity={0.05} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.3} />
             <XAxis
               dataKey="name"
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }}
+              tick={{ fontSize: 10, fill: "var(--foreground)" }}
             />
-            <YAxis tickLine={false} axisLine={false} width={30} tick={{ fill: "hsl(var(--foreground))" }} />
+            <YAxis tickLine={false} axisLine={false} width={30} tick={{ fill: "var(--foreground)" }} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Area
               type="monotone"

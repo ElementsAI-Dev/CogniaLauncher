@@ -43,6 +43,7 @@ import {
   TraySettings,
   PathsSettings,
   ProviderSettings,
+  BackupSettings,
   SystemInfo,
   SettingsSkeleton,
 } from '@/components/settings';
@@ -74,6 +75,7 @@ const SECTION_IDS: SettingsSection[] = [
   'tray',
   'paths',
   'provider',
+  'backup',
   'system',
 ];
 
@@ -118,6 +120,7 @@ export default function SettingsPage() {
         tray: ['tray.'],
         paths: ['paths.'],
         provider: ['provider_settings.'],
+        backup: [],
         system: [],
       };
       const prefixes = sectionPrefixes[sectionId] || [];
@@ -454,6 +457,7 @@ export default function SettingsPage() {
         tray: ['tray.'],
         paths: ['paths.'],
         provider: ['provider_settings.'],
+        backup: [],
         system: [],
       };
       const prefixes = sectionPrefixes[sectionId] || [];
@@ -816,6 +820,19 @@ export default function SettingsPage() {
                 onValueChange={handleChange}
                 t={t}
               />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="backup"
+              title={t('backup.title')}
+              description={t('backup.description')}
+              icon="Archive"
+              defaultOpen={!collapsedSections.has('backup')}
+              hasChanges={false}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <BackupSettings t={t} />
             </CollapsibleSection>
 
             <CollapsibleSection

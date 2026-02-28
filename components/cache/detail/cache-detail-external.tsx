@@ -60,6 +60,7 @@ export function CacheDetailExternalView() {
     availableCount,
     cleanableCount,
     grouped,
+    orderedCategories,
     fetchExternalCaches,
     handleCleanSingle,
     handleCleanAll,
@@ -197,19 +198,19 @@ export function CacheDetailExternalView() {
           </CardContent>
         </Card>
       ) : (
-        Object.entries(grouped).map(([category, items]) => (
+        orderedCategories.map((category) => (
           <Card key={category}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 {categoryIcons[category] || categoryIcons.other}
                 {getCategoryLabel(category, t)}
-                <Badge variant="secondary" className="ml-2">{items.length}</Badge>
+                <Badge variant="secondary" className="ml-2">{grouped[category].length}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <ScrollArea className="max-h-[500px]">
                 <Accordion type="multiple" className="space-y-2">
-                  {items.map((cache) => {
+                  {grouped[category].map((cache) => {
                     const pathInfo = getPathInfo(cache.provider);
                     return (
                       <AccordionItem key={cache.provider} value={cache.provider} className="rounded-lg border last:border-b">

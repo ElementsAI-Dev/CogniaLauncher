@@ -22,7 +22,8 @@ import {
   EmptyTitle,
   EmptyDescription,
 } from '@/components/ui/empty';
-import { AlertCircle, Variable, Route, Terminal } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { EnvVarScope } from '@/types/tauri';
 
@@ -150,6 +151,32 @@ export default function EnvVarPage() {
       <PageHeader
         title={t('envvar.title')}
         description={t('envvar.description')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setImportExportOpen(true)} className="gap-1.5">
+              <Upload className="h-3.5 w-3.5" />
+              {t('envvar.importExport.import')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setImportExportOpen(true)} className="gap-1.5">
+              <Download className="h-3.5 w-3.5" />
+              {t('envvar.importExport.export')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => scopeFilter === 'user' || scopeFilter === 'system' ? fetchPersistentVars(scopeFilter) : fetchAllVars()}
+              disabled={loading}
+              className="gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              {t('envvar.actions.refresh')}
+            </Button>
+            <Button size="sm" onClick={handleOpenAdd} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('envvar.actions.add')}
+            </Button>
+          </div>
+        }
       />
 
       {error && (
@@ -181,11 +208,6 @@ export default function EnvVarPage() {
             onSearchChange={setSearchQuery}
             scopeFilter={scopeFilter}
             onScopeFilterChange={handleScopeFilterChange}
-            onRefresh={() => scopeFilter === 'user' || scopeFilter === 'system' ? fetchPersistentVars(scopeFilter) : fetchAllVars()}
-            onAdd={handleOpenAdd}
-            onImport={() => setImportExportOpen(true)}
-            onExport={() => setImportExportOpen(true)}
-            isLoading={loading}
             t={t}
           />
           <EnvVarTable

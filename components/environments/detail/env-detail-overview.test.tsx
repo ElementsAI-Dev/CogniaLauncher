@@ -18,6 +18,8 @@ const defaultProps = {
     current_version: null,
     installed_versions: [],
     available: true,
+    total_size: 0,
+    version_count: 0,
   },
   detectedVersion: null,
   t: (key: string) => key,

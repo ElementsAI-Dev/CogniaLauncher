@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
@@ -67,6 +68,7 @@ import type { WslDistroStatus } from '@/types/tauri';
 
 export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const { t } = useLocale();
+  const router = useRouter();
   const isDesktop = isTauri();
   const {
     available,
@@ -202,11 +204,11 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
       await packageUninstall([`wsl:${distroName}`]);
       toast.success(t('wsl.unregisterSuccess').replace('{name}', distroName));
       // Navigate back after unregister
-      window.location.href = '/wsl';
+      router.push('/wsl');
     } catch (err) {
       toast.error(String(err));
     }
-  }, [distroName, t]);
+  }, [distroName, router, t]);
 
   const handleChangeDefaultUserConfirm = useCallback(async (distro: string, username: string) => {
     try {

@@ -25,6 +25,23 @@ import {
 import type { InstalledVersion, EnvCleanupResult } from "@/lib/tauri";
 import { formatSize, cn } from "@/lib/utils";
 
+function formatAge(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (isNaN(then)) return dateStr;
+  const diffMs = now - then;
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days < 1) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "1 month ago";
+  if (months < 12) return `${months} months ago`;
+  const years = Math.floor(months / 12);
+  if (years === 1) return "1 year ago";
+  return `${years} years ago`;
+}
+
 interface CleanupDialogProps {
   envType: string;
   installedVersions: InstalledVersion[];
@@ -194,7 +211,7 @@ export function CleanupDialog({
                         </div>
                         {v.installed_at && (
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {new Date(v.installed_at).toLocaleDateString()}
+                            {formatAge(v.installed_at)}
                           </p>
                         )}
                       </div>

@@ -16,6 +16,27 @@ pub struct Settings {
     pub provider_settings: GlobalProviderSettings,
     pub appearance: AppearanceSettings,
     pub terminal: TerminalSettings,
+    pub log: LogSettings,
+    pub backup: BackupSettings,
+    pub plugin: PluginSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PluginSettings {
+    pub auto_load_on_startup: bool,
+    pub max_execution_timeout_secs: u64,
+    pub sandbox_fs: bool,
+}
+
+impl Default for PluginSettings {
+    fn default() -> Self {
+        Self {
+            auto_load_on_startup: true,
+            max_execution_timeout_secs: 30,
+            sandbox_fs: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +85,51 @@ impl Default for TerminalSettings {
             proxy_mode: "global".into(),
             custom_proxy: None,
             no_proxy: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LogSettings {
+    /// Maximum number of days to retain log files (0 = unlimited)
+    pub max_retention_days: u32,
+    /// Maximum total size of all log files in MB (0 = unlimited)
+    pub max_total_size_mb: u32,
+    /// Automatically clean old logs on startup
+    pub auto_cleanup: bool,
+}
+
+impl Default for LogSettings {
+    fn default() -> Self {
+        Self {
+            max_retention_days: 30,
+            max_total_size_mb: 100,
+            auto_cleanup: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackupSettings {
+    /// Enable automatic backups
+    pub auto_backup_enabled: bool,
+    /// Interval between auto backups in hours (0 = disabled)
+    pub auto_backup_interval_hours: u32,
+    /// Maximum number of manual backups to keep (0 = unlimited)
+    pub max_backups: u32,
+    /// Maximum age of backups in days before auto-cleanup (0 = unlimited)
+    pub retention_days: u32,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            auto_backup_enabled: false,
+            auto_backup_interval_hours: 24,
+            max_backups: 10,
+            retention_days: 30,
         }
     }
 }
@@ -397,6 +463,20 @@ impl Settings {
                 .no_proxy
                 .clone()
                 .or_else(|| Some(String::new())),
+            ["log", "max_retention_days"] => Some(self.log.max_retention_days.to_string()),
+            ["log", "max_total_size_mb"] => Some(self.log.max_total_size_mb.to_string()),
+            ["log", "auto_cleanup"] => Some(self.log.auto_cleanup.to_string()),
+            ["backup", "auto_backup_enabled"] => {
+                Some(self.backup.auto_backup_enabled.to_string())
+            }
+            ["backup", "auto_backup_interval_hours"] => {
+                Some(self.backup.auto_backup_interval_hours.to_string())
+            }
+            ["backup", "max_backups"] => Some(self.backup.max_backups.to_string()),
+            ["backup", "retention_days"] => Some(self.backup.retention_days.to_string()),
+            ["plugin", "auto_load_on_startup"] => Some(self.plugin.auto_load_on_startup.to_string()),
+            ["plugin", "max_execution_timeout_secs"] => Some(self.plugin.max_execution_timeout_secs.to_string()),
+            ["plugin", "sandbox_fs"] => Some(self.plugin.sandbox_fs.to_string()),
             ["providers", provider, "token"] => self
                 .providers
                 .get(*provider)
@@ -666,6 +746,56 @@ impl Settings {
                 } else {
                     Some(value.to_string())
                 };
+            }
+            ["log", "max_retention_days"] => {
+                self.log.max_retention_days = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for max_retention_days".into())
+                })?;
+            }
+            ["log", "max_total_size_mb"] => {
+                self.log.max_total_size_mb = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for max_total_size_mb".into())
+                })?;
+            }
+            ["log", "auto_cleanup"] => {
+                self.log.auto_cleanup = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["backup", "auto_backup_enabled"] => {
+                self.backup.auto_backup_enabled = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["backup", "auto_backup_interval_hours"] => {
+                self.backup.auto_backup_interval_hours = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for auto_backup_interval_hours".into())
+                })?;
+            }
+            ["backup", "max_backups"] => {
+                self.backup.max_backups = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for max_backups".into())
+                })?;
+            }
+            ["backup", "retention_days"] => {
+                self.backup.retention_days = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for retention_days".into())
+                })?;
+            }
+            ["plugin", "auto_load_on_startup"] => {
+                self.plugin.auto_load_on_startup = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["plugin", "max_execution_timeout_secs"] => {
+                self.plugin.max_execution_timeout_secs = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for max_execution_timeout_secs".into())
+                })?;
+            }
+            ["plugin", "sandbox_fs"] => {
+                self.plugin.sandbox_fs = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["providers", provider, "token"] => {
                 let ps = self.providers.entry(provider.to_string()).or_default();
@@ -1573,5 +1703,207 @@ mod tests {
         let mut s = Settings::default();
         s.set_value("mirrors.npm", "https://example.com").unwrap();
         assert!(s.set_value("mirrors.npm.verify_ssl", "yes").is_err());
+    }
+
+    // ===== LogSettings defaults and get/set =====
+
+    #[test]
+    fn test_default_log_settings() {
+        let l = LogSettings::default();
+        assert_eq!(l.max_retention_days, 30);
+        assert_eq!(l.max_total_size_mb, 100);
+        assert!(l.auto_cleanup);
+    }
+
+    #[test]
+    fn test_get_set_log_max_retention_days() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("log.max_retention_days"), Some("30".into()));
+        s.set_value("log.max_retention_days", "60").unwrap();
+        assert_eq!(s.log.max_retention_days, 60);
+        assert_eq!(s.get_value("log.max_retention_days"), Some("60".into()));
+    }
+
+    #[test]
+    fn test_get_set_log_max_total_size_mb() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("log.max_total_size_mb"), Some("100".into()));
+        s.set_value("log.max_total_size_mb", "200").unwrap();
+        assert_eq!(s.log.max_total_size_mb, 200);
+        assert_eq!(s.get_value("log.max_total_size_mb"), Some("200".into()));
+    }
+
+    #[test]
+    fn test_get_set_log_auto_cleanup() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("log.auto_cleanup"), Some("true".into()));
+        s.set_value("log.auto_cleanup", "false").unwrap();
+        assert!(!s.log.auto_cleanup);
+        assert_eq!(s.get_value("log.auto_cleanup"), Some("false".into()));
+    }
+
+    #[test]
+    fn test_set_log_max_retention_days_zero_unlimited() {
+        let mut s = Settings::default();
+        s.set_value("log.max_retention_days", "0").unwrap();
+        assert_eq!(s.log.max_retention_days, 0);
+    }
+
+    #[test]
+    fn test_set_log_max_total_size_mb_zero_unlimited() {
+        let mut s = Settings::default();
+        s.set_value("log.max_total_size_mb", "0").unwrap();
+        assert_eq!(s.log.max_total_size_mb, 0);
+    }
+
+    #[test]
+    fn test_set_log_invalid_values() {
+        let mut s = Settings::default();
+        assert!(s.set_value("log.max_retention_days", "abc").is_err());
+        assert!(s.set_value("log.max_total_size_mb", "xyz").is_err());
+        assert!(s.set_value("log.auto_cleanup", "yes").is_err());
+    }
+
+    #[test]
+    fn test_log_settings_serialize_roundtrip() {
+        let mut s = Settings::default();
+        s.set_value("log.max_retention_days", "14").unwrap();
+        s.set_value("log.max_total_size_mb", "50").unwrap();
+        s.set_value("log.auto_cleanup", "false").unwrap();
+
+        let toml_str = toml::to_string(&s).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(parsed.log.max_retention_days, 14);
+        assert_eq!(parsed.log.max_total_size_mb, 50);
+        assert!(!parsed.log.auto_cleanup);
+    }
+
+    // ===== BackupSettings defaults and get/set =====
+
+    #[test]
+    fn test_default_backup_settings() {
+        let b = BackupSettings::default();
+        assert!(!b.auto_backup_enabled);
+        assert_eq!(b.auto_backup_interval_hours, 24);
+        assert_eq!(b.max_backups, 10);
+        assert_eq!(b.retention_days, 30);
+    }
+
+    #[test]
+    fn test_get_set_backup_auto_backup_enabled() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("backup.auto_backup_enabled"), Some("false".into()));
+        s.set_value("backup.auto_backup_enabled", "true").unwrap();
+        assert!(s.backup.auto_backup_enabled);
+        assert_eq!(s.get_value("backup.auto_backup_enabled"), Some("true".into()));
+    }
+
+    #[test]
+    fn test_get_set_backup_auto_backup_interval_hours() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("backup.auto_backup_interval_hours"), Some("24".into()));
+        s.set_value("backup.auto_backup_interval_hours", "12").unwrap();
+        assert_eq!(s.backup.auto_backup_interval_hours, 12);
+    }
+
+    #[test]
+    fn test_get_set_backup_max_backups() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("backup.max_backups"), Some("10".into()));
+        s.set_value("backup.max_backups", "5").unwrap();
+        assert_eq!(s.backup.max_backups, 5);
+    }
+
+    #[test]
+    fn test_get_set_backup_retention_days() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("backup.retention_days"), Some("30".into()));
+        s.set_value("backup.retention_days", "0").unwrap();
+        assert_eq!(s.backup.retention_days, 0);
+    }
+
+    #[test]
+    fn test_set_backup_invalid_values() {
+        let mut s = Settings::default();
+        assert!(s.set_value("backup.auto_backup_enabled", "yes").is_err());
+        assert!(s.set_value("backup.auto_backup_interval_hours", "abc").is_err());
+        assert!(s.set_value("backup.max_backups", "-1").is_err());
+        assert!(s.set_value("backup.retention_days", "xyz").is_err());
+    }
+
+    #[test]
+    fn test_backup_settings_serialize_roundtrip() {
+        let mut s = Settings::default();
+        s.set_value("backup.auto_backup_enabled", "true").unwrap();
+        s.set_value("backup.auto_backup_interval_hours", "6").unwrap();
+        s.set_value("backup.max_backups", "20").unwrap();
+        s.set_value("backup.retention_days", "90").unwrap();
+
+        let toml_str = toml::to_string(&s).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+
+        assert!(parsed.backup.auto_backup_enabled);
+        assert_eq!(parsed.backup.auto_backup_interval_hours, 6);
+        assert_eq!(parsed.backup.max_backups, 20);
+        assert_eq!(parsed.backup.retention_days, 90);
+    }
+
+    // ===== PluginSettings =====
+
+    #[test]
+    fn test_default_plugin_settings() {
+        let p = PluginSettings::default();
+        assert!(p.auto_load_on_startup);
+        assert_eq!(p.max_execution_timeout_secs, 30);
+        assert!(p.sandbox_fs);
+    }
+
+    #[test]
+    fn test_get_set_plugin_auto_load() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("plugin.auto_load_on_startup"), Some("true".into()));
+        s.set_value("plugin.auto_load_on_startup", "false").unwrap();
+        assert!(!s.plugin.auto_load_on_startup);
+        assert_eq!(s.get_value("plugin.auto_load_on_startup"), Some("false".into()));
+    }
+
+    #[test]
+    fn test_get_set_plugin_timeout() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("plugin.max_execution_timeout_secs"), Some("30".into()));
+        s.set_value("plugin.max_execution_timeout_secs", "60").unwrap();
+        assert_eq!(s.plugin.max_execution_timeout_secs, 60);
+    }
+
+    #[test]
+    fn test_get_set_plugin_sandbox() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("plugin.sandbox_fs"), Some("true".into()));
+        s.set_value("plugin.sandbox_fs", "false").unwrap();
+        assert!(!s.plugin.sandbox_fs);
+    }
+
+    #[test]
+    fn test_set_plugin_invalid_values() {
+        let mut s = Settings::default();
+        assert!(s.set_value("plugin.auto_load_on_startup", "yes").is_err());
+        assert!(s.set_value("plugin.max_execution_timeout_secs", "abc").is_err());
+        assert!(s.set_value("plugin.sandbox_fs", "maybe").is_err());
+    }
+
+    #[test]
+    fn test_plugin_settings_serialize_roundtrip() {
+        let mut s = Settings::default();
+        s.set_value("plugin.auto_load_on_startup", "false").unwrap();
+        s.set_value("plugin.max_execution_timeout_secs", "120").unwrap();
+        s.set_value("plugin.sandbox_fs", "false").unwrap();
+
+        let toml_str = toml::to_string(&s).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+
+        assert!(!parsed.plugin.auto_load_on_startup);
+        assert_eq!(parsed.plugin.max_execution_timeout_secs, 120);
+        assert!(!parsed.plugin.sandbox_fs);
     }
 }

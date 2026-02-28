@@ -9,7 +9,7 @@ pub mod migration;
 pub mod sqlite_db;
 
 // Re-export main types (avoiding glob conflicts)
-pub use db::{CacheDb, CacheEntry, CacheEntryType, CacheIndex, CacheStats};
+pub use db::{CacheEntry, CacheEntryType, CacheIndex, CacheStats};
 pub use download::DownloadCache;
 pub use download_history::{DownloadHistory, DownloadRecord, DownloadStatus, HistoryStats};
 pub use download_resumer::{DownloadResumer, PartialDownload};

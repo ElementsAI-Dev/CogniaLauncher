@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -8,14 +8,18 @@ import { FileText, FolderOpen } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { formatRelativeDate } from '@/lib/utils/git-date';
 import { isTauri } from '@/lib/tauri';
+import { GitDiffViewer } from './git-diff-viewer';
 import type { GitCommitEntry } from '@/types/tauri';
 import type { GitFileHistoryProps } from '@/types/git';
 
-export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) {
+export function GitFileHistory({ repoPath, onGetHistory, onGetCommitDiff }: GitFileHistoryProps) {
   const { t } = useLocale();
   const [filePath, setFilePath] = useState('');
   const [history, setHistory] = useState<GitCommitEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedHash, setSelectedHash] = useState<string | null>(null);
+  const [fileDiff, setFileDiff] = useState<string>('');
+  const [diffLoading, setDiffLoading] = useState(false);
 
   const handleBrowse = async () => {
     if (!isTauri()) return;
@@ -38,6 +42,8 @@ export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) 
   const loadHistory = async (file: string) => {
     if (!file.trim()) return;
     setLoading(true);
+    setSelectedHash(null);
+    setFileDiff('');
     try {
       const result = await onGetHistory(file.trim(), 50);
       setHistory(result);
@@ -45,6 +51,23 @@ export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) 
       setLoading(false);
     }
   };
+
+  const handleSelectCommit = useCallback(async (hash: string) => {
+    if (!onGetCommitDiff || !filePath.trim()) return;
+    if (selectedHash === hash) {
+      setSelectedHash(null);
+      setFileDiff('');
+      return;
+    }
+    setSelectedHash(hash);
+    setDiffLoading(true);
+    try {
+      const d = await onGetCommitDiff(hash, filePath.trim());
+      setFileDiff(d);
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [onGetCommitDiff, filePath, selectedHash]);
 
   return (
     <Card>
@@ -78,7 +101,10 @@ export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) 
             {history.map((commit) => (
               <div
                 key={commit.hash}
-                className="flex items-start gap-3 py-1.5 px-1 rounded hover:bg-muted/50 text-xs"
+                className={`flex items-start gap-3 py-1.5 px-1 rounded text-xs ${
+                  selectedHash === commit.hash ? 'bg-muted' : 'hover:bg-muted/50'
+                } ${onGetCommitDiff ? 'cursor-pointer' : ''}`}
+                onClick={() => handleSelectCommit(commit.hash)}
               >
                 <code className="font-mono text-muted-foreground shrink-0 mt-0.5">
                   {commit.hash.slice(0, 7)}
@@ -92,6 +118,15 @@ export function GitFileHistory({ repoPath, onGetHistory }: GitFileHistoryProps) 
                 </span>
               </div>
             ))}
+          </div>
+        )}
+        {selectedHash && onGetCommitDiff && (
+          <div className="mt-3 border-t pt-3">
+            <GitDiffViewer
+              diff={fileDiff}
+              loading={diffLoading}
+              title={`${selectedHash.slice(0, 7)} — ${filePath.split(/[\\/]/).pop() || filePath}`}
+            />
           </div>
         )}
       </CardContent>

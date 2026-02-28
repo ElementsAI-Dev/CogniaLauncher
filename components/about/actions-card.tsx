@@ -13,6 +13,7 @@ import {
   FileText,
   ClipboardList,
 } from "lucide-react";
+import { useFeedbackStore } from "@/lib/stores/feedback";
 
 interface ActionsCardProps {
   loading: boolean;
@@ -31,6 +32,7 @@ export function ActionsCard({
   onExportDiagnostics,
   t,
 }: ActionsCardProps) {
+  const { openDialog } = useFeedbackStore();
   const handleOpen = (url: string) => () => {
     void openExternal(url);
   };
@@ -104,10 +106,8 @@ export function ActionsCard({
           {/* Report Bug */}
           <Button
             variant="outline"
-            onClick={handleOpen(
-              "https://github.com/ElementAstro/CogniaLauncher/issues/new?template=bug_report.md",
-            )}
-            aria-label={`${t("about.reportBug")} - ${t("about.openInNewTab")}`}
+            onClick={() => openDialog({ category: "bug" })}
+            aria-label={t("about.reportBug")}
           >
             <Bug className="h-4 w-4 mr-2" aria-hidden="true" />
             {t("about.reportBug")}
@@ -116,10 +116,8 @@ export function ActionsCard({
           {/* Feature Request */}
           <Button
             variant="outline"
-            onClick={handleOpen(
-              "https://github.com/ElementAstro/CogniaLauncher/discussions/new?category=ideas",
-            )}
-            aria-label={`${t("about.featureRequest")} - ${t("about.openInNewTab")}`}
+            onClick={() => openDialog({ category: "feature" })}
+            aria-label={t("about.featureRequest")}
           >
             <MessageSquarePlus className="h-4 w-4 mr-2" aria-hidden="true" />
             {t("about.featureRequest")}

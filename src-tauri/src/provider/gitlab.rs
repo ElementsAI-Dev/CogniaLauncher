@@ -58,13 +58,62 @@ impl GitLabProvider {
         opts
     }
 
-    async fn api_get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> CogniaResult<T> {
+    pub async fn api_get<T: for<'de> Deserialize<'de>>(&self, path: &str) -> CogniaResult<T> {
         let url = format!("{}{}", self.api_base, path);
         let opts = self.build_request_options();
         let resp = self.client.get_with_options(&url, Some(opts)).await?;
         resp.json()
             .await
             .map_err(|e| CogniaError::Network(e.to_string()))
+    }
+
+    async fn api_get_paginated<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        max_pages: usize,
+    ) -> CogniaResult<Vec<T>> {
+        let mut all_items: Vec<T> = Vec::new();
+        let mut url = format!("{}{}", self.api_base, path);
+
+        for _ in 0..max_pages {
+            let opts = self.build_request_options();
+            let resp = self.client.get_with_options(&url, Some(opts)).await?;
+
+            let next_url = resp
+                .headers()
+                .get("link")
+                .and_then(|v| v.to_str().ok())
+                .and_then(Self::parse_next_link);
+
+            let items: Vec<T> = resp
+                .json()
+                .await
+                .map_err(|e| CogniaError::Network(e.to_string()))?;
+
+            let is_empty = items.is_empty();
+            all_items.extend(items);
+
+            match next_url {
+                Some(next) if !is_empty => url = next,
+                _ => break,
+            }
+        }
+
+        Ok(all_items)
+    }
+
+    fn parse_next_link(link_header: &str) -> Option<String> {
+        for part in link_header.split(',') {
+            let part = part.trim();
+            if part.contains("rel=\"next\"") {
+                if let Some(start) = part.find('<') {
+                    if let Some(end) = part.find('>') {
+                        return Some(part[start + 1..end].to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// URL-encode a project path (owner/repo -> owner%2Frepo)
@@ -79,19 +128,19 @@ impl GitLabProvider {
 
     pub async fn list_branches(&self, project: &str) -> CogniaResult<Vec<GitLabBranch>> {
         let encoded = Self::encode_project(project);
-        self.api_get(&format!(
-            "/projects/{}/repository/branches?per_page=100",
-            encoded
-        ))
+        self.api_get_paginated(
+            &format!("/projects/{}/repository/branches?per_page=100", encoded),
+            5,
+        )
         .await
     }
 
     pub async fn list_tags(&self, project: &str) -> CogniaResult<Vec<GitLabTag>> {
         let encoded = Self::encode_project(project);
-        self.api_get(&format!(
-            "/projects/{}/repository/tags?per_page=100",
-            encoded
-        ))
+        self.api_get_paginated(
+            &format!("/projects/{}/repository/tags?per_page=100", encoded),
+            5,
+        )
         .await
     }
 
@@ -99,6 +148,20 @@ impl GitLabProvider {
         let encoded = Self::encode_project(project);
         self.api_get(&format!("/projects/{}/releases?per_page=30", encoded))
             .await
+    }
+
+    pub async fn get_latest_release(&self, project: &str) -> CogniaResult<GitLabRelease> {
+        let encoded = Self::encode_project(project);
+        let releases: Vec<GitLabRelease> = self
+            .api_get(&format!(
+                "/projects/{}/releases?per_page=1&order_by=released_at&sort=desc",
+                encoded
+            ))
+            .await?;
+        releases
+            .into_iter()
+            .next()
+            .ok_or_else(|| CogniaError::Provider("No releases found".into()))
     }
 
     pub async fn get_release_by_tag(
@@ -148,6 +211,92 @@ impl GitLabProvider {
         &self.instance_url
     }
 
+    // ====================================================================
+    // Pipeline & Job (CI Artifacts) API
+    // ====================================================================
+
+    pub async fn list_pipelines(
+        &self,
+        project: &str,
+        ref_name: Option<&str>,
+        status: Option<&str>,
+    ) -> CogniaResult<Vec<GitLabPipeline>> {
+        let encoded = Self::encode_project(project);
+        let mut query = format!("/projects/{}/pipelines?per_page=20&order_by=updated_at&sort=desc", encoded);
+        if let Some(r) = ref_name {
+            query.push_str(&format!("&ref={}", urlencoding::encode(r)));
+        }
+        if let Some(s) = status {
+            query.push_str(&format!("&status={}", s));
+        }
+        self.api_get(&query).await
+    }
+
+    pub async fn list_pipeline_jobs(
+        &self,
+        project: &str,
+        pipeline_id: u64,
+    ) -> CogniaResult<Vec<GitLabJob>> {
+        let encoded = Self::encode_project(project);
+        self.api_get(&format!(
+            "/projects/{}/pipelines/{}/jobs?per_page=100",
+            encoded, pipeline_id
+        ))
+        .await
+    }
+
+    pub fn get_job_artifacts_url(&self, project: &str, job_id: u64) -> String {
+        let encoded = Self::encode_project(project);
+        format!("{}/projects/{}/jobs/{}/artifacts", self.api_base, encoded, job_id)
+    }
+
+    // ====================================================================
+    // Package Registry API
+    // ====================================================================
+
+    pub async fn list_packages(
+        &self,
+        project: &str,
+        package_type: Option<&str>,
+    ) -> CogniaResult<Vec<GitLabPackage>> {
+        let encoded = Self::encode_project(project);
+        let mut query = format!("/projects/{}/packages?per_page=30&order_by=created_at&sort=desc", encoded);
+        if let Some(pt) = package_type {
+            query.push_str(&format!("&package_type={}", pt));
+        }
+        self.api_get(&query).await
+    }
+
+    pub async fn list_package_files(
+        &self,
+        project: &str,
+        package_id: u64,
+    ) -> CogniaResult<Vec<GitLabPackageFile>> {
+        let encoded = Self::encode_project(project);
+        self.api_get(&format!(
+            "/projects/{}/packages/{}/package_files",
+            encoded, package_id
+        ))
+        .await
+    }
+
+    pub fn get_package_file_url(
+        &self,
+        project: &str,
+        package_id: u64,
+        file_name: &str,
+    ) -> String {
+        let encoded = Self::encode_project(project);
+        format!(
+            "{}/projects/{}/packages/{}/package_files/{}/download",
+            self.api_base, encoded, package_id, urlencoding::encode(file_name)
+        )
+    }
+
+    // ====================================================================
+    // Source Archive
+    // ====================================================================
+
     pub fn get_source_archive_url(&self, project: &str, ref_name: &str, format: &str) -> String {
         let encoded = Self::encode_project(project);
         let ext = match format {
@@ -162,18 +311,22 @@ impl GitLabProvider {
         )
     }
 
+    /// Parse a GitLab project URL or path into (namespace, project_name).
+    /// Supports nested subgroups: `group/subgroup/project` → `("group/subgroup", "project")`.
     pub fn parse_project_url(url: &str) -> Option<(String, String)> {
         let url = url.trim();
 
-        // Handle owner/repo format directly
+        // Handle direct path format: owner/repo or group/subgroup/project
         if !url.contains("://") && !url.starts_with("git@") {
             let parts: Vec<&str> = url.split('/').collect();
-            if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-                return Some((parts[0].to_string(), parts[1].to_string()));
+            if parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()) {
+                let project = parts[parts.len() - 1].to_string();
+                let namespace = parts[..parts.len() - 1].join("/");
+                return Some((namespace, project));
             }
         }
 
-        // Handle HTTPS URLs: https://gitlab.com/owner/repo or https://gitlab.example.com/owner/repo
+        // Handle HTTPS URLs: https://gitlab.com/owner/repo or https://gitlab.example.com/group/sub/project
         if url.starts_with("http://") || url.starts_with("https://") {
             if let Some(pos) = url.find("://") {
                 let after_scheme = &url[pos + 3..];
@@ -188,20 +341,24 @@ impl GitLabProvider {
                         path
                     };
                     let parts: Vec<&str> = path.split('/').collect();
-                    if parts.len() >= 2 {
-                        return Some((parts[0].to_string(), parts[1].to_string()));
+                    if parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()) {
+                        let project = parts[parts.len() - 1].to_string();
+                        let namespace = parts[..parts.len() - 1].join("/");
+                        return Some((namespace, project));
                     }
                 }
             }
         }
 
-        // Handle SSH URLs: git@gitlab.com:owner/repo.git
+        // Handle SSH URLs: git@gitlab.com:owner/repo.git or git@gitlab.com:group/sub/project.git
         if let Some(path) = url.strip_prefix("git@") {
             if let Some(colon_pos) = path.find(':') {
                 let repo_path = path[colon_pos + 1..].trim_end_matches(".git");
                 let parts: Vec<&str> = repo_path.split('/').collect();
-                if parts.len() >= 2 {
-                    return Some((parts[0].to_string(), parts[1].to_string()));
+                if parts.len() >= 2 && parts.iter().all(|p| !p.is_empty()) {
+                    let project = parts[parts.len() - 1].to_string();
+                    let namespace = parts[..parts.len() - 1].join("/");
+                    return Some((namespace, project));
                 }
             }
         }
@@ -293,6 +450,84 @@ pub struct GitLabReleaseLink {
 pub struct GitLabReleaseSource {
     pub format: String,
     pub url: String,
+}
+
+// ============================================================================
+// Pipeline & Job Types (for CI Artifacts)
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabPipeline {
+    pub id: u64,
+    #[serde(rename = "ref")]
+    pub ref_name: Option<String>,
+    pub sha: Option<String>,
+    pub status: String,
+    pub source: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub web_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabJob {
+    pub id: u64,
+    pub name: String,
+    pub stage: Option<String>,
+    pub status: String,
+    pub pipeline: Option<GitLabJobPipeline>,
+    pub web_url: Option<String>,
+    pub created_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub artifacts: Option<Vec<GitLabJobArtifact>>,
+    #[serde(rename = "ref")]
+    pub ref_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabJobPipeline {
+    pub id: u64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabJobArtifact {
+    pub file_type: String,
+    pub size: Option<u64>,
+    pub filename: String,
+    pub file_format: Option<String>,
+}
+
+// ============================================================================
+// Package Registry Types
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabPackage {
+    pub id: u64,
+    pub name: String,
+    pub version: String,
+    pub package_type: String,
+    pub status: Option<String>,
+    pub created_at: Option<String>,
+    #[serde(rename = "_links")]
+    pub links: Option<GitLabPackageLinks>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabPackageLinks {
+    pub web_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GitLabPackageFile {
+    pub id: u64,
+    pub package_id: u64,
+    pub file_name: String,
+    pub size: u64,
+    pub file_md5: Option<String>,
+    pub file_sha256: Option<String>,
+    pub created_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -433,11 +668,7 @@ impl Provider for GitLabProvider {
             }
             found.ok_or(last_err)?
         } else {
-            let releases = self.list_releases(&req.name).await?;
-            releases
-                .into_iter()
-                .next()
-                .ok_or_else(|| CogniaError::Provider("No releases found".into()))?
+            self.get_latest_release(&req.name).await?
         };
 
         let asset = self
@@ -487,12 +718,103 @@ impl Provider for GitLabProvider {
         Ok(())
     }
 
-    async fn list_installed(&self, _: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
-        Ok(vec![])
+    async fn list_installed(&self, filter: InstalledFilter) -> CogniaResult<Vec<InstalledPackage>> {
+        let packages_dir = match fs::get_cognia_dir() {
+            Some(dir) => dir.join("packages"),
+            None => return Ok(vec![]),
+        };
+
+        if !packages_dir.exists() {
+            return Ok(vec![]);
+        }
+
+        let mut installed = Vec::new();
+        let entries = std::fs::read_dir(&packages_dir)?;
+
+        for entry in entries.flatten() {
+            let pkg_name = entry.file_name().to_string_lossy().to_string();
+
+            if let Some(ref name_filter) = filter.name_filter {
+                if !pkg_name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                    continue;
+                }
+            }
+
+            let pkg_path = entry.path();
+            if !pkg_path.is_dir() {
+                continue;
+            }
+
+            let versions: Vec<String> = std::fs::read_dir(&pkg_path)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+
+            if let Some(version) = versions.first() {
+                let installed_at = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                    .unwrap_or_default();
+                installed.push(InstalledPackage {
+                    name: pkg_name,
+                    version: version.trim_start_matches('v').to_string(),
+                    provider: self.id().into(),
+                    install_path: pkg_path.clone(),
+                    installed_at,
+                    is_global: true,
+                });
+            }
+        }
+
+        Ok(installed)
     }
 
-    async fn check_updates(&self, _: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        Ok(vec![])
+    async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
+        let mut updates = Vec::new();
+
+        for pkg_name in packages {
+            let latest = match self.get_latest_release(pkg_name).await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            let latest_version = latest.tag_name.trim_start_matches('v').to_string();
+            let local_pkg_name = pkg_name.split('/').next_back().unwrap_or(pkg_name);
+            let pkg_dir = match fs::get_cognia_dir() {
+                Some(dir) => dir.join("packages").join(local_pkg_name),
+                None => continue,
+            };
+
+            if !pkg_dir.exists() {
+                continue;
+            }
+
+            let installed_versions: Vec<String> = std::fs::read_dir(&pkg_dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .map(|e| e.file_name().to_string_lossy().trim_start_matches('v').to_string())
+                .collect();
+
+            if let Some(current) = installed_versions.first() {
+                if current != &latest_version {
+                    updates.push(UpdateInfo {
+                        name: pkg_name.clone(),
+                        current_version: current.clone(),
+                        latest_version: latest_version.clone(),
+                        provider: self.id().into(),
+                    });
+                }
+            }
+        }
+
+        Ok(updates)
     }
 }
 
@@ -553,6 +875,55 @@ mod tests {
         assert_eq!(
             result,
             Some(("owner".to_string(), "repo".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_nested_subgroup() {
+        let result = GitLabProvider::parse_project_url("group/subgroup/project");
+        assert_eq!(
+            result,
+            Some(("group/subgroup".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_deep_nested_subgroup() {
+        let result = GitLabProvider::parse_project_url("org/team/sub/project");
+        assert_eq!(
+            result,
+            Some(("org/team/sub".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https_nested_subgroup() {
+        let result =
+            GitLabProvider::parse_project_url("https://gitlab.com/group/subgroup/project");
+        assert_eq!(
+            result,
+            Some(("group/subgroup".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_https_nested_with_tree() {
+        let result = GitLabProvider::parse_project_url(
+            "https://gitlab.com/group/subgroup/project/-/tree/main",
+        );
+        assert_eq!(
+            result,
+            Some(("group/subgroup".to_string(), "project".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_project_url_ssh_nested_subgroup() {
+        let result =
+            GitLabProvider::parse_project_url("git@gitlab.com:group/subgroup/project.git");
+        assert_eq!(
+            result,
+            Some(("group/subgroup".to_string(), "project".to_string()))
         );
     }
 
@@ -652,5 +1023,30 @@ mod tests {
     #[test]
     fn test_default_impl() {
         let _provider = GitLabProvider::default();
+    }
+
+    #[test]
+    fn test_parse_next_link() {
+        let header = r#"<https://gitlab.com/api/v4/projects/1/branches?page=2&per_page=100>; rel="next", <https://gitlab.com/api/v4/projects/1/branches?page=5&per_page=100>; rel="last""#;
+        let next = GitLabProvider::parse_next_link(header);
+        assert_eq!(
+            next,
+            Some("https://gitlab.com/api/v4/projects/1/branches?page=2&per_page=100".into())
+        );
+    }
+
+    #[test]
+    fn test_parse_next_link_no_next() {
+        let header = r#"<https://gitlab.com/api/v4/projects/1/branches?page=5&per_page=100>; rel="last""#;
+        let next = GitLabProvider::parse_next_link(header);
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_encode_nested_project() {
+        assert_eq!(
+            GitLabProvider::encode_project("group/subgroup/project"),
+            "group%2Fsubgroup%2Fproject"
+        );
     }
 }

@@ -101,6 +101,39 @@ pub async fn backup_validate(
 }
 
 #[tauri::command]
+pub async fn backup_export(
+    backup_path: String,
+    dest_path: String,
+) -> Result<u64, String> {
+    backup::export_backup(&PathBuf::from(&backup_path), &PathBuf::from(&dest_path))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn backup_import(
+    zip_path: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<BackupInfo, String> {
+    let s = settings.read().await;
+    backup::import_backup(&PathBuf::from(&zip_path), &s)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn backup_cleanup(
+    max_count: u32,
+    max_age_days: u32,
+    settings: State<'_, SharedSettings>,
+) -> Result<u32, String> {
+    let s = settings.read().await;
+    backup::cleanup_old_backups(&s, max_count, max_age_days)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn db_integrity_check(
     settings: State<'_, SharedSettings>,
 ) -> Result<IntegrityCheckResult, String> {

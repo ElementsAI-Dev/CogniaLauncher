@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,9 @@ import {
   RefreshCw,
   ArrowUpCircle,
   Loader2,
+  Timer,
+  Container,
+  Gpu,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBytes } from '@/lib/utils';
@@ -54,6 +57,8 @@ export function WslDistroOverview({
   const [envFetched, setEnvFetched] = useState(false);
   const [resources, setResources] = useState<WslDistroResources | null>(null);
   const [resourcesFetched, setResourcesFetched] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [updatingPkgs, setUpdatingPkgs] = useState<'update' | 'upgrade' | null>(null);
 
   const isRunning = distro?.state.toLowerCase() === 'running';
@@ -129,6 +134,23 @@ export function WslDistroOverview({
       .catch(() => setResources(null))
       .finally(() => setResourcesFetched(true));
   }, [distroName, getDistroResources]);
+
+  // Auto-refresh resource monitoring (5s interval)
+  useEffect(() => {
+    if (autoRefresh && isRunning && getDistroResources) {
+      autoRefreshRef.current = setInterval(() => {
+        getDistroResources(distroName)
+          .then(setResources)
+          .catch(() => {});
+      }, 5000);
+    }
+    return () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+        autoRefreshRef.current = null;
+      }
+    };
+  }, [autoRefresh, isRunning, distroName, getDistroResources]);
 
   const handlePackageAction = useCallback(async (mode: 'update' | 'upgrade') => {
     if (!updateDistroPackages) return;
@@ -345,6 +367,31 @@ export function WslDistroOverview({
                     </div>
                   </div>
                 )}
+                <div className="flex items-start gap-2">
+                  <Container className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">{t('wsl.detail.docker')}</p>
+                    <p className="text-sm font-medium">
+                      {env.dockerAvailable ? (
+                        <Badge variant="default" className="text-[10px]">{t('wsl.detail.dockerAvailable')}</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-[10px]">{t('wsl.detail.dockerNotFound')}</Badge>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {env.gpuName && (
+                  <div className="flex items-start gap-2">
+                    <Gpu className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">{t('wsl.detail.gpu')}</p>
+                      <p className="text-sm font-medium">{env.gpuName}</p>
+                      {env.gpuMemory && (
+                        <p className="text-xs text-muted-foreground">{env.gpuMemory}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <Empty className="border-none py-4">
@@ -371,15 +418,26 @@ export function WslDistroOverview({
               {t('wsl.detail.resources')}
             </CardTitle>
             <CardAction>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleRefreshResources}
-                disabled={!resourcesFetched}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${!resourcesFetched ? 'animate-spin' : ''}`} />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={autoRefresh ? 'default' : 'ghost'}
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => setAutoRefresh((v) => !v)}
+                  title={autoRefresh ? t('wsl.detail.autoRefreshStop') : t('wsl.detail.autoRefreshStart')}
+                >
+                  <Timer className={`h-3.5 w-3.5 ${autoRefresh ? 'animate-pulse' : ''}`} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleRefreshResources}
+                  disabled={!resourcesFetched}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${!resourcesFetched ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </CardAction>
           </CardHeader>
           <CardContent>

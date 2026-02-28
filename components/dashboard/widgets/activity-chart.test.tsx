@@ -37,6 +37,8 @@ const mockEnvironments: EnvironmentInfo[] = [
       { version: "18.0.0", install_path: "/p", size: null, installed_at: null, is_current: false },
       { version: "20.0.0", install_path: "/p", size: null, installed_at: null, is_current: true },
     ],
+    total_size: 0,
+    version_count: 2,
   },
 ];
 

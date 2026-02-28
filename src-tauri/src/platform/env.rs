@@ -237,6 +237,18 @@ impl ShellType {
         }
     }
 
+    /// Convert to canonical string id
+    pub fn to_id(&self) -> &'static str {
+        match self {
+            ShellType::Bash => "bash",
+            ShellType::Zsh => "zsh",
+            ShellType::Fish => "fish",
+            ShellType::PowerShell => "powershell",
+            ShellType::Cmd => "cmd",
+            ShellType::Nushell => "nushell",
+        }
+    }
+
     /// Primary config file path (backward-compatible)
     pub fn config_file(&self) -> Option<PathBuf> {
         self.config_files().into_iter().next()

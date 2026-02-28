@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 /// Default timeout for Git commands (30 seconds)
@@ -264,6 +265,7 @@ pub struct GitCloneProgress {
     pub percent: Option<u32>,
     pub current: Option<u64>,
     pub total: Option<u64>,
+    pub speed: Option<String>,
     pub message: String,
 }
 
@@ -755,10 +757,28 @@ pub fn parse_reflog(output: &str) -> Vec<GitReflogEntry> {
 // Clone progress parsing & URL helpers
 // ============================================================================
 
+/// Cached regex patterns for clone progress parsing
+fn percent_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(\d+)%").unwrap())
+}
+
+fn count_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\((\d+)/(\d+)\)").unwrap())
+}
+
+fn speed_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\|\s*([\d.]+\s*[KMG]?i?B/s)").unwrap())
+}
+
 /// Parse a git clone progress line from stderr.
 /// Git clone with `--progress` emits lines like:
+///   "Cloning into 'repo'..."
+///   "remote: Enumerating objects: 100, done."
 ///   "remote: Counting objects: 100% (50/50), done."
-///   "Receiving objects:  45% (100/222)"
+///   "Receiving objects:  45% (100/222), 1.20 MiB | 512.00 KiB/s"
 ///   "Resolving deltas: 100% (80/80), done."
 ///   "Checking out files:  67% (100/150)"
 pub fn parse_clone_progress(line: &str) -> Option<GitCloneProgress> {
@@ -767,10 +787,24 @@ pub fn parse_clone_progress(line: &str) -> Option<GitCloneProgress> {
         return None;
     }
 
+    // "Cloning into 'repo'..." — initial phase
+    if line.starts_with("Cloning into") {
+        return Some(GitCloneProgress {
+            phase: "cloning_into".to_string(),
+            percent: None,
+            current: None,
+            total: None,
+            speed: None,
+            message: line.to_string(),
+        });
+    }
+
     // Strip optional "remote: " prefix
     let content = line.strip_prefix("remote: ").unwrap_or(line);
 
-    let phase = if content.starts_with("Counting") {
+    let phase = if content.starts_with("Enumerating") {
+        "enumerating"
+    } else if content.starts_with("Counting") {
         "counting"
     } else if content.starts_with("Compressing") {
         "compressing"
@@ -784,15 +818,12 @@ pub fn parse_clone_progress(line: &str) -> Option<GitCloneProgress> {
         return None;
     };
 
-    let percent_re = Regex::new(r"(\d+)%").ok()?;
-    let count_re = Regex::new(r"\((\d+)/(\d+)\)").ok()?;
-
-    let percent = percent_re
+    let percent = percent_regex()
         .captures(content)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse::<u32>().ok());
 
-    let (current, total) = if let Some(caps) = count_re.captures(content) {
+    let (current, total) = if let Some(caps) = count_regex().captures(content) {
         let cur = caps.get(1).and_then(|m| m.as_str().parse::<u64>().ok());
         let tot = caps.get(2).and_then(|m| m.as_str().parse::<u64>().ok());
         (cur, tot)
@@ -800,11 +831,17 @@ pub fn parse_clone_progress(line: &str) -> Option<GitCloneProgress> {
         (None, None)
     };
 
+    let speed = speed_regex()
+        .captures(content)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string());
+
     Some(GitCloneProgress {
         phase: phase.to_string(),
         percent,
         current,
         total,
+        speed,
         message: line.to_string(),
     })
 }
@@ -846,23 +883,45 @@ pub fn extract_repo_name(url: &str) -> Option<String> {
 }
 
 /// Validate whether a string looks like a valid git remote URL.
+/// Accepts: HTTPS, HTTP, git://, ssh://, file://, SSH shorthand (user@host:path), local paths.
 pub fn validate_git_url(url: &str) -> bool {
     let url = url.trim();
     if url.is_empty() {
         return false;
     }
 
-    // HTTPS/HTTP/git:// protocol
+    // HTTPS/HTTP/git://ssh:// protocol
     for scheme in &["https://", "http://", "git://", "ssh://"] {
         if let Some(rest) = url.strip_prefix(scheme) {
-            // Must have at least host/path
             return rest.contains('/') && rest.len() > 3;
         }
     }
 
-    // SSH shorthand: git@host:path
-    if let Some(rest) = url.strip_prefix("git@") {
-        return rest.contains(':') && rest.len() > 3;
+    // file:// protocol (local clone)
+    if let Some(rest) = url.strip_prefix("file://") {
+        return !rest.is_empty();
+    }
+
+    // SSH shorthand: user@host:path (not just git@)
+    if url.contains('@') && url.contains(':') {
+        if let Some(at_pos) = url.find('@') {
+            let after_at = &url[at_pos + 1..];
+            if let Some(colon_pos) = after_at.find(':') {
+                // Ensure there's content before @, between @ and :, and after :
+                return at_pos > 0 && colon_pos > 0 && colon_pos + 1 < after_at.len();
+            }
+        }
+    }
+
+    // Local absolute path — Windows drive letter or Unix absolute path
+    #[cfg(windows)]
+    {
+        if url.len() >= 3 && url.as_bytes()[1] == b':' && (url.as_bytes()[2] == b'\\' || url.as_bytes()[2] == b'/') {
+            return true;
+        }
+    }
+    if url.starts_with('/') && url.len() > 1 {
+        return true;
     }
 
     false
@@ -1214,6 +1273,82 @@ impl GitProvider {
         Ok(())
     }
 
+    /// Get a single global git config value by key
+    pub async fn get_config_value(&self, key: &str) -> CogniaResult<Option<String>> {
+        match run_git_lenient(&["config", "--global", "--get", key]).await {
+            Ok(v) => {
+                let trimmed = v.trim().to_string();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed))
+                }
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Get the path to the global git config file
+    pub async fn get_config_file_path(&self) -> CogniaResult<Option<String>> {
+        match run_git_lenient(&["config", "--global", "--list", "--show-origin"]).await {
+            Ok(output) => {
+                // First line format: "file:/path/to/.gitconfig\tkey=value"
+                if let Some(first_line) = output.lines().next() {
+                    if let Some(rest) = first_line.strip_prefix("file:") {
+                        if let Some(tab_pos) = rest.find('\t') {
+                            return Ok(Some(rest[..tab_pos].to_string()));
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// List all git aliases (alias.* entries)
+    pub async fn list_aliases(&self) -> CogniaResult<Vec<GitConfigEntry>> {
+        match run_git_lenient(&["config", "--global", "--get-regexp", "^alias\\."]).await {
+            Ok(output) => {
+                Ok(output
+                    .lines()
+                    .filter_map(|line| {
+                        let line = line.trim();
+                        if line.is_empty() {
+                            return None;
+                        }
+                        // Format: "alias.co checkout"
+                        let mut parts = line.splitn(2, ' ');
+                        let full_key = parts.next()?.trim();
+                        let value = parts.next().unwrap_or("").to_string();
+                        let alias_name = full_key.strip_prefix("alias.")?;
+                        Some(GitConfigEntry {
+                            key: alias_name.to_string(),
+                            value,
+                        })
+                    })
+                    .collect())
+            }
+            Err(_) => Ok(vec![]),
+        }
+    }
+
+    /// Set a global git config value only if it's not already set
+    pub async fn set_config_if_unset(&self, key: &str, value: &str) -> CogniaResult<bool> {
+        match self.get_config_value(key).await? {
+            Some(_) => Ok(false), // already set
+            None => {
+                self.set_config(key, value).await?;
+                Ok(true) // newly set
+            }
+        }
+    }
+
+    /// Open the global git config file in the default editor
+    pub async fn open_config_in_editor(&self) -> CogniaResult<String> {
+        run_git(&["config", "--global", "--edit"]).await
+    }
+
     // ========================================================================
     // Repository inspection methods
     // ========================================================================
@@ -1421,6 +1556,8 @@ impl GitProvider {
         path: &str,
         limit: u32,
         all_branches: bool,
+        first_parent: bool,
+        branch: Option<&str>,
     ) -> CogniaResult<Vec<GitGraphEntry>> {
         let format_str = format!(
             "%H{}%P{}%D{}%an{}%aI{}%s",
@@ -1429,8 +1566,16 @@ impl GitProvider {
         let format_arg = format!("--format={}", format_str);
         let limit_str = format!("-{}", limit);
         let mut args = vec!["log", "--topo-order", &format_arg, &limit_str];
+        if first_parent {
+            args.push("--first-parent");
+        }
         if all_branches {
             args.push("--all");
+        }
+        let branch_owned: String;
+        if let Some(b) = branch {
+            branch_owned = b.to_string();
+            args.push(&branch_owned);
         }
         let output = run_git_in_lenient(path, &args).await?;
         Ok(parse_graph_log(&output))
@@ -1856,6 +2001,7 @@ impl GitProvider {
                 percent: Some(100),
                 current: None,
                 total: None,
+                speed: None,
                 message: format!("Repository cloned to {}", dest_path),
             });
             Ok(format!("Repository cloned to {}", dest_path))
@@ -1870,6 +2016,63 @@ impl GitProvider {
                 percent: None,
                 current: None,
                 total: None,
+                speed: None,
+                message: err.clone(),
+            });
+            Err(CogniaError::Provider(format!("git clone: {}", err)))
+        }
+    }
+
+    /// Clone a repository with streaming progress and cancellation support
+    pub async fn clone_repo_with_progress_cancellable<F>(
+        &self,
+        url: &str,
+        dest_path: &str,
+        options: GitCloneOptions,
+        mut on_progress: F,
+        cancel_rx: tokio::sync::watch::Receiver<bool>,
+    ) -> CogniaResult<String>
+    where
+        F: FnMut(GitCloneProgress),
+    {
+        let args = build_clone_args(url, dest_path, &options);
+        let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+        let out = process::execute_with_streaming_cancellable(
+            "git",
+            &arg_refs,
+            Some(make_install_opts()),
+            |_stdout_line| {},
+            |stderr_line| {
+                if let Some(progress) = parse_clone_progress(stderr_line) {
+                    on_progress(progress);
+                }
+            },
+            cancel_rx,
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("git clone: {}", e)))?;
+        if out.success {
+            on_progress(GitCloneProgress {
+                phase: "done".to_string(),
+                percent: Some(100),
+                current: None,
+                total: None,
+                speed: None,
+                message: format!("Repository cloned to {}", dest_path),
+            });
+            Ok(format!("Repository cloned to {}", dest_path))
+        } else {
+            let err = if out.stderr.trim().is_empty() {
+                out.stdout.trim().to_string()
+            } else {
+                out.stderr.trim().to_string()
+            };
+            on_progress(GitCloneProgress {
+                phase: "error".to_string(),
+                percent: None,
+                current: None,
+                total: None,
+                speed: None,
                 message: err.clone(),
             });
             Err(CogniaError::Provider(format!("git clone: {}", err)))
@@ -1887,10 +2090,16 @@ impl GitProvider {
         path: &str,
         staged: bool,
         file: Option<&str>,
+        context_lines: Option<u32>,
     ) -> CogniaResult<String> {
         let mut args = vec!["diff"];
         if staged {
             args.push("--staged");
+        }
+        let ctx_arg;
+        if let Some(ctx) = context_lines {
+            ctx_arg = format!("-U{}", ctx);
+            args.push(&ctx_arg);
         }
         if let Some(f) = file {
             args.push("--");
@@ -1906,8 +2115,36 @@ impl GitProvider {
         from: &str,
         to: &str,
         file: Option<&str>,
+        context_lines: Option<u32>,
     ) -> CogniaResult<String> {
         let mut args = vec!["diff", from, to];
+        let ctx_arg;
+        if let Some(ctx) = context_lines {
+            ctx_arg = format!("-U{}", ctx);
+            args.push(&ctx_arg);
+        }
+        if let Some(f) = file {
+            args.push("--");
+            args.push(f);
+        }
+        run_git_in_lenient(path, &args).await
+    }
+
+    /// Get the full diff (patch) for a single commit
+    pub async fn get_commit_diff(
+        &self,
+        path: &str,
+        hash: &str,
+        file: Option<&str>,
+        context_lines: Option<u32>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["diff-tree", "-p", "--no-commit-id"];
+        let ctx_arg;
+        if let Some(ctx) = context_lines {
+            ctx_arg = format!("-U{}", ctx);
+            args.push(&ctx_arg);
+        }
+        args.push(hash);
         if let Some(f) = file {
             args.push("--");
             args.push(f);
@@ -2740,7 +2977,44 @@ filename src/main.rs\n\
 
     #[test]
     fn test_parse_clone_cloning_into() {
-        assert!(parse_clone_progress("Cloning into 'repo'...").is_none());
+        let result = parse_clone_progress("Cloning into 'repo'...");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "cloning_into");
+        assert_eq!(p.percent, None);
+        assert_eq!(p.speed, None);
+    }
+
+    #[test]
+    fn test_parse_clone_enumerating() {
+        let result = parse_clone_progress("remote: Enumerating objects: 100, done.");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "enumerating");
+    }
+
+    #[test]
+    fn test_parse_clone_receiving_with_speed() {
+        let result = parse_clone_progress(
+            "Receiving objects:  45% (100/222), 1.20 MiB | 512.00 KiB/s",
+        );
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase, "receiving");
+        assert_eq!(p.percent, Some(45));
+        assert_eq!(p.current, Some(100));
+        assert_eq!(p.total, Some(222));
+        assert_eq!(p.speed, Some("512.00 KiB/s".to_string()));
+    }
+
+    #[test]
+    fn test_parse_clone_receiving_mib_speed() {
+        let result = parse_clone_progress(
+            "Receiving objects:  90% (500/555), 50.00 MiB | 10.50 MiB/s",
+        );
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.speed, Some("10.50 MiB/s".to_string()));
     }
 
     #[test]
@@ -2842,5 +3116,113 @@ filename src/main.rs\n\
     #[test]
     fn test_invalid_no_path() {
         assert!(!validate_git_url("https://"));
+    }
+
+    #[test]
+    fn test_valid_file_protocol() {
+        assert!(validate_git_url("file:///home/user/repo"));
+    }
+
+    #[test]
+    fn test_valid_generic_ssh() {
+        assert!(validate_git_url("deploy@server.example.com:repos/project.git"));
+    }
+
+    #[test]
+    fn test_valid_local_unix_path() {
+        assert!(validate_git_url("/home/user/repos/myrepo"));
+    }
+
+    #[test]
+    fn test_valid_ssh_protocol() {
+        assert!(validate_git_url("ssh://git@github.com/user/repo.git"));
+    }
+
+    #[test]
+    fn test_invalid_bare_at_sign() {
+        assert!(!validate_git_url("@"));
+    }
+
+    #[test]
+    fn test_invalid_single_slash() {
+        assert!(!validate_git_url("/"));
+    }
+
+    // ====================================================================
+    // parse_config_list edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_parse_config_list_empty() {
+        assert!(parse_config_list("").is_empty());
+    }
+
+    #[test]
+    fn test_parse_config_list_no_value() {
+        let entries = parse_config_list("core.bare=\n");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, "core.bare");
+        assert_eq!(entries[0].value, "");
+    }
+
+    #[test]
+    fn test_parse_config_list_multiple() {
+        let input = "user.name=John Doe\nuser.email=john@example.com\ncore.autocrlf=true\n";
+        let entries = parse_config_list(input);
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, "user.name");
+        assert_eq!(entries[0].value, "John Doe");
+        assert_eq!(entries[2].key, "core.autocrlf");
+        assert_eq!(entries[2].value, "true");
+    }
+
+    // ====================================================================
+    // alias parsing (simulating list_aliases output)
+    // ====================================================================
+
+    #[test]
+    fn test_parse_alias_output() {
+        // git config --global --get-regexp "^alias\." output format
+        let input = "alias.co checkout\nalias.br branch\nalias.lg log --oneline --graph --decorate --all\n";
+        let entries: Vec<GitConfigEntry> = input
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() { return None; }
+                let mut parts = line.splitn(2, ' ');
+                let full_key = parts.next()?.trim();
+                let value = parts.next().unwrap_or("").to_string();
+                let alias_name = full_key.strip_prefix("alias.")?;
+                Some(GitConfigEntry {
+                    key: alias_name.to_string(),
+                    value,
+                })
+            })
+            .collect();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, "co");
+        assert_eq!(entries[0].value, "checkout");
+        assert_eq!(entries[1].key, "br");
+        assert_eq!(entries[1].value, "branch");
+        assert_eq!(entries[2].key, "lg");
+        assert_eq!(entries[2].value, "log --oneline --graph --decorate --all");
+    }
+
+    #[test]
+    fn test_parse_alias_output_empty() {
+        let input = "";
+        let entries: Vec<GitConfigEntry> = input
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() { return None; }
+                let mut parts = line.splitn(2, ' ');
+                let full_key = parts.next()?.trim();
+                let value = parts.next().unwrap_or("").to_string();
+                let alias_name = full_key.strip_prefix("alias.")?;
+                Some(GitConfigEntry { key: alias_name.to_string(), value })
+            })
+            .collect();
+        assert!(entries.is_empty());
     }
 }

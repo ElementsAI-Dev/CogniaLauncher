@@ -7,6 +7,10 @@ const mockLogQuery = jest.fn();
 const mockLogClear = jest.fn();
 const mockLogGetDir = jest.fn();
 const mockLogExport = jest.fn();
+const mockLogGetTotalSize = jest.fn();
+const mockLogCleanup = jest.fn();
+const mockLogDeleteFile = jest.fn();
+const mockLogDeleteBatch = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
@@ -15,6 +19,10 @@ jest.mock('@/lib/tauri', () => ({
   logClear: (...args: unknown[]) => mockLogClear(...args),
   logGetDir: (...args: unknown[]) => mockLogGetDir(...args),
   logExport: (...args: unknown[]) => mockLogExport(...args),
+  logGetTotalSize: (...args: unknown[]) => mockLogGetTotalSize(...args),
+  logCleanup: (...args: unknown[]) => mockLogCleanup(...args),
+  logDeleteFile: (...args: unknown[]) => mockLogDeleteFile(...args),
+  logDeleteBatch: (...args: unknown[]) => mockLogDeleteBatch(...args),
 }));
 
 // Mock log store
@@ -121,5 +129,93 @@ describe('useLogs', () => {
     expect(result.current).toHaveProperty('logs');
     expect(result.current).toHaveProperty('logFiles');
     expect(result.current).toHaveProperty('filter');
+  });
+
+  it('should return new management methods', () => {
+    const { result } = renderHook(() => useLogs());
+
+    expect(result.current).toHaveProperty('cleanupLogs');
+    expect(result.current).toHaveProperty('deleteLogFile');
+    expect(result.current).toHaveProperty('deleteLogFiles');
+    expect(result.current).toHaveProperty('getTotalSize');
+  });
+
+  it('should cleanup logs and reload files', async () => {
+    const cleanupResult = { deletedCount: 3, freedBytes: 1024 };
+    mockLogCleanup.mockResolvedValue(cleanupResult);
+    mockLogListFiles.mockResolvedValue([]);
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.cleanupLogs();
+    });
+
+    expect(mockLogCleanup).toHaveBeenCalled();
+    expect(response).toEqual(cleanupResult);
+    expect(mockLogListFiles).toHaveBeenCalled();
+  });
+
+  it('should delete a specific log file and reload', async () => {
+    mockLogDeleteFile.mockResolvedValue(undefined);
+    mockLogListFiles.mockResolvedValue([]);
+    const { result } = renderHook(() => useLogs());
+
+    await act(async () => {
+      await result.current.deleteLogFile('2026-02-28_14-27-30.log');
+    });
+
+    expect(mockLogDeleteFile).toHaveBeenCalledWith('2026-02-28_14-27-30.log');
+    expect(mockLogListFiles).toHaveBeenCalled();
+  });
+
+  it('should batch delete log files and reload', async () => {
+    const batchResult = { deletedCount: 2, freedBytes: 2048 };
+    mockLogDeleteBatch.mockResolvedValue(batchResult);
+    mockLogListFiles.mockResolvedValue([]);
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.deleteLogFiles(['a.log', 'b.log']);
+    });
+
+    expect(mockLogDeleteBatch).toHaveBeenCalledWith(['a.log', 'b.log']);
+    expect(response).toEqual(batchResult);
+    expect(mockLogListFiles).toHaveBeenCalled();
+  });
+
+  it('should get total size', async () => {
+    mockLogGetTotalSize.mockResolvedValue(5120);
+    const { result } = renderHook(() => useLogs());
+
+    let size;
+    await act(async () => {
+      size = await result.current.getTotalSize();
+    });
+
+    expect(mockLogGetTotalSize).toHaveBeenCalled();
+    expect(size).toBe(5120);
+  });
+
+  it('should handle cleanup error gracefully', async () => {
+    mockLogCleanup.mockRejectedValue(new Error('fail'));
+    const { result } = renderHook(() => useLogs());
+
+    let response;
+    await act(async () => {
+      response = await result.current.cleanupLogs();
+    });
+
+    expect(response).toBeNull();
+  });
+
+  it('should handle delete file error by throwing', async () => {
+    mockLogDeleteFile.mockRejectedValue(new Error('fail'));
+    const { result } = renderHook(() => useLogs());
+
+    await expect(act(async () => {
+      await result.current.deleteLogFile('bad.log');
+    })).rejects.toThrow('fail');
   });
 });

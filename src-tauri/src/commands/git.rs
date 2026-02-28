@@ -1,7 +1,18 @@
 use crate::provider::git::{self, GitProvider};
 use crate::provider::traits::Provider;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::{watch, Mutex};
+
+/// Global cancel sender for the current clone operation.
+/// When a clone starts it creates a new watch channel and stores the sender here.
+/// `git_cancel_clone` sends `true` through this channel to kill the process.
+static CLONE_CANCEL: OnceLock<Mutex<Option<watch::Sender<bool>>>> = OnceLock::new();
+
+fn clone_cancel() -> &'static Mutex<Option<watch::Sender<bool>>> {
+    CLONE_CANCEL.get_or_init(|| Mutex::new(None))
+}
 
 // Re-export types from provider for frontend consumption
 pub use crate::provider::git::{
@@ -84,6 +95,51 @@ pub async fn git_set_config(key: String, value: String) -> Result<(), String> {
 pub async fn git_remove_config(key: String) -> Result<(), String> {
     get_provider()
         .remove_config(&key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get a single global git config value by key
+#[tauri::command]
+pub async fn git_get_config_value(key: String) -> Result<Option<String>, String> {
+    get_provider()
+        .get_config_value(&key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the path to the global git config file
+#[tauri::command]
+pub async fn git_get_config_file_path() -> Result<Option<String>, String> {
+    get_provider()
+        .get_config_file_path()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List all git aliases
+#[tauri::command]
+pub async fn git_list_aliases() -> Result<Vec<GitConfigEntry>, String> {
+    get_provider()
+        .list_aliases()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Set a global git config value only if not already set
+#[tauri::command]
+pub async fn git_set_config_if_unset(key: String, value: String) -> Result<bool, String> {
+    get_provider()
+        .set_config_if_unset(&key, &value)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Open the global git config file in the default editor
+#[tauri::command]
+pub async fn git_open_config_in_editor() -> Result<String, String> {
+    get_provider()
+        .open_config_in_editor()
         .await
         .map_err(|e| e.to_string())
 }
@@ -211,9 +267,17 @@ pub async fn git_get_graph_log(
     path: String,
     limit: Option<u32>,
     all_branches: Option<bool>,
+    first_parent: Option<bool>,
+    branch: Option<String>,
 ) -> Result<Vec<GitGraphEntry>, String> {
     get_provider()
-        .get_graph_log(&path, limit.unwrap_or(200), all_branches.unwrap_or(true))
+        .get_graph_log(
+            &path,
+            limit.unwrap_or(200),
+            all_branches.unwrap_or(true),
+            first_parent.unwrap_or(false),
+            branch.as_deref(),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -481,12 +545,37 @@ pub async fn git_clone(
 ) -> Result<String, String> {
     let opts = options.unwrap_or_default();
     let app_clone = app.clone();
-    get_provider()
-        .clone_repo_with_progress(&url, &dest_path, opts, move |progress| {
+
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    {
+        let mut guard = clone_cancel().lock().await;
+        *guard = Some(cancel_tx);
+    }
+
+    let result = get_provider()
+        .clone_repo_with_progress_cancellable(&url, &dest_path, opts, move |progress| {
             let _ = app_clone.emit("git-clone-progress", &progress);
-        })
+        }, cancel_rx)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+
+    {
+        let mut guard = clone_cancel().lock().await;
+        *guard = None;
+    }
+
+    result
+}
+
+#[tauri::command]
+pub async fn git_cancel_clone() -> Result<(), String> {
+    let guard = clone_cancel().lock().await;
+    if let Some(tx) = guard.as_ref() {
+        let _ = tx.send(true);
+        Ok(())
+    } else {
+        Err("No clone operation in progress".to_string())
+    }
 }
 
 #[tauri::command]
@@ -512,9 +601,10 @@ pub async fn git_get_diff(
     path: String,
     staged: Option<bool>,
     file: Option<String>,
+    context_lines: Option<u32>,
 ) -> Result<String, String> {
     get_provider()
-        .get_diff(&path, staged.unwrap_or(false), file.as_deref())
+        .get_diff(&path, staged.unwrap_or(false), file.as_deref(), context_lines)
         .await
         .map_err(|e| e.to_string())
 }
@@ -525,9 +615,24 @@ pub async fn git_get_diff_between(
     from: String,
     to: String,
     file: Option<String>,
+    context_lines: Option<u32>,
 ) -> Result<String, String> {
     get_provider()
-        .get_diff_between(&path, &from, &to, file.as_deref())
+        .get_diff_between(&path, &from, &to, file.as_deref(), context_lines)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the full diff (patch) for a single commit
+#[tauri::command]
+pub async fn git_get_commit_diff(
+    path: String,
+    hash: String,
+    file: Option<String>,
+    context_lines: Option<u32>,
+) -> Result<String, String> {
+    get_provider()
+        .get_commit_diff(&path, &hash, file.as_deref(), context_lines)
         .await
         .map_err(|e| e.to_string())
 }

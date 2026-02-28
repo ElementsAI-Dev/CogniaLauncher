@@ -54,6 +54,7 @@ jest.mock('@/lib/tauri', () => ({
   gitPull: jest.fn().mockResolvedValue('Already up to date'),
   gitFetch: jest.fn().mockResolvedValue('Fetch completed'),
   gitClone: jest.fn().mockResolvedValue('Repository cloned'),
+  gitCancelClone: jest.fn().mockResolvedValue(undefined),
   gitInit: jest.fn().mockResolvedValue('Initialized empty Git repository'),
   gitGetDiff: jest.fn().mockResolvedValue('diff --git a/f b/f'),
   gitGetDiffBetween: jest.fn().mockResolvedValue('diff between'),
@@ -75,6 +76,12 @@ jest.mock('@/lib/tauri', () => ({
     { hash: 'abc1234', selector: 'HEAD@{0}', action: 'commit', message: 'commit: msg', date: '2025-01-15' },
   ]),
   gitClean: jest.fn().mockResolvedValue('Removing untracked.txt'),
+  // New config management commands
+  gitGetConfigValue: jest.fn().mockResolvedValue('John Doe'),
+  gitGetConfigFilePath: jest.fn().mockResolvedValue('/home/user/.gitconfig'),
+  gitListAliases: jest.fn().mockResolvedValue([{ key: 'co', value: 'checkout' }]),
+  gitSetConfigIfUnset: jest.fn().mockResolvedValue(true),
+  gitOpenConfigInEditor: jest.fn().mockResolvedValue(''),
 }));
 
 // Get mocked tauri for assertions
@@ -338,6 +345,14 @@ describe('useGit', () => {
     expect(msg!).toBe('Repository cloned');
   });
 
+  it('cancelClone calls tauri', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => {
+      await result.current.cancelClone();
+    });
+    expect(tauri.gitCancelClone).toHaveBeenCalled();
+  });
+
   it('initRepo calls tauri with path', async () => {
     const { result } = renderHook(() => useGit());
     await act(async () => {
@@ -353,7 +368,7 @@ describe('useGit', () => {
     await act(async () => {
       diff = await result.current.getDiff(true, 'file.ts');
     });
-    expect(tauri.gitGetDiff).toHaveBeenCalledWith('/repo', true, 'file.ts');
+    expect(tauri.gitGetDiff).toHaveBeenCalledWith('/repo', true, 'file.ts', undefined);
     expect(diff!).toBe('diff --git a/f b/f');
   });
 
@@ -363,7 +378,7 @@ describe('useGit', () => {
     await act(async () => {
       await result.current.getDiffBetween('abc', 'def', 'file.ts');
     });
-    expect(tauri.gitGetDiffBetween).toHaveBeenCalledWith('/repo', 'abc', 'def', 'file.ts');
+    expect(tauri.gitGetDiffBetween).toHaveBeenCalledWith('/repo', 'abc', 'def', 'file.ts', undefined);
   });
 
   it('merge calls tauri and refreshes', async () => {
@@ -517,6 +532,57 @@ describe('useGit', () => {
     });
     expect(tauri.gitClean).toHaveBeenCalledWith('/repo', true);
     expect(tauri.gitGetStatus).toHaveBeenCalled();
+  });
+
+  // ===== NEW: Config value operations =====
+
+  it('getConfigValue calls tauri', async () => {
+    const { result } = renderHook(() => useGit());
+    let val: string | null;
+    await act(async () => {
+      val = await result.current.getConfigValue('user.name');
+    });
+    expect(tauri.gitGetConfigValue).toHaveBeenCalledWith('user.name');
+    expect(val!).toBe('John Doe');
+  });
+
+  it('getConfigFilePath calls tauri', async () => {
+    const { result } = renderHook(() => useGit());
+    let path: string | null;
+    await act(async () => {
+      path = await result.current.getConfigFilePath();
+    });
+    expect(tauri.gitGetConfigFilePath).toHaveBeenCalled();
+    expect(path!).toBe('/home/user/.gitconfig');
+  });
+
+  it('listAliases calls tauri', async () => {
+    const { result } = renderHook(() => useGit());
+    let aliases: { key: string; value: string }[];
+    await act(async () => {
+      aliases = await result.current.listAliases();
+    });
+    expect(tauri.gitListAliases).toHaveBeenCalled();
+    expect(aliases!).toEqual([{ key: 'co', value: 'checkout' }]);
+  });
+
+  it('setConfigIfUnset calls tauri and refreshes on new set', async () => {
+    const { result } = renderHook(() => useGit());
+    let wasSet: boolean;
+    await act(async () => {
+      wasSet = await result.current.setConfigIfUnset('init.defaultBranch', 'main');
+    });
+    expect(tauri.gitSetConfigIfUnset).toHaveBeenCalledWith('init.defaultBranch', 'main');
+    expect(wasSet!).toBe(true);
+    expect(tauri.gitGetConfig).toHaveBeenCalled();
+  });
+
+  it('openConfigInEditor calls tauri', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => {
+      await result.current.openConfigInEditor();
+    });
+    expect(tauri.gitOpenConfigInEditor).toHaveBeenCalled();
   });
 
   // ===== Error handling =====

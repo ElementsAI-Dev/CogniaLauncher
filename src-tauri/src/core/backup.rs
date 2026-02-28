@@ -81,6 +81,8 @@ pub struct BackupManifest {
     pub file_checksums: HashMap<String, String>,
     pub total_size: u64,
     pub note: Option<String>,
+    #[serde(default)]
+    pub auto_generated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +206,7 @@ pub async fn create_backup(
         file_checksums,
         total_size,
         note: note.map(|s| s.to_string()),
+        auto_generated: false,
     };
 
     // Write manifest
@@ -342,6 +345,9 @@ async fn backup_content(
 }
 
 /// Restore selected content types from a backup directory.
+///
+/// Automatically creates a safety backup before restoring so the user can
+/// roll back if something goes wrong.
 pub async fn restore_backup(
     backup_path: &Path,
     contents: &[BackupContentType],
@@ -350,6 +356,27 @@ pub async fn restore_backup(
     profile_manager: &mut ProfileManager,
     custom_detection_manager: &mut CustomDetectionManager,
 ) -> CogniaResult<RestoreResult> {
+    // Create a safety backup before restoring
+    match create_auto_backup(
+        settings,
+        "pre-restore-auto-backup",
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    )
+    .await
+    {
+        Ok(result) => {
+            log::info!(
+                "Pre-restore safety backup created at: {}",
+                result.path
+            );
+        }
+        Err(e) => {
+            log::warn!("Failed to create pre-restore safety backup: {}", e);
+        }
+    }
+
     // First validate the backup
     let validation = validate_backup(backup_path).await?;
     if !validation.valid {
@@ -473,6 +500,8 @@ async fn restore_content(
             if fs::exists(&src).await {
                 let dest = cache_dir.join("download_history.json");
                 fs::copy_file(&src, &dest).await?;
+            } else {
+                log::warn!("download-history.json not found in backup, skipping");
             }
         }
 
@@ -481,6 +510,8 @@ async fn restore_content(
             if fs::exists(&src).await {
                 let dest = cache_dir.join("cleanup-history.json");
                 fs::copy_file(&src, &dest).await?;
+            } else {
+                log::warn!("cleanup-history.json not found in backup, skipping");
             }
         }
 
@@ -504,7 +535,9 @@ async fn restore_content(
 
         BackupContentType::EnvironmentSettings => {
             let src_dir = backup_path.join("env-settings");
-            if fs::exists(&src_dir).await {
+            if !fs::exists(&src_dir).await {
+                log::warn!("env-settings directory not found in backup, skipping");
+            } else {
                 let dest_dir = state_dir.join("env-settings");
                 fs::create_dir_all(&dest_dir).await?;
 
@@ -674,8 +707,288 @@ pub async fn validate_backup(backup_path: &Path) -> CogniaResult<BackupValidatio
 }
 
 // ============================================================================
+// Export / Import (ZIP)
+// ============================================================================
+
+/// Export a backup directory as a `.zip` archive.
+pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult<u64> {
+    // Validate it's a real backup
+    let manifest_path = backup_path.join("manifest.json");
+    if !fs::exists(&manifest_path).await {
+        return Err(CogniaError::Internal(
+            "Not a valid backup directory (no manifest.json)".into(),
+        ));
+    }
+
+    let backup_dir = backup_path.to_path_buf();
+    let dest = dest_path.to_path_buf();
+
+    let size = tokio::task::spawn_blocking(move || -> CogniaResult<u64> {
+        use std::io::Write;
+
+        let file = std::fs::File::create(&dest)
+            .map_err(|e| CogniaError::Io(e))?;
+        let mut zip_writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        // Use the backup directory name as a top-level prefix in the zip
+        // so import can extract it as a named directory.
+        let dir_name = backup_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("backup")
+            .to_string();
+
+        // Add top-level directory entry
+        zip_writer.add_directory(format!("{}/", dir_name), options)
+            .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
+
+        // Walk the backup directory
+        for entry in walkdir::WalkDir::new(&backup_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(&backup_dir)
+                .unwrap_or(path);
+
+            if path.is_file() {
+                let name = format!("{}/{}", dir_name, relative.to_string_lossy().replace('\\', "/"));
+                zip_writer.start_file(&name, options)
+                    .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
+                let data = std::fs::read(path).map_err(CogniaError::Io)?;
+                zip_writer.write_all(&data)
+                    .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
+            } else if path.is_dir() && path != backup_dir.as_path() {
+                let name = format!("{}/{}/", dir_name, relative.to_string_lossy().replace('\\', "/"));
+                zip_writer.add_directory(&name, options)
+                    .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
+            }
+        }
+
+        zip_writer.finish()
+            .map_err(|e| CogniaError::Internal(format!("ZIP finish error: {}", e)))?;
+
+        let meta = std::fs::metadata(&dest).map_err(CogniaError::Io)?;
+        Ok(meta.len())
+    })
+    .await
+    .map_err(|e| CogniaError::Internal(format!("Export task failed: {}", e)))??;
+
+    Ok(size)
+}
+
+/// Import a `.zip` archive as a backup.
+///
+/// Extracts to the backups directory, validates the manifest, and returns the
+/// resulting `BackupInfo`.
+pub async fn import_backup(
+    zip_path: &Path,
+    settings: &Settings,
+) -> CogniaResult<BackupInfo> {
+    let backup_base = settings.get_root_dir().join("backups");
+    fs::create_dir_all(&backup_base).await?;
+
+    let src = zip_path.to_path_buf();
+    let base = backup_base.clone();
+
+    // Extract in blocking context
+    let extracted_dir = tokio::task::spawn_blocking(move || -> CogniaResult<std::path::PathBuf> {
+        use std::io::Read;
+
+        let file = std::fs::File::open(&src).map_err(CogniaError::Io)?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| CogniaError::Internal(format!("Invalid ZIP: {}", e)))?;
+
+        // Determine the backup directory name from the zip
+        // If the zip has a top-level directory, use it; otherwise generate one
+        let top_dir = {
+            let first = archive.by_index(0)
+                .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
+            let name = first.name().to_string();
+            if let Some(slash_pos) = name.find('/') {
+                name[..slash_pos].to_string()
+            } else {
+                format!(
+                    "cognia-backup-imported-{}",
+                    chrono::Utc::now().format("%Y%m%d-%H%M%S")
+                )
+            }
+        };
+
+        let dest_dir = base.join(&top_dir);
+        if dest_dir.exists() {
+            return Err(CogniaError::Internal(format!(
+                "Backup directory already exists: {}",
+                top_dir
+            )));
+        }
+
+        // Extract all files
+        for i in 0..archive.len() {
+            let mut entry = archive.by_index(i)
+                .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
+
+            let out_path = base.join(entry.name());
+
+            // Prevent path traversal
+            if !out_path.starts_with(&base) {
+                continue;
+            }
+
+            if entry.is_dir() {
+                std::fs::create_dir_all(&out_path).map_err(CogniaError::Io)?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(CogniaError::Io)?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(CogniaError::Io)?;
+                let mut buf = Vec::new();
+                entry.read_to_end(&mut buf)
+                    .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
+                std::io::Write::write_all(&mut outfile, &buf)
+                    .map_err(|e| CogniaError::Internal(format!("Write error: {}", e)))?;
+            }
+        }
+
+        Ok(dest_dir)
+    })
+    .await
+    .map_err(|e| CogniaError::Internal(format!("Import task failed: {}", e)))??;
+
+    // Validate the extracted backup
+    let validation = validate_backup(&extracted_dir).await?;
+    if !validation.valid {
+        // Clean up invalid import
+        let _ = fs::remove_dir_all(&extracted_dir).await;
+        return Err(CogniaError::Internal(format!(
+            "Imported backup is invalid: {}",
+            validation.errors.join("; ")
+        )));
+    }
+
+    let manifest = validation.manifest.unwrap();
+    let size = dir_size_async(&extracted_dir).await;
+    let name = extracted_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    Ok(BackupInfo {
+        path: extracted_dir.display().to_string(),
+        name,
+        manifest,
+        size,
+        size_human: format_size(size),
+    })
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
+
+/// Create an automatic backup with the auto_generated flag set.
+pub async fn create_auto_backup(
+    settings: &Settings,
+    note: &str,
+    terminal_manager: &TerminalProfileManager,
+    profile_manager: &ProfileManager,
+    custom_detection_manager: &CustomDetectionManager,
+) -> CogniaResult<BackupResult> {
+    let mut result = create_backup(
+        settings,
+        &BackupContentType::all(),
+        Some(note),
+        terminal_manager,
+        profile_manager,
+        custom_detection_manager,
+    )
+    .await?;
+
+    // Mark as auto-generated in the manifest
+    result.manifest.auto_generated = true;
+
+    // Re-write manifest with the auto_generated flag
+    let manifest_json = serde_json::to_string_pretty(&result.manifest)
+        .map_err(|e| CogniaError::Internal(format!("Failed to serialize manifest: {}", e)))?;
+    let manifest_path = std::path::PathBuf::from(&result.path).join("manifest.json");
+    fs::write_file_string(&manifest_path, &manifest_json).await?;
+
+    Ok(result)
+}
+
+/// Remove old backups based on retention policy.
+///
+/// - `max_count`: Maximum number of backups to keep (0 = unlimited).
+/// - `max_age_days`: Maximum age in days (0 = unlimited).
+///
+/// Auto-generated backups are counted separately and limited to `max_count / 2`
+/// (minimum 3).
+pub async fn cleanup_old_backups(
+    settings: &Settings,
+    max_count: u32,
+    max_age_days: u32,
+) -> CogniaResult<u32> {
+    let mut backups = list_backups(settings).await?;
+    if backups.is_empty() {
+        return Ok(0);
+    }
+
+    let mut deleted = 0u32;
+    let now = Utc::now();
+
+    // Delete backups older than max_age_days
+    if max_age_days > 0 {
+        let cutoff = now - chrono::Duration::days(max_age_days as i64);
+        let cutoff_str = cutoff.to_rfc3339();
+        let mut to_remove = Vec::new();
+        for backup in &backups {
+            if backup.manifest.created_at < cutoff_str {
+                to_remove.push(backup.path.clone());
+            }
+        }
+        for path in to_remove {
+            if delete_backup(&std::path::PathBuf::from(&path)).await.unwrap_or(false) {
+                deleted += 1;
+            }
+        }
+        // Re-fetch after deletions
+        backups = list_backups(settings).await?;
+    }
+
+    // Enforce max_count
+    if max_count > 0 {
+        let auto_limit = (max_count / 2).max(3) as usize;
+
+        // Split into manual and auto backups
+        let (auto_backups, manual_backups): (Vec<_>, Vec<_>) = backups
+            .iter()
+            .partition(|b| b.manifest.auto_generated);
+
+        // Trim manual backups (already sorted newest-first)
+        if manual_backups.len() > max_count as usize {
+            for backup in &manual_backups[max_count as usize..] {
+                if delete_backup(&std::path::PathBuf::from(&backup.path)).await.unwrap_or(false) {
+                    deleted += 1;
+                }
+            }
+        }
+
+        // Trim auto backups
+        if auto_backups.len() > auto_limit {
+            for backup in &auto_backups[auto_limit..] {
+                if delete_backup(&std::path::PathBuf::from(&backup.path)).await.unwrap_or(false) {
+                    deleted += 1;
+                }
+            }
+        }
+    }
+
+    Ok(deleted)
+}
 
 async fn dir_size_async(path: &Path) -> u64 {
     let path = path.to_path_buf();
@@ -768,6 +1081,7 @@ mod tests {
             file_checksums: HashMap::new(),
             total_size: 0,
             note: None,
+            auto_generated: false,
         };
 
         let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
@@ -826,6 +1140,7 @@ mod tests {
             },
             total_size: 4096,
             note: Some("Test backup".to_string()),
+            auto_generated: false,
         };
 
         let json = serde_json::to_string(&manifest).unwrap();
@@ -855,6 +1170,7 @@ mod tests {
                 file_checksums: HashMap::new(),
                 total_size: 0,
                 note: None,
+                auto_generated: false,
             },
             size: 1024,
             size_human: "1.00 KB".to_string(),
@@ -882,6 +1198,7 @@ mod tests {
                 file_checksums: HashMap::new(),
                 total_size: 0,
                 note: None,
+                auto_generated: false,
             },
             duration_ms: 150,
             error: None,
@@ -993,6 +1310,7 @@ mod tests {
             file_checksums: HashMap::new(),
             total_size: 0,
             note: None,
+            auto_generated: false,
         };
         let json = serde_json::to_string(&manifest).unwrap();
         tokio::fs::write(dir.path().join("manifest.json"), &json)
@@ -1014,5 +1332,283 @@ mod tests {
         let result = delete_backup(&fake_backup).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no manifest.json"));
+    }
+
+    // ===== auto_generated field tests =====
+
+    #[test]
+    fn test_manifest_auto_generated_default_false() {
+        let json = r#"{
+            "formatVersion": 1,
+            "appVersion": "1.0.0",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "platform": "test",
+            "hostname": "test",
+            "contents": [],
+            "fileChecksums": {},
+            "totalSize": 0,
+            "note": null
+        }"#;
+        let manifest: BackupManifest = serde_json::from_str(json).unwrap();
+        assert!(!manifest.auto_generated, "auto_generated should default to false");
+    }
+
+    #[test]
+    fn test_manifest_auto_generated_roundtrip() {
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.0.0".to_string(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![],
+            file_checksums: HashMap::new(),
+            total_size: 0,
+            note: Some("auto".to_string()),
+            auto_generated: true,
+        };
+
+        let json = serde_json::to_string(&manifest).unwrap();
+        assert!(json.contains("\"autoGenerated\":true"));
+
+        let deser: BackupManifest = serde_json::from_str(&json).unwrap();
+        assert!(deser.auto_generated);
+    }
+
+    // ===== export / import tests =====
+
+    #[tokio::test]
+    async fn test_export_backup_no_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty_dir = dir.path().join("empty");
+        tokio::fs::create_dir(&empty_dir).await.unwrap();
+        let dest = dir.path().join("out.zip");
+
+        let result = export_backup(&empty_dir, &dest).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no manifest.json"));
+    }
+
+    #[tokio::test]
+    async fn test_export_import_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a fake backup directory
+        let backup_dir = dir.path().join("cognia-backup-test");
+        tokio::fs::create_dir(&backup_dir).await.unwrap();
+
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.0.0".to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![BackupContentType::Config],
+            file_checksums: HashMap::new(),
+            total_size: 42,
+            note: Some("roundtrip test".to_string()),
+            auto_generated: false,
+        };
+        let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
+        tokio::fs::write(backup_dir.join("manifest.json"), &manifest_json)
+            .await
+            .unwrap();
+        tokio::fs::write(backup_dir.join("config.toml"), "# test config")
+            .await
+            .unwrap();
+
+        // Export to zip
+        let zip_path = dir.path().join("export.zip");
+        let zip_size = export_backup(&backup_dir, &zip_path).await.unwrap();
+        assert!(zip_size > 0);
+        assert!(zip_path.exists());
+
+        // Import into a fresh "backups" directory via Settings
+        let import_root = dir.path().join("import-root");
+        tokio::fs::create_dir(&import_root).await.unwrap();
+
+        let mut settings = Settings::default();
+        settings.paths.root = Some(import_root.clone());
+
+        let info = import_backup(&zip_path, &settings).await.unwrap();
+        assert_eq!(info.manifest.format_version, 1);
+        assert_eq!(info.manifest.note, Some("roundtrip test".to_string()));
+        assert!(info.size > 0);
+
+        // Verify files exist
+        let imported_dir = std::path::PathBuf::from(&info.path);
+        assert!(imported_dir.join("manifest.json").exists());
+        assert!(imported_dir.join("config.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn test_import_duplicate_fails() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create a backup directory
+        let backup_dir = dir.path().join("cognia-backup-dup");
+        tokio::fs::create_dir(&backup_dir).await.unwrap();
+
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.0.0".to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![],
+            file_checksums: HashMap::new(),
+            total_size: 0,
+            note: None,
+            auto_generated: false,
+        };
+        tokio::fs::write(
+            backup_dir.join("manifest.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        // Export
+        let zip_path = dir.path().join("dup.zip");
+        export_backup(&backup_dir, &zip_path).await.unwrap();
+
+        // Import once
+        let import_root = dir.path().join("import-root2");
+        tokio::fs::create_dir(&import_root).await.unwrap();
+        let mut settings = Settings::default();
+        settings.paths.root = Some(import_root.clone());
+
+        import_backup(&zip_path, &settings).await.unwrap();
+
+        // Import again — should fail (directory exists)
+        let result = import_backup(&zip_path, &settings).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("already exists"));
+    }
+
+    // ===== cleanup tests =====
+
+    #[tokio::test]
+    async fn test_cleanup_empty_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default();
+        settings.paths.root = Some(dir.path().to_path_buf());
+
+        let deleted = cleanup_old_backups(&settings, 5, 30).await.unwrap();
+        assert_eq!(deleted, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_max_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let backups_dir = dir.path().join("backups");
+        tokio::fs::create_dir(&backups_dir).await.unwrap();
+
+        // Create 5 backup directories with manifests
+        for i in 0..5 {
+            let name = format!("cognia-backup-{:04}", i);
+            let bdir = backups_dir.join(&name);
+            tokio::fs::create_dir(&bdir).await.unwrap();
+
+            let manifest = BackupManifest {
+                format_version: 1,
+                app_version: "1.0.0".to_string(),
+                created_at: format!("2024-01-{:02}T00:00:00Z", i + 1),
+                platform: "test".to_string(),
+                hostname: "test".to_string(),
+                contents: vec![],
+                file_checksums: HashMap::new(),
+                total_size: 0,
+                note: None,
+                auto_generated: false,
+            };
+            tokio::fs::write(
+                bdir.join("manifest.json"),
+                serde_json::to_string(&manifest).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+
+        let mut settings = Settings::default();
+        settings.paths.root = Some(dir.path().to_path_buf());
+
+        // Keep max 2 — should delete 3
+        let deleted = cleanup_old_backups(&settings, 2, 0).await.unwrap();
+        assert_eq!(deleted, 3);
+
+        let remaining = list_backups(&settings).await.unwrap();
+        assert_eq!(remaining.len(), 2);
+    }
+
+    // ===== validate with checksum mismatch =====
+
+    #[tokio::test]
+    async fn test_validate_backup_checksum_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Write a file and record wrong checksum
+        tokio::fs::write(dir.path().join("config.toml"), "data")
+            .await
+            .unwrap();
+
+        let mut checksums = HashMap::new();
+        checksums.insert("config.toml".to_string(), "wrong_checksum".to_string());
+
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.0.0".to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![BackupContentType::Config],
+            file_checksums: checksums,
+            total_size: 4,
+            note: None,
+            auto_generated: false,
+        };
+        tokio::fs::write(
+            dir.path().join("manifest.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let result = validate_backup(dir.path()).await.unwrap();
+        assert!(!result.valid);
+        assert_eq!(result.checksum_mismatches.len(), 1);
+        assert_eq!(result.checksum_mismatches[0], "config.toml");
+    }
+
+    #[tokio::test]
+    async fn test_validate_backup_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut checksums = HashMap::new();
+        checksums.insert("missing.txt".to_string(), "abc".to_string());
+
+        let manifest = BackupManifest {
+            format_version: 1,
+            app_version: "1.0.0".to_string(),
+            created_at: Utc::now().to_rfc3339(),
+            platform: "test".to_string(),
+            hostname: "test".to_string(),
+            contents: vec![],
+            file_checksums: checksums,
+            total_size: 0,
+            note: None,
+            auto_generated: false,
+        };
+        tokio::fs::write(
+            dir.path().join("manifest.json"),
+            serde_json::to_string(&manifest).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let result = validate_backup(dir.path()).await.unwrap();
+        assert!(!result.valid);
+        assert_eq!(result.missing_files.len(), 1);
+        assert_eq!(result.missing_files[0], "missing.txt");
     }
 }

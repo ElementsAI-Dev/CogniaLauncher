@@ -110,7 +110,7 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
                 outerRadius={70}
                 paddingAngle={3}
                 strokeWidth={2}
-                stroke="hsl(var(--background))"
+                stroke="var(--background)"
                 dataKey="value"
                 nameKey="name"
               >
@@ -146,19 +146,19 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid horizontal={false} stroke="hsl(var(--border))" strokeOpacity={0.3} />
+                <CartesianGrid horizontal={false} stroke="var(--border)" strokeOpacity={0.3} />
                 <YAxis
                   dataKey="name"
                   type="category"
                   tickLine={false}
                   axisLine={false}
                   width={60}
-                  tick={{ fontSize: 11, fill: "hsl(var(--foreground))" }}
+                  tick={{ fontSize: 11, fill: "var(--foreground)" }}
                 />
                 <XAxis type="number" hide />
                 <ChartTooltip
                   content={<ChartTooltipContent />}
-                  cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+                  cursor={{ fill: "var(--muted)", opacity: 0.3 }}
                 />
                 <Bar dataKey="versions" radius={[0, 6, 6, 0]} barSize={20}>
                   {barData.map((_, index) => (

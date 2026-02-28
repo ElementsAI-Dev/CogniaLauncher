@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
+import { useFeedbackStore } from "@/lib/stores/feedback";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import {
   CommandDialog,
@@ -25,6 +26,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
   const { t } = useLocale();
   const { toggleDrawer } = useLogStore();
+  const { openDialog: openFeedback } = useFeedbackStore();
   const [search, setSearch] = useState("");
 
   const navigationItems = useMemo(
@@ -40,6 +42,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       { href: "/settings", label: t("nav.settings") },
       { href: "/about", label: t("nav.about") },
       { href: "/docs", label: t("nav.docs") },
+      { href: "/toolbox", label: t("nav.toolbox") },
     ],
     [t],
   );
@@ -104,6 +107,24 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           >
             {t("commandPalette.actions.toggleLogs")}
             <CommandShortcut>Ctrl+Shift+L</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            value={t("about.reportBug")}
+            onSelect={() => {
+              openFeedback({ category: "bug" });
+              closePalette();
+            }}
+          >
+            {t("about.reportBug")}
+          </CommandItem>
+          <CommandItem
+            value={t("about.featureRequest")}
+            onSelect={() => {
+              openFeedback({ category: "feature" });
+              closePalette();
+            }}
+          >
+            {t("about.featureRequest")}
           </CommandItem>
         </CommandGroup>
       </CommandList>

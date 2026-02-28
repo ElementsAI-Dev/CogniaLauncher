@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { ExternalCacheInfo, ExternalCachePathInfo } from '@/lib/tauri';
 import { formatBytes } from '@/lib/utils';
-import { groupCachesByCategory } from '@/lib/constants/cache';
+import { groupCachesByCategory, CACHE_CATEGORY_ORDER } from '@/lib/constants/cache';
 
 interface UseCacheDetailExternalOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -51,7 +51,9 @@ export function useCacheDetailExternal({ t }: UseCacheDetailExternalOptions) {
   const totalSize = caches.reduce((acc, c) => acc + c.size, 0);
   const availableCount = caches.filter((c) => c.isAvailable).length;
   const cleanableCount = caches.filter((c) => c.canClean).length;
-  const grouped = groupCachesByCategory(caches, 'other');
+  const groupedRaw = groupCachesByCategory(caches, 'package_manager');
+  const orderedCategories = CACHE_CATEGORY_ORDER.filter((cat) => groupedRaw[cat]?.length > 0);
+  const grouped = groupedRaw;
 
   // Actions
   const handleCleanSingle = async (provider: string) => {
@@ -130,6 +132,7 @@ export function useCacheDetailExternal({ t }: UseCacheDetailExternalOptions) {
     availableCount,
     cleanableCount,
     grouped,
+    orderedCategories,
 
     // Actions
     fetchExternalCaches,

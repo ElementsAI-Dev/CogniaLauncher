@@ -4,8 +4,10 @@ use crate::provider::{
     EnvironmentProvider, InstalledVersion, ProviderRegistry, SystemEnvironmentType, VersionInfo,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +20,12 @@ pub struct EnvironmentInfo {
     pub current_version: Option<String>,
     pub installed_versions: Vec<InstalledVersion>,
     pub available: bool,
+    /// Total disk usage across all installed versions (bytes).
+    #[serde(default)]
+    pub total_size: u64,
+    /// Number of installed versions.
+    #[serde(default)]
+    pub version_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +37,51 @@ pub struct DetectedEnvironment {
     pub source: String,
     pub source_path: Option<PathBuf>,
 }
+
+/// TTL-cached available versions to avoid repeated network requests.
+pub struct VersionCache {
+    entries: RwLock<HashMap<String, (Instant, Vec<VersionInfo>)>>,
+    ttl: Duration,
+}
+
+impl VersionCache {
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            entries: RwLock::new(HashMap::new()),
+            ttl,
+        }
+    }
+
+    pub async fn get(&self, key: &str) -> Option<Vec<VersionInfo>> {
+        let entries = self.entries.read().await;
+        if let Some((cached_at, versions)) = entries.get(key) {
+            if cached_at.elapsed() < self.ttl {
+                return Some(versions.clone());
+            }
+        }
+        None
+    }
+
+    pub async fn set(&self, key: String, versions: Vec<VersionInfo>) {
+        let mut entries = self.entries.write().await;
+        entries.insert(key, (Instant::now(), versions));
+    }
+
+    pub async fn invalidate(&self, key: &str) {
+        let mut entries = self.entries.write().await;
+        entries.remove(key);
+    }
+
+    pub async fn invalidate_all(&self) {
+        let mut entries = self.entries.write().await;
+        entries.clear();
+    }
+}
+
+/// Default TTL for cached versions: 10 minutes.
+pub const VERSION_CACHE_TTL: Duration = Duration::from_secs(600);
+
+pub type SharedVersionCache = Arc<VersionCache>;
 
 pub struct EnvironmentManager {
     registry: Arc<RwLock<ProviderRegistry>>,
@@ -277,32 +330,39 @@ impl EnvironmentManager {
     }
 
     pub async fn list_environments(&self) -> CogniaResult<Vec<EnvironmentInfo>> {
-        let mut envs = Vec::new();
+        let all_types = SystemEnvironmentType::all();
+        let mut futures = Vec::with_capacity(all_types.len());
 
-        for env in SystemEnvironmentType::all() {
-            let env_type = env.env_type();
-            let (logical, provider_id, provider) =
-                self.resolve_provider(env_type, None, None).await?;
-
-            let available = provider.is_available().await;
-
-            let (current, installed) = if available {
-                let current = provider.get_current_version().await.ok().flatten();
-                let installed = provider.list_installed_versions().await.unwrap_or_default();
-                (current, installed)
-            } else {
-                (None, vec![])
-            };
-
-            envs.push(EnvironmentInfo {
-                env_type: logical,
-                provider_id,
-                provider: provider.display_name().to_string(),
-                current_version: current,
-                installed_versions: installed,
-                available,
-            });
+        for env in &all_types {
+            let env_type = env.env_type().to_string();
+            let registry = self.registry.clone();
+            futures.push(tokio::spawn(async move {
+                let manager = EnvironmentManager::new(registry);
+                let timeout = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    manager.get_environment(&env_type),
+                );
+                match timeout.await {
+                    Ok(Ok(info)) => Some(info),
+                    Ok(Err(_)) | Err(_) => Some(EnvironmentInfo {
+                        env_type,
+                        provider_id: String::new(),
+                        provider: String::new(),
+                        current_version: None,
+                        installed_versions: vec![],
+                        available: false,
+                        total_size: 0,
+                        version_count: 0,
+                    }),
+                }
+            }));
         }
+
+        let results = futures::future::join_all(futures).await;
+        let envs: Vec<EnvironmentInfo> = results
+            .into_iter()
+            .filter_map(|r| r.ok().flatten())
+            .collect();
 
         Ok(envs)
     }
@@ -322,6 +382,9 @@ impl EnvironmentManager {
             vec![]
         };
 
+        let total_size: u64 = installed.iter().filter_map(|v| v.size).sum();
+        let version_count = installed.len();
+
         Ok(EnvironmentInfo {
             env_type: logical,
             provider_id,
@@ -329,6 +392,8 @@ impl EnvironmentManager {
             current_version: current,
             installed_versions: installed,
             available,
+            total_size,
+            version_count,
         })
     }
 
@@ -357,18 +422,25 @@ impl EnvironmentManager {
         &self,
         start_path: &Path,
     ) -> CogniaResult<Vec<DetectedEnvironment>> {
-        let mut detected = Vec::new();
+        let all_types = SystemEnvironmentType::all();
+        let mut futures = Vec::with_capacity(all_types.len());
 
-        for env in SystemEnvironmentType::all() {
-            let env_type = env.env_type();
-            match self.detect_version(env_type, start_path).await {
-                Ok(Some(item)) => detected.push(item),
-                Ok(None) => {}
-                Err(_) => {
-                    // Best-effort detection; ignore failures for unsupported / unavailable providers.
-                }
-            }
+        for env in &all_types {
+            let env_type = env.env_type().to_string();
+            let path = start_path.to_path_buf();
+            futures.push(async move {
+                let logical = normalize_env_type(&env_type);
+                let sources =
+                    super::project_env_detect::default_enabled_detection_sources(&logical);
+                super::project_env_detect::detect_env_version(&logical, &path, &sources).await
+            });
         }
+
+        let results = futures::future::join_all(futures).await;
+        let detected: Vec<DetectedEnvironment> = results
+            .into_iter()
+            .filter_map(|r| r.ok().flatten())
+            .collect();
 
         Ok(detected)
     }
@@ -535,17 +607,30 @@ impl EnvironmentManager {
 
     /// Check for updates across all known environment types.
     pub async fn check_all_env_updates(&self) -> CogniaResult<Vec<EnvUpdateCheckResult>> {
-        let mut results = Vec::new();
+        let all_types = SystemEnvironmentType::all();
+        let mut futures = Vec::with_capacity(all_types.len());
 
-        for env in SystemEnvironmentType::all() {
-            let env_type = env.env_type();
-            match self.check_env_updates(env_type).await {
-                Ok(result) => results.push(result),
-                Err(_) => {
-                    // Best-effort: skip environments that fail
+        for env in &all_types {
+            let env_type = env.env_type().to_string();
+            let registry = self.registry.clone();
+            futures.push(tokio::spawn(async move {
+                let manager = EnvironmentManager::new(registry);
+                let timeout = tokio::time::timeout(
+                    std::time::Duration::from_secs(15),
+                    manager.check_env_updates(&env_type),
+                );
+                match timeout.await {
+                    Ok(Ok(result)) => Some(result),
+                    Ok(Err(_)) | Err(_) => None,
                 }
-            }
+            }));
         }
+
+        let joined = futures::future::join_all(futures).await;
+        let results: Vec<EnvUpdateCheckResult> = joined
+            .into_iter()
+            .filter_map(|r| r.ok().flatten())
+            .collect();
 
         Ok(results)
     }
@@ -637,15 +722,36 @@ pub struct CleanedVersion {
 }
 
 /// Compare two semver-like version strings. Returns >0 if a > b, <0 if a < b.
+///
+/// Tries the `semver` crate first (handles pre-release, build metadata correctly).
+/// Falls back to numeric-only comparison for non-semver strings (e.g. `nightly-2025-01-01`).
 fn compare_semver(a: &str, b: &str) -> i32 {
+    fn clean(s: &str) -> &str {
+        let s = s.trim();
+        s.strip_prefix('v').unwrap_or(s)
+    }
+
+    let ca = clean(a);
+    let cb = clean(b);
+
+    // Try semver crate first — handles pre-release ordering correctly
+    if let (Ok(va), Ok(vb)) = (semver::Version::parse(ca), semver::Version::parse(cb)) {
+        return match va.cmp(&vb) {
+            std::cmp::Ordering::Greater => 1,
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+        };
+    }
+
+    // Lenient: try parsing as semver::VersionReq won't help here, so fall back to
+    // numeric-only comparison for non-semver strings.
     let parse = |s: &str| -> Vec<u64> {
-        s.trim_start_matches('v')
-            .split('.')
+        s.split('.')
             .filter_map(|p| p.parse::<u64>().ok())
             .collect()
     };
-    let a_parts = parse(a);
-    let b_parts = parse(b);
+    let a_parts = parse(ca);
+    let b_parts = parse(cb);
     let len = a_parts.len().max(b_parts.len());
     for i in 0..len {
         let av = a_parts.get(i).copied().unwrap_or(0);

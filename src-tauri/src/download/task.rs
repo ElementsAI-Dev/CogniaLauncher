@@ -31,6 +31,9 @@ pub struct DownloadConfig {
     /// Destination directory for extraction (None = same dir as download)
     #[serde(default)]
     pub extract_dest: Option<PathBuf>,
+    /// Number of parallel segments for downloading (1 = single connection, max 32)
+    #[serde(default = "default_segments")]
+    pub segments: u8,
 }
 
 fn default_max_retries() -> u32 {
@@ -45,6 +48,9 @@ fn default_verify_checksum() -> bool {
 fn default_allow_resume() -> bool {
     true
 }
+fn default_segments() -> u8 {
+    1
+}
 
 impl Default for DownloadConfig {
     fn default() -> Self {
@@ -56,6 +62,7 @@ impl Default for DownloadConfig {
             allow_resume: default_allow_resume(),
             auto_extract: false,
             extract_dest: None,
+            segments: default_segments(),
         }
     }
 }
@@ -169,6 +176,9 @@ pub struct DownloadTask {
     /// Server-provided filename from Content-Disposition header
     #[serde(default)]
     pub server_filename: Option<String>,
+    /// Mirror/fallback URLs to try if the primary URL fails
+    #[serde(default)]
+    pub mirror_urls: Vec<String>,
 }
 
 impl DownloadTask {
@@ -194,6 +204,7 @@ impl DownloadTask {
             metadata: std::collections::HashMap::new(),
             headers: std::collections::HashMap::new(),
             server_filename: None,
+            mirror_urls: Vec::new(),
         }
     }
 
@@ -299,6 +310,16 @@ impl DownloadTaskBuilder {
 
     pub fn with_headers(mut self, headers: std::collections::HashMap<String, String>) -> Self {
         self.task.headers.extend(headers);
+        self
+    }
+
+    pub fn with_mirror(mut self, url: String) -> Self {
+        self.task.mirror_urls.push(url);
+        self
+    }
+
+    pub fn with_mirrors(mut self, urls: Vec<String>) -> Self {
+        self.task.mirror_urls.extend(urls);
         self
     }
 
@@ -498,6 +519,7 @@ mod tests {
             allow_resume: false,
             auto_extract: false,
             extract_dest: None,
+            segments: 1,
         };
 
         let task = DownloadTask::builder(
@@ -678,6 +700,7 @@ mod tests {
             allow_resume: false,
             auto_extract: true,
             extract_dest: Some(PathBuf::from("/tmp/out")),
+            segments: 4,
         };
 
         let json = serde_json::to_string(&config).unwrap();
@@ -786,5 +809,121 @@ mod tests {
             deserialized.server_filename,
             Some("actual-file-v2.0.zip".to_string())
         );
+    }
+
+    #[test]
+    fn test_download_config_segments_default() {
+        let config = DownloadConfig::default();
+        assert_eq!(config.segments, 1);
+    }
+
+    #[test]
+    fn test_download_config_segments_custom() {
+        let config = DownloadConfig {
+            segments: 8,
+            ..Default::default()
+        };
+        assert_eq!(config.segments, 8);
+    }
+
+    #[test]
+    fn test_download_config_segments_serde_roundtrip() {
+        let config = DownloadConfig {
+            segments: 16,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: DownloadConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.segments, 16);
+    }
+
+    #[test]
+    fn test_download_config_segments_serde_default_when_missing() {
+        let json = r#"{"maxRetries":3,"timeoutSecs":300,"verifyChecksum":true,"speedLimit":0,"allowResume":true}"#;
+        let config: DownloadConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.segments, 1);
+    }
+
+    #[test]
+    fn test_download_task_mirror_urls_default_empty() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        assert!(task.mirror_urls.is_empty());
+    }
+
+    #[test]
+    fn test_download_task_builder_with_mirror() {
+        let task = DownloadTask::builder(
+            "https://primary.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_mirror("https://mirror1.com/file.zip".to_string())
+        .with_mirror("https://mirror2.com/file.zip".to_string())
+        .build();
+
+        assert_eq!(task.mirror_urls.len(), 2);
+        assert_eq!(task.mirror_urls[0], "https://mirror1.com/file.zip");
+        assert_eq!(task.mirror_urls[1], "https://mirror2.com/file.zip");
+    }
+
+    #[test]
+    fn test_download_task_builder_with_mirrors() {
+        let mirrors = vec![
+            "https://mirror1.com/file.zip".to_string(),
+            "https://mirror2.com/file.zip".to_string(),
+        ];
+        let task = DownloadTask::builder(
+            "https://primary.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_mirrors(mirrors)
+        .build();
+
+        assert_eq!(task.mirror_urls.len(), 2);
+    }
+
+    #[test]
+    fn test_download_task_mirror_urls_serde_roundtrip() {
+        let mut task = DownloadTask::new(
+            "https://primary.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        task.mirror_urls = vec![
+            "https://mirror1.com/file.zip".to_string(),
+            "https://mirror2.com/file.zip".to_string(),
+        ];
+
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains("mirror1.com"));
+
+        let deserialized: DownloadTask = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.mirror_urls.len(), 2);
+        assert_eq!(deserialized.mirror_urls[0], "https://mirror1.com/file.zip");
+    }
+
+    #[test]
+    fn test_download_task_mirror_urls_serde_default_when_missing() {
+        let json = serde_json::json!({
+            "id": "test-id",
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test",
+            "state": {"type": "queued"},
+            "progress": {"downloadedBytes": 0, "speed": 0.0, "percent": 0.0},
+            "priority": 0,
+            "createdAt": "2025-01-01T00:00:00Z",
+            "retries": 0,
+            "config": {"maxRetries": 3, "timeoutSecs": 300, "verifyChecksum": true, "speedLimit": 0, "allowResume": true},
+            "supportsResume": false,
+            "metadata": {}
+        });
+        let task: DownloadTask = serde_json::from_value(json).unwrap();
+        assert!(task.mirror_urls.is_empty());
     }
 }

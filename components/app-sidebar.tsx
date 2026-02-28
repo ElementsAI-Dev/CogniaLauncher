@@ -20,6 +20,7 @@ import {
   BookOpen,
   GitBranch,
   Variable,
+  Wrench,
 } from "lucide-react";
 import {
   Sidebar,
@@ -58,6 +59,7 @@ const navItems = [
   { href: "/git", labelKey: "nav.git", icon: GitBranch, tourId: undefined },
   { href: "/envvar", labelKey: "nav.envvar", icon: Variable, tourId: undefined },
   { href: "/terminal", labelKey: "nav.terminal", icon: SquareTerminal, tourId: undefined },
+  { href: "/toolbox", labelKey: "nav.toolbox", icon: Wrench, tourId: undefined },
   { href: "/wsl", labelKey: "nav.wsl", icon: Terminal, tourId: undefined },
   { href: "/logs", labelKey: "nav.logs", icon: ScrollText, tourId: undefined },
   { href: "/docs", labelKey: "nav.docs", icon: BookOpen, tourId: undefined },
@@ -269,8 +271,8 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
-              {/* Downloads, Git & Env Vars */}
-              {navItems.slice(5, 8).map((item) => {
+              {/* Downloads, Git, Env Vars, Terminal & Toolbox */}
+              {navItems.slice(5, 10).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (
@@ -325,8 +327,8 @@ export function AppSidebar() {
                               isActive={pathname === "/wsl/distro" && new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('name') === distro.name}
                             >
                               <Link href={`/wsl/distro?name=${encodeURIComponent(distro.name)}`}>
-                                <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${distro.state.toLowerCase() === 'running' ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
-                                {distro.name}
+                                <span className={`mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${distro.state.toLowerCase() === 'running' ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                                <span>{distro.name}</span>
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
@@ -360,7 +362,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>{t("nav.settings")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.slice(9).map((item) => {
+              {navItems.slice(11).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
                 return (

@@ -45,7 +45,7 @@ import {
   FileArchive,
   Calendar,
   Star,
-  Archive,
+  Gitlab,
   KeyRound,
   ChevronDown,
   Eye,
@@ -96,6 +96,7 @@ export function GitLabDownloadDialog({
     downloadAsset,
     downloadSource,
     saveToken,
+    saveInstanceUrl,
     clearSavedToken,
     reset,
   } = useGitLabDownloads();
@@ -150,8 +151,11 @@ export function GitLabDownloadDialog({
 
   const handleSaveToken = useCallback(async () => {
     await saveToken();
+    if (instanceUrl.trim()) {
+      await saveInstanceUrl();
+    }
     toast.success(t("downloads.gitlab.tokenSaved"));
-  }, [saveToken, t]);
+  }, [saveToken, saveInstanceUrl, instanceUrl, t]);
 
   const handleClearToken = useCallback(async () => {
     await clearSavedToken();
@@ -227,7 +231,7 @@ export function GitLabDownloadDialog({
       <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Archive className="h-5 w-5" />
+            <Gitlab className="h-5 w-5" />
             {t("downloads.gitlab.dialogTitle")}
           </DialogTitle>
           <DialogDescription>
@@ -461,6 +465,12 @@ export function GitLabDownloadDialog({
                                   </span>
                                 )}
                               </div>
+                              {selectedRelease === release.tagName &&
+                                release.description && (
+                                  <p className="text-xs text-muted-foreground mt-2 line-clamp-3 whitespace-pre-wrap">
+                                    {release.description}
+                                  </p>
+                                )}
                             </div>
                           ))}
                         </div>

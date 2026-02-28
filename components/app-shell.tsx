@@ -18,6 +18,7 @@ import { BackgroundImage } from "@/components/layout/background-image";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { LogDrawer } from "@/components/log/log-drawer";
 import { CrashRecoveryDialog } from "@/components/crash-recovery-dialog";
+import { FeedbackDialog } from "@/components/feedback";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { SplashScreen } from "@/components/splash-screen";
@@ -178,6 +179,7 @@ export function AppShell({ children }: AppShellProps) {
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
         <LogDrawer />
         <CrashRecoveryDialog t={t} />
+        <FeedbackDialog />
 
         {/* Onboarding wizard - shown on first run or when re-triggered from settings */}
         <OnboardingWizard

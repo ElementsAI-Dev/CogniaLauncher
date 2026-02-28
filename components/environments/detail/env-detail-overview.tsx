@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { writeClipboard } from '@/lib/clipboard';
 import {
   Card,
@@ -49,15 +50,24 @@ export function EnvDetailOverview({
   detectedVersion,
   t,
 }: EnvDetailOverviewProps) {
-  const { systemHealth, loading: healthLoading, checkAll, getStatusColor } =
+  const { systemHealth, environmentHealth, loading: healthLoading, checkAll, checkEnvironment, getStatusColor } =
     useHealthCheck();
 
-  const totalSize = env?.installed_versions.reduce(
+  // Auto-trigger health check on mount if no cached data for this env
+  const autoCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!autoCheckedRef.current && env?.available && !environmentHealth[envType]) {
+      autoCheckedRef.current = true;
+      checkEnvironment(envType);
+    }
+  }, [env?.available, envType, environmentHealth, checkEnvironment]);
+
+  const totalSize = env?.total_size ?? env?.installed_versions.reduce(
     (acc, v) => acc + (v.size || 0),
     0,
   ) ?? 0;
 
-  const envHealth = systemHealth?.environments.find(
+  const envHealth = environmentHealth[envType] ?? systemHealth?.environments.find(
     (e) => e.env_type === envType,
   );
 

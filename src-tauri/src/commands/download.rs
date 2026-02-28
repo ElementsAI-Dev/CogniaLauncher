@@ -135,6 +135,7 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
         default_task_config: DownloadConfig::default(),
         partials_dir: settings.get_cache_dir().join("partials"),
         auto_start: true,
+        progress_interval_ms: 100,
     };
 
     let cache_dir = settings.get_cache_dir();
@@ -142,6 +143,18 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
     let proxy = settings.network.proxy.clone();
     let mut manager = DownloadManager::new(config, proxy);
     let mut rx = manager.create_event_channel();
+
+    // Enable queue persistence for crash recovery
+    manager.enable_persistence(&cache_dir);
+
+    // Restore tasks from previous session
+    let restored = manager.load_persisted_tasks().await;
+    if restored > 0 {
+        log::info!(
+            "Restored {} download tasks from previous session",
+            restored
+        );
+    }
 
     // Clean up stale partial downloads on startup (older than 7 days)
     let cleaned = manager
@@ -164,6 +177,8 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
     let manager_clone = shared_manager.clone();
     let cache_dir_clone = cache_dir.clone();
     tokio::spawn(async move {
+        use tauri_plugin_notification::NotificationExt;
+
         while let Some(event) = rx.recv().await {
             // Emit events to frontend with enriched payloads where needed
             match &event {
@@ -237,6 +252,35 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
                     };
                     let _ = app_clone.emit(event_name, &event);
                 }
+            }
+
+            // Send desktop notifications for completed/failed downloads
+            match &event {
+                DownloadEvent::TaskCompleted { task_id } => {
+                    let mgr = manager_clone.read().await;
+                    if let Some(task) = mgr.get_task(task_id).await {
+                        let _ = app_clone
+                            .notification()
+                            .builder()
+                            .title("Download Complete")
+                            .body(format!("{} has finished downloading.", task.name))
+                            .show();
+                    }
+                    drop(mgr);
+                }
+                DownloadEvent::TaskFailed { task_id, error } => {
+                    let mgr = manager_clone.read().await;
+                    if let Some(task) = mgr.get_task(task_id).await {
+                        let _ = app_clone
+                            .notification()
+                            .builder()
+                            .title("Download Failed")
+                            .body(format!("{}: {}", task.name, error))
+                            .show();
+                    }
+                    drop(mgr);
+                }
+                _ => {}
             }
 
             // Record completed/failed/cancelled downloads to history
@@ -391,7 +435,17 @@ pub async fn download_add(
         }
     }
 
-    let task = builder.build();
+    let mut task = builder.build();
+
+    // Apply auto_extract settings from request
+    if let Some(auto_extract) = request.auto_extract {
+        task.config.auto_extract = auto_extract;
+    }
+    if let Some(ref extract_dest) = request.extract_dest {
+        if !extract_dest.is_empty() {
+            task.config.extract_dest = Some(PathBuf::from(extract_dest));
+        }
+    }
 
     let mgr = manager.read().await;
     let task_id = mgr.add_task(task).await;
@@ -1419,5 +1473,50 @@ mod tests {
         assert_eq!(info.expected_checksum, Some("sha256abc".to_string()));
         assert!(info.supports_resume);
         assert_eq!(info.metadata.get("version"), Some(&"1.0.0".to_string()));
+    }
+
+    #[test]
+    fn test_download_request_with_auto_extract() {
+        let json = r#"{
+            "url": "https://example.com/archive.tar.gz",
+            "destination": "/tmp/archive.tar.gz",
+            "name": "Archive",
+            "autoExtract": true,
+            "extractDest": "/tmp/extracted"
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.auto_extract, Some(true));
+        assert_eq!(request.extract_dest, Some("/tmp/extracted".to_string()));
+    }
+
+    #[test]
+    fn test_download_request_without_auto_extract() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File"
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        assert!(request.auto_extract.is_none());
+        assert!(request.extract_dest.is_none());
+    }
+
+    #[test]
+    fn test_download_request_auto_extract_false() {
+        let json = r#"{
+            "url": "https://example.com/file.zip",
+            "destination": "/tmp/file.zip",
+            "name": "Test File",
+            "autoExtract": false
+        }"#;
+
+        let request: DownloadRequest = serde_json::from_str(json).unwrap();
+
+        assert_eq!(request.auto_extract, Some(false));
+        assert!(request.extract_dest.is_none());
     }
 }

@@ -13,6 +13,7 @@ import {
   Monitor,
   FolderOpen,
   Package,
+  Archive,
   Info,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ export const SECTION_ICONS: Record<string, LucideIcon> = {
   Monitor,
   FolderOpen,
   Package,
+  Archive,
   Info,
 };
 
@@ -41,6 +43,7 @@ export type SettingsSection =
   | 'tray'
   | 'paths'
   | 'provider'
+  | 'backup'
   | 'system';
 
 export type SettingType = 'input' | 'switch' | 'select';
@@ -140,11 +143,18 @@ export const SETTINGS_SECTIONS: SectionDefinition[] = [
     order: 9,
   },
   {
+    id: 'backup',
+    labelKey: 'backup.title',
+    descKey: 'backup.description',
+    icon: 'Archive',
+    order: 10,
+  },
+  {
     id: 'system',
     labelKey: 'settings.systemInfo',
     descKey: 'settings.systemInfoDesc',
     icon: 'Info',
-    order: 10,
+    order: 11,
   },
 ];
 

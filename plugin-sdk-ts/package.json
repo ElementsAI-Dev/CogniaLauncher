@@ -1,0 +1,21 @@
+{
+  "name": "@cognia/plugin-sdk",
+  "version": "0.1.0",
+  "description": "Type-safe TypeScript SDK for building CogniaLauncher WASM plugins",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AstroAir/CogniaLauncher",
+    "directory": "plugin-sdk-ts"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": [
+    "src/",
+    "cognia.d.ts",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@extism/js-pdk": "^1.1.1"
+  }
+}

@@ -48,6 +48,11 @@ export interface UseGitReturn {
   refreshConfig: () => Promise<void>;
   setConfigValue: (key: string, value: string) => Promise<void>;
   removeConfigKey: (key: string) => Promise<void>;
+  getConfigValue: (key: string) => Promise<string | null>;
+  getConfigFilePath: () => Promise<string | null>;
+  listAliases: () => Promise<GitConfigEntry[]>;
+  setConfigIfUnset: (key: string, value: string) => Promise<boolean>;
+  openConfigInEditor: () => Promise<string>;
 
   // Actions - Repository inspection
   setRepoPath: (path: string) => Promise<void>;
@@ -72,7 +77,7 @@ export interface UseGitReturn {
 
   // Actions - Commit detail & graph
   getCommitDetail: (hash: string) => Promise<GitCommitDetail | null>;
-  getGraphLog: (limit?: number, allBranches?: boolean) => Promise<GitGraphEntry[]>;
+  getGraphLog: (limit?: number, allBranches?: boolean, firstParent?: boolean, branch?: string) => Promise<GitGraphEntry[]>;
   getAheadBehind: (branch: string, upstream?: string) => Promise<GitAheadBehind>;
 
   // Actions - Branch operations
@@ -106,11 +111,13 @@ export interface UseGitReturn {
   pull: (remote?: string, branch?: string, rebase?: boolean) => Promise<string>;
   fetch: (remote?: string) => Promise<string>;
   cloneRepo: (url: string, destPath: string, options?: GitCloneOptions) => Promise<string>;
+  cancelClone: () => Promise<void>;
   extractRepoName: (url: string) => Promise<string | null>;
   validateGitUrl: (url: string) => Promise<boolean>;
   initRepo: (path: string) => Promise<string>;
-  getDiff: (staged?: boolean, file?: string) => Promise<string>;
-  getDiffBetween: (from: string, to: string, file?: string) => Promise<string>;
+  getDiff: (staged?: boolean, file?: string, contextLines?: number) => Promise<string>;
+  getDiffBetween: (from: string, to: string, file?: string, contextLines?: number) => Promise<string>;
+  getCommitDiff: (hash: string, file?: string, contextLines?: number) => Promise<string>;
   merge: (branch: string, noFf?: boolean) => Promise<string>;
   revertCommit: (hash: string, noCommit?: boolean) => Promise<string>;
   cherryPick: (hash: string) => Promise<string>;
@@ -240,6 +247,61 @@ export function useGit(): UseGitReturn {
       await tauri.gitRemoveConfig(key);
       const entries = await tauri.gitGetConfig();
       setConfig(entries);
+    } catch (e) {
+      setError(String(e));
+      throw e;
+    }
+  }, []);
+
+  const getConfigValue = useCallback(async (key: string): Promise<string | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.gitGetConfigValue(key);
+    } catch (e) {
+      setError(String(e));
+      return null;
+    }
+  }, []);
+
+  const getConfigFilePath = useCallback(async (): Promise<string | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.gitGetConfigFilePath();
+    } catch (e) {
+      setError(String(e));
+      return null;
+    }
+  }, []);
+
+  const listAliases = useCallback(async (): Promise<GitConfigEntry[]> => {
+    if (!tauri.isTauri()) return [];
+    try {
+      return await tauri.gitListAliases();
+    } catch (e) {
+      setError(String(e));
+      return [];
+    }
+  }, []);
+
+  const setConfigIfUnset = useCallback(async (key: string, value: string): Promise<boolean> => {
+    if (!tauri.isTauri()) return false;
+    try {
+      const result = await tauri.gitSetConfigIfUnset(key, value);
+      if (result) {
+        const entries = await tauri.gitGetConfig();
+        setConfig(entries);
+      }
+      return result;
+    } catch (e) {
+      setError(String(e));
+      return false;
+    }
+  }, []);
+
+  const openConfigInEditor = useCallback(async (): Promise<string> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    try {
+      return await tauri.gitOpenConfigInEditor();
     } catch (e) {
       setError(String(e));
       throw e;
@@ -422,10 +484,10 @@ export function useGit(): UseGitReturn {
   );
 
   const getGraphLog = useCallback(
-    async (limit?: number, allBranches?: boolean): Promise<GitGraphEntry[]> => {
+    async (limit?: number, allBranches?: boolean, firstParent?: boolean, branch?: string): Promise<GitGraphEntry[]> => {
       if (!tauri.isTauri() || !repoPath) return [];
       try {
-        return await tauri.gitGetGraphLog(repoPath, limit, allBranches);
+        return await tauri.gitGetGraphLog(repoPath, limit, allBranches, firstParent, branch);
       } catch (e) {
         setError(String(e));
         return [];
@@ -716,6 +778,11 @@ export function useGit(): UseGitReturn {
     [],
   );
 
+  const cancelClone = useCallback(async (): Promise<void> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    await tauri.gitCancelClone();
+  }, []);
+
   const extractRepoName = useCallback(async (url: string): Promise<string | null> => {
     if (!tauri.isTauri()) return null;
     return await tauri.gitExtractRepoName(url);
@@ -735,17 +802,30 @@ export function useGit(): UseGitReturn {
   );
 
   const getDiff = useCallback(
-    async (staged?: boolean, file?: string): Promise<string> => {
+    async (staged?: boolean, file?: string, contextLines?: number): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) return '';
-      return await tauri.gitGetDiff(repoPath, staged, file);
+      return await tauri.gitGetDiff(repoPath, staged, file, contextLines);
     },
     [repoPath],
   );
 
   const getDiffBetween = useCallback(
-    async (from: string, to: string, file?: string): Promise<string> => {
+    async (from: string, to: string, file?: string, contextLines?: number): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) return '';
-      return await tauri.gitGetDiffBetween(repoPath, from, to, file);
+      return await tauri.gitGetDiffBetween(repoPath, from, to, file, contextLines);
+    },
+    [repoPath],
+  );
+
+  const getCommitDiff = useCallback(
+    async (hash: string, file?: string, contextLines?: number): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) return '';
+      try {
+        return await tauri.gitGetCommitDiff(repoPath, hash, file, contextLines);
+      } catch (e) {
+        setError(String(e));
+        return '';
+      }
     },
     [repoPath],
   );
@@ -939,6 +1019,11 @@ export function useGit(): UseGitReturn {
     refreshConfig,
     setConfigValue,
     removeConfigKey,
+    getConfigValue,
+    getConfigFilePath,
+    listAliases,
+    setConfigIfUnset,
+    openConfigInEditor,
     setRepoPath,
     refreshRepoInfo,
     refreshBranches,
@@ -975,11 +1060,13 @@ export function useGit(): UseGitReturn {
     pull,
     fetch: fetchRemote,
     cloneRepo,
+    cancelClone,
     extractRepoName,
     validateGitUrl,
     initRepo,
     getDiff,
     getDiffBetween,
+    getCommitDiff,
     merge,
     revertCommit,
     cherryPick,

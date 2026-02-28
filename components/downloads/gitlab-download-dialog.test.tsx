@@ -27,7 +27,7 @@ const mockUseGitLabDownloads = {
   setToken: jest.fn(),
   instanceUrl: "",
   setInstanceUrl: jest.fn(),
-  parsedProject: null as { owner: string; repo: string; fullName: string } | null,
+  parsedProject: null as { namespace: string; project: string; fullName: string } | null,
   projectInfo: null as GitLabProjectInfo | null,
   isValidating: false,
   isValid: false as boolean | null,
@@ -42,6 +42,7 @@ const mockUseGitLabDownloads = {
   downloadAsset: jest.fn(),
   downloadSource: jest.fn(),
   saveToken: jest.fn().mockResolvedValue(undefined),
+  saveInstanceUrl: jest.fn().mockResolvedValue(undefined),
   clearSavedToken: jest.fn().mockResolvedValue(undefined),
   reset: jest.fn(),
 };
@@ -145,7 +146,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("renders project info with star count when valid", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       projectInfo: testProjectInfo,
     });
@@ -154,7 +155,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows releases tab with release items when validated", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [testRelease],
     });
@@ -165,7 +166,7 @@ describe("GitLabDownloadDialog", () => {
   it("shows upcoming badge for upcoming releases", () => {
     const upcomingRelease = { ...testRelease, upcomingRelease: true };
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [upcomingRelease],
     });
@@ -174,7 +175,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows no releases message when releases array is empty", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [],
     });
@@ -183,7 +184,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows asset checkboxes when a release is selected", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [testRelease],
     });
@@ -194,7 +195,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows asset linkType badge when present", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [testRelease],
     });
@@ -204,7 +205,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows branches in branch tab when validated", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       sourceType: "branch",
       branches: [
@@ -220,7 +221,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows tags in tag tab when validated", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       sourceType: "tag",
       tags: [
@@ -234,7 +235,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("does not show release list when loading is true", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       loading: true,
       releases: [testRelease],
@@ -247,7 +248,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("download button is disabled when no selection is made", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
     });
     const downloadButton = screen.getByText("downloads.gitlab.addToQueue").closest("button");
@@ -262,7 +263,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("shows destination picker when project is validated", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
     });
     expect(screen.getByText("downloads.gitlab.destination")).toBeInTheDocument();
@@ -271,7 +272,7 @@ describe("GitLabDownloadDialog", () => {
   it("calls reset and onOpenChange when cancel button is clicked", async () => {
     const onOpenChange = jest.fn();
     Object.assign(mockUseGitLabDownloads, {
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
     });
     render(
@@ -294,7 +295,7 @@ describe("GitLabDownloadDialog", () => {
 
   it("toggles asset checkbox selection", async () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [testRelease],
     });
@@ -308,9 +309,20 @@ describe("GitLabDownloadDialog", () => {
     await userEvent.click(checkboxes[0]);
   });
 
+  it("shows release description when release is selected", () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      releases: [testRelease],
+    });
+    // Click to select release
+    fireEvent.click(screen.getByText("v1.0.0"));
+    expect(screen.getByText("First release")).toBeInTheDocument();
+  });
+
   it("shows release date for releases with releasedAt", () => {
     renderDialog({
-      parsedProject: { owner: "owner", repo: "test-project", fullName: "owner/test-project" },
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
       isValid: true,
       releases: [testRelease],
     });

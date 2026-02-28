@@ -2,23 +2,74 @@ use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{env::Platform, process};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
+
+/// Default timeout for query operations (search, list, show, etc.)
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+/// Long timeout for mutating operations (install, uninstall, upgrade, import, repair).
+const LONG_TIMEOUT: Duration = Duration::from_secs(600);
 
 pub struct WingetProvider;
 
 /// Common flags appended to every winget invocation for non-interactive automated use.
 const COMMON_FLAGS: &[&str] = &["--accept-source-agreements", "--disable-interactivity"];
 
+/// A pinned package entry from `winget pin list`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WingetPin {
+    pub name: String,
+    pub id: String,
+    pub version: String,
+    pub source: String,
+    pub pin_type: String,
+}
+
+/// A winget source entry from `winget source list`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WingetSource {
+    pub name: String,
+    pub argument: String,
+    pub source_type: String,
+    pub updated: String,
+}
+
+/// Detailed info from `winget --info`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WingetInfo {
+    pub version: String,
+    pub logs_dir: Option<String>,
+    pub is_admin: bool,
+    pub sources: Vec<WingetSource>,
+}
+
 impl WingetProvider {
     pub fn new() -> Self {
         Self
     }
 
-    /// Execute a winget command with common flags and a generous timeout.
-    /// Merges stdout for the caller; returns an error only when exit code != 0.
+    /// Execute a winget command with common flags and standard timeout (120s).
     async fn run_winget(&self, args: &[&str]) -> CogniaResult<String> {
+        self.run_winget_with_timeout(args, DEFAULT_TIMEOUT).await
+    }
+
+    /// Execute a winget command with common flags and long timeout (600s).
+    /// Use for install, uninstall, upgrade, import, repair operations.
+    async fn run_winget_long(&self, args: &[&str]) -> CogniaResult<String> {
+        self.run_winget_with_timeout(args, LONG_TIMEOUT).await
+    }
+
+    /// Execute a winget command with common flags and the specified timeout.
+    async fn run_winget_with_timeout(
+        &self,
+        args: &[&str],
+        timeout: Duration,
+    ) -> CogniaResult<String> {
         let mut full_args: Vec<&str> = args.to_vec();
         for flag in COMMON_FLAGS {
             if !full_args.contains(flag) {
@@ -26,7 +77,7 @@ impl WingetProvider {
             }
         }
 
-        let opts = process::ProcessOptions::new().with_timeout(Duration::from_secs(120));
+        let opts = process::ProcessOptions::new().with_timeout(timeout);
 
         let out = process::execute("winget", &full_args, Some(opts)).await?;
 
@@ -45,6 +96,21 @@ impl WingetProvider {
             };
             Err(CogniaError::Provider(msg))
         }
+    }
+
+    /// Execute a winget command that may return useful stdout on non-zero exit.
+    /// Returns stdout regardless of exit code (e.g., `winget upgrade` returns 1 when updates exist).
+    async fn run_winget_lenient(&self, args: &[&str]) -> CogniaResult<String> {
+        let mut full_args: Vec<&str> = args.to_vec();
+        for flag in COMMON_FLAGS {
+            if !full_args.contains(flag) {
+                full_args.push(flag);
+            }
+        }
+
+        let opts = process::ProcessOptions::new().with_timeout(DEFAULT_TIMEOUT);
+        let out = process::execute("winget", &full_args, Some(opts)).await?;
+        Ok(Self::clean_output(&out.stdout))
     }
 
     /// Strip null bytes and UTF-8 BOM that winget sometimes emits on Windows.
@@ -144,6 +210,276 @@ impl WingetProvider {
     fn parse_show_field<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
         line.strip_prefix(prefix).map(|v| v.trim())
     }
+
+    // ── Pin management ──────────────────────────────────────────────────
+
+    /// List all pinned packages via `winget pin list`.
+    pub async fn pin_list(&self) -> CogniaResult<Vec<WingetPin>> {
+        let out = self.run_winget(&["pin", "list"]).await?;
+        Ok(Self::parse_pin_list(&out))
+    }
+
+    /// Add a pin for a package. `pin_type` can be "pinning", "blocking", or "gating".
+    pub async fn pin_add(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        blocking: bool,
+    ) -> CogniaResult<()> {
+        let mut args = vec!["pin", "add", "--id", id, "--exact"];
+        if let Some(v) = version {
+            args.extend(&["--version", v]);
+        }
+        if blocking {
+            args.push("--blocking");
+        }
+        self.run_winget(&args).await?;
+        Ok(())
+    }
+
+    /// Remove a pin from a package.
+    pub async fn pin_remove(&self, id: &str) -> CogniaResult<()> {
+        self.run_winget(&["pin", "remove", "--id", id, "--exact"])
+            .await?;
+        Ok(())
+    }
+
+    /// Reset all pins.
+    pub async fn pin_reset(&self) -> CogniaResult<()> {
+        self.run_winget(&["pin", "reset", "--force"]).await?;
+        Ok(())
+    }
+
+    /// Parse `winget pin list` output into structured data.
+    fn parse_pin_list(output: &str) -> Vec<WingetPin> {
+        let (data_lines, col_starts) = Self::parse_winget_columns(output);
+        data_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| {
+                let name = Self::extract_column(line, &col_starts, 0);
+                let id = Self::extract_column(line, &col_starts, 1);
+                let version = Self::extract_column(line, &col_starts, 2);
+                let source = Self::extract_column(line, &col_starts, 3);
+                let pin_type = Self::extract_column(line, &col_starts, 4);
+
+                if id.is_empty() {
+                    return None;
+                }
+
+                Some(WingetPin {
+                    name,
+                    id,
+                    version,
+                    source,
+                    pin_type,
+                })
+            })
+            .collect()
+    }
+
+    // ── Source management ────────────────────────────────────────────────
+
+    /// List all configured sources.
+    pub async fn source_list(&self) -> CogniaResult<Vec<WingetSource>> {
+        let out = self.run_winget(&["source", "list"]).await?;
+        Ok(Self::parse_source_list(&out))
+    }
+
+    /// Add a new package source.
+    pub async fn source_add(
+        &self,
+        name: &str,
+        url: &str,
+        source_type: Option<&str>,
+    ) -> CogniaResult<()> {
+        let mut args = vec!["source", "add", "--name", name, "--arg", url];
+        if let Some(t) = source_type {
+            args.extend(&["--type", t]);
+        }
+        self.run_winget(&args).await?;
+        Ok(())
+    }
+
+    /// Remove a package source.
+    pub async fn source_remove(&self, name: &str) -> CogniaResult<()> {
+        self.run_winget(&["source", "remove", "--name", name])
+            .await?;
+        Ok(())
+    }
+
+    /// Reset all sources to default.
+    pub async fn source_reset(&self) -> CogniaResult<()> {
+        self.run_winget(&["source", "reset", "--force"]).await?;
+        Ok(())
+    }
+
+    /// Parse `winget source list` output.
+    fn parse_source_list(output: &str) -> Vec<WingetSource> {
+        let (data_lines, col_starts) = Self::parse_winget_columns(output);
+        data_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| {
+                let name = Self::extract_column(line, &col_starts, 0);
+                let argument = Self::extract_column(line, &col_starts, 1);
+
+                if name.is_empty() {
+                    return None;
+                }
+
+                Some(WingetSource {
+                    name,
+                    argument,
+                    source_type: String::new(),
+                    updated: String::new(),
+                })
+            })
+            .collect()
+    }
+
+    // ── Export / Import ──────────────────────────────────────────────────
+
+    /// Export installed packages to a JSON file using native `winget export`.
+    pub async fn export_packages(
+        &self,
+        output_path: &str,
+        include_versions: bool,
+    ) -> CogniaResult<()> {
+        let mut args = vec!["export", "-o", output_path];
+        if include_versions {
+            args.push("--include-versions");
+        }
+        self.run_winget(&args).await?;
+        Ok(())
+    }
+
+    /// Import packages from a JSON file using native `winget import`.
+    pub async fn import_packages(
+        &self,
+        input_path: &str,
+        ignore_unavailable: bool,
+        ignore_versions: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec![
+            "import",
+            "-i",
+            input_path,
+            "--accept-package-agreements",
+        ];
+        if ignore_unavailable {
+            args.push("--ignore-unavailable");
+        }
+        if ignore_versions {
+            args.push("--ignore-versions");
+        }
+        self.run_winget_long(&args).await
+    }
+
+    // ── Repair ───────────────────────────────────────────────────────────
+
+    /// Repair an installed package.
+    pub async fn repair_package(&self, id: &str) -> CogniaResult<()> {
+        self.run_winget_long(&["repair", "--id", id, "--exact", "--silent"])
+            .await?;
+        Ok(())
+    }
+
+    // ── Download (offline installer) ────────────────────────────────────
+
+    /// Download a package installer without installing.
+    pub async fn download_installer(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        directory: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["download", "--id", id, "--exact"];
+        if let Some(v) = version {
+            args.extend(&["--version", v]);
+        }
+        if let Some(d) = directory {
+            args.extend(&["-d", d]);
+        }
+        self.run_winget_long(&args).await
+    }
+
+    // ── Info ─────────────────────────────────────────────────────────────
+
+    /// Get detailed winget info via `winget --info`.
+    pub async fn get_info(&self) -> CogniaResult<WingetInfo> {
+        let out = self.run_winget(&["--info"]).await?;
+        let version_out = self.run_winget(&["--version"]).await.unwrap_or_default();
+        let version = version_out.trim().trim_start_matches('v').to_string();
+
+        let mut logs_dir = None;
+        let mut is_admin = false;
+
+        for line in out.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("Logs") {
+                if let Some(path) = trimmed.split_whitespace().last() {
+                    if path.contains('\\') || path.contains('/') {
+                        logs_dir = Some(path.to_string());
+                    }
+                }
+            }
+            if trimmed.contains("Administrator") && trimmed.contains("true") {
+                is_admin = true;
+            }
+        }
+
+        let sources = self.source_list().await.unwrap_or_default();
+
+        Ok(WingetInfo {
+            version,
+            logs_dir,
+            is_admin,
+            sources,
+        })
+    }
+
+    // ── Advanced install with scope/arch/locale ─────────────────────────
+
+    /// Install a package with advanced options (scope, architecture, locale, location).
+    pub async fn install_advanced(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        scope: Option<&str>,
+        architecture: Option<&str>,
+        locale: Option<&str>,
+        location: Option<&str>,
+        force: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec![
+            "install",
+            "--id",
+            id,
+            "--exact",
+            "--accept-package-agreements",
+            "--silent",
+        ];
+        if let Some(v) = version {
+            args.extend(&["--version", v]);
+        }
+        if let Some(s) = scope {
+            args.extend(&["--scope", s]);
+        }
+        if let Some(a) = architecture {
+            args.extend(&["--architecture", a]);
+        }
+        if let Some(l) = locale {
+            args.extend(&["--locale", l]);
+        }
+        if let Some(loc) = location {
+            args.extend(&["--location", loc]);
+        }
+        if force {
+            args.push("--force");
+        }
+        self.run_winget_long(&args).await
+    }
 }
 
 impl Default for WingetProvider {
@@ -169,6 +505,7 @@ impl Provider for WingetProvider {
             Capability::Update,
             Capability::Upgrade,
             Capability::UpdateIndex,
+            Capability::LockVersion,
         ])
     }
     fn supported_platforms(&self) -> Vec<Platform> {
@@ -209,10 +546,16 @@ impl Provider for WingetProvider {
                     return None;
                 }
 
+                let display = name.clone();
+                let pkg_id = if !id.is_empty() { id } else { name };
+
                 Some(PackageSummary {
-                    // Prefer Id as the package identifier (more reliable for install)
-                    name: if !id.is_empty() { id } else { name },
-                    description: None,
+                    name: pkg_id,
+                    description: if !display.is_empty() {
+                        Some(display)
+                    } else {
+                        None
+                    },
                     latest_version: if version.is_empty() {
                         None
                     } else {
@@ -237,6 +580,7 @@ impl Provider for WingetProvider {
         let mut homepage = None;
         let mut license = None;
         let mut author = None;
+        let mut repository = None;
         // Track multi-line description
         let mut in_description = false;
         let mut desc_lines: Vec<String> = Vec::new();
@@ -269,17 +613,38 @@ impl Provider for WingetProvider {
                 }
             } else if let Some(v) = Self::parse_show_field(line, "Homepage:") {
                 homepage = Some(v.to_string());
+            } else if let Some(v) = Self::parse_show_field(line, "Publisher Url:") {
+                if homepage.is_none() {
+                    homepage = Some(v.to_string());
+                }
+            } else if let Some(v) = Self::parse_show_field(line, "Publisher Support Url:") {
+                if repository.is_none() && !v.is_empty() {
+                    repository = Some(v.to_string());
+                }
             } else if let Some(v) = Self::parse_show_field(line, "License:") {
                 license = Some(v.to_string());
             } else if let Some(v) = Self::parse_show_field(line, "License Url:") {
                 if license.is_none() {
                     license = Some(v.to_string());
                 }
+            } else if let Some(v) = Self::parse_show_field(line, "Copyright:") {
+                // Append copyright info to license if present
+                if let Some(ref mut lic) = license {
+                    lic.push_str(&format!(" ({})", v));
+                }
+            } else if let Some(v) = Self::parse_show_field(line, "Package Url:") {
+                if repository.is_none() && !v.is_empty() {
+                    repository = Some(v.to_string());
+                }
             } else if let Some(v) = Self::parse_show_field(line, "Description:") {
                 if !v.is_empty() {
                     desc_lines.push(v.to_string());
                 }
                 in_description = true;
+            } else if let Some(v) = Self::parse_show_field(line, "Release Notes Url:") {
+                if repository.is_none() && !v.is_empty() {
+                    repository = Some(v.to_string());
+                }
             }
         }
 
@@ -298,7 +663,7 @@ impl Provider for WingetProvider {
             description: desc,
             homepage,
             license,
-            repository: None,
+            repository,
             versions: version
                 .map(|v| {
                     vec![VersionInfo {
@@ -363,7 +728,7 @@ impl Provider for WingetProvider {
             args.push("--force");
         }
 
-        let _out = self.run_winget(&args).await?;
+        let _out = self.run_winget_long(&args).await?;
 
         // Get the actual installed version via `winget list`
         let actual_version = self
@@ -399,7 +764,7 @@ impl Provider for WingetProvider {
             args.push("--force");
         }
 
-        self.run_winget(&args).await?;
+        self.run_winget_long(&args).await?;
         Ok(())
     }
 
@@ -443,7 +808,7 @@ impl Provider for WingetProvider {
     }
 
     async fn check_updates(&self, packages: &[String]) -> CogniaResult<Vec<UpdateInfo>> {
-        let out = self.run_winget(&["upgrade"]).await?;
+        let out = self.run_winget_lenient(&["upgrade"]).await?;
 
         // Winget upgrade output columns: Name, Id, Version, Available, Source
         let (data_lines, col_starts) = Self::parse_winget_columns(&out);
@@ -492,7 +857,7 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     fn requires_elevation(&self, op: &str) -> bool {
-        matches!(op, "install" | "uninstall" | "upgrade")
+        matches!(op, "install" | "uninstall" | "upgrade" | "repair" | "import")
     }
 
     async fn get_version(&self) -> CogniaResult<String> {
@@ -517,7 +882,7 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        self.run_winget(&[
+        self.run_winget_long(&[
             "upgrade",
             "--id",
             name,
@@ -530,8 +895,17 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = self
-            .run_winget(&[
+        // Snapshot available upgrades before running
+        let before = self
+            .check_updates(&[])
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|u| u.name)
+            .collect::<HashSet<_>>();
+
+        let _out = self
+            .run_winget_long(&[
                 "upgrade",
                 "--all",
                 "--accept-package-agreements",
@@ -540,20 +914,23 @@ impl SystemPackageProvider for WingetProvider {
             ])
             .await?;
 
-        // Parse output to report which packages were upgraded
-        let mut upgraded = Vec::new();
-        for line in out.lines() {
-            let trimmed = line.trim();
-            if trimmed.contains("Successfully installed")
-                || trimmed.contains("successfully installed")
-            {
-                upgraded.push(trimmed.to_string());
-            }
-        }
+        // Snapshot remaining upgrades after running
+        let after = self
+            .check_updates(&[])
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|u| u.name)
+            .collect::<HashSet<_>>();
+
+        // Packages that were in `before` but not in `after` were successfully upgraded
+        let upgraded: Vec<String> = before.difference(&after).cloned().collect();
+
         if upgraded.is_empty() {
-            upgraded.push("All packages upgraded".into());
+            Ok(vec!["All packages upgraded".into()])
+        } else {
+            Ok(upgraded)
         }
-        Ok(upgraded)
     }
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
@@ -733,6 +1110,12 @@ Version
         assert!(SystemPackageProvider::requires_elevation(
             &provider, "upgrade"
         ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "repair"
+        ));
+        assert!(SystemPackageProvider::requires_elevation(
+            &provider, "import"
+        ));
         assert!(!SystemPackageProvider::requires_elevation(
             &provider, "search"
         ));
@@ -745,5 +1128,95 @@ Version
     fn test_default_impl() {
         let _provider = WingetProvider::default();
         // Ensure Default impl works
+    }
+
+    #[test]
+    fn test_capabilities_include_lock_version() {
+        let provider = WingetProvider::new();
+        let caps = provider.capabilities();
+        assert!(caps.contains(&Capability::LockVersion));
+    }
+
+    #[test]
+    fn test_parse_pin_list_standard() {
+        let output = "Name          Id                  Version  Source  Pin Type\n------------- ------------------- -------- ------ --------\nPowerToys     Microsoft.PowerToys 0.75.1   winget Pinning\nVS Code       Microsoft.VSCode    1.85.0   winget Blocking\n";
+        let pins = WingetProvider::parse_pin_list(output);
+        assert_eq!(pins.len(), 2);
+        assert_eq!(pins[0].id, "Microsoft.PowerToys");
+        assert_eq!(pins[0].pin_type, "Pinning");
+        assert_eq!(pins[1].id, "Microsoft.VSCode");
+        assert_eq!(pins[1].pin_type, "Blocking");
+    }
+
+    #[test]
+    fn test_parse_pin_list_empty() {
+        let output = "Name  Id  Version  Source  Pin Type\n----- --- -------- ------ --------\n";
+        let pins = WingetProvider::parse_pin_list(output);
+        assert!(pins.is_empty());
+    }
+
+    #[test]
+    fn test_parse_source_list_standard() {
+        let output = "Name      Arg\n--------- -------------------------------------------\nwinget    https://cdn.winget.microsoft.com/cache\nmsstore   https://storeedgefd.dsx.mp.microsoft.com/v9.0\n";
+        let sources = WingetProvider::parse_source_list(output);
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].name, "winget");
+        assert!(sources[0].argument.contains("winget.microsoft.com"));
+        assert_eq!(sources[1].name, "msstore");
+    }
+
+    #[test]
+    fn test_parse_source_list_empty() {
+        let output = "Name  Arg\n----- ---\n";
+        let sources = WingetProvider::parse_source_list(output);
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn test_timeout_constants() {
+        assert_eq!(DEFAULT_TIMEOUT.as_secs(), 120);
+        assert_eq!(LONG_TIMEOUT.as_secs(), 600);
+    }
+
+    #[test]
+    fn test_winget_pin_serde() {
+        let pin = WingetPin {
+            name: "PowerToys".into(),
+            id: "Microsoft.PowerToys".into(),
+            version: "0.75.*".into(),
+            source: "winget".into(),
+            pin_type: "Gating".into(),
+        };
+        let json = serde_json::to_string(&pin).unwrap();
+        assert!(json.contains("\"pinType\":\"Gating\""));
+        let deserialized: WingetPin = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.pin_type, "Gating");
+    }
+
+    #[test]
+    fn test_winget_source_serde() {
+        let source = WingetSource {
+            name: "winget".into(),
+            argument: "https://cdn.winget.microsoft.com/cache".into(),
+            source_type: "Microsoft.PreIndexed.Package".into(),
+            updated: "2024-01-01".into(),
+        };
+        let json = serde_json::to_string(&source).unwrap();
+        assert!(json.contains("\"sourceType\""));
+        let deserialized: WingetSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "winget");
+    }
+
+    #[test]
+    fn test_winget_info_serde() {
+        let info = WingetInfo {
+            version: "1.8.1911".into(),
+            logs_dir: Some("C:\\Users\\test\\AppData\\Local\\Packages\\logs".into()),
+            is_admin: false,
+            sources: vec![],
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"logsDir\""));
+        assert!(json.contains("\"isAdmin\":false"));
     }
 }

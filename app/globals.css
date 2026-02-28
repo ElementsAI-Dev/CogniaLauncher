@@ -761,6 +761,71 @@ html:not(.no-transitions) [data-state="closed"] {
   @apply absolute right-10 top-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60 select-none pointer-events-none;
 }
 
+/* Callout / Admonition styles */
+.docs-callout {
+  @apply my-4 rounded-lg border-l-4 p-4;
+}
+.docs-callout-title {
+  @apply flex items-center gap-2 font-semibold text-sm mb-2;
+}
+.docs-callout-icon {
+  @apply text-base leading-none;
+}
+.docs-callout-content {
+  @apply text-sm leading-relaxed;
+}
+.docs-callout-content p:first-child {
+  @apply mt-0;
+}
+.docs-callout-content p:last-child {
+  @apply mb-0;
+}
+.docs-callout-note {
+  @apply border-blue-500/60 bg-blue-500/5;
+}
+.docs-callout-note .docs-callout-title {
+  @apply text-blue-600;
+}
+.dark .docs-callout-note .docs-callout-title {
+  @apply text-blue-400;
+}
+.docs-callout-tip {
+  @apply border-green-500/60 bg-green-500/5;
+}
+.docs-callout-tip .docs-callout-title {
+  @apply text-green-600;
+}
+.dark .docs-callout-tip .docs-callout-title {
+  @apply text-green-400;
+}
+.docs-callout-important {
+  @apply border-purple-500/60 bg-purple-500/5;
+}
+.docs-callout-important .docs-callout-title {
+  @apply text-purple-600;
+}
+.dark .docs-callout-important .docs-callout-title {
+  @apply text-purple-400;
+}
+.docs-callout-warning {
+  @apply border-yellow-500/60 bg-yellow-500/5;
+}
+.docs-callout-warning .docs-callout-title {
+  @apply text-yellow-600;
+}
+.dark .docs-callout-warning .docs-callout-title {
+  @apply text-yellow-400;
+}
+.docs-callout-caution {
+  @apply border-red-500/60 bg-red-500/5;
+}
+.docs-callout-caution .docs-callout-title {
+  @apply text-red-600;
+}
+.dark .docs-callout-caution .docs-callout-title {
+  @apply text-red-400;
+}
+
 /* ===== Syntax Highlighting (rehype-highlight) ===== */
 
 .hljs {

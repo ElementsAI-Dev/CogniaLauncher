@@ -1,0 +1,74 @@
+[plugin]
+id = "com.cognia.hello-world-ts"
+name = "Hello World (TypeScript)"
+version = "0.1.0"
+description = "A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK"
+authors = ["CogniaLauncher Team"]
+
+[[tools]]
+id = "hello"
+name_en = "Hello World"
+name_zh = "你好世界"
+description_en = "Greets the user with platform and environment info"
+description_zh = "使用平台和环境信息向用户问好"
+category = "developer"
+keywords = ["hello", "demo", "example"]
+icon = "Hand"
+entry = "hello"
+
+[[tools]]
+id = "env-check"
+name_en = "Environment Check"
+name_zh = "环境检查"
+description_en = "Check installed development environments"
+description_zh = "检查已安装的开发环境"
+category = "developer"
+keywords = ["env", "check", "detect"]
+icon = "Search"
+entry = "env_check"
+
+[[tools]]
+id = "env-dashboard"
+name_en = "Environment Dashboard"
+name_zh = "环境仪表盘"
+description_en = "Rich declarative UI dashboard showing environments"
+description_zh = "展示开发环境的富界面仪表盘"
+category = "developer"
+keywords = ["env", "dashboard", "ui"]
+icon = "LayoutDashboard"
+entry = "env_dashboard"
+ui_mode = "declarative"
+
+[[tools]]
+id = "custom-view"
+name_en = "Custom UI View"
+name_zh = "自定义界面"
+description_en = "Demonstrates iframe-based custom UI with postMessage bridge"
+description_zh = "演示基于 iframe 的自定义界面及 postMessage 桥接"
+category = "developer"
+keywords = ["iframe", "custom", "ui", "bridge"]
+icon = "AppWindow"
+entry = "custom_view"
+ui_mode = "iframe"
+
+[ui]
+entry = "ui/index.html"
+width = 800
+height = 600
+
+[permissions]
+config_read = true
+env_read = true
+pkg_search = true
+
+[locales.en]
+greeting = "Hello, {name}! Welcome to CogniaLauncher plugins."
+envAvailable = "{env} is available (v{version})"
+envNotAvailable = "{env} is not installed"
+noInput = "No input provided"
+
+[locales.zh]
+greeting = "你好，{name}！欢迎使用 CogniaLauncher 插件。"
+envAvailable = "{env} 可用（v{version}）"
+envNotAvailable = "{env} 未安装"
+noInput = "未提供输入"

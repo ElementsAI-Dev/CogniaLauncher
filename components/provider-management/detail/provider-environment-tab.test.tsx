@@ -69,6 +69,8 @@ const envInfo: EnvironmentInfo = {
     { version: "18.19.0", install_path: "/home/.nvm/versions/18.19.0", size: 48000, installed_at: "2024-01-02T00:00:00Z", is_current: false },
   ],
   available: true,
+  total_size: 98000,
+  version_count: 2,
 };
 
 const envProviderInfo: EnvironmentProviderInfo = {

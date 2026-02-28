@@ -85,6 +85,13 @@ urlencoding = "2.1"
 # Trash support (cross-platform recycle bin)
 trash = "3"
 
+# Plugin system (WASM runtime)
+extism = "1.10"
+
+# Plugin SDK: clipboard and notification support
+arboard = "3"
+notify-rust = "4"
+
 # System information
 sysinfo = "0.33"
 

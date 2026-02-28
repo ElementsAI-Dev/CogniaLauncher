@@ -86,6 +86,8 @@ export interface WslSettingDef {
   description: string;
   type: SettingType;
   options?: string[];
+  /** INI section this setting belongs to (default: 'wsl2') */
+  section?: 'wsl2' | 'experimental';
 }
 
 /** A per-distro quick setting definition (/etc/wsl.conf) */
@@ -94,8 +96,9 @@ export interface QuickSetting {
   key: string;
   labelKey: string;
   descKey: string;
-  type: 'boolean';
+  type: 'boolean' | 'text' | 'select';
   defaultValue: string;
+  options?: string[];
 }
 
 // ============================================================================

@@ -111,6 +111,14 @@ export function useDownloads() {
           store.setStats(stats as QueueStats);
         });
 
+        const unlistenExtracting = await tauri.listenDownloadTaskExtracting((taskId) => {
+          store.updateTask(taskId, { state: 'extracting' as DownloadTask['state'] });
+        });
+
+        const unlistenExtracted = await tauri.listenDownloadTaskExtracted(() => {
+          refreshTasks();
+        });
+
         unlistenRefs.current = [
           unlistenAdded,
           unlistenStarted,
@@ -121,6 +129,8 @@ export function useDownloads() {
           unlistenResumed,
           unlistenCancelled,
           unlistenQueueUpdated,
+          unlistenExtracting,
+          unlistenExtracted,
         ];
       } catch (err) {
         console.error('Failed to setup download listeners:', err);

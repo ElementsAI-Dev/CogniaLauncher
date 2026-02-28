@@ -15,28 +15,80 @@ import {
   TerminalPsModulesTable,
   TerminalProxySettings,
   TerminalEnvVars,
+  TerminalTemplatePicker,
 } from '@/components/terminal';
-import type { TerminalProfile } from '@/types/tauri';
-import { Monitor, User, FileText, Blocks, Shield, Globe, Variable } from 'lucide-react';
+import type { TerminalProfile, TerminalProfileTemplate } from '@/types/tauri';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Monitor, User, FileText, Blocks, Shield, Globe, Variable, RefreshCw, Plus } from 'lucide-react';
 
 export default function TerminalPage() {
   const { t } = useLocale();
   const terminal = useTerminal();
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<TerminalProfile | null>(null);
-  const profileDialogKey = `${profileDialogOpen ? 'open' : 'closed'}:${editingProfile?.id ?? 'new'}:${terminal.shells
+  const [templateProfile, setTemplateProfile] = useState<TerminalProfile | null>(null);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+  const [saveAsTemplateProfileId, setSaveAsTemplateProfileId] = useState<string | null>(null);
+  const [saveAsTemplateName, setSaveAsTemplateName] = useState('');
+  const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState('');
+
+  const profileDialogKey = `${profileDialogOpen ? 'open' : 'closed'}:${editingProfile?.id ?? 'new'}:${templateProfile?.name ?? 'none'}:${terminal.shells
     .map((shell) => shell.id)
     .join('|')}`;
 
   const handleCreateNew = useCallback(() => {
     setEditingProfile(null);
+    setTemplateProfile(null);
     setProfileDialogOpen(true);
   }, []);
 
   const handleEdit = useCallback((profile: TerminalProfile) => {
     setEditingProfile(profile);
+    setTemplateProfile(null);
     setProfileDialogOpen(true);
   }, []);
+
+  const handleFromTemplate = useCallback(() => {
+    setTemplatePickerOpen(true);
+  }, []);
+
+  const handleTemplateSelect = useCallback(async (tpl: TerminalProfileTemplate) => {
+    const prefilled = await terminal.createProfileFromTemplate(tpl.id);
+    if (prefilled) {
+      setEditingProfile(null);
+      setTemplateProfile(prefilled);
+      setProfileDialogOpen(true);
+    }
+  }, [terminal]);
+
+  const handleSaveAsTemplate = useCallback((profileId: string) => {
+    const profile = terminal.profiles.find((p) => p.id === profileId);
+    setSaveAsTemplateProfileId(profileId);
+    setSaveAsTemplateName(profile?.name ?? '');
+    setSaveAsTemplateDesc('');
+    setSaveAsTemplateOpen(true);
+  }, [terminal.profiles]);
+
+  const handleConfirmSaveAsTemplate = useCallback(async () => {
+    if (!saveAsTemplateProfileId || !saveAsTemplateName.trim()) return;
+    await terminal.saveProfileAsTemplate(
+      saveAsTemplateProfileId,
+      saveAsTemplateName.trim(),
+      saveAsTemplateDesc.trim(),
+    );
+    setSaveAsTemplateOpen(false);
+  }, [saveAsTemplateProfileId, saveAsTemplateName, saveAsTemplateDesc, terminal]);
 
   useEffect(() => {
     terminal.loadProxyConfig();
@@ -52,10 +104,28 @@ export default function TerminalPage() {
   }, [terminal]);
 
   return (
-    <main className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <PageHeader
         title={t('terminal.title')}
         description={t('terminal.description')}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { terminal.detectShells(); terminal.fetchProfiles(); }}
+              disabled={terminal.loading}
+              className="gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${terminal.loading ? 'animate-spin' : ''}`} />
+              {t('common.refresh')}
+            </Button>
+            <Button size="sm" onClick={handleCreateNew} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('terminal.createProfile')}
+            </Button>
+          </div>
+        }
       />
 
       <Tabs defaultValue="shells" className="space-y-4">
@@ -119,6 +189,8 @@ export default function TerminalPage() {
               }
             }}
             onImport={terminal.importProfiles}
+            onFromTemplate={handleFromTemplate}
+            onSaveAsTemplate={handleSaveAsTemplate}
             launchingProfileId={terminal.launchingProfileId}
             lastLaunchResult={terminal.lastLaunchResult}
             onClearLaunchResult={terminal.clearLaunchResult}
@@ -130,6 +202,7 @@ export default function TerminalPage() {
             shells={terminal.shells}
             onReadConfig={terminal.readShellConfig}
             onFetchConfigEntries={terminal.fetchConfigEntries}
+            onParseConfigContent={terminal.parseConfigContent}
             onBackupConfig={terminal.backupShellConfig}
             onWriteConfig={terminal.writeShellConfig}
           />
@@ -140,8 +213,12 @@ export default function TerminalPage() {
             shells={terminal.shells}
             frameworks={terminal.frameworks}
             plugins={terminal.plugins}
+            frameworkCacheStats={terminal.frameworkCacheStats}
+            frameworkCacheLoading={terminal.frameworkCacheLoading}
             onDetectFrameworks={terminal.detectFrameworks}
             onFetchPlugins={terminal.fetchPlugins}
+            onFetchCacheStats={terminal.fetchFrameworkCacheStats}
+            onCleanFrameworkCache={terminal.cleanFrameworkCache}
             loading={terminal.loading}
           />
         </TabsContent>
@@ -202,7 +279,53 @@ export default function TerminalPage() {
         profile={editingProfile}
         shells={terminal.shells}
         onSave={handleSaveProfile}
+        fromTemplate={templateProfile}
       />
-    </main>
+
+      <TerminalTemplatePicker
+        open={templatePickerOpen}
+        onOpenChange={setTemplatePickerOpen}
+        templates={terminal.templates}
+        onSelect={handleTemplateSelect}
+        onDelete={terminal.deleteCustomTemplate}
+      />
+
+      <Dialog open={saveAsTemplateOpen} onOpenChange={setSaveAsTemplateOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{t('terminal.saveAsTemplate')}</DialogTitle>
+            <DialogDescription>{t('terminal.saveAsTemplateDesc')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="tpl-name">{t('terminal.templateName')}</Label>
+              <Input
+                id="tpl-name"
+                value={saveAsTemplateName}
+                onChange={(e) => setSaveAsTemplateName(e.target.value)}
+                placeholder="My Template"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tpl-desc">{t('terminal.templateDescription')}</Label>
+              <Input
+                id="tpl-desc"
+                value={saveAsTemplateDesc}
+                onChange={(e) => setSaveAsTemplateDesc(e.target.value)}
+                placeholder="A useful terminal setup..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveAsTemplateOpen(false)}>
+              {t('terminal.cancel')}
+            </Button>
+            <Button onClick={handleConfirmSaveAsTemplate} disabled={!saveAsTemplateName.trim()}>
+              {t('terminal.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

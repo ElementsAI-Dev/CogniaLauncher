@@ -18,6 +18,8 @@ const mockT = (key: string) => {
     'wsl.notAvailableDesc': "Install WSL by running 'wsl --install' in an elevated PowerShell prompt.",
     'wsl.installWsl': 'Install WSL',
     'wsl.installWslSuccess': 'WSL installed successfully. A restart may be required.',
+    'common.cancel': 'Cancel',
+    'common.confirm': 'Confirm',
   };
   return translations[key] || key;
 };
@@ -41,7 +43,12 @@ describe('WslNotAvailable', () => {
     const onInstallWsl = jest.fn().mockResolvedValue('installed');
     render(<WslNotAvailable t={mockT} onInstallWsl={onInstallWsl} />);
 
+    // Click the trigger button to open the AlertDialog
     await user.click(screen.getByRole('button', { name: 'Install WSL' }));
+
+    // Confirm in the AlertDialog (the confirm/action button)
+    const confirmBtn = await screen.findByRole('button', { name: /confirm/i });
+    await user.click(confirmBtn);
 
     await waitFor(() => expect(onInstallWsl).toHaveBeenCalledTimes(1));
     expect(mockToastSuccess).toHaveBeenCalled();

@@ -9,6 +9,7 @@ export { UpdateSettings } from "./update-settings";
 export { TraySettings } from "./tray-settings";
 export { PathsSettings } from "./paths-settings";
 export { ProviderSettings } from "./provider-settings";
+export { BackupSettings } from "./backup-settings";
 export { SystemInfo } from "./system-info";
 export { SettingsSkeleton } from "./settings-skeleton";
 export { AccentColorPicker } from "./accent-color-picker";

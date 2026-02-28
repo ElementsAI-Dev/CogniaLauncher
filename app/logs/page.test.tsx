@@ -4,7 +4,7 @@ import LogsPage from './page';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
-    t: (key: string) => {
+    t: (key: string, params?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         'logs.title': 'Logs',
         'logs.description': 'View application logs',
@@ -18,8 +18,18 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'logs.openDir': 'Open Directory',
         'logs.openDirError': 'Failed to open directory',
         'logs.viewFile': 'View File',
+        'logs.currentSession': 'Current Session',
+        'logs.management': 'Management',
+        'logs.deleteSelected': 'Delete Selected',
         'common.refresh': 'Refresh',
       };
+      if (params) {
+        let result = translations[key] || key;
+        for (const [k, v] of Object.entries(params)) {
+          result = result.replace(`{${k}}`, String(v));
+        }
+        return result;
+      }
       return translations[key] || key;
     },
   }),
@@ -31,13 +41,21 @@ const mockSetSelectedLogFile = jest.fn();
 jest.mock('@/lib/stores/log', () => ({
   useLogStore: () => ({
     logFiles: [
-      { name: 'app.log', size: 1024, modified: '2025-01-01T00:00:00Z' },
-      { name: 'error.log', size: 512, modified: '2025-01-02T00:00:00Z' },
+      { name: '2026-02-28_14-27-30.log', size: 1024, modified: 1740000000 },
+      { name: '2026-02-27_10-00-00.log', size: 512, modified: 1739900000 },
     ],
     setLogFiles: mockSetLogFiles,
     getLogStats: () => ({ total: 42, error: 5, warn: 10, info: 27 }),
     selectedLogFile: null,
     setSelectedLogFile: mockSetSelectedLogFile,
+  }),
+}));
+
+jest.mock('@/hooks/use-logs', () => ({
+  useLogs: () => ({
+    cleanupLogs: jest.fn().mockResolvedValue(null),
+    deleteLogFiles: jest.fn().mockResolvedValue(null),
+    getTotalSize: jest.fn().mockResolvedValue(0),
   }),
 }));
 
@@ -48,7 +66,7 @@ jest.mock('@/lib/tauri', () => ({
 }));
 
 jest.mock('sonner', () => ({
-  toast: { success: jest.fn(), error: jest.fn() },
+  toast: { success: jest.fn(), error: jest.fn(), info: jest.fn() },
 }));
 
 jest.mock('@/components/log', () => ({
@@ -63,10 +81,22 @@ jest.mock('@/components/log/log-file-viewer', () => ({
   ),
 }));
 
+jest.mock('@/components/log/log-management-card', () => ({
+  LogManagementCard: () => <div data-testid="log-management-card">Management</div>,
+}));
+
 jest.mock('@/lib/utils', () => ({
   formatBytes: (size: number) => `${size} B`,
-  formatDate: (date: string) => date,
+  formatDate: (date: number | string) => String(date),
   cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
+}));
+
+jest.mock('@/lib/log', () => ({
+  formatSessionLabel: (name: string) => {
+    if (name === '2026-02-28_14-27-30.log') return '2026-02-28 14:27:30';
+    if (name === '2026-02-27_10-00-00.log') return '2026-02-27 10:00:00';
+    return null;
+  },
 }));
 
 describe('LogsPage', () => {
@@ -110,5 +140,10 @@ describe('LogsPage', () => {
   it('renders refresh button', () => {
     render(<LogsPage />);
     expect(screen.getByText('Refresh')).toBeInTheDocument();
+  });
+
+  it('renders management tab (visible on mobile)', () => {
+    render(<LogsPage />);
+    expect(screen.getByText('Management')).toBeInTheDocument();
   });
 });

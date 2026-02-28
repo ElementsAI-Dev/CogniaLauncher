@@ -1,3 +1,4 @@
+use crate::SharedSettings;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -516,6 +517,141 @@ pub fn log_get_dir(app: AppHandle) -> Result<String, String> {
 pub async fn log_get_total_size(app: AppHandle) -> Result<u64, String> {
     let files = log_list_files(app).await?;
     Ok(files.iter().map(|f| f.size).sum())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogCleanupResult {
+    pub deleted_count: usize,
+    pub freed_bytes: u64,
+}
+
+#[tauri::command]
+pub async fn log_cleanup(
+    app: AppHandle,
+    settings: tauri::State<'_, SharedSettings>,
+) -> Result<LogCleanupResult, String> {
+    let settings_guard = settings.read().await;
+    let max_retention_days = settings_guard.log.max_retention_days;
+    let max_total_size_mb = settings_guard.log.max_total_size_mb;
+    drop(settings_guard);
+
+    cleanup_logs_with_policy(&app, max_retention_days, max_total_size_mb).await
+}
+
+#[tauri::command]
+pub async fn log_delete_file(app: AppHandle, file_name: String) -> Result<(), String> {
+    let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
+    let log_path = log_dir.join(&file_name);
+
+    if !log_path.exists() {
+        return Err(format!("Log file does not exist: {}", file_name));
+    }
+
+    // Don't allow deleting the current session log (newest file)
+    let files = log_list_files(app).await?;
+    if let Some(first) = files.first() {
+        if first.name == file_name {
+            return Err("Cannot delete the current session log file".to_string());
+        }
+    }
+
+    fs::remove_file(&log_path)
+        .await
+        .map_err(|e| format!("Failed to delete log file: {}", e))
+}
+
+#[tauri::command]
+pub async fn log_delete_batch(
+    app: AppHandle,
+    file_names: Vec<String>,
+) -> Result<LogCleanupResult, String> {
+    let log_dir = get_log_dir(&app).ok_or("Failed to get log directory")?;
+
+    // Get the current session log to protect it
+    let files = log_list_files(app).await?;
+    let current_log = files.first().map(|f| f.name.clone());
+
+    let mut deleted_count = 0usize;
+    let mut freed_bytes = 0u64;
+
+    for name in &file_names {
+        if current_log.as_deref() == Some(name.as_str()) {
+            continue; // Skip current session log
+        }
+        let path = log_dir.join(name);
+        if path.exists() {
+            if let Ok(meta) = fs::metadata(&path).await {
+                freed_bytes += meta.len();
+            }
+            if fs::remove_file(&path).await.is_ok() {
+                deleted_count += 1;
+            }
+        }
+    }
+
+    Ok(LogCleanupResult {
+        deleted_count,
+        freed_bytes,
+    })
+}
+
+/// Run log cleanup based on retention policy. Called at startup and on demand.
+pub async fn cleanup_logs_with_policy(
+    app: &AppHandle,
+    max_retention_days: u32,
+    max_total_size_mb: u32,
+) -> Result<LogCleanupResult, String> {
+    let files = log_list_files(app.clone()).await?;
+    if files.len() <= 1 {
+        return Ok(LogCleanupResult {
+            deleted_count: 0,
+            freed_bytes: 0,
+        });
+    }
+
+    let log_dir = get_log_dir(app).ok_or("Failed to get log directory")?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let mut deleted_count = 0usize;
+    let mut freed_bytes = 0u64;
+    let mut remaining_size: u64 = files.iter().map(|f| f.size).sum();
+    let max_total_bytes = (max_total_size_mb as u64) * 1024 * 1024;
+
+    // Skip the first file (current session log, newest)
+    for file in files.iter().skip(1).rev() {
+        let mut should_delete = false;
+
+        // Check retention days (0 = unlimited)
+        if max_retention_days > 0 {
+            let age_days = (now - file.modified) / 86400;
+            if age_days > max_retention_days as i64 {
+                should_delete = true;
+            }
+        }
+
+        // Check total size limit (0 = unlimited)
+        if !should_delete && max_total_bytes > 0 && remaining_size > max_total_bytes {
+            should_delete = true;
+        }
+
+        if should_delete {
+            let path = log_dir.join(&file.name);
+            if fs::remove_file(&path).await.is_ok() {
+                deleted_count += 1;
+                freed_bytes += file.size;
+                remaining_size -= file.size;
+            }
+        }
+    }
+
+    Ok(LogCleanupResult {
+        deleted_count,
+        freed_bytes,
+    })
 }
 
 #[cfg(test)]

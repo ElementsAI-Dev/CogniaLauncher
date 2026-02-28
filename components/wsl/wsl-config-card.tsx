@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { COMMON_WSL2_SETTINGS } from '@/lib/constants/wsl';
+import { COMMON_WSL2_SETTINGS, NETWORK_PRESETS } from '@/lib/constants/wsl';
 import type { WslConfigCardProps } from '@/types/wsl';
 
 export function WslConfigCard({
@@ -65,8 +65,25 @@ export function WslConfigCard({
     }
   };
 
-  const handleQuickSet = async (key: string, value: string) => {
-    await handleSave('wsl2', key, value);
+  const handleQuickSet = async (section: string, key: string, value: string) => {
+    await handleSave(section, key, value);
+  };
+
+  const handleApplyPreset = async (presetId: string) => {
+    const preset = NETWORK_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setSaving(true);
+    try {
+      for (const s of preset.settings) {
+        await onSetConfig(s.section, s.key, s.value);
+      }
+      toast.success(t('wsl.config.presetApplied'));
+      await onRefresh();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading && !config) {
@@ -153,6 +170,36 @@ export function WslConfigCard({
         )}
 
         <Separator />
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center justify-between w-full group">
+            <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.networkPresets')}</p>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-2 mt-3">
+              {NETWORK_PRESETS.map((preset) => (
+                <Tooltip key={preset.id}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start text-xs"
+                      onClick={() => handleApplyPreset(preset.id)}
+                      disabled={saving}
+                    >
+                      {t(preset.labelKey)}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[280px]">
+                    <p className="text-xs">{t(preset.descKey)}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Separator />
         <Collapsible defaultOpen>
           <CollapsibleTrigger className="flex items-center justify-between w-full group">
             <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.quickSettings')}</p>
@@ -161,9 +208,11 @@ export function WslConfigCard({
           <CollapsibleContent>
           <div className="grid grid-cols-2 gap-3 mt-3">
             {COMMON_WSL2_SETTINGS.map((setting) => {
-              const currentValue = wsl2Config[setting.key];
+              const sec = setting.section ?? 'wsl2';
+              const sectionConfig = sec === 'experimental' ? experimentalConfig : wsl2Config;
+              const currentValue = sectionConfig[setting.key];
               return (
-                <Tooltip key={setting.key}>
+                <Tooltip key={`${sec}-${setting.key}`}>
                   <TooltipTrigger asChild>
                     <div className="space-y-1">
                       <Label className="text-xs">{setting.label}</Label>
@@ -172,7 +221,7 @@ export function WslConfigCard({
                           <Switch
                             checked={currentValue === 'true'}
                             onCheckedChange={(checked) =>
-                              handleQuickSet(setting.key, checked ? 'true' : 'false')
+                              handleQuickSet(sec, setting.key, checked ? 'true' : 'false')
                             }
                           />
                           <span className="text-xs text-muted-foreground">
@@ -182,7 +231,7 @@ export function WslConfigCard({
                       ) : setting.type === 'select' && setting.options ? (
                         <Select
                           value={currentValue || ''}
-                          onValueChange={(val) => handleQuickSet(setting.key, val)}
+                          onValueChange={(val) => handleQuickSet(sec, setting.key, val)}
                         >
                           <SelectTrigger className="h-7 text-xs">
                             <SelectValue placeholder={setting.placeholder} />
@@ -203,12 +252,12 @@ export function WslConfigCard({
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               const input = e.target as HTMLInputElement;
-                              if (input.value) handleQuickSet(setting.key, input.value);
+                              if (input.value) handleQuickSet(sec, setting.key, input.value);
                             }
                           }}
                           onBlur={(e) => {
                             if (e.target.value && e.target.value !== currentValue) {
-                              handleQuickSet(setting.key, e.target.value);
+                              handleQuickSet(sec, setting.key, e.target.value);
                             }
                           }}
                         />

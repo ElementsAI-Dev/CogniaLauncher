@@ -29,6 +29,7 @@ interface AddDownloadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (request: DownloadRequest) => Promise<void>;
+  initialUrl?: string;
 }
 
 const DEFAULT_FORM = {
@@ -38,6 +39,8 @@ const DEFAULT_FORM = {
   checksum: "",
   priority: "",
   provider: "",
+  autoExtract: false,
+  extractDest: "",
 };
 
 function isValidUrl(url: string): boolean {
@@ -64,6 +67,7 @@ export function AddDownloadDialog({
   open,
   onOpenChange,
   onSubmit,
+  initialUrl,
 }: AddDownloadDialogProps) {
   const { t } = useLocale();
   const [form, setForm] = useState(DEFAULT_FORM);
@@ -72,8 +76,10 @@ export function AddDownloadDialog({
   useEffect(() => {
     if (!open) {
       setForm(DEFAULT_FORM);
+    } else if (initialUrl) {
+      setForm((prev) => ({ ...prev, url: initialUrl }));
     }
-  }, [open]);
+  }, [open, initialUrl]);
 
   useEffect(() => {
     if (!form.name.trim() && form.url.trim()) {
@@ -101,6 +107,8 @@ export function AddDownloadDialog({
         checksum: form.checksum.trim() || undefined,
         priority: form.priority ? Number(form.priority) : undefined,
         provider: form.provider.trim() || undefined,
+        autoExtract: form.autoExtract || undefined,
+        extractDest: form.extractDest.trim() || undefined,
       });
       onOpenChange(false);
     } finally {
@@ -213,6 +221,21 @@ export function AddDownloadDialog({
                 }
               />
             </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="auto-extract"
+              type="checkbox"
+              checked={form.autoExtract}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, autoExtract: event.target.checked }))
+              }
+              className="h-4 w-4 rounded border-input"
+            />
+            <Label htmlFor="auto-extract" className="text-sm font-normal">
+              {t("downloads.settings.autoExtract")}
+            </Label>
           </div>
         </div>
 

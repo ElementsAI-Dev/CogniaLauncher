@@ -1,5 +1,7 @@
 export { GitStatusCard } from './git-status-card';
 export { GitConfigCard } from './git-config-card';
+export { GitGlobalSettingsCard } from './git-global-settings-card';
+export { GitAliasCard } from './git-alias-card';
 export { GitRepoSelector } from './git-repo-selector';
 export { GitBranchCard } from './git-branch-card';
 export { GitRemoteCard } from './git-remote-card';
@@ -23,3 +25,4 @@ export { GitDiffViewer } from './git-diff-viewer';
 export { GitCloneDialog } from './git-clone-dialog';
 export { GitMergeDialog } from './git-merge-dialog';
 export { GitReflogCard } from './git-reflog-card';
+export { GitRepoActionBar } from './git-repo-action-bar';

@@ -120,6 +120,10 @@ jest.mock("@/components/command-palette", () => ({
     open ? <div data-testid="command-palette">Command Palette</div> : null,
 }));
 
+jest.mock("@/components/feedback", () => ({
+  FeedbackDialog: () => <div data-testid="feedback-dialog">FeedbackDialog</div>,
+}));
+
 jest.mock("@/components/theme-toggle", () => ({
   ThemeToggle: () => <button data-testid="theme-toggle">Theme</button>,
 }));

@@ -264,9 +264,9 @@ export function useEnvironments() {
     }
   }, [setDetectedVersions, setError]);
 
-  const fetchAvailableVersions = useCallback(async (envType: string) => {
+  const fetchAvailableVersions = useCallback(async (envType: string, force?: boolean) => {
     try {
-      const versions = await tauri.envAvailableVersions(envType);
+      const versions = await tauri.envAvailableVersions(envType, undefined, force);
       setAvailableVersions(envType, versions);
       return versions;
     } catch (err) {
@@ -394,11 +394,25 @@ export function useEnvironments() {
     }
   }, [setError]);
 
-  // Get full store for return (read-only state values)
-  const store = useEnvironmentStore();
+  // Select only the state values consumers commonly need.
+  // For UI-only state (searchQuery, viewMode, filters, dialog/panel states),
+  // consumers should subscribe directly via useEnvironmentStore((s) => s.xxx).
+  const detectedVersions = useEnvironmentStore((s) => s.detectedVersions);
+  const availableVersions = useEnvironmentStore((s) => s.availableVersions);
+  const loading = useEnvironmentStore((s) => s.loading);
+  const error = useEnvironmentStore((s) => s.error);
 
   return {
-    ...store,
+    // State (selectively subscribed)
+    environments,
+    availableProviders,
+    currentInstallation,
+    detectedVersions,
+    availableVersions,
+    loading,
+    error,
+
+    // Actions (stable references, don't cause re-renders)
     fetchEnvironments,
     loadEnvSettings,
     saveEnvSettings,
@@ -418,5 +432,11 @@ export function useEnvironments() {
     cleanupVersions,
     listGlobalPackages,
     migratePackages,
+
+    // Store actions consumers may need
+    openAddDialog: useEnvironmentStore((s) => s.openAddDialog),
+    openVersionBrowser: useEnvironmentStore((s) => s.openVersionBrowser),
+    openDetailsPanel: useEnvironmentStore((s) => s.openDetailsPanel),
+    setSelectedEnv: useEnvironmentStore((s) => s.setSelectedEnv),
   };
 }

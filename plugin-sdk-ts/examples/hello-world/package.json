@@ -1,0 +1,17 @@
+{
+  "name": "cognia-hello-world-ts",
+  "version": "0.1.0",
+  "description": "A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.mjs && extism-js dist/plugin.js -i plugin.d.ts -o plugin.wasm",
+    "bundle": "node esbuild.config.mjs"
+  },
+  "dependencies": {
+    "@cognia/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "^1.1.1",
+    "esbuild": "^0.20.0"
+  }
+}

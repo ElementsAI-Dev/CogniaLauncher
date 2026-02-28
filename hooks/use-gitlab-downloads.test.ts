@@ -12,6 +12,8 @@ const mockGitlabDownloadSource = jest.fn();
 const mockGitlabGetToken = jest.fn();
 const mockGitlabSetToken = jest.fn();
 const mockGitlabClearToken = jest.fn();
+const mockGitlabGetInstanceUrl = jest.fn();
+const mockGitlabSetInstanceUrl = jest.fn();
 const mockIsTauri = jest.fn(() => true);
 
 jest.mock('@/lib/tauri', () => ({
@@ -27,6 +29,8 @@ jest.mock('@/lib/tauri', () => ({
   gitlabGetToken: (...args: unknown[]) => mockGitlabGetToken(...args),
   gitlabSetToken: (...args: unknown[]) => mockGitlabSetToken(...args),
   gitlabClearToken: (...args: unknown[]) => mockGitlabClearToken(...args),
+  gitlabGetInstanceUrl: (...args: unknown[]) => mockGitlabGetInstanceUrl(...args),
+  gitlabSetInstanceUrl: (...args: unknown[]) => mockGitlabSetInstanceUrl(...args),
 }));
 
 describe('useGitLabDownloads', () => {
@@ -34,6 +38,7 @@ describe('useGitLabDownloads', () => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(true);
     mockGitlabGetToken.mockResolvedValue(null);
+    mockGitlabGetInstanceUrl.mockResolvedValue(null);
   });
 
   it('should initialize with default state', () => {
@@ -374,6 +379,55 @@ describe('useGitLabDownloads', () => {
     expect(result.current.sourceType).toBe('release');
     expect(result.current.parsedProject).toBeNull();
     expect(result.current.error).toBeNull();
+  });
+
+  it('should load saved instance URL on mount', async () => {
+    mockGitlabGetToken.mockResolvedValue(null);
+    mockGitlabGetInstanceUrl.mockResolvedValue('https://gitlab.example.com');
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    await waitFor(() => {
+      expect(result.current.instanceUrl).toBe('https://gitlab.example.com');
+    });
+  });
+
+  it('should load both saved token and instance URL on mount', async () => {
+    mockGitlabGetToken.mockResolvedValue('glpat-saved');
+    mockGitlabGetInstanceUrl.mockResolvedValue('https://gl.corp.com');
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    await waitFor(() => {
+      expect(result.current.token).toBe('glpat-saved');
+      expect(result.current.instanceUrl).toBe('https://gl.corp.com');
+    });
+  });
+
+  it('should save instance URL', async () => {
+    mockGitlabSetInstanceUrl.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setInstanceUrl('https://gitlab.example.com');
+    });
+
+    await act(async () => {
+      await result.current.saveInstanceUrl();
+    });
+
+    expect(mockGitlabSetInstanceUrl).toHaveBeenCalledWith('https://gitlab.example.com');
+  });
+
+  it('should not load instance URL when not in Tauri', async () => {
+    mockIsTauri.mockReturnValue(false);
+
+    renderHook(() => useGitLabDownloads());
+
+    await waitFor(() => {
+      expect(mockGitlabGetInstanceUrl).not.toHaveBeenCalled();
+    });
   });
 
   it('should clear data when projectInput is emptied', async () => {

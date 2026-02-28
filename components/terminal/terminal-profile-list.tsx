@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal } from 'lucide-react';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -36,6 +36,8 @@ interface TerminalProfileListProps {
   onDuplicate?: (id: string) => void;
   onExportAll?: () => void;
   onImport?: (json: string, merge: boolean) => void;
+  onFromTemplate?: () => void;
+  onSaveAsTemplate?: (profileId: string) => void;
   launchingProfileId?: string | null;
   lastLaunchResult?: {
     profileId: string;
@@ -54,6 +56,8 @@ export function TerminalProfileList({
   onDuplicate,
   onExportAll,
   onImport,
+  onFromTemplate,
+  onSaveAsTemplate,
   launchingProfileId = null,
   lastLaunchResult = null,
   onClearLaunchResult,
@@ -92,6 +96,12 @@ export function TerminalProfileList({
             >
               <Upload className="mr-1 h-3.5 w-3.5" />
               {t('terminal.importProfiles')}
+            </Button>
+          )}
+          {onFromTemplate && (
+            <Button size="sm" variant="outline" onClick={onFromTemplate}>
+              <LayoutTemplate className="mr-1 h-3.5 w-3.5" />
+              {t('terminal.fromTemplate')}
             </Button>
           )}
           <Button size="sm" onClick={onCreateNew}>
@@ -229,6 +239,12 @@ export function TerminalProfileList({
                           <DropdownMenuItem onClick={() => onDuplicate(profile.id)}>
                             <Copy className="h-4 w-4 mr-2" />
                             {t('terminal.duplicate')}
+                          </DropdownMenuItem>
+                        )}
+                        {onSaveAsTemplate && (
+                          <DropdownMenuItem onClick={() => onSaveAsTemplate(profile.id)}>
+                            <Bookmark className="h-4 w-4 mr-2" />
+                            {t('terminal.saveAsTemplate')}
                           </DropdownMenuItem>
                         )}
                         {!profile.isDefault && (

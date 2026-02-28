@@ -70,6 +70,27 @@ jest.mock('@/lib/tauri', () => ({
     total_count: 0,
   }),
   deleteCacheEntries: jest.fn().mockResolvedValue(0),
+  listenCacheAutoCleaned: jest.fn().mockResolvedValue(() => {}),
+  listenCacheChanged: jest.fn().mockResolvedValue(() => {}),
+  cacheOptimize: jest.fn().mockResolvedValue({
+    sizeBefore: 1048576,
+    sizeBeforeHuman: '1 MB',
+    sizeAfter: 524288,
+    sizeAfterHuman: '512 KB',
+    sizeSaved: 524288,
+    sizeSavedHuman: '512 KB',
+  }),
+  dbGetInfo: jest.fn().mockResolvedValue({
+    dbSize: 1048576,
+    dbSizeHuman: '1 MB',
+    walSize: 4096,
+    walSizeHuman: '4 KB',
+    pageCount: 256,
+    pageSize: 4096,
+    freelistCount: 0,
+    tableCounts: { cache_entries: 10 },
+  }),
+  getCacheSizeHistory: jest.fn().mockResolvedValue([]),
 }));
 
 // Mock useSettings hook
@@ -173,6 +194,42 @@ const mockMessages = {
       settingsFailed: 'Failed to save cache settings',
       refreshSuccess: 'Cache info refreshed',
       refreshFailed: 'Failed to refresh cache info',
+      // Database maintenance keys
+      optimize: 'Optimize Database',
+      optimizeDesc: 'Run VACUUM and ANALYZE to reclaim unused space and improve performance',
+      optimizing: 'Optimizing...',
+      optimizeSuccess: 'Database optimized, saved {size}',
+      optimizeFailed: 'Database optimization failed',
+      optimizeNoChange: 'Database is already optimized',
+      dbInfo: 'Database Info',
+      dbSize: 'Database Size',
+      walSize: 'WAL Size',
+      pageCount: 'Page Count',
+      freePages: 'Free Pages',
+      sizeBefore: 'Size Before',
+      sizeAfter: 'Size After',
+      sizeSaved: 'Space Saved',
+      autoCleanEvent: 'Auto-cleanup freed {size}',
+      forceClean: 'Force Clean',
+      forceCleanConfirmTitle: 'Force Clean All',
+      forceCleanConfirmDesc: 'This will force-clean all internal caches.',
+      forceCleanSuccess: 'Force cleaned {count} entries, freed {size}',
+      forceCleanFailed: 'Force clean failed',
+      hitRate: 'Hit Rate',
+      hitRateDesc: 'Cache hit/miss statistics',
+      hits: 'Hits',
+      misses: 'Misses',
+      totalRequests: 'Total Requests',
+      resetStats: 'Reset',
+      statsReset: 'Stats reset',
+      statsResetFailed: 'Failed to reset stats',
+      hotFiles: 'Hot Files',
+      hotFilesDesc: 'Most frequently accessed cache entries',
+      noHotFiles: 'No hot files yet',
+      accesses: 'accesses',
+      browseEntries: 'Browse Entries',
+      warningCritical: 'Critical: Cache usage at {percent}%',
+      warningHigh: 'Warning: Cache usage at {percent}%',
       // New translation keys
       preview: 'Preview',
       previewTitle: 'Clean Preview',
@@ -473,6 +530,42 @@ describe('CachePage', () => {
       
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /verify/i })).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Database Maintenance', () => {
+    it('renders optimize database section', async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        const elements = screen.getAllByText('Optimize Database');
+        expect(elements.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('renders optimize description', async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Run VACUUM and ANALYZE to reclaim unused space and improve performance')).toBeInTheDocument();
+      });
+    });
+
+    it('renders optimize button', async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        const buttons = screen.getAllByRole('button', { name: /optimize database/i });
+        expect(buttons.length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('renders DB info button', async () => {
+      renderWithProviders(<CachePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /database info/i })).toBeInTheDocument();
       });
     });
   });

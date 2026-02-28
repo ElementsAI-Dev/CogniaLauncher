@@ -18,6 +18,9 @@ const eslintConfig = defineConfig([
     "src-tauri/target/**",
     // Playwright E2E tests (not React code):
     "e2e/**",
+    // Plugin SDK packages (standalone, own tsconfig):
+    "plugin-sdk/**",
+    "plugin-sdk-ts/**",
   ]),
 ]);
 

@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, RotateCcw, Home, ChevronDown, Copy, Check } from "lucide-react";
+import { AlertCircle, RotateCcw, Home, ChevronDown, Copy, Check, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { captureFrontendCrash } from "@/lib/crash-reporter";
+import { useFeedbackStore } from "@/lib/stores/feedback";
+import { useLocale } from "@/components/providers/locale-provider";
 
 export default function Error({
   error,
@@ -15,6 +17,8 @@ export default function Error({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { openDialog } = useFeedbackStore();
+  const { t } = useLocale();
 
   useEffect(() => {
     console.error("Unhandled error:", error);
@@ -37,9 +41,27 @@ export default function Error({
     ]
       .filter(Boolean)
       .join("\n");
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for non-HTTPS or permission denied
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        // Both methods failed - silently ignore
+      }
+    }
   };
 
   return (
@@ -58,10 +80,10 @@ export default function Error({
         {/* Title */}
         <div className="text-center mb-2 error-content-2">
           <h1 className="text-xl font-semibold tracking-tight">
-            Something went wrong
+            {t("errorPage.title")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
-            {error.message || "An unexpected error occurred. Please try again."}
+            {error.message || t("errorPage.defaultMessage")}
           </p>
         </div>
 
@@ -75,14 +97,14 @@ export default function Error({
               <ChevronDown
                 className={`h-3.5 w-3.5 transition-transform duration-200 ${showDetails ? "rotate-180" : ""}`}
               />
-              Error details
+              {t("errorPage.details")}
             </button>
             {showDetails && (
               <div className="mt-3 relative group">
                 <div className="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-muted-foreground overflow-auto max-h-40 leading-relaxed">
                   {error.digest && (
                     <p className="mb-1">
-                      <span className="text-foreground/60">ID:</span> {error.digest}
+                      <span className="text-foreground/60">{t("errorPage.errorId")}:</span> {error.digest}
                     </p>
                   )}
                   {error.stack && (
@@ -110,12 +132,30 @@ export default function Error({
         <div className="flex justify-center gap-3 mt-6 error-content-4">
           <Button variant="outline" onClick={reset} className="gap-2">
             <RotateCcw className="h-4 w-4" />
-            Try Again
+            {t("errorPage.tryAgain")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() =>
+              openDialog({
+                category: "bug",
+                errorContext: {
+                  message: error.message,
+                  stack: error.stack,
+                  component: "app/error.tsx",
+                  digest: error.digest,
+                },
+              })
+            }
+            className="gap-2"
+          >
+            <Bug className="h-4 w-4" />
+            {t("errorPage.reportError")}
           </Button>
           <Button asChild className="gap-2">
             <Link href="/">
               <Home className="h-4 w-4" />
-              Dashboard
+              {t("errorPage.dashboard")}
             </Link>
           </Button>
         </div>

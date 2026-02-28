@@ -87,6 +87,7 @@ export const DEFAULT_PROVIDERS: Record<string, { id: string; name: string; descr
     { id: 'system-c', name: 'System C', description: 'System-installed C compiler (gcc/cc)' },
     { id: 'vcpkg', name: 'vcpkg', description: 'C/C++ package manager by Microsoft' },
     { id: 'conan', name: 'Conan', description: 'C/C++ package manager' },
+    { id: 'xmake', name: 'xmake', description: 'Cross-platform C/C++ build utility' },
     { id: 'msvc', name: 'MSVC', description: 'Visual Studio Build Tools detection' },
     { id: 'msys2', name: 'MSYS2', description: 'MSYS2 pacman package manager (Windows)' },
   ],

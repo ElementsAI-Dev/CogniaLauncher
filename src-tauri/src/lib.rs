@@ -5,6 +5,7 @@ pub mod core;
 pub mod download;
 pub mod error;
 pub mod platform;
+pub mod plugin;
 pub mod provider;
 pub mod resolver;
 pub mod tray;
@@ -12,6 +13,7 @@ pub mod tray;
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
 use commands::download::init_download_manager;
+use commands::plugin::SharedPluginManager;
 use commands::terminal::SharedTerminalProfileManager;
 use config::Settings;
 use core::custom_detection::CustomDetectionManager;
@@ -70,12 +72,20 @@ pub fn run() {
                 log::LevelFilter::Info
             };
 
+            // Session-based log file: each app launch creates a new log file
+            // named by start time, e.g. "2026-02-28_14-27-30.log"
+            let session_file_name = chrono::Local::now()
+                .format("%Y-%m-%d_%H-%M-%S")
+                .to_string();
+
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .targets([
                         Target::new(TargetKind::Stdout),
                         Target::new(TargetKind::Webview),
-                        Target::new(TargetKind::LogDir { file_name: None }),
+                        Target::new(TargetKind::LogDir {
+                            file_name: Some(session_file_name),
+                        }),
                     ])
                     .format(|out, message, record| {
                         out.finish(format_args!(
@@ -86,8 +96,8 @@ pub fn run() {
                             message
                         ))
                     })
-                    .rotation_strategy(RotationStrategy::KeepSome(5))
-                    .max_file_size(10_000_000) // 10MB per log file
+                    .rotation_strategy(RotationStrategy::KeepAll)
+                    .max_file_size(50_000_000) // 50MB safety cap per session
                     .level(log_level)
                     .level_for("hyper", log::LevelFilter::Info)
                     .level_for("reqwest", log::LevelFilter::Info)
@@ -177,17 +187,31 @@ pub fn run() {
                     }
                 };
 
+                // Initialize plugin manager with access to launcher APIs
+                let cognia_dir_for_plugins = settings.read().await.get_root_dir();
+                let plugin_deps = plugin::PluginDeps {
+                    registry: registry.clone(),
+                    settings: settings.clone(),
+                };
+                let mut plugin_manager = plugin::PluginManager::new(&cognia_dir_for_plugins, plugin_deps);
+                if let Err(e) = plugin_manager.init().await {
+                    info!("Plugin manager init error: {}", e);
+                } else {
+                    info!("Plugin manager initialized");
+                }
+
                 // Mark initialization as complete
                 INITIALIZED.store(true, Ordering::SeqCst);
                 info!("Application initialization complete");
 
-                (download_manager, terminal_manager)
+                (download_manager, terminal_manager, plugin_manager)
             });
 
-            // Register download manager and terminal profile manager as Tauri managed state
-            let (download_manager, terminal_manager) = download_manager;
+            // Register download manager, terminal profile manager, and plugin manager as Tauri managed state
+            let (download_manager, terminal_manager, plugin_manager) = download_manager;
             app.manage(download_manager);
             app.manage(Arc::new(RwLock::new(terminal_manager)) as SharedTerminalProfileManager);
+            app.manage(Arc::new(RwLock::new(plugin_manager)) as SharedPluginManager);
 
             // Initialize system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -202,6 +226,38 @@ pub fn run() {
                 }
             }
 
+            // Run log cleanup on startup if auto_cleanup is enabled
+            {
+                let log_settings = app.state::<SharedSettings>().inner().clone();
+                let log_app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let settings_guard = log_settings.read().await;
+                    if settings_guard.log.auto_cleanup {
+                        let max_retention_days = settings_guard.log.max_retention_days;
+                        let max_total_size_mb = settings_guard.log.max_total_size_mb;
+                        drop(settings_guard);
+                        match commands::log::cleanup_logs_with_policy(
+                            &log_app_handle,
+                            max_retention_days,
+                            max_total_size_mb,
+                        )
+                        .await
+                        {
+                            Ok(result) if result.deleted_count > 0 => {
+                                info!(
+                                    "Log auto-cleanup: deleted {} files, freed {} bytes",
+                                    result.deleted_count, result.freed_bytes
+                                );
+                            }
+                            Err(e) => {
+                                info!("Log auto-cleanup error: {}", e);
+                            }
+                            _ => {}
+                        }
+                    }
+                });
+            }
+
             // Start background cache cleanup task
             let cleanup_settings = app.state::<SharedSettings>().inner().clone();
             let cleanup_app_handle = app.handle().clone();
@@ -209,8 +265,20 @@ pub fn run() {
                 cache_cleanup_task(cleanup_settings, cleanup_app_handle).await;
             });
 
+            // Start background auto-backup task
+            {
+                let backup_settings = app.state::<SharedSettings>().inner().clone();
+                let backup_tm = app.state::<SharedTerminalProfileManager>().inner().clone();
+                let backup_pm = app.state::<core::profiles::SharedProfileManager>().inner().clone();
+                let backup_cdm = app.state::<SharedCustomDetectionManager>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    auto_backup_task(backup_settings, backup_tm, backup_pm, backup_cdm).await;
+                });
+            }
+
             Ok(())
         })
+        .manage(Arc::new(core::VersionCache::new(core::VERSION_CACHE_TTL)) as core::SharedVersionCache)
         .manage(Arc::new(core::eol::EolCache::new()) as commands::environment::SharedEolCache)
         .manage(Arc::new(RwLock::new(ProviderRegistry::new())) as SharedRegistry)
         .manage(Arc::new(RwLock::new(Settings::default())) as SharedSettings)
@@ -245,6 +313,9 @@ pub fn run() {
             commands::environment::env_verify_install,
             commands::environment::env_installed_versions,
             commands::environment::env_current_version,
+            // Detection source commands
+            commands::environment::env_get_detection_sources,
+            commands::environment::env_get_all_detection_sources,
             // EOL commands
             commands::environment::env_get_eol_info,
             commands::environment::env_get_version_eol,
@@ -347,9 +418,6 @@ pub fn run() {
             commands::cache::cache_force_clean_external,
             // External cache paths
             commands::cache::get_external_cache_paths,
-            // Enhanced cache settings
-            commands::cache::get_enhanced_cache_settings,
-            commands::cache::set_enhanced_cache_settings,
             // Database optimization & size history
             commands::cache::cache_optimize,
             commands::cache::get_cache_size_history,
@@ -359,6 +427,9 @@ pub fn run() {
             commands::backup::backup_list,
             commands::backup::backup_delete,
             commands::backup::backup_validate,
+            commands::backup::backup_export,
+            commands::backup::backup_import,
+            commands::backup::backup_cleanup,
             commands::backup::db_integrity_check,
             commands::backup::db_get_info,
             // Batch operations
@@ -441,6 +512,9 @@ pub fn run() {
             commands::log::log_get_dir,
             commands::log::log_export,
             commands::log::log_get_total_size,
+            commands::log::log_cleanup,
+            commands::log::log_delete_file,
+            commands::log::log_delete_batch,
             // Diagnostic commands
             commands::diagnostic::diagnostic_export_bundle,
             commands::diagnostic::diagnostic_get_default_export_path,
@@ -517,6 +591,13 @@ pub fn run() {
             commands::gitlab::gitlab_get_token,
             commands::gitlab::gitlab_clear_token,
             commands::gitlab::gitlab_validate_token,
+            commands::gitlab::gitlab_search_projects,
+            commands::gitlab::gitlab_list_pipelines,
+            commands::gitlab::gitlab_list_pipeline_jobs,
+            commands::gitlab::gitlab_download_job_artifacts,
+            commands::gitlab::gitlab_list_packages,
+            commands::gitlab::gitlab_list_package_files,
+            commands::gitlab::gitlab_download_package_file,
             commands::gitlab::gitlab_set_instance_url,
             commands::gitlab::gitlab_get_instance_url,
             // Tray commands
@@ -539,6 +620,13 @@ pub fn run() {
             tray::tray_set_menu_config,
             tray::tray_get_available_menu_items,
             tray::tray_reset_menu_config,
+            // Feedback commands
+            commands::feedback::feedback_save,
+            commands::feedback::feedback_list,
+            commands::feedback::feedback_get,
+            commands::feedback::feedback_delete,
+            commands::feedback::feedback_export,
+            commands::feedback::feedback_count,
             // Custom detection commands
             commands::custom_detection::custom_rule_list,
             commands::custom_detection::custom_rule_get,
@@ -592,6 +680,18 @@ pub fn run() {
             commands::wsl::wsl_install_with_location,
             commands::wsl::wsl_debug_detection,
             commands::wsl::wsl_detect_distro_env,
+            // Xmake/Xrepo commands
+            commands::xmake::xmake_list_repos,
+            commands::xmake::xmake_add_repo,
+            commands::xmake::xmake_remove_repo,
+            commands::xmake::xmake_update_repos,
+            commands::xmake::xmake_clean_cache,
+            commands::xmake::xmake_env_show,
+            commands::xmake::xmake_env_list,
+            commands::xmake::xmake_env_bind,
+            commands::xmake::xmake_export_package,
+            commands::xmake::xmake_import_package,
+            commands::xmake::xmake_download_source,
             commands::wsl::wsl_get_distro_resources,
             commands::wsl::wsl_list_users,
             commands::wsl::wsl_update_distro_packages,
@@ -604,6 +704,11 @@ pub fn run() {
             commands::git::git_get_config,
             commands::git::git_set_config,
             commands::git::git_remove_config,
+            commands::git::git_get_config_value,
+            commands::git::git_get_config_file_path,
+            commands::git::git_list_aliases,
+            commands::git::git_set_config_if_unset,
+            commands::git::git_open_config_in_editor,
             commands::git::git_get_repo_info,
             commands::git::git_get_log,
             commands::git::git_get_branches,
@@ -639,11 +744,13 @@ pub fn run() {
             commands::git::git_pull,
             commands::git::git_fetch,
             commands::git::git_clone,
+            commands::git::git_cancel_clone,
             commands::git::git_extract_repo_name,
             commands::git::git_validate_url,
             commands::git::git_init,
             commands::git::git_get_diff,
             commands::git::git_get_diff_between,
+            commands::git::git_get_commit_diff,
             commands::git::git_merge,
             commands::git::git_revert,
             commands::git::git_cherry_pick,
@@ -679,6 +786,7 @@ pub fn run() {
             commands::terminal::terminal_backup_config,
             commands::terminal::terminal_append_to_config,
             commands::terminal::terminal_get_config_entries,
+            commands::terminal::terminal_parse_config_content,
             commands::terminal::terminal_ps_list_profiles,
             commands::terminal::terminal_ps_read_profile,
             commands::terminal::terminal_ps_write_profile,
@@ -698,6 +806,50 @@ pub fn run() {
             commands::terminal::terminal_ps_uninstall_module,
             commands::terminal::terminal_ps_update_module,
             commands::terminal::terminal_ps_find_module,
+            commands::terminal::terminal_list_templates,
+            commands::terminal::terminal_create_custom_template,
+            commands::terminal::terminal_delete_custom_template,
+            commands::terminal::terminal_save_profile_as_template,
+            commands::terminal::terminal_create_profile_from_template,
+            commands::terminal::terminal_get_framework_cache_stats,
+            commands::terminal::terminal_get_single_framework_cache_info,
+            commands::terminal::terminal_clean_framework_cache,
+            // Plugin system commands
+            commands::plugin::plugin_list,
+            commands::plugin::plugin_get_info,
+            commands::plugin::plugin_list_all_tools,
+            commands::plugin::plugin_get_tools,
+            commands::plugin::plugin_import_local,
+            commands::plugin::plugin_install,
+            commands::plugin::plugin_uninstall,
+            commands::plugin::plugin_enable,
+            commands::plugin::plugin_disable,
+            commands::plugin::plugin_reload,
+            commands::plugin::plugin_call_tool,
+            commands::plugin::plugin_get_permissions,
+            commands::plugin::plugin_grant_permission,
+            commands::plugin::plugin_revoke_permission,
+            commands::plugin::plugin_get_data_dir,
+            commands::plugin::plugin_get_locales,
+            commands::plugin::plugin_scaffold,
+            commands::plugin::plugin_validate,
+            commands::plugin::plugin_get_ui_entry,
+            commands::plugin::plugin_get_ui_asset,
+            // Winget-specific commands
+            commands::winget::winget_pin_list,
+            commands::winget::winget_pin_add,
+            commands::winget::winget_pin_remove,
+            commands::winget::winget_pin_reset,
+            commands::winget::winget_source_list,
+            commands::winget::winget_source_add,
+            commands::winget::winget_source_remove,
+            commands::winget::winget_source_reset,
+            commands::winget::winget_export,
+            commands::winget::winget_import,
+            commands::winget::winget_repair,
+            commands::winget::winget_download,
+            commands::winget::winget_get_info,
+            commands::winget::winget_install_advanced,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -810,6 +962,7 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
 
         // Track cleanup metrics for event emission
         let mut expired_metadata_removed: usize = 0;
+        let mut expired_metadata_freed: u64 = 0;
         let mut expired_downloads_freed: u64 = 0;
         let mut evicted_count: usize = 0;
         let mut stale_partials_removed: usize = 0;
@@ -818,10 +971,18 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
         if let Ok(mut metadata_cache) =
             MetadataCache::open_with_ttl(&cache_dir, metadata_cache_ttl).await
         {
+            // Measure expired metadata size before cleaning
+            let expired_size: u64 = metadata_cache
+                .preview_expired()
+                .await
+                .map(|entries| entries.iter().map(|e| e.size).sum())
+                .unwrap_or(0);
+
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
-                    debug!("Auto-cleanup: removed {} expired metadata entries", count);
+                    debug!("Auto-cleanup: removed {} expired metadata entries ({} bytes)", count, expired_size);
                     expired_metadata_removed = count;
+                    expired_metadata_freed = expired_size;
                 }
                 Err(e) => {
                     info!("Auto-cleanup metadata error: {}", e);
@@ -904,7 +1065,7 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
             || evicted_count > 0
             || stale_partials_removed > 0
         {
-            let total_freed = expired_downloads_freed;
+            let total_freed = expired_downloads_freed + expired_metadata_freed;
             let _ = app.emit(
                 "cache-auto-cleaned",
                 CacheAutoCleanedEvent {
@@ -916,5 +1077,74 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
                 },
             );
         }
+    }
+}
+
+/// Background task for automatic backups based on backup settings.
+async fn auto_backup_task(
+    settings: SharedSettings,
+    terminal_manager: SharedTerminalProfileManager,
+    profile_manager: core::profiles::SharedProfileManager,
+    custom_detection_manager: SharedCustomDetectionManager,
+) {
+    // Wait 60 seconds after startup before first check
+    tokio::time::sleep(Duration::from_secs(60)).await;
+
+    loop {
+        // Read settings each cycle so changes take effect
+        let (enabled, interval_hours, max_backups, retention_days) = {
+            let s = settings.read().await;
+            (
+                s.backup.auto_backup_enabled,
+                s.backup.auto_backup_interval_hours,
+                s.backup.max_backups,
+                s.backup.retention_days,
+            )
+        };
+
+        if !enabled || interval_hours == 0 {
+            // Check again in 5 minutes if disabled
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            continue;
+        }
+
+        // Perform auto backup
+        {
+            let s = settings.read().await;
+            let tm = terminal_manager.read().await;
+            let pm = profile_manager.read().await;
+            let cdm = custom_detection_manager.read().await;
+
+            match core::backup::create_auto_backup(&s, "scheduled-auto-backup", &tm, &pm, &cdm)
+                .await
+            {
+                Ok(result) => {
+                    info!(
+                        "Auto-backup created: {} ({}ms)",
+                        result.path, result.duration_ms
+                    );
+                }
+                Err(e) => {
+                    info!("Auto-backup failed: {}", e);
+                }
+            }
+
+            // Run cleanup after backup
+            if max_backups > 0 || retention_days > 0 {
+                match core::backup::cleanup_old_backups(&s, max_backups, retention_days).await {
+                    Ok(deleted) if deleted > 0 => {
+                        info!("Auto-backup cleanup: removed {} old backups", deleted);
+                    }
+                    Err(e) => {
+                        info!("Auto-backup cleanup error: {}", e);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Sleep for the configured interval
+        let sleep_secs = (interval_hours as u64).max(1) * 3600;
+        tokio::time::sleep(Duration::from_secs(sleep_secs)).await;
     }
 }

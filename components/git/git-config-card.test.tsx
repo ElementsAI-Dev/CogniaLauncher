@@ -84,14 +84,18 @@ describe('GitConfigCard', () => {
     expect(mockOnSet).not.toHaveBeenCalled();
   });
 
-  it('calls onRemove when delete button clicked', () => {
-    const { container } = render(
+  it('calls onRemove when delete button clicked and confirmed', async () => {
+    render(
       <GitConfigCard config={[{ key: 'user.name', value: 'John' }]} onSet={mockOnSet} onRemove={mockOnRemove} />,
     );
-    // First button is the delete button for the single entry (add button is last)
-    const buttons = container.querySelectorAll('button');
-    // Delete button is the one within the config entry row
-    fireEvent.click(buttons[0]);
+    // Click the trash/delete button which opens AlertDialog
+    const deleteButton = screen.getByRole('button', { expanded: false });
+    fireEvent.click(deleteButton);
+    // Confirm in the AlertDialog
+    await waitFor(() => {
+      expect(screen.getByText('git.config.confirmRemove')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('git.config.confirmRemove'));
     expect(mockOnRemove).toHaveBeenCalledWith('user.name');
   });
 

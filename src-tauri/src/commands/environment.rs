@@ -1,6 +1,6 @@
 use crate::core::{
     DetectedEnvironment, EnvCleanupResult, EnvUpdateCheckResult, EnvironmentInfo,
-    EnvironmentManager,
+    EnvironmentManager, SharedVersionCache,
 };
 use crate::provider::{
     EnvironmentProvider, InstallProgressEvent, InstallRequest, InstallStage, ProgressSender,
@@ -301,19 +301,39 @@ pub async fn env_detect_all(
     registry: State<'_, SharedRegistry>,
     config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<Vec<DetectedEnvironment>, String> {
-    let manager = EnvironmentManager::new(registry.inner().clone());
+    let all_types = crate::provider::SystemEnvironmentType::all();
 
-    let mut detected = Vec::new();
-    for env in crate::provider::SystemEnvironmentType::all() {
+    // Pre-fetch all per-env-type detection sources (requires config lock)
+    let mut source_map: Vec<(String, Vec<String>)> = Vec::with_capacity(all_types.len());
+    for env in &all_types {
         let env_type = env.env_type();
         let sources = enabled_detection_sources_for_env_type(env_type, config.inner()).await;
-        if let Ok(Some(item)) = manager
-            .detect_version_with_sources(env_type, std::path::Path::new(&start_path), &sources)
-            .await
-        {
-            detected.push(item);
-        }
+        source_map.push((env_type.to_string(), sources));
     }
+
+    // Run detections in parallel
+    let registry_inner = registry.inner().clone();
+    let mut futures = Vec::with_capacity(source_map.len());
+    for (env_type, sources) in source_map {
+        let reg = registry_inner.clone();
+        let path = start_path.clone();
+        futures.push(async move {
+            let manager = EnvironmentManager::new(reg);
+            manager
+                .detect_version_with_sources(
+                    &env_type,
+                    std::path::Path::new(&path),
+                    &sources,
+                )
+                .await
+        });
+    }
+
+    let results = futures::future::join_all(futures).await;
+    let detected: Vec<DetectedEnvironment> = results
+        .into_iter()
+        .filter_map(|r| r.ok().flatten())
+        .collect();
 
     Ok(detected)
 }
@@ -322,13 +342,27 @@ pub async fn env_detect_all(
 pub async fn env_available_versions(
     env_type: String,
     provider_id: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    version_cache: State<'_, SharedVersionCache>,
 ) -> Result<Vec<crate::provider::VersionInfo>, String> {
+    let cache_key = format!("{}:{}", env_type, provider_id.as_deref().unwrap_or(""));
+
+    // Return cached data if available and not forced
+    if !force.unwrap_or(false) {
+        if let Some(cached) = version_cache.get(&cache_key).await {
+            return Ok(cached);
+        }
+    }
+
     let manager = EnvironmentManager::new(registry.inner().clone());
-    manager
+    let versions = manager
         .get_available_versions(&env_type, provider_id.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    version_cache.set(cache_key, versions.clone()).await;
+    Ok(versions)
 }
 
 #[tauri::command]
@@ -844,6 +878,35 @@ pub async fn env_current_version(
         .get_current_version()
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Get the default detection file sources for a given environment type.
+/// This allows the frontend to query the backend's authoritative list
+/// instead of maintaining a duplicate.
+#[tauri::command]
+pub async fn env_get_detection_sources(
+    env_type: String,
+) -> Result<Vec<String>, String> {
+    let logical = EnvironmentManager::logical_env_type(&env_type);
+    let sources = crate::core::project_env_detect::default_detection_sources(&logical);
+    Ok(sources.iter().map(|s| s.to_string()).collect())
+}
+
+/// Get detection sources for all known environment types at once.
+#[tauri::command]
+pub async fn env_get_all_detection_sources() -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+    use crate::provider::SystemEnvironmentType;
+
+    let mut result = std::collections::HashMap::new();
+    for env in SystemEnvironmentType::all() {
+        let env_type = env.env_type();
+        let sources = crate::core::project_env_detect::default_detection_sources(env_type);
+        result.insert(
+            env_type.to_string(),
+            sources.iter().map(|s| s.to_string()).collect(),
+        );
+    }
+    Ok(result)
 }
 
 // ──────────────────────────────────────────────────────

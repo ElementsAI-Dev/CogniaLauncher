@@ -7,7 +7,7 @@ import type { GroupedCaches } from '@/types/cache';
 
 export const ENTRIES_PER_PAGE = 20;
 
-export const CACHE_CATEGORY_ORDER = ['system', 'package_manager', 'devtools'] as const;
+export const CACHE_CATEGORY_ORDER = ['system', 'package_manager', 'devtools', 'terminal'] as const;
 
 // ============================================================================
 // Pure Helper Functions
@@ -45,6 +45,8 @@ export function getCategoryLabel(
       return t('cache.categoryDevtools');
     case 'package_manager':
       return t('cache.categoryPackageManager');
+    case 'terminal':
+      return t('cache.categoryTerminal');
     default:
       return category;
   }

@@ -5,7 +5,7 @@ use crate::cache::{
     MigrationValidation,
 };
 use crate::config::Settings;
-use crate::platform::{disk, disk::format_size, fs};
+use crate::platform::{disk, disk::format_size, fs, process::ProcessOptions};
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -1781,7 +1781,11 @@ pub async fn cache_force_clean_external(
     // Use command if requested and available, otherwise filesystem clean
     let clean_result = if use_command {
         if let Some((cmd, args)) = provider_enum.clean_command() {
-            match crate::platform::process::execute(cmd, args, None).await {
+            let opts = Some(ProcessOptions {
+                timeout: Some(Duration::from_secs(120)),
+                ..Default::default()
+            });
+            match crate::platform::process::execute(cmd, args, opts).await {
                 Ok(output) if output.success => Ok(()),
                 Ok(output) => Err(format!("Command failed: {}", output.stderr)),
                 Err(e) => Err(format!("Command error: {}", e)),
@@ -1923,55 +1927,7 @@ fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<Strin
     }
 }
 
-// ============================================================================
-// Enhanced Cache Settings (with threshold & monitoring)
-// ============================================================================
-
-/// Enhanced cache settings with monitoring fields
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnhancedCacheSettings {
-    pub max_size: u64,
-    pub max_age_days: u32,
-    pub metadata_cache_ttl: u64,
-    pub auto_clean: bool,
-    pub auto_clean_threshold: u8,
-    pub monitor_interval: u64,
-    pub monitor_external: bool,
-}
-
-#[tauri::command]
-pub async fn get_enhanced_cache_settings(
-    settings: State<'_, SharedSettings>,
-) -> Result<EnhancedCacheSettings, String> {
-    let s = settings.read().await;
-    Ok(EnhancedCacheSettings {
-        max_size: s.general.cache_max_size,
-        max_age_days: s.general.cache_max_age_days,
-        metadata_cache_ttl: s.general.metadata_cache_ttl,
-        auto_clean: s.general.auto_clean_cache,
-        auto_clean_threshold: s.general.cache_auto_clean_threshold,
-        monitor_interval: s.general.cache_monitor_interval,
-        monitor_external: s.general.cache_monitor_external,
-    })
-}
-
-#[tauri::command]
-pub async fn set_enhanced_cache_settings(
-    new_settings: EnhancedCacheSettings,
-    settings: State<'_, SharedSettings>,
-) -> Result<(), String> {
-    let mut s = settings.write().await;
-    s.general.cache_max_size = new_settings.max_size;
-    s.general.cache_max_age_days = new_settings.max_age_days;
-    s.general.metadata_cache_ttl = new_settings.metadata_cache_ttl;
-    s.general.auto_clean_cache = new_settings.auto_clean;
-    s.general.cache_auto_clean_threshold = new_settings.auto_clean_threshold;
-    s.general.cache_monitor_interval = new_settings.monitor_interval;
-    s.general.cache_monitor_external = new_settings.monitor_external;
-    s.save().await.map_err(|e| e.to_string())?;
-    Ok(())
-}
+// EnhancedCacheSettings removed: unified into CacheSettings (get/set_cache_settings)
 
 // ============================================================================
 // Cache Database Optimization

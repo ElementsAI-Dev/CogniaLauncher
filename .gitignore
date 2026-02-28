@@ -13,6 +13,7 @@
 # testing
 /coverage
 junit.xml
+test-results.json
 *.test.js.snap
 *.test.ts.snap
 *.test.tsx.snap
@@ -30,6 +31,7 @@ junit.xml
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
@@ -48,8 +50,23 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-#Windsurf
+# SWC compiler cache
+.swc/
+
+# AI tools
 .windsurfrules
 .ace-tool/
+.claude/
+.serena/
 
+# Windows artifacts
 nul
+
+# Tauri debug artifacts
+src-tauri/check_output.txt
+
+# Plugin SDK build artifacts
+plugin-sdk/**/target/
+plugin-sdk-ts/**/node_modules/
+plugin-sdk-ts/**/dist/
+plugin-sdk-ts/**/*.wasm

@@ -58,6 +58,8 @@ const mockEnvironments: EnvironmentInfo[] = [
         is_current: true,
       },
     ],
+    total_size: 0,
+    version_count: 2,
   },
   {
     env_type: "python",
@@ -66,6 +68,8 @@ const mockEnvironments: EnvironmentInfo[] = [
     available: false,
     current_version: null,
     installed_versions: [],
+    total_size: 0,
+    version_count: 0,
   },
   {
     env_type: "rust",
@@ -82,6 +86,8 @@ const mockEnvironments: EnvironmentInfo[] = [
         is_current: true,
       },
     ],
+    total_size: 0,
+    version_count: 1,
   },
 ];
 

@@ -42,6 +42,8 @@ const mockEnvironments: EnvironmentInfo[] = [
       { version: "18.0.0", install_path: "/p", size: null, installed_at: null, is_current: false },
       { version: "20.0.0", install_path: "/p", size: null, installed_at: null, is_current: true },
     ],
+    total_size: 0,
+    version_count: 2,
   },
   {
     env_type: "python",
@@ -50,6 +52,8 @@ const mockEnvironments: EnvironmentInfo[] = [
     available: false,
     current_version: null,
     installed_versions: [],
+    total_size: 0,
+    version_count: 0,
   },
 ];
 

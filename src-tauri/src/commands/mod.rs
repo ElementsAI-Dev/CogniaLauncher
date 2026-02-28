@@ -5,6 +5,7 @@ pub mod config;
 pub mod custom_detection;
 pub mod diagnostic;
 pub mod download;
+pub mod feedback;
 pub mod environment;
 pub mod envvar;
 pub mod fs_utils;
@@ -21,7 +22,10 @@ pub mod search;
 pub mod shim;
 pub mod terminal;
 pub mod updater;
+pub mod plugin;
+pub mod winget;
 pub mod wsl;
+pub mod xmake;
 
 pub use backup::{
     backup_create, backup_delete, backup_list, backup_restore, backup_validate, db_get_info,
@@ -38,10 +42,9 @@ pub use cache::{
     cache_size_monitor, cache_verify, clean_all_external_caches, clean_external_cache,
     clear_cleanup_history, delete_cache_entries, delete_cache_entry, discover_external_caches,
     get_cache_access_stats, get_cache_path_info, get_cache_settings, get_cleanup_history,
-    get_cleanup_summary, get_combined_cache_stats, get_enhanced_cache_settings,
+    get_cleanup_summary, get_combined_cache_stats,
     get_external_cache_paths, get_top_accessed_entries, list_cache_entries,
     reset_cache_access_stats, reset_cache_path, set_cache_path, set_cache_settings,
-    set_enhanced_cache_settings,
 };
 pub use config::{
     app_check_init, config_export, config_get, config_import, config_list, config_reset,
@@ -54,6 +57,9 @@ pub use custom_detection::{
     custom_rule_get, custom_rule_import, custom_rule_import_presets, custom_rule_list,
     custom_rule_list_by_env, custom_rule_presets, custom_rule_test, custom_rule_toggle,
     custom_rule_update, custom_rule_validate_regex, SharedCustomDetectionManager,
+};
+pub use feedback::{
+    feedback_count, feedback_delete, feedback_export, feedback_get, feedback_list, feedback_save,
 };
 pub use diagnostic::{
     diagnostic_capture_frontend_crash, diagnostic_check_last_crash, diagnostic_dismiss_crash,
@@ -93,18 +99,19 @@ pub use envvar::{
 };
 pub use git::{
     git_branch_rename, git_branch_set_upstream, git_checkout_branch, git_cherry_pick, git_clean,
-    git_clone, git_commit, git_create_branch, git_create_tag, git_delete_branch,
+    git_cancel_clone, git_clone, git_commit, git_create_branch, git_create_tag, git_delete_branch,
     git_delete_remote_branch, git_delete_tag, git_discard_changes, git_extract_repo_name,
     git_fetch, git_get_activity, git_get_ahead_behind, git_get_blame, git_get_branches,
-    git_get_commit_detail, git_get_config, git_get_contributors, git_get_diff,
-    git_get_diff_between, git_get_executable_path, git_get_file_history, git_get_file_stats,
-    git_get_graph_log, git_get_log, git_get_reflog, git_get_remotes, git_get_repo_info,
-    git_get_stashes, git_get_status, git_get_tags, git_get_version, git_init, git_install,
-    git_is_available, git_merge, git_pull, git_push, git_push_tags, git_remote_add,
-    git_remote_remove, git_remote_rename, git_remote_set_url, git_remove_config, git_reset,
-    git_revert, git_search_commits, git_set_config, git_stage_all, git_stage_files,
-    git_stash_apply, git_stash_drop, git_stash_pop, git_stash_save, git_stash_show,
-    git_unstage_files, git_update, git_validate_url,
+    git_get_commit_detail, git_get_commit_diff, git_get_config, git_get_config_file_path,
+    git_get_config_value, git_get_contributors, git_get_diff, git_get_diff_between,
+    git_get_executable_path, git_get_file_history, git_get_file_stats, git_get_graph_log,
+    git_get_log, git_get_reflog, git_get_remotes, git_get_repo_info, git_get_stashes,
+    git_get_status, git_get_tags, git_get_version, git_init, git_install, git_is_available,
+    git_list_aliases, git_merge, git_open_config_in_editor, git_pull, git_push, git_push_tags,
+    git_remote_add, git_remote_remove, git_remote_rename, git_remote_set_url, git_remove_config,
+    git_reset, git_revert, git_search_commits, git_set_config, git_set_config_if_unset,
+    git_stage_all, git_stage_files, git_stash_apply, git_stash_drop, git_stash_pop,
+    git_stash_save, git_stash_show, git_unstage_files, git_update, git_validate_url,
 };
 pub use github::{
     github_clear_token, github_download_asset, github_download_source, github_get_release_assets,
@@ -113,10 +120,13 @@ pub use github::{
     github_validate_token,
 };
 pub use gitlab::{
-    gitlab_clear_token, gitlab_download_asset, gitlab_download_source, gitlab_get_instance_url,
+    gitlab_clear_token, gitlab_download_asset, gitlab_download_job_artifacts,
+    gitlab_download_package_file, gitlab_download_source, gitlab_get_instance_url,
     gitlab_get_project_info, gitlab_get_release_assets, gitlab_get_token, gitlab_list_branches,
-    gitlab_list_releases, gitlab_list_tags, gitlab_parse_url, gitlab_set_instance_url,
-    gitlab_set_token, gitlab_validate_project, gitlab_validate_token,
+    gitlab_list_package_files, gitlab_list_packages, gitlab_list_pipeline_jobs,
+    gitlab_list_pipelines, gitlab_list_releases, gitlab_list_tags, gitlab_parse_url,
+    gitlab_search_projects, gitlab_set_instance_url, gitlab_set_token, gitlab_validate_project,
+    gitlab_validate_token,
 };
 pub use health_check::{
     health_check_all, health_check_environment, health_check_package_manager,
@@ -126,7 +136,10 @@ pub use launch::{
     env_activate, env_get_info, exec_shell_with_env, launch_with_env, launch_with_streaming,
     which_program,
 };
-pub use log::{log_clear, log_export, log_get_dir, log_list_files, log_query};
+pub use log::{
+    log_cleanup, log_clear, log_delete_batch, log_delete_file, log_export, log_get_dir,
+    log_get_total_size, log_list_files, log_query,
+};
 pub use manifest::{manifest_init, manifest_read};
 pub use package::{
     package_check_installed, package_info, package_install, package_list, package_search,
@@ -143,20 +156,42 @@ pub use shim::{
     shim_regenerate_all, shim_remove, shim_update,
 };
 pub use terminal::{
-    terminal_append_to_config, terminal_backup_config, terminal_create_profile,
-    terminal_delete_profile, terminal_detect_framework, terminal_detect_shells,
-    terminal_duplicate_profile, terminal_export_profiles, terminal_get_config_entries,
-    terminal_get_default_profile, terminal_get_profile, terminal_get_proxy_env_vars,
-    terminal_get_shell_env_vars, terminal_get_shell_info, terminal_import_profiles,
-    terminal_launch_profile, terminal_launch_profile_detailed, terminal_list_plugins,
-    terminal_list_profiles, terminal_ps_find_module, terminal_ps_get_execution_policy,
+    terminal_append_to_config, terminal_backup_config, terminal_create_custom_template,
+    terminal_create_profile, terminal_create_profile_from_template,
+    terminal_delete_custom_template, terminal_delete_profile, terminal_detect_framework,
+    terminal_detect_shells, terminal_duplicate_profile, terminal_export_profiles,
+    terminal_get_config_entries, terminal_get_default_profile, terminal_get_profile,
+    terminal_get_proxy_env_vars, terminal_get_shell_env_vars, terminal_get_shell_info,
+    terminal_import_profiles, terminal_launch_profile, terminal_launch_profile_detailed,
+    terminal_list_plugins, terminal_list_profiles, terminal_list_templates,
+    terminal_parse_config_content, terminal_ps_find_module, terminal_ps_get_execution_policy,
     terminal_ps_get_module_detail, terminal_ps_install_module, terminal_ps_list_all_modules,
     terminal_ps_list_installed_scripts, terminal_ps_list_profiles, terminal_ps_read_profile,
     terminal_ps_set_execution_policy, terminal_ps_uninstall_module, terminal_ps_update_module,
-    terminal_ps_write_profile, terminal_read_config, terminal_set_default_profile,
-    terminal_update_profile, terminal_write_config, SharedTerminalProfileManager,
+    terminal_ps_write_profile, terminal_read_config, terminal_save_profile_as_template,
+    terminal_set_default_profile, terminal_update_profile, terminal_write_config,
+    terminal_get_framework_cache_stats, terminal_get_single_framework_cache_info,
+    terminal_clean_framework_cache,
+    SharedTerminalProfileManager,
+};
+pub use plugin::{
+    plugin_call_tool, plugin_disable, plugin_enable, plugin_get_data_dir, plugin_get_info,
+    plugin_get_locales, plugin_get_permissions, plugin_get_tools, plugin_get_ui_asset,
+    plugin_get_ui_entry, plugin_grant_permission, plugin_import_local, plugin_install,
+    plugin_list, plugin_list_all_tools, plugin_reload, plugin_revoke_permission,
+    plugin_scaffold, plugin_uninstall, plugin_validate, SharedPluginManager,
 };
 pub use updater::{self_check_update, self_update};
+pub use winget::{
+    winget_download, winget_export, winget_get_info, winget_import, winget_install_advanced,
+    winget_pin_add, winget_pin_list, winget_pin_remove, winget_pin_reset, winget_repair,
+    winget_source_add, winget_source_list, winget_source_remove, winget_source_reset,
+};
+pub use xmake::{
+    xmake_add_repo, xmake_clean_cache, xmake_download_source, xmake_env_bind, xmake_env_list,
+    xmake_env_show, xmake_export_package, xmake_import_package, xmake_list_repos,
+    xmake_remove_repo, xmake_update_repos,
+};
 pub use wsl::{
     wsl_change_default_user, wsl_convert_path, wsl_debug_detection, wsl_disk_usage, wsl_exec,
     wsl_export, wsl_get_capabilities, wsl_get_config, wsl_get_distro_config, wsl_get_ip,

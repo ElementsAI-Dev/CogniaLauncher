@@ -128,6 +128,31 @@ export function getAdjacentDocs(
   };
 }
 
+export function getBreadcrumbs(slug: string): DocNavItem[] {
+  const crumbs: DocNavItem[] = [{ title: '文档', titleEn: 'Docs', slug: 'index' }];
+  if (slug === 'index') return crumbs;
+
+  // Find the parent section and the item itself
+  for (const section of DOC_NAV) {
+    if (section.slug === slug) {
+      crumbs.push(section);
+      return crumbs;
+    }
+    if (section.children) {
+      const child = section.children.find((c) => c.slug === slug);
+      if (child) {
+        crumbs.push({ title: section.title, titleEn: section.titleEn, slug: section.children[0]?.slug });
+        if (child.slug !== section.children[0]?.slug) {
+          crumbs.push(child);
+        }
+        return crumbs;
+      }
+    }
+  }
+
+  return crumbs;
+}
+
 export function slugToArray(slug: string): string[] {
   if (slug === 'index') return [];
   return slug.split('/');
