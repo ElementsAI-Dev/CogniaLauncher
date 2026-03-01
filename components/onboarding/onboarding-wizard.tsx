@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,8 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
 import { ONBOARDING_STEPS } from '@/lib/stores/onboarding';
 import { STEP_ICONS } from '@/lib/constants/onboarding';
+import { MIRROR_PRESETS } from '@/lib/constants/mirrors';
+import { isTauri } from '@/lib/tauri';
 import { WelcomeStep } from './steps/welcome-step';
 import { LanguageStep } from './steps/language-step';
 import { ThemeStep } from './steps/theme-step';
@@ -49,11 +51,54 @@ export function OnboardingWizard({
   const { theme, setTheme } = useTheme();
 
   const currentStepId = ONBOARDING_STEPS[currentStep] ?? 'welcome';
+  const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const prevStepRef = useRef(currentStep);
+
+  // Track direction based on step change
+  useEffect(() => {
+    if (currentStep > prevStepRef.current) setDirection('forward');
+    else if (currentStep < prevStepRef.current) setDirection('back');
+    prevStepRef.current = currentStep;
+  }, [currentStep]);
+
+  // Keyboard navigation (same pattern as tour-overlay)
+  useEffect(() => {
+    if (!open) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        e.preventDefault();
+        if (isLastStep) onComplete();
+        else onNext();
+      } else if (e.key === 'ArrowLeft') {
+        if (!isFirstStep) onPrev();
+      } else if (e.key === 'Escape') {
+        onSkip();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [open, isFirstStep, isLastStep, onNext, onPrev, onComplete, onSkip]);
 
   const handleStartTourAndClose = useCallback(() => {
     onComplete();
     onStartTour();
   }, [onComplete, onStartTour]);
+
+  const handleApplyMirrorPreset = useCallback(async (presetKey: string) => {
+    const preset = MIRROR_PRESETS[presetKey];
+    if (!preset || !isTauri()) return;
+    try {
+      const { configSet } = await import('@/lib/tauri');
+      await Promise.all([
+        configSet('mirrors.npm', preset.npm),
+        configSet('mirrors.pypi', preset.pypi),
+        configSet('mirrors.crates', preset.crates),
+        configSet('mirrors.go', preset.go),
+      ]);
+    } catch {
+      // Non-critical: user can configure mirrors later in Settings
+    }
+  }, []);
 
   const renderStep = () => {
     switch (currentStepId) {
@@ -66,7 +111,7 @@ export function OnboardingWizard({
       case 'environment-detection':
         return <EnvironmentDetectionStep t={t} />;
       case 'mirrors':
-        return <MirrorsStep t={t} />;
+        return <MirrorsStep t={t} onApplyPreset={handleApplyMirrorPreset} />;
       case 'shell-init':
         return <ShellInitStep t={t} />;
       case 'complete':
@@ -138,7 +183,13 @@ export function OnboardingWizard({
 
         {/* Step content */}
         <ScrollArea className="flex-1 min-h-0">
-          <div className="px-6 py-4">
+          <div
+            key={currentStepId}
+            className={cn(
+              'px-6 py-4 animate-in fade-in-0 duration-200',
+              direction === 'forward' ? 'slide-in-from-right-4' : 'slide-in-from-left-4',
+            )}
+          >
             {renderStep()}
           </div>
         </ScrollArea>

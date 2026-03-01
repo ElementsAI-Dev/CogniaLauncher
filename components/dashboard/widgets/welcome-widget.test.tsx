@@ -10,6 +10,15 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+const mockStartTour = jest.fn();
+jest.mock("@/lib/stores/onboarding", () => ({
+  useOnboardingStore: jest.fn(() => ({
+    completed: false,
+    tourCompleted: false,
+    startTour: mockStartTour,
+  })),
+}));
+
 describe("WelcomeWidget", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -93,5 +102,17 @@ describe("WelcomeWidget", () => {
       <WelcomeWidget hasEnvironments={false} hasPackages={false} className="custom" />,
     );
     expect(container.firstChild).toHaveClass("custom");
+  });
+
+  it("renders Take Tour button when tour not completed", () => {
+    render(<WelcomeWidget hasEnvironments={false} hasPackages={false} />);
+    expect(screen.getByText("dashboard.widgets.welcomeTakeTour")).toBeInTheDocument();
+  });
+
+  it("calls startTour when Take Tour button is clicked", () => {
+    render(<WelcomeWidget hasEnvironments={false} hasPackages={false} />);
+    const tourBtn = screen.getByText("dashboard.widgets.welcomeTakeTour").closest("button");
+    if (tourBtn) fireEvent.click(tourBtn);
+    expect(mockStartTour).toHaveBeenCalledTimes(1);
   });
 });

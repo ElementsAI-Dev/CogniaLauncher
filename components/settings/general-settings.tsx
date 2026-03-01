@@ -159,6 +159,18 @@ export function GeneralSettings({
           min={0}
           error={errors["general.download_speed_limit"]}
         />
+        <Separator />
+        <SettingItem
+          id="update-check-concurrency"
+          label={t("settings.updateCheckConcurrency")}
+          description={t("settings.updateCheckConcurrencyDesc")}
+          value={localConfig["general.update_check_concurrency"] || "8"}
+          onChange={(v) => onValueChange("general.update_check_concurrency", v)}
+          type="number"
+          min={1}
+          max={32}
+          error={errors["general.update_check_concurrency"]}
+        />
     </div>
   );
 }

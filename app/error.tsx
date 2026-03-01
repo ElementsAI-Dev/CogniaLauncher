@@ -6,7 +6,41 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { captureFrontendCrash } from "@/lib/crash-reporter";
 import { useFeedbackStore } from "@/lib/stores/feedback";
-import { useLocale } from "@/components/providers/locale-provider";
+
+const i18n: Record<string, Record<string, string>> = {
+  en: {
+    title: "Something went wrong",
+    defaultMessage: "An unexpected error occurred. Please try again.",
+    details: "Error details",
+    errorId: "Error ID",
+    tryAgain: "Try Again",
+    reportError: "Report This Error",
+    dashboard: "Dashboard",
+  },
+  zh: {
+    title: "出了点问题",
+    defaultMessage: "发生了意外错误，请重试。",
+    details: "错误详情",
+    errorId: "错误 ID",
+    tryAgain: "重试",
+    reportError: "报告此错误",
+    dashboard: "返回首页",
+  },
+};
+
+function detectLang(): string {
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(/NEXT_LOCALE=([^;]+)/);
+    if (match?.[1] && (match[1] === "en" || match[1] === "zh")) {
+      return match[1];
+    }
+  }
+  if (typeof navigator !== "undefined") {
+    const lang = navigator.language;
+    if (lang.startsWith("zh")) return "zh";
+  }
+  return "en";
+}
 
 export default function Error({
   error,
@@ -17,8 +51,10 @@ export default function Error({
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [copied, setCopied] = useState(false);
+  const lang = detectLang();
+  const t = i18n[lang] || i18n.en;
+
   const { openDialog } = useFeedbackStore();
-  const { t } = useLocale();
 
   useEffect(() => {
     console.error("Unhandled error:", error);
@@ -80,10 +116,10 @@ export default function Error({
         {/* Title */}
         <div className="text-center mb-2 error-content-2">
           <h1 className="text-xl font-semibold tracking-tight">
-            {t("errorPage.title")}
+            {t.title}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
-            {error.message || t("errorPage.defaultMessage")}
+            {error.message || t.defaultMessage}
           </p>
         </div>
 
@@ -97,14 +133,14 @@ export default function Error({
               <ChevronDown
                 className={`h-3.5 w-3.5 transition-transform duration-200 ${showDetails ? "rotate-180" : ""}`}
               />
-              {t("errorPage.details")}
+              {t.details}
             </button>
             {showDetails && (
               <div className="mt-3 relative group">
                 <div className="rounded-lg border bg-muted/30 p-3 font-mono text-xs text-muted-foreground overflow-auto max-h-40 leading-relaxed">
                   {error.digest && (
                     <p className="mb-1">
-                      <span className="text-foreground/60">{t("errorPage.errorId")}:</span> {error.digest}
+                      <span className="text-foreground/60">{t.errorId}:</span> {error.digest}
                     </p>
                   )}
                   {error.stack && (
@@ -132,7 +168,7 @@ export default function Error({
         <div className="flex justify-center gap-3 mt-6 error-content-4">
           <Button variant="outline" onClick={reset} className="gap-2">
             <RotateCcw className="h-4 w-4" />
-            {t("errorPage.tryAgain")}
+            {t.tryAgain}
           </Button>
           <Button
             variant="outline"
@@ -150,12 +186,12 @@ export default function Error({
             className="gap-2"
           >
             <Bug className="h-4 w-4" />
-            {t("errorPage.reportError")}
+            {t.reportError}
           </Button>
           <Button asChild className="gap-2">
             <Link href="/">
               <Home className="h-4 w-4" />
-              {t("errorPage.dashboard")}
+              {t.dashboard}
             </Link>
           </Button>
         </div>

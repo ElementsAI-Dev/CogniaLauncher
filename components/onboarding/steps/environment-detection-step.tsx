@@ -8,18 +8,21 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { isTauri } from '@/lib/tauri';
+import { useEnvironmentStore } from '@/lib/stores/environment';
 import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
 
 export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState<DetectedEnv[]>([]);
   const [hasRun, setHasRun] = useState(false);
+  const storeEnvironments = useEnvironmentStore((s) => s.environments);
+  const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
 
   const runDetection = useCallback(async () => {
     setDetecting(true);
     try {
       if (isTauri()) {
-        const { envDetectSystemAll } = await import('@/lib/tauri');
+        const { envDetectSystemAll, envList } = await import('@/lib/tauri');
         const result = await envDetectSystemAll();
         setDetected(
           result.map((env) => ({
@@ -28,6 +31,13 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
             available: true,
           })),
         );
+        // Sync full environment list to global store so Environments page has data
+        try {
+          const envs = await envList();
+          setEnvironments(envs);
+        } catch {
+          // Non-critical: environments page will fetch on its own mount
+        }
       } else {
         // Web mode: simulate detection with common tools
         await new Promise((r) => setTimeout(r, 1500));
@@ -43,13 +53,27 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
       setDetecting(false);
       setHasRun(true);
     }
-  }, []);
+  }, [setEnvironments]);
 
+  // Use cached store data if available, otherwise auto-detect
   useEffect(() => {
-    if (!hasRun) {
+    if (hasRun) return;
+    if (storeEnvironments.length > 0) {
+      // Populate from existing store data
+      setDetected(
+        storeEnvironments
+          .filter((env) => env.available)
+          .map((env) => ({
+            name: env.env_type || 'Unknown',
+            version: env.current_version || '',
+            available: true,
+          })),
+      );
+      setHasRun(true);
+    } else {
       runDetection();
     }
-  }, [hasRun, runDetection]);
+  }, [hasRun, storeEnvironments, runDetection]);
 
   const detectedCount = detected.filter((e) => e.available).length;
 

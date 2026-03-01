@@ -46,15 +46,31 @@ export default function DashboardPage() {
   useEffect(() => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
-    Promise.all([
-      fetchEnvironments(),
-      fetchInstalledPackages(),
-      fetchProviders(),
-      fetchCacheInfo(),
-      fetchPlatformInfo(),
-    ]).then(() => {
+
+    // Phased loading to avoid firing all heavy backend calls at once.
+    // Phase 1 (immediate, lightweight): provider metadata + platform info
+    // Phase 2 (deferred): cache info
+    // Phase 3 (after Phase 1): environments + packages (heaviest — subprocess spawns)
+    const loadData = async () => {
+      // Phase 1: lightweight metadata (no subprocess spawns)
+      await Promise.all([
+        fetchProviders(),
+        fetchPlatformInfo(),
+      ]);
+
+      // Phase 2: cache info (moderate I/O, deferred)
+      fetchCacheInfo();
+
+      // Phase 3: heavy scans (subprocess-intensive, run after UI has rendered)
+      await Promise.all([
+        fetchEnvironments(),
+        fetchInstalledPackages(),
+      ]);
+
       setLastRefreshed(new Date());
-    });
+    };
+
+    loadData();
   }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
 
   const handleRefreshAll = useCallback(async () => {
@@ -62,8 +78,8 @@ export default function DashboardPage() {
     setDismissedError(false);
     try {
       await Promise.all([
-        fetchEnvironments(),
-        fetchInstalledPackages(),
+        fetchEnvironments(true),
+        fetchInstalledPackages(undefined, true),
         fetchProviders(),
         fetchCacheInfo(),
         fetchPlatformInfo(),

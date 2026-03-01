@@ -53,4 +53,16 @@ describe("CompleteStep", () => {
     render(<CompleteStep {...defaultProps} />);
     expect(screen.getByText("Click Finish to get started")).toBeInTheDocument();
   });
+
+  it("renders confetti particles", () => {
+    const { container } = render(<CompleteStep {...defaultProps} />);
+    const particles = container.querySelectorAll(".onboarding-confetti-particle");
+    expect(particles.length).toBe(8);
+  });
+
+  it("renders icon with zoom animation", () => {
+    const { container } = render(<CompleteStep {...defaultProps} />);
+    const animatedIcon = container.querySelector(".zoom-in-50");
+    expect(animatedIcon).toBeInTheDocument();
+  });
 });

@@ -3,7 +3,7 @@ import { TOUR_STEPS } from "@/lib/constants/onboarding";
 describe("TOUR_STEPS", () => {
   it("exports a non-empty array", () => {
     expect(Array.isArray(TOUR_STEPS)).toBe(true);
-    expect(TOUR_STEPS.length).toBe(6);
+    expect(TOUR_STEPS.length).toBe(9);
   });
 
   it("each step has all required fields", () => {

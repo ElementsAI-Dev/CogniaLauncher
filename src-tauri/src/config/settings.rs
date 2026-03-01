@@ -19,6 +19,34 @@ pub struct Settings {
     pub log: LogSettings,
     pub backup: BackupSettings,
     pub plugin: PluginSettings,
+    pub startup: StartupSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StartupSettings {
+    /// Automatically scan environments on launch
+    pub scan_environments: bool,
+    /// Automatically scan installed packages on launch
+    pub scan_packages: bool,
+    /// Maximum concurrent provider checks during startup scans
+    pub max_concurrent_scans: u32,
+    /// Timeout in seconds for the entire startup sequence
+    pub startup_timeout_secs: u32,
+    /// Run resource integrity check on startup
+    pub integrity_check: bool,
+}
+
+impl Default for StartupSettings {
+    fn default() -> Self {
+        Self {
+            scan_environments: true,
+            scan_packages: true,
+            max_concurrent_scans: 6,
+            startup_timeout_secs: 30,
+            integrity_check: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +126,8 @@ pub struct LogSettings {
     pub max_total_size_mb: u32,
     /// Automatically clean old logs on startup
     pub auto_cleanup: bool,
+    /// Backend log level (trace/debug/info/warn/error). Applied on next app restart.
+    pub log_level: String,
 }
 
 impl Default for LogSettings {
@@ -106,6 +136,7 @@ impl Default for LogSettings {
             max_retention_days: 30,
             max_total_size_mb: 100,
             auto_cleanup: true,
+            log_level: "info".to_string(),
         }
     }
 }
@@ -160,6 +191,8 @@ pub struct GeneralSettings {
     pub cache_monitor_external: bool,
     /// Download speed limit in bytes/sec (0 = unlimited)
     pub download_speed_limit: u64,
+    /// Max concurrent tasks for update checking (1-32, default 8)
+    pub update_check_concurrency: u32,
 }
 
 impl Default for GeneralSettings {
@@ -177,6 +210,7 @@ impl Default for GeneralSettings {
             cache_monitor_interval: 300, // 5 minutes
             cache_monitor_external: false,
             download_speed_limit: 0,
+            update_check_concurrency: 8,
         }
     }
 }
@@ -398,6 +432,9 @@ impl Settings {
             ["general", "download_speed_limit"] => {
                 Some(self.general.download_speed_limit.to_string())
             }
+            ["general", "update_check_concurrency"] => {
+                Some(self.general.update_check_concurrency.to_string())
+            }
             ["network", "timeout"] => Some(self.network.timeout.to_string()),
             ["network", "retries"] => Some(self.network.retries.to_string()),
             ["network", "proxy"] => self.network.proxy.clone(),
@@ -466,6 +503,7 @@ impl Settings {
             ["log", "max_retention_days"] => Some(self.log.max_retention_days.to_string()),
             ["log", "max_total_size_mb"] => Some(self.log.max_total_size_mb.to_string()),
             ["log", "auto_cleanup"] => Some(self.log.auto_cleanup.to_string()),
+            ["log", "log_level"] => Some(self.log.log_level.clone()),
             ["backup", "auto_backup_enabled"] => {
                 Some(self.backup.auto_backup_enabled.to_string())
             }
@@ -477,6 +515,11 @@ impl Settings {
             ["plugin", "auto_load_on_startup"] => Some(self.plugin.auto_load_on_startup.to_string()),
             ["plugin", "max_execution_timeout_secs"] => Some(self.plugin.max_execution_timeout_secs.to_string()),
             ["plugin", "sandbox_fs"] => Some(self.plugin.sandbox_fs.to_string()),
+            ["startup", "scan_environments"] => Some(self.startup.scan_environments.to_string()),
+            ["startup", "scan_packages"] => Some(self.startup.scan_packages.to_string()),
+            ["startup", "max_concurrent_scans"] => Some(self.startup.max_concurrent_scans.to_string()),
+            ["startup", "startup_timeout_secs"] => Some(self.startup.startup_timeout_secs.to_string()),
+            ["startup", "integrity_check"] => Some(self.startup.integrity_check.to_string()),
             ["providers", provider, "token"] => self
                 .providers
                 .get(*provider)
@@ -575,6 +618,15 @@ impl Settings {
                 self.general.download_speed_limit = value.parse().map_err(|_| {
                     CogniaError::Config("Invalid value for download_speed_limit".into())
                 })?;
+            }
+            ["general", "update_check_concurrency"] => {
+                let v: u32 = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for update_check_concurrency".into())
+                })?;
+                if v == 0 || v > 32 {
+                    return Err(CogniaError::Config("update_check_concurrency must be 1-32".into()));
+                }
+                self.general.update_check_concurrency = v;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value
@@ -762,6 +814,17 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["log", "log_level"] => {
+                let valid = ["trace", "debug", "info", "warn", "error"];
+                let lower = value.to_lowercase();
+                if !valid.contains(&lower.as_str()) {
+                    return Err(CogniaError::Config(format!(
+                        "Invalid log level '{}'. Must be one of: trace, debug, info, warn, error",
+                        value
+                    )));
+                }
+                self.log.log_level = lower;
+            }
             ["backup", "auto_backup_enabled"] => {
                 self.backup.auto_backup_enabled = value
                     .parse()
@@ -794,6 +857,31 @@ impl Settings {
             }
             ["plugin", "sandbox_fs"] => {
                 self.plugin.sandbox_fs = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["startup", "scan_environments"] => {
+                self.startup.scan_environments = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["startup", "scan_packages"] => {
+                self.startup.scan_packages = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["startup", "max_concurrent_scans"] => {
+                self.startup.max_concurrent_scans = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for max_concurrent_scans".into())
+                })?;
+            }
+            ["startup", "startup_timeout_secs"] => {
+                self.startup.startup_timeout_secs = value.parse().map_err(|_| {
+                    CogniaError::Config("Invalid value for startup_timeout_secs".into())
+                })?;
+            }
+            ["startup", "integrity_check"] => {
+                self.startup.integrity_check = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
@@ -1428,6 +1516,44 @@ mod tests {
         assert!(s.set_value("general.auto_update_metadata", "yes").is_err());
         assert!(s.set_value("security.allow_http", "1").is_err());
         assert!(s.set_value("terminal.shell_integration", "on").is_err());
+    }
+
+    #[test]
+    fn test_get_set_update_check_concurrency() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("general.update_check_concurrency"),
+            Some("8".into())
+        );
+        s.set_value("general.update_check_concurrency", "16").unwrap();
+        assert_eq!(
+            s.get_value("general.update_check_concurrency"),
+            Some("16".into())
+        );
+        assert_eq!(s.general.update_check_concurrency, 16);
+    }
+
+    #[test]
+    fn test_update_check_concurrency_boundary() {
+        let mut s = Settings::default();
+        // Min boundary
+        s.set_value("general.update_check_concurrency", "1").unwrap();
+        assert_eq!(s.general.update_check_concurrency, 1);
+        // Max boundary
+        s.set_value("general.update_check_concurrency", "32").unwrap();
+        assert_eq!(s.general.update_check_concurrency, 32);
+        // Below min
+        assert!(s.set_value("general.update_check_concurrency", "0").is_err());
+        // Above max
+        assert!(s.set_value("general.update_check_concurrency", "33").is_err());
+        // Invalid string
+        assert!(s.set_value("general.update_check_concurrency", "abc").is_err());
+    }
+
+    #[test]
+    fn test_default_update_check_concurrency() {
+        let g = GeneralSettings::default();
+        assert_eq!(g.update_check_concurrency, 8);
     }
 
     #[test]

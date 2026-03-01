@@ -41,12 +41,15 @@ export function TourOverlay({
       return;
     }
 
+    let foundTarget = false;
+
     const updatePositions = () => {
       const el = document.querySelector(step.target);
       if (!el) {
         targetRectRef.current = null;
         return;
       }
+      foundTarget = true;
 
       const rect = el.getBoundingClientRect();
       const tr: TargetRect = {
@@ -113,16 +116,25 @@ export function TourOverlay({
     // Initial find with a small delay to allow route navigation
     const timer = setTimeout(updatePositions, 200);
 
+    // Auto-skip if target not found after 2s
+    const skipTimer = setTimeout(() => {
+      if (!foundTarget) {
+        if (isLast) onComplete();
+        else onNext();
+      }
+    }, 2000);
+
     // Re-measure on scroll/resize
     window.addEventListener('resize', updatePositions);
     window.addEventListener('scroll', updatePositions, true);
 
     return () => {
       clearTimeout(timer);
+      clearTimeout(skipTimer);
       window.removeEventListener('resize', updatePositions);
       window.removeEventListener('scroll', updatePositions, true);
     };
-  }, [active, step, currentStep]);
+  }, [active, step, currentStep, isLast, onComplete, onNext]);
 
   // Handle keyboard navigation
   useEffect(() => {

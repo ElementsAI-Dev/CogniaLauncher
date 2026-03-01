@@ -1,6 +1,15 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { EnvironmentDetectionStep } from "./environment-detection-step";
 
+const mockSetEnvironments = jest.fn();
+jest.mock("@/lib/stores/environment", () => ({
+  useEnvironmentStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      environments: [],
+      setEnvironments: mockSetEnvironments,
+    }),
+}));
+
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
 }));
@@ -22,6 +31,7 @@ const mockT = (key: string) => {
 describe("EnvironmentDetectionStep", () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
@@ -90,7 +100,6 @@ describe("EnvironmentDetectionStep", () => {
     await waitFor(() => {
       expect(screen.getByText("Rescan")).toBeInTheDocument();
     });
-    // Rescan button should be enabled
     const rescanBtn = screen.getByText("Rescan").closest("button");
     expect(rescanBtn).not.toBeDisabled();
     unmount();

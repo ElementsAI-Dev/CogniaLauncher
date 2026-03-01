@@ -22,10 +22,10 @@ export function DeferredProviders({ children, fallback = null }: DeferredProvide
     // Use requestIdleCallback to defer until browser is idle,
     // with setTimeout fallback for environments without it
     if (typeof window.requestIdleCallback === "function") {
-      const id = window.requestIdleCallback(() => setMounted(true), { timeout: 200 });
+      const id = window.requestIdleCallback(() => setMounted(true), { timeout: 500 });
       return () => window.cancelIdleCallback(id);
     } else {
-      const timer = setTimeout(() => setMounted(true), 16);
+      const timer = setTimeout(() => setMounted(true), 100);
       return () => clearTimeout(timer);
     }
   }, []);

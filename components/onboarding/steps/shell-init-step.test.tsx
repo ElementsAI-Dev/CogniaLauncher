@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ShellInitStep } from "./shell-init-step";
 
@@ -14,10 +14,23 @@ jest.mock("@/lib/platform", () => ({
   isWindows: () => true,
 }));
 
+const mockPathCheck = jest.fn();
+const mockPathSetup = jest.fn();
+
+jest.mock("@/lib/tauri", () => ({
+  isTauri: () => true,
+  pathCheck: (...args: unknown[]) => mockPathCheck(...args),
+  pathSetup: (...args: unknown[]) => mockPathSetup(...args),
+}));
+
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "onboarding.shellTitle": "Shell Integration",
     "onboarding.shellDesc": "Add CogniaLauncher to your PATH",
+    "onboarding.shellAutoSetup": "Auto Setup PATH",
+    "onboarding.shellAutoSetupSuccess": "PATH configured!",
+    "onboarding.shellAutoSetupFailed": "Auto setup failed",
+    "onboarding.shellAlreadyConfigured": "PATH already configured",
     "onboarding.shellCopy": "Copy",
     "onboarding.shellCopied": "Copied!",
     "onboarding.shellCopyFailed": "Copy failed",
@@ -27,6 +40,11 @@ const mockT = (key: string) => {
 };
 
 describe("ShellInitStep", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPathCheck.mockResolvedValue(false);
+  });
+
   it("renders title", () => {
     render(<ShellInitStep t={mockT} />);
     expect(screen.getByText("Shell Integration")).toBeInTheDocument();
@@ -89,11 +107,8 @@ describe("ShellInitStep", () => {
     (writeClipboard as jest.Mock).mockResolvedValue(undefined);
 
     render(<ShellInitStep t={mockT} />);
-    // Copy on current shell
     await userEvent.click(screen.getByText("Copy"));
-    // Switch shell
     await userEvent.click(screen.getByText("Bash"));
-    // Should show copy button (not copied)
     expect(screen.getByText("Copy")).toBeInTheDocument();
   });
 
@@ -101,5 +116,58 @@ describe("ShellInitStep", () => {
     render(<ShellInitStep t={mockT} />);
     expect(screen.getByText("$PROFILE")).toBeInTheDocument();
     expect(screen.getByText(/\$env:PATH/)).toBeInTheDocument();
+  });
+
+  it("renders Auto Setup button in Tauri mode", async () => {
+    render(<ShellInitStep t={mockT} />);
+    await waitFor(() => {
+      expect(screen.getByText("Auto Setup PATH")).toBeInTheDocument();
+    });
+  });
+
+  it("shows already configured message when PATH is set", async () => {
+    mockPathCheck.mockResolvedValue(true);
+    render(<ShellInitStep t={mockT} />);
+    await waitFor(() => {
+      expect(screen.getByText("PATH already configured")).toBeInTheDocument();
+    });
+  });
+
+  it("calls pathSetup when Auto Setup button is clicked", async () => {
+    mockPathSetup.mockResolvedValue(undefined);
+    render(<ShellInitStep t={mockT} />);
+    await waitFor(() => {
+      expect(screen.getByText("Auto Setup PATH")).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText("Auto Setup PATH"));
+    await waitFor(() => {
+      expect(mockPathSetup).toHaveBeenCalled();
+    });
+  });
+
+  it("shows success toast after successful auto setup", async () => {
+    const { toast } = jest.requireMock("sonner");
+    mockPathSetup.mockResolvedValue(undefined);
+    render(<ShellInitStep t={mockT} />);
+    await waitFor(() => {
+      expect(screen.getByText("Auto Setup PATH")).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText("Auto Setup PATH"));
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("PATH configured!");
+    });
+  });
+
+  it("shows error toast when auto setup fails", async () => {
+    const { toast } = jest.requireMock("sonner");
+    mockPathSetup.mockRejectedValue(new Error("fail"));
+    render(<ShellInitStep t={mockT} />);
+    await waitFor(() => {
+      expect(screen.getByText("Auto Setup PATH")).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText("Auto Setup PATH"));
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Auto setup failed");
+    });
   });
 });

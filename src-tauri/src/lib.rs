@@ -12,7 +12,7 @@ pub mod tray;
 
 use cache::{DownloadCache, DownloadResumer, MetadataCache};
 use commands::custom_detection::SharedCustomDetectionManager;
-use commands::download::init_download_manager;
+use commands::download::{setup_download_manager, SharedDownloadManager};
 use commands::plugin::SharedPluginManager;
 use commands::terminal::SharedTerminalProfileManager;
 use config::Settings;
@@ -66,10 +66,24 @@ pub fn run() {
             // - Stdout: Console output for development
             // - Webview: Forward logs to frontend for log panel display
             // - LogDir: Persistent log files with rotation
-            let log_level = if cfg!(debug_assertions) {
-                log::LevelFilter::Debug
-            } else {
-                log::LevelFilter::Info
+            // Read configured log level from settings, fallback to debug/info defaults
+            let log_level = {
+                let settings_state = app.state::<SharedSettings>().inner().clone();
+                let guard = tauri::async_runtime::block_on(settings_state.read());
+                let configured = guard.log.log_level.clone();
+                drop(guard);
+                match configured.as_str() {
+                    "trace" => log::LevelFilter::Trace,
+                    "debug" => log::LevelFilter::Debug,
+                    "warn" => log::LevelFilter::Warn,
+                    "error" => log::LevelFilter::Error,
+                    "info" => log::LevelFilter::Info,
+                    _ => if cfg!(debug_assertions) {
+                        log::LevelFilter::Debug
+                    } else {
+                        log::LevelFilter::Info
+                    },
+                }
             };
 
             // Session-based log file: each app launch creates a new log file
@@ -114,12 +128,15 @@ pub fn run() {
             // Get config directory for custom detection rules
             let config_dir = app.path().app_config_dir().unwrap_or_default();
 
-            // Get app handle before the async block (needed for download manager event forwarding)
-            let app_handle_for_download = app.handle().clone();
+            // Get app handles before the async block
+            let app_handle_for_init = app.handle().clone();
 
-            // Use block_on to ensure initialization completes before app starts accepting commands
-            let download_manager = tauri::async_runtime::block_on(async move {
-                // Load settings from disk
+            // ═══════════════════════════════════════════════════════════════════
+            // CRITICAL PATH (block_on) — only fast, essential operations.
+            // Everything here must complete before the webview starts rendering.
+            // ═══════════════════════════════════════════════════════════════════
+            tauri::async_runtime::block_on(async {
+                // 1. Load settings from disk
                 match Settings::load().await {
                     Ok(loaded_settings) => {
                         let mut settings_guard = settings.write().await;
@@ -130,18 +147,37 @@ pub fn run() {
                         info!("Using default settings: {}", e);
                     }
                 }
+                emit_init_progress(&app_handle_for_init, "settings", 15, "splash.loadingSettings");
 
-                // Initialize the shared HTTP client with proxy/security settings
+                // 2. Initialize the shared HTTP client with proxy/security settings
                 {
                     let settings_guard = settings.read().await;
                     platform::proxy::rebuild_shared_client(&settings_guard);
                 }
 
-                // Initialize providers with settings (including mirror configuration)
+                // 3. Ensure critical directories exist (fast filesystem ops)
+                {
+                    let s = settings.read().await;
+                    let dirs = [
+                        s.get_root_dir(),
+                        s.get_cache_dir(),
+                        s.get_environments_dir(),
+                        s.get_bin_dir(),
+                        s.get_state_dir(),
+                    ];
+                    drop(s);
+                    for dir in &dirs {
+                        if let Err(e) = platform::fs::create_dir_all(dir).await {
+                            info!("Directory ensure error {:?}: {}", dir, e);
+                        }
+                    }
+                }
+
+                // 4. Initialize provider registry (struct construction, no subprocess I/O)
                 let settings_guard = settings.read().await;
                 match ProviderRegistry::with_settings(&settings_guard).await {
                     Ok(initialized_registry) => {
-                        drop(settings_guard); // Release read lock before acquiring write lock
+                        drop(settings_guard);
                         let mut registry_guard = registry.write().await;
                         *registry_guard = initialized_registry;
                         info!("Provider registry initialized with settings");
@@ -151,67 +187,141 @@ pub fn run() {
                         info!("Provider registry initialization error: {}", e);
                     }
                 }
+                emit_init_progress(&app_handle_for_init, "providers", 40, "splash.loadingProviders");
+            });
 
-                // Initialize custom detection manager
-                let mut custom_detection_guard = custom_detection.write().await;
-                *custom_detection_guard = CustomDetectionManager::new(&config_dir);
-                if let Err(e) = custom_detection_guard.load().await {
-                    info!("Custom detection rules load error (using defaults): {}", e);
-                } else {
-                    info!("Custom detection rules loaded");
+            // ═══════════════════════════════════════════════════════════════════
+            // PRE-REGISTER MANAGERS as empty/default placeholders.
+            // Commands will see empty state until background init completes.
+            // ═══════════════════════════════════════════════════════════════════
+            let download_mgr: SharedDownloadManager = Arc::new(RwLock::new(download::DownloadManager::default()));
+            app.manage(download_mgr.clone());
+
+            let terminal_mgr: SharedTerminalProfileManager = Arc::new(RwLock::new(TerminalProfileManager::empty()));
+            app.manage(terminal_mgr.clone());
+
+            // PluginManager::new() is synchronous — safe to call here
+            let cognia_dir_for_plugins = tauri::async_runtime::block_on(async { settings.read().await.get_root_dir() });
+            let plugin_deps = plugin::PluginDeps {
+                registry: registry.clone(),
+                settings: settings.clone(),
+            };
+            let plugin_mgr: SharedPluginManager = Arc::new(RwLock::new(
+                plugin::PluginManager::new(&cognia_dir_for_plugins, plugin_deps),
+            ));
+            app.manage(plugin_mgr.clone());
+
+            // ═══════════════════════════════════════════════════════════════════
+            // DEFERRED INIT (background spawn) — heavy I/O, subprocess calls,
+            // database checks. Runs while the webview is already rendering.
+            // ═══════════════════════════════════════════════════════════════════
+            let bg_app = app.handle().clone();
+            let bg_settings = settings.clone();
+            let bg_custom_detection = custom_detection.clone();
+            let bg_download = download_mgr.clone();
+            let bg_terminal = terminal_mgr.clone();
+            let bg_plugin = plugin_mgr.clone();
+            let bg_config_dir = config_dir.clone();
+
+            tauri::async_runtime::spawn(async move {
+                // Read startup settings once for the entire deferred init
+                let startup_cfg = bg_settings.read().await.startup.clone();
+
+                // ── Resource integrity check (config parsability, cache DB) ──
+                emit_init_progress(&bg_app, "resources", 50, "splash.checkingResources");
+                {
+                    let s = bg_settings.read().await;
+                    let cache_dir = s.get_cache_dir();
+                    drop(s);
+
+                    // Config file parsability check (always runs — fast and critical)
+                    if let Some(config_path) = Settings::config_path() {
+                        if platform::fs::exists(&config_path).await {
+                            match platform::fs::read_file_string(&config_path).await {
+                                Ok(content) => {
+                                    if toml::from_str::<Settings>(&content).is_err() {
+                                        info!("Config file corrupted, backing up and resetting to defaults");
+                                        let backup = config_path.with_extension("toml.bak");
+                                        let _ = platform::fs::copy_file(&config_path, &backup).await;
+                                        let _ = Settings::default().save().await;
+                                    }
+                                }
+                                Err(e) => info!("Cannot read config file: {}", e),
+                            }
+                        }
+                    }
+
+                    // Cache DB integrity check (can be slow on large databases)
+                    if startup_cfg.integrity_check {
+                        if let Ok(dl_cache) = DownloadCache::open(&cache_dir).await {
+                            match dl_cache.integrity_check().await {
+                                Ok(result) if !result.ok => {
+                                    info!("Cache DB integrity issues: {:?}", result.errors);
+                                }
+                                Err(e) => info!("Cache DB integrity check failed: {}", e),
+                                _ => info!("Cache DB integrity OK"),
+                            }
+                        }
+                    } else {
+                        info!("Cache DB integrity check skipped (disabled in startup settings)");
+                    }
+
+                    info!("Resource integrity check complete");
                 }
-                drop(custom_detection_guard);
 
-                // Initialize download manager
-                let settings_guard = settings.read().await;
-                let download_manager =
-                    init_download_manager(app_handle_for_download, &settings_guard).await;
-                drop(settings_guard);
-                info!("Download manager initialized");
-
-                // Initialize terminal profile manager
-                let cognia_dir = settings.read().await.get_root_dir();
-                let terminal_manager = match TerminalProfileManager::new(&cognia_dir).await {
-                    Ok(mgr) => {
-                        info!("Terminal profile manager initialized");
-                        mgr
+                // ── Custom detection manager ──
+                emit_init_progress(&bg_app, "detection", 60, "splash.loadingDetection");
+                {
+                    let mut custom_detection_guard = bg_custom_detection.write().await;
+                    *custom_detection_guard = CustomDetectionManager::new(&bg_config_dir);
+                    if let Err(e) = custom_detection_guard.load().await {
+                        info!("Custom detection rules load error (using defaults): {}", e);
+                    } else {
+                        info!("Custom detection rules loaded");
                     }
-                    Err(e) => {
-                        info!("Terminal profile manager init error (using empty): {}", e);
-                        TerminalProfileManager::new(&std::path::PathBuf::from("."))
-                            .await
-                            .unwrap_or_else(|_| {
-                                // This is a panic-safe fallback; we create a minimal manager
-                                panic!("Cannot initialize terminal profile manager at all")
-                            })
-                    }
-                };
+                }
 
-                // Initialize plugin manager with access to launcher APIs
-                let cognia_dir_for_plugins = settings.read().await.get_root_dir();
-                let plugin_deps = plugin::PluginDeps {
-                    registry: registry.clone(),
-                    settings: settings.clone(),
-                };
-                let mut plugin_manager = plugin::PluginManager::new(&cognia_dir_for_plugins, plugin_deps);
-                if let Err(e) = plugin_manager.init().await {
-                    info!("Plugin manager init error: {}", e);
-                } else {
-                    info!("Plugin manager initialized");
+                // ── Download manager (replaces pre-registered default) ──
+                emit_init_progress(&bg_app, "downloads", 70, "splash.loadingDownloads");
+                {
+                    let settings_guard = bg_settings.read().await;
+                    setup_download_manager(bg_download, bg_app.clone(), &settings_guard).await;
+                    drop(settings_guard);
+                    info!("Download manager initialized");
+                }
+
+                // ── Terminal profile manager (replaces pre-registered empty) ──
+                emit_init_progress(&bg_app, "terminal", 80, "splash.loadingTerminal");
+                {
+                    let cognia_dir = bg_settings.read().await.get_root_dir();
+                    match TerminalProfileManager::new(&cognia_dir).await {
+                        Ok(mgr) => {
+                            *bg_terminal.write().await = mgr;
+                            info!("Terminal profile manager initialized");
+                        }
+                        Err(e) => {
+                            info!("Terminal profile manager init error (using empty): {}", e);
+                            // Keep the empty placeholder — commands will return empty lists
+                        }
+                    }
+                }
+
+                // ── Plugin manager (init discovers & loads plugins) ──
+                emit_init_progress(&bg_app, "plugins", 90, "splash.loadingPlugins");
+                {
+                    let mut plugin_guard = bg_plugin.write().await;
+                    if let Err(e) = plugin_guard.init().await {
+                        info!("Plugin manager init error: {}", e);
+                    } else {
+                        info!("Plugin manager initialized");
+                    }
                 }
 
                 // Mark initialization as complete
                 INITIALIZED.store(true, Ordering::SeqCst);
+                emit_init_progress(&bg_app, "ready", 100, "splash.ready");
                 info!("Application initialization complete");
-
-                (download_manager, terminal_manager, plugin_manager)
             });
-
-            // Register download manager, terminal profile manager, and plugin manager as Tauri managed state
-            let (download_manager, terminal_manager, plugin_manager) = download_manager;
-            app.manage(download_manager);
-            app.manage(Arc::new(RwLock::new(terminal_manager)) as SharedTerminalProfileManager);
-            app.manage(Arc::new(RwLock::new(plugin_manager)) as SharedPluginManager);
 
             // Initialize system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -502,6 +612,8 @@ pub fn run() {
             commands::envvar::envvar_list_persistent,
             commands::envvar::envvar_expand,
             commands::envvar::envvar_deduplicate_path,
+            commands::envvar::envvar_list_persistent_typed,
+            commands::envvar::envvar_detect_conflicts,
             // Updater commands
             commands::updater::self_check_update,
             commands::updater::self_update,
@@ -777,6 +889,10 @@ pub fn run() {
             commands::wsl::wsl_get_distro_resources,
             commands::wsl::wsl_list_users,
             commands::wsl::wsl_update_distro_packages,
+            commands::wsl::wsl_open_in_explorer,
+            commands::wsl::wsl_open_in_terminal,
+            commands::wsl::wsl_clone_distro,
+            commands::wsl::wsl_total_disk_usage,
             // Git commands
             commands::git::git_is_available,
             commands::git::git_get_version,
@@ -849,11 +965,105 @@ pub fn run() {
             commands::git::git_stash_show,
             commands::git::git_get_reflog,
             commands::git::git_clean,
+            commands::git::git_clean_dry_run,
+            commands::git::git_stash_push_files,
+            // Git submodule commands
+            commands::git::git_list_submodules,
+            commands::git::git_add_submodule,
+            commands::git::git_update_submodules,
+            commands::git::git_remove_submodule,
+            commands::git::git_sync_submodules,
+            // Git worktree commands
+            commands::git::git_list_worktrees,
+            commands::git::git_add_worktree,
+            commands::git::git_remove_worktree,
+            commands::git::git_prune_worktrees,
+            // Git .gitignore commands
+            commands::git::git_get_gitignore,
+            commands::git::git_set_gitignore,
+            commands::git::git_check_ignore,
+            commands::git::git_add_to_gitignore,
+            // Git hooks commands
+            commands::git::git_list_hooks,
+            commands::git::git_get_hook_content,
+            commands::git::git_set_hook_content,
+            commands::git::git_toggle_hook,
+            // Git LFS commands
+            commands::git::git_lfs_is_available,
+            commands::git::git_lfs_get_version,
+            commands::git::git_lfs_tracked_patterns,
+            commands::git::git_lfs_ls_files,
+            commands::git::git_lfs_track,
+            commands::git::git_lfs_untrack,
+            commands::git::git_lfs_install,
+            // Git rebase & squash commands
+            commands::git::git_rebase,
+            commands::git::git_rebase_abort,
+            commands::git::git_rebase_continue,
+            commands::git::git_rebase_skip,
+            commands::git::git_squash,
+            // Git merge/rebase state & conflict resolution
+            commands::git::git_get_merge_rebase_state,
+            commands::git::git_get_conflicted_files,
+            commands::git::git_resolve_file_ours,
+            commands::git::git_resolve_file_theirs,
+            commands::git::git_resolve_file_mark,
+            commands::git::git_merge_abort,
+            commands::git::git_merge_continue,
+            // Git cherry-pick abort/continue & revert abort
+            commands::git::git_cherry_pick_abort,
+            commands::git::git_cherry_pick_continue,
+            commands::git::git_revert_abort,
+            // Git stash branch
+            commands::git::git_stash_branch,
+            // Git local config
+            commands::git::git_get_local_config,
+            commands::git::git_set_local_config,
+            commands::git::git_remove_local_config,
+            commands::git::git_get_local_config_value,
+            // Git shallow clone management
+            commands::git::git_is_shallow,
+            commands::git::git_deepen,
+            commands::git::git_unshallow,
+            // Git repo statistics & health
+            commands::git::git_get_repo_stats,
+            commands::git::git_fsck,
+            commands::git::git_describe,
+            commands::git::git_remote_prune,
+            // Git signature verification
+            commands::git::git_verify_commit,
+            commands::git::git_verify_tag,
+            // Git interactive rebase
+            commands::git::git_get_rebase_todo_preview,
+            commands::git::git_start_interactive_rebase,
+            // Git bisect
+            commands::git::git_bisect_start,
+            commands::git::git_bisect_good,
+            commands::git::git_bisect_bad,
+            commands::git::git_bisect_skip,
+            commands::git::git_bisect_reset,
+            commands::git::git_bisect_log,
+            commands::git::git_get_bisect_state,
+            // Git sparse-checkout
+            commands::git::git_is_sparse_checkout,
+            commands::git::git_sparse_checkout_init,
+            commands::git::git_sparse_checkout_set,
+            commands::git::git_sparse_checkout_add,
+            commands::git::git_sparse_checkout_list,
+            commands::git::git_sparse_checkout_disable,
+            // Git archive
+            commands::git::git_archive,
+            // Git patch
+            commands::git::git_format_patch,
+            commands::git::git_apply_patch,
+            commands::git::git_apply_mailbox,
             // Filesystem utility commands
             commands::fs_utils::validate_path,
             // Terminal management commands
             commands::terminal::terminal_detect_shells,
             commands::terminal::terminal_get_shell_info,
+            commands::terminal::terminal_measure_startup,
+            commands::terminal::terminal_check_shell_health,
             commands::terminal::terminal_list_profiles,
             commands::terminal::terminal_get_profile,
             commands::terminal::terminal_create_profile,
@@ -919,6 +1129,16 @@ pub fn run() {
             commands::plugin::plugin_update,
             commands::plugin::plugin_get_ui_entry,
             commands::plugin::plugin_get_ui_asset,
+            commands::plugin::plugin_get_health,
+            commands::plugin::plugin_get_all_health,
+            commands::plugin::plugin_reset_health,
+            commands::plugin::plugin_dispatch_event,
+            commands::plugin::plugin_export_data,
+            commands::plugin::plugin_get_settings_schema,
+            commands::plugin::plugin_get_settings_values,
+            commands::plugin::plugin_set_setting,
+            commands::plugin::plugin_check_all_updates,
+            commands::plugin::plugin_update_all,
             // Winget-specific commands
             commands::winget::winget_pin_list,
             commands::winget::winget_pin_add,
@@ -967,6 +1187,18 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InitProgressEvent {
+    phase: &'static str,
+    progress: u8,
+    message: &'static str,
+}
+
+fn emit_init_progress(app: &tauri::AppHandle, phase: &'static str, progress: u8, message: &'static str) {
+    let _ = app.emit("init-progress", InitProgressEvent { phase, progress, message });
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -1037,6 +1269,30 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
                 }
                 // Prune old snapshots (keep 90 days)
                 let _ = download_cache.prune_old_snapshots(90).await;
+            }
+        }
+
+        // Log cleanup runs independently of cache auto_clean setting
+        {
+            let s = settings.read().await;
+            if s.log.auto_cleanup {
+                let max_ret = s.log.max_retention_days;
+                let max_size = s.log.max_total_size_mb;
+                drop(s);
+                match commands::log::cleanup_logs_with_policy(&app, max_ret, max_size).await {
+                    Ok(result) if result.deleted_count > 0 => {
+                        debug!(
+                            "Periodic log cleanup: deleted {} files, freed {} bytes",
+                            result.deleted_count, result.freed_bytes
+                        );
+                    }
+                    Err(e) => {
+                        debug!("Periodic log cleanup error: {}", e);
+                    }
+                    _ => {}
+                }
+            } else {
+                drop(s);
             }
         }
 

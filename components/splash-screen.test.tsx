@@ -8,9 +8,9 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 const defaultProps = {
-  phase: "initializing" as const,
+  phase: "providers" as const,
   progress: 50,
-  message: "splash.initializing",
+  message: "splash.loadingProviders",
   version: "1.0.0",
   onTransitionEnd: jest.fn(),
 };
@@ -53,7 +53,19 @@ describe("SplashScreen", () => {
 
   it("renders status message", () => {
     render(<SplashScreen {...defaultProps} />);
-    expect(screen.getByText("splash.initializing")).toBeInTheDocument();
+    expect(screen.getByText("splash.loadingProviders")).toBeInTheDocument();
+  });
+
+  it("renders resource check phase message", () => {
+    render(
+      <SplashScreen
+        {...defaultProps}
+        phase="resources"
+        progress={20}
+        message="splash.checkingResources"
+      />,
+    );
+    expect(screen.getByText("splash.checkingResources")).toBeInTheDocument();
   });
 
   it("applies fade-out class when phase is ready after delay", () => {

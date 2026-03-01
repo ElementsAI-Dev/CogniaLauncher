@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
@@ -11,8 +12,10 @@ import {
   ArrowRight,
   Sparkles,
   CheckCircle2,
+  Map,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useOnboardingStore } from '@/lib/stores/onboarding';
 
 interface WelcomeWidgetProps {
   hasEnvironments: boolean;
@@ -23,6 +26,7 @@ interface WelcomeWidgetProps {
 export function WelcomeWidget({ hasEnvironments, hasPackages, className }: WelcomeWidgetProps) {
   const { t } = useLocale();
   const router = useRouter();
+  const { completed: onboardingCompleted, tourCompleted, startTour } = useOnboardingStore();
 
   // Don't show if user already has both environments and packages
   if (hasEnvironments && hasPackages) return null;
@@ -49,7 +53,7 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
       icon: Settings,
       title: t('dashboard.widgets.welcomeStep3Title'),
       description: t('dashboard.widgets.welcomeStep3Desc'),
-      done: false,
+      done: onboardingCompleted,
       href: '/settings',
     },
   ];
@@ -113,6 +117,19 @@ export function WelcomeWidget({ hasEnvironments, hasPackages, className }: Welco
             );
           })}
         </div>
+
+        {/* Guided Tour shortcut */}
+        {!tourCompleted && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full mt-4 gap-2"
+            onClick={startTour}
+          >
+            <Map className="h-4 w-4" />
+            {t('dashboard.widgets.welcomeTakeTour')}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

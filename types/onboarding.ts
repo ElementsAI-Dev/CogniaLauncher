@@ -138,14 +138,7 @@ export interface DetectedEnv {
 
 export interface MirrorsStepProps {
   t: (key: string) => string;
-}
-
-export type MirrorPreset = 'default' | 'china' | 'custom';
-
-export interface MirrorPresetOption {
-  value: MirrorPreset;
-  labelKey: string;
-  descKey: string;
+  onApplyPreset: (presetKey: string) => void;
 }
 
 export interface ShellInitStepProps {

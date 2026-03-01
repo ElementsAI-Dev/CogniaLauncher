@@ -44,6 +44,7 @@ import {
   PathsSettings,
   ProviderSettings,
   BackupSettings,
+  StartupSettings,
   SystemInfo,
   SettingsSkeleton,
 } from '@/components/settings';
@@ -76,6 +77,7 @@ const SECTION_IDS: SettingsSection[] = [
   'paths',
   'provider',
   'backup',
+  'startup',
   'system',
 ];
 
@@ -121,6 +123,7 @@ export default function SettingsPage() {
         paths: ['paths.'],
         provider: ['provider_settings.'],
         backup: [],
+        startup: ['startup.'],
         system: [],
       };
       const prefixes = sectionPrefixes[sectionId] || [];
@@ -458,6 +461,7 @@ export default function SettingsPage() {
         paths: ['paths.'],
         provider: ['provider_settings.'],
         backup: [],
+        startup: ['startup.'],
         system: [],
       };
       const prefixes = sectionPrefixes[sectionId] || [];
@@ -712,6 +716,7 @@ export default function SettingsPage() {
               onResetSection={handleResetSection}
               onOpenChange={handleSectionOpenChange}
               t={t}
+              data-hint="settings-mirrors"
             >
               <MirrorsSettings
                 localConfig={localConfig}
@@ -836,6 +841,24 @@ export default function SettingsPage() {
             </CollapsibleSection>
 
             <CollapsibleSection
+              id="startup"
+              title={t('settings.startup')}
+              description={t('settings.startupDesc')}
+              icon="Zap"
+              defaultOpen={!collapsedSections.has('startup')}
+              hasChanges={sectionHasChanges('startup')}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <StartupSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleValueChange}
+                t={t}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
               id="system"
               title={t('settings.systemInfo')}
               description={t('settings.systemInfoDesc')}
@@ -878,7 +901,7 @@ function OnboardingSettingsCard({ t }: { t: (key: string) => string }) {
   const hasBeenThrough = completed || skipped;
 
   return (
-    <Card data-hint="settings-mirrors">
+    <Card>
       <CardHeader>
         <CardTitle className="text-lg">{t('settings.onboardingTitle')}</CardTitle>
         <CardDescription>{t('settings.onboardingDesc')}</CardDescription>

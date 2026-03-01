@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Layers, Package, Settings } from 'lucide-react';
+import { Layers, Package, Settings, Wrench } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   getSearchHistory,
@@ -11,6 +11,7 @@ import type { SearchResult } from '@/types/dashboard';
 import type { EnvironmentInfo, InstalledPackage } from '@/lib/tauri';
 import { createElement } from 'react';
 import { LanguageIcon } from '@/components/provider-management/provider-icon';
+import { useToolbox } from '@/hooks/use-toolbox';
 
 interface UseDashboardSearchParams {
   environments: EnvironmentInfo[];
@@ -28,6 +29,7 @@ export interface UseDashboardSearchReturn {
   quickActions: SearchResult[];
   envResults: SearchResult[];
   pkgResults: SearchResult[];
+  toolResults: SearchResult[];
   actionResults: SearchResult[];
   hasResults: boolean;
   showDropdown: boolean;
@@ -47,6 +49,7 @@ export function useDashboardSearch({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>(getSearchHistory);
+  const { allTools } = useToolbox();
 
   const quickActions: SearchResult[] = useMemo(
     () => [
@@ -115,6 +118,26 @@ export function useDashboardSearch({
       }));
   }, [query, packages]);
 
+  const toolResults = useMemo((): SearchResult[] => {
+    if (!query.trim()) return [];
+    const lowerQuery = query.toLowerCase();
+    return allTools
+      .filter(
+        (tool) =>
+          tool.name.toLowerCase().includes(lowerQuery) ||
+          tool.keywords.some((kw) => kw.toLowerCase().includes(lowerQuery)),
+      )
+      .slice(0, 4)
+      .map((tool) => ({
+        type: 'action' as const,
+        id: `tool-${tool.id}`,
+        title: tool.name,
+        subtitle: tool.description,
+        icon: createElement(Wrench, { className: 'h-4 w-4' }),
+        href: `/toolbox/tool?id=${encodeURIComponent(tool.id)}`,
+      }));
+  }, [query, allTools]);
+
   const actionResults = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
     const lowerQuery = query.toLowerCase();
@@ -123,7 +146,7 @@ export function useDashboardSearch({
     );
   }, [query, quickActions]);
 
-  const hasResults = envResults.length > 0 || pkgResults.length > 0 || actionResults.length > 0;
+  const hasResults = envResults.length > 0 || pkgResults.length > 0 || toolResults.length > 0 || actionResults.length > 0;
   const showDropdown = open && (!!query.trim() || searchHistory.length > 0);
 
   const saveToHistory = useCallback((searchQuery: string) => {
@@ -195,6 +218,7 @@ export function useDashboardSearch({
     quickActions,
     envResults,
     pkgResults,
+    toolResults,
     actionResults,
     hasResults,
     showDropdown,

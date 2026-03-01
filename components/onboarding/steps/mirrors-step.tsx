@@ -2,15 +2,22 @@
 
 import { Server, Check, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { MIRROR_PRESETS } from '@/lib/constants/onboarding';
-import type { MirrorsStepProps, MirrorPreset } from '@/types/onboarding';
+import { MIRROR_PRESETS } from '@/lib/constants/mirrors';
+import type { MirrorsStepProps } from '@/types/onboarding';
 
-export function MirrorsStep({ t }: MirrorsStepProps) {
-  const [preset, setPreset] = useState<MirrorPreset>('default');
+export function MirrorsStep({ t, onApplyPreset }: MirrorsStepProps) {
+  const [selected, setSelected] = useState<string>('default');
+
+  const handleChange = useCallback((key: string) => {
+    setSelected(key);
+    onApplyPreset(key);
+  }, [onApplyPreset]);
+
+  const presetEntries = Object.entries(MIRROR_PRESETS);
 
   return (
     <div className="flex flex-col items-center text-center space-y-6 py-4">
@@ -24,27 +31,29 @@ export function MirrorsStep({ t }: MirrorsStepProps) {
         </p>
       </div>
       <RadioGroup
-        value={preset}
-        onValueChange={(v) => setPreset(v as MirrorPreset)}
+        value={selected}
+        onValueChange={handleChange}
         className="grid grid-cols-1 gap-3 w-full max-w-sm"
       >
-        {MIRROR_PRESETS.map((item) => (
+        {presetEntries.map(([key, preset]) => (
           <Label
-            key={item.value}
-            htmlFor={`mirror-${item.value}`}
+            key={key}
+            htmlFor={`mirror-${key}`}
             className={cn(
               'flex items-center gap-4 rounded-lg border-2 p-4 transition-all text-left cursor-pointer font-normal',
-              preset === item.value
+              selected === key
                 ? 'border-primary bg-primary/5 shadow-sm'
                 : 'border-transparent bg-muted/30 hover:bg-muted/50',
             )}
           >
-            <RadioGroupItem value={item.value} id={`mirror-${item.value}`} className="sr-only" />
+            <RadioGroupItem value={key} id={`mirror-${key}`} className="sr-only" />
             <div className="flex-1 min-w-0">
-              <div className="font-medium text-sm">{t(item.labelKey)}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{t(item.descKey)}</div>
+              <div className="font-medium text-sm">{t(preset.labelKey)}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {t(`onboarding.mirrorPresetDesc_${key}`)}
+              </div>
             </div>
-            {preset === item.value && (
+            {selected === key && (
               <Check className="h-5 w-5 text-primary shrink-0" />
             )}
           </Label>

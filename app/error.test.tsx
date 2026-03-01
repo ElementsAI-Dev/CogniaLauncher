@@ -12,9 +12,6 @@ jest.mock("@/lib/stores/feedback", () => ({
   useFeedbackStore: () => ({ openDialog: mockOpenDialog }),
 }));
 
-jest.mock("@/components/providers/locale-provider", () => ({
-  useLocale: () => ({ t: (key: string) => key }),
-}));
 
 const mockCaptureFrontendCrash =
   captureFrontendCrash as jest.MockedFunction<typeof captureFrontendCrash>;
@@ -60,7 +57,7 @@ describe("app/error.tsx", () => {
     const error = Object.assign(new Error("test error"), { digest: undefined });
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
-    expect(screen.getByText("errorPage.title")).toBeInTheDocument();
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(screen.getByText("test error")).toBeInTheDocument();
   });
 
@@ -68,7 +65,7 @@ describe("app/error.tsx", () => {
     const error = Object.assign(new Error(""), { digest: undefined });
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
-    expect(screen.getByText("errorPage.defaultMessage")).toBeInTheDocument();
+    expect(screen.getByText("An unexpected error occurred. Please try again.")).toBeInTheDocument();
   });
 
   it("calls reset when Try Again button is clicked", async () => {
@@ -78,7 +75,7 @@ describe("app/error.tsx", () => {
 
     render(<ErrorBoundary error={error} reset={reset} />);
 
-    await user.click(screen.getByRole("button", { name: /errorPage\.tryAgain/i }));
+    await user.click(screen.getByRole("button", { name: /Try Again/i }));
     expect(reset).toHaveBeenCalled();
   });
 
@@ -91,7 +88,7 @@ describe("app/error.tsx", () => {
 
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
-    await user.click(screen.getByRole("button", { name: /errorPage\.reportError/i }));
+    await user.click(screen.getByRole("button", { name: /Report This Error/i }));
     expect(mockOpenDialog).toHaveBeenCalledWith(
       expect.objectContaining({
         category: "bug",
@@ -108,7 +105,7 @@ describe("app/error.tsx", () => {
     const error = Object.assign(new Error("err"), { digest: undefined });
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
-    const link = screen.getByRole("link", { name: /errorPage\.dashboard/i });
+    const link = screen.getByRole("link", { name: /Dashboard/i });
     expect(link).toHaveAttribute("href", "/");
   });
 
@@ -125,11 +122,11 @@ describe("app/error.tsx", () => {
     expect(screen.queryByText(/d-456/)).not.toBeInTheDocument();
 
     // Click to expand
-    await user.click(screen.getByText("errorPage.details"));
+    await user.click(screen.getByText("Error details"));
     expect(screen.getByText(/d-456/)).toBeInTheDocument();
 
     // Click to collapse
-    await user.click(screen.getByText("errorPage.details"));
+    await user.click(screen.getByText("Error details"));
     expect(screen.queryByText(/d-456/)).not.toBeInTheDocument();
   });
 
@@ -141,7 +138,7 @@ describe("app/error.tsx", () => {
 
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
-    expect(screen.queryByText("errorPage.details")).not.toBeInTheDocument();
+    expect(screen.queryByText("Error details")).not.toBeInTheDocument();
   });
 
   it("copies error text to clipboard", async () => {
@@ -161,7 +158,7 @@ describe("app/error.tsx", () => {
     render(<ErrorBoundary error={error} reset={jest.fn()} />);
 
     // Expand details first
-    await user.click(screen.getByText("errorPage.details"));
+    await user.click(screen.getByText("Error details"));
 
     // Click copy button (the ghost icon button)
     const copyButtons = screen.getAllByRole("button");

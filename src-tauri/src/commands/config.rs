@@ -57,6 +57,7 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "general.cache_monitor_interval",
     "general.cache_monitor_external",
     "general.download_speed_limit",
+    "general.update_check_concurrency",
     "network.timeout",
     "network.retries",
     "network.proxy",
@@ -85,6 +86,11 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "backup.auto_backup_interval_hours",
     "backup.max_backups",
     "backup.retention_days",
+    "startup.scan_environments",
+    "startup.scan_packages",
+    "startup.max_concurrent_scans",
+    "startup.startup_timeout_secs",
+    "startup.integrity_check",
 ];
 
 #[tauri::command]

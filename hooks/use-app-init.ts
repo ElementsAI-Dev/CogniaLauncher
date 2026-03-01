@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { isTauri, appCheckInit } from '@/lib/tauri';
+import { isTauri, appCheckInit, listenInitProgress } from '@/lib/tauri';
 
-export type InitPhase = 'checking' | 'initializing' | 'ready' | 'web-mode';
+export type InitPhase =
+  | 'checking' | 'settings' | 'resources' | 'providers'
+  | 'detection' | 'downloads' | 'terminal' | 'plugins'
+  | 'ready' | 'web-mode';
 
 interface AppInitState {
   phase: InitPhase;
@@ -10,20 +13,11 @@ interface AppInitState {
   message: string;
 }
 
-const POLL_INTERVAL_MS = 200;
+const POLL_INTERVAL_MS = 300;
 const INIT_TIMEOUT_MS = 30_000;
-const SIMULATED_PROGRESS_STEPS = [
-  { at: 0, msg: 'splash.loadingSettings' },
-  { at: 15, msg: 'splash.loadingProviders' },
-  { at: 35, msg: 'splash.loadingDetection' },
-  { at: 55, msg: 'splash.loadingDownloads' },
-  { at: 75, msg: 'splash.loadingTray' },
-  { at: 90, msg: 'splash.finalizing' },
-];
 
 export function useAppInit() {
   const [state, setState] = useState<AppInitState>(() => {
-    // Non-Tauri (web browser) mode: skip initialization check
     if (!isTauri()) {
       return {
         phase: 'web-mode',
@@ -42,8 +36,7 @@ export function useAppInit() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTimeRef = useRef<number>(0);
+  const unlistenRef = useRef<(() => void) | null>(null);
 
   const cleanup = useCallback(() => {
     if (pollRef.current) {
@@ -54,63 +47,50 @@ export function useAppInit() {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    if (progressRef.current) {
-      clearInterval(progressRef.current);
-      progressRef.current = null;
-    }
+    unlistenRef.current?.();
+    unlistenRef.current = null;
   }, []);
 
   useEffect(() => {
-    // Non-Tauri (web browser) mode: already handled in state initializer
     if (!isTauri()) {
       return;
     }
 
-    startTimeRef.current = Date.now();
-
-    // Simulated progress animation based on elapsed time
-    progressRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTimeRef.current;
-      const fraction = Math.min(elapsed / INIT_TIMEOUT_MS, 0.95);
-      const simProgress = Math.floor(fraction * 95);
-
-      const step = [...SIMULATED_PROGRESS_STEPS]
-        .reverse()
-        .find((s) => simProgress >= s.at);
-
+    // Listen for real init progress events from backend
+    listenInitProgress((event) => {
+      const { phase, progress, message } = event;
       setState((prev) => {
         if (prev.phase === 'ready') return prev;
         return {
           ...prev,
-          phase: 'initializing',
-          progress: Math.max(prev.progress, simProgress),
-          message: step?.msg ?? prev.message,
+          phase: phase as InitPhase,
+          progress: Math.max(prev.progress, progress),
+          message,
         };
       });
-    }, 100);
+    }).then((fn) => {
+      unlistenRef.current = fn;
+    });
 
-    // Poll the backend for initialization status
+    // Poll as fallback (events may be emitted before webview is ready)
     const checkInit = async () => {
       try {
         const status = await appCheckInit();
         if (status.initialized) {
           cleanup();
-          setState({
+          setState((prev) => ({
             phase: 'ready',
             version: status.version,
             progress: 100,
-            message: 'splash.ready',
-          });
+            message: prev.message === 'splash.starting' ? 'splash.ready' : prev.message,
+          }));
         }
       } catch {
         // Backend not ready yet, keep polling
       }
     };
 
-    // Initial check
     checkInit();
-
-    // Poll at intervals
     pollRef.current = setInterval(checkInit, POLL_INTERVAL_MS);
 
     // Timeout fallback: proceed anyway after INIT_TIMEOUT_MS

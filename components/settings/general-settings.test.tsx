@@ -21,6 +21,8 @@ const mockT = (key: string) => {
     "settings.resolvePreferLocked": "Prefer Locked",
     "settings.autoUpdateMetadata": "Auto Update Metadata",
     "settings.autoUpdateMetadataDesc": "Automatically refresh metadata",
+    "settings.updateCheckConcurrency": "Update Check Concurrency",
+    "settings.updateCheckConcurrencyDesc": "Maximum number of concurrent update checks (1-32)",
   };
   return translations[key] || key;
 };
@@ -234,5 +236,48 @@ describe("GeneralSettings", () => {
       "general.cache_monitor_external",
       "true",
     );
+  });
+
+  it("should render update check concurrency setting", () => {
+    render(<GeneralSettings {...defaultProps} />);
+
+    expect(screen.getByText("Update Check Concurrency")).toBeInTheDocument();
+    expect(
+      screen.getByText("Maximum number of concurrent update checks (1-32)"),
+    ).toBeInTheDocument();
+  });
+
+  it("should use default value for update check concurrency when config is empty", () => {
+    render(<GeneralSettings {...defaultProps} localConfig={{}} />);
+
+    const inputs = screen.getAllByRole("spinbutton");
+    // update_check_concurrency is the last number input, default = 8
+    const lastInput = inputs[inputs.length - 1];
+    expect(lastInput).toHaveValue(8);
+  });
+
+  it("should call onValueChange when update check concurrency is changed", () => {
+    const onValueChange = jest.fn();
+    render(<GeneralSettings {...defaultProps} onValueChange={onValueChange} />);
+
+    const inputs = screen.getAllByRole("spinbutton");
+    const lastInput = inputs[inputs.length - 1];
+    fireEvent.change(lastInput, { target: { value: "16" } });
+
+    expect(onValueChange).toHaveBeenCalledWith(
+      "general.update_check_concurrency",
+      "16",
+    );
+  });
+
+  it("should display validation error for update check concurrency", () => {
+    const errors = {
+      "general.update_check_concurrency": "Value must be between 1 and 32",
+    };
+    render(<GeneralSettings {...defaultProps} errors={errors} />);
+
+    expect(
+      screen.getByText("Value must be between 1 and 32"),
+    ).toBeInTheDocument();
   });
 });

@@ -611,6 +611,26 @@ html:not(.no-transitions) [data-state="closed"] {
   }
 }
 
+/* Onboarding confetti particles */
+.onboarding-confetti-particle {
+  animation: onboarding-confetti-burst 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes onboarding-confetti-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0) translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.2) translateY(-20px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) translateY(10px);
+  }
+}
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .splash-orb,
@@ -756,6 +776,11 @@ html:not(.no-transitions) [data-state="closed"] {
   color: var(--primary);
 }
 
+/* Code block filename header */
+.docs-code-filename {
+  @apply rounded-t-lg border border-b-0 border-border bg-muted/80 px-4 py-1.5 text-xs font-mono text-muted-foreground;
+}
+
 /* Code block language label */
 .docs-code-lang {
   @apply absolute right-10 top-2 text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60 select-none pointer-events-none;
@@ -824,6 +849,33 @@ html:not(.no-transitions) [data-state="closed"] {
 }
 .dark .docs-callout-caution .docs-callout-title {
   @apply text-red-400;
+}
+
+/* Details / Summary (collapsible sections) */
+.docs-details {
+  @apply my-4 rounded-lg border border-border;
+}
+.docs-details[open] {
+  @apply pb-4;
+}
+.docs-summary {
+  @apply cursor-pointer select-none px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors rounded-lg list-none;
+}
+.docs-summary::-webkit-details-marker {
+  display: none;
+}
+.docs-summary::before {
+  content: '▶';
+  @apply mr-2 text-xs text-muted-foreground inline-block transition-transform duration-200;
+}
+.docs-details[open] > .docs-summary::before {
+  transform: rotate(90deg);
+}
+.docs-details[open] > .docs-summary {
+  @apply border-b border-border rounded-b-none mb-0;
+}
+.docs-details > *:not(summary) {
+  @apply px-4;
 }
 
 /* ===== Syntax Highlighting (rehype-highlight) ===== */

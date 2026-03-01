@@ -2,6 +2,7 @@
 
 import { useEffect, ReactNode, useCallback } from "react";
 import { useLogStore, type LogLevel } from "@/lib/stores/log";
+import { CONSOLE_IGNORE_PATTERNS } from "@/lib/constants/log";
 import {
   isTauri,
   listenEnvInstallProgress,
@@ -111,6 +112,9 @@ export function LogProvider({ children }: LogProviderProps) {
             typeof arg === "object" ? JSON.stringify(arg) : String(arg),
           )
           .join(" ");
+
+        // Skip noisy messages from React internals, HMR, etc.
+        if (CONSOLE_IGNORE_PATTERNS.some((p) => p.test(message))) return;
 
         // Add to log store (deferred to avoid setState during render)
         setTimeout(() => {
@@ -296,6 +300,11 @@ export function LogProvider({ children }: LogProviderProps) {
               level,
               message,
               target: "env-install",
+              context: {
+                envType: progress.envType,
+                version: progress.version,
+                step: progress.step,
+              },
             });
           },
         );
@@ -379,6 +388,7 @@ export function LogProvider({ children }: LogProviderProps) {
             level: "info",
             message: t("logs.messages.downloadAdded", { taskId }),
             target: "download",
+            context: { taskId },
           });
         });
         unlistenFns.push(unlistenDlAdded);
@@ -389,6 +399,7 @@ export function LogProvider({ children }: LogProviderProps) {
             level: "info",
             message: t("logs.messages.downloadStarted", { taskId }),
             target: "download",
+            context: { taskId },
           });
         });
         unlistenFns.push(unlistenDlStarted);
@@ -400,6 +411,7 @@ export function LogProvider({ children }: LogProviderProps) {
               level: "info",
               message: t("logs.messages.downloadCompleted", { taskId }),
               target: "download",
+              context: { taskId },
             });
           },
         );
@@ -412,6 +424,7 @@ export function LogProvider({ children }: LogProviderProps) {
               level: "error",
               message: t("logs.messages.downloadFailed", { taskId, error }),
               target: "download",
+              context: { taskId, error: error ?? "" },
             });
           },
         );

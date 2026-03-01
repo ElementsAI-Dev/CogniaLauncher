@@ -15,6 +15,7 @@ import {
   Package,
   Archive,
   Info,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ export const SECTION_ICONS: Record<string, LucideIcon> = {
   Package,
   Archive,
   Info,
+  Zap,
 };
 
 export type SettingsSection =
@@ -44,6 +46,7 @@ export type SettingsSection =
   | 'paths'
   | 'provider'
   | 'backup'
+  | 'startup'
   | 'system';
 
 export type SettingType = 'input' | 'switch' | 'select';
@@ -150,11 +153,18 @@ export const SETTINGS_SECTIONS: SectionDefinition[] = [
     order: 10,
   },
   {
+    id: 'startup',
+    labelKey: 'settings.startup',
+    descKey: 'settings.startupDesc',
+    icon: 'Zap',
+    order: 11,
+  },
+  {
     id: 'system',
     labelKey: 'settings.systemInfo',
     descKey: 'settings.systemInfoDesc',
     icon: 'Info',
-    order: 11,
+    order: 12,
   },
 ];
 
@@ -265,6 +275,15 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     descKey: 'settings.downloadSpeedLimitDesc',
     type: 'input',
     keywords: ['download', 'speed', 'limit', 'bandwidth', 'throttle', '下载', '速度', '限制', '带宽'],
+    advanced: true,
+  },
+  {
+    key: 'general.update_check_concurrency',
+    section: 'general',
+    labelKey: 'settings.updateCheckConcurrency',
+    descKey: 'settings.updateCheckConcurrencyDesc',
+    type: 'input',
+    keywords: ['update', 'check', 'concurrency', 'parallel', 'thread', '更新', '检查', '并发', '线程'],
     advanced: true,
   },
 
@@ -552,6 +571,48 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     type: 'input',
     keywords: ['provider', 'disable', 'package', 'manager', '提供者', '禁用', '包管理器'],
     advanced: true,
+  },
+
+  // Startup Settings
+  {
+    key: 'startup.scan_environments',
+    section: 'startup',
+    labelKey: 'settings.startupScanEnvironments',
+    descKey: 'settings.startupScanEnvironmentsDesc',
+    type: 'switch',
+    keywords: ['startup', 'scan', 'environment', 'launch', 'boot', '启动', '扫描', '环境'],
+  },
+  {
+    key: 'startup.scan_packages',
+    section: 'startup',
+    labelKey: 'settings.startupScanPackages',
+    descKey: 'settings.startupScanPackagesDesc',
+    type: 'switch',
+    keywords: ['startup', 'scan', 'package', 'launch', 'boot', '启动', '扫描', '包'],
+  },
+  {
+    key: 'startup.max_concurrent_scans',
+    section: 'startup',
+    labelKey: 'settings.startupMaxConcurrentScans',
+    descKey: 'settings.startupMaxConcurrentScansDesc',
+    type: 'input',
+    keywords: ['startup', 'concurrent', 'parallel', 'scan', 'performance', '启动', '并发', '扫描'],
+  },
+  {
+    key: 'startup.startup_timeout_secs',
+    section: 'startup',
+    labelKey: 'settings.startupTimeoutSecs',
+    descKey: 'settings.startupTimeoutSecsDesc',
+    type: 'input',
+    keywords: ['startup', 'timeout', 'launch', 'boot', '启动', '超时'],
+  },
+  {
+    key: 'startup.integrity_check',
+    section: 'startup',
+    labelKey: 'settings.startupIntegrityCheck',
+    descKey: 'settings.startupIntegrityCheckDesc',
+    type: 'switch',
+    keywords: ['startup', 'integrity', 'check', 'cache', 'database', '启动', '完整性', '检查'],
   },
 ];
 

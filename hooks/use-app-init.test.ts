@@ -4,10 +4,17 @@ import { useAppInit } from './use-app-init';
 // Mock Tauri APIs
 const mockIsTauri = jest.fn(() => false);
 const mockAppCheckInit = jest.fn();
+const mockListenInitProgress = jest.fn();
+let capturedListener: ((event: { phase: string; progress: number; message: string }) => void) | null = null;
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
   appCheckInit: (...args: unknown[]) => mockAppCheckInit(...args),
+  listenInitProgress: (cb: (event: { phase: string; progress: number; message: string }) => void) => {
+    capturedListener = cb;
+    mockListenInitProgress(cb);
+    return Promise.resolve(jest.fn());
+  },
 }));
 
 describe('useAppInit', () => {
@@ -15,6 +22,7 @@ describe('useAppInit', () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
     mockIsTauri.mockReturnValue(false);
+    capturedListener = null;
   });
 
   afterEach(() => {
@@ -36,6 +44,12 @@ describe('useAppInit', () => {
 
       expect(result.current.version).toBeNull();
     });
+
+    it('should not register event listener in web mode', () => {
+      renderHook(() => useAppInit());
+
+      expect(mockListenInitProgress).not.toHaveBeenCalled();
+    });
   });
 
   describe('desktop mode (Tauri)', () => {
@@ -53,7 +67,15 @@ describe('useAppInit', () => {
       expect(result.current.progress).toBe(0);
     });
 
-    it('should transition to ready when backend is initialized', async () => {
+    it('should register init progress event listener', () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      renderHook(() => useAppInit());
+
+      expect(mockListenInitProgress).toHaveBeenCalledTimes(1);
+    });
+
+    it('should transition to ready when backend is initialized via polling', async () => {
       mockAppCheckInit.mockResolvedValue({ initialized: true, version: '1.0.0' });
 
       const { result } = renderHook(() => useAppInit());
@@ -69,7 +91,100 @@ describe('useAppInit', () => {
       expect(result.current.isReady).toBe(true);
       expect(result.current.progress).toBe(100);
       expect(result.current.version).toBe('1.0.0');
-      expect(result.current.message).toBe('splash.ready');
+    });
+
+    it('should update state when init-progress event is received', async () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      const { result } = renderHook(() => useAppInit());
+
+      // Wait for listener to register
+      await act(async () => {});
+
+      // Simulate backend emitting init-progress events
+      act(() => {
+        capturedListener?.({ phase: 'settings', progress: 10, message: 'splash.loadingSettings' });
+      });
+
+      expect(result.current.phase).toBe('settings');
+      expect(result.current.progress).toBe(10);
+      expect(result.current.message).toBe('splash.loadingSettings');
+
+      act(() => {
+        capturedListener?.({ phase: 'resources', progress: 20, message: 'splash.checkingResources' });
+      });
+
+      expect(result.current.phase).toBe('resources');
+      expect(result.current.progress).toBe(20);
+      expect(result.current.message).toBe('splash.checkingResources');
+    });
+
+    it('should progress through all init phases via events', async () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      const phases = [
+        { phase: 'settings', progress: 10, message: 'splash.loadingSettings' },
+        { phase: 'resources', progress: 20, message: 'splash.checkingResources' },
+        { phase: 'providers', progress: 45, message: 'splash.loadingProviders' },
+        { phase: 'detection', progress: 60, message: 'splash.loadingDetection' },
+        { phase: 'downloads', progress: 70, message: 'splash.loadingDownloads' },
+        { phase: 'terminal', progress: 80, message: 'splash.loadingTerminal' },
+        { phase: 'plugins', progress: 90, message: 'splash.loadingPlugins' },
+        { phase: 'ready', progress: 100, message: 'splash.ready' },
+      ];
+
+      for (const p of phases) {
+        act(() => {
+          capturedListener?.(p);
+        });
+        expect(result.current.phase).toBe(p.phase);
+        expect(result.current.progress).toBe(p.progress);
+      }
+    });
+
+    it('should not regress progress on out-of-order events', async () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      act(() => {
+        capturedListener?.({ phase: 'providers', progress: 45, message: 'splash.loadingProviders' });
+      });
+      expect(result.current.progress).toBe(45);
+
+      // Simulate an earlier event arriving late
+      act(() => {
+        capturedListener?.({ phase: 'settings', progress: 10, message: 'splash.loadingSettings' });
+      });
+
+      // Progress should not go backwards
+      expect(result.current.progress).toBe(45);
+    });
+
+    it('should ignore events after reaching ready phase', async () => {
+      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
+
+      const { result } = renderHook(() => useAppInit());
+
+      await act(async () => {});
+
+      act(() => {
+        capturedListener?.({ phase: 'ready', progress: 100, message: 'splash.ready' });
+      });
+      expect(result.current.phase).toBe('ready');
+
+      // Late event should be ignored
+      act(() => {
+        capturedListener?.({ phase: 'settings', progress: 10, message: 'splash.loadingSettings' });
+      });
+      expect(result.current.phase).toBe('ready');
+      expect(result.current.progress).toBe(100);
     });
 
     it('should poll at intervals until ready', async () => {
@@ -87,35 +202,21 @@ describe('useAppInit', () => {
       // Initial check
       await act(async () => {});
 
-      // First poll interval (200ms)
+      // First poll interval (300ms)
       await act(async () => {
-        jest.advanceTimersByTime(200);
+        jest.advanceTimersByTime(300);
       });
       await act(async () => {});
 
-      // Second poll interval (200ms)
+      // Second poll interval (300ms)
       await act(async () => {
-        jest.advanceTimersByTime(200);
+        jest.advanceTimersByTime(300);
       });
       await act(async () => {});
 
       expect(callCount).toBeGreaterThanOrEqual(3);
       expect(result.current.phase).toBe('ready');
       expect(result.current.version).toBe('2.0.0');
-    });
-
-    it('should show progress messages over time', async () => {
-      mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
-
-      const { result } = renderHook(() => useAppInit());
-
-      // Advance enough for progress to increase
-      await act(async () => {
-        jest.advanceTimersByTime(500);
-      });
-
-      expect(result.current.phase).toBe('initializing');
-      expect(result.current.progress).toBeGreaterThan(0);
     });
 
     it('should timeout and become ready after INIT_TIMEOUT_MS', async () => {
@@ -139,15 +240,15 @@ describe('useAppInit', () => {
       const { result } = renderHook(() => useAppInit());
 
       await act(async () => {
-        jest.advanceTimersByTime(200);
+        jest.advanceTimersByTime(300);
       });
       await act(async () => {});
 
-      // Should not crash, stays in initializing phase
+      // Should not crash, stays in checking phase
       expect(result.current.isReady).toBe(false);
     });
 
-    it('should clean up timers on unmount', async () => {
+    it('should clean up timers and listener on unmount', async () => {
       mockAppCheckInit.mockResolvedValue({ initialized: false, version: null });
 
       const { unmount } = renderHook(() => useAppInit());

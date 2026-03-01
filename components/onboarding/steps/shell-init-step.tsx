@@ -1,22 +1,54 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
-import { Terminal, Copy, CheckCircle2, Info } from 'lucide-react';
+import { Terminal, Copy, CheckCircle2, Info, Wand2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { isWindows as isWindowsOS } from '@/lib/platform';
+import { isTauri } from '@/lib/tauri';
 import { SHELL_OPTIONS } from '@/lib/constants/onboarding';
 import type { ShellInitStepProps, ShellType } from '@/types/onboarding';
 
 export function ShellInitStep({ t }: ShellInitStepProps) {
   const [selectedShell, setSelectedShell] = useState<ShellType>(isWindowsOS() ? 'powershell' : 'bash');
   const [copied, setCopied] = useState(false);
+  const [pathConfigured, setPathConfigured] = useState<boolean | null>(null);
+  const [autoSetupLoading, setAutoSetupLoading] = useState(false);
 
   const currentShell = SHELL_OPTIONS.find((s) => s.value === selectedShell)!;
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { pathCheck } = await import('@/lib/tauri');
+        const result = await pathCheck();
+        if (!cancelled) setPathConfigured(result);
+      } catch {
+        if (!cancelled) setPathConfigured(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAutoSetup = useCallback(async () => {
+    setAutoSetupLoading(true);
+    try {
+      const { pathSetup } = await import('@/lib/tauri');
+      await pathSetup();
+      setPathConfigured(true);
+      toast.success(t('onboarding.shellAutoSetupSuccess'));
+    } catch {
+      toast.error(t('onboarding.shellAutoSetupFailed'));
+    } finally {
+      setAutoSetupLoading(false);
+    }
+  }, [t]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -40,6 +72,33 @@ export function ShellInitStep({ t }: ShellInitStepProps) {
           {t('onboarding.shellDesc')}
         </p>
       </div>
+
+      {/* Auto setup for Tauri mode */}
+      {isTauri() && (
+        <div className="w-full max-w-md">
+          {pathConfigured ? (
+            <Alert className="border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-xs text-green-700 dark:text-green-400">
+                {t('onboarding.shellAlreadyConfigured')}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Button
+              onClick={handleAutoSetup}
+              disabled={autoSetupLoading}
+              className="gap-2 w-full"
+            >
+              {autoSetupLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              {t('onboarding.shellAutoSetup')}
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Shell selector */}
       <ToggleGroup

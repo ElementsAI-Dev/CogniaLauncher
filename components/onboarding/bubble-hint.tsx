@@ -118,7 +118,7 @@ export function BubbleHint({ hint, onDismiss }: BubbleHintProps) {
       {/* Arrow */}
       <div
         className={cn(
-          'absolute h-2.5 w-2.5 border bg-popover',
+          'absolute h-2.5 w-2.5 bg-popover',
           ARROW_CLASS[actualSide] ?? ARROW_CLASS.bottom,
         )}
       />

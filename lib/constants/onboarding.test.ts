@@ -7,7 +7,6 @@ import {
   STEP_ICONS,
   LANGUAGES,
   THEMES,
-  MIRROR_PRESETS,
   SHELL_OPTIONS,
 } from './onboarding';
 
@@ -112,12 +111,16 @@ describe('THEMES', () => {
   });
 });
 
-describe('MIRROR_PRESETS', () => {
-  it('has default, china, custom', () => {
-    const values = MIRROR_PRESETS.map((p) => p.value);
-    expect(values).toContain('default');
-    expect(values).toContain('china');
-    expect(values).toContain('custom');
+describe('TOUR_STEPS expanded', () => {
+  it('includes providers, cache, downloads steps', () => {
+    const ids = TOUR_STEPS.map((s) => s.id);
+    expect(ids).toContain('providers');
+    expect(ids).toContain('cache');
+    expect(ids).toContain('downloads');
+  });
+
+  it('has 9 total tour steps', () => {
+    expect(TOUR_STEPS.length).toBe(9);
   });
 });
 

@@ -14,7 +14,6 @@ import type {
   StepIconMap,
   LanguageOption,
   ThemeOption,
-  MirrorPresetOption,
   ShellOption,
 } from '@/types/onboarding';
 
@@ -27,10 +26,10 @@ export const POPOVER_OFFSET = 12;
 export const TOUR_PADDING = 8;
 
 export const ARROW_CLASS: Record<string, string> = {
-  top: 'left-1/2 -translate-x-1/2 -bottom-[5px] rotate-45',
-  bottom: 'left-1/2 -translate-x-1/2 -top-[5px] rotate-45',
-  left: 'top-1/2 -translate-y-1/2 -right-[5px] rotate-45',
-  right: 'top-1/2 -translate-y-1/2 -left-[5px] rotate-45',
+  top: 'left-1/2 -translate-x-1/2 -bottom-[5px] rotate-45 border-b border-r',
+  bottom: 'left-1/2 -translate-x-1/2 -top-[5px] rotate-45 border-t border-l',
+  left: 'top-1/2 -translate-y-1/2 -right-[5px] rotate-45 border-t border-r',
+  right: 'top-1/2 -translate-y-1/2 -left-[5px] rotate-45 border-b border-l',
 };
 
 // ============================================================================
@@ -165,6 +164,27 @@ export const TOUR_STEPS: TourStepDef[] = [
     side: 'right',
   },
   {
+    id: 'providers',
+    target: '[data-tour="nav-providers"]',
+    titleKey: 'onboarding.tourProvidersTitle',
+    descKey: 'onboarding.tourProvidersDesc',
+    side: 'right',
+  },
+  {
+    id: 'cache',
+    target: '[data-tour="nav-cache"]',
+    titleKey: 'onboarding.tourCacheTitle',
+    descKey: 'onboarding.tourCacheDesc',
+    side: 'right',
+  },
+  {
+    id: 'downloads',
+    target: '[data-tour="nav-downloads"]',
+    titleKey: 'onboarding.tourDownloadsTitle',
+    descKey: 'onboarding.tourDownloadsDesc',
+    side: 'right',
+  },
+  {
     id: 'command-palette',
     target: '[data-tour="command-palette-btn"]',
     titleKey: 'onboarding.tourCommandPaletteTitle',
@@ -211,28 +231,6 @@ export const THEMES: ThemeOption[] = [
   { value: 'light', icon: Sun, preview: 'bg-white border-gray-200 text-gray-900' },
   { value: 'dark', icon: Moon, preview: 'bg-gray-900 border-gray-700 text-gray-100' },
   { value: 'system', icon: Monitor, preview: 'bg-gradient-to-r from-white to-gray-900 border-gray-400' },
-];
-
-// ============================================================================
-// Mirror Presets
-// ============================================================================
-
-export const MIRROR_PRESETS: MirrorPresetOption[] = [
-  {
-    value: 'default',
-    labelKey: 'onboarding.mirrorsDefault',
-    descKey: 'onboarding.mirrorsDefaultDesc',
-  },
-  {
-    value: 'china',
-    labelKey: 'onboarding.mirrorsChinaPreset',
-    descKey: 'onboarding.mirrorsChinaPresetDesc',
-  },
-  {
-    value: 'custom',
-    labelKey: 'onboarding.mirrorsCustom',
-    descKey: 'onboarding.mirrorsCustomDesc',
-  },
 ];
 
 // ============================================================================
