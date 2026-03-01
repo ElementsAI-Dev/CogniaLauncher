@@ -123,6 +123,33 @@ jest.mock('react-markdown', () => {
         continue;
       }
 
+      // Details/Summary HTML blocks
+      if (line.trim().startsWith('<details')) {
+        const detailLines: string[] = [];
+        let k = i + 1;
+        while (k < lines.length && !lines[k].trim().startsWith('</details')) {
+          detailLines.push(lines[k]);
+          k++;
+        }
+        const DetailsComp = components.details;
+        const SummaryComp = components.summary;
+        const summaryLine = detailLines.find(l => l.trim().startsWith('<summary'));
+        const summaryText = summaryLine?.replace(/<\/?summary>/g, '').trim() ?? '';
+        const bodyLines = detailLines.filter(l => !l.trim().startsWith('<summary') && !l.trim().startsWith('</summary'));
+        if (DetailsComp) {
+          elements.push(
+            <DetailsComp key={i}>
+              {SummaryComp ? <SummaryComp>{summaryText}</SummaryComp> : <summary>{summaryText}</summary>}
+              <p>{bodyLines.join('\n').trim()}</p>
+            </DetailsComp>
+          );
+        } else {
+          elements.push(<details key={i}><summary>{summaryText}</summary><p>{bodyLines.join('\n').trim()}</p></details>);
+        }
+        i = k;
+        continue;
+      }
+
       // Paragraphs
       if (line.trim()) {
         elements.push(<p key={i}>{line}</p>);
@@ -136,6 +163,7 @@ jest.mock('react-markdown', () => {
 });
 
 jest.mock('remark-gfm', () => ({ __esModule: true, default: () => {} }));
+jest.mock('rehype-raw', () => ({ __esModule: true, default: () => {} }));
 jest.mock('rehype-highlight', () => ({ __esModule: true, default: () => {} }));
 jest.mock('rehype-slug', () => ({ __esModule: true, default: () => {} }));
 
@@ -286,6 +314,27 @@ describe('MarkdownRenderer', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Copied')).toBeInTheDocument();
     });
+  });
+
+  it('renders details with docs-details class', () => {
+    const content = '<details>\n<summary>Click me</summary>\nHidden content here\n</details>';
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const details = container.querySelector('.docs-details');
+    expect(details).toBeInTheDocument();
+  });
+
+  it('renders summary with docs-summary class', () => {
+    const content = '<details>\n<summary>Click me</summary>\nHidden content here\n</details>';
+    const { container } = render(<MarkdownRenderer content={content} />);
+    const summary = container.querySelector('.docs-summary');
+    expect(summary).toBeInTheDocument();
+    expect(summary?.textContent).toBe('Click me');
+  });
+
+  it('renders details body content', () => {
+    const content = '<details>\n<summary>Toggle</summary>\nBody text\n</details>';
+    render(<MarkdownRenderer content={content} />);
+    expect(screen.getByText('Body text')).toBeInTheDocument();
   });
 
   it('handles anchor click by scrolling to element', () => {

@@ -98,4 +98,34 @@ describe('DocsNavFooter', () => {
     render(<DocsNavFooter prev={{ title: '首页', slug: 'index' }} />);
     expect(screen.getByText('首页')).toBeInTheDocument();
   });
+
+  it('applies truncate class to prev/next titles', () => {
+    render(
+      <DocsNavFooter
+        prev={{ title: '首页', titleEn: 'Home', slug: 'index' }}
+        next={{ title: '安装', titleEn: 'Installation', slug: 'getting-started/installation' }}
+      />
+    );
+    const homeEl = screen.getByText('Home');
+    expect(homeEl.className).toContain('truncate');
+    const installEl = screen.getByText('Installation');
+    expect(installEl.className).toContain('truncate');
+  });
+
+  it('renders title attribute for tooltip on long names', () => {
+    render(<DocsNavFooter prev={{ title: '首页', titleEn: 'Home', slug: 'index' }} />);
+    const el = screen.getByText('Home');
+    expect(el).toHaveAttribute('title', 'Home');
+  });
+
+  it('uses responsive flex layout for prev/next container', () => {
+    const { container } = render(
+      <DocsNavFooter
+        prev={{ title: '首页', titleEn: 'Home', slug: 'index' }}
+        next={{ title: '安装', titleEn: 'Installation', slug: 'getting-started/installation' }}
+      />
+    );
+    const navContainer = container.querySelector('.flex.flex-col');
+    expect(navContainer).toBeInTheDocument();
+  });
 });

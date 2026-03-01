@@ -3,7 +3,9 @@ import { DocsSidebar } from './docs-sidebar';
 
 // Mock DocsSearch to avoid useRouter dependency in sidebar tests
 jest.mock('./docs-search', () => ({
-  DocsSearch: () => <div data-testid="docs-search" />,
+  DocsSearch: ({ searchIndex }: { searchIndex?: unknown[] }) => (
+    <div data-testid="docs-search" data-has-index={!!searchIndex} />
+  ),
 }));
 
 // Control usePathname return value per test
@@ -80,6 +82,7 @@ describe('DocsSidebar', () => {
   beforeEach(() => {
     mockPathname = '/docs';
     mockLocale = 'en';
+    Element.prototype.scrollIntoView = jest.fn();
   });
 
   it('renders the sidebar with navigation items', () => {
@@ -165,6 +168,35 @@ describe('DocsSidebar', () => {
     const { container } = render(<DocsSidebar className="custom-class" />);
     const aside = container.querySelector('aside');
     expect(aside?.className).toContain('custom-class');
+  });
+
+  it('applies sticky and flex layout classes to aside', () => {
+    const { container } = render(<DocsSidebar />);
+    const aside = container.querySelector('aside');
+    expect(aside?.className).toContain('sticky');
+    expect(aside?.className).toContain('flex');
+    expect(aside?.className).toContain('h-screen');
+  });
+
+  it('passes searchIndex to DocsSearch', () => {
+    const index = [{ slug: 'test', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
+    render(<DocsSidebar searchIndex={index} />);
+    const search = screen.getByTestId('docs-search');
+    expect(search).toHaveAttribute('data-has-index', 'true');
+  });
+
+  it('renders DocsSearch without searchIndex by default', () => {
+    render(<DocsSidebar />);
+    const search = screen.getByTestId('docs-search');
+    expect(search).toHaveAttribute('data-has-index', 'false');
+  });
+
+  it('calls scrollIntoView on active nav item', () => {
+    const scrollIntoViewMock = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    mockPathname = '/docs/getting-started/installation';
+    render(<DocsSidebar />);
+    expect(scrollIntoViewMock).toHaveBeenCalled();
   });
 
   it('does not render link for item without slug and no children', () => {

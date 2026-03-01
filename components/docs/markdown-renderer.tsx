@@ -6,6 +6,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSlug from 'rehype-slug';
+import rehypeRaw from 'rehype-raw';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -88,18 +89,19 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
     <div className={cn('docs-prose', className)}>
       <Markdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight, rehypeSlug]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight, rehypeSlug]}
         components={{
           ...headingComponents,
           pre: ({ children, ...props }: ComponentPropsWithoutRef<'pre'>) => {
             let textContent = '';
             let language = '';
+            let filename = '';
             if (
               children &&
               typeof children === 'object' &&
               'props' in (children as React.ReactElement)
             ) {
-              const codeEl = children as React.ReactElement<{ children?: React.ReactNode; className?: string }>;
+              const codeEl = children as React.ReactElement<{ children?: React.ReactNode; className?: string; 'data-meta'?: string }>;
               if (typeof codeEl.props.children === 'string') {
                 textContent = codeEl.props.children;
               }
@@ -108,13 +110,24 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
               if (langMatch) {
                 language = langMatch[1];
               }
+              const meta = codeEl.props['data-meta'] ?? '';
+              const titleMatch = meta.match(/title=["']([^"']+)["']/);
+              if (titleMatch) {
+                filename = titleMatch[1];
+              }
             }
             return (
               <div className="group/code relative">
-                {language && (
+                {filename && (
+                  <div className="docs-code-filename">{filename}</div>
+                )}
+                {language && !filename && (
                   <span className="docs-code-lang">{language}</span>
                 )}
-                <pre {...props}>{children}</pre>
+                {language && filename && (
+                  <span className="docs-code-lang">{language}</span>
+                )}
+                <pre {...props} className={cn(props.className, filename && 'rounded-t-none border-t-0')}>{children}</pre>
                 {textContent && <CopyButton text={textContent} />}
               </div>
             );
@@ -197,6 +210,12 @@ export function MarkdownRenderer({ content, className, basePath }: MarkdownRende
           img: ({ alt, ...props }: ComponentPropsWithoutRef<'img'>) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img alt={alt || ''} className="docs-img" {...props} />
+          ),
+          details: ({ children, ...props }: ComponentPropsWithoutRef<'details'>) => (
+            <details className="docs-details" {...props}>{children}</details>
+          ),
+          summary: ({ children, ...props }: ComponentPropsWithoutRef<'summary'>) => (
+            <summary className="docs-summary" {...props}>{children}</summary>
           ),
         }}
       >

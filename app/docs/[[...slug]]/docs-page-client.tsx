@@ -11,20 +11,23 @@ import {
   DocsNavFooter,
   DocsBreadcrumb,
   DocsScrollProgress,
+  DocsHomeCards,
 } from '@/components/docs';
 import { getDocTitle, getAdjacentDocs, arrayToSlug } from '@/lib/docs/navigation';
 import { estimateReadingTime } from '@/lib/docs/reading-time';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Clock } from 'lucide-react';
+import type { DocSearchEntry } from '@/lib/docs/content';
 
 interface DocsPageClientProps {
   contentZh: string | null;
   contentEn: string | null;
   slug?: string[];
   basePath?: string;
+  searchIndex?: DocSearchEntry[];
 }
 
-export function DocsPageClient({ contentZh, contentEn, slug, basePath }: DocsPageClientProps) {
+export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchIndex }: DocsPageClientProps) {
   const { t, locale } = useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentSlug = arrayToSlug(slug);
@@ -40,7 +43,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath }: DocsPag
 
   return (
     <div className="flex h-full">
-      <DocsSidebar className="border-r border-border pl-4 pt-2 hidden md:block" />
+      <DocsSidebar className="border-r border-border pl-4 pt-2 hidden lg:block" searchIndex={searchIndex} />
       <div className="flex-1 flex flex-col min-w-0" ref={scrollRef}>
         <DocsScrollProgress containerRef={scrollRef} />
         <ScrollArea className="flex-1">
@@ -63,6 +66,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath }: DocsPag
             <div className="mt-6">
               <MarkdownRenderer content={content} basePath={basePath} />
             </div>
+            {currentSlug === 'index' && <DocsHomeCards />}
             <DocsNavFooter prev={prev} next={next} slug={currentSlug} />
           </main>
         </ScrollArea>

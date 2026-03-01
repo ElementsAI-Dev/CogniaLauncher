@@ -46,14 +46,14 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
         </div>
       )}
       {(prev || next) && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {prev ? (
-            <Button variant="outline" asChild className="gap-2">
+            <Button variant="outline" asChild className="gap-2 max-w-full sm:max-w-[48%] justify-start">
               <Link href={getHref(prev.slug)}>
-                <ChevronLeft className="h-4 w-4" />
-                <div className="text-left">
+                <ChevronLeft className="h-4 w-4 shrink-0" />
+                <div className="text-left min-w-0">
                   <div className="text-xs text-muted-foreground">{t('docs.previousPage')}</div>
-                  <div className="text-sm">{getTitle(prev)}</div>
+                  <div className="text-sm truncate" title={getTitle(prev)}>{getTitle(prev)}</div>
                 </div>
               </Link>
             </Button>
@@ -61,13 +61,13 @@ export function DocsNavFooter({ prev, next, slug }: DocsNavFooterProps) {
             <div />
           )}
           {next ? (
-            <Button variant="outline" asChild className="gap-2">
+            <Button variant="outline" asChild className="gap-2 max-w-full sm:max-w-[48%] justify-end sm:ml-auto">
               <Link href={getHref(next.slug)}>
-                <div className="text-right">
+                <div className="text-right min-w-0">
                   <div className="text-xs text-muted-foreground">{t('docs.nextPage')}</div>
-                  <div className="text-sm">{getTitle(next)}</div>
+                  <div className="text-sm truncate" title={getTitle(next)}>{getTitle(next)}</div>
                 </div>
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-4 w-4 shrink-0" />
               </Link>
             </Button>
           ) : (

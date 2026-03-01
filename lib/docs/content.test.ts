@@ -1,4 +1,4 @@
-import { resolveDocPath, getDocContent, getDocContentBilingual, getAllDocSlugs, getDocBasePath } from './content';
+import { resolveDocPath, getDocContent, getDocContentBilingual, getAllDocSlugs, getDocBasePath, buildSearchIndex } from './content';
 import path from 'path';
 
 // Use real filesystem — these tests run against the actual docs/ directory
@@ -157,5 +157,67 @@ describe('getDocBasePath', () => {
 
   it('returns undefined for non-existent file at root level', () => {
     expect(getDocBasePath(['nonexistent'])).toBeUndefined();
+  });
+});
+
+describe('buildSearchIndex', () => {
+  it('returns an array of DocSearchEntry objects', () => {
+    const index = buildSearchIndex();
+    expect(Array.isArray(index)).toBe(true);
+    expect(index.length).toBeGreaterThan(0);
+  });
+
+  it('includes root index entry with slug "index"', () => {
+    const index = buildSearchIndex();
+    const rootEntry = index.find((e) => e.slug === 'index');
+    expect(rootEntry).toBeDefined();
+  });
+
+  it('entries have headings arrays for both locales', () => {
+    const index = buildSearchIndex();
+    const entry = index.find((e) => e.slug === 'index');
+    expect(entry).toBeDefined();
+    expect(Array.isArray(entry!.headingsZh)).toBe(true);
+    expect(Array.isArray(entry!.headingsEn)).toBe(true);
+    expect(entry!.headingsZh.length).toBeGreaterThan(0);
+    expect(entry!.headingsEn.length).toBeGreaterThan(0);
+  });
+
+  it('entries have excerpt strings for both locales', () => {
+    const index = buildSearchIndex();
+    const entry = index.find((e) => e.slug === 'index');
+    expect(entry).toBeDefined();
+    expect(typeof entry!.excerptZh).toBe('string');
+    expect(typeof entry!.excerptEn).toBe('string');
+    expect(entry!.excerptZh.length).toBeGreaterThan(0);
+    expect(entry!.excerptEn.length).toBeGreaterThan(0);
+  });
+
+  it('excerpt length is capped around 200 characters', () => {
+    const index = buildSearchIndex();
+    for (const entry of index) {
+      if (entry.excerptZh) {
+        expect(entry.excerptZh.length).toBeLessThanOrEqual(210);
+      }
+      if (entry.excerptEn) {
+        expect(entry.excerptEn.length).toBeLessThanOrEqual(210);
+      }
+    }
+  });
+
+  it('headings do not include markdown formatting', () => {
+    const index = buildSearchIndex();
+    for (const entry of index) {
+      for (const h of [...entry.headingsZh, ...entry.headingsEn]) {
+        expect(h).not.toMatch(/^\*\*/);
+        expect(h).not.toMatch(/^`/);
+      }
+    }
+  });
+
+  it('covers all doc slugs', () => {
+    const slugs = getAllDocSlugs();
+    const index = buildSearchIndex();
+    expect(index.length).toBe(slugs.length);
   });
 });

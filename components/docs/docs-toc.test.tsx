@@ -55,6 +55,7 @@ beforeEach(() => {
   mockActiveId = '';
   mockScrollToId.mockClear();
   mockExtractHeadings.mockReturnValue(defaultHeadings);
+  Element.prototype.scrollIntoView = jest.fn();
 });
 
 describe('DocsToc', () => {
@@ -86,16 +87,23 @@ describe('DocsToc', () => {
     expect(introLink).toHaveAttribute('href', '#introduction');
   });
 
-  it('applies pl-3 class for h3 headings (indented)', () => {
+  it('applies pl-4 class for h3 headings (indented)', () => {
     render(<DocsToc content={contentWithHeadings} mode="desktop" />);
     const gsLink = screen.getByText('Getting Started').closest('a');
-    expect(gsLink?.className).toContain('pl-3');
+    expect(gsLink?.className).toContain('pl-4');
   });
 
-  it('does not apply pl-3 class for h2 headings', () => {
+  it('applies pl-3 class for h2 headings', () => {
     render(<DocsToc content={contentWithHeadings} mode="desktop" />);
     const introLink = screen.getByText('Introduction').closest('a');
-    expect(introLink?.className).not.toContain('pl-3');
+    expect(introLink?.className).toContain('pl-3');
+    expect(introLink?.className).not.toContain('pl-4');
+  });
+
+  it('applies border-l-2 to all TOC items', () => {
+    render(<DocsToc content={contentWithHeadings} mode="desktop" />);
+    const introLink = screen.getByText('Introduction').closest('a');
+    expect(introLink?.className).toContain('border-l-2');
   });
 
   it('renders only desktop TOC when mode=desktop', () => {
@@ -136,17 +144,27 @@ describe('DocsToc', () => {
     expect(mockScrollToId).toHaveBeenCalledWith('introduction');
   });
 
-  it('applies active style when activeId matches heading', () => {
+  it('applies active style with border-primary when activeId matches heading', () => {
     mockActiveId = 'introduction';
     render(<DocsToc content={contentWithHeadings} mode="desktop" />);
     const link = screen.getByText('Introduction').closest('a');
     expect(link?.className).toContain('text-primary');
+    expect(link?.className).toContain('border-primary');
   });
 
-  it('applies inactive style when activeId does not match', () => {
+  it('applies inactive style with border-transparent when activeId does not match', () => {
     mockActiveId = 'introduction';
     render(<DocsToc content={contentWithHeadings} mode="desktop" />);
     const link = screen.getByText('API Reference').closest('a');
     expect(link?.className).toContain('text-muted-foreground');
+    expect(link?.className).toContain('border-transparent');
+  });
+
+  it('calls scrollIntoView on the active TOC item', () => {
+    const scrollIntoViewMock = jest.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    mockActiveId = 'api-reference';
+    render(<DocsToc content={contentWithHeadings} mode="desktop" />);
+    expect(scrollIntoViewMock).toHaveBeenCalled();
   });
 });

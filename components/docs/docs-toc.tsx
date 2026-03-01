@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Collapsible,
@@ -29,27 +29,39 @@ function TocNav({
   activeId: string;
   onItemClick: (id: string) => void;
 }) {
+  const activeRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    if (activeRef.current) {
+      activeRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeId]);
+
   return (
-    <nav className="space-y-1">
-      {headings.map((heading) => (
-        <a
-          key={heading.id}
-          href={`#${heading.id}`}
-          className={cn(
-            'block text-xs leading-relaxed transition-colors hover:text-foreground',
-            heading.level === 3 && 'pl-3',
-            activeId === heading.id
-              ? 'text-primary font-medium'
-              : 'text-muted-foreground'
-          )}
-          onClick={(e) => {
-            e.preventDefault();
-            onItemClick(heading.id);
-          }}
-        >
-          {heading.text}
-        </a>
-      ))}
+    <nav className="space-y-0.5 relative">
+      {headings.map((heading) => {
+        const isActive = activeId === heading.id;
+        return (
+          <a
+            key={heading.id}
+            ref={isActive ? activeRef : undefined}
+            href={`#${heading.id}`}
+            className={cn(
+              'block text-xs leading-relaxed transition-colors hover:text-foreground border-l-2 py-0.5',
+              heading.level === 3 ? 'pl-4' : 'pl-3',
+              isActive
+                ? 'border-primary text-primary font-medium'
+                : 'border-transparent text-muted-foreground'
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              onItemClick(heading.id);
+            }}
+          >
+            {heading.text}
+          </a>
+        );
+      })}
     </nav>
   );
 }

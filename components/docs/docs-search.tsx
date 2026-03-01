@@ -6,15 +6,17 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useLocale } from '@/components/providers/locale-provider';
 import { searchDocs, type DocSearchResult } from '@/lib/docs/search';
+import type { DocSearchEntry } from '@/lib/docs/content';
 import { slugToArray } from '@/lib/docs/navigation';
 import { cn } from '@/lib/utils';
 import { Search, FileText } from 'lucide-react';
 
 interface DocsSearchProps {
   className?: string;
+  searchIndex?: DocSearchEntry[];
 }
 
-export function DocsSearch({ className }: DocsSearchProps) {
+export function DocsSearch({ className, searchIndex }: DocsSearchProps) {
   const { t, locale } = useLocale();
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -23,7 +25,7 @@ export function DocsSearch({ className }: DocsSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const results = useMemo(() => searchDocs(query, locale), [query, locale]);
+  const results = useMemo(() => searchDocs(query, locale, searchIndex), [query, locale, searchIndex]);
 
   // Close on outside click
   useEffect(() => {
@@ -34,6 +36,21 @@ export function DocsSearch({ className }: DocsSearchProps) {
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Global keyboard shortcut: "/" or Ctrl/Cmd+K to focus search
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && !isInput)) {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    }
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
   const navigateToResult = useCallback((result: DocSearchResult) => {
@@ -86,8 +103,11 @@ export function DocsSearch({ className }: DocsSearchProps) {
           }}
           onFocus={() => query.length > 0 && setOpen(true)}
           onKeyDown={handleKeyDown}
-          className="pl-8 h-8 text-sm"
+          className="pl-8 pr-10 h-8 text-sm"
         />
+        <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex h-5 items-center rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+          /
+        </kbd>
       </div>
 
       {open && query.length > 0 && (
@@ -103,7 +123,7 @@ export function DocsSearch({ className }: DocsSearchProps) {
                   <button
                     key={result.slug}
                     className={cn(
-                      'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-left transition-colors',
+                      'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-sm text-left transition-colors',
                       i === selectedIndex
                         ? 'bg-accent text-accent-foreground'
                         : 'text-foreground hover:bg-accent/50'
@@ -111,9 +131,14 @@ export function DocsSearch({ className }: DocsSearchProps) {
                     onClick={() => navigateToResult(result)}
                     onMouseEnter={() => setSelectedIndex(i)}
                   >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{getTitle(result)}</span>
-                    <span className="ml-auto text-xs text-muted-foreground truncate max-w-[120px]">
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{getTitle(result)}</div>
+                      {result.snippet !== getTitle(result) && (
+                        <div className="truncate text-xs text-muted-foreground">{result.snippet}</div>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground truncate max-w-[100px] shrink-0 mt-0.5">
                       {result.slug}
                     </span>
                   </button>

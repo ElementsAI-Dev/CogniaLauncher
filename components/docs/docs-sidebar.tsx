@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -23,22 +23,34 @@ import { ChevronRight, Menu } from 'lucide-react';
 import { DOC_NAV, slugToArray, type DocNavItem } from '@/lib/docs/navigation';
 import { DocsSearch } from './docs-search';
 
+import type { DocSearchEntry } from '@/lib/docs/content';
+
 interface DocsSidebarProps {
   className?: string;
+  searchIndex?: DocSearchEntry[];
 }
 
 function NavItem({ item, locale }: { item: DocNavItem; locale: string }) {
   const pathname = usePathname();
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  const slugArr = item.slug ? slugToArray(item.slug) : [];
+  const href = item.slug ? (slugArr.length === 0 ? '/docs' : `/docs/${slugArr.join('/')}`) : '';
+  const isActive = !!item.slug && pathname === href;
+  const title = locale === 'en' ? (item.titleEn ?? item.title) : item.title;
+
+  // Auto-scroll active item into view (#5)
+  useEffect(() => {
+    if (isActive && linkRef.current) {
+      linkRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [isActive]);
 
   if (!item.slug) return null;
 
-  const slugArr = slugToArray(item.slug);
-  const href = slugArr.length === 0 ? '/docs' : `/docs/${slugArr.join('/')}`;
-  const isActive = pathname === href;
-  const title = locale === 'en' ? (item.titleEn ?? item.title) : item.title;
-
   return (
     <Link
+      ref={linkRef}
       href={href}
       className={cn(
         'block rounded-md px-3 py-1.5 text-sm transition-colors',
@@ -134,15 +146,15 @@ function useSidebarState() {
   return { t, locale, isSectionActive };
 }
 
-export function DocsSidebar({ className }: DocsSidebarProps) {
+export function DocsSidebar({ className, searchIndex }: DocsSidebarProps) {
   const { locale, isSectionActive } = useSidebarState();
 
   return (
-    <aside className={cn('w-60 shrink-0', className)}>
-      <div className="pr-2 pt-2 pb-1">
-        <DocsSearch />
+    <aside className={cn('w-60 shrink-0 sticky top-0 self-start h-screen flex flex-col', className)}>
+      <div className="pr-2 pt-2 pb-1 shrink-0">
+        <DocsSearch searchIndex={searchIndex} />
       </div>
-      <ScrollArea className="h-[calc(100vh-10rem)]">
+      <ScrollArea className="flex-1 min-h-0">
         <SidebarNav locale={locale} isSectionActive={isSectionActive} />
       </ScrollArea>
     </aside>
@@ -156,7 +168,7 @@ export function DocsMobileSidebar() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="md:hidden gap-2">
+        <Button variant="outline" size="sm" className="lg:hidden gap-2">
           <Menu className="h-4 w-4" />
           {t('docs.mobileMenu')}
         </Button>

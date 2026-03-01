@@ -50,6 +50,65 @@ export function getDocBasePath(slug?: string[], locale: DocLocale = 'zh'): strin
   return dir === '.' ? undefined : dir;
 }
 
+export interface DocSearchEntry {
+  slug: string;
+  headingsZh: string[];
+  headingsEn: string[];
+  excerptZh: string;
+  excerptEn: string;
+}
+
+function extractHeadingsFromMarkdown(content: string): string[] {
+  const headings: string[] = [];
+  const lines = content.split('\n');
+  let inCode = false;
+  for (const line of lines) {
+    if (line.startsWith('```')) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    const match = line.match(/^#{1,4}\s+(.+)$/);
+    if (match) {
+      headings.push(match[1].replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1').trim());
+    }
+  }
+  return headings;
+}
+
+function extractExcerpt(content: string, maxLen = 200): string {
+  const lines = content.split('\n');
+  let inCode = false;
+  const paragraphs: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('```')) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    if (line.startsWith('#') || line.startsWith('|') || line.startsWith('---') || line.startsWith('- ')) continue;
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      paragraphs.push(trimmed);
+      if (paragraphs.join(' ').length >= maxLen) break;
+    }
+  }
+  const text = paragraphs.join(' ');
+  return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
+}
+
+export function buildSearchIndex(): DocSearchEntry[] {
+  const slugs = getAllDocSlugs();
+  const entries: DocSearchEntry[] = [];
+  for (const slugArr of slugs) {
+    const slug = slugArr.length === 0 ? 'index' : slugArr.join('/');
+    const zh = getDocContent(slugArr, 'zh');
+    const en = getDocContent(slugArr, 'en');
+    entries.push({
+      slug,
+      headingsZh: zh ? extractHeadingsFromMarkdown(zh) : [],
+      headingsEn: en ? extractHeadingsFromMarkdown(en) : [],
+      excerptZh: zh ? extractExcerpt(zh) : '',
+      excerptEn: en ? extractExcerpt(en) : '',
+    });
+  }
+  return entries;
+}
+
 export function getAllDocSlugs(): string[][] {
   const slugs: string[][] = [];
   const docsDir = getDocsDir('zh');
