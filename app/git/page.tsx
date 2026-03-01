@@ -510,8 +510,8 @@ export default function GitPage() {
             />
             <GitCommitDialog
               stagedCount={git.statusFiles.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?").length}
-              onCommit={async (message, amend) => {
-                const msg = await git.commit(message, amend);
+              onCommit={async (message, amend, allowEmpty, signoff, noVerify) => {
+                const msg = await git.commit(message, amend, allowEmpty, signoff, noVerify);
                 toast.success(t('git.commit.success'), { description: msg });
                 return msg;
               }}

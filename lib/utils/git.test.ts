@@ -292,8 +292,28 @@ describe('getStatusLabel', () => {
     expect(getStatusLabel('C', ' ')).toBe('Copied');
   });
 
+  it('returns Conflict for UU (both modified)', () => {
+    expect(getStatusLabel('U', 'U')).toBe('Conflict');
+  });
+
+  it('returns Conflict for U in index', () => {
+    expect(getStatusLabel('U', ' ')).toBe('Conflict');
+  });
+
+  it('returns Conflict for U in worktree', () => {
+    expect(getStatusLabel(' ', 'U')).toBe('Conflict');
+  });
+
+  it('returns Conflict for AU (added by us, unmerged)', () => {
+    expect(getStatusLabel('A', 'U')).toBe('Conflict');
+  });
+
+  it('returns Conflict for DU (deleted by us, unmerged)', () => {
+    expect(getStatusLabel('D', 'U')).toBe('Conflict');
+  });
+
   it('returns raw status for unknown combo', () => {
-    expect(getStatusLabel('U', 'U')).toBe('UU');
+    expect(getStatusLabel('X', 'Y')).toBe('XY');
   });
 });
 
@@ -320,6 +340,18 @@ describe('getStatusColor', () => {
 
   it('returns yellow for modified', () => {
     expect(getStatusColor('M', ' ')).toBe('text-yellow-600');
+  });
+
+  it('returns dark red for conflict UU', () => {
+    expect(getStatusColor('U', 'U')).toBe('text-red-700');
+  });
+
+  it('returns dark red for conflict U in index', () => {
+    expect(getStatusColor('U', ' ')).toBe('text-red-700');
+  });
+
+  it('returns dark red for conflict U in worktree', () => {
+    expect(getStatusColor(' ', 'U')).toBe('text-red-700');
   });
 });
 

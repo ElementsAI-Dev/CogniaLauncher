@@ -57,14 +57,14 @@ describe('GitCommitDialog', () => {
     expect(commitButton).not.toBeDisabled();
   });
 
-  it('calls onCommit with message when commit button is clicked', async () => {
+  it('calls onCommit with message and default flags when commit button is clicked', async () => {
     render(<GitCommitDialog stagedCount={3} onCommit={mockOnCommit} />);
     const textarea = screen.getByPlaceholderText('git.commit.messagePlaceholder');
     fireEvent.change(textarea, { target: { value: 'feat: add feature' } });
     const commitButton = screen.getByRole('button', { name: /git\.actions\.commit/i });
     fireEvent.click(commitButton);
     await waitFor(() => {
-      expect(mockOnCommit).toHaveBeenCalledWith('feat: add feature', false);
+      expect(mockOnCommit).toHaveBeenCalledWith('feat: add feature', false, false, false, false);
     });
   });
 
@@ -81,6 +81,44 @@ describe('GitCommitDialog', () => {
   it('renders amend checkbox', () => {
     render(<GitCommitDialog stagedCount={0} onCommit={mockOnCommit} />);
     expect(screen.getByText('git.commit.amend')).toBeInTheDocument();
+  });
+
+  it('renders signoff checkbox', () => {
+    render(<GitCommitDialog stagedCount={0} onCommit={mockOnCommit} />);
+    expect(screen.getByText('git.commit.signoff')).toBeInTheDocument();
+  });
+
+  it('renders noVerify checkbox', () => {
+    render(<GitCommitDialog stagedCount={0} onCommit={mockOnCommit} />);
+    expect(screen.getByText('git.commit.noVerify')).toBeInTheDocument();
+  });
+
+  it('renders allowEmpty checkbox', () => {
+    render(<GitCommitDialog stagedCount={0} onCommit={mockOnCommit} />);
+    expect(screen.getByText('git.commit.allowEmpty')).toBeInTheDocument();
+  });
+
+  it('enables commit button when allowEmpty is checked even with 0 staged files', async () => {
+    render(<GitCommitDialog stagedCount={0} onCommit={mockOnCommit} />);
+    const textarea = screen.getByPlaceholderText('git.commit.messagePlaceholder');
+    fireEvent.change(textarea, { target: { value: 'empty commit' } });
+    // Click allowEmpty checkbox
+    const allowEmptyCheckbox = screen.getByRole('checkbox', { name: /git\.commit\.allowEmpty/i });
+    fireEvent.click(allowEmptyCheckbox);
+    const commitButton = screen.getByRole('button', { name: /git\.actions\.commit/i });
+    expect(commitButton).not.toBeDisabled();
+  });
+
+  it('passes signoff flag when signoff checkbox is checked', async () => {
+    render(<GitCommitDialog stagedCount={3} onCommit={mockOnCommit} />);
+    const textarea = screen.getByPlaceholderText('git.commit.messagePlaceholder');
+    fireEvent.change(textarea, { target: { value: 'signed commit' } });
+    const signoffCheckbox = screen.getByRole('checkbox', { name: /git\.commit\.signoff/i });
+    fireEvent.click(signoffCheckbox);
+    fireEvent.click(screen.getByRole('button', { name: /git\.actions\.commit/i }));
+    await waitFor(() => {
+      expect(mockOnCommit).toHaveBeenCalledWith('signed commit', false, false, true, false);
+    });
   });
 
   it('disables textarea when disabled prop is true', () => {

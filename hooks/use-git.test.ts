@@ -303,7 +303,7 @@ describe('useGit', () => {
     await act(async () => {
       msg = await result.current.commit('feat: add feature', true);
     });
-    expect(tauri.gitCommit).toHaveBeenCalledWith('/repo', 'feat: add feature', true);
+    expect(tauri.gitCommit).toHaveBeenCalledWith('/repo', 'feat: add feature', true, undefined, undefined, undefined);
     expect(msg!).toBe('[main abc1234] my commit');
   });
 
@@ -311,9 +311,9 @@ describe('useGit', () => {
     const { result } = renderHook(() => useGit());
     await act(async () => { await result.current.setRepoPath('/repo'); });
     await act(async () => {
-      await result.current.push('origin', 'main', true);
+      await result.current.push('origin', 'main', undefined, true);
     });
-    expect(tauri.gitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', true);
+    expect(tauri.gitPush).toHaveBeenCalledWith('/repo', 'origin', 'main', undefined, true, undefined);
   });
 
   it('pull calls tauri and refreshes branch/status', async () => {
@@ -322,7 +322,7 @@ describe('useGit', () => {
     await act(async () => {
       await result.current.pull('origin', 'main', true);
     });
-    expect(tauri.gitPull).toHaveBeenCalledWith('/repo', 'origin', 'main', true);
+    expect(tauri.gitPull).toHaveBeenCalledWith('/repo', 'origin', 'main', true, undefined);
     expect(tauri.gitGetBranches).toHaveBeenCalled();
   });
 
@@ -332,7 +332,7 @@ describe('useGit', () => {
     await act(async () => {
       await result.current.fetch('origin');
     });
-    expect(tauri.gitFetch).toHaveBeenCalledWith('/repo', 'origin');
+    expect(tauri.gitFetch).toHaveBeenCalledWith('/repo', 'origin', undefined, undefined);
   });
 
   it('cloneRepo calls tauri with url and path', async () => {

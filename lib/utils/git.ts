@@ -425,6 +425,9 @@ export function pairChangesForSplit(changes: DiffChange[]): SplitLine[] {
  */
 export function getStatusLabel(indexStatus: string, worktreeStatus: string): string {
   if (indexStatus === '?' && worktreeStatus === '?') return 'Untracked';
+  if (indexStatus === 'U' || worktreeStatus === 'U') return 'Conflict';
+  if (indexStatus === 'A' && worktreeStatus === 'U') return 'Conflict';
+  if (indexStatus === 'D' && worktreeStatus === 'U') return 'Conflict';
   if (indexStatus === 'A') return 'Added';
   if (indexStatus === 'D' || worktreeStatus === 'D') return 'Deleted';
   if (indexStatus === 'R') return 'Renamed';
@@ -438,6 +441,7 @@ export function getStatusLabel(indexStatus: string, worktreeStatus: string): str
  */
 export function getStatusColor(indexStatus: string, worktreeStatus: string): string {
   if (indexStatus === '?' && worktreeStatus === '?') return 'text-muted-foreground';
+  if (indexStatus === 'U' || worktreeStatus === 'U') return 'text-red-700';
   if (indexStatus === 'A') return 'text-green-600';
   if (indexStatus === 'D' || worktreeStatus === 'D') return 'text-red-600';
   return 'text-yellow-600';

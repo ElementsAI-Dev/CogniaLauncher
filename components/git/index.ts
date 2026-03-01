@@ -26,3 +26,4 @@ export { GitCloneDialog } from './git-clone-dialog';
 export { GitMergeDialog } from './git-merge-dialog';
 export { GitReflogCard } from './git-reflog-card';
 export { GitRepoActionBar } from './git-repo-action-bar';
+export { GitConflictBanner } from './git-conflict-banner';

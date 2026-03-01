@@ -72,6 +72,60 @@ async fn run_git_in_lenient(path: &str, args: &[&str]) -> CogniaResult<String> {
     run_git_lenient(&full_args).await
 }
 
+/// Run a git command with custom ProcessOptions (e.g. longer timeout)
+async fn run_git_with_opts(args: &[&str], opts: ProcessOptions) -> CogniaResult<String> {
+    let out = process::execute("git", args, Some(opts))
+        .await
+        .map_err(|e| CogniaError::Provider(format!("git: {}", e)))?;
+    if out.success {
+        Ok(out.stdout.trim().to_string())
+    } else {
+        let err = if out.stderr.trim().is_empty() {
+            out.stdout.trim().to_string()
+        } else {
+            out.stderr.trim().to_string()
+        };
+        Err(CogniaError::Provider(format!("git: {}", err)))
+    }
+}
+
+/// Run a git command with -C <path> prefix and longer timeout (300s)
+async fn run_git_in_long(path: &str, args: &[&str]) -> CogniaResult<String> {
+    let mut full_args = vec!["-C", path];
+    full_args.extend_from_slice(args);
+    run_git_with_opts(&full_args, make_install_opts()).await
+}
+
+/// Run a git command with -C <path> prefix and longer timeout (300s), lenient.
+/// Returns stderr as Ok when stdout is empty (useful for push/fetch where progress goes to stderr).
+async fn run_git_in_long_lenient(path: &str, args: &[&str]) -> CogniaResult<String> {
+    let mut full_args = vec!["-C", path];
+    full_args.extend_from_slice(args);
+    let out = process::execute("git", &full_args, Some(make_install_opts()))
+        .await
+        .map_err(|e| CogniaError::Provider(format!("git: {}", e)))?;
+    if out.success {
+        let stdout = out.stdout.trim().to_string();
+        if stdout.is_empty() {
+            let stderr = out.stderr.trim().to_string();
+            Ok(if stderr.is_empty() {
+                String::new()
+            } else {
+                stderr
+            })
+        } else {
+            Ok(stdout)
+        }
+    } else {
+        let err = if out.stderr.trim().is_empty() {
+            out.stdout.trim().to_string()
+        } else {
+            out.stderr.trim().to_string()
+        };
+        Err(CogniaError::Provider(format!("git: {}", err)))
+    }
+}
+
 // ============================================================================
 // Data structures for repo inspection
 // ============================================================================
@@ -234,6 +288,87 @@ pub struct GitReflogEntry {
     pub action: String,
     pub message: String,
     pub date: String,
+}
+
+// ============================================================================
+// Submodule, Worktree, Hook, LFS, Merge/Rebase state types
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitSubmoduleInfo {
+    pub path: String,
+    pub hash: String,
+    pub status: String,
+    pub describe: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktreeInfo {
+    pub path: String,
+    pub head: String,
+    pub branch: Option<String>,
+    pub is_bare: bool,
+    pub is_detached: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHookInfo {
+    pub name: String,
+    pub enabled: bool,
+    pub has_content: bool,
+    pub file_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLfsFile {
+    pub oid: String,
+    pub name: String,
+    pub pointer_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitMergeRebaseState {
+    pub state: String,
+    pub onto: Option<String>,
+    pub progress: Option<u32>,
+    pub total: Option<u32>,
+}
+
+// ============================================================================
+// New data structures for advanced features
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRepoStats {
+    pub size_on_disk: String,
+    pub object_count: u64,
+    pub pack_count: u32,
+    pub loose_objects: u32,
+    pub commit_count: u64,
+    pub is_shallow: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBisectState {
+    pub active: bool,
+    pub current_hash: Option<String>,
+    pub steps_taken: u32,
+    pub remaining_estimate: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRebaseTodoItem {
+    pub action: String,
+    pub hash: String,
+    pub message: String,
 }
 
 // ============================================================================
@@ -748,6 +883,143 @@ pub fn parse_reflog(output: &str) -> Vec<GitReflogEntry> {
                 action,
                 message: subject.to_string(),
                 date: fields[3].to_string(),
+            })
+        })
+        .collect()
+}
+
+// ============================================================================
+// Submodule, Worktree, LFS parsing helpers
+// ============================================================================
+
+/// Parse `git submodule status --recursive` output
+/// Format: `[+-U ]<sha1> <path> (<describe>)` or `[+-U ]<sha1> <path>`
+pub fn parse_submodule_status(output: &str) -> Vec<GitSubmoduleInfo> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            // First char is status indicator: ' '=initialized, '-'=uninitialized, '+'=modified, 'U'=conflict
+            let status_char = line.chars().next().unwrap_or(' ');
+            let status = match status_char {
+                '-' => "uninitialized",
+                '+' => "modified",
+                'U' => "conflict",
+                _ => "initialized",
+            }
+            .to_string();
+
+            let rest = if matches!(status_char, '-' | '+' | 'U') {
+                &line[1..]
+            } else {
+                line
+            };
+            let parts: Vec<&str> = rest.trim().splitn(3, ' ').collect();
+            if parts.len() < 2 {
+                return None;
+            }
+            let hash = parts[0].to_string();
+            let path = parts[1].to_string();
+            let describe = parts
+                .get(2)
+                .unwrap_or(&"")
+                .trim_start_matches('(')
+                .trim_end_matches(')')
+                .to_string();
+            Some(GitSubmoduleInfo {
+                path,
+                hash,
+                status,
+                describe,
+            })
+        })
+        .collect()
+}
+
+/// Parse `git worktree list --porcelain` output
+/// Format: blocks separated by blank lines, each block:
+///   worktree <path>
+///   HEAD <sha>
+///   branch refs/heads/<name>  (or "detached")
+///   bare (optional)
+pub fn parse_worktree_list(output: &str) -> Vec<GitWorktreeInfo> {
+    let mut worktrees = Vec::new();
+    let mut current_path = String::new();
+    let mut current_head = String::new();
+    let mut current_branch: Option<String> = None;
+    let mut is_bare = false;
+    let mut is_detached = false;
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            if !current_path.is_empty() {
+                worktrees.push(GitWorktreeInfo {
+                    path: current_path.clone(),
+                    head: current_head.clone(),
+                    branch: current_branch.take(),
+                    is_bare,
+                    is_detached,
+                });
+                current_path.clear();
+                current_head.clear();
+                is_bare = false;
+                is_detached = false;
+            }
+            continue;
+        }
+        if let Some(p) = line.strip_prefix("worktree ") {
+            current_path = p.to_string();
+        } else if let Some(h) = line.strip_prefix("HEAD ") {
+            current_head = h.to_string();
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            // Strip "refs/heads/" prefix for display
+            current_branch = Some(
+                b.strip_prefix("refs/heads/")
+                    .unwrap_or(b)
+                    .to_string(),
+            );
+        } else if line == "bare" {
+            is_bare = true;
+        } else if line == "detached" {
+            is_detached = true;
+        }
+    }
+    // Handle last entry (no trailing blank line)
+    if !current_path.is_empty() {
+        worktrees.push(GitWorktreeInfo {
+            path: current_path,
+            head: current_head,
+            branch: current_branch,
+            is_bare,
+            is_detached,
+        });
+    }
+    worktrees
+}
+
+/// Parse `git lfs ls-files --long` output
+/// Format: `<oid> <status> <name>`  where status is '*' (pointer) or '-' (full)
+pub fn parse_lfs_ls_files(output: &str) -> Vec<GitLfsFile> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            // Format: "<oid_prefix> <*|-> <filename>"
+            let parts: Vec<&str> = line.splitn(3, ' ').collect();
+            if parts.len() < 3 {
+                return None;
+            }
+            Some(GitLfsFile {
+                oid: parts[0].to_string(),
+                pointer_status: parts[1].to_string(),
+                name: parts[2].to_string(),
             })
         })
         .collect()
@@ -1840,10 +2112,22 @@ impl GitProvider {
         path: &str,
         message: &str,
         amend: bool,
+        allow_empty: bool,
+        signoff: bool,
+        no_verify: bool,
     ) -> CogniaResult<String> {
         let mut args = vec!["commit", "-m", message];
         if amend {
             args.push("--amend");
+        }
+        if allow_empty {
+            args.push("--allow-empty");
+        }
+        if signoff {
+            args.push("--signoff");
+        }
+        if no_verify {
+            args.push("--no-verify");
         }
         run_git_in(path, &args).await
     }
@@ -1854,36 +2138,31 @@ impl GitProvider {
         path: &str,
         remote: Option<&str>,
         branch: Option<&str>,
+        force: bool,
         force_lease: bool,
+        set_upstream: bool,
     ) -> CogniaResult<String> {
-        let mut full_args = vec!["-C", path, "push"];
-        if force_lease {
-            full_args.push("--force-with-lease");
+        let mut args = vec!["push"];
+        if force {
+            args.push("--force");
+        } else if force_lease {
+            args.push("--force-with-lease");
+        }
+        if set_upstream {
+            args.push("-u");
         }
         if let Some(r) = remote {
-            full_args.push(r);
+            args.push(r);
         }
         if let Some(b) = branch {
-            full_args.push(b);
+            args.push(b);
         }
-        let out = process::execute("git", &full_args, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git push: {}", e)))?;
-        if out.success {
-            let msg = out.stderr.trim().to_string();
-            Ok(if msg.is_empty() {
-                "Push completed".into()
-            } else {
-                msg
-            })
+        let result = run_git_in_long_lenient(path, &args).await?;
+        Ok(if result.is_empty() {
+            "Push completed".into()
         } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!("git push: {}", err)))
-        }
+            result
+        })
     }
 
     /// Pull from remote
@@ -1893,56 +2172,48 @@ impl GitProvider {
         remote: Option<&str>,
         branch: Option<&str>,
         rebase: bool,
+        autostash: bool,
     ) -> CogniaResult<String> {
-        let mut full_args = vec!["-C", path, "pull"];
+        let mut args = vec!["pull"];
         if rebase {
-            full_args.push("--rebase");
+            args.push("--rebase");
+        }
+        if autostash {
+            args.push("--autostash");
         }
         if let Some(r) = remote {
-            full_args.push(r);
+            args.push(r);
         }
         if let Some(b) = branch {
-            full_args.push(b);
+            args.push(b);
         }
-        let out = process::execute("git", &full_args, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git pull: {}", e)))?;
-        if out.success {
-            Ok(out.stdout.trim().to_string())
-        } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!("git pull: {}", err)))
-        }
+        run_git_in_long(path, &args).await
     }
 
     /// Fetch from remote
-    pub async fn fetch_remote(&self, path: &str, remote: Option<&str>) -> CogniaResult<String> {
-        let mut full_args = vec!["-C", path, "fetch"];
+    pub async fn fetch_remote(
+        &self,
+        path: &str,
+        remote: Option<&str>,
+        prune: bool,
+        all: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["fetch"];
+        if all {
+            args.push("--all");
+        }
+        if prune {
+            args.push("--prune");
+        }
         if let Some(r) = remote {
-            full_args.push(r);
+            args.push(r);
         }
-        let out = process::execute("git", &full_args, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git fetch: {}", e)))?;
-        if out.success {
-            let msg = out.stderr.trim().to_string();
-            Ok(if msg.is_empty() {
-                "Fetch completed".into()
-            } else {
-                msg
-            })
+        let result = run_git_in_long_lenient(path, &args).await?;
+        Ok(if result.is_empty() {
+            "Fetch completed".into()
         } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!("git fetch: {}", err)))
-        }
+            result
+        })
     }
 
     /// Clone a repository with options
@@ -1954,19 +2225,8 @@ impl GitProvider {
     ) -> CogniaResult<String> {
         let args = build_clone_args(url, dest_path, &options);
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        let out = process::execute("git", &arg_refs, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git clone: {}", e)))?;
-        if out.success {
-            Ok(format!("Repository cloned to {}", dest_path))
-        } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!("git clone: {}", err)))
-        }
+        run_git_with_opts(&arg_refs, make_install_opts()).await?;
+        Ok(format!("Repository cloned to {}", dest_path))
     }
 
     /// Clone a repository with streaming progress
@@ -2270,23 +2530,12 @@ impl GitProvider {
 
     /// Push all tags to remote
     pub async fn push_tags(&self, path: &str, remote: Option<&str>) -> CogniaResult<String> {
-        let mut full_args = vec!["-C", path, "push", "--tags"];
+        let mut args = vec!["push", "--tags"];
         if let Some(r) = remote {
-            full_args.push(r);
+            args.push(r);
         }
-        let out = process::execute("git", &full_args, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git push --tags: {}", e)))?;
-        if out.success {
-            Ok("Tags pushed to remote".into())
-        } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!("git push --tags: {}", err)))
-        }
+        run_git_in_long(path, &args).await?;
+        Ok("Tags pushed to remote".into())
     }
 
     /// Delete a remote branch
@@ -2296,23 +2545,8 @@ impl GitProvider {
         remote: &str,
         branch: &str,
     ) -> CogniaResult<String> {
-        let full_args = vec!["-C", path, "push", remote, "--delete", branch];
-        let out = process::execute("git", &full_args, Some(make_install_opts()))
-            .await
-            .map_err(|e| CogniaError::Provider(format!("git push --delete: {}", e)))?;
-        if out.success {
-            Ok(format!("Remote branch '{}/{}' deleted", remote, branch))
-        } else {
-            let err = if out.stderr.trim().is_empty() {
-                out.stdout.trim().to_string()
-            } else {
-                out.stderr.trim().to_string()
-            };
-            Err(CogniaError::Provider(format!(
-                "git push --delete: {}",
-                err
-            )))
-        }
+        run_git_in_long(path, &["push", remote, "--delete", branch]).await?;
+        Ok(format!("Remote branch '{}/{}' deleted", remote, branch))
     }
 
     /// Show stash diff
@@ -2342,6 +2576,1122 @@ impl GitProvider {
             args.push("-d");
         }
         run_git_in(path, &args).await
+    }
+
+    /// Dry-run clean: preview which untracked files would be removed
+    pub async fn clean_dry_run(
+        &self,
+        path: &str,
+        directories: bool,
+    ) -> CogniaResult<Vec<String>> {
+        let mut args = vec!["clean", "-n"];
+        if directories {
+            args.push("-d");
+        }
+        let output = run_git_in_lenient(path, &args).await.unwrap_or_default();
+        Ok(output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                // Output format: "Would remove <path>"
+                line.strip_prefix("Would remove ").map(|p| p.to_string())
+            })
+            .collect())
+    }
+
+    /// Stash specific files
+    pub async fn stash_push_files(
+        &self,
+        path: &str,
+        files: &[&str],
+        message: Option<&str>,
+        include_untracked: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["stash", "push"];
+        if include_untracked {
+            args.push("-u");
+        }
+        if let Some(m) = message {
+            args.push("-m");
+            args.push(m);
+        }
+        args.push("--");
+        args.extend_from_slice(files);
+        run_git_in(path, &args).await
+    }
+
+    // ========================================================================
+    // Submodule management
+    // ========================================================================
+
+    /// List submodules and their status
+    pub async fn list_submodules(&self, path: &str) -> CogniaResult<Vec<GitSubmoduleInfo>> {
+        let output = run_git_in_lenient(path, &["submodule", "status", "--recursive"])
+            .await
+            .unwrap_or_default();
+        Ok(parse_submodule_status(&output))
+    }
+
+    /// Add a submodule
+    pub async fn add_submodule(
+        &self,
+        path: &str,
+        url: &str,
+        subpath: &str,
+    ) -> CogniaResult<String> {
+        run_git_in(path, &["submodule", "add", url, subpath]).await?;
+        Ok(format!("Submodule '{}' added at '{}'", url, subpath))
+    }
+
+    /// Update submodules
+    pub async fn update_submodules(
+        &self,
+        path: &str,
+        init: bool,
+        recursive: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["submodule", "update"];
+        if init {
+            args.push("--init");
+        }
+        if recursive {
+            args.push("--recursive");
+        }
+        run_git_in(path, &args).await?;
+        Ok("Submodules updated".into())
+    }
+
+    /// Remove a submodule
+    pub async fn remove_submodule(&self, path: &str, subpath: &str) -> CogniaResult<String> {
+        run_git_in(path, &["submodule", "deinit", "-f", subpath]).await?;
+        run_git_in(path, &["rm", "-f", subpath]).await?;
+        Ok(format!("Submodule '{}' removed", subpath))
+    }
+
+    /// Sync submodule URLs from .gitmodules
+    pub async fn sync_submodules(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["submodule", "sync", "--recursive"]).await?;
+        Ok("Submodule URLs synced".into())
+    }
+
+    // ========================================================================
+    // Worktree management
+    // ========================================================================
+
+    /// List worktrees
+    pub async fn list_worktrees(&self, path: &str) -> CogniaResult<Vec<GitWorktreeInfo>> {
+        let output = run_git_in_lenient(path, &["worktree", "list", "--porcelain"])
+            .await
+            .unwrap_or_default();
+        Ok(parse_worktree_list(&output))
+    }
+
+    /// Add a worktree
+    pub async fn add_worktree(
+        &self,
+        path: &str,
+        dest: &str,
+        branch: Option<&str>,
+        new_branch: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["worktree", "add"];
+        let new_branch_owned: String;
+        if let Some(nb) = new_branch {
+            new_branch_owned = nb.to_string();
+            args.push("-b");
+            args.push(&new_branch_owned);
+        }
+        args.push(dest);
+        if let Some(b) = branch {
+            args.push(b);
+        }
+        run_git_in(path, &args).await?;
+        Ok(format!("Worktree added at '{}'", dest))
+    }
+
+    /// Remove a worktree
+    pub async fn remove_worktree(
+        &self,
+        path: &str,
+        dest: &str,
+        force: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["worktree", "remove"];
+        if force {
+            args.push("--force");
+        }
+        args.push(dest);
+        run_git_in(path, &args).await?;
+        Ok(format!("Worktree '{}' removed", dest))
+    }
+
+    /// Prune stale worktree entries
+    pub async fn prune_worktrees(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["worktree", "prune"]).await?;
+        Ok("Stale worktrees pruned".into())
+    }
+
+    // ========================================================================
+    // .gitignore management
+    // ========================================================================
+
+    /// Read .gitignore content
+    pub async fn get_gitignore(&self, path: &str) -> CogniaResult<String> {
+        let root = run_git_in(path, &["rev-parse", "--show-toplevel"]).await?;
+        let gitignore_path = std::path::Path::new(root.trim()).join(".gitignore");
+        match tokio::fs::read_to_string(&gitignore_path).await {
+            Ok(content) => Ok(content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(CogniaError::Provider(format!(
+                "Failed to read .gitignore: {}",
+                e
+            ))),
+        }
+    }
+
+    /// Write .gitignore content
+    pub async fn set_gitignore(&self, path: &str, content: &str) -> CogniaResult<()> {
+        let root = run_git_in(path, &["rev-parse", "--show-toplevel"]).await?;
+        let gitignore_path = std::path::Path::new(root.trim()).join(".gitignore");
+        tokio::fs::write(&gitignore_path, content)
+            .await
+            .map_err(|e| CogniaError::Provider(format!("Failed to write .gitignore: {}", e)))?;
+        Ok(())
+    }
+
+    /// Check which files are ignored
+    pub async fn check_ignore(&self, path: &str, files: &[&str]) -> CogniaResult<Vec<String>> {
+        let mut args = vec!["check-ignore"];
+        args.extend_from_slice(files);
+        let output = run_git_in_lenient(path, &args).await.unwrap_or_default();
+        Ok(output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    /// Append patterns to .gitignore
+    pub async fn add_to_gitignore(&self, path: &str, patterns: &[&str]) -> CogniaResult<()> {
+        let root = run_git_in(path, &["rev-parse", "--show-toplevel"]).await?;
+        let gitignore_path = std::path::Path::new(root.trim()).join(".gitignore");
+        let mut content = tokio::fs::read_to_string(&gitignore_path)
+            .await
+            .unwrap_or_default();
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        for pattern in patterns {
+            content.push_str(pattern);
+            content.push('\n');
+        }
+        tokio::fs::write(&gitignore_path, &content)
+            .await
+            .map_err(|e| CogniaError::Provider(format!("Failed to write .gitignore: {}", e)))?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Git Hooks management
+    // ========================================================================
+
+    /// List hooks in the repository
+    pub async fn list_hooks(&self, path: &str) -> CogniaResult<Vec<GitHookInfo>> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let hooks_dir = std::path::Path::new(path)
+            .join(git_dir.trim())
+            .join("hooks");
+        let mut hooks = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(&hooks_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let file_name = entry.file_name().to_string_lossy().to_string();
+                if file_name.starts_with('.') {
+                    continue;
+                }
+                let is_sample = file_name.ends_with(".sample");
+                let name = if is_sample {
+                    file_name.trim_end_matches(".sample").to_string()
+                } else {
+                    file_name.clone()
+                };
+                let has_content = entry.metadata().await.map(|m| m.len() > 0).unwrap_or(false);
+                hooks.push(GitHookInfo {
+                    name,
+                    enabled: !is_sample,
+                    has_content,
+                    file_name,
+                });
+            }
+        }
+        hooks.sort_by(|a, b| a.name.cmp(&b.name));
+        hooks.dedup_by(|a, b| a.name == b.name);
+        Ok(hooks)
+    }
+
+    /// Get hook file content
+    pub async fn get_hook_content(&self, path: &str, name: &str) -> CogniaResult<String> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let hooks_dir = std::path::Path::new(path)
+            .join(git_dir.trim())
+            .join("hooks");
+        // Try active hook first, then sample
+        let hook_path = hooks_dir.join(name);
+        if hook_path.exists() {
+            return tokio::fs::read_to_string(&hook_path)
+                .await
+                .map_err(|e| CogniaError::Provider(format!("Failed to read hook: {}", e)));
+        }
+        let sample_path = hooks_dir.join(format!("{}.sample", name));
+        if sample_path.exists() {
+            return tokio::fs::read_to_string(&sample_path)
+                .await
+                .map_err(|e| CogniaError::Provider(format!("Failed to read hook: {}", e)));
+        }
+        Ok(String::new())
+    }
+
+    /// Set hook file content
+    pub async fn set_hook_content(
+        &self,
+        path: &str,
+        name: &str,
+        content: &str,
+    ) -> CogniaResult<()> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let hook_path = std::path::Path::new(path)
+            .join(git_dir.trim())
+            .join("hooks")
+            .join(name);
+        tokio::fs::write(&hook_path, content)
+            .await
+            .map_err(|e| CogniaError::Provider(format!("Failed to write hook: {}", e)))?;
+        // Make executable on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o755);
+            tokio::fs::set_permissions(&hook_path, perms)
+                .await
+                .map_err(|e| {
+                    CogniaError::Provider(format!("Failed to set hook permissions: {}", e))
+                })?;
+        }
+        Ok(())
+    }
+
+    /// Toggle hook enabled/disabled
+    pub async fn toggle_hook(&self, path: &str, name: &str, enabled: bool) -> CogniaResult<()> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let hooks_dir = std::path::Path::new(path)
+            .join(git_dir.trim())
+            .join("hooks");
+        let active_path = hooks_dir.join(name);
+        let sample_path = hooks_dir.join(format!("{}.sample", name));
+        if enabled {
+            // Rename .sample → active
+            if sample_path.exists() && !active_path.exists() {
+                tokio::fs::rename(&sample_path, &active_path).await.map_err(|e| {
+                    CogniaError::Provider(format!("Failed to enable hook: {}", e))
+                })?;
+            }
+        } else {
+            // Rename active → .sample
+            if active_path.exists() && !sample_path.exists() {
+                tokio::fs::rename(&active_path, &sample_path).await.map_err(|e| {
+                    CogniaError::Provider(format!("Failed to disable hook: {}", e))
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    // ========================================================================
+    // Git LFS
+    // ========================================================================
+
+    /// Check if git-lfs is available
+    pub async fn lfs_is_available(&self) -> bool {
+        matches!(
+            process::execute("git", &["lfs", "version"], Some(make_opts())).await,
+            Ok(out) if out.success
+        )
+    }
+
+    /// Get LFS tracked patterns from .gitattributes
+    pub async fn lfs_tracked_patterns(&self, path: &str) -> CogniaResult<Vec<String>> {
+        let output = run_git_in_lenient(path, &["lfs", "track"]).await.unwrap_or_default();
+        Ok(output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                // Output: "    *.psd (.gitattributes)"
+                if line.starts_with('*') || line.starts_with('.') {
+                    let pattern = line.split(" (").next().unwrap_or(line).trim();
+                    if !pattern.is_empty() {
+                        return Some(pattern.to_string());
+                    }
+                }
+                None
+            })
+            .collect())
+    }
+
+    /// List LFS files
+    pub async fn lfs_ls_files(&self, path: &str) -> CogniaResult<Vec<GitLfsFile>> {
+        let output = run_git_in_lenient(path, &["lfs", "ls-files", "--long"])
+            .await
+            .unwrap_or_default();
+        Ok(parse_lfs_ls_files(&output))
+    }
+
+    /// Track a pattern with LFS
+    pub async fn lfs_track(&self, path: &str, pattern: &str) -> CogniaResult<String> {
+        run_git_in(path, &["lfs", "track", pattern]).await?;
+        Ok(format!("LFS tracking '{}'", pattern))
+    }
+
+    /// Untrack a pattern from LFS
+    pub async fn lfs_untrack(&self, path: &str, pattern: &str) -> CogniaResult<String> {
+        run_git_in(path, &["lfs", "untrack", pattern]).await?;
+        Ok(format!("LFS untracking '{}'", pattern))
+    }
+
+    /// Install LFS hooks in the repository
+    pub async fn lfs_install(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["lfs", "install"]).await
+    }
+
+    /// Get LFS version string
+    pub async fn lfs_get_version(&self) -> CogniaResult<Option<String>> {
+        match process::execute("git", &["lfs", "version"], Some(make_opts())).await {
+            Ok(out) if out.success => {
+                // "git-lfs/3.4.0 (GitHub; windows amd64; ...)"
+                let version = out
+                    .stdout
+                    .trim()
+                    .split('/')
+                    .nth(1)
+                    .and_then(|s| s.split_whitespace().next())
+                    .map(|s| s.to_string());
+                Ok(version)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    // ========================================================================
+    // Rebase
+    // ========================================================================
+
+    /// Rebase current branch onto target
+    pub async fn rebase(&self, path: &str, onto: &str) -> CogniaResult<String> {
+        run_git_in(path, &["rebase", onto]).await
+    }
+
+    /// Abort an in-progress rebase
+    pub async fn rebase_abort(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["rebase", "--abort"]).await?;
+        Ok("Rebase aborted".into())
+    }
+
+    /// Continue rebase after resolving conflicts
+    pub async fn rebase_continue(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["rebase", "--continue"]).await
+    }
+
+    /// Skip current commit during rebase
+    pub async fn rebase_skip(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["rebase", "--skip"]).await
+    }
+
+    /// Squash last N commits into one
+    pub async fn squash_last_n(
+        &self,
+        path: &str,
+        count: u32,
+        message: &str,
+    ) -> CogniaResult<String> {
+        let target = format!("HEAD~{}", count);
+        run_git_in(path, &["reset", "--soft", &target]).await?;
+        run_git_in(path, &["commit", "-m", message]).await
+    }
+
+    /// Get rebase status (in progress or not)
+    pub async fn get_merge_rebase_state(&self, path: &str) -> CogniaResult<GitMergeRebaseState> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let git_dir_path = std::path::Path::new(path).join(git_dir.trim());
+
+        if git_dir_path.join("MERGE_HEAD").exists() {
+            return Ok(GitMergeRebaseState {
+                state: "merging".into(),
+                onto: None,
+                progress: None,
+                total: None,
+            });
+        }
+        if git_dir_path.join("rebase-merge").exists() || git_dir_path.join("rebase-apply").exists()
+        {
+            let rebase_dir = if git_dir_path.join("rebase-merge").exists() {
+                git_dir_path.join("rebase-merge")
+            } else {
+                git_dir_path.join("rebase-apply")
+            };
+            let onto = tokio::fs::read_to_string(rebase_dir.join("onto"))
+                .await
+                .ok()
+                .map(|s| s.trim().to_string());
+            let progress = tokio::fs::read_to_string(rebase_dir.join("msgnum"))
+                .await
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            let total = tokio::fs::read_to_string(rebase_dir.join("end"))
+                .await
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok());
+            return Ok(GitMergeRebaseState {
+                state: "rebasing".into(),
+                onto,
+                progress,
+                total,
+            });
+        }
+        if git_dir_path.join("CHERRY_PICK_HEAD").exists() {
+            return Ok(GitMergeRebaseState {
+                state: "cherry_picking".into(),
+                onto: None,
+                progress: None,
+                total: None,
+            });
+        }
+        if git_dir_path.join("REVERT_HEAD").exists() {
+            return Ok(GitMergeRebaseState {
+                state: "reverting".into(),
+                onto: None,
+                progress: None,
+                total: None,
+            });
+        }
+        Ok(GitMergeRebaseState {
+            state: "none".into(),
+            onto: None,
+            progress: None,
+            total: None,
+        })
+    }
+
+    // ========================================================================
+    // Conflict resolution
+    // ========================================================================
+
+    /// Get list of conflicted files
+    pub async fn get_conflicted_files(&self, path: &str) -> CogniaResult<Vec<String>> {
+        let output = run_git_in_lenient(path, &["diff", "--name-only", "--diff-filter=U"])
+            .await
+            .unwrap_or_default();
+        Ok(output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    /// Resolve a file conflict by choosing ours
+    pub async fn resolve_file_ours(&self, path: &str, file: &str) -> CogniaResult<String> {
+        run_git_in(path, &["checkout", "--ours", "--", file]).await?;
+        run_git_in(path, &["add", "--", file]).await?;
+        Ok(format!("Resolved '{}' using ours", file))
+    }
+
+    /// Resolve a file conflict by choosing theirs
+    pub async fn resolve_file_theirs(&self, path: &str, file: &str) -> CogniaResult<String> {
+        run_git_in(path, &["checkout", "--theirs", "--", file]).await?;
+        run_git_in(path, &["add", "--", file]).await?;
+        Ok(format!("Resolved '{}' using theirs", file))
+    }
+
+    /// Mark a conflicted file as resolved (after manual edit)
+    pub async fn resolve_file_mark(&self, path: &str, file: &str) -> CogniaResult<String> {
+        run_git_in(path, &["add", "--", file]).await?;
+        Ok(format!("Marked '{}' as resolved", file))
+    }
+
+    /// Abort an in-progress merge
+    pub async fn merge_abort(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["merge", "--abort"]).await?;
+        Ok("Merge aborted".into())
+    }
+
+    /// Continue merge after resolving all conflicts
+    pub async fn merge_continue(&self, path: &str) -> CogniaResult<String> {
+        // Use core.editor=true to skip editor on merge commit
+        run_git_with_opts(
+            &["-C", path, "-c", "core.editor=true", "merge", "--continue"],
+            make_opts(),
+        )
+        .await?;
+        Ok("Merge continued".into())
+    }
+
+    // ========================================================================
+    // Cherry-pick abort/continue & Revert abort
+    // ========================================================================
+
+    /// Abort an in-progress cherry-pick
+    pub async fn cherry_pick_abort(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["cherry-pick", "--abort"]).await?;
+        Ok("Cherry-pick aborted".into())
+    }
+
+    /// Continue cherry-pick after resolving conflicts
+    pub async fn cherry_pick_continue(&self, path: &str) -> CogniaResult<String> {
+        run_git_with_opts(
+            &["-C", path, "-c", "core.editor=true", "cherry-pick", "--continue"],
+            make_opts(),
+        )
+        .await?;
+        Ok("Cherry-pick continued".into())
+    }
+
+    /// Abort an in-progress revert
+    pub async fn revert_abort(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["revert", "--abort"]).await?;
+        Ok("Revert aborted".into())
+    }
+
+    // ========================================================================
+    // Stash branch
+    // ========================================================================
+
+    /// Create a new branch from a stash entry
+    pub async fn stash_branch(
+        &self,
+        path: &str,
+        branch_name: &str,
+        stash_id: Option<&str>,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["stash", "branch", branch_name];
+        if let Some(id) = stash_id {
+            args.push(id);
+        }
+        run_git_in(path, &args).await?;
+        Ok(format!("Branch '{}' created from stash", branch_name))
+    }
+
+    // ========================================================================
+    // Local (per-repo) config
+    // ========================================================================
+
+    /// Get all local config entries for a repository
+    pub async fn get_local_config_list(&self, path: &str) -> CogniaResult<Vec<GitConfigEntry>> {
+        match run_git_in_lenient(path, &["config", "--local", "--list"]).await {
+            Ok(output) => Ok(parse_config_list(&output)),
+            Err(_) => Ok(vec![]),
+        }
+    }
+
+    /// Set a local config value
+    pub async fn set_local_config(
+        &self,
+        path: &str,
+        key: &str,
+        value: &str,
+    ) -> CogniaResult<()> {
+        run_git_in(path, &["config", "--local", key, value]).await?;
+        Ok(())
+    }
+
+    /// Remove a local config key
+    pub async fn remove_local_config(&self, path: &str, key: &str) -> CogniaResult<()> {
+        run_git_in(path, &["config", "--local", "--unset", key]).await?;
+        Ok(())
+    }
+
+    /// Get a single local config value
+    pub async fn get_local_config_value(
+        &self,
+        path: &str,
+        key: &str,
+    ) -> CogniaResult<Option<String>> {
+        match run_git_in_lenient(path, &["config", "--local", "--get", key]).await {
+            Ok(v) => {
+                let trimmed = v.trim().to_string();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed))
+                }
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    // ========================================================================
+    // Shallow clone management
+    // ========================================================================
+
+    /// Check if the repository is a shallow clone
+    pub async fn is_shallow(&self, path: &str) -> CogniaResult<bool> {
+        match run_git_in(path, &["rev-parse", "--is-shallow-repository"]).await {
+            Ok(output) => Ok(output.trim() == "true"),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Deepen a shallow clone by N commits
+    pub async fn deepen(&self, path: &str, depth: u32) -> CogniaResult<String> {
+        let depth_arg = format!("--deepen={}", depth);
+        run_git_in_long(path, &["fetch", &depth_arg]).await?;
+        Ok(format!("Repository deepened by {} commits", depth))
+    }
+
+    /// Convert a shallow clone to a full clone
+    pub async fn unshallow(&self, path: &str) -> CogniaResult<String> {
+        run_git_in_long(path, &["fetch", "--unshallow"]).await?;
+        Ok("Repository unshallowed (full history fetched)".into())
+    }
+
+    // ========================================================================
+    // Repository statistics
+    // ========================================================================
+
+    /// Get repository statistics (object count, disk usage, etc.)
+    pub async fn get_repo_stats(&self, path: &str) -> CogniaResult<GitRepoStats> {
+        let count_output = run_git_in_lenient(path, &["count-objects", "-vH"])
+            .await
+            .unwrap_or_default();
+
+        let mut size_on_disk = String::new();
+        let mut object_count: u64 = 0;
+        let mut pack_count: u32 = 0;
+        let mut loose_objects: u32 = 0;
+
+        for line in count_output.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("count: ") {
+                loose_objects = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("in-pack: ") {
+                object_count = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("packs: ") {
+                pack_count = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("size-pack: ") {
+                size_on_disk = rest.trim().to_string();
+            }
+        }
+        object_count += loose_objects as u64;
+
+        let commit_count = run_git_in_lenient(path, &["rev-list", "--count", "--all"])
+            .await
+            .ok()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(0);
+
+        let is_shallow = self.is_shallow(path).await.unwrap_or(false);
+
+        Ok(GitRepoStats {
+            size_on_disk,
+            object_count,
+            pack_count,
+            loose_objects,
+            commit_count,
+            is_shallow,
+        })
+    }
+
+    /// Run git fsck to check repository integrity
+    pub async fn fsck(&self, path: &str) -> CogniaResult<Vec<String>> {
+        let output = run_git_in_lenient(path, &["fsck", "--no-dangling", "--no-progress"])
+            .await
+            .unwrap_or_default();
+        Ok(output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    /// Get human-readable description based on nearest tag
+    pub async fn describe(&self, path: &str) -> CogniaResult<Option<String>> {
+        match run_git_in_lenient(path, &["describe", "--tags", "--always", "--long"]).await {
+            Ok(d) => {
+                let trimmed = d.trim().to_string();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed))
+                }
+            }
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Prune stale remote-tracking branches
+    pub async fn remote_prune(&self, path: &str, remote: &str) -> CogniaResult<String> {
+        run_git_in(path, &["remote", "prune", remote]).await?;
+        Ok(format!("Pruned stale branches from '{}'", remote))
+    }
+
+    // ========================================================================
+    // Commit signature verification
+    // ========================================================================
+
+    /// Verify a commit signature
+    pub async fn verify_commit(&self, path: &str, hash: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["verify-commit", hash]).await
+    }
+
+    /// Verify a tag signature
+    pub async fn verify_tag(&self, path: &str, tag: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["tag", "-v", tag]).await
+    }
+
+    // ========================================================================
+    // Interactive rebase
+    // ========================================================================
+
+    /// Get commits between base and HEAD for interactive rebase preview
+    pub async fn get_rebase_todo_preview(
+        &self,
+        path: &str,
+        base: &str,
+    ) -> CogniaResult<Vec<GitRebaseTodoItem>> {
+        let format_str = format!("%H{}%s", FIELD_SEP);
+        let format_arg = format!("--format={}", format_str);
+        let range = format!("{}..HEAD", base);
+        let output =
+            run_git_in_lenient(path, &["log", "--reverse", &format_arg, &range]).await?;
+
+        Ok(output
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() {
+                    return None;
+                }
+                let fields: Vec<&str> = line.split(FIELD_SEP).collect();
+                if fields.len() < 2 {
+                    return None;
+                }
+                Some(GitRebaseTodoItem {
+                    action: "pick".to_string(),
+                    hash: fields[0].to_string(),
+                    message: fields[1..].join(&FIELD_SEP.to_string()),
+                })
+            })
+            .collect())
+    }
+
+    /// Start an interactive rebase with a user-defined todo list
+    pub async fn start_interactive_rebase(
+        &self,
+        path: &str,
+        base: &str,
+        todo: &[GitRebaseTodoItem],
+    ) -> CogniaResult<String> {
+        // Write a temporary script that replaces the todo file content
+        let temp_dir = std::env::temp_dir();
+        #[cfg(windows)]
+        let script_path = temp_dir.join("cognia_rebase_editor.cmd");
+        #[cfg(not(windows))]
+        let script_path = temp_dir.join("cognia_rebase_editor.sh");
+
+        // Helper closure to format a todo item as a short line
+        let fmt_item = |item: &GitRebaseTodoItem| {
+            format!(
+                "{} {} {}",
+                item.action,
+                &item.hash[..7.min(item.hash.len())],
+                item.message
+            )
+        };
+
+        #[cfg(windows)]
+        {
+            let script = format!(
+                "@echo off\r\n(\r\n{}\r\n) > %1\r\n",
+                todo.iter()
+                    .map(|item| format!("echo {}", fmt_item(item)))
+                    .collect::<Vec<_>>()
+                    .join("\r\n")
+            );
+            tokio::fs::write(&script_path, &script).await.map_err(|e| {
+                CogniaError::Provider(format!("Failed to write rebase editor script: {}", e))
+            })?;
+        }
+        #[cfg(not(windows))]
+        {
+            let todo_content: String = todo.iter().map(|item| fmt_item(item)).collect::<Vec<_>>().join("\n");
+            let todo_escaped = todo_content.replace('\\', "\\\\").replace('"', "\\\"");
+            let script = format!(
+                "#!/bin/sh\nprintf '{}\\n' > \"$1\"\n",
+                todo_escaped.replace('\n', "\\n")
+            );
+            tokio::fs::write(&script_path, &script).await.map_err(|e| {
+                CogniaError::Provider(format!("Failed to write rebase editor script: {}", e))
+            })?;
+            // Make executable
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o755);
+            tokio::fs::set_permissions(&script_path, perms)
+                .await
+                .map_err(|e| {
+                    CogniaError::Provider(format!(
+                        "Failed to set rebase editor script permissions: {}",
+                        e
+                    ))
+                })?;
+        }
+
+        let editor_env = script_path.to_string_lossy().to_string();
+        let opts = make_install_opts().with_env("GIT_SEQUENCE_EDITOR", &editor_env);
+
+        let result = process::execute(
+            "git",
+            &["-C", path, "rebase", "-i", base],
+            Some(opts),
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("git rebase -i: {}", e)))?;
+
+        // Clean up temp script
+        let _ = tokio::fs::remove_file(&script_path).await;
+
+        if result.success {
+            Ok("Interactive rebase completed".into())
+        } else {
+            let stderr = result.stderr.trim().to_string();
+            if stderr.contains("Could not apply") || stderr.contains("CONFLICT") {
+                // Rebase paused due to conflicts — this is not an error
+                Ok(format!("Rebase paused: {}", stderr))
+            } else {
+                let err = if stderr.is_empty() {
+                    result.stdout.trim().to_string()
+                } else {
+                    stderr
+                };
+                Err(CogniaError::Provider(format!("git rebase -i: {}", err)))
+            }
+        }
+    }
+
+    // ========================================================================
+    // Git bisect
+    // ========================================================================
+
+    /// Start a bisect session
+    pub async fn bisect_start(
+        &self,
+        path: &str,
+        bad_ref: &str,
+        good_ref: &str,
+    ) -> CogniaResult<String> {
+        run_git_in(path, &["bisect", "start", bad_ref, good_ref]).await
+    }
+
+    /// Mark current commit as good
+    pub async fn bisect_good(&self, path: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["bisect", "good"]).await
+    }
+
+    /// Mark current commit as bad
+    pub async fn bisect_bad(&self, path: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["bisect", "bad"]).await
+    }
+
+    /// Skip current commit in bisect
+    pub async fn bisect_skip(&self, path: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["bisect", "skip"]).await
+    }
+
+    /// Reset (end) a bisect session
+    pub async fn bisect_reset(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["bisect", "reset"]).await?;
+        Ok("Bisect session ended".into())
+    }
+
+    /// Get bisect log
+    pub async fn bisect_log(&self, path: &str) -> CogniaResult<String> {
+        run_git_in_lenient(path, &["bisect", "log"]).await
+    }
+
+    /// Get the current bisect state
+    pub async fn get_bisect_state(&self, path: &str) -> CogniaResult<GitBisectState> {
+        let git_dir = run_git_in(path, &["rev-parse", "--git-dir"]).await?;
+        let git_dir_path = std::path::Path::new(path).join(git_dir.trim());
+
+        let active = git_dir_path.join("BISECT_START").exists();
+        if !active {
+            return Ok(GitBisectState {
+                active: false,
+                current_hash: None,
+                steps_taken: 0,
+                remaining_estimate: None,
+            });
+        }
+
+        let current_hash = run_git_in(path, &["rev-parse", "--short", "HEAD"])
+            .await
+            .ok();
+
+        // Parse bisect log to count steps
+        let log = run_git_in_lenient(path, &["bisect", "log"])
+            .await
+            .unwrap_or_default();
+        let steps_taken = log
+            .lines()
+            .filter(|l| {
+                let l = l.trim();
+                l.starts_with("# good:") || l.starts_with("# bad:") || l.starts_with("# skip:")
+            })
+            .count() as u32;
+
+        Ok(GitBisectState {
+            active: true,
+            current_hash,
+            steps_taken,
+            remaining_estimate: None,
+        })
+    }
+
+    // ========================================================================
+    // Git sparse-checkout
+    // ========================================================================
+
+    /// Check if sparse-checkout is enabled
+    pub async fn is_sparse_checkout(&self, path: &str) -> CogniaResult<bool> {
+        match run_git_in_lenient(path, &["sparse-checkout", "list"]).await {
+            Ok(_) => {
+                // Also check config
+                match run_git_in_lenient(path, &["config", "core.sparseCheckout"]).await {
+                    Ok(v) => Ok(v.trim() == "true"),
+                    Err(_) => Ok(false),
+                }
+            }
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// Initialize sparse-checkout
+    pub async fn sparse_checkout_init(&self, path: &str, cone: bool) -> CogniaResult<String> {
+        let mut args = vec!["sparse-checkout", "init"];
+        if cone {
+            args.push("--cone");
+        }
+        run_git_in(path, &args).await?;
+        Ok("Sparse-checkout initialized".into())
+    }
+
+    /// Set sparse-checkout patterns (replaces existing)
+    pub async fn sparse_checkout_set(
+        &self,
+        path: &str,
+        patterns: &[&str],
+    ) -> CogniaResult<String> {
+        let mut args = vec!["sparse-checkout", "set"];
+        args.extend_from_slice(patterns);
+        run_git_in(path, &args).await?;
+        Ok("Sparse-checkout patterns set".into())
+    }
+
+    /// Add patterns to sparse-checkout
+    pub async fn sparse_checkout_add(
+        &self,
+        path: &str,
+        patterns: &[&str],
+    ) -> CogniaResult<String> {
+        let mut args = vec!["sparse-checkout", "add"];
+        args.extend_from_slice(patterns);
+        run_git_in(path, &args).await?;
+        Ok("Sparse-checkout patterns added".into())
+    }
+
+    /// List current sparse-checkout patterns
+    pub async fn sparse_checkout_list(&self, path: &str) -> CogniaResult<Vec<String>> {
+        let output = run_git_in_lenient(path, &["sparse-checkout", "list"])
+            .await
+            .unwrap_or_default();
+        Ok(output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    /// Disable sparse-checkout
+    pub async fn sparse_checkout_disable(&self, path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["sparse-checkout", "disable"]).await?;
+        Ok("Sparse-checkout disabled".into())
+    }
+
+    // ========================================================================
+    // Git archive
+    // ========================================================================
+
+    /// Create an archive of the repository
+    pub async fn archive_repo(
+        &self,
+        path: &str,
+        format: &str,
+        output_path: &str,
+        ref_name: &str,
+        prefix: Option<&str>,
+    ) -> CogniaResult<String> {
+        let format_arg = format!("--format={}", format);
+        let output_arg = format!("--output={}", output_path);
+        let mut args = vec!["archive", &format_arg, &output_arg];
+        let prefix_arg;
+        if let Some(p) = prefix {
+            prefix_arg = format!("--prefix={}/", p);
+            args.push(&prefix_arg);
+        }
+        args.push(ref_name);
+        run_git_in_long(path, &args).await?;
+        Ok(format!("Archive created at {}", output_path))
+    }
+
+    // ========================================================================
+    // Git patch (format-patch / apply / am)
+    // ========================================================================
+
+    /// Create patch files from a commit range
+    pub async fn format_patch(
+        &self,
+        path: &str,
+        range: &str,
+        output_dir: &str,
+    ) -> CogniaResult<Vec<String>> {
+        let output_arg = format!("-o{}", output_dir);
+        let output =
+            run_git_in_lenient(path, &["format-patch", &output_arg, range]).await?;
+        Ok(output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect())
+    }
+
+    /// Apply a patch file (git apply)
+    pub async fn apply_patch(
+        &self,
+        path: &str,
+        patch_path: &str,
+        check_only: bool,
+    ) -> CogniaResult<String> {
+        let mut args = vec!["apply"];
+        if check_only {
+            args.push("--check");
+        }
+        args.push(patch_path);
+        run_git_in(path, &args).await?;
+        Ok(if check_only {
+            "Patch can be applied cleanly".into()
+        } else {
+            "Patch applied successfully".into()
+        })
+    }
+
+    /// Apply a mailbox patch (git am, for format-patch output)
+    pub async fn apply_mailbox(&self, path: &str, patch_path: &str) -> CogniaResult<String> {
+        run_git_in(path, &["am", patch_path]).await
     }
 }
 
@@ -3224,5 +4574,350 @@ filename src/main.rs\n\
             })
             .collect();
         assert!(entries.is_empty());
+    }
+
+    // ====================================================================
+    // Submodule parsing tests
+    // ====================================================================
+
+    #[test]
+    fn test_parse_submodule_status_initialized() {
+        let input = " abc1234def5678901234567890123456789012 lib/vendor (v1.0.0)\n";
+        let subs = parse_submodule_status(input);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].path, "lib/vendor");
+        assert_eq!(subs[0].hash, "abc1234def5678901234567890123456789012");
+        assert_eq!(subs[0].status, "initialized");
+        assert_eq!(subs[0].describe, "v1.0.0");
+    }
+
+    #[test]
+    fn test_parse_submodule_status_uninitialized() {
+        let input = "-abc1234def5678901234567890123456789012 lib/vendor\n";
+        let subs = parse_submodule_status(input);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].status, "uninitialized");
+        assert_eq!(subs[0].path, "lib/vendor");
+        assert_eq!(subs[0].describe, "");
+    }
+
+    #[test]
+    fn test_parse_submodule_status_modified() {
+        let input = "+abc1234def5678901234567890123456789012 lib/vendor (v1.0.0-1-gabc1234)\n";
+        let subs = parse_submodule_status(input);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].status, "modified");
+    }
+
+    #[test]
+    fn test_parse_submodule_status_multiple() {
+        let input = " aaa0000000000000000000000000000000000000 sub1 (v1)\n\
+                      -bbb0000000000000000000000000000000000000 sub2\n\
+                      +ccc0000000000000000000000000000000000000 sub3 (v3)\n";
+        let subs = parse_submodule_status(input);
+        assert_eq!(subs.len(), 3);
+        assert_eq!(subs[0].status, "initialized");
+        assert_eq!(subs[1].status, "uninitialized");
+        assert_eq!(subs[2].status, "modified");
+    }
+
+    #[test]
+    fn test_parse_submodule_status_empty() {
+        assert!(parse_submodule_status("").is_empty());
+    }
+
+    // ====================================================================
+    // Worktree parsing tests
+    // ====================================================================
+
+    #[test]
+    fn test_parse_worktree_list_single() {
+        let input = "worktree /home/user/project\nHEAD abc1234\nbranch refs/heads/main\n\n";
+        let wts = parse_worktree_list(input);
+        assert_eq!(wts.len(), 1);
+        assert_eq!(wts[0].path, "/home/user/project");
+        assert_eq!(wts[0].head, "abc1234");
+        assert_eq!(wts[0].branch, Some("main".to_string()));
+        assert!(!wts[0].is_bare);
+        assert!(!wts[0].is_detached);
+    }
+
+    #[test]
+    fn test_parse_worktree_list_multiple() {
+        let input = "worktree /home/user/project\nHEAD abc1234\nbranch refs/heads/main\n\n\
+                      worktree /home/user/project-feature\nHEAD def5678\nbranch refs/heads/feature\n\n";
+        let wts = parse_worktree_list(input);
+        assert_eq!(wts.len(), 2);
+        assert_eq!(wts[0].branch, Some("main".to_string()));
+        assert_eq!(wts[1].branch, Some("feature".to_string()));
+    }
+
+    #[test]
+    fn test_parse_worktree_list_bare() {
+        let input = "worktree /home/user/bare.git\nHEAD abc1234\nbare\n\n";
+        let wts = parse_worktree_list(input);
+        assert_eq!(wts.len(), 1);
+        assert!(wts[0].is_bare);
+        assert_eq!(wts[0].branch, None);
+    }
+
+    #[test]
+    fn test_parse_worktree_list_detached() {
+        let input = "worktree /home/user/detached\nHEAD abc1234\ndetached\n\n";
+        let wts = parse_worktree_list(input);
+        assert_eq!(wts.len(), 1);
+        assert!(wts[0].is_detached);
+        assert_eq!(wts[0].branch, None);
+    }
+
+    #[test]
+    fn test_parse_worktree_list_no_trailing_newline() {
+        let input = "worktree /tmp/wt\nHEAD abc1234\nbranch refs/heads/dev";
+        let wts = parse_worktree_list(input);
+        assert_eq!(wts.len(), 1);
+        assert_eq!(wts[0].branch, Some("dev".to_string()));
+    }
+
+    #[test]
+    fn test_parse_worktree_list_empty() {
+        assert!(parse_worktree_list("").is_empty());
+    }
+
+    // ====================================================================
+    // LFS parsing tests
+    // ====================================================================
+
+    #[test]
+    fn test_parse_lfs_ls_files_standard() {
+        let input = "abc123def456 * assets/large.psd\ndef789abc012 - docs/guide.pdf\n";
+        let files = parse_lfs_ls_files(input);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].oid, "abc123def456");
+        assert_eq!(files[0].pointer_status, "*");
+        assert_eq!(files[0].name, "assets/large.psd");
+        assert_eq!(files[1].pointer_status, "-");
+        assert_eq!(files[1].name, "docs/guide.pdf");
+    }
+
+    #[test]
+    fn test_parse_lfs_ls_files_empty() {
+        assert!(parse_lfs_ls_files("").is_empty());
+    }
+
+    #[test]
+    fn test_parse_lfs_ls_files_spaces_in_name() {
+        let input = "abc123def456 * path with spaces/file name.bin\n";
+        let files = parse_lfs_ls_files(input);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "path with spaces/file name.bin");
+    }
+
+    // ====================================================================
+    // Status conflict handling tests
+    // ====================================================================
+
+    #[test]
+    fn test_parse_status_porcelain_conflicts() {
+        let input = "UU conflicted.txt\nAA both_added.txt\nM  normal.rs\n";
+        let (staged, modified, untracked) = parse_status_porcelain(input);
+        assert_eq!(staged, 3);   // U (index) + A (index) + M (index)
+        assert_eq!(modified, 2); // U (worktree) + A (worktree)
+        assert_eq!(untracked, 0);
+    }
+
+    #[test]
+    fn test_parse_status_files_conflict() {
+        let input = "UU conflicted.txt\n";
+        let files = parse_status_files(input);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "conflicted.txt");
+        assert_eq!(files[0].index_status, "U");
+        assert_eq!(files[0].worktree_status, "U");
+    }
+
+    // ====================================================================
+    // New data struct serialization tests
+    // ====================================================================
+
+    #[test]
+    fn test_git_repo_stats_serialization() {
+        let stats = GitRepoStats {
+            size_on_disk: "4.50 MiB".into(),
+            object_count: 1234,
+            pack_count: 2,
+            loose_objects: 10,
+            commit_count: 500,
+            is_shallow: false,
+        };
+        let json = serde_json::to_string(&stats).unwrap();
+        assert!(json.contains("\"sizeOnDisk\":\"4.50 MiB\""));
+        assert!(json.contains("\"objectCount\":1234"));
+        assert!(json.contains("\"isShallow\":false"));
+        let deserialized: GitRepoStats = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.commit_count, 500);
+    }
+
+    #[test]
+    fn test_git_bisect_state_serialization() {
+        let state = GitBisectState {
+            active: true,
+            current_hash: Some("abc1234".into()),
+            steps_taken: 3,
+            remaining_estimate: Some(4),
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"active\":true"));
+        assert!(json.contains("\"currentHash\":\"abc1234\""));
+        assert!(json.contains("\"stepsTaken\":3"));
+        assert!(json.contains("\"remainingEstimate\":4"));
+
+        let inactive = GitBisectState {
+            active: false,
+            current_hash: None,
+            steps_taken: 0,
+            remaining_estimate: None,
+        };
+        let json2 = serde_json::to_string(&inactive).unwrap();
+        assert!(json2.contains("\"active\":false"));
+        assert!(json2.contains("\"currentHash\":null"));
+    }
+
+    #[test]
+    fn test_git_rebase_todo_item_serialization() {
+        let item = GitRebaseTodoItem {
+            action: "squash".into(),
+            hash: "abc1234def5678".into(),
+            message: "Fix typo in readme".into(),
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("\"action\":\"squash\""));
+        assert!(json.contains("\"hash\":\"abc1234def5678\""));
+
+        let items = vec![
+            GitRebaseTodoItem { action: "pick".into(), hash: "aaa1111".into(), message: "First".into() },
+            GitRebaseTodoItem { action: "squash".into(), hash: "bbb2222".into(), message: "Second".into() },
+            GitRebaseTodoItem { action: "drop".into(), hash: "ccc3333".into(), message: "Third".into() },
+        ];
+        let json = serde_json::to_string(&items).unwrap();
+        let deserialized: Vec<GitRebaseTodoItem> = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), 3);
+        assert_eq!(deserialized[0].action, "pick");
+        assert_eq!(deserialized[1].action, "squash");
+        assert_eq!(deserialized[2].action, "drop");
+    }
+
+    #[test]
+    fn test_git_merge_rebase_state_reverting() {
+        let state = GitMergeRebaseState {
+            state: "reverting".into(),
+            onto: None,
+            progress: None,
+            total: None,
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"state\":\"reverting\""));
+    }
+
+    // ====================================================================
+    // count-objects parsing tests (for get_repo_stats)
+    // ====================================================================
+
+    #[test]
+    fn test_parse_count_objects_output() {
+        let input = "count: 42\nsize: 168\nin-pack: 1234\npacks: 2\nsize-pack: 4096\nprune-packable: 0\ngarbage: 0\nsize-garbage: 0\n";
+        let mut size_on_disk = String::new();
+        let mut object_count: u64 = 0;
+        let mut pack_count: u32 = 0;
+        let mut loose_objects: u32 = 0;
+        for line in input.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("count: ") {
+                loose_objects = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("in-pack: ") {
+                object_count = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("packs: ") {
+                pack_count = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("size-pack: ") {
+                size_on_disk = rest.trim().to_string();
+            }
+        }
+        object_count += loose_objects as u64;
+        assert_eq!(loose_objects, 42);
+        assert_eq!(object_count, 1276); // 1234 + 42
+        assert_eq!(pack_count, 2);
+        assert_eq!(size_on_disk, "4096");
+    }
+
+    #[test]
+    fn test_parse_count_objects_empty() {
+        let input = "";
+        let mut loose_objects: u32 = 0;
+        let mut object_count: u64 = 0;
+        for line in input.lines() {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("count: ") {
+                loose_objects = rest.trim().parse().unwrap_or(0);
+            } else if let Some(rest) = line.strip_prefix("in-pack: ") {
+                object_count = rest.trim().parse().unwrap_or(0);
+            }
+        }
+        object_count += loose_objects as u64;
+        assert_eq!(loose_objects, 0);
+        assert_eq!(object_count, 0);
+    }
+
+    // ====================================================================
+    // Provider metadata tests for new features
+    // ====================================================================
+
+    #[test]
+    fn test_validate_git_url_windows_path() {
+        #[cfg(windows)]
+        {
+            assert!(validate_git_url("C:\\Users\\test\\repo"));
+            assert!(validate_git_url("D:/Projects/repo.git"));
+        }
+    }
+
+    #[test]
+    fn test_extract_repo_name_with_git_suffix_and_slash() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/repo.git/"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_rebase_todo_item_short_hash() {
+        let item = GitRebaseTodoItem {
+            action: "pick".into(),
+            hash: "abc".into(), // shorter than 7
+            message: "short hash".into(),
+        };
+        // Ensure formatting doesn't panic on short hashes
+        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        assert_eq!(formatted, "pick abc short hash");
+    }
+
+    #[test]
+    fn test_rebase_todo_item_exact_seven() {
+        let item = GitRebaseTodoItem {
+            action: "fixup".into(),
+            hash: "abc1234".into(),
+            message: "exact seven".into(),
+        };
+        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        assert_eq!(formatted, "fixup abc1234 exact seven");
+    }
+
+    #[test]
+    fn test_rebase_todo_item_long_hash() {
+        let item = GitRebaseTodoItem {
+            action: "reword".into(),
+            hash: "abc1234def5678901234567890123456789012".into(),
+            message: "long hash".into(),
+        };
+        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        assert_eq!(formatted, "reword abc1234 long hash");
     }
 }

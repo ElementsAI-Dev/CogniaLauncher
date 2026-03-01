@@ -16,10 +16,11 @@ fn clone_cancel() -> &'static Mutex<Option<watch::Sender<bool>>> {
 
 // Re-export types from provider for frontend consumption
 pub use crate::provider::git::{
-    GitAheadBehind, GitBlameEntry, GitBranchInfo, GitCloneOptions, GitCloneProgress,
-    GitCommitDetail, GitCommitEntry, GitConfigEntry, GitContributor, GitDayActivity, GitDiffFile,
-    GitFileStatEntry, GitGraphEntry, GitReflogEntry, GitRemoteInfo, GitRepoInfo, GitStashEntry,
-    GitStatusFile, GitTagInfo,
+    GitAheadBehind, GitBisectState, GitBlameEntry, GitBranchInfo, GitCloneOptions,
+    GitCloneProgress, GitCommitDetail, GitCommitEntry, GitConfigEntry, GitContributor,
+    GitDayActivity, GitDiffFile, GitFileStatEntry, GitGraphEntry, GitHookInfo, GitLfsFile,
+    GitMergeRebaseState, GitRebaseTodoItem, GitReflogEntry, GitRemoteInfo, GitRepoInfo,
+    GitRepoStats, GitStashEntry, GitStatusFile, GitSubmoduleInfo, GitTagInfo, GitWorktreeInfo,
 };
 
 /// Diff stats for a commit
@@ -485,9 +486,19 @@ pub async fn git_commit(
     path: String,
     message: String,
     amend: Option<bool>,
+    allow_empty: Option<bool>,
+    signoff: Option<bool>,
+    no_verify: Option<bool>,
 ) -> Result<String, String> {
     get_provider()
-        .commit(&path, &message, amend.unwrap_or(false))
+        .commit(
+            &path,
+            &message,
+            amend.unwrap_or(false),
+            allow_empty.unwrap_or(false),
+            signoff.unwrap_or(false),
+            no_verify.unwrap_or(false),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -497,14 +508,18 @@ pub async fn git_push(
     path: String,
     remote: Option<String>,
     branch: Option<String>,
+    force: Option<bool>,
     force_lease: Option<bool>,
+    set_upstream: Option<bool>,
 ) -> Result<String, String> {
     get_provider()
         .push(
             &path,
             remote.as_deref(),
             branch.as_deref(),
+            force.unwrap_or(false),
             force_lease.unwrap_or(false),
+            set_upstream.unwrap_or(false),
         )
         .await
         .map_err(|e| e.to_string())
@@ -516,6 +531,7 @@ pub async fn git_pull(
     remote: Option<String>,
     branch: Option<String>,
     rebase: Option<bool>,
+    autostash: Option<bool>,
 ) -> Result<String, String> {
     get_provider()
         .pull(
@@ -523,15 +539,26 @@ pub async fn git_pull(
             remote.as_deref(),
             branch.as_deref(),
             rebase.unwrap_or(false),
+            autostash.unwrap_or(false),
         )
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn git_fetch(path: String, remote: Option<String>) -> Result<String, String> {
+pub async fn git_fetch(
+    path: String,
+    remote: Option<String>,
+    prune: Option<bool>,
+    all: Option<bool>,
+) -> Result<String, String> {
     get_provider()
-        .fetch_remote(&path, remote.as_deref())
+        .fetch_remote(
+            &path,
+            remote.as_deref(),
+            prune.unwrap_or(false),
+            all.unwrap_or(false),
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -796,6 +823,755 @@ pub async fn git_get_reflog(
 pub async fn git_clean(path: String, directories: Option<bool>) -> Result<String, String> {
     get_provider()
         .clean_untracked(&path, directories.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_clean_dry_run(
+    path: String,
+    directories: Option<bool>,
+) -> Result<Vec<String>, String> {
+    get_provider()
+        .clean_dry_run(&path, directories.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_stash_push_files(
+    path: String,
+    files: Vec<String>,
+    message: Option<String>,
+    include_untracked: Option<bool>,
+) -> Result<String, String> {
+    let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+    get_provider()
+        .stash_push_files(
+            &path,
+            &file_refs,
+            message.as_deref(),
+            include_untracked.unwrap_or(false),
+        )
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Submodule commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_list_submodules(path: String) -> Result<Vec<GitSubmoduleInfo>, String> {
+    get_provider()
+        .list_submodules(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_add_submodule(
+    path: String,
+    url: String,
+    subpath: String,
+) -> Result<String, String> {
+    get_provider()
+        .add_submodule(&path, &url, &subpath)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_update_submodules(
+    path: String,
+    init: Option<bool>,
+    recursive: Option<bool>,
+) -> Result<String, String> {
+    get_provider()
+        .update_submodules(&path, init.unwrap_or(true), recursive.unwrap_or(true))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_remove_submodule(path: String, subpath: String) -> Result<String, String> {
+    get_provider()
+        .remove_submodule(&path, &subpath)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sync_submodules(path: String) -> Result<String, String> {
+    get_provider()
+        .sync_submodules(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Worktree commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_list_worktrees(path: String) -> Result<Vec<GitWorktreeInfo>, String> {
+    get_provider()
+        .list_worktrees(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_add_worktree(
+    path: String,
+    dest: String,
+    branch: Option<String>,
+    new_branch: Option<String>,
+) -> Result<String, String> {
+    get_provider()
+        .add_worktree(&path, &dest, branch.as_deref(), new_branch.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_remove_worktree(
+    path: String,
+    dest: String,
+    force: Option<bool>,
+) -> Result<String, String> {
+    get_provider()
+        .remove_worktree(&path, &dest, force.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_prune_worktrees(path: String) -> Result<String, String> {
+    get_provider()
+        .prune_worktrees(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// .gitignore commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_get_gitignore(path: String) -> Result<String, String> {
+    get_provider()
+        .get_gitignore(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_set_gitignore(path: String, content: String) -> Result<(), String> {
+    get_provider()
+        .set_gitignore(&path, &content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_check_ignore(path: String, files: Vec<String>) -> Result<Vec<String>, String> {
+    let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+    get_provider()
+        .check_ignore(&path, &file_refs)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_add_to_gitignore(
+    path: String,
+    patterns: Vec<String>,
+) -> Result<(), String> {
+    let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    get_provider()
+        .add_to_gitignore(&path, &pattern_refs)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Git Hooks commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_list_hooks(path: String) -> Result<Vec<GitHookInfo>, String> {
+    get_provider()
+        .list_hooks(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_get_hook_content(path: String, name: String) -> Result<String, String> {
+    get_provider()
+        .get_hook_content(&path, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_set_hook_content(
+    path: String,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    get_provider()
+        .set_hook_content(&path, &name, &content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_toggle_hook(
+    path: String,
+    name: String,
+    enabled: bool,
+) -> Result<(), String> {
+    get_provider()
+        .toggle_hook(&path, &name, enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Git LFS commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_lfs_is_available() -> Result<bool, String> {
+    Ok(get_provider().lfs_is_available().await)
+}
+
+#[tauri::command]
+pub async fn git_lfs_get_version() -> Result<Option<String>, String> {
+    get_provider()
+        .lfs_get_version()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_lfs_tracked_patterns(path: String) -> Result<Vec<String>, String> {
+    get_provider()
+        .lfs_tracked_patterns(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_lfs_ls_files(path: String) -> Result<Vec<GitLfsFile>, String> {
+    get_provider()
+        .lfs_ls_files(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_lfs_track(path: String, pattern: String) -> Result<String, String> {
+    get_provider()
+        .lfs_track(&path, &pattern)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_lfs_untrack(path: String, pattern: String) -> Result<String, String> {
+    get_provider()
+        .lfs_untrack(&path, &pattern)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_lfs_install(path: String) -> Result<String, String> {
+    get_provider()
+        .lfs_install(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Rebase & Squash commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_rebase(path: String, onto: String) -> Result<String, String> {
+    get_provider()
+        .rebase(&path, &onto)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_rebase_abort(path: String) -> Result<String, String> {
+    get_provider()
+        .rebase_abort(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_rebase_continue(path: String) -> Result<String, String> {
+    get_provider()
+        .rebase_continue(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_rebase_skip(path: String) -> Result<String, String> {
+    get_provider()
+        .rebase_skip(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_squash(path: String, count: u32, message: String) -> Result<String, String> {
+    get_provider()
+        .squash_last_n(&path, count, &message)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Merge/Rebase state & Conflict resolution commands
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_get_merge_rebase_state(path: String) -> Result<GitMergeRebaseState, String> {
+    get_provider()
+        .get_merge_rebase_state(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_get_conflicted_files(path: String) -> Result<Vec<String>, String> {
+    get_provider()
+        .get_conflicted_files(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_resolve_file_ours(path: String, file: String) -> Result<String, String> {
+    get_provider()
+        .resolve_file_ours(&path, &file)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_resolve_file_theirs(path: String, file: String) -> Result<String, String> {
+    get_provider()
+        .resolve_file_theirs(&path, &file)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_resolve_file_mark(path: String, file: String) -> Result<String, String> {
+    get_provider()
+        .resolve_file_mark(&path, &file)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_merge_abort(path: String) -> Result<String, String> {
+    get_provider()
+        .merge_abort(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_merge_continue(path: String) -> Result<String, String> {
+    get_provider()
+        .merge_continue(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Cherry-pick abort/continue & Revert abort
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_cherry_pick_abort(path: String) -> Result<String, String> {
+    get_provider()
+        .cherry_pick_abort(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_cherry_pick_continue(path: String) -> Result<String, String> {
+    get_provider()
+        .cherry_pick_continue(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_revert_abort(path: String) -> Result<String, String> {
+    get_provider()
+        .revert_abort(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Stash branch
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_stash_branch(
+    path: String,
+    branch_name: String,
+    stash_id: Option<String>,
+) -> Result<String, String> {
+    get_provider()
+        .stash_branch(&path, &branch_name, stash_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Local (per-repo) config
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_get_local_config(path: String) -> Result<Vec<GitConfigEntry>, String> {
+    get_provider()
+        .get_local_config_list(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_set_local_config(
+    path: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    get_provider()
+        .set_local_config(&path, &key, &value)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_remove_local_config(path: String, key: String) -> Result<(), String> {
+    get_provider()
+        .remove_local_config(&path, &key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_get_local_config_value(
+    path: String,
+    key: String,
+) -> Result<Option<String>, String> {
+    get_provider()
+        .get_local_config_value(&path, &key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Shallow clone management
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_is_shallow(path: String) -> Result<bool, String> {
+    get_provider()
+        .is_shallow(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_deepen(path: String, depth: u32) -> Result<String, String> {
+    get_provider()
+        .deepen(&path, depth)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_unshallow(path: String) -> Result<String, String> {
+    get_provider()
+        .unshallow(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Repository statistics & health
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_get_repo_stats(path: String) -> Result<GitRepoStats, String> {
+    get_provider()
+        .get_repo_stats(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_fsck(path: String) -> Result<Vec<String>, String> {
+    get_provider()
+        .fsck(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_describe(path: String) -> Result<Option<String>, String> {
+    get_provider()
+        .describe(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_remote_prune(path: String, remote: String) -> Result<String, String> {
+    get_provider()
+        .remote_prune(&path, &remote)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Commit/tag signature verification
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_verify_commit(path: String, hash: String) -> Result<String, String> {
+    get_provider()
+        .verify_commit(&path, &hash)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_verify_tag(path: String, tag: String) -> Result<String, String> {
+    get_provider()
+        .verify_tag(&path, &tag)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Interactive rebase
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_get_rebase_todo_preview(
+    path: String,
+    base: String,
+) -> Result<Vec<GitRebaseTodoItem>, String> {
+    get_provider()
+        .get_rebase_todo_preview(&path, &base)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_start_interactive_rebase(
+    path: String,
+    base: String,
+    todo: Vec<GitRebaseTodoItem>,
+) -> Result<String, String> {
+    get_provider()
+        .start_interactive_rebase(&path, &base, &todo)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Git bisect
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_bisect_start(
+    path: String,
+    bad_ref: String,
+    good_ref: String,
+) -> Result<String, String> {
+    get_provider()
+        .bisect_start(&path, &bad_ref, &good_ref)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_bisect_good(path: String) -> Result<String, String> {
+    get_provider()
+        .bisect_good(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_bisect_bad(path: String) -> Result<String, String> {
+    get_provider()
+        .bisect_bad(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_bisect_skip(path: String) -> Result<String, String> {
+    get_provider()
+        .bisect_skip(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_bisect_reset(path: String) -> Result<String, String> {
+    get_provider()
+        .bisect_reset(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_bisect_log(path: String) -> Result<String, String> {
+    get_provider()
+        .bisect_log(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_get_bisect_state(path: String) -> Result<GitBisectState, String> {
+    get_provider()
+        .get_bisect_state(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Sparse-checkout
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_is_sparse_checkout(path: String) -> Result<bool, String> {
+    get_provider()
+        .is_sparse_checkout(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sparse_checkout_init(path: String, cone: Option<bool>) -> Result<String, String> {
+    get_provider()
+        .sparse_checkout_init(&path, cone.unwrap_or(true))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sparse_checkout_set(
+    path: String,
+    patterns: Vec<String>,
+) -> Result<String, String> {
+    let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    get_provider()
+        .sparse_checkout_set(&path, &refs)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sparse_checkout_add(
+    path: String,
+    patterns: Vec<String>,
+) -> Result<String, String> {
+    let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+    get_provider()
+        .sparse_checkout_add(&path, &refs)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sparse_checkout_list(path: String) -> Result<Vec<String>, String> {
+    get_provider()
+        .sparse_checkout_list(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_sparse_checkout_disable(path: String) -> Result<String, String> {
+    get_provider()
+        .sparse_checkout_disable(&path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Git archive
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_archive(
+    path: String,
+    format: String,
+    output_path: String,
+    ref_name: String,
+    prefix: Option<String>,
+) -> Result<String, String> {
+    get_provider()
+        .archive_repo(&path, &format, &output_path, &ref_name, prefix.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Git patch (format-patch / apply / am)
+// ============================================================================
+
+#[tauri::command]
+pub async fn git_format_patch(
+    path: String,
+    range: String,
+    output_dir: String,
+) -> Result<Vec<String>, String> {
+    get_provider()
+        .format_patch(&path, &range, &output_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_apply_patch(
+    path: String,
+    patch_path: String,
+    check_only: Option<bool>,
+) -> Result<String, String> {
+    get_provider()
+        .apply_patch(&path, &patch_path, check_only.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn git_apply_mailbox(path: String, patch_path: String) -> Result<String, String> {
+    get_provider()
+        .apply_mailbox(&path, &patch_path)
         .await
         .map_err(|e| e.to_string())
 }

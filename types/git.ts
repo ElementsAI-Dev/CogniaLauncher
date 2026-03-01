@@ -66,7 +66,7 @@ export interface GitCommitDetailProps {
 
 export interface GitCommitDialogProps {
   stagedCount: number;
-  onCommit: (message: string, amend?: boolean) => Promise<string>;
+  onCommit: (message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean) => Promise<string>;
   disabled?: boolean;
 }
 

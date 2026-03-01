@@ -106,10 +106,10 @@ export interface UseGitReturn {
   stageAll: () => Promise<string>;
   unstageFiles: (files: string[]) => Promise<string>;
   discardChanges: (files: string[]) => Promise<string>;
-  commit: (message: string, amend?: boolean) => Promise<string>;
-  push: (remote?: string, branch?: string, forceLease?: boolean) => Promise<string>;
-  pull: (remote?: string, branch?: string, rebase?: boolean) => Promise<string>;
-  fetch: (remote?: string) => Promise<string>;
+  commit: (message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean) => Promise<string>;
+  push: (remote?: string, branch?: string, force?: boolean, forceLease?: boolean, setUpstream?: boolean) => Promise<string>;
+  pull: (remote?: string, branch?: string, rebase?: boolean, autostash?: boolean) => Promise<string>;
+  fetch: (remote?: string, prune?: boolean, all?: boolean) => Promise<string>;
   cloneRepo: (url: string, destPath: string, options?: GitCloneOptions) => Promise<string>;
   cancelClone: () => Promise<void>;
   extractRepoName: (url: string) => Promise<string | null>;
@@ -732,9 +732,9 @@ export function useGit(): UseGitReturn {
   );
 
   const commit = useCallback(
-    async (message: string, amend?: boolean): Promise<string> => {
+    async (message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitCommit(repoPath, message, amend);
+      const msg = await tauri.gitCommit(repoPath, message, amend, allowEmpty, signoff, noVerify);
       await refreshStatus();
       await refreshRepoInfo();
       return msg;
@@ -743,17 +743,17 @@ export function useGit(): UseGitReturn {
   );
 
   const push = useCallback(
-    async (remote?: string, branch?: string, forceLease?: boolean): Promise<string> => {
+    async (remote?: string, branch?: string, force?: boolean, forceLease?: boolean, setUpstream?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      return await tauri.gitPush(repoPath, remote, branch, forceLease);
+      return await tauri.gitPush(repoPath, remote, branch, force, forceLease, setUpstream);
     },
     [repoPath],
   );
 
   const pull = useCallback(
-    async (remote?: string, branch?: string, rebase?: boolean): Promise<string> => {
+    async (remote?: string, branch?: string, rebase?: boolean, autostash?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      const msg = await tauri.gitPull(repoPath, remote, branch, rebase);
+      const msg = await tauri.gitPull(repoPath, remote, branch, rebase, autostash);
       await refreshRepoInfo();
       await refreshStatus();
       await refreshBranches();
@@ -763,9 +763,9 @@ export function useGit(): UseGitReturn {
   );
 
   const fetchRemote = useCallback(
-    async (remote?: string): Promise<string> => {
+    async (remote?: string, prune?: boolean, all?: boolean): Promise<string> => {
       if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
-      return await tauri.gitFetch(repoPath, remote);
+      return await tauri.gitFetch(repoPath, remote, prune, all);
     },
     [repoPath],
   );
