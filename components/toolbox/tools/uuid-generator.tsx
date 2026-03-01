@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,18 +28,15 @@ export default function UuidGenerator({ className }: ToolComponentProps) {
   const [uppercase, setUppercase] = useState(false);
   const [noDashes, setNoDashes] = useState(false);
   const [uuids, setUuids] = useState<string[]>(() => generateUUIDs(1, false, false));
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const handleGenerate = useCallback(() => {
     setUuids(generateUUIDs(Math.max(1, Math.min(100, count)), uppercase, noDashes));
-    setCopied(false);
   }, [count, uppercase, noDashes]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(uuids.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [uuids]);
+    await copy(uuids.join('\n'));
+  }, [copy, uuids]);
 
   return (
     <div className={className}>

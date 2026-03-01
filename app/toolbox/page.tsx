@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useToolbox } from '@/hooks/use-toolbox';
 import { usePlugins } from '@/hooks/use-plugins';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import {
   ToolGrid,
   ToolCategoryNav,
@@ -12,23 +13,26 @@ import {
   ToolDetailPanel,
   ToolEmptyState,
 } from '@/components/toolbox';
+import { ToolMobileCategoryNav } from '@/components/toolbox/tool-mobile-category-nav';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { LayoutGrid, List, Plug } from 'lucide-react';
 import Link from 'next/link';
-import { isTauri } from '@/lib/tauri';
 
 export default function ToolboxPage() {
   const { t } = useLocale();
-  const isDesktop = isTauri();
   const { fetchPlugins } = usePlugins();
   const {
     filteredTools,
     allTools,
     categoryToolCounts,
     totalToolCount,
+    dynamicCategories,
+    isDesktop,
     favorites,
     recentTools,
+    mostUsedCount,
+    toolUseCounts,
     viewMode,
     selectedCategory,
     searchQuery,
@@ -40,6 +44,14 @@ export default function ToolboxPage() {
     setSearchQuery,
     setActiveToolId,
   } = useToolbox();
+
+  const searchRef = useRef<import('@/components/toolbox/tool-search-bar').ToolSearchBarRef>(null);
+
+  useKeyboardShortcuts({
+    shortcuts: [
+      { key: '/', action: () => searchRef.current?.focus(), description: 'Focus search' },
+    ],
+  });
 
   // Fetch plugins on mount (desktop only)
   useEffect(() => {
@@ -107,11 +119,25 @@ export default function ToolboxPage() {
         }
       />
 
-      <ToolSearchBar
-        value={searchQuery}
-        onChange={setSearchQuery}
-        resultCount={filteredTools.length}
-      />
+      <div className="flex items-center gap-2">
+        <ToolMobileCategoryNav
+          selectedCategory={selectedCategory}
+          onSelectCategory={setCategory}
+          categoryToolCounts={categoryToolCounts}
+          totalToolCount={totalToolCount}
+          favoritesCount={favorites.length}
+          recentCount={recentTools.length}
+          mostUsedCount={mostUsedCount}
+          dynamicCategories={dynamicCategories}
+        />
+        <ToolSearchBar
+          ref={searchRef}
+          value={searchQuery}
+          onChange={setSearchQuery}
+          resultCount={filteredTools.length}
+          className="flex-1"
+        />
+      </div>
 
       <div className="flex gap-6">
         <div className="hidden md:block w-48 shrink-0">
@@ -122,6 +148,8 @@ export default function ToolboxPage() {
             totalToolCount={totalToolCount}
             favoritesCount={favorites.length}
             recentCount={recentTools.length}
+            mostUsedCount={mostUsedCount}
+            dynamicCategories={dynamicCategories}
           />
         </div>
 
@@ -133,6 +161,7 @@ export default function ToolboxPage() {
               viewMode={viewMode}
               onToggleFavorite={toggleFavorite}
               onOpen={handleOpenTool}
+              toolUseCounts={toolUseCounts}
             />
           ) : (
             <ToolEmptyState type={emptyType} />

@@ -7,6 +7,7 @@ describe('useToolboxStore', () => {
     useToolboxStore.setState({
       favorites: [],
       recentTools: [],
+      toolUseCounts: {},
       viewMode: 'grid',
       selectedCategory: 'all',
       searchQuery: '',
@@ -85,6 +86,28 @@ describe('useToolboxStore', () => {
     });
     expect(result.current.recentTools).toHaveLength(10);
     expect(result.current.recentTools[0]).toBe('tool-14');
+  });
+
+  // --- Tool usage counts ---
+
+  it('should increment toolUseCounts on addRecent', () => {
+    const { result } = renderHook(() => useToolboxStore());
+    act(() => {
+      result.current.addRecent('tool-a');
+      result.current.addRecent('tool-b');
+      result.current.addRecent('tool-a');
+    });
+    expect(result.current.toolUseCounts['tool-a']).toBe(2);
+    expect(result.current.toolUseCounts['tool-b']).toBe(1);
+  });
+
+  it('should start toolUseCounts at 0 for new tools', () => {
+    const { result } = renderHook(() => useToolboxStore());
+    expect(result.current.toolUseCounts).toEqual({});
+    act(() => {
+      result.current.addRecent('new-tool');
+    });
+    expect(result.current.toolUseCounts['new-tool']).toBe(1);
   });
 
   // --- View mode ---

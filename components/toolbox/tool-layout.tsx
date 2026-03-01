@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
 import { Copy, ClipboardPaste, Trash2, Check } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 
 interface ToolTextAreaProps {
   label: string;
@@ -35,18 +36,16 @@ export function ToolTextArea({
   showClear = false,
 }: ToolTextAreaProps) {
   const { t } = useLocale();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, paste } = useCopyToClipboard();
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [value]);
+    await copy(value);
+  }, [copy, value]);
 
   const handlePaste = useCallback(async () => {
-    const text = await navigator.clipboard.readText();
+    const text = await paste();
     onChange?.(text);
-  }, [onChange]);
+  }, [paste, onChange]);
 
   const handleClear = useCallback(() => {
     onChange?.('');

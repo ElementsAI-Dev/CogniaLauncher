@@ -90,6 +90,35 @@ export interface PluginUpdateInfo {
   changelog: string | null;
 }
 
+export interface PluginHealth {
+  consecutiveFailures: number;
+  totalCalls: number;
+  failedCalls: number;
+  totalDurationMs: number;
+  lastError: string | null;
+  autoDisabled: boolean;
+}
+
+export interface PluginSettingDeclaration {
+  id: string;
+  type: 'string' | 'number' | 'boolean' | 'select';
+  labelEn: string;
+  labelZh: string | null;
+  descriptionEn: string | null;
+  descriptionZh: string | null;
+  default: unknown;
+  required: boolean;
+  min: number | null;
+  max: number | null;
+  options: PluginSettingOption[];
+}
+
+export interface PluginSettingOption {
+  value: string;
+  labelEn: string;
+  labelZh: string | null;
+}
+
 export type PluginSource =
   | { type: 'local'; path: string }
   | { type: 'url'; url: string }

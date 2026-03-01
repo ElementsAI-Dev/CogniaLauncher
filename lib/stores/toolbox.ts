@@ -7,6 +7,7 @@ const MAX_RECENT_TOOLS = 10;
 interface ToolboxState {
   favorites: string[];
   recentTools: string[];
+  toolUseCounts: Record<string, number>;
   viewMode: 'grid' | 'list';
 
   selectedCategory: ToolCategoryFilter;
@@ -26,6 +27,7 @@ export const useToolboxStore = create<ToolboxState>()(
     (set) => ({
       favorites: [],
       recentTools: [],
+      toolUseCounts: {},
       viewMode: 'grid',
 
       selectedCategory: 'all',
@@ -42,7 +44,10 @@ export const useToolboxStore = create<ToolboxState>()(
       addRecent: (toolId) =>
         set((state) => {
           const filtered = state.recentTools.filter((id) => id !== toolId);
-          return { recentTools: [toolId, ...filtered].slice(0, MAX_RECENT_TOOLS) };
+          return {
+            recentTools: [toolId, ...filtered].slice(0, MAX_RECENT_TOOLS),
+            toolUseCounts: { ...state.toolUseCounts, [toolId]: (state.toolUseCounts[toolId] ?? 0) + 1 },
+          };
         }),
 
       setViewMode: (viewMode) => set({ viewMode }),
@@ -53,10 +58,11 @@ export const useToolboxStore = create<ToolboxState>()(
     {
       name: 'cognia-toolbox',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         favorites: state.favorites,
         recentTools: state.recentTools,
+        toolUseCounts: state.toolUseCounts,
         viewMode: state.viewMode,
       }),
     },

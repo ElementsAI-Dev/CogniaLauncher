@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { PluginToolRunner } from './plugin-tool-runner';
 import type { PluginToolInfo } from '@/types/plugin';
 
@@ -6,16 +6,18 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (k: string) => k, locale: 'en' }),
 }));
 
+const mockCallTool = jest.fn().mockResolvedValue('{"result":"ok"}');
 jest.mock('@/hooks/use-plugins', () => ({
   usePlugins: () => ({
-    callTool: jest.fn().mockResolvedValue('{"result":"ok"}'),
+    callTool: mockCallTool,
     getLocales: jest.fn().mockResolvedValue(null),
     translatePluginKey: jest.fn((_l: unknown, _lo: string, k: string) => k),
   }),
 }));
 
+const mockIsTauri = jest.fn(() => true);
 jest.mock('@/lib/tauri', () => ({
-  isTauri: () => false,
+  isTauri: () => mockIsTauri(),
   pluginGetUiEntry: jest.fn().mockRejectedValue(new Error('Not desktop')),
 }));
 
@@ -33,6 +35,12 @@ jest.mock('@/components/plugin/plugin-ui-renderer', () => ({
 jest.mock('@/components/plugin/plugin-iframe-view', () => ({
   PluginIframeView: ({ pluginId }: { pluginId: string }) => (
     <div data-testid="plugin-iframe-view">iframe: {pluginId}</div>
+  ),
+}));
+
+jest.mock('@/components/docs/markdown-renderer', () => ({
+  MarkdownRenderer: ({ content }: { content: string }) => (
+    <div data-testid="markdown-renderer">{content}</div>
   ),
 }));
 
@@ -54,7 +62,19 @@ const baseTool: PluginToolInfo = {
 describe('PluginToolRunner', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(true);
   });
+
+  // --- Desktop-only guard ---
+
+  it('shows desktop-only alert when not in Tauri', () => {
+    mockIsTauri.mockReturnValue(false);
+    render(<PluginToolRunner tool={baseTool} />);
+    expect(screen.getByText('toolbox.plugin.desktopOnly')).toBeInTheDocument();
+    expect(screen.queryByText('toolbox.plugin.run')).not.toBeInTheDocument();
+  });
+
+  // --- Mode selection ---
 
   it('renders text mode by default', () => {
     render(<PluginToolRunner tool={baseTool} />);
@@ -87,6 +107,8 @@ describe('PluginToolRunner', () => {
     expect(screen.getByTestId('plugin-iframe-view')).toBeInTheDocument();
   });
 
+  // --- Badge display ---
+
   it('shows plugin name badge in text mode', () => {
     render(<PluginToolRunner tool={baseTool} />);
     expect(screen.getByText('toolbox.plugin.providedBy Test Plugin')).toBeInTheDocument();
@@ -104,7 +126,9 @@ describe('PluginToolRunner', () => {
     expect(screen.getByText('toolbox.plugin.providedBy Test Plugin')).toBeInTheDocument();
   });
 
-  it('renders text input and output areas in text mode', () => {
+  // --- Text mode specifics ---
+
+  it('renders text input area in text mode', () => {
     render(<PluginToolRunner tool={baseTool} />);
     expect(screen.getByText('toolbox.plugin.input')).toBeInTheDocument();
   });
@@ -121,5 +145,90 @@ describe('PluginToolRunner', () => {
     render(<PluginToolRunner tool={tool} />);
     expect(screen.queryByText('toolbox.plugin.input')).not.toBeInTheDocument();
     expect(screen.queryByText('toolbox.plugin.run')).not.toBeInTheDocument();
+  });
+
+  // --- Run + cancel ---
+
+  it('shows cancel button and elapsed time while running', async () => {
+    let resolveCall: (v: string) => void;
+    mockCallTool.mockReturnValue(new Promise<string>((r) => { resolveCall = r; }));
+
+    render(<PluginToolRunner tool={baseTool} />);
+    const runButton = screen.getByText('toolbox.plugin.run');
+
+    await act(async () => {
+      fireEvent.click(runButton);
+    });
+
+    expect(screen.getByText('common.cancel')).toBeInTheDocument();
+    expect(screen.getByText('toolbox.plugin.running')).toBeInTheDocument();
+
+    // Cancel
+    await act(async () => {
+      fireEvent.click(screen.getByText('common.cancel'));
+    });
+
+    expect(screen.queryByText('common.cancel')).not.toBeInTheDocument();
+    expect(screen.getByText('toolbox.plugin.cancelled')).toBeInTheDocument();
+
+    // Resolve to prevent unhandled promise
+    resolveCall!('done');
+  });
+
+  // --- Smart output ---
+
+  it('renders JSON output with pretty-print', async () => {
+    mockCallTool.mockResolvedValue('{"name":"test","value":42}');
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('toolbox.plugin.output')).toBeInTheDocument();
+    });
+  });
+
+  it('renders markdown output when __type is markdown', async () => {
+    mockCallTool.mockResolvedValue(JSON.stringify({ __type: 'markdown', content: '# Hello' }));
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('markdown-renderer')).toBeInTheDocument();
+      expect(screen.getByText('# Hello')).toBeInTheDocument();
+    });
+  });
+
+  it('renders plain text output for non-JSON', async () => {
+    mockCallTool.mockResolvedValue('hello world');
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('toolbox.plugin.output')).toBeInTheDocument();
+    });
+  });
+
+  // --- Error display ---
+
+  it('shows error alert on tool failure', async () => {
+    mockCallTool.mockRejectedValue(new Error('WASM crashed'));
+    render(<PluginToolRunner tool={baseTool} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('toolbox.plugin.run'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('WASM crashed')).toBeInTheDocument();
+    });
   });
 });

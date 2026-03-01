@@ -31,6 +31,7 @@ import { WslStatusWidget } from "@/components/dashboard/widgets/wsl-status-widge
 import { HealthCheckWidget } from "@/components/dashboard/widgets/health-check-widget";
 import { UpdatesWidget } from "@/components/dashboard/widgets/updates-widget";
 import { WelcomeWidget } from "@/components/dashboard/widgets/welcome-widget";
+import { ToolboxFavoritesWidget } from "@/components/dashboard/widgets/toolbox-favorites-widget";
 import { QuickActionsInline } from "@/components/dashboard/quick-actions";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Layers, Package, HardDrive, Activity } from "lucide-react";
@@ -186,6 +187,8 @@ export function WidgetGrid({
               hasPackages={packages.length > 0}
             />
           );
+        case "toolbox-favorites":
+          return <ToolboxFavoritesWidget />;
         default:
           return (
             <div className="p-4 text-center text-sm text-muted-foreground">

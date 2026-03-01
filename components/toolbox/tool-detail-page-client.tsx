@@ -1,54 +1,17 @@
 'use client';
 
-import { use, Suspense, useEffect, useMemo, type ComponentType } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useToolbox } from '@/hooks/use-toolbox';
 import { useToolboxStore } from '@/lib/stores/toolbox';
-import { getToolById } from '@/lib/constants/toolbox';
 import { PluginToolRunner } from '@/components/toolbox/plugin-tool-runner';
+import { BuiltInToolRenderer } from '@/components/toolbox/built-in-tool-renderer';
 import { ArrowLeft, Plug } from 'lucide-react';
 import Link from 'next/link';
-import type { ToolComponentProps } from '@/types/toolbox';
-
-function ToolLoadingFallback() {
-  return (
-    <div className="space-y-4">
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-48 w-full" />
-      <Skeleton className="h-10 w-48" />
-      <Skeleton className="h-48 w-full" />
-    </div>
-  );
-}
-
-const componentCache = new Map<string, Promise<ComponentType<ToolComponentProps>>>();
-
-function loadComponent(builtInId: string): Promise<ComponentType<ToolComponentProps>> {
-  const cached = componentCache.get(builtInId);
-  if (cached) return cached;
-  const tool = getToolById(builtInId);
-  if (!tool) {
-    const empty = Promise.resolve((() => null) as unknown as ComponentType<ToolComponentProps>);
-    componentCache.set(builtInId, empty);
-    return empty;
-  }
-  const promise = tool.component().then((mod) => mod.default);
-  componentCache.set(builtInId, promise);
-  return promise;
-}
-
-function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
-  /* eslint-disable -- dynamic component loaded from module-level promise cache */
-  const Component = use(loadComponent(builtInId));
-  if (!Component) return null;
-  return <Component />;
-  /* eslint-enable */
-}
 
 export function ToolDetailPageClient({ toolId }: { toolId: string }) {
   const router = useRouter();
@@ -107,9 +70,7 @@ export function ToolDetailPageClient({ toolId }: { toolId: string }) {
       />
 
       {tool.isBuiltIn && tool.builtInDef ? (
-        <Suspense fallback={<ToolLoadingFallback />}>
-          <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
-        </Suspense>
+        <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
       ) : tool.pluginTool ? (
         <PluginToolRunner tool={tool.pluginTool} />
       ) : (

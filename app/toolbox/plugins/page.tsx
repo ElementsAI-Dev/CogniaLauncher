@@ -28,6 +28,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DestinationPicker } from '@/components/downloads/destination-picker';
 import { usePlugins } from '@/hooks/use-plugins';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
@@ -49,12 +51,17 @@ import {
   Package,
   Hammer,
   Info,
+  ArrowUpCircle,
+  Heart,
+  Settings2,
+  Download,
+  AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { PluginInfo, PluginPermissionState, PluginLanguage, ScaffoldConfig } from '@/types/plugin';
+import type { PluginInfo, PluginPermissionState, PluginLanguage, ScaffoldConfig, PluginUpdateInfo, PluginHealth, PluginSettingDeclaration } from '@/types/plugin';
 
 export default function PluginsPage() {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const isDesktop = isTauri();
   const {
     plugins,
@@ -62,6 +69,7 @@ export default function PluginsPage() {
     loading,
     fetchPlugins,
     installPlugin,
+    importLocalPlugin,
     uninstallPlugin,
     enablePlugin,
     disablePlugin,
@@ -70,6 +78,17 @@ export default function PluginsPage() {
     grantPermission,
     revokePermission,
     scaffoldPlugin,
+    checkUpdate,
+    updatePlugin,
+    getHealth,
+    resetHealth,
+    getSettingsSchema,
+    getSettingsValues,
+    setSetting,
+    exportData,
+    checkAllUpdates,
+    updateAll,
+    pendingUpdates,
   } = usePlugins();
 
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
@@ -81,6 +100,16 @@ export default function PluginsPage() {
   const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
   const [scaffoldOpen, setScaffoldOpen] = useState(false);
   const [scaffolding, setScaffolding] = useState(false);
+  const [importPath, setImportPath] = useState('');
+  const [importingLocal, setImportingLocal] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<Record<string, PluginUpdateInfo | null>>({});
+  const [updatingPlugin, setUpdatingPlugin] = useState<string | null>(null);
+  const [updateConfirmPlugin, setUpdateConfirmPlugin] = useState<string | null>(null);
+  const [healthDialogPlugin, setHealthDialogPlugin] = useState<string | null>(null);
+  const [healthData, setHealthData] = useState<PluginHealth | null>(null);
+  const [settingsDialogPlugin, setSettingsDialogPlugin] = useState<string | null>(null);
+  const [settingsSchema, setSettingsSchema] = useState<PluginSettingDeclaration[]>([]);
+  const [settingsValues, setSettingsValues] = useState<Record<string, unknown>>({});
   const [scaffoldForm, setScaffoldForm] = useState({
     name: '', id: '', description: '', author: '', outputDir: '',
     language: 'typescript' as PluginLanguage,
@@ -104,6 +133,42 @@ export default function PluginsPage() {
       setInstalling(false);
     }
   }, [installSource, installPlugin]);
+
+  const handleImportLocal = useCallback(async () => {
+    if (!importPath.trim()) return;
+    setImportingLocal(true);
+    try {
+      await importLocalPlugin(importPath.trim());
+      setInstallDialogOpen(false);
+      setImportPath('');
+    } finally {
+      setImportingLocal(false);
+    }
+  }, [importPath, importLocalPlugin]);
+
+  const handleCheckUpdate = useCallback(async (plugin: PluginInfo) => {
+    const info = await checkUpdate(plugin.id);
+    setUpdateInfo((prev) => ({ ...prev, [plugin.id]: info }));
+    if (!info) {
+      const { toast } = await import('sonner');
+      toast.info(t('toolbox.plugin.noUpdate'));
+    }
+  }, [checkUpdate, t]);
+
+  const handleConfirmUpdate = useCallback((pluginId: string) => {
+    setUpdateConfirmPlugin(pluginId);
+  }, []);
+
+  const handleUpdate = useCallback(async (pluginId: string) => {
+    setUpdateConfirmPlugin(null);
+    setUpdatingPlugin(pluginId);
+    try {
+      await updatePlugin(pluginId);
+      setUpdateInfo((prev) => ({ ...prev, [pluginId]: null }));
+    } finally {
+      setUpdatingPlugin(null);
+    }
+  }, [updatePlugin]);
 
   const handleScaffold = useCallback(async () => {
     if (!scaffoldForm.name.trim() || !scaffoldForm.id.trim() || !scaffoldForm.outputDir.trim()) return;
@@ -151,6 +216,60 @@ export default function PluginsPage() {
     const perms = await getPermissions(permDialogPlugin);
     setPermState(perms);
   }, [permDialogPlugin, grantPermission, revokePermission, getPermissions]);
+
+  const handleOpenHealth = useCallback(async (pluginId: string) => {
+    setHealthDialogPlugin(pluginId);
+    const data = await getHealth(pluginId);
+    setHealthData(data);
+  }, [getHealth]);
+
+  const handleResetHealth = useCallback(async () => {
+    if (!healthDialogPlugin) return;
+    await resetHealth(healthDialogPlugin);
+    const data = await getHealth(healthDialogPlugin);
+    setHealthData(data);
+  }, [healthDialogPlugin, resetHealth, getHealth]);
+
+  const handleOpenSettings = useCallback(async (pluginId: string) => {
+    setSettingsDialogPlugin(pluginId);
+    const [schema, values] = await Promise.all([
+      getSettingsSchema(pluginId),
+      getSettingsValues(pluginId),
+    ]);
+    setSettingsSchema(schema ?? []);
+    setSettingsValues(values ?? {});
+  }, [getSettingsSchema, getSettingsValues]);
+
+  const handleSetSetting = useCallback(async (key: string, value: unknown) => {
+    if (!settingsDialogPlugin) return;
+    await setSetting(settingsDialogPlugin, key, value);
+    setSettingsValues((prev) => ({ ...prev, [key]: value }));
+    const { toast: toastFn } = await import('sonner');
+    toastFn.success(t('toolbox.plugin.pluginSettingsSaved'));
+  }, [settingsDialogPlugin, setSetting, t]);
+
+  const handleExport = useCallback(async (pluginId: string) => {
+    await exportData(pluginId);
+  }, [exportData]);
+
+  const handleCheckAllUpdates = useCallback(async () => {
+    const updates = await checkAllUpdates();
+    if (updates.length === 0) {
+      const { toast: toastFn } = await import('sonner');
+      toastFn.info(t('toolbox.plugin.noUpdatesAvailable'));
+    }
+  }, [checkAllUpdates, t]);
+
+  const handleUpdateAll = useCallback(async () => {
+    await updateAll();
+    setUpdateInfo({});
+  }, [updateAll]);
+
+  const getHealthStatus = useCallback((plugin: PluginInfo): 'good' | 'warning' | 'critical' => {
+    if (!plugin.enabled) return 'good';
+    // We don't have health data in plugin list, so default to good
+    return 'good';
+  }, []);
 
   if (!isDesktop) {
     return (
@@ -206,6 +325,12 @@ export default function PluginsPage() {
               <Hammer className="h-3.5 w-3.5" />
               {t('toolbox.plugin.createPlugin')}
             </Button>
+            {plugins.length > 0 && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCheckAllUpdates} disabled={loading}>
+                <ArrowUpCircle className="h-3.5 w-3.5" />
+                {t('toolbox.plugin.checkAllUpdates')}
+              </Button>
+            )}
             <Button size="sm" className="gap-1.5" onClick={() => setInstallDialogOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
               {t('toolbox.plugin.install')}
@@ -213,6 +338,21 @@ export default function PluginsPage() {
           </div>
         }
       />
+
+      {pendingUpdates.length > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/50 p-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+              {t('toolbox.plugin.updatesAvailable', { count: pendingUpdates.length })}
+            </span>
+          </div>
+          <Button size="sm" className="gap-1.5" onClick={handleUpdateAll} disabled={loading}>
+            <ArrowUpCircle className="h-3.5 w-3.5" />
+            {t('toolbox.plugin.updateAll')}
+          </Button>
+        </div>
+      )}
 
       {plugins.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -242,6 +382,14 @@ export default function PluginsPage() {
               onReload={() => reloadPlugin(plugin.id)}
               onPermissions={() => handleOpenPermissions(plugin.id)}
               onDetails={() => setDetailPlugin(plugin)}
+              onCheckUpdate={() => handleCheckUpdate(plugin)}
+              onUpdate={() => handleConfirmUpdate(plugin.id)}
+              onHealth={() => handleOpenHealth(plugin.id)}
+              onSettings={() => handleOpenSettings(plugin.id)}
+              onExport={() => handleExport(plugin.id)}
+              pluginUpdateInfo={updateInfo[plugin.id] ?? null}
+              isUpdating={updatingPlugin === plugin.id}
+              healthStatus={getHealthStatus(plugin)}
             />
           ))}
         </div>
@@ -273,32 +421,56 @@ export default function PluginsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Install Dialog */}
+      {/* Install / Import Dialog */}
       <Dialog open={installDialogOpen} onOpenChange={setInstallDialogOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle>{t('toolbox.plugin.installDialog')}</DialogTitle>
             <DialogDescription>{t('toolbox.plugin.installDialogDesc')}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="plugin-source">{t('toolbox.plugin.sourceLabel')}</Label>
-              <Input
-                id="plugin-source"
-                value={installSource}
-                onChange={(e) => setInstallSource(e.target.value)}
-                placeholder={t('toolbox.plugin.sourcePlaceholder')}
+          <Tabs defaultValue="url" className="mt-2">
+            <TabsList className="w-full">
+              <TabsTrigger value="url" className="flex-1">{t('toolbox.plugin.installTab')}</TabsTrigger>
+              <TabsTrigger value="local" className="flex-1">{t('toolbox.plugin.importTab')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="url" className="space-y-4 pt-2">
+              <div className="grid gap-2">
+                <Label htmlFor="plugin-source">{t('toolbox.plugin.sourceLabel')}</Label>
+                <Input
+                  id="plugin-source"
+                  value={installSource}
+                  onChange={(e) => setInstallSource(e.target.value)}
+                  placeholder={t('toolbox.plugin.sourcePlaceholder')}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button onClick={handleInstall} disabled={installing || !installSource.trim()}>
+                  {installing ? t('toolbox.plugin.running') : t('toolbox.plugin.install')}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+            <TabsContent value="local" className="space-y-4 pt-2">
+              <DestinationPicker
+                value={importPath}
+                onChange={setImportPath}
+                placeholder={t('toolbox.plugin.importPlaceholder')}
+                label={t('toolbox.plugin.importLabel')}
+                isDesktop={isDesktop}
+                browseTooltip={t('toolbox.plugin.importBrowse')}
               />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={handleInstall} disabled={installing || !installSource.trim()}>
-              {installing ? t('toolbox.plugin.running') : t('toolbox.plugin.install')}
-            </Button>
-          </DialogFooter>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setInstallDialogOpen(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button onClick={handleImportLocal} disabled={importingLocal || !importPath.trim()}>
+                  {importingLocal ? t('toolbox.plugin.importing') : t('toolbox.plugin.import')}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -364,14 +536,14 @@ export default function PluginsPage() {
                   </Select>
                 </div>
               </div>
-              <div className="grid gap-1.5">
-                <Label className="text-xs">{t('toolbox.plugin.scaffoldOutputDir')}</Label>
-                <Input
-                  value={scaffoldForm.outputDir}
-                  onChange={(e) => setScaffoldForm(p => ({ ...p, outputDir: e.target.value }))}
-                  placeholder="C:\\Users\\you\\plugins"
-                />
-              </div>
+              <DestinationPicker
+                value={scaffoldForm.outputDir}
+                onChange={(v) => setScaffoldForm(p => ({ ...p, outputDir: v }))}
+                placeholder="C:\\Users\\you\\plugins"
+                label={t('toolbox.plugin.scaffoldOutputDir')}
+                isDesktop={isDesktop}
+                browseTooltip={t('common.browse')}
+              />
               <Separator />
               <div className="space-y-2">
                 <Label className="text-xs font-medium">{t('toolbox.plugin.scaffoldPermissions')}</Label>
@@ -448,7 +620,7 @@ export default function PluginsPage() {
                     <div className="space-y-1">
                       {pluginTools.filter(tool => tool.pluginId === detailPlugin.id).map(tool => (
                         <div key={tool.toolId} className="flex items-center justify-between text-xs p-1.5 rounded bg-muted/50">
-                          <span className="font-medium">{tool.nameEn}</span>
+                          <span className="font-medium">{locale === 'zh' && tool.nameZh ? tool.nameZh : tool.nameEn}</span>
                           <Badge variant="outline" className="text-[10px] font-mono">{tool.entry}</Badge>
                         </div>
                       ))}
@@ -502,6 +674,166 @@ export default function PluginsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Update Confirmation with Changelog */}
+      <AlertDialog open={updateConfirmPlugin !== null} onOpenChange={(open) => { if (!open) setUpdateConfirmPlugin(null); }}>
+        <AlertDialogContent className="sm:max-w-[520px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('toolbox.plugin.updateConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {updateConfirmPlugin && updateInfo[updateConfirmPlugin] && (
+                <>
+                  {t('toolbox.plugin.updateConfirmDesc', {
+                    name: plugins.find(p => p.id === updateConfirmPlugin)?.name ?? updateConfirmPlugin,
+                    current: updateInfo[updateConfirmPlugin]!.currentVersion,
+                    latest: updateInfo[updateConfirmPlugin]!.latestVersion,
+                  })}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {updateConfirmPlugin && updateInfo[updateConfirmPlugin]?.changelog && (
+            <ScrollArea className="max-h-[200px] rounded-md border p-3">
+              <pre className="text-xs whitespace-pre-wrap">{updateInfo[updateConfirmPlugin]!.changelog}</pre>
+            </ScrollArea>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (updateConfirmPlugin) handleUpdate(updateConfirmPlugin);
+              }}
+            >
+              {t('toolbox.plugin.update')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Health Dialog */}
+      <Dialog open={healthDialogPlugin !== null} onOpenChange={(open) => { if (!open) setHealthDialogPlugin(null); }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Heart className="h-4 w-4" />
+              {t('toolbox.plugin.healthTitle')}
+            </DialogTitle>
+            <DialogDescription>{healthDialogPlugin}</DialogDescription>
+          </DialogHeader>
+          {healthData && (
+            <div className="space-y-3 py-2">
+              {healthData.autoDisabled && (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-2 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {t('toolbox.plugin.healthAutoDisabledDesc')}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-md border p-3 text-center">
+                  <div className="text-2xl font-bold">{healthData.totalCalls}</div>
+                  <div className="text-xs text-muted-foreground">{t('toolbox.plugin.healthTotalCalls')}</div>
+                </div>
+                <div className="rounded-md border p-3 text-center">
+                  <div className="text-2xl font-bold text-destructive">{healthData.failedCalls}</div>
+                  <div className="text-xs text-muted-foreground">{t('toolbox.plugin.healthFailedCalls')}</div>
+                </div>
+                <div className="rounded-md border p-3 text-center">
+                  <div className="text-2xl font-bold">
+                    {healthData.totalCalls > 0 ? `${((healthData.failedCalls / healthData.totalCalls) * 100).toFixed(1)}%` : '0%'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t('toolbox.plugin.healthFailureRate')}</div>
+                </div>
+                <div className="rounded-md border p-3 text-center">
+                  <div className="text-2xl font-bold">{healthData.consecutiveFailures}</div>
+                  <div className="text-xs text-muted-foreground">{t('toolbox.plugin.healthConsecutiveFailures')}</div>
+                </div>
+              </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground">{t('toolbox.plugin.healthAvgDuration')}:</span>{' '}
+                <span className="font-mono">
+                  {healthData.totalCalls > 0 ? `${(healthData.totalDurationMs / healthData.totalCalls).toFixed(0)}ms` : '-'}
+                </span>
+              </div>
+              {healthData.lastError && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">{t('toolbox.plugin.healthLastError')}:</span>
+                  <code className="block mt-1 rounded bg-muted p-2 text-xs break-all">{healthData.lastError}</code>
+                </div>
+              )}
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetHealth}>
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('toolbox.plugin.healthReset')}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={settingsDialogPlugin !== null} onOpenChange={(open) => { if (!open) setSettingsDialogPlugin(null); }}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4" />
+              {t('toolbox.plugin.pluginSettings')}
+            </DialogTitle>
+            <DialogDescription>{t('toolbox.plugin.pluginSettingsDesc')}</DialogDescription>
+          </DialogHeader>
+          {settingsSchema.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">{t('toolbox.plugin.pluginSettingsEmpty')}</p>
+          ) : (
+            <ScrollArea className="max-h-[400px]">
+              <div className="space-y-4 py-2 pr-2">
+                {settingsSchema.map((setting) => (
+                  <div key={setting.id} className="space-y-1.5">
+                    <Label className="text-sm">
+                      {locale === 'zh' && setting.labelZh ? setting.labelZh : setting.labelEn}
+                    </Label>
+                    {(locale === 'zh' && setting.descriptionZh ? setting.descriptionZh : setting.descriptionEn) && (
+                      <p className="text-xs text-muted-foreground">
+                        {locale === 'zh' && setting.descriptionZh ? setting.descriptionZh : setting.descriptionEn}
+                      </p>
+                    )}
+                    {setting.type === 'boolean' ? (
+                      <Switch
+                        checked={!!settingsValues[setting.id]}
+                        onCheckedChange={(checked) => handleSetSetting(setting.id, checked)}
+                      />
+                    ) : setting.type === 'select' ? (
+                      <Select
+                        value={String(settingsValues[setting.id] ?? setting.default ?? '')}
+                        onValueChange={(v) => handleSetSetting(setting.id, v)}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {setting.options.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {locale === 'zh' && opt.labelZh ? opt.labelZh : opt.labelEn}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : setting.type === 'number' ? (
+                      <Input
+                        type="number"
+                        min={setting.min ?? undefined}
+                        max={setting.max ?? undefined}
+                        value={String(settingsValues[setting.id] ?? setting.default ?? '')}
+                        onChange={(e) => handleSetSetting(setting.id, Number(e.target.value))}
+                      />
+                    ) : (
+                      <Input
+                        value={String(settingsValues[setting.id] ?? setting.default ?? '')}
+                        onChange={(e) => handleSetSetting(setting.id, e.target.value)}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -514,6 +846,14 @@ function PluginCard({
   onReload,
   onPermissions,
   onDetails,
+  onCheckUpdate,
+  onUpdate,
+  onHealth,
+  onSettings,
+  onExport,
+  pluginUpdateInfo,
+  isUpdating,
+  healthStatus,
 }: {
   plugin: PluginInfo;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -522,7 +862,16 @@ function PluginCard({
   onReload: () => void;
   onPermissions: () => void;
   onDetails: () => void;
+  onCheckUpdate: () => void;
+  onUpdate: () => void;
+  onHealth: () => void;
+  onSettings: () => void;
+  onExport: () => void;
+  pluginUpdateInfo: PluginUpdateInfo | null;
+  isUpdating: boolean;
+  healthStatus: 'good' | 'warning' | 'critical';
 }) {
+  const healthColor = healthStatus === 'good' ? 'bg-green-500' : healthStatus === 'warning' ? 'bg-yellow-500' : 'bg-red-500';
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -530,6 +879,7 @@ function PluginCard({
           <div className="space-y-1">
             <CardTitle className="text-base flex items-center gap-2">
               <Plug className="h-4 w-4" />
+              <span className={`h-2 w-2 rounded-full shrink-0 ${healthColor}`} />
               {plugin.name}
               <Badge variant="outline" className="text-[10px]">v{plugin.version}</Badge>
               {plugin.enabled ? (
@@ -539,6 +889,11 @@ function PluginCard({
               ) : (
                 <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground">
                   {t('toolbox.plugin.disable')}
+                </Badge>
+              )}
+              {pluginUpdateInfo && (
+                <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  {t('toolbox.plugin.updateAvailable', { version: pluginUpdateInfo.latestVersion })}
                 </Badge>
               )}
             </CardTitle>
@@ -559,7 +914,7 @@ function PluginCard({
           <span>{plugin.source.type}</span>
         </div>
         <Separator className="mb-3" />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onDetails}>
             <Info className="h-3 w-3" />
             {t('toolbox.plugin.details')}
@@ -568,10 +923,33 @@ function PluginCard({
             <Shield className="h-3 w-3" />
             {t('toolbox.plugin.permissions')}
           </Button>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onHealth}>
+            <Heart className="h-3 w-3" />
+            {t('toolbox.plugin.health')}
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onSettings}>
+            <Settings2 className="h-3 w-3" />
+            {t('toolbox.plugin.pluginSettings')}
+          </Button>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onExport}>
+            <Download className="h-3 w-3" />
+            {t('toolbox.plugin.export')}
+          </Button>
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onReload}>
             <RefreshCw className="h-3 w-3" />
             {t('toolbox.plugin.reload')}
           </Button>
+          {pluginUpdateInfo ? (
+            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-blue-600 hover:text-blue-700" onClick={onUpdate} disabled={isUpdating}>
+              <ArrowUpCircle className="h-3 w-3" />
+              {isUpdating ? t('toolbox.plugin.updating') : t('toolbox.plugin.update')}
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={onCheckUpdate}>
+              <ArrowUpCircle className="h-3 w-3" />
+              {t('toolbox.plugin.checkUpdate')}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs text-destructive hover:text-destructive" onClick={onUninstall}>
             <Trash2 className="h-3 w-3" />
             {t('toolbox.plugin.uninstall')}

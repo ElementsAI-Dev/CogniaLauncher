@@ -6,3 +6,4 @@ export { ToolDetailPanel } from './tool-detail-panel';
 export { ToolTextArea } from './tool-layout';
 export { ToolEmptyState } from './tool-empty-state';
 export { PluginToolRunner } from './plugin-tool-runner';
+export { BuiltInToolRenderer, ToolLoadingFallback } from './built-in-tool-renderer';

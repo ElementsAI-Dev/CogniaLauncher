@@ -18,6 +18,19 @@ jest.mock('@/lib/tauri', () => ({
   pluginGetLocales: jest.fn(),
   pluginScaffold: jest.fn(),
   pluginValidate: jest.fn(),
+  pluginCheckUpdate: jest.fn(),
+  pluginUpdate: jest.fn(),
+  pluginGetHealth: jest.fn(),
+  pluginGetAllHealth: jest.fn(),
+  pluginResetHealth: jest.fn(),
+  pluginGetSettingsSchema: jest.fn(),
+  pluginGetSettingsValues: jest.fn(),
+  pluginSetSetting: jest.fn(),
+  pluginExportData: jest.fn(),
+  pluginCheckAllUpdates: jest.fn(),
+  pluginUpdateAll: jest.fn(),
+  pluginDispatchEvent: jest.fn(),
+  pluginGetUiAsset: jest.fn(),
 }));
 
 jest.mock('sonner', () => ({
@@ -56,6 +69,25 @@ describe('usePlugins', () => {
     expect(typeof result.current.translatePluginKey).toBe('function');
     expect(typeof result.current.scaffoldPlugin).toBe('function');
     expect(typeof result.current.validatePlugin).toBe('function');
+    expect(typeof result.current.checkUpdate).toBe('function');
+    expect(typeof result.current.updatePlugin).toBe('function');
+    expect(typeof result.current.getHealth).toBe('function');
+    expect(typeof result.current.getAllHealth).toBe('function');
+    expect(typeof result.current.resetHealth).toBe('function');
+    expect(typeof result.current.getSettingsSchema).toBe('function');
+    expect(typeof result.current.getSettingsValues).toBe('function');
+    expect(typeof result.current.setSetting).toBe('function');
+    expect(typeof result.current.exportData).toBe('function');
+    expect(typeof result.current.checkAllUpdates).toBe('function');
+    expect(typeof result.current.updateAll).toBe('function');
+    expect(typeof result.current.dispatchEvent).toBe('function');
+    expect(typeof result.current.getUiAsset).toBe('function');
+  });
+
+  it('should expose healthMap and pendingUpdates state', () => {
+    const { result } = renderHook(() => usePlugins());
+    expect(result.current.healthMap).toEqual({});
+    expect(result.current.pendingUpdates).toEqual([]);
   });
 
   it('should skip fetch when not Tauri', async () => {
@@ -149,5 +181,91 @@ describe('usePlugins', () => {
     const { result } = renderHook(() => usePlugins());
     const result2 = result.current.translatePluginKey(null, 'en', 'some_key');
     expect(result2).toBe('some_key');
+  });
+
+  // --- New actions: skip when not Tauri ---
+
+  it('should skip getHealth when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const health = await act(async () => result.current.getHealth('test'));
+    expect(health).toBeNull();
+    expect(tauri.pluginGetHealth).not.toHaveBeenCalled();
+  });
+
+  it('should skip getAllHealth when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const map = await act(async () => result.current.getAllHealth());
+    expect(map).toBeNull();
+    expect(tauri.pluginGetAllHealth).not.toHaveBeenCalled();
+  });
+
+  it('should skip resetHealth when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => result.current.resetHealth('test'));
+    expect(tauri.pluginResetHealth).not.toHaveBeenCalled();
+  });
+
+  it('should skip getSettingsSchema when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const schema = await act(async () => result.current.getSettingsSchema('test'));
+    expect(schema).toBeNull();
+    expect(tauri.pluginGetSettingsSchema).not.toHaveBeenCalled();
+  });
+
+  it('should skip getSettingsValues when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const values = await act(async () => result.current.getSettingsValues('test'));
+    expect(values).toBeNull();
+    expect(tauri.pluginGetSettingsValues).not.toHaveBeenCalled();
+  });
+
+  it('should skip setSetting when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => result.current.setSetting('test', 'key', 'value'));
+    expect(tauri.pluginSetSetting).not.toHaveBeenCalled();
+  });
+
+  it('should skip exportData when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const path = await act(async () => result.current.exportData('test'));
+    expect(path).toBeNull();
+    expect(tauri.pluginExportData).not.toHaveBeenCalled();
+  });
+
+  it('should skip checkAllUpdates when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const updates = await act(async () => result.current.checkAllUpdates());
+    expect(updates).toEqual([]);
+    expect(tauri.pluginCheckAllUpdates).not.toHaveBeenCalled();
+  });
+
+  it('should skip updateAll when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => result.current.updateAll());
+    expect(tauri.pluginUpdateAll).not.toHaveBeenCalled();
+  });
+
+  it('should skip dispatchEvent when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    await act(async () => result.current.dispatchEvent('test_event', { foo: 'bar' }));
+    expect(tauri.pluginDispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('should skip getUiAsset when not Tauri', async () => {
+    tauri.isTauri.mockReturnValue(false);
+    const { result } = renderHook(() => usePlugins());
+    const asset = await act(async () => result.current.getUiAsset('test', 'index.html'));
+    expect(asset).toBeNull();
+    expect(tauri.pluginGetUiAsset).not.toHaveBeenCalled();
   });
 });

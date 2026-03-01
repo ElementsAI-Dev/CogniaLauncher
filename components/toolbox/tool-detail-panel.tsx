@@ -1,6 +1,5 @@
 'use client';
 
-import { Suspense, use, type ComponentType } from 'react';
 import {
   Sheet,
   SheetContent,
@@ -9,58 +8,18 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useLocale } from '@/components/providers/locale-provider';
-import { getToolById } from '@/lib/constants/toolbox';
 import { PluginToolRunner } from '@/components/toolbox/plugin-tool-runner';
+import { BuiltInToolRenderer } from '@/components/toolbox/built-in-tool-renderer';
 import { Button } from '@/components/ui/button';
 import { Plug, Maximize2 } from 'lucide-react';
 import Link from 'next/link';
-import type { ToolComponentProps } from '@/types/toolbox';
 import type { UnifiedTool } from '@/hooks/use-toolbox';
 
 interface ToolDetailPanelProps {
   tool: UnifiedTool | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}
-
-function ToolLoadingFallback() {
-  return (
-    <div className="space-y-4 p-4">
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-32 w-full" />
-    </div>
-  );
-}
-
-// Module-level cache for built-in tool component promises
-const componentCache = new Map<string, Promise<ComponentType<ToolComponentProps>>>();
-
-function loadBuiltInComponent(builtInId: string): Promise<ComponentType<ToolComponentProps>> {
-  const cached = componentCache.get(builtInId);
-  if (cached) return cached;
-
-  const tool = getToolById(builtInId);
-  if (!tool) {
-    const empty = Promise.resolve((() => null) as unknown as ComponentType<ToolComponentProps>);
-    componentCache.set(builtInId, empty);
-    return empty;
-  }
-
-  const promise = tool.component().then((mod) => mod.default);
-  componentCache.set(builtInId, promise);
-  return promise;
-}
-
-function BuiltInToolRenderer({ builtInId }: { builtInId: string }) {
-  /* eslint-disable -- dynamic component loaded from module-level promise cache */
-  const Component = use(loadBuiltInComponent(builtInId));
-  if (!Component) return null;
-  return <Component />;
-  /* eslint-enable */
 }
 
 export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelProps) {
@@ -85,7 +44,7 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
             </SheetHeader>
             <div className="mt-2">
               <Button variant="outline" size="sm" className="gap-1.5" asChild onClick={() => onOpenChange(false)}>
-                <Link href={`/toolbox/${tool.isBuiltIn && tool.builtInDef ? tool.builtInDef.id : encodeURIComponent(tool.id)}`}>
+                <Link href={`/toolbox/tool?id=${encodeURIComponent(tool.id)}`}>
                   <Maximize2 className="h-3.5 w-3.5" />
                   {t('toolbox.actions.openFullPage')}
                 </Link>
@@ -93,9 +52,7 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
             </div>
             <div className="mt-6">
               {tool.isBuiltIn && tool.builtInDef ? (
-                <Suspense fallback={<ToolLoadingFallback />}>
-                  <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
-                </Suspense>
+                <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
               ) : tool.pluginTool ? (
                 <PluginToolRunner tool={tool.pluginTool} />
               ) : (

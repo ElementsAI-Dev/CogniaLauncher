@@ -36,8 +36,9 @@ import {
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { writeClipboard } from '@/lib/clipboard';
-import * as LucideIcons from 'lucide-react';
-import { Wrench, Copy, Check, Upload } from 'lucide-react';
+import { useLocale } from '@/components/providers/locale-provider';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
+import { Copy, Check, Upload } from 'lucide-react';
 import type {
   UiBlock,
   UiTextBlock,
@@ -60,17 +61,6 @@ import type {
   FormField,
   PluginUiAction,
 } from '@/types/plugin-ui';
-
-// ============================================================================
-// Dynamic Icon (reuses pattern from tool-card.tsx)
-// ============================================================================
-
-function DynamicIcon({ name, className }: { name: string; className?: string }) {
-  const icons = LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>;
-  const Resolved = icons[name];
-  if (!Resolved) return <Wrench className={className} />;
-  return <Resolved className={className} />;
-}
 
 // ============================================================================
 // Main Renderer
@@ -260,6 +250,29 @@ function KeyValueBlock({ block }: { block: UiKeyValueBlock }) {
 }
 
 // ============================================================================
+// i18n Helper Components
+// ============================================================================
+
+function SubmitButton({ label }: { label?: string }) {
+  const { t } = useLocale();
+  return (
+    <Button type="submit" size="sm">
+      {label ?? t('toolbox.plugin.defaultSubmit')}
+    </Button>
+  );
+}
+
+function ChooseFileButton({ onClick }: { onClick: () => void }) {
+  const { t } = useLocale();
+  return (
+    <Button variant="outline" size="sm" className="gap-1.5" onClick={onClick}>
+      <Upload className="h-3.5 w-3.5" />
+      {t('toolbox.plugin.chooseFile')}
+    </Button>
+  );
+}
+
+// ============================================================================
 // Interactive Blocks
 // ============================================================================
 
@@ -312,9 +325,7 @@ function FormBlock({
           onChange={(v) => setFormData((prev) => ({ ...prev, [field.id]: v }))}
         />
       ))}
-      <Button type="submit" size="sm">
-        {block.submitLabel ?? 'Submit'}
-      </Button>
+      <SubmitButton label={block.submitLabel} />
     </form>
   );
 }
@@ -488,6 +499,7 @@ function AccordionBlock({
 }
 
 function CopyButtonBlock({ block }: { block: UiCopyButtonBlock }) {
+  const { t } = useLocale();
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(async () => {
     try {
@@ -504,7 +516,7 @@ function CopyButtonBlock({ block }: { block: UiCopyButtonBlock }) {
   return (
     <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopy}>
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {block.label ?? (copied ? 'Copied!' : 'Copy')}
+      {block.label ?? (copied ? t('toolbox.actions.copied') : t('toolbox.actions.copy'))}
     </Button>
   );
 }
@@ -540,15 +552,7 @@ function FileInputBlock({
     <div className="space-y-1.5">
       <Label className="text-sm">{block.label}</Label>
       <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => inputRef.current?.click()}
-        >
-          <Upload className="h-3.5 w-3.5" />
-          Choose File
-        </Button>
+        <ChooseFileButton onClick={() => inputRef.current?.click()} />
         <input
           ref={inputRef}
           type="file"

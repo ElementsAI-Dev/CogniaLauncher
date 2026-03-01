@@ -49,6 +49,14 @@ jest.mock("@/hooks/use-keyboard-shortcuts", () => ({
   useKeyboardShortcuts: jest.fn(),
 }));
 
+jest.mock("@/hooks/use-toolbox", () => ({
+  useToolbox: () => ({ allTools: [] }),
+}));
+
+jest.mock("@/lib/tauri", () => ({
+  isTauri: jest.fn(() => false),
+}));
+
 describe("CommandPalette", () => {
   beforeEach(() => {
     jest.clearAllMocks();

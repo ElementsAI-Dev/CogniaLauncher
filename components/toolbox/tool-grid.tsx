@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { ToolCard } from '@/components/toolbox/tool-card';
 import { cn } from '@/lib/utils';
 import type { UnifiedTool } from '@/hooks/use-toolbox';
@@ -10,9 +11,12 @@ interface ToolGridProps {
   viewMode: 'grid' | 'list';
   onToggleFavorite: (id: string) => void;
   onOpen: (id: string) => void;
+  toolUseCounts?: Record<string, number>;
 }
 
-export function ToolGrid({ tools, favorites, viewMode, onToggleFavorite, onOpen }: ToolGridProps) {
+export function ToolGrid({ tools, favorites, viewMode, onToggleFavorite, onOpen, toolUseCounts }: ToolGridProps) {
+  const favSet = useMemo(() => new Set(favorites), [favorites]);
+
   return (
     <div
       className={cn(
@@ -25,10 +29,11 @@ export function ToolGrid({ tools, favorites, viewMode, onToggleFavorite, onOpen 
         <ToolCard
           key={tool.id}
           tool={tool}
-          isFavorite={favorites.includes(tool.id)}
+          isFavorite={favSet.has(tool.id)}
           onToggleFavorite={onToggleFavorite}
           onOpen={onOpen}
           viewMode={viewMode}
+          useCount={toolUseCounts?.[tool.id] ?? 0}
         />
       ))}
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ToolTextArea } from '@/components/toolbox/tool-layout';
@@ -23,6 +24,7 @@ export default function HashGenerator({ className }: ToolComponentProps) {
   const [input, setInput] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
   const [computing, setComputing] = useState(false);
+  const { copy } = useCopyToClipboard();
   const [copiedAlgo, setCopiedAlgo] = useState<string | null>(null);
 
   const handleGenerate = useCallback(async () => {
@@ -39,10 +41,10 @@ export default function HashGenerator({ className }: ToolComponentProps) {
   }, [input]);
 
   const handleCopy = useCallback(async (algo: string, value: string) => {
-    await navigator.clipboard.writeText(value);
+    await copy(value);
     setCopiedAlgo(algo);
     setTimeout(() => setCopiedAlgo(null), 1500);
-  }, []);
+  }, [copy]);
 
   return (
     <div className={className}>

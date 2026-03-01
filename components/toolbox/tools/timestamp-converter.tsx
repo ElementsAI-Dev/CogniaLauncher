@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,7 +29,8 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
   const [mode, setMode] = useState<'toDate' | 'toTimestamp'>('toDate');
   const [results, setResults] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copy } = useCopyToClipboard();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const handleConvert = useCallback(() => {
     if (!input.trim()) { setResults(null); setError(null); return; }
@@ -72,10 +74,10 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
   }, []);
 
   const handleCopy = useCallback(async (key: string, value: string) => {
-    await navigator.clipboard.writeText(value);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 1500);
-  }, []);
+    await copy(value);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1500);
+  }, [copy]);
 
   return (
     <div className={className}>
@@ -116,7 +118,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
                   <Badge variant="secondary" className="text-xs shrink-0 w-24 justify-center">{key}</Badge>
                   <code className="flex-1 text-xs font-mono truncate">{value}</code>
                   <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleCopy(key, value)}>
-                    {copied === key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                    {copiedKey === key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                   </Button>
                 </div>
               ))}

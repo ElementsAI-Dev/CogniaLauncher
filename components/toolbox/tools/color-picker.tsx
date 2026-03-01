@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -49,7 +50,8 @@ function getContrastRatio(hex: string): string {
 export default function ColorPicker({ className }: ToolComponentProps) {
   const { t } = useLocale();
   const [hex, setHex] = useState('#3b82f6');
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copy } = useCopyToClipboard();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const rgb = hexToRgb(hex);
   const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
@@ -73,10 +75,10 @@ export default function ColorPicker({ className }: ToolComponentProps) {
   }, [rgb]);
 
   const handleCopy = useCallback(async (text: string, key: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied(null), 1500);
-  }, []);
+    await copy(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1500);
+  }, [copy]);
 
   const formats = [
     { key: 'hex', label: 'HEX', value: hex.toUpperCase() },
@@ -133,7 +135,7 @@ export default function ColorPicker({ className }: ToolComponentProps) {
                 <span className="text-sm font-medium w-20">{label}</span>
                 <code className="flex-1 text-xs font-mono">{value}</code>
                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => handleCopy(value, key)}>
-                  {copied === key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  {copiedKey === key ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
                 </Button>
               </div>
             ))}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +33,7 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
   const [mode, setMode] = useState<'paragraphs' | 'sentences' | 'words'>('paragraphs');
   const [count, setCount] = useState(3);
   const [output, setOutput] = useState('');
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const handleGenerate = useCallback(() => {
     let result: string;
@@ -44,14 +45,11 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
       result = randomWords(count);
     }
     setOutput(result);
-    setCopied(false);
   }, [mode, count]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [output]);
+    await copy(output);
+  }, [copy, output]);
 
   return (
     <div className={className}>

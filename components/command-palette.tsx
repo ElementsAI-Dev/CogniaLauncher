@@ -6,6 +6,8 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useFeedbackStore } from "@/lib/stores/feedback";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useToolbox } from "@/hooks/use-toolbox";
+import { isTauri } from "@/lib/tauri";
 import {
   CommandDialog,
   CommandInput,
@@ -27,6 +29,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { t } = useLocale();
   const { toggleDrawer } = useLogStore();
   const { openDialog: openFeedback } = useFeedbackStore();
+  const { allTools } = useToolbox();
   const [search, setSearch] = useState("");
 
   const navigationItems = useMemo(
@@ -127,6 +130,59 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             {t("about.featureRequest")}
           </CommandItem>
         </CommandGroup>
+        {allTools.length > 0 && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={t("commandPalette.groups.tools")}>
+              {allTools.map((tool) => (
+                <CommandItem
+                  key={tool.id}
+                  value={`${tool.name} ${tool.keywords.join(" ")}`}
+                  onSelect={() => {
+                    router.push(`/toolbox/tool?id=${encodeURIComponent(tool.id)}`);
+                    closePalette();
+                  }}
+                >
+                  {tool.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </>
+        )}
+        {isTauri() && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={t("commandPalette.groups.pluginManagement")}>
+              <CommandItem
+                value={t("commandPalette.actions.managePlugins")}
+                onSelect={() => {
+                  router.push("/toolbox/plugins");
+                  closePalette();
+                }}
+              >
+                {t("commandPalette.actions.managePlugins")}
+              </CommandItem>
+              <CommandItem
+                value={t("commandPalette.actions.installPlugin")}
+                onSelect={() => {
+                  router.push("/toolbox/plugins?action=install");
+                  closePalette();
+                }}
+              >
+                {t("commandPalette.actions.installPlugin")}
+              </CommandItem>
+              <CommandItem
+                value={t("commandPalette.actions.createPlugin")}
+                onSelect={() => {
+                  router.push("/toolbox/plugins?action=scaffold");
+                  closePalette();
+                }}
+              >
+                {t("commandPalette.actions.createPlugin")}
+              </CommandItem>
+            </CommandGroup>
+          </>
+        )}
       </CommandList>
     </CommandDialog>
   );

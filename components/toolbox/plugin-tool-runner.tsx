@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -8,9 +8,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ToolTextArea } from '@/components/toolbox/tool-layout';
 import { PluginUiRenderer } from '@/components/plugin/plugin-ui-renderer';
 import { PluginIframeView } from '@/components/plugin/plugin-iframe-view';
+import { MarkdownRenderer } from '@/components/docs/markdown-renderer';
 import { useLocale } from '@/components/providers/locale-provider';
 import { usePlugins } from '@/hooks/use-plugins';
 import { Play, AlertCircle, Loader2 } from 'lucide-react';
+import { isTauri } from '@/lib/tauri';
 import type { PluginToolInfo } from '@/types/plugin';
 import type { UiBlock, PluginUiResponse, PluginUiAction } from '@/types/plugin-ui';
 
@@ -20,6 +22,17 @@ interface PluginToolRunnerProps {
 }
 
 export function PluginToolRunner({ tool, className }: PluginToolRunnerProps) {
+  const { t } = useLocale();
+
+  if (!isTauri()) {
+    return (
+      <Alert className={className}>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>{t('toolbox.plugin.desktopOnly')}</AlertDescription>
+      </Alert>
+    );
+  }
+
   const uiMode = tool.uiMode || 'text';
 
   if (uiMode === 'iframe') {
@@ -44,20 +57,46 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
   const [output, setOutput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const cancelledRef = useRef(false);
+  const runIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setElapsedMs((v) => v + 100), 100);
+    return () => clearInterval(id);
+  }, [running]);
 
   const handleRun = useCallback(async () => {
+    const currentRunId = ++runIdRef.current;
+    cancelledRef.current = false;
     setRunning(true);
     setError(null);
     setOutput('');
+    setElapsedMs(0);
     try {
       const result = await callTool(tool.pluginId, tool.entry, input);
-      setOutput(result ?? '');
+      if (!cancelledRef.current && runIdRef.current === currentRunId) {
+        setOutput(result ?? '');
+      }
     } catch (e) {
-      setError((e as Error).message ?? String(e));
+      if (!cancelledRef.current && runIdRef.current === currentRunId) {
+        setError((e as Error).message ?? String(e));
+      }
     } finally {
-      setRunning(false);
+      if (runIdRef.current === currentRunId) {
+        setRunning(false);
+      }
     }
   }, [callTool, tool.pluginId, tool.entry, input]);
+
+  const handleCancel = useCallback(() => {
+    cancelledRef.current = true;
+    setRunning(false);
+    setError(t('toolbox.plugin.cancelled'));
+  }, [t]);
+
+  const elapsedDisplay = running ? `${(elapsedMs / 1000).toFixed(1)}s` : null;
 
   return (
     <div className={className}>
@@ -85,30 +124,77 @@ function TextToolRunner({ tool, className }: PluginToolRunnerProps) {
           </Alert>
         )}
 
-        <Button
-          onClick={handleRun}
-          size="sm"
-          disabled={running}
-          className="gap-1.5"
-        >
-          {running ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleRun}
+            size="sm"
+            disabled={running}
+            className="gap-1.5"
+          >
+            {running ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+            {running ? t('toolbox.plugin.running') : t('toolbox.plugin.run')}
+          </Button>
+          {running && (
+            <>
+              <Button onClick={handleCancel} size="sm" variant="outline" className="gap-1.5">
+                {t('common.cancel')}
+              </Button>
+              {elapsedDisplay && (
+                <span className="text-xs text-muted-foreground font-mono">{elapsedDisplay}</span>
+              )}
+            </>
           )}
-          {running ? t('toolbox.plugin.running') : t('toolbox.plugin.run')}
-        </Button>
+        </div>
 
-        {output && (
-          <ToolTextArea
-            label={t('toolbox.plugin.output')}
-            value={output}
-            readOnly
-            rows={8}
-          />
-        )}
+        {output && <SmartOutput output={output} label={t('toolbox.plugin.output')} />}
       </div>
     </div>
+  );
+}
+
+function SmartOutput({ output, label }: { output: string; label: string }) {
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    // not JSON — render as plain text
+  }
+
+  if (parsed && typeof parsed === 'object' && parsed.__type === 'markdown' && typeof parsed.content === 'string') {
+    return (
+      <div className="space-y-2">
+        <span className="text-sm font-medium">{label}</span>
+        <div className="rounded-md border p-4">
+          <MarkdownRenderer content={parsed.content as string} className="prose-sm max-w-none" />
+        </div>
+      </div>
+    );
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const prettyJson = JSON.stringify(parsed, null, 2);
+    return (
+      <ToolTextArea
+        label={label}
+        value={prettyJson}
+        readOnly
+        rows={Math.min(20, prettyJson.split('\n').length + 1)}
+        language="json"
+      />
+    );
+  }
+
+  return (
+    <ToolTextArea
+      label={label}
+      value={output}
+      readOnly
+      rows={8}
+    />
   );
 }
 

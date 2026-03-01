@@ -45,6 +45,7 @@ export function QuickSearch({
     quickActions,
     envResults,
     pkgResults,
+    toolResults,
     actionResults,
     hasResults,
     showDropdown,
@@ -140,6 +141,32 @@ export function QuickSearch({
                           <div className="font-medium">{result.title}</div>
                           {result.subtitle && (
                             <div className="text-xs text-muted-foreground">
+                              {result.subtitle}
+                            </div>
+                          )}
+                        </div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+
+                {toolResults.length > 0 && (
+                  <CommandGroup heading={t("dashboard.quickSearch.tools")}>
+                    {toolResults.map((result) => (
+                      <CommandItem
+                        key={result.id}
+                        value={result.id}
+                        onSelect={() => handleSelect(result)}
+                        className="gap-3"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          {result.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{result.title}</div>
+                          {result.subtitle && (
+                            <div className="text-xs text-muted-foreground truncate">
                               {result.subtitle}
                             </div>
                           )}

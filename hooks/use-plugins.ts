@@ -18,8 +18,26 @@ import {
   pluginValidate,
   pluginCheckUpdate,
   pluginUpdate,
+  pluginGetHealth,
+  pluginGetAllHealth,
+  pluginResetHealth,
+  pluginGetSettingsSchema,
+  pluginGetSettingsValues,
+  pluginSetSetting,
+  pluginExportData,
+  pluginCheckAllUpdates,
+  pluginUpdateAll,
+  pluginDispatchEvent,
+  pluginGetUiAsset,
 } from '@/lib/tauri';
-import type { ScaffoldConfig, ScaffoldResult, ValidationResult, PluginUpdateInfo } from '@/types/plugin';
+import type {
+  ScaffoldConfig,
+  ScaffoldResult,
+  ValidationResult,
+  PluginUpdateInfo,
+  PluginHealth,
+  PluginSettingDeclaration,
+} from '@/types/plugin';
 import { isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
 
@@ -233,6 +251,137 @@ export function usePlugins() {
     }
   }, [store, fetchPlugins]);
 
+  const getHealth = useCallback(async (pluginId: string): Promise<PluginHealth | null> => {
+    if (!isTauri()) return null;
+    try {
+      const health = await pluginGetHealth(pluginId);
+      store.setPluginHealth(pluginId, health);
+      return health;
+    } catch (e) {
+      toast.error(`Health check failed: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, [store]);
+
+  const getAllHealth = useCallback(async () => {
+    if (!isTauri()) return null;
+    try {
+      const healthMap = await pluginGetAllHealth();
+      store.setHealthMap(healthMap);
+      return healthMap;
+    } catch (e) {
+      toast.error(`Health check failed: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, [store]);
+
+  const resetHealth = useCallback(async (pluginId: string) => {
+    if (!isTauri()) return;
+    try {
+      await pluginResetHealth(pluginId);
+      toast.success(`Health reset: ${pluginId}`);
+      await getHealth(pluginId);
+    } catch (e) {
+      toast.error(`Reset failed: ${(e as Error).message ?? String(e)}`);
+    }
+  }, [getHealth]);
+
+  const getSettingsSchema = useCallback(async (pluginId: string): Promise<PluginSettingDeclaration[] | null> => {
+    if (!isTauri()) return null;
+    try {
+      return await pluginGetSettingsSchema(pluginId);
+    } catch (e) {
+      toast.error(`Failed to load settings: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, []);
+
+  const getSettingsValues = useCallback(async (pluginId: string): Promise<Record<string, unknown> | null> => {
+    if (!isTauri()) return null;
+    try {
+      return await pluginGetSettingsValues(pluginId);
+    } catch (e) {
+      toast.error(`Failed to load settings: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, []);
+
+  const setSetting = useCallback(async (pluginId: string, key: string, value: unknown) => {
+    if (!isTauri()) return;
+    try {
+      await pluginSetSetting(pluginId, key, value);
+    } catch (e) {
+      toast.error(`Failed to save setting: ${(e as Error).message ?? String(e)}`);
+      throw e;
+    }
+  }, []);
+
+  const exportData = useCallback(async (pluginId: string): Promise<string | null> => {
+    if (!isTauri()) return null;
+    try {
+      const path = await pluginExportData(pluginId);
+      toast.success(`Plugin data exported: ${path}`);
+      return path;
+    } catch (e) {
+      toast.error(`Export failed: ${(e as Error).message ?? String(e)}`);
+      return null;
+    }
+  }, []);
+
+  const checkAllUpdates = useCallback(async (): Promise<PluginUpdateInfo[]> => {
+    if (!isTauri()) return [];
+    store.setLoading(true);
+    try {
+      const updates = await pluginCheckAllUpdates();
+      store.setPendingUpdates(updates);
+      return updates;
+    } catch (e) {
+      toast.error(`Update check failed: ${(e as Error).message ?? String(e)}`);
+      return [];
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store]);
+
+  const updateAll = useCallback(async () => {
+    if (!isTauri()) return;
+    store.setLoading(true);
+    try {
+      const results = await pluginUpdateAll();
+      const successes = results.filter((r) => r.Ok).length;
+      const failures = results.filter((r) => r.Err).length;
+      if (failures > 0) {
+        toast.warning(`Updated ${successes}, failed ${failures}`);
+      } else {
+        toast.success(`All ${successes} plugins updated`);
+      }
+      store.setPendingUpdates([]);
+      await fetchPlugins();
+    } catch (e) {
+      toast.error(`Batch update failed: ${(e as Error).message ?? String(e)}`);
+    } finally {
+      store.setLoading(false);
+    }
+  }, [store, fetchPlugins]);
+
+  const dispatchEvent = useCallback(async (eventName: string, payload: unknown = {}) => {
+    if (!isTauri()) return;
+    try {
+      await pluginDispatchEvent(eventName, payload);
+    } catch {
+      // Event dispatch is best-effort, don't show error
+    }
+  }, []);
+
+  const getUiAsset = useCallback(async (pluginId: string, assetPath: string): Promise<number[] | null> => {
+    if (!isTauri()) return null;
+    try {
+      return await pluginGetUiAsset(pluginId, assetPath);
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     plugins: store.installedPlugins,
     pluginTools: store.pluginTools,
@@ -255,5 +404,18 @@ export function usePlugins() {
     validatePlugin,
     checkUpdate,
     updatePlugin,
+    healthMap: store.healthMap,
+    pendingUpdates: store.pendingUpdates,
+    getHealth,
+    getAllHealth,
+    resetHealth,
+    getSettingsSchema,
+    getSettingsValues,
+    setSetting,
+    exportData,
+    checkAllUpdates,
+    updateAll,
+    dispatchEvent,
+    getUiAsset,
   };
 }

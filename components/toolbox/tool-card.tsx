@@ -8,8 +8,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
 import { getCategoryMeta } from '@/lib/constants/toolbox';
-import { Star, Sparkles, Wrench, Plug } from 'lucide-react';
-import * as LucideIcons from 'lucide-react';
+import { Star, Sparkles, Plug } from 'lucide-react';
+import { DynamicIcon } from '@/components/ui/dynamic-icon';
 import type { UnifiedTool } from '@/hooks/use-toolbox';
 
 interface ToolCardProps {
@@ -18,16 +18,10 @@ interface ToolCardProps {
   onToggleFavorite: (id: string) => void;
   onOpen: (id: string) => void;
   viewMode: 'grid' | 'list';
+  useCount?: number;
 }
 
-function DynamicIcon({ name, className }: { name: string; className?: string }) {
-  const icons = LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>;
-  const Resolved = icons[name];
-  if (!Resolved) return <Wrench className={className} />;
-  return <Resolved className={className} />;
-}
-
-export function ToolCard({ tool, isFavorite, onToggleFavorite, onOpen, viewMode }: ToolCardProps) {
+export function ToolCard({ tool, isFavorite, onToggleFavorite, onOpen, viewMode, useCount = 0 }: ToolCardProps) {
   const { t } = useLocale();
   const category = getCategoryMeta(tool.category as import('@/types/toolbox').ToolCategory);
 
@@ -124,6 +118,11 @@ export function ToolCard({ tool, isFavorite, onToggleFavorite, onOpen, viewMode 
             <Badge variant="outline" className="text-[10px] px-1 py-0 gap-0.5">
               <Plug className="h-2.5 w-2.5" />
               {t('toolbox.plugin.external')}
+            </Badge>
+          )}
+          {useCount > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
+              {useCount}×
             </Badge>
           )}
         </div>

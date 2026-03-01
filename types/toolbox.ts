@@ -29,7 +29,7 @@ export interface ToolCategoryMeta {
 }
 
 /** Virtual category for navigation (includes special groups) */
-export type ToolCategoryFilter = ToolCategory | 'all' | 'favorites' | 'recent';
+export type ToolCategoryFilter = ToolCategory | 'all' | 'favorites' | 'recent' | 'most-used';
 
 // ============================================================================
 // Tool Definition

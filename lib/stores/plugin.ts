@@ -1,12 +1,14 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { PluginInfo, PluginToolInfo } from '@/types/plugin';
+import type { PluginInfo, PluginToolInfo, PluginHealth, PluginUpdateInfo } from '@/types/plugin';
 
 interface PluginState {
   installedPlugins: PluginInfo[];
   pluginTools: PluginToolInfo[];
   loading: boolean;
   error: string | null;
+  healthMap: Record<string, PluginHealth>;
+  pendingUpdates: PluginUpdateInfo[];
 
   setInstalledPlugins: (plugins: PluginInfo[]) => void;
   setPluginTools: (tools: PluginToolInfo[]) => void;
@@ -15,6 +17,9 @@ interface PluginState {
   updatePlugin: (pluginId: string, updates: Partial<PluginInfo>) => void;
   removePlugin: (pluginId: string) => void;
   addPlugin: (plugin: PluginInfo) => void;
+  setHealthMap: (healthMap: Record<string, PluginHealth>) => void;
+  setPluginHealth: (pluginId: string, health: PluginHealth) => void;
+  setPendingUpdates: (updates: PluginUpdateInfo[]) => void;
 }
 
 export const usePluginStore = create<PluginState>()(
@@ -24,6 +29,8 @@ export const usePluginStore = create<PluginState>()(
       pluginTools: [],
       loading: false,
       error: null,
+      healthMap: {},
+      pendingUpdates: [],
 
       setInstalledPlugins: (installedPlugins) => set({ installedPlugins }),
       setPluginTools: (pluginTools) => set({ pluginTools }),
@@ -47,13 +54,21 @@ export const usePluginStore = create<PluginState>()(
         set((state) => ({
           installedPlugins: [...state.installedPlugins, plugin],
         })),
+
+      setHealthMap: (healthMap) => set({ healthMap }),
+      setPluginHealth: (pluginId, health) =>
+        set((state) => ({
+          healthMap: { ...state.healthMap, [pluginId]: health },
+        })),
+      setPendingUpdates: (pendingUpdates) => set({ pendingUpdates }),
     }),
     {
       name: 'cognia-plugins',
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         installedPlugins: state.installedPlugins,
+        pluginTools: state.pluginTools,
       }),
     },
   ),

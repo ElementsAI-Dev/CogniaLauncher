@@ -1,8 +1,10 @@
 'use client';
 
+import { useRef, forwardRef, useImperativeHandle } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Kbd } from '@/components/ui/kbd';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Search, X } from 'lucide-react';
 
@@ -13,36 +15,50 @@ interface ToolSearchBarProps {
   className?: string;
 }
 
-export function ToolSearchBar({ value, onChange, resultCount, className }: ToolSearchBarProps) {
-  const { t } = useLocale();
+export interface ToolSearchBarRef {
+  focus: () => void;
+}
 
-  return (
-    <div className={className}>
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder={t('toolbox.search.placeholder')}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="pl-9 pr-20"
-        />
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-          {value && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => onChange('')}
-              aria-label={t('common.clear')}
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-            {t('toolbox.search.count', { count: resultCount })}
-          </Badge>
+export const ToolSearchBar = forwardRef<ToolSearchBarRef, ToolSearchBarProps>(
+  function ToolSearchBar({ value, onChange, resultCount, className }, ref) {
+    const { t } = useLocale();
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useImperativeHandle(ref, () => ({
+      focus: () => inputRef.current?.focus(),
+    }));
+
+    return (
+      <div className={className}>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            placeholder={t('toolbox.search.placeholder')}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="pl-9 pr-24"
+          />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {value ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => onChange('')}
+                aria-label={t('common.clear')}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            ) : (
+              <Kbd className="text-[10px]">/</Kbd>
+            )}
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              {t('toolbox.search.count', { count: resultCount })}
+            </Badge>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  },
+);

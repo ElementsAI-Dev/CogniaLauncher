@@ -4,7 +4,7 @@ import { usePluginStore } from '@/lib/stores/plugin';
 import { TOOL_REGISTRY, TOOL_CATEGORIES } from '@/lib/constants/toolbox';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
-import type { ToolCategory, ToolDefinitionWithMeta } from '@/types/toolbox';
+import type { ToolCategory, ToolCategoryMeta, ToolDefinitionWithMeta } from '@/types/toolbox';
 import type { PluginToolInfo } from '@/types/plugin';
 
 /** Unified tool item that can be either a built-in tool or a plugin tool */
@@ -67,7 +67,8 @@ export function useToolbox() {
       .map((tool) => builtInToUnified(tool, t));
 
     const plugins: UnifiedTool[] = pluginStore.pluginTools
-      .map((tool) => pluginToolToUnified(tool, locale));
+      .map((tool) => pluginToolToUnified(tool, locale))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     return [...builtIn, ...plugins];
   }, [isDesktop, t, locale, pluginStore.pluginTools]);
@@ -83,6 +84,10 @@ export function useToolbox() {
       tools = tools
         .filter((tool) => recentSet.has(tool.id))
         .sort((a, b) => store.recentTools.indexOf(a.id) - store.recentTools.indexOf(b.id));
+    } else if (store.selectedCategory === 'most-used') {
+      tools = tools
+        .filter((tool) => (store.toolUseCounts[tool.id] ?? 0) > 0)
+        .sort((a, b) => (store.toolUseCounts[b.id] ?? 0) - (store.toolUseCounts[a.id] ?? 0));
     } else if (store.selectedCategory !== 'all') {
       tools = tools.filter((tool) => tool.category === store.selectedCategory);
     }
@@ -108,15 +113,38 @@ export function useToolbox() {
     }
 
     return tools;
-  }, [allTools, store.selectedCategory, store.searchQuery, store.favorites, store.recentTools]);
+  }, [allTools, store.selectedCategory, store.searchQuery, store.favorites, store.recentTools, store.toolUseCounts]);
+
+  const knownCategoryIds = useMemo(() => new Set<string>(TOOL_CATEGORIES.map((c) => c.id)), []);
+
+  const dynamicCategories = useMemo(() => {
+    const seen = new Set<string>();
+    const result: ToolCategoryMeta[] = [];
+    for (const tool of allTools) {
+      if (!knownCategoryIds.has(tool.category) && !seen.has(tool.category)) {
+        seen.add(tool.category);
+        result.push({
+          id: tool.category as ToolCategory,
+          nameKey: tool.category,
+          descriptionKey: '',
+          icon: 'Plug',
+          color: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
+        });
+      }
+    }
+    return result;
+  }, [allTools, knownCategoryIds]);
 
   const categoryToolCounts = useMemo(() => {
-    const counts = new Map<ToolCategory, number>();
+    const counts = new Map<string, number>();
     for (const cat of TOOL_CATEGORIES) {
       counts.set(cat.id, allTools.filter((t) => t.category === cat.id).length);
     }
+    for (const cat of dynamicCategories) {
+      counts.set(cat.id, allTools.filter((t) => t.category === cat.id).length);
+    }
     return counts;
-  }, [allTools]);
+  }, [allTools, dynamicCategories]);
 
   const totalToolCount = allTools.length;
 
@@ -125,8 +153,12 @@ export function useToolbox() {
     allTools,
     categoryToolCounts,
     totalToolCount,
+    dynamicCategories,
+    isDesktop,
     favorites: store.favorites,
     recentTools: store.recentTools,
+    toolUseCounts: store.toolUseCounts,
+    mostUsedCount: Object.values(store.toolUseCounts).filter((c) => c > 0).length,
     viewMode: store.viewMode,
     selectedCategory: store.selectedCategory,
     searchQuery: store.searchQuery,

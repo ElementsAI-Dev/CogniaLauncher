@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -54,21 +55,18 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
   const [excludeSimilar, setExcludeSimilar] = useState(false);
   const [count] = useState(1);
   const [passwords, setPasswords] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const handleGenerate = useCallback(() => {
     const results = Array.from({ length: count }, () =>
       generatePassword(length, upper, lower, digits, special, excludeSimilar),
     );
     setPasswords(results);
-    setCopied(false);
   }, [length, upper, lower, digits, special, excludeSimilar, count]);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(passwords.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }, [passwords]);
+    await copy(passwords.join('\n'));
+  }, [copy, passwords]);
 
   const strength = passwords[0] ? getStrength(passwords[0]) : 0;
   const strengthColor = strength < 40 ? 'bg-red-500' : strength < 70 ? 'bg-yellow-500' : 'bg-green-500';
