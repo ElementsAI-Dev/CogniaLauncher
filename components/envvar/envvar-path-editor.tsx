@@ -140,6 +140,7 @@ export function EnvVarPathEditor({
     if (success) {
       onRefresh();
     }
+    return success;
   }, [onRemove, onRefresh]);
 
   const handleDeduplicate = useCallback(async () => {

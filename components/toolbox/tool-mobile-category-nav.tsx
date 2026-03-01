@@ -21,6 +21,7 @@ interface ToolMobileCategoryNavProps {
   totalToolCount: number;
   favoritesCount: number;
   recentCount: number;
+  mostUsedCount?: number;
   dynamicCategories?: ToolCategoryMeta[];
 }
 
@@ -31,6 +32,7 @@ export function ToolMobileCategoryNav({
   totalToolCount,
   favoritesCount,
   recentCount,
+  mostUsedCount = 0,
   dynamicCategories,
 }: ToolMobileCategoryNavProps) {
   const { t } = useLocale();
@@ -61,6 +63,7 @@ export function ToolMobileCategoryNav({
             totalToolCount={totalToolCount}
             favoritesCount={favoritesCount}
             recentCount={recentCount}
+            mostUsedCount={mostUsedCount}
             dynamicCategories={dynamicCategories}
           />
         </div>

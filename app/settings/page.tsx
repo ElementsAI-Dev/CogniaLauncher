@@ -853,7 +853,7 @@ export default function SettingsPage() {
               <StartupSettings
                 localConfig={localConfig}
                 errors={validationErrors}
-                onValueChange={handleValueChange}
+                onValueChange={handleChange}
                 t={t}
               />
             </CollapsibleSection>

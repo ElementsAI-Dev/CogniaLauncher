@@ -381,6 +381,8 @@ import type {
   EnvVarConflict,
   ShellType,
   ShellInfo,
+  ShellStartupMeasurement,
+  ShellHealthResult,
   TerminalProfile,
   TerminalProfileTemplate,
   PSProfileInfo,

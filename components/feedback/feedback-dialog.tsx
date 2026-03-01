@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useFeedbackStore } from "@/lib/stores/feedback";
 import { useFeedback } from "@/hooks/use-feedback";
@@ -562,9 +563,12 @@ export function FeedbackDialog() {
                       onClick={() => setPreviewOpen(true)}
                       className="cursor-zoom-in"
                     >
-                      <img
+                      <Image
                         src={screenshot}
                         alt="Screenshot preview"
+                        width={160}
+                        height={96}
+                        unoptimized
                         className="h-16 w-auto rounded border object-cover"
                       />
                     </button>
@@ -673,10 +677,13 @@ export function FeedbackDialog() {
     {screenshot && (
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-3xl p-2">
-          <img
+          <Image
             src={screenshot}
             alt="Screenshot full preview"
-            className="w-full rounded"
+            width={1920}
+            height={1080}
+            unoptimized
+            className="w-full h-auto rounded"
           />
         </DialogContent>
       </Dialog>
