@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useLocale } from "@/components/providers/locale-provider";
 import { isTauri, configGet, configSet } from "@/lib/tauri";
@@ -30,21 +37,28 @@ export function LogManagementCard({
   const [retentionDays, setRetentionDays] = useState<string>("30");
   const [maxTotalSizeMb, setMaxTotalSizeMb] = useState<string>("100");
   const [autoCleanup, setAutoCleanup] = useState(true);
-  const [loaded, setLoaded] = useState(false);
+  const [logLevel, setLogLevel] = useState<string>("info");
 
-  // Load settings from backend on first render
-  if (!loaded && isTauri()) {
-    setLoaded(true);
+  useEffect(() => {
+    if (!isTauri()) return;
     Promise.all([
       configGet("log.max_retention_days"),
       configGet("log.max_total_size_mb"),
       configGet("log.auto_cleanup"),
-    ]).then(([days, size, auto]) => {
+      configGet("log.log_level"),
+    ]).then(([days, size, auto, level]) => {
       if (days) setRetentionDays(days);
       if (size) setMaxTotalSizeMb(size);
       if (auto) setAutoCleanup(auto === "true");
+      if (level) setLogLevel(level);
     }).catch(() => { /* use defaults */ });
-  }
+  }, []);
+
+  // Periodically refresh stats to keep size display up to date
+  useEffect(() => {
+    const timer = setInterval(onRefresh, 30_000);
+    return () => clearInterval(timer);
+  }, [onRefresh]);
 
   const handleSaveRetentionDays = async (value: string) => {
     setRetentionDays(value);
@@ -166,6 +180,34 @@ export function LogManagementCard({
               </p>
             </div>
             <Switch checked={autoCleanup} onCheckedChange={handleToggleAutoCleanup} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="log-level" className="text-sm">
+              {t("logs.logLevel")}
+            </Label>
+            <Select
+              value={logLevel}
+              onValueChange={async (value) => {
+                setLogLevel(value);
+                if (!isTauri()) return;
+                try { await configSet("log.log_level", value); } catch { /* ignore */ }
+              }}
+            >
+              <SelectTrigger id="log-level" className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="trace">Trace</SelectItem>
+                <SelectItem value="debug">Debug</SelectItem>
+                <SelectItem value="info">Info</SelectItem>
+                <SelectItem value="warn">Warn</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t("logs.logLevelDescription")}
+            </p>
           </div>
         </div>
 

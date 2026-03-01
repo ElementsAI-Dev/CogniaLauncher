@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 export type SpeedUnit = "B/s" | "KB/s" | "MB/s";
 
@@ -29,6 +30,8 @@ interface DownloadSettingsCardProps {
   onMaxConcurrentChange: (value: string) => void;
   onApply: () => void;
   disabled: boolean;
+  clipboardMonitor?: boolean;
+  onClipboardMonitorChange?: (enabled: boolean) => void;
   t: (key: string) => string;
 }
 
@@ -41,6 +44,8 @@ export function DownloadSettingsCard({
   onMaxConcurrentChange,
   onApply,
   disabled,
+  clipboardMonitor,
+  onClipboardMonitorChange,
   t,
 }: DownloadSettingsCardProps) {
   return (
@@ -103,6 +108,21 @@ export function DownloadSettingsCard({
             </p>
           </div>
         </div>
+        {onClipboardMonitorChange !== undefined && (
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label>{t("downloads.settings.clipboardMonitor")}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t("downloads.settings.clipboardMonitorDesc")}
+              </p>
+            </div>
+            <Switch
+              checked={clipboardMonitor ?? false}
+              onCheckedChange={onClipboardMonitorChange}
+              disabled={disabled}
+            />
+          </div>
+        )}
         <Button size="sm" onClick={onApply} disabled={disabled}>
           {t("common.save")}
         </Button>

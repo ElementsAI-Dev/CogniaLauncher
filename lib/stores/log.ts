@@ -5,6 +5,10 @@ import { ALL_LEVELS } from '@/lib/constants/log';
 export type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
 import type { LogLevel, LogEntry, LogFilter, LogFileInfo } from '@/types/log';
 
+const EMPTY_LOG_COUNTS: Record<LogLevel, number> = {
+  trace: 0, debug: 0, info: 0, warn: 0, error: 0,
+};
+
 interface LogState {
   logs: LogEntry[];
   maxLogs: number;
@@ -14,6 +18,9 @@ interface LogState {
   drawerOpen: boolean;
   logFiles: LogFileInfo[];
   selectedLogFile: string | null;
+  bookmarkedIds: string[];
+  showBookmarksOnly: boolean;
+  _logCounts: Record<LogLevel, number>;
   
   // Actions
   addLog: (log: Omit<LogEntry, 'id'>) => void;
@@ -32,6 +39,8 @@ interface LogState {
   toggleDrawer: () => void;
   setLogFiles: (files: LogFileInfo[]) => void;
   setSelectedLogFile: (fileName: string | null) => void;
+  toggleBookmark: (id: string) => void;
+  setShowBookmarksOnly: (show: boolean) => void;
   
   // Computed
   getFilteredLogs: () => LogEntry[];
@@ -61,22 +70,36 @@ export const useLogStore = create<LogState>()(
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      bookmarkedIds: [],
+      showBookmarksOnly: false,
+      _logCounts: { ...EMPTY_LOG_COUNTS },
 
       addLog: (log) => set((state) => {
         if (state.paused) return state;
         const newLog: LogEntry = { ...log, id: generateLogId() };
-        const newLogs = [...state.logs, newLog];
-        return { logs: newLogs.slice(-state.maxLogs) };
+        const counts = { ...state._logCounts };
+        counts[newLog.level] = (counts[newLog.level] || 0) + 1;
+        if (state.logs.length >= state.maxLogs) {
+          const removed = state.logs[0];
+          counts[removed.level] = Math.max(0, (counts[removed.level] || 0) - 1);
+          return { logs: [...state.logs.slice(1), newLog], _logCounts: counts };
+        }
+        return { logs: [...state.logs, newLog], _logCounts: counts };
       }),
 
       addLogs: (logs) => set((state) => {
         if (state.paused) return state;
         const newLogs = logs.map((log) => ({ ...log, id: generateLogId() }));
         const allLogs = [...state.logs, ...newLogs];
-        return { logs: allLogs.slice(-state.maxLogs) };
+        const trimmed = allLogs.slice(-state.maxLogs);
+        const counts = { ...EMPTY_LOG_COUNTS };
+        for (const log of trimmed) {
+          counts[log.level] = (counts[log.level] || 0) + 1;
+        }
+        return { logs: trimmed, _logCounts: counts };
       }),
 
-      clearLogs: () => set({ logs: [] }),
+      clearLogs: () => set({ logs: [], bookmarkedIds: [], _logCounts: { ...EMPTY_LOG_COUNTS } }),
 
       setFilter: (filter) => set((state) => ({
         filter: { ...state.filter, ...filter },
@@ -131,6 +154,12 @@ export const useLogStore = create<LogState>()(
 
       setLogFiles: (logFiles) => set({ logFiles }),
       setSelectedLogFile: (selectedLogFile) => set({ selectedLogFile }),
+      toggleBookmark: (id) => set((state) => ({
+        bookmarkedIds: state.bookmarkedIds.includes(id)
+          ? state.bookmarkedIds.filter((i) => i !== id)
+          : [...state.bookmarkedIds, id],
+      })),
+      setShowBookmarksOnly: (showBookmarksOnly) => set({ showBookmarksOnly }),
 
       getFilteredLogs: () => {
         const state = get();
@@ -180,23 +209,19 @@ export const useLogStore = create<LogState>()(
               return false;
             }
           }
+          // Bookmarks filter
+          if (state.showBookmarksOnly) {
+            if (!state.bookmarkedIds.includes(log.id)) {
+              return false;
+            }
+          }
           return true;
         });
       },
 
       getLogStats: () => {
         const state = get();
-        const byLevel: Record<LogLevel, number> = {
-          trace: 0,
-          debug: 0,
-          info: 0,
-          warn: 0,
-          error: 0,
-        };
-        for (const log of state.logs) {
-          byLevel[log.level]++;
-        }
-        return { total: state.logs.length, byLevel };
+        return { total: state.logs.length, byLevel: { ...state._logCounts } };
       },
     }),
     {
@@ -212,6 +237,7 @@ export const useLogStore = create<LogState>()(
           endTime: null,
         },
         autoScroll: state.autoScroll,
+        bookmarkedIds: state.bookmarkedIds,
       }),
     }
   )

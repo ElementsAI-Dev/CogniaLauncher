@@ -256,6 +256,16 @@ impl Default for SystemHealthResult {
     }
 }
 
+/// Progress information for health check
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthCheckProgress {
+    pub completed: usize,
+    pub total: usize,
+    pub current_provider: String,
+    pub phase: String,
+}
+
 /// Health check manager
 pub struct HealthCheckManager {
     registry: Arc<RwLock<ProviderRegistry>>,
@@ -266,32 +276,135 @@ impl HealthCheckManager {
         Self { registry }
     }
 
-    /// Run health check for all environments
+    /// Run health check for all environments (parallel with timeout and progress)
     pub async fn check_all(&self) -> CogniaResult<SystemHealthResult> {
+        self.check_all_with_progress(|_| {}).await
+    }
+
+    /// Run health check with progress callback
+    pub async fn check_all_with_progress<F>(
+        &self,
+        mut on_progress: F,
+    ) -> CogniaResult<SystemHealthResult>
+    where
+        F: FnMut(HealthCheckProgress),
+    {
         let mut result = SystemHealthResult::new();
 
-        // Check system-level issues
+        // Phase 1: System-level checks (fast, no parallelism needed)
+        on_progress(HealthCheckProgress {
+            completed: 0,
+            total: 1,
+            current_provider: "system".into(),
+            phase: "system".into(),
+        });
         self.check_system_health(&mut result).await;
 
-        // Check each environment provider
-        let registry = self.registry.read().await;
-        let provider_ids: Vec<String> = registry
-            .list_environment_providers()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        // Phase 2: Environment providers — parallel with timeout
+        let env_entries: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
+            let registry = self.registry.read().await;
+            registry
+                .list_environment_providers()
+                .iter()
+                .filter_map(|id| {
+                    registry
+                        .get_environment_provider(id)
+                        .map(|p| (id.to_string(), p))
+                })
+                .collect()
+        };
 
-        for provider_id in provider_ids {
-            if let Some(provider) = registry.get_environment_provider(&provider_id) {
-                let env_result = self.check_environment_health(&*provider).await;
-                result.add_environment(env_result);
-            }
+        let total_env = env_entries.len();
+        let mut env_futures = Vec::with_capacity(total_env);
+        let env_ids: Vec<String> = env_entries.iter().map(|(id, _)| id.clone()).collect();
+
+        for (_id, provider) in env_entries {
+            let registry = self.registry.clone();
+            env_futures.push(tokio::spawn(async move {
+                let mgr = HealthCheckManager::new(registry);
+                tokio::time::timeout(
+                    Duration::from_secs(15),
+                    mgr.check_environment_health(&*provider),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    let mut r = EnvironmentHealthResult::new(provider.id());
+                    r.add_issue(HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::Other,
+                        format!("{} health check timed out", provider.display_name()),
+                    ));
+                    r.finalize();
+                    r
+                })
+            }));
         }
 
-        // Check package managers
-        drop(registry);
-        for pm_result in self.check_package_managers().await? {
-            result.add_package_manager(pm_result);
+        let env_results = futures::future::join_all(env_futures).await;
+        for (i, join_result) in env_results.into_iter().enumerate() {
+            if let Ok(env_result) = join_result {
+                result.add_environment(env_result);
+            }
+            on_progress(HealthCheckProgress {
+                completed: i + 1,
+                total: total_env,
+                current_provider: env_ids.get(i).cloned().unwrap_or_default(),
+                phase: "environment".into(),
+            });
+        }
+
+        // Phase 3: Package managers — parallel with timeout
+        let pm_entries: Vec<(String, Arc<dyn Provider>)> = {
+            let registry = self.registry.read().await;
+            let mut provider_ids = registry.list_system_package_provider_ids();
+            provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
+            provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
+            provider_ids.sort();
+            provider_ids.dedup();
+            provider_ids
+                .into_iter()
+                .filter_map(|id| registry.get(&id).map(|p| (id, p)))
+                .collect()
+        };
+
+        let total_pm = pm_entries.len();
+        let mut pm_futures = Vec::with_capacity(total_pm);
+        let pm_ids: Vec<String> = pm_entries.iter().map(|(id, _)| id.clone()).collect();
+
+        for (_id, provider) in pm_entries {
+            let registry = self.registry.clone();
+            pm_futures.push(tokio::spawn(async move {
+                let mgr = HealthCheckManager::new(registry);
+                tokio::time::timeout(
+                    Duration::from_secs(15),
+                    mgr.check_package_manager_health(&*provider),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    let mut r =
+                        PackageManagerHealthResult::new(provider.id(), provider.display_name());
+                    r.add_issue(HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::Other,
+                        format!("{} health check timed out", provider.display_name()),
+                    ));
+                    r.finalize();
+                    r
+                })
+            }));
+        }
+
+        let pm_results = futures::future::join_all(pm_futures).await;
+        for (i, join_result) in pm_results.into_iter().enumerate() {
+            if let Ok(pm_result) = join_result {
+                result.add_package_manager(pm_result);
+            }
+            on_progress(HealthCheckProgress {
+                completed: i + 1,
+                total: total_pm,
+                current_provider: pm_ids.get(i).cloned().unwrap_or_default(),
+                phase: "package_manager".into(),
+            });
         }
 
         Ok(result)
@@ -301,14 +414,34 @@ impl HealthCheckManager {
     pub async fn check_environment(&self, env_type: &str) -> CogniaResult<EnvironmentHealthResult> {
         let registry = self.registry.read().await;
 
-        // Find provider for this environment type by checking provider IDs
-        let provider_id = self.env_type_to_provider(env_type);
+        // Dynamic provider resolution via candidate_provider_ids (same as EnvironmentManager)
+        let candidates = crate::core::environment::candidate_provider_ids(env_type);
 
-        let provider = registry
-            .get_environment_provider(&provider_id)
-            .ok_or_else(|| CogniaError::Provider(format!("No provider found for {}", env_type)))?;
+        // Find first registered provider from priority-ordered candidates
+        let provider = candidates
+            .iter()
+            .filter_map(|id| registry.get_environment_provider(id))
+            .next();
 
-        Ok(self.check_environment_health(&*provider).await)
+        match provider {
+            Some(p) => Ok(self.check_environment_health(&*p).await),
+            None => {
+                let mut result = EnvironmentHealthResult::new(env_type);
+                result.add_issue(
+                    HealthIssue::new(
+                        Severity::Info,
+                        IssueCategory::ProviderNotFound,
+                        format!("No {} version manager installed", env_type),
+                    )
+                    .with_details(format!(
+                        "Install a version manager for {} to enable environment management",
+                        env_type
+                    )),
+                );
+                result.finalize();
+                Ok(result)
+            }
+        }
     }
 
     /// Run health check for all package managers
@@ -397,44 +530,56 @@ impl HealthCheckManager {
             return result;
         }
 
-        // Check 2: Get version (using SystemPackageProvider trait if available)
+        // Check 2: Get version + Check 3: System requirements
         let system_provider = {
             let registry = self.registry.read().await;
             registry.get_system_provider(provider.id())
         };
-        if let Some(system_provider) = system_provider {
-            if let Ok(version) = system_provider.get_version().await {
+        if let Some(sp) = &system_provider {
+            if let Ok(version) = sp.get_version().await {
                 result.version = Some(version);
             }
-            if let Ok(path) = system_provider.get_executable_path().await {
+            if let Ok(path) = sp.get_executable_path().await {
                 result.executable_path = Some(path);
             }
-            result.install_instructions = system_provider.get_install_instructions();
+            result.install_instructions = sp.get_install_instructions();
+
+            // Check 3: System requirements (lightweight, replaces expensive list_installed scan)
+            match sp.check_system_requirements().await {
+                Ok(true) => {
+                    // All requirements met
+                }
+                Ok(false) => {
+                    result.add_issue(
+                        HealthIssue::new(
+                            Severity::Warning,
+                            IssueCategory::ConfigError,
+                            format!(
+                                "{} system requirements not fully met",
+                                provider.display_name()
+                            ),
+                        )
+                        .with_details(
+                            "Some system prerequisites may be missing or misconfigured",
+                        ),
+                    );
+                }
+                Err(e) => {
+                    result.add_issue(
+                        HealthIssue::new(
+                            Severity::Warning,
+                            IssueCategory::ConfigError,
+                            format!(
+                                "{} requirements check failed",
+                                provider.display_name()
+                            ),
+                        )
+                        .with_details(format!("{}", e)),
+                    );
+                }
+            }
         } else {
             result.install_instructions = Some(self.get_install_instructions(provider.id()));
-        }
-
-        // Check 3: Verify the provider can list packages (functional check)
-        match provider
-            .list_installed(crate::provider::InstalledFilter {
-                global_only: true,
-                ..Default::default()
-            })
-            .await
-        {
-            Ok(_) => {
-                // Provider is functional
-            }
-            Err(e) => {
-                result.add_issue(
-                    HealthIssue::new(
-                        Severity::Warning,
-                        IssueCategory::ConfigError,
-                        format!("{} may have configuration issues", provider.display_name()),
-                    )
-                    .with_details(format!("Failed to list packages: {}", e)),
-                );
-            }
         }
 
         result.finalize();
@@ -533,32 +678,6 @@ impl HealthCheckManager {
         }
     }
 
-    /// Map environment type to provider ID
-    fn env_type_to_provider(&self, env_type: &str) -> String {
-        match env_type.to_lowercase().as_str() {
-            "node" => "fnm".to_string(), // Default to fnm, could be nvm
-            "deno" => "deno".to_string(),
-            "python" => "pyenv".to_string(),
-            "go" => "goenv".to_string(),
-            "rust" => "rustup".to_string(),
-            "ruby" => "rbenv".to_string(),
-            "java" => "sdkman".to_string(),
-            "kotlin" => "sdkman-kotlin".to_string(),
-            "scala" => "sdkman-scala".to_string(),
-            "groovy" => "sdkman-groovy".to_string(),
-            "gradle" => "sdkman-gradle".to_string(),
-            "maven" => "sdkman-maven".to_string(),
-            "php" => "phpbrew".to_string(),
-            "dotnet" => "dotnet".to_string(),
-            "zig" => "zig".to_string(),
-            "dart" => "fvm".to_string(),
-            "lua" => "system-lua".to_string(),
-            "c" => "system-c".to_string(),
-            "cpp" => "system-cpp".to_string(),
-            _ => env_type.to_string(),
-        }
-    }
-
     /// Check system-level health
     async fn check_system_health(&self, result: &mut SystemHealthResult) {
         // Check PATH environment variable
@@ -573,6 +692,118 @@ impl HealthCheckManager {
             for issue in shell_issues {
                 result.add_system_issue(issue);
             }
+        }
+
+        // Check disk space
+        if let Some(disk_issues) = self.check_disk_space().await {
+            for issue in disk_issues {
+                result.add_system_issue(issue);
+            }
+        }
+
+        // Check for version manager conflicts
+        if let Some(conflict_issues) = self.check_version_manager_conflicts().await {
+            for issue in conflict_issues {
+                result.add_system_issue(issue);
+            }
+        }
+    }
+
+    /// Check available disk space on the home partition
+    async fn check_disk_space(&self) -> Option<Vec<HealthIssue>> {
+        let home = crate::platform::env::dirs_home()?;
+        let space = crate::platform::disk::get_disk_space(&home).await.ok()?;
+        let mut issues = Vec::new();
+
+        const MB_256: u64 = 256 * 1024 * 1024;
+        const GB_1: u64 = 1024 * 1024 * 1024;
+
+        if space.available < MB_256 {
+            issues.push(
+                HealthIssue::new(
+                    Severity::Error,
+                    IssueCategory::Other,
+                    format!("Critically low disk space: {} available", space.available_human()),
+                )
+                .with_details(
+                    "Package installations and version management may fail. Free up disk space.",
+                ),
+            );
+        } else if space.available < GB_1 {
+            issues.push(
+                HealthIssue::new(
+                    Severity::Warning,
+                    IssueCategory::Other,
+                    format!("Low disk space: {} available", space.available_human()),
+                )
+                .with_details(
+                    "Some large package installations may fail. Consider freeing up disk space.",
+                ),
+            );
+        }
+
+        if issues.is_empty() {
+            None
+        } else {
+            Some(issues)
+        }
+    }
+
+    /// Check for multiple version managers active for the same language
+    async fn check_version_manager_conflicts(&self) -> Option<Vec<HealthIssue>> {
+        let mut issues = Vec::new();
+
+        let conflict_groups: &[(&str, &[&str])] = &[
+            ("node", &["fnm", "nvm", "volta"]),
+            ("python", &["pyenv", "conda"]),
+            ("ruby", &["rbenv"]),
+            ("java", &["sdkman"]),
+            ("go", &["goenv"]),
+        ];
+
+        // Collect all (env_type, manager_id, provider) tuples, then drop the lock
+        let mut checks: Vec<(&str, &str, Arc<dyn EnvironmentProvider>)> = Vec::new();
+        {
+            let registry = self.registry.read().await;
+            for &(env_type, managers) in conflict_groups {
+                for &manager in managers {
+                    if let Some(provider) = registry.get_environment_provider(manager) {
+                        checks.push((env_type, manager, provider));
+                    }
+                }
+            }
+        }
+
+        // Group by env_type and check availability without holding the lock
+        for &(env_type, _managers) in conflict_groups {
+            let mut available = Vec::new();
+            for &(et, manager, ref provider) in &checks {
+                if et == env_type && provider.is_available().await {
+                    available.push(manager);
+                }
+            }
+            if available.len() > 1 {
+                issues.push(
+                    HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::PathConflict,
+                        format!(
+                            "Multiple {} version managers detected: {}",
+                            env_type,
+                            available.join(", ")
+                        ),
+                    )
+                    .with_details(
+                        "Having multiple version managers for the same language can cause PATH conflicts and unexpected version switching.",
+                    ),
+                );
+            }
+        }
+
+        if issues.is_empty() {
+            None
+        } else {
+            Some(issues)
         }
     }
 
@@ -743,23 +974,75 @@ impl HealthCheckManager {
         }
     }
 
-    /// Check shell configuration
+    /// Check shell configuration for missing provider init lines
     async fn check_shell_config(&self) -> Option<Vec<HealthIssue>> {
+        use crate::platform::env::ShellType;
+
         let mut issues = Vec::new();
 
-        // Detect current shell
-        let shell = if cfg!(windows) {
-            std::env::var("COMSPEC").ok()
-        } else {
-            std::env::var("SHELL").ok()
+        let shell_type = ShellType::detect();
+        let config_files = shell_type.config_files();
+        if config_files.is_empty() {
+            return None;
+        }
+
+        // Find the first existing shell config file and read its content
+        let mut content = None;
+        for path in &config_files {
+            if path.exists() {
+                if let Ok(c) = crate::core::terminal::read_shell_config(path).await {
+                    content = Some((path.clone(), c));
+                    break;
+                }
+            }
+        }
+
+        let Some((_config_path, content)) = content else {
+            return None;
         };
 
-        if shell.is_none() {
-            issues.push(HealthIssue::new(
-                Severity::Warning,
-                IssueCategory::ShellIntegration,
-                "Could not detect current shell",
-            ));
+        // Collect providers then drop lock before async is_available() calls
+        let env_providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
+            let registry = self.registry.read().await;
+            registry
+                .list_environment_providers()
+                .iter()
+                .filter_map(|id| {
+                    registry
+                        .get_environment_provider(id)
+                        .map(|p| (id.to_string(), p))
+                })
+                .collect()
+        };
+
+        for (provider_id, provider) in &env_providers {
+            if !provider.is_available().await {
+                continue;
+            }
+            let init_pattern = Self::get_shell_init_pattern(provider_id);
+            if !init_pattern.is_empty() && !content.contains(&init_pattern) {
+                issues.push(
+                    HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::ShellIntegration,
+                        format!(
+                            "{} shell initialization not found",
+                            provider.display_name()
+                        ),
+                    )
+                    .with_details(format!(
+                        "Expected '{}' in shell config. The provider is installed but may not activate in new shell sessions.",
+                        init_pattern
+                    ))
+                    .with_fix(
+                        self.get_shell_setup_command(provider_id),
+                        format!(
+                            "Add {} initialization to your shell config",
+                            provider.display_name()
+                        ),
+                    ),
+                );
+            }
         }
 
         if issues.is_empty() {
@@ -769,21 +1052,56 @@ impl HealthCheckManager {
         }
     }
 
+    /// Key string to look for in shell config to verify provider init
+    fn get_shell_init_pattern(provider_id: &str) -> String {
+        match provider_id {
+            "fnm" => "fnm env".into(),
+            "nvm" => "nvm.sh".into(),
+            "volta" => ".volta".into(),
+            "pyenv" => "pyenv init".into(),
+            "conda" => "conda".into(),
+            "goenv" => "goenv init".into(),
+            "rustup" => "cargo/env".into(),
+            "rbenv" => "rbenv init".into(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy"
+            | "sdkman-gradle" | "sdkman-maven" => "sdkman-init.sh".into(),
+            "phpbrew" => "phpbrew/bashrc".into(),
+            _ => String::new(),
+        }
+    }
+
     /// Check PATH configuration for a specific provider
     async fn check_provider_path(
         &self,
         provider: &dyn EnvironmentProvider,
         result: &mut EnvironmentHealthResult,
     ) {
-        // This is a simplified check - could be expanded based on provider type
         let provider_id = provider.id();
-        let path = std::env::var("PATH").unwrap_or_default();
+        let path_var = std::env::var("PATH").unwrap_or_default();
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        let path_dirs: Vec<String> = path_var
+            .split(sep)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_lowercase().replace('\\', "/"))
+            .collect();
 
-        // Check if provider's typical paths are in PATH
         let expected_patterns = self.get_expected_path_patterns(provider_id);
+        if expected_patterns.is_empty() {
+            return;
+        }
 
-        for pattern in expected_patterns {
-            if !path.to_lowercase().contains(&pattern.to_lowercase()) {
+        // Use path-segment matching instead of naive substring to avoid false positives
+        // e.g. ".fnm" should match "/home/user/.fnm/..." but not "/home/user/my-fnm-project/"
+        for pattern in &expected_patterns {
+            let pat = pattern.to_lowercase();
+            let found = path_dirs.iter().any(|dir| {
+                dir.contains(&format!("/.{}/", pat))
+                    || dir.contains(&format!("/{}/", pat))
+                    || dir.ends_with(&format!("/.{}", pat))
+                    || dir.ends_with(&format!("/{}", pat))
+                    || dir.contains(&format!(".{}/", pat))
+            });
+            if !found {
                 result.add_issue(
                     HealthIssue::new(
                         Severity::Warning,
@@ -799,7 +1117,7 @@ impl HealthCheckManager {
                         "Add the provider to your shell configuration",
                     ),
                 );
-                break;
+                // Report all missing patterns, don't break after first
             }
         }
     }
@@ -1210,13 +1528,6 @@ mod tests {
     }
 
     #[test]
-    fn test_env_type_to_provider_c_cpp() {
-        let mgr = make_test_manager();
-        assert_eq!(mgr.env_type_to_provider("c"), "system-c");
-        assert_eq!(mgr.env_type_to_provider("cpp"), "system-cpp");
-    }
-
-    #[test]
     fn test_provider_to_env_type_c_cpp() {
         let mgr = make_test_manager();
         assert_eq!(mgr.provider_to_env_type("system-c"), "c");
@@ -1250,14 +1561,6 @@ mod tests {
     }
 
     // ── Adoptium / SDKMAN-Gradle / SDKMAN-Maven / SDKMAN-Groovy ──
-
-    #[test]
-    fn test_env_type_to_provider_jvm_tools() {
-        let mgr = make_test_manager();
-        assert_eq!(mgr.env_type_to_provider("groovy"), "sdkman-groovy");
-        assert_eq!(mgr.env_type_to_provider("gradle"), "sdkman-gradle");
-        assert_eq!(mgr.env_type_to_provider("maven"), "sdkman-maven");
-    }
 
     #[test]
     fn test_provider_to_env_type_jvm_providers() {

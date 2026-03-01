@@ -39,6 +39,7 @@ import {
 import {
   ArrowDownToLine,
   CheckCircle2,
+  FileDown,
   Gauge,
   History,
   Timer,
@@ -109,6 +110,24 @@ export function DownloadHistoryPanel({
               placeholder={t("downloads.historyPanel.search")}
               className="w-56"
             />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={history.length === 0}
+              onClick={() => {
+                const json = JSON.stringify(history, null, 2);
+                const blob = new Blob([json], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `download-history-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              {t("downloads.historyPanel.export")}
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button

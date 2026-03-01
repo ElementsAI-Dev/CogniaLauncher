@@ -6,6 +6,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Action to perform after a download completes successfully
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PostAction {
+    #[default]
+    None,
+    OpenFile,
+    RevealInFolder,
+}
+
 /// Configuration for a download task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +44,9 @@ pub struct DownloadConfig {
     /// Number of parallel segments for downloading (1 = single connection, max 32)
     #[serde(default = "default_segments")]
     pub segments: u8,
+    /// Action to perform after download completes
+    #[serde(default)]
+    pub post_action: PostAction,
 }
 
 fn default_max_retries() -> u32 {
@@ -63,6 +76,7 @@ impl Default for DownloadConfig {
             auto_extract: false,
             extract_dest: None,
             segments: default_segments(),
+            post_action: PostAction::None,
         }
     }
 }
@@ -520,6 +534,7 @@ mod tests {
             auto_extract: false,
             extract_dest: None,
             segments: 1,
+            ..Default::default()
         };
 
         let task = DownloadTask::builder(
@@ -701,6 +716,7 @@ mod tests {
             auto_extract: true,
             extract_dest: Some(PathBuf::from("/tmp/out")),
             segments: 4,
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&config).unwrap();

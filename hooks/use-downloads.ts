@@ -77,9 +77,15 @@ export function useDownloads() {
           store.updateTask(taskId, { state: 'downloading' });
         });
 
+        let lastSpeedSample = 0;
         const unlistenProgress = await tauri.listenDownloadTaskProgress(
           (taskId, progress) => {
             store.updateTaskProgress(taskId, progress as DownloadProgress);
+            const now = Date.now();
+            if (now - lastSpeedSample >= 1000) {
+              lastSpeedSample = now;
+              store.addSpeedSample((progress as DownloadProgress).speed);
+            }
           }
         );
 
@@ -179,6 +185,52 @@ export function useDownloads() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTasks, refreshStats]);
+
+  // Clipboard URL monitoring
+  const seenUrlsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!tauri.isTauri() || !store.clipboardMonitor) return;
+
+    const DOWNLOAD_EXTENSIONS = /\.(zip|tar\.gz|tgz|tar\.xz|tar\.bz2|7z|rar|exe|msi|dmg|pkg|deb|rpm|appimage|iso|img|bin|gz|xz|bz2|zst)$/i;
+
+    const interval = setInterval(async () => {
+      try {
+        const { readText } = await import('@tauri-apps/plugin-clipboard-manager');
+        const text = await readText();
+        if (!text) return;
+
+        const url = text.trim();
+        if (seenUrlsRef.current.has(url)) return;
+        if (!/^https?:\/\//i.test(url)) return;
+
+        try { new URL(url); } catch { return; }
+
+        const pathname = new URL(url).pathname;
+        if (!DOWNLOAD_EXTENSIONS.test(pathname)) return;
+
+        seenUrlsRef.current.add(url);
+
+        const { toast } = await import('sonner');
+        const filename = pathname.split('/').filter(Boolean).pop() ?? 'download';
+        toast(filename, {
+          description: url.length > 80 ? url.slice(0, 80) + '…' : url,
+          action: {
+            label: '↓',
+            onClick: () => {
+              store.setError(null);
+              window.dispatchEvent(new CustomEvent('clipboard-download-url', { detail: url }));
+            },
+          },
+          duration: 8000,
+        });
+      } catch {
+        // Clipboard read may fail silently (e.g. no permission, empty)
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.clipboardMonitor]);
 
   // Add a new download
   const addDownload = useCallback(
@@ -484,6 +536,8 @@ export function useDownloads() {
     getSpeedLimit,
     setMaxConcurrent,
     getMaxConcurrent,
+    clipboardMonitor: store.clipboardMonitor,
+    setClipboardMonitor: store.setClipboardMonitor,
 
     // Actions - File
     verifyFile,

@@ -29,6 +29,10 @@ interface DownloadState {
   // Settings
   speedLimit: number; // 0 = unlimited
   maxConcurrent: number;
+  clipboardMonitor: boolean;
+  
+  // Speed history for chart
+  speedHistory: number[];
   
   // UI state
   isLoading: boolean;
@@ -54,6 +58,7 @@ interface DownloadState {
   // Actions - Settings
   setSpeedLimit: (limit: number) => void;
   setMaxConcurrent: (max: number) => void;
+  setClipboardMonitor: (enabled: boolean) => void;
   
   // Actions - UI
   setLoading: (loading: boolean) => void;
@@ -63,6 +68,9 @@ interface DownloadState {
   selectAllTasks: () => void;
   deselectAllTasks: () => void;
   toggleShowHistory: () => void;
+  
+  // Actions - Speed History
+  addSpeedSample: (speed: number) => void;
   
   // Computed
   getActiveTasks: () => DownloadTask[];
@@ -81,6 +89,8 @@ export const useDownloadStore = create<DownloadState>()(
       historyStats: null,
       speedLimit: 0,
       maxConcurrent: 4,
+      clipboardMonitor: false,
+      speedHistory: [],
       isLoading: false,
       error: null,
       selectedTaskIds: new Set<string>(),
@@ -139,6 +149,14 @@ export const useDownloadStore = create<DownloadState>()(
       setSpeedLimit: (limit) => set({ speedLimit: limit }),
       
       setMaxConcurrent: (max) => set({ maxConcurrent: max }),
+      
+      setClipboardMonitor: (enabled) => set({ clipboardMonitor: enabled }),
+
+      // Speed history
+      addSpeedSample: (speed) =>
+        set((state) => ({
+          speedHistory: [...state.speedHistory, speed].slice(-60),
+        })),
 
       // UI actions
       setLoading: (loading) => set({ isLoading: loading }),
@@ -188,6 +206,7 @@ export const useDownloadStore = create<DownloadState>()(
         speedLimit: state.speedLimit,
         maxConcurrent: state.maxConcurrent,
         showHistory: state.showHistory,
+        clipboardMonitor: state.clipboardMonitor,
       }),
     }
   )

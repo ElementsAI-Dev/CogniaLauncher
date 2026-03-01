@@ -1,4 +1,5 @@
-use super::{CacheEntry, CacheEntryType, SqliteCacheDb};
+use super::{CacheEntry, CacheEntryType, SharedCacheDb, SqliteCacheDb};
+use std::sync::Arc;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
 use chrono::Utc;
@@ -9,7 +10,7 @@ const DEFAULT_TTL_SECONDS: i64 = 3600;
 
 pub struct MetadataCache {
     cache_dir: PathBuf,
-    db: SqliteCacheDb,
+    db: Arc<SqliteCacheDb>,
     default_ttl: i64,
 }
 
@@ -22,7 +23,18 @@ impl MetadataCache {
         let metadata_dir = cache_dir.join("metadata");
         fs::create_dir_all(&metadata_dir).await?;
 
-        let db = SqliteCacheDb::open(cache_dir).await?;
+        let db = Arc::new(SqliteCacheDb::open(cache_dir).await?);
+
+        Ok(Self {
+            cache_dir: metadata_dir,
+            db,
+            default_ttl,
+        })
+    }
+
+    pub async fn from_shared(cache_dir: &Path, db: SharedCacheDb, default_ttl: i64) -> CogniaResult<Self> {
+        let metadata_dir = cache_dir.join("metadata");
+        fs::create_dir_all(&metadata_dir).await?;
 
         Ok(Self {
             cache_dir: metadata_dir,
@@ -143,6 +155,22 @@ impl MetadataCache {
         self.db.remove(&cache_key).await
     }
 
+    /// Remove all entries whose key starts with the given prefix.
+    /// Also removes associated files from disk.
+    pub async fn remove_by_prefix(&mut self, prefix: &str) -> CogniaResult<usize> {
+        let full_prefix = format!("metadata:{}", prefix);
+
+        // Use targeted query to get only matching file paths instead of loading all entries
+        let file_paths = self.db.list_file_paths_by_prefix(&full_prefix).await?;
+        for path in &file_paths {
+            if fs::exists(path).await {
+                let _ = fs::remove_file(path).await;
+            }
+        }
+
+        self.db.remove_by_prefix(&full_prefix).await
+    }
+
     pub async fn clean_expired(&mut self) -> CogniaResult<usize> {
         self.clean_expired_with_option(false).await
     }
@@ -218,15 +246,8 @@ impl MetadataCache {
     }
 
     pub async fn stats(&self) -> CogniaResult<MetadataCacheStats> {
-        let binding = self.db.list().await?;
-        let entries: Vec<_> = binding
-            .iter()
-            .filter(|e| e.entry_type == CacheEntryType::Metadata)
-            .collect();
-
-        let total_size = entries.iter().map(|e| e.size).sum();
-        let entry_count = entries.len();
-        let expired_count = entries.iter().filter(|e| e.is_expired()).count();
+        let (total_size, entry_count, expired_count) =
+            self.db.stats_by_type(CacheEntryType::Metadata).await?;
 
         Ok(MetadataCacheStats {
             total_size,
@@ -560,5 +581,113 @@ mod tests {
 
         let count = cache.clean_all().await.unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_from_shared() {
+        let dir = tempdir().unwrap();
+
+        // Create a shared DB instance
+        let db = Arc::new(SqliteCacheDb::open(dir.path()).await.unwrap());
+
+        // Create two MetadataCache instances sharing the same DB
+        let mut cache1 = MetadataCache::from_shared(dir.path(), db.clone(), 3600).await.unwrap();
+        let mut cache2 = MetadataCache::from_shared(dir.path(), db, 3600).await.unwrap();
+
+        let data = TestData {
+            name: "shared".to_string(),
+            value: 42,
+        };
+        cache1.set("shared-key", &data).await.unwrap();
+
+        // cache2 should see the same data (shared underlying DB)
+        let cached = cache2.get::<TestData>("shared-key").await.unwrap().unwrap();
+        assert_eq!(cached.data, data);
+        assert!(!cached.is_stale);
+    }
+
+    #[tokio::test]
+    async fn test_remove_by_prefix() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        // Insert entries with different prefixes
+        cache.set("pkg:installed:all", &"data1").await.unwrap();
+        cache.set("pkg:installed:npm", &"data2").await.unwrap();
+        cache.set("pkg:installed:pip", &"data3").await.unwrap();
+        cache.set("pkg:search:react", &"data4").await.unwrap();
+        cache.set("env:list", &"data5").await.unwrap();
+
+        // Remove by prefix should only remove matching entries
+        let removed = cache.remove_by_prefix("pkg:installed:").await.unwrap();
+        assert_eq!(removed, 3);
+
+        // Non-matching entries should still exist
+        assert!(cache.get::<String>("pkg:search:react").await.unwrap().is_some());
+        assert!(cache.get::<String>("env:list").await.unwrap().is_some());
+
+        // Removed entries should be gone
+        assert!(cache.get::<String>("pkg:installed:all").await.unwrap().is_none());
+        assert!(cache.get::<String>("pkg:installed:npm").await.unwrap().is_none());
+        assert!(cache.get::<String>("pkg:installed:pip").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_remove_by_prefix_cleans_files() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        cache.set("prefix:a", &"value-a").await.unwrap();
+        cache.set("prefix:b", &"value-b").await.unwrap();
+
+        // Verify files exist on disk
+        let metadata_dir = dir.path().join("metadata");
+        let count_before = std::fs::read_dir(&metadata_dir).unwrap().count();
+        assert_eq!(count_before, 2);
+
+        // Remove by prefix
+        cache.remove_by_prefix("prefix:").await.unwrap();
+
+        // Files should be cleaned from disk
+        let count_after = std::fs::read_dir(&metadata_dir).unwrap().count();
+        assert_eq!(count_after, 0);
+    }
+
+    #[tokio::test]
+    async fn test_remove_by_prefix_no_matches() {
+        let dir = tempdir().unwrap();
+        let mut cache = MetadataCache::open(dir.path()).await.unwrap();
+
+        cache.set("alpha:1", &"val").await.unwrap();
+
+        // Remove with non-matching prefix
+        let removed = cache.remove_by_prefix("beta:").await.unwrap();
+        assert_eq!(removed, 0);
+
+        // Original entry should still exist
+        assert!(cache.get::<String>("alpha:1").await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_from_shared_with_different_ttls() {
+        let dir = tempdir().unwrap();
+
+        let db = Arc::new(SqliteCacheDb::open(dir.path()).await.unwrap());
+
+        // Short TTL cache
+        let mut short_cache = MetadataCache::from_shared(dir.path(), db.clone(), -1).await.unwrap();
+        // Long TTL cache
+        let mut long_cache = MetadataCache::from_shared(dir.path(), db, 86400).await.unwrap();
+
+        // Write via short_cache (expires immediately)
+        short_cache.set("ttl-test", &"data").await.unwrap();
+
+        // Read via short_cache should see it as stale
+        let cached = short_cache.get::<String>("ttl-test").await.unwrap().unwrap();
+        assert!(cached.is_stale);
+
+        // Read via long_cache also sees the same entry (shared DB, same TTL on the entry itself)
+        let cached = long_cache.get::<String>("ttl-test").await.unwrap().unwrap();
+        assert!(cached.is_stale); // Entry was written with short TTL, so still stale
     }
 }

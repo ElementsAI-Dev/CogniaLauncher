@@ -4,15 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDownloads } from '@/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
@@ -23,57 +18,25 @@ import {
   DownloadToolbar,
   DownloadEmptyState,
   DownloadDetailDialog,
+  DownloadTaskRow,
+  DownloadSettingsCard,
+  DownloadHistoryPanel,
+  BatchImportDialog,
   type StatusFilter,
+  type SpeedUnit,
 } from '@/components/downloads';
 import { toast } from 'sonner';
 import {
   AlertCircle,
   ArrowDownToLine,
-  Pause,
-  Play,
   RefreshCw,
-  Trash2,
-  X,
-  CheckCircle2,
-  Timer,
-  Gauge,
   History,
   Github,
   Gitlab,
-  FolderOpen,
-  ExternalLink,
+  ListPlus,
 } from 'lucide-react';
-import { formatEta } from '@/lib/utils';
+import { EMPTY_QUEUE_STATS } from '@/lib/constants/downloads';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
-
-const EMPTY_STATS = {
-  totalTasks: 0,
-  queued: 0,
-  downloading: 0,
-  paused: 0,
-  completed: 0,
-  failed: 0,
-  cancelled: 0,
-  totalBytes: 0,
-  downloadedBytes: 0,
-  totalHuman: '0 B',
-  downloadedHuman: '0 B',
-  overallProgress: 0,
-};
-
-function getStateBadgeVariant(state: DownloadTask['state']) {
-  switch (state) {
-    case 'completed':
-      return 'default';
-    case 'failed':
-    case 'cancelled':
-      return 'destructive';
-    case 'paused':
-      return 'secondary';
-    default:
-      return 'outline';
-  }
-}
 
 export default function DownloadsPage() {
   const { t } = useLocale();
@@ -85,12 +48,13 @@ export default function DownloadsPage() {
   const [historyQuery, setHistoryQuery] = useState('');
   const [historyResults, setHistoryResults] = useState<HistoryRecord[] | null>(null);
   const [speedLimitInput, setSpeedLimitInput] = useState('0');
-  const [speedUnit, setSpeedUnit] = useState<'B/s' | 'KB/s' | 'MB/s'>('B/s');
+  const [speedUnit, setSpeedUnit] = useState<SpeedUnit>('B/s');
   const [maxConcurrentInput, setMaxConcurrentInput] = useState('4');
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [detailTask, setDetailTask] = useState<DownloadTask | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [batchImportOpen, setBatchImportOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragUrl, setDragUrl] = useState<string | null>(null);
 
@@ -115,6 +79,8 @@ export default function DownloadsPage() {
     retryFailed,
     setSpeedLimit,
     setMaxConcurrent,
+    clipboardMonitor,
+    setClipboardMonitor,
     openFile,
     revealFile,
     retryTask,
@@ -128,7 +94,7 @@ export default function DownloadsPage() {
     removeHistoryRecord,
   } = useDownloads();
 
-  const queueStats = stats ?? EMPTY_STATS;
+  const queueStats = stats ?? EMPTY_QUEUE_STATS;
 
   useEffect(() => {
     // Auto-select best unit when syncing from backend
@@ -300,32 +266,6 @@ export default function DownloadsPage() {
     }
   }, [maxConcurrentInput, setMaxConcurrent, setSpeedLimit, speedLimitInput, speedUnit, t]);
 
-  const historyStatsCard = useMemo(() => {
-    if (!historyStats) return null;
-    return [
-      {
-        label: t('downloads.historyPanel.totalDownloaded'),
-        value: historyStats.totalBytesHuman,
-        icon: <ArrowDownToLine className="h-4 w-4" />,
-      },
-      {
-        label: t('downloads.historyPanel.averageSpeed'),
-        value: historyStats.averageSpeedHuman,
-        icon: <Gauge className="h-4 w-4" />,
-      },
-      {
-        label: t('downloads.historyPanel.successRate'),
-        value: `${historyStats.successRate}%`,
-        icon: <CheckCircle2 className="h-4 w-4" />,
-      },
-      {
-        label: t('downloads.stats.total'),
-        value: historyStats.totalCount,
-        icon: <History className="h-4 w-4" />,
-      },
-    ];
-  }, [historyStats, t]);
-
   return (
     <div
       className="p-6 space-y-6 relative"
@@ -350,6 +290,10 @@ export default function DownloadsPage() {
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <ArrowDownToLine className="h-4 w-4 mr-2" />
               {t('downloads.addDownload')}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBatchImportOpen(true)}>
+              <ListPlus className="h-4 w-4 mr-2" />
+              {t('downloads.batchImport')}
             </Button>
             <Button size="sm" variant="outline" onClick={() => setGithubDialogOpen(true)}>
               <Github className="h-4 w-4 mr-2" />
@@ -456,121 +400,21 @@ export default function DownloadsPage() {
                     </TableHeader>
                     <TableBody>
                       {filteredTasks.map((task) => (
-                        <TableRow key={task.id}>
-                          <TableCell className="min-w-[220px]">
-                            <div className="space-y-1">
-                              <p
-                                className="font-medium truncate cursor-pointer hover:underline"
-                                title={task.name}
-                                onClick={() => {
-                                  setDetailTask(task);
-                                  setDetailOpen(true);
-                                }}
-                              >
-                                {task.name}
-                              </p>
-                              <p className="text-xs text-muted-foreground truncate" title={task.url}>
-                                {task.url}
-                              </p>
-                              {task.error && (
-                                <p className="text-xs text-destructive">{task.error}</p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {task.provider ? (
-                              <Badge variant="outline" className="font-normal">
-                                {task.provider}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={getStateBadgeVariant(task.state)}>
-                              {t(`downloads.state.${task.state}`)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="min-w-[200px]">
-                            <div className="space-y-2">
-                              <Progress value={task.progress.percent} className="h-2" />
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>{task.progress.downloadedHuman}</span>
-                                <span>{task.progress.totalHuman ?? '—'}</span>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{task.progress.speedHuman || '—'}</TableCell>
-                          <TableCell>{formatEta(task.progress.etaHuman)}</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {task.state === 'downloading' || task.state === 'queued' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => pauseDownload(task.id)}
-                                  title={t('downloads.actions.pause')}
-                                >
-                                  <Pause className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                              {task.state === 'paused' || task.state === 'failed' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => resumeDownload(task.id)}
-                                  title={t('downloads.actions.resume')}
-                                >
-                                  <Play className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                              {task.state !== 'completed' && task.state !== 'cancelled' ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => cancelDownload(task.id)}
-                                  title={t('downloads.actions.cancel')}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              ) : null}
-                              {task.state === 'completed' && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => openFile(task.destination)}
-                                    title={t('downloads.actions.open')}
-                                  >
-                                    <ExternalLink className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => revealFile(task.destination)}
-                                    title={t('downloads.actions.reveal')}
-                                  >
-                                    <FolderOpen className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => removeDownload(task.id)}
-                                title={t('downloads.actions.remove')}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
+                        <DownloadTaskRow
+                          key={task.id}
+                          task={task}
+                          onPause={pauseDownload}
+                          onResume={resumeDownload}
+                          onCancel={cancelDownload}
+                          onRemove={removeDownload}
+                          onOpen={openFile}
+                          onReveal={revealFile}
+                          onDetail={(task) => {
+                            setDetailTask(task);
+                            setDetailOpen(true);
+                          }}
+                          t={t}
+                        />
                       ))}
                     </TableBody>
                   </Table>
@@ -579,175 +423,31 @@ export default function DownloadsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('downloads.settings.speedLimit')}</CardTitle>
-              <CardDescription>{t('downloads.settings.speedLimitDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="speed-limit">{t('downloads.settings.speedLimit')}</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="speed-limit"
-                      type="number"
-                      min={0}
-                      step="0.1"
-                      value={speedLimitInput}
-                      onChange={(event) => setSpeedLimitInput(event.target.value)}
-                      className="flex-1"
-                    />
-                    <Select value={speedUnit} onValueChange={(v) => setSpeedUnit(v as typeof speedUnit)}>
-                      <SelectTrigger className="w-24">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="B/s">B/s</SelectItem>
-                        <SelectItem value="KB/s">KB/s</SelectItem>
-                        <SelectItem value="MB/s">MB/s</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {speedLimitInput === '0'
-                      ? t('downloads.settings.unlimited')
-                      : `${speedLimitInput} ${speedUnit}`}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="max-concurrent">{t('downloads.settings.maxConcurrent')}</Label>
-                  <Input
-                    id="max-concurrent"
-                    type="number"
-                    min={1}
-                    value={maxConcurrentInput}
-                    onChange={(event) => setMaxConcurrentInput(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t('downloads.settings.maxConcurrentDesc')}
-                  </p>
-                </div>
-              </div>
-              <Button size="sm" onClick={handleApplySettings} disabled={!isDesktop}>
-                {t('common.save')}
-              </Button>
-            </CardContent>
-          </Card>
+          <DownloadSettingsCard
+            speedLimitInput={speedLimitInput}
+            onSpeedLimitChange={setSpeedLimitInput}
+            speedUnit={speedUnit}
+            onSpeedUnitChange={setSpeedUnit}
+            maxConcurrentInput={maxConcurrentInput}
+            onMaxConcurrentChange={setMaxConcurrentInput}
+            onApply={handleApplySettings}
+            disabled={!isDesktop}
+            clipboardMonitor={clipboardMonitor}
+            onClipboardMonitorChange={setClipboardMonitor}
+            t={t}
+          />
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <CardTitle>{t('downloads.historyPanel.title')}</CardTitle>
-                  <CardDescription>{t('downloads.historyPanel.search')}</CardDescription>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    value={historyQuery}
-                    onChange={(event) => setHistoryQuery(event.target.value)}
-                    placeholder={t('downloads.historyPanel.search')}
-                    className="w-56"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => clearHistory()}
-                    disabled={history.length === 0}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {t('downloads.historyPanel.clear')}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {historyStatsCard && (
-                <div className="grid gap-4 md:grid-cols-4 mb-4">
-                  {historyStatsCard.map((card) => (
-                    <div
-                      key={card.label}
-                      className="flex items-center gap-2 rounded-lg border p-3"
-                    >
-                      <span className="text-muted-foreground">{card.icon}</span>
-                      <div>
-                        <p className="text-xs text-muted-foreground">{card.label}</p>
-                        <p className="text-lg font-semibold">{card.value}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {activeHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <History className="h-12 w-12 mb-4 opacity-50" />
-                  <p className="text-sm font-medium">{t('downloads.noHistory')}</p>
-                  <p className="text-xs">{t('downloads.noHistoryDesc')}</p>
-                </div>
-              ) : (
-                <ScrollArea className="h-[420px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{t('downloads.name')}</TableHead>
-                        <TableHead>{t('downloads.status')}</TableHead>
-                        <TableHead>{t('downloads.historyPanel.duration')}</TableHead>
-                        <TableHead>{t('downloads.historyPanel.averageSpeed')}</TableHead>
-                        <TableHead>{t('downloads.progress.total')}</TableHead>
-                        <TableHead className="text-right">{t('common.actions')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {activeHistory.map((record) => (
-                        <TableRow key={record.id}>
-                          <TableCell className="min-w-[220px]">
-                            <div className="space-y-1">
-                              <p className="font-medium truncate" title={record.filename}>
-                                {record.filename}
-                              </p>
-                              <p className="text-xs text-muted-foreground truncate" title={record.url}>
-                                {record.url}
-                              </p>
-                              {record.error && (
-                                <p className="text-xs text-destructive">{record.error}</p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={getStateBadgeVariant(record.status)}>
-                              {t(`downloads.state.${record.status}`)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Timer className="h-4 w-4 text-muted-foreground" />
-                              {record.durationHuman}
-                            </div>
-                          </TableCell>
-                          <TableCell>{record.speedHuman}</TableCell>
-                          <TableCell>{record.sizeHuman}</TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => removeHistoryRecord(record.id)}
-                              title={t('downloads.actions.remove')}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+          <DownloadHistoryPanel
+            history={activeHistory}
+            historyStats={historyStats}
+            historyQuery={historyQuery}
+            onHistoryQueryChange={setHistoryQuery}
+            onClearHistory={() => clearHistory()}
+            onRemoveRecord={removeHistoryRecord}
+            t={t}
+          />
         </TabsContent>
       </Tabs>
 
@@ -788,6 +488,27 @@ export default function DownloadsPage() {
         onOpenFile={openFile}
         onRevealFile={revealFile}
         onCalculateChecksum={calculateChecksum}
+      />
+
+      <BatchImportDialog
+        open={batchImportOpen}
+        onOpenChange={setBatchImportOpen}
+        onSubmit={async (requests) => {
+          let added = 0;
+          for (const req of requests) {
+            try {
+              await addDownload(req);
+              added++;
+            } catch (err) {
+              console.error('Failed to add download:', err);
+            }
+          }
+          if (added > 0) {
+            toast.success(t('downloads.toast.batchAdded', { count: added }));
+            await refreshTasks();
+            await refreshStats();
+          }
+        }}
       />
     </div>
   );

@@ -18,6 +18,8 @@ describe('useLogStore', () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      bookmarkedIds: [],
+      _logCounts: { trace: 0, debug: 0, info: 0, warn: 0, error: 0 },
     });
   });
 

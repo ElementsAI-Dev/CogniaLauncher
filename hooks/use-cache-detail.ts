@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
+import { useDebounce } from '@/hooks/use-mobile';
 import type {
   CacheEntryItem,
   CacheInfo,
@@ -96,13 +97,15 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     }
   }, [fetchInfo, fetchEntries]);
 
-  // Refetch when filters change
+  const debouncedSearch = useDebounce(searchQuery, 300);
+
+  // Refetch when filters change (search is debounced)
   useEffect(() => {
     if (initializedRef.current) {
       fetchEntries(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, sortBy, entryTypeFilter]);
+  }, [debouncedSearch, sortBy, entryTypeFilter]);
 
   // Refetch when page changes
   useEffect(() => {

@@ -8,6 +8,7 @@ export interface LogEntry {
   target?: string;
   file?: string;
   line?: number;
+  context?: Record<string, string>;
 }
 
 export interface LogFilter {

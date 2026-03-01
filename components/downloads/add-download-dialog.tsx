@@ -24,6 +24,8 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { DestinationPicker } from "./destination-picker";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { isTauri } from "@/lib/tauri";
+import { isValidUrl, inferNameFromUrl } from "@/lib/downloads";
+import { DEFAULT_DOWNLOAD_FORM, SEGMENT_OPTIONS, POST_ACTION_OPTIONS } from "@/lib/constants/downloads";
 
 interface AddDownloadDialogProps {
   open: boolean;
@@ -32,36 +34,6 @@ interface AddDownloadDialogProps {
   initialUrl?: string;
 }
 
-const DEFAULT_FORM = {
-  url: "",
-  destination: "",
-  name: "",
-  checksum: "",
-  priority: "",
-  provider: "",
-  autoExtract: false,
-  extractDest: "",
-};
-
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function inferNameFromUrl(url: string) {
-  try {
-    const parsed = new URL(url);
-    const lastSegment = parsed.pathname.split("/").filter(Boolean).pop();
-    return lastSegment || "download";
-  } catch {
-    const parts = url.split("/").filter(Boolean);
-    return parts[parts.length - 1] || "download";
-  }
-}
 
 export function AddDownloadDialog({
   open,
@@ -70,12 +42,12 @@ export function AddDownloadDialog({
   initialUrl,
 }: AddDownloadDialogProps) {
   const { t } = useLocale();
-  const [form, setForm] = useState(DEFAULT_FORM);
+  const [form, setForm] = useState(DEFAULT_DOWNLOAD_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setForm(DEFAULT_FORM);
+      setForm(DEFAULT_DOWNLOAD_FORM);
     } else if (initialUrl) {
       setForm((prev) => ({ ...prev, url: initialUrl }));
     }
@@ -109,6 +81,9 @@ export function AddDownloadDialog({
         provider: form.provider.trim() || undefined,
         autoExtract: form.autoExtract || undefined,
         extractDest: form.extractDest.trim() || undefined,
+        segments: form.segments !== "1" ? Number(form.segments) : undefined,
+        mirrorUrls: form.mirrorUrls.length > 0 ? form.mirrorUrls : undefined,
+        postAction: form.postAction !== "none" ? form.postAction as DownloadRequest['postAction'] : undefined,
       });
       onOpenChange(false);
     } finally {
@@ -223,19 +198,128 @@ export function AddDownloadDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              id="auto-extract"
-              type="checkbox"
-              checked={form.autoExtract}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, autoExtract: event.target.checked }))
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>{t("downloads.mirrors")}</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    mirrorUrls: [...prev.mirrorUrls, ""],
+                  }))
+                }
+              >
+                + {t("downloads.addMirror")}
+              </Button>
+            </div>
+            {form.mirrorUrls.map((mirror, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Input
+                  value={mirror}
+                  onChange={(e) => {
+                    const updated = [...form.mirrorUrls];
+                    updated[idx] = e.target.value;
+                    setForm((prev) => ({ ...prev, mirrorUrls: updated }));
+                  }}
+                  placeholder={`https://mirror${idx + 1}.example.com/file.zip`}
+                  className="flex-1 text-xs"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 flex-shrink-0"
+                  onClick={() => {
+                    const updated = form.mirrorUrls.filter((_, i) => i !== idx);
+                    setForm((prev) => ({ ...prev, mirrorUrls: updated }));
+                  }}
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  id="auto-extract"
+                  type="checkbox"
+                  checked={form.autoExtract}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, autoExtract: event.target.checked }))
+                  }
+                  className="h-4 w-4 rounded border-input"
+                />
+                <Label htmlFor="auto-extract" className="text-sm font-normal">
+                  {t("downloads.settings.autoExtract")}
+                </Label>
+              </div>
+              {form.autoExtract && (
+                <DestinationPicker
+                  value={form.extractDest}
+                  onChange={(val) =>
+                    setForm((prev) => ({ ...prev, extractDest: val }))
+                  }
+                  placeholder={t("downloads.extractDestPlaceholder")}
+                  label={t("downloads.extractDest")}
+                  isDesktop={isTauri()}
+                  browseTooltip={t("downloads.browseFolder")}
+                  manualPathMessage={t("downloads.manualPathRequired")}
+                  errorMessage={t("downloads.dialogError")}
+                  mode="directory"
+                  dialogTitle={t("downloads.selectExtractDest")}
+                />
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="download-segments">
+                {t("downloads.segments")}
+              </Label>
+              <Select
+                value={form.segments}
+                onValueChange={(val) =>
+                  setForm((prev) => ({ ...prev, segments: val }))
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEGMENT_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label} {opt.value === "1" ? t("downloads.segmentsSingle") : t("downloads.segmentsParallel")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("downloads.postAction")}</Label>
+            <Select
+              value={form.postAction}
+              onValueChange={(val) =>
+                setForm((prev) => ({ ...prev, postAction: val }))
               }
-              className="h-4 w-4 rounded border-input"
-            />
-            <Label htmlFor="auto-extract" className="text-sm font-normal">
-              {t("downloads.settings.autoExtract")}
-            </Label>
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {POST_ACTION_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {t(`downloads.postAction.${opt.label}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

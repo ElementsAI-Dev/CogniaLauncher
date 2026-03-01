@@ -10,6 +10,11 @@ export const DEFAULT_DOWNLOAD_FORM = {
   checksum: "",
   priority: "",
   provider: "",
+  autoExtract: false,
+  extractDest: "",
+  segments: "1",
+  mirrorUrls: [] as string[],
+  postAction: "none",
 };
 
 /**
@@ -39,6 +44,25 @@ export const EMPTY_QUEUE_STATS = {
   downloadedHuman: "0 B",
   overallProgress: 0,
 };
+
+/**
+ * Post-download action options
+ */
+export const POST_ACTION_OPTIONS = [
+  { value: "none", label: "none" },
+  { value: "open_file", label: "openFile" },
+  { value: "reveal_in_folder", label: "revealInFolder" },
+] as const;
+
+/**
+ * Segment count options for multi-segment parallel downloads
+ */
+export const SEGMENT_OPTIONS = [
+  { value: "1", label: "1" },
+  { value: "4", label: "4" },
+  { value: "8", label: "8" },
+  { value: "16", label: "16" },
+] as const;
 
 /**
  * GitHub supported archive formats

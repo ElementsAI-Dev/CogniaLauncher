@@ -21,3 +21,12 @@ export { RepoValidationInput } from "./repo-validation-input";
 
 export { RefListSelector } from "./ref-list-selector";
 export type { RefItem } from "./ref-list-selector";
+
+export { DownloadTaskRow } from "./download-task-row";
+
+export { DownloadSettingsCard } from "./download-settings-card";
+export type { SpeedUnit } from "./download-settings-card";
+
+export { DownloadHistoryPanel } from "./download-history-panel";
+
+export { BatchImportDialog } from "./batch-import-dialog";

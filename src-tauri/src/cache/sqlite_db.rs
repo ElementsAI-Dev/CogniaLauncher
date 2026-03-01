@@ -78,6 +78,24 @@ impl SqliteCacheDb {
             .map_err(|e| {
                 CogniaError::Internal(format!("Failed to set synchronous mode: {}", e))
             })?;
+        sqlx::query("PRAGMA busy_timeout = 5000")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                CogniaError::Internal(format!("Failed to set busy_timeout: {}", e))
+            })?;
+        sqlx::query("PRAGMA temp_store = memory")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                CogniaError::Internal(format!("Failed to set temp_store: {}", e))
+            })?;
+        sqlx::query("PRAGMA cache_size = -2000")
+            .execute(&pool)
+            .await
+            .map_err(|e| {
+                CogniaError::Internal(format!("Failed to set cache_size: {}", e))
+            })?;
 
         // Run migrations for cache_entries table
         sqlx::query(
@@ -258,14 +276,46 @@ impl SqliteCacheDb {
         Ok(())
     }
 
-    /// Record a cache hit
+    /// Record a cache hit (auto-persists every 100 operations)
     fn record_hit(&self) {
-        self.stats_hits.fetch_add(1, Ordering::Relaxed);
+        let val = self.stats_hits.fetch_add(1, Ordering::Relaxed);
+        if val % 100 == 99 {
+            let pool = self.pool.clone();
+            let hits = val + 1;
+            let misses = self.stats_misses.load(Ordering::Relaxed);
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let _ = sqlx::query(
+                        "UPDATE cache_access_stats SET hits = ?, misses = ? WHERE id = 1",
+                    )
+                    .bind(hits as i64)
+                    .bind(misses as i64)
+                    .execute(&pool)
+                    .await;
+                });
+            }
+        }
     }
 
-    /// Record a cache miss
+    /// Record a cache miss (auto-persists every 100 operations)
     fn record_miss(&self) {
-        self.stats_misses.fetch_add(1, Ordering::Relaxed);
+        let val = self.stats_misses.fetch_add(1, Ordering::Relaxed);
+        if val % 100 == 99 {
+            let pool = self.pool.clone();
+            let hits = self.stats_hits.load(Ordering::Relaxed);
+            let misses = val + 1;
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let _ = sqlx::query(
+                        "UPDATE cache_access_stats SET hits = ?, misses = ? WHERE id = 1",
+                    )
+                    .bind(hits as i64)
+                    .bind(misses as i64)
+                    .execute(&pool)
+                    .await;
+                });
+            }
+        }
     }
 
     /// Migrate from JSON-based cache index to SQLite
@@ -362,6 +412,18 @@ impl SqliteCacheDb {
             .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    /// Remove all cache entries whose key starts with the given prefix
+    pub async fn remove_by_prefix(&self, prefix: &str) -> CogniaResult<usize> {
+        let pattern = format!("{}%", prefix);
+        let result = sqlx::query("DELETE FROM cache_entries WHERE key LIKE ?")
+            .bind(&pattern)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(result.rows_affected() as usize)
     }
 
     /// Update last accessed time and hit count
@@ -625,6 +687,94 @@ impl SqliteCacheDb {
         Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
 
+    /// Get aggregated stats for a specific entry type.
+    /// Returns (total_size, entry_count, expired_count).
+    pub async fn stats_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<(u64, usize, usize)> {
+        #[derive(FromRow)]
+        struct TypeStatsRow {
+            total_size: Option<i64>,
+            entry_count: i64,
+            expired_count: i64,
+        }
+
+        let now = Utc::now().to_rfc3339();
+        let row: TypeStatsRow = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE(SUM(size), 0) as total_size,
+                COUNT(*) as entry_count,
+                SUM(CASE WHEN expires_at IS NOT NULL AND expires_at < ? THEN 1 ELSE 0 END) as expired_count
+            FROM cache_entries WHERE entry_type = ?
+            "#,
+        )
+        .bind(&now)
+        .bind(Self::entry_type_to_str(entry_type))
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok((
+            row.total_size.unwrap_or(0) as u64,
+            row.entry_count as usize,
+            row.expired_count as usize,
+        ))
+    }
+
+    /// List entries by type that were created before the given cutoff time.
+    pub async fn list_by_type_before(
+        &self,
+        entry_type: CacheEntryType,
+        before: DateTime<Utc>,
+    ) -> CogniaResult<Vec<CacheEntry>> {
+        let rows: Vec<CacheEntryRow> = sqlx::query_as(
+            "SELECT * FROM cache_entries WHERE entry_type = ? AND created_at < ?",
+        )
+        .bind(Self::entry_type_to_str(entry_type))
+        .bind(before.to_rfc3339())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+    }
+
+    /// List entries by type ordered by LRU (least recently used first).
+    pub async fn list_by_type_lru(
+        &self,
+        entry_type: CacheEntryType,
+        limit: usize,
+    ) -> CogniaResult<Vec<CacheEntry>> {
+        let rows: Vec<CacheEntryRow> = sqlx::query_as(
+            "SELECT * FROM cache_entries WHERE entry_type = ? ORDER BY COALESCE(last_accessed, created_at) ASC LIMIT ?",
+        )
+        .bind(Self::entry_type_to_str(entry_type))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows.into_iter().map(Self::row_to_entry).collect())
+    }
+
+    /// List file paths for entries whose key starts with the given prefix.
+    pub async fn list_file_paths_by_prefix(&self, prefix: &str) -> CogniaResult<Vec<PathBuf>> {
+        let pattern = format!("{}%", prefix);
+
+        #[derive(FromRow)]
+        struct FilePathRow {
+            file_path: String,
+        }
+
+        let rows: Vec<FilePathRow> =
+            sqlx::query_as("SELECT file_path FROM cache_entries WHERE key LIKE ?")
+                .bind(&pattern)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
+
+        Ok(rows.into_iter().map(|r| PathBuf::from(r.file_path)).collect())
+    }
+
     // Helper: Convert row to CacheEntry
     fn row_to_entry(row: CacheEntryRow) -> CacheEntry {
         CacheEntry {
@@ -780,13 +930,30 @@ impl SqliteCacheDb {
 
     // ==================== Size Snapshots ====================
 
-    /// Record a cache size snapshot for trend tracking
+    /// Record a cache size snapshot for trend tracking.
+    /// Skips recording if the last snapshot was taken less than 1 hour ago to
+    /// prevent table bloat when cache_monitor_interval is set very low.
     pub async fn record_size_snapshot(
         &self,
         internal_size: u64,
         download_count: usize,
         metadata_count: usize,
     ) -> CogniaResult<()> {
+        let last_ts: Option<String> = sqlx::query_scalar(
+            "SELECT timestamp FROM cache_size_snapshots ORDER BY id DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| CogniaError::Internal(format!("Failed to query last snapshot: {}", e)))?;
+
+        if let Some(ts) = last_ts {
+            if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
+                if Utc::now() - dt < ChronoDuration::hours(1) {
+                    return Ok(());
+                }
+            }
+        }
+
         sqlx::query(
             r#"
             INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count)
@@ -1482,8 +1649,20 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
-        db.record_size_snapshot(1000, 5, 3).await.unwrap();
-        db.record_size_snapshot(2000, 10, 6).await.unwrap();
+        // Insert snapshots with timestamps >1 hour apart to satisfy the dedup guard
+        let ts1 = (Utc::now() - ChronoDuration::hours(3)).to_rfc3339();
+        let ts2 = (Utc::now() - ChronoDuration::hours(2)).to_rfc3339();
+        sqlx::query(
+            "INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&ts1).bind(1000i64).bind(5i64).bind(3i64)
+        .execute(&db.pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&ts2).bind(2000i64).bind(10i64).bind(6i64)
+        .execute(&db.pool).await.unwrap();
+        // This one goes through record_size_snapshot (last snapshot is >1hr old)
         db.record_size_snapshot(3000, 15, 9).await.unwrap();
 
         let snapshots = db.get_size_snapshots(30).await.unwrap();

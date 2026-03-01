@@ -19,7 +19,9 @@ import { normalizeLevel, parseTimestamp } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { FileText, Loader2, RefreshCw } from "lucide-react";
+import { FileText, Loader2, RefreshCw, ArrowDownToLine } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface LogFileViewerProps {
@@ -42,6 +44,7 @@ export function LogFileViewer({
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [following, setFollowing] = useState(false);
 
   const queryOptions = useMemo(
     () => ({
@@ -124,12 +127,14 @@ export function LogFileViewer({
   }, [entries.length, loadEntries]);
 
   const handleExport = useCallback(
-    async (format: "txt" | "json") => {
+    async (format: "txt" | "json" | "csv") => {
       if (!fileName) return;
+      // Backend only supports txt/json; csv is handled by frontend-only exportLogs
+      const backendFormat = format === "csv" ? "txt" : format;
       try {
         const result = await exportLogFile({
           ...queryOptions,
-          format,
+          format: backendFormat,
         });
         if (!result) return;
 
@@ -157,6 +162,17 @@ export function LogFileViewer({
     loadEntries(0, false);
   }, [fileName, loadEntries, open]);
 
+  // Follow mode: auto-refresh every 3 seconds for current session file
+  useEffect(() => {
+    if (!following || !open || !fileName) return;
+    const timer = setInterval(() => loadEntries(0, false), 3000);
+    return () => clearInterval(timer);
+  }, [following, open, fileName, loadEntries]);
+
+  // Determine if this is the current session (first/newest file)
+  const { logFiles } = useLogStore();
+  const isCurrentSession = logFiles.length > 0 && logFiles[0]?.name === fileName;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl h-[80vh]">
@@ -176,10 +192,24 @@ export function LogFileViewer({
 
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>{t("logs.fileEntries", { count: totalCount })}</span>
-            <Button variant="ghost" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="mr-2 h-3 w-3" />
-              {t("common.refresh")}
-            </Button>
+            <div className="flex items-center gap-1">
+              {isCurrentSession && (
+                <Toggle
+                  pressed={following}
+                  onPressedChange={setFollowing}
+                  size="sm"
+                  className="h-8 gap-1 px-2"
+                  aria-label={t("logs.follow")}
+                >
+                  <ArrowDownToLine className={cn("h-3 w-3", following && "text-primary")} />
+                  <span className="text-xs">{t("logs.follow")}</span>
+                </Toggle>
+              )}
+              <Button variant="ghost" size="sm" onClick={handleRefresh}>
+                <RefreshCw className="mr-2 h-3 w-3" />
+                {t("common.refresh")}
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1 rounded-lg border">

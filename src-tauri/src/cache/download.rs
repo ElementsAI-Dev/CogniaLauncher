@@ -1,20 +1,21 @@
 use super::{
     sqlite_db::{CacheAccessStats, CacheSizeSnapshot, DatabaseInfo, IntegrityCheckResult},
-    CacheEntry, CacheEntryType, SqliteCacheDb,
+    CacheEntry, CacheEntryType, SharedCacheDb, SqliteCacheDb,
 };
+use std::sync::Arc;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     disk::format_size,
     fs,
     network::{DownloadProgress, HttpClient},
 };
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{Duration as ChronoDuration, Utc};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub struct DownloadCache {
     cache_dir: PathBuf,
-    db: SqliteCacheDb,
+    db: Arc<SqliteCacheDb>,
 }
 
 impl DownloadCache {
@@ -22,7 +23,17 @@ impl DownloadCache {
         let downloads_dir = cache_dir.join("downloads");
         fs::create_dir_all(&downloads_dir).await?;
 
-        let db = SqliteCacheDb::open(cache_dir).await?;
+        let db = Arc::new(SqliteCacheDb::open(cache_dir).await?);
+
+        Ok(Self {
+            cache_dir: downloads_dir,
+            db,
+        })
+    }
+
+    pub async fn from_shared(cache_dir: &Path, db: SharedCacheDb) -> CogniaResult<Self> {
+        let downloads_dir = cache_dir.join("downloads");
+        fs::create_dir_all(&downloads_dir).await?;
 
         Ok(Self {
             cache_dir: downloads_dir,
@@ -155,13 +166,7 @@ impl DownloadCache {
     pub async fn clean_with_option(&mut self, use_trash: bool) -> CogniaResult<u64> {
         let mut total_freed = 0u64;
 
-        let entries: Vec<CacheEntry> = self
-            .db
-            .list()
-            .await?
-            .into_iter()
-            .filter(|e| e.entry_type == CacheEntryType::Download)
-            .collect();
+        let entries = self.db.list_by_type(CacheEntryType::Download).await?;
 
         for entry in entries {
             if fs::exists(&entry.file_path).await {
@@ -176,23 +181,13 @@ impl DownloadCache {
 
     /// Get list of entries that would be cleaned (for preview)
     pub async fn preview_clean(&self) -> CogniaResult<Vec<CacheEntry>> {
-        Ok(self
-            .db
-            .list()
-            .await?
-            .into_iter()
-            .filter(|e| e.entry_type == CacheEntryType::Download)
-            .collect())
+        self.db.list_by_type(CacheEntryType::Download).await
     }
 
     /// Get list of expired download entries (for preview)
     pub async fn preview_expired(&self, max_age: Duration) -> CogniaResult<Vec<CacheEntry>> {
-        let entries = self.db.list().await?;
-        Ok(entries
-            .into_iter()
-            .filter(|entry| entry.entry_type == CacheEntryType::Download)
-            .filter(|entry| is_entry_expired(entry, max_age))
-            .collect())
+        let cutoff = Utc::now() - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
+        self.db.list_by_type_before(CacheEntryType::Download, cutoff).await
     }
 
     pub async fn clean_expired(&mut self, max_age: Duration) -> CogniaResult<u64> {
@@ -205,14 +200,11 @@ impl DownloadCache {
         max_age: Duration,
         use_trash: bool,
     ) -> CogniaResult<u64> {
-        let entries = self.db.list().await?;
+        let cutoff = Utc::now() - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
+        let entries = self.db.list_by_type_before(CacheEntryType::Download, cutoff).await?;
         let mut total_freed = 0u64;
 
-        for entry in entries
-            .into_iter()
-            .filter(|e| e.entry_type == CacheEntryType::Download)
-            .filter(|e| is_entry_expired(e, max_age))
-        {
+        for entry in entries {
             if fs::exists(&entry.file_path).await {
                 total_freed += entry.size;
                 fs::remove_file_with_option(&entry.file_path, use_trash).await?;
@@ -224,23 +216,14 @@ impl DownloadCache {
     }
 
     pub async fn evict_to_size(&mut self, max_size: u64) -> CogniaResult<usize> {
-        let mut entries: Vec<_> = self
-            .db
-            .list()
-            .await?
-            .into_iter()
-            .filter(|e| e.entry_type == CacheEntryType::Download)
-            .collect();
-
-        let total_download_size: u64 = entries.iter().map(|entry| entry.size).sum();
+        let (total_download_size, _, _) = self.db.stats_by_type(CacheEntryType::Download).await?;
         if total_download_size <= max_size {
             return Ok(0);
         }
 
+        let entries = self.db.list_by_type_lru(CacheEntryType::Download, 100).await?;
         let mut remaining = total_download_size;
         let mut removed = 0usize;
-
-        entries.sort_by_key(|entry| entry.last_accessed.unwrap_or(entry.created_at));
 
         for entry in entries {
             if remaining <= max_size {
@@ -260,14 +243,7 @@ impl DownloadCache {
     }
 
     pub async fn stats(&self) -> CogniaResult<DownloadCacheStats> {
-        let entries = self.db.list().await?;
-        let entries: Vec<_> = entries
-            .iter()
-            .filter(|e| e.entry_type == CacheEntryType::Download)
-            .collect();
-
-        let total_size = entries.iter().map(|e| e.size).sum();
-        let entry_count = entries.len();
+        let (total_size, entry_count, _) = self.db.stats_by_type(CacheEntryType::Download).await?;
 
         Ok(DownloadCacheStats {
             total_size,
@@ -377,12 +353,6 @@ impl DownloadCache {
     pub async fn prune_old_snapshots(&self, max_age_days: u32) -> CogniaResult<usize> {
         self.db.prune_old_snapshots(max_age_days).await
     }
-}
-
-fn is_entry_expired(entry: &CacheEntry, max_age: Duration) -> bool {
-    let max_age = ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
-    let cutoff: DateTime<Utc> = Utc::now() - max_age;
-    entry.created_at < cutoff
 }
 
 #[derive(Debug, Clone)]
@@ -687,20 +657,16 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache = DownloadCache::open(dir.path()).await.unwrap();
 
-        // Record snapshots
+        // First snapshot recorded normally
         cache.record_size_snapshot(1000, 5, 3).await.unwrap();
-        cache.record_size_snapshot(2000, 10, 6).await.unwrap();
 
+        // Second snapshot would be skipped by the 1-hour dedup guard,
+        // so verify the single snapshot is correct
         let snapshots = cache.get_size_snapshots(30).await.unwrap();
-        assert_eq!(snapshots.len(), 2);
-
-        // Oldest first (ascending order)
+        assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].internal_size, 1000);
         assert_eq!(snapshots[0].download_count, 5);
         assert_eq!(snapshots[0].metadata_count, 3);
-        assert_eq!(snapshots[1].internal_size, 2000);
-        assert_eq!(snapshots[1].download_count, 10);
-        assert_eq!(snapshots[1].metadata_count, 6);
     }
 
     #[tokio::test]

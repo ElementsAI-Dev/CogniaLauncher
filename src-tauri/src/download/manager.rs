@@ -919,6 +919,26 @@ impl DownloadManager {
                     }
                 }
 
+                // Execute post-download action
+                match &task.config.post_action {
+                    crate::download::task::PostAction::OpenFile => {
+                        if let Err(e) = tauri_plugin_opener::open_path(
+                            task.destination.to_string_lossy().as_ref(),
+                            Option::<&str>::None,
+                        ) {
+                            log::warn!("Post-action open_file failed for {}: {}", task_id, e);
+                        }
+                    }
+                    crate::download::task::PostAction::RevealInFolder => {
+                        if let Err(e) = tauri_plugin_opener::reveal_item_in_dir(
+                            task.destination.to_string_lossy().as_ref(),
+                        ) {
+                            log::warn!("Post-action reveal failed for {}: {}", task_id, e);
+                        }
+                    }
+                    crate::download::task::PostAction::None => {}
+                }
+
                 let mut q = queue.write().await;
                 let _ = q.complete(&task_id);
 

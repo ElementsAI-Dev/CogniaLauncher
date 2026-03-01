@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   healthCheckAll,
   healthCheckEnvironment,
-  type SystemHealthResult,
-  type EnvironmentHealthResult,
-  type HealthStatus,
+  isTauri,
 } from '@/lib/tauri';
-import { isTauri } from '@/lib/tauri';
+import { useHealthCheckStore, type HealthCheckProgress } from '@/lib/stores/health-check';
+import { getStatusColor } from '@/lib/provider-utils';
+import type { HealthStatus, SystemHealthResult, EnvironmentHealthResult } from '@/types/tauri';
 
 interface UseHealthCheckReturn {
   systemHealth: SystemHealthResult | null;
   environmentHealth: Record<string, EnvironmentHealthResult>;
   loading: boolean;
   error: string | null;
+  progress: HealthCheckProgress | null;
   checkAll: () => Promise<void>;
   checkEnvironment: (envType: string) => Promise<void>;
   getStatusColor: (status: HealthStatus) => string;
@@ -23,75 +24,82 @@ interface UseHealthCheckReturn {
 }
 
 /**
- * Hook for managing environment health checks
+ * Hook for managing environment health checks.
+ * Uses Zustand store for persistence across navigations.
  */
 export function useHealthCheck(): UseHealthCheckReturn {
-  const [systemHealth, setSystemHealth] = useState<SystemHealthResult | null>(null);
-  const [environmentHealth, setEnvironmentHealth] = useState<Record<string, EnvironmentHealthResult>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const store = useHealthCheckStore();
+  const unlistenRef = useRef<(() => void) | null>(null);
+
+  // Listen for health check progress events
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<HealthCheckProgress>('health-check-progress', (event) => {
+          if (!cancelled) {
+            useHealthCheckStore.getState().setProgress(event.payload);
+          }
+        });
+        if (cancelled) {
+          unlisten();
+        } else {
+          unlistenRef.current = unlisten;
+        }
+      } catch {
+        // Not in Tauri context
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unlistenRef.current?.();
+      unlistenRef.current = null;
+    };
+  }, []);
 
   const checkAll = useCallback(async () => {
     if (!isTauri()) {
-      setError('Health check is only available in desktop app');
+      store.setError('Health check is only available in desktop app');
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    store.setLoading(true);
+    store.setError(null);
+    store.setProgress(null);
 
     try {
       const result = await healthCheckAll();
-      setSystemHealth(result);
-      
-      // Also populate individual environment health
-      const envHealthMap: Record<string, EnvironmentHealthResult> = {};
-      for (const env of result.environments) {
-        envHealthMap[env.env_type] = env;
-      }
-      setEnvironmentHealth(envHealthMap);
+      store.setSystemHealth(result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      store.setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      store.setLoading(false);
+      store.setProgress(null);
     }
-  }, []);
+  }, [store]);
 
   const checkEnvironment = useCallback(async (envType: string) => {
     if (!isTauri()) {
-      setError('Health check is only available in desktop app');
+      store.setError('Health check is only available in desktop app');
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    store.setLoading(true);
+    store.setError(null);
 
     try {
       const result = await healthCheckEnvironment(envType);
-      setEnvironmentHealth((prev) => ({
-        ...prev,
-        [envType]: result,
-      }));
+      store.setEnvironmentHealth(envType, result);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      store.setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      store.setLoading(false);
     }
-  }, []);
-
-  const getStatusColor = useCallback((status: HealthStatus): string => {
-    switch (status) {
-      case 'healthy':
-        return 'text-green-600 bg-green-50 border-green-200';
-      case 'warning':
-        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-      case 'error':
-        return 'text-red-600 bg-red-50 border-red-200';
-      case 'unknown':
-      default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
-    }
-  }, []);
+  }, [store]);
 
   const getStatusIcon = useCallback((status: HealthStatus): string => {
     switch (status) {
@@ -107,21 +115,16 @@ export function useHealthCheck(): UseHealthCheckReturn {
     }
   }, []);
 
-  const clearResults = useCallback(() => {
-    setSystemHealth(null);
-    setEnvironmentHealth({});
-    setError(null);
-  }, []);
-
   return {
-    systemHealth,
-    environmentHealth,
-    loading,
-    error,
+    systemHealth: store.systemHealth,
+    environmentHealth: store.environmentHealth,
+    loading: store.loading,
+    error: store.error,
+    progress: store.progress,
     checkAll,
     checkEnvironment,
     getStatusColor,
     getStatusIcon,
-    clearResults,
+    clearResults: store.clearResults,
   };
 }

@@ -69,6 +69,7 @@ import {
 } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/layout/page-header';
+import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import { ExternalCacheSection } from '@/components/cache/external-cache-section';
 import { CacheMonitorCard } from '@/components/cache/cache-monitor-card';
 import { CachePathCard } from '@/components/cache/cache-path-card';
@@ -370,7 +371,7 @@ export default function CachePage() {
                 <div className="text-3xl font-bold">{cacheInfo?.total_size_human || '0 B'}</div>
                 <Progress value={usagePercent} className="h-2" />
                 <p className="text-sm text-muted-foreground">
-                  {t('cache.entries', { count: cacheInfo?.download_cache.entry_count || 0 }).replace('{count}', String(cacheInfo?.download_cache.entry_count || 0))} {t('cache.downloadCache').toLowerCase()}, {t('cache.entries', { count: cacheInfo?.metadata_cache.entry_count || 0 }).replace('{count}', String(cacheInfo?.metadata_cache.entry_count || 0))} {t('cache.metadataCache').toLowerCase()}
+                  {t('cache.entries', { count: cacheInfo?.download_cache.entry_count || 0 })} {t('cache.downloadCache').toLowerCase()}, {t('cache.entries', { count: cacheInfo?.metadata_cache.entry_count || 0 })} {t('cache.metadataCache').toLowerCase()}
                 </p>
               </>
             )}
@@ -428,7 +429,7 @@ export default function CachePage() {
                   <>
                     <p className="text-lg font-semibold">{cacheInfo?.download_cache.size_human || '0 B'}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t('cache.entries', { count: cacheInfo?.download_cache.entry_count || 0 }).replace('{count}', String(cacheInfo?.download_cache.entry_count || 0))}
+                      {t('cache.entries', { count: cacheInfo?.download_cache.entry_count || 0 })}
                     </p>
                   </>
                 )}
@@ -505,7 +506,7 @@ export default function CachePage() {
                   <>
                     <p className="text-lg font-semibold">{cacheInfo?.metadata_cache.size_human || '0 B'}</p>
                     <p className="text-sm text-muted-foreground">
-                      {t('cache.entries', { count: cacheInfo?.metadata_cache.entry_count || 0 }).replace('{count}', String(cacheInfo?.metadata_cache.entry_count || 0))}
+                      {t('cache.entries', { count: cacheInfo?.metadata_cache.entry_count || 0 })}
                     </p>
                   </>
                 )}
@@ -1281,8 +1282,8 @@ export default function CachePage() {
           <div className="flex items-center justify-between">
             <div className="text-sm text-muted-foreground">
               {t('cache.showingEntries', { 
-                from: browserPage * 20 + 1, 
-                to: Math.min((browserPage + 1) * 20, browserTotalCount),
+                from: browserPage * ENTRIES_PER_PAGE + 1, 
+                to: Math.min((browserPage + 1) * ENTRIES_PER_PAGE, browserTotalCount),
                 total: browserTotalCount 
               })}
             </div>
@@ -1302,7 +1303,7 @@ export default function CachePage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={(browserPage + 1) * 20 >= browserTotalCount}
+                disabled={(browserPage + 1) * ENTRIES_PER_PAGE >= browserTotalCount}
                 onClick={() => {
                   const newPage = browserPage + 1;
                   setBrowserPage(newPage);

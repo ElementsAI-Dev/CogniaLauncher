@@ -125,10 +125,20 @@ pub struct DownloadRequest {
     pub auto_extract: Option<bool>,
     #[serde(default)]
     pub extract_dest: Option<String>,
+    #[serde(default)]
+    pub segments: Option<u8>,
+    #[serde(default)]
+    pub mirror_urls: Option<Vec<String>>,
+    #[serde(default)]
+    pub post_action: Option<String>,
 }
 
-/// Initialize the download manager and start event forwarding
-pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> SharedDownloadManager {
+/// Initialize the download manager in-place and start event forwarding.
+///
+/// The `shared` parameter should be a pre-registered `SharedDownloadManager` (initially
+/// containing a default/empty manager). This function replaces its contents with a fully
+/// initialized manager and spawns the event forwarding task.
+pub async fn setup_download_manager(shared: SharedDownloadManager, app: AppHandle, settings: &Settings) {
     let config = DownloadManagerConfig {
         max_concurrent: settings.general.parallel_downloads as usize,
         speed_limit: settings.general.download_speed_limit,
@@ -170,7 +180,10 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
     // Start the manager
     manager.start().await;
 
-    let shared_manager = Arc::new(RwLock::new(manager));
+    // Replace the pre-registered default with the fully initialized manager
+    *shared.write().await = manager;
+
+    let shared_manager = shared;
 
     // Spawn event forwarding task (also records download history)
     let app_clone = app.clone();
@@ -371,8 +384,6 @@ pub async fn init_download_manager(app: AppHandle, settings: &Settings) -> Share
             }
         }
     });
-
-    shared_manager
 }
 
 /// Add a new download task
@@ -434,6 +445,11 @@ pub async fn download_add(
             builder = builder.with_headers(headers);
         }
     }
+    if let Some(mirror_urls) = request.mirror_urls {
+        if !mirror_urls.is_empty() {
+            builder = builder.with_mirrors(mirror_urls);
+        }
+    }
 
     let mut task = builder.build();
 
@@ -445,6 +461,16 @@ pub async fn download_add(
         if !extract_dest.is_empty() {
             task.config.extract_dest = Some(PathBuf::from(extract_dest));
         }
+    }
+    if let Some(segments) = request.segments {
+        task.config.segments = segments.clamp(1, 32);
+    }
+    if let Some(ref action) = request.post_action {
+        task.config.post_action = match action.as_str() {
+            "open_file" => crate::download::task::PostAction::OpenFile,
+            "reveal_in_folder" => crate::download::task::PostAction::RevealInFolder,
+            _ => crate::download::task::PostAction::None,
+        };
     }
 
     let mgr = manager.read().await;

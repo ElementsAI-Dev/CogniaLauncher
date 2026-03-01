@@ -103,35 +103,62 @@ export function useLogs() {
     }
   }, []);
 
-  // Export logs to file
-  const exportLogs = useCallback((format: 'txt' | 'json' = 'txt') => {
+  // Export logs to file (Tauri: native save dialog, web: browser download)
+  const exportLogs = useCallback(async (format: 'txt' | 'json' | 'csv' = 'txt') => {
     const logsToExport = getFilteredLogs();
     
     let content: string;
     let mimeType: string;
-    let extension: string;
 
     if (format === 'json') {
       content = JSON.stringify(logsToExport, null, 2);
       mimeType = 'application/json';
-      extension = 'json';
+    } else if (format === 'csv') {
+      const header = 'timestamp,level,target,message';
+      const rows = logsToExport.map((log) => {
+        const ts = new Date(log.timestamp).toISOString();
+        const msg = log.message.replace(/"/g, '""');
+        return `"${ts}","${log.level}","${log.target ?? ''}","${msg}"`;
+      });
+      content = [header, ...rows].join('\n');
+      mimeType = 'text/csv';
     } else {
       content = logsToExport
         .map((log) => {
-          const date = new Date(log.timestamp);
-          const timestamp = date.toISOString();
+          const timestamp = new Date(log.timestamp).toISOString();
           return `[${timestamp}][${log.level.toUpperCase()}]${log.target ? `[${log.target}]` : ''} ${log.message}`;
         })
         .join('\n');
       mimeType = 'text/plain';
-      extension = 'txt';
     }
 
+    const fileName = `cognia-logs-${new Date().toISOString().split('T')[0]}.${format}`;
+
+    // Try Tauri native save dialog first
+    if (isTauri()) {
+      try {
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+        const selected = await save({
+          defaultPath: fileName,
+          filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        });
+        if (selected) {
+          await writeTextFile(selected, content);
+          return;
+        }
+        return; // user cancelled
+      } catch {
+        // Fallback to browser download below
+      }
+    }
+
+    // Browser fallback
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cognia-logs-${new Date().toISOString().split('T')[0]}.${extension}`;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { writeClipboard } from '@/lib/clipboard';
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,10 +10,11 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { Copy, ChevronDown, ChevronUp, Star } from "lucide-react";
 import { useState, useCallback, useMemo, type ReactNode } from "react";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { LogEntry as LogEntryType } from "@/types/log";
+import { useLogStore } from "@/lib/stores/log";
 import { LEVEL_STYLES, LEVEL_LABELS } from "@/lib/constants/log";
 import { escapeRegExp, formatLogTimestamp } from "@/lib/log";
 
@@ -34,7 +36,8 @@ export function LogEntry({
   allowCollapse = false,
 }: LogEntryProps) {
   const { t } = useLocale();
-  const [copied, setCopied] = useState(false);
+  const { bookmarkedIds, toggleBookmark } = useLogStore();
+  const isBookmarked = bookmarkedIds.includes(entry.id);
   const [expanded, setExpanded] = useState(false);
   const style = LEVEL_STYLES[entry.level];
   const isExpandable =
@@ -45,12 +48,11 @@ export function LogEntry({
     try {
       const text = `[${formatLogTimestamp(entry.timestamp)}][${entry.level.toUpperCase()}]${entry.target ? `[${entry.target}]` : ""} ${entry.message}`;
       await writeClipboard(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.success(t("common.copied"));
     } catch {
-      // Ignore clipboard errors
+      toast.error(t("common.copyFailed"));
     }
-  }, [entry]);
+  }, [entry, t]);
 
   const highlightNodes = useMemo(() => {
     if (!highlightText) return entry.message;
@@ -157,6 +159,15 @@ export function LogEntry({
         )}
       >
         {highlightNodes}
+        {expanded && entry.context && Object.keys(entry.context).length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {Object.entries(entry.context).map(([k, v]) => (
+              <Badge key={k} variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                {k}={v}
+              </Badge>
+            ))}
+          </div>
+        )}
       </span>
 
       {/* Action buttons */}
@@ -190,14 +201,25 @@ export function LogEntry({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
+              onClick={() => toggleBookmark(entry.id)}
+              aria-label={t("logs.bookmark")}
+            >
+              <Star className={cn("h-3.5 w-3.5", isBookmarked && "fill-yellow-400 text-yellow-400")} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("logs.bookmark")}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
               onClick={handleCopy}
               aria-label={t("logs.copyEntry")}
             >
-              {copied ? (
-                <Check className="h-3.5 w-3.5 text-green-500" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
+              <Copy className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t("logs.copyEntry")}</TooltipContent>

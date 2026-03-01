@@ -34,7 +34,8 @@ import {
 } from "@/components/ui/collapsible";
 import { Toggle } from "@/components/ui/toggle";
 import { useLogStore } from "@/lib/stores/log";
-import { ALL_LEVELS, LEVEL_COLORS } from "@/lib/constants/log";
+import { useLogs } from "@/hooks/use-logs";
+import { ALL_LEVELS, LEVEL_COLORS, LEVEL_STYLES, KNOWN_TARGETS } from "@/lib/constants/log";
 import { formatDateTimeInput, parseDateTimeInput } from "@/lib/log";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
@@ -48,10 +49,11 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useDebounce } from "@/hooks/use-mobile";
 
 interface LogToolbarProps {
-  onExport?: (format: "txt" | "json") => void;
+  onExport?: (format: "txt" | "json" | "csv") => void;
   showRealtimeControls?: boolean;
   showMaxLogs?: boolean;
 }
@@ -80,7 +82,10 @@ export function LogToolbar({
     clearLogs,
     setMaxLogs,
     getLogStats,
+    showBookmarksOnly,
+    setShowBookmarksOnly,
   } = useLogStore();
+  const { exportLogs } = useLogs();
 
   const stats = getLogStats();
   const [timeRangePreset, setTimeRangePreset] = useState<TimeRangePreset>(
@@ -95,7 +100,13 @@ export function LogToolbar({
   const [customEnd, setCustomEnd] = useState(() =>
     formatDateTimeInput(filter.endTime),
   );
+  const [localSearch, setLocalSearch] = useState(filter.search);
+  const debouncedSearch = useDebounce(localSearch, 300);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  useEffect(() => {
+    setSearch(debouncedSearch);
+  }, [debouncedSearch, setSearch]);
+
   const activeFiltersCount =
     (filter.levels.length < ALL_LEVELS.length ? 1 : 0) +
     (filter.startTime || filter.endTime ? 1 : 0) +
@@ -113,36 +124,14 @@ export function LogToolbar({
   );
 
   const handleExport = useCallback(
-    (format: "txt" | "json") => {
+    (format: "txt" | "json" | "csv") => {
       if (onExport) {
         onExport(format);
         return;
       }
-
-      const logs = useLogStore.getState().logs;
-      const content =
-        format === "json"
-          ? JSON.stringify(logs, null, 2)
-          : logs
-              .map((log) => {
-                const date = new Date(log.timestamp);
-                const timestamp = date.toISOString();
-                return `[${timestamp}][${log.level.toUpperCase()}]${log.target ? `[${log.target}]` : ""} ${log.message}`;
-              })
-              .join("\n");
-
-      const mimeType = format === "json" ? "application/json" : "text/plain";
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `cognia-logs-${new Date().toISOString().split("T")[0]}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      exportLogs(format);
     },
-    [onExport],
+    [onExport, exportLogs],
   );
 
   const handlePresetChange = useCallback(
@@ -221,16 +210,16 @@ export function LogToolbar({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
             placeholder={t("logs.searchPlaceholder")}
-            value={filter.search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             className="pl-9 pr-8 h-9"
           />
-          {filter.search && (
+          {localSearch && (
             <Button
               variant="ghost"
               size="icon"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6"
-              onClick={() => setSearch("")}
+              onClick={() => { setLocalSearch(""); setSearch(""); }}
               aria-label={t("logs.clearSearch")}
             >
               <X className="h-3.5 w-3.5 text-muted-foreground" />
@@ -371,6 +360,9 @@ export function LogToolbar({
             <DropdownMenuItem onClick={() => handleExport("json")}>
               {t("logs.exportJson")}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport("csv")}>
+              {t("logs.exportCsv")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -392,20 +384,50 @@ export function LogToolbar({
           </Tooltip>
         )}
 
-        {/* Stats badge */}
+        {/* Stats badge + level bar */}
         {showRealtimeControls && (
-          <Badge
-            variant="secondary"
-            className="hidden md:flex items-center gap-2 px-3 py-1.5 text-xs tabular-nums"
-          >
-            <span className="text-muted-foreground">{t("logs.total")}:</span>
-            <span className="font-medium">{stats.total}</span>
-            {paused && (
-              <span className="text-yellow-600 dark:text-yellow-400 font-medium">
-                • {t("logs.paused")}
-              </span>
+          <div className="hidden md:flex items-center gap-2">
+            {stats.total > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="h-2 w-20 rounded-full overflow-hidden bg-muted flex">
+                    {ALL_LEVELS.map((level) => {
+                      const pct = (stats.byLevel[level] / stats.total) * 100;
+                      if (pct === 0) return null;
+                      return (
+                        <div
+                          key={level}
+                          className={cn("h-full", LEVEL_STYLES[level].indicator)}
+                          style={{ width: `${pct}%` }}
+                        />
+                      );
+                    })}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  {ALL_LEVELS.map((level) => (
+                    stats.byLevel[level] > 0 && (
+                      <span key={level} className={cn("mr-2", LEVEL_COLORS[level])}>
+                        {level.toUpperCase()}: {stats.byLevel[level]}
+                      </span>
+                    )
+                  ))}
+                </TooltipContent>
+              </Tooltip>
             )}
-          </Badge>
+            <Badge
+              variant="secondary"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs tabular-nums"
+            >
+              <span className="text-muted-foreground">{t("logs.total")}:</span>
+              <span className="font-medium">{stats.total}</span>
+              {paused && (
+                <span className="text-yellow-600 dark:text-yellow-400 font-medium">
+                  • {t("logs.paused")}
+                </span>
+              )}
+            </Badge>
+          </div>
         )}
       </div>
 
@@ -457,6 +479,31 @@ export function LogToolbar({
 
             <Separator orientation="vertical" className="h-5 hidden sm:block" />
 
+            {/* Target filter */}
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground shrink-0">
+                {t("logs.targetFilter")}:
+              </Label>
+              <Select
+                value={filter.target ?? "all"}
+                onValueChange={(v) => setFilter({ target: v === "all" ? undefined : v })}
+              >
+                <SelectTrigger className="h-8 w-[140px]" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("logs.allTargets")}</SelectItem>
+                  {KNOWN_TARGETS.map((target) => (
+                    <SelectItem key={target} value={target}>
+                      {target}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator orientation="vertical" className="h-5 hidden sm:block" />
+
             {/* Regex toggle */}
             <div className="flex items-center gap-2">
               <Switch
@@ -469,6 +516,23 @@ export function LogToolbar({
                 className="text-xs text-muted-foreground cursor-pointer"
               >
                 {t("logs.regex")}
+              </Label>
+            </div>
+
+            <Separator orientation="vertical" className="h-5 hidden sm:block" />
+
+            {/* Bookmarks only toggle */}
+            <div className="flex items-center gap-2">
+              <Switch
+                id="bookmarks-toggle"
+                checked={showBookmarksOnly}
+                onCheckedChange={setShowBookmarksOnly}
+              />
+              <Label
+                htmlFor="bookmarks-toggle"
+                className="text-xs text-muted-foreground cursor-pointer"
+              >
+                {t("logs.bookmarksOnly")}
               </Label>
             </div>
 

@@ -57,3 +57,19 @@ export const LEVEL_COLORS: Record<LogLevel, string> = {
   warn: "text-yellow-600 dark:text-yellow-400",
   error: "text-red-500",
 };
+
+export const KNOWN_TARGETS = [
+  'webview', 'command', 'download', 'batch',
+  'env-install', 'self-update', 'update-check', 'runtime',
+] as const;
+
+export const CONSOLE_IGNORE_PATTERNS: RegExp[] = [
+  /Download the React DevTools/,
+  /\[HMR\]/,
+  /Warning: .* did not match/,
+  /was not wrapped in act/,
+  /findDOMNode is deprecated/,
+  /defaultProps will be removed/,
+  /ReactDOM\.render is no longer supported/,
+  /Fast Refresh/,
+];

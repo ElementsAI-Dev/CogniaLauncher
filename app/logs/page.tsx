@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useLogStore } from '@/lib/stores/log';
 import { useLogs } from '@/hooks/use-logs';
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { isTauri, logListFiles, logGetDir } from '@/lib/tauri';
 import { formatBytes, formatDate } from '@/lib/utils';
 import { formatSessionLabel } from '@/lib/log';
@@ -23,8 +24,15 @@ import { toast } from 'sonner';
 export default function LogsPage() {
   const { t } = useLocale();
   const { logFiles, setLogFiles, getLogStats, selectedLogFile, setSelectedLogFile } = useLogStore();
-  const { cleanupLogs, deleteLogFiles, getTotalSize } = useLogs();
+  const { cleanupLogs, deleteLogFiles, getTotalSize, clearLogs } = useLogs();
   const [logDir, setLogDir] = useState<string>('');
+
+  useKeyboardShortcuts({
+    shortcuts: [
+      { key: 'l', ctrlKey: true, action: () => clearLogs(), description: 'Clear logs' },
+      { key: 'r', ctrlKey: true, action: () => loadLogFiles(), description: 'Refresh log files' },
+    ],
+  });
   const [loading, setLoading] = useState(false);
   const [totalSize, setTotalSize] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());

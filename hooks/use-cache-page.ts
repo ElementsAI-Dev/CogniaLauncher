@@ -16,6 +16,7 @@ import type {
 } from '@/lib/tauri';
 import * as tauri from '@/lib/tauri';
 import type { CleanType, OperationType } from '@/types/cache';
+import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 
 interface UseCachePageOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -239,8 +240,8 @@ export function useCachePage({ t }: UseCachePageOptions) {
         entryType: browserTypeFilter || undefined,
         search: browserSearch || undefined,
         sortBy: browserSortBy,
-        limit: 20,
-        offset: page * 20,
+        limit: ENTRIES_PER_PAGE,
+        offset: page * ENTRIES_PER_PAGE,
       });
       setBrowserEntries(result.entries);
       setBrowserTotalCount(result.total_count);

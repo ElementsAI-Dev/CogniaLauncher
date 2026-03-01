@@ -210,7 +210,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                                 <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
                                   <p className="font-medium">{d.date}</p>
                                   <p>{d.sizeHuman}</p>
-                                  <p className="text-muted-foreground">{d.downloads} downloads, {d.metadata} metadata</p>
+                                  <p className="text-muted-foreground">{d.downloads} {t('cache.downloadCache').toLowerCase()}, {d.metadata} {t('cache.metadataCache').toLowerCase()}</p>
                                 </div>
                               );
                             }}

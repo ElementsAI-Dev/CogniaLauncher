@@ -38,6 +38,8 @@ import {
 } from "lucide-react";
 import type { DownloadTask } from "@/types/tauri";
 import { formatEta } from "@/lib/utils";
+import { getStateBadgeVariant, findClosestPriority } from "@/lib/downloads";
+import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
 
 interface DownloadDetailDialogProps {
   task: DownloadTask | null;
@@ -67,34 +69,6 @@ function getStateIcon(state: DownloadTask["state"]) {
   }
 }
 
-function getStateBadgeVariant(state: DownloadTask["state"]) {
-  switch (state) {
-    case "completed":
-      return "default" as const;
-    case "failed":
-    case "cancelled":
-      return "destructive" as const;
-    case "paused":
-      return "secondary" as const;
-    default:
-      return "outline" as const;
-  }
-}
-
-const PRIORITY_OPTIONS = [
-  { value: "10", label: "critical" },
-  { value: "8", label: "high" },
-  { value: "5", label: "normal" },
-  { value: "1", label: "low" },
-];
-
-function findClosestPriority(priority: number): string {
-  const sorted = PRIORITY_OPTIONS.map((o) => ({
-    ...o,
-    diff: Math.abs(Number(o.value) - priority),
-  })).sort((a, b) => a.diff - b.diff);
-  return sorted[0].value;
-}
 
 export function DownloadDetailDialog({
   task,
@@ -272,13 +246,35 @@ export function DownloadDetailDialog({
             </InfoRow>
 
             <InfoRow label={t("downloads.detail.retries")}>
-              {task.retries} / {task.retries + 3}
+              {task.retries}
             </InfoRow>
 
             {task.expectedChecksum && (
               <InfoRow label={t("downloads.detail.checksum")}>
-                <span className="font-mono text-xs truncate" title={task.expectedChecksum}>
-                  {task.expectedChecksum}
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="font-mono text-xs truncate" title={task.expectedChecksum}>
+                    {task.expectedChecksum}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 flex-shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(task.expectedChecksum!).then(() => {
+                        toast.success(t("downloads.detail.checksumCopied"));
+                      });
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </div>
+              </InfoRow>
+            )}
+
+            {task.serverFilename && (
+              <InfoRow label={t("downloads.detail.serverFilename")}>
+                <span className="text-xs" title={task.serverFilename}>
+                  {task.serverFilename}
                 </span>
               </InfoRow>
             )}

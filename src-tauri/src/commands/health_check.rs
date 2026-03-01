@@ -1,16 +1,23 @@
 use crate::core::{
-    EnvironmentHealthResult, HealthCheckManager, PackageManagerHealthResult, SystemHealthResult,
+    EnvironmentHealthResult, HealthCheckManager, HealthCheckProgress, PackageManagerHealthResult,
+    SystemHealthResult,
 };
 use crate::provider::SharedRegistry;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 /// Check health of all environments and package managers
 #[tauri::command]
 pub async fn health_check_all(
     registry: State<'_, SharedRegistry>,
+    app_handle: AppHandle,
 ) -> Result<SystemHealthResult, String> {
     let manager = HealthCheckManager::new(registry.inner().clone());
-    manager.check_all().await.map_err(|e| e.to_string())
+    manager
+        .check_all_with_progress(|progress: HealthCheckProgress| {
+            let _ = app_handle.emit("health-check-progress", &progress);
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Check health of a specific environment

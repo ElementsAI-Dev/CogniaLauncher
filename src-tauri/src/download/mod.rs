@@ -14,7 +14,7 @@ mod manager;
 mod persistence;
 mod queue;
 mod state;
-mod task;
+pub(crate) mod task;
 mod throttle;
 
 pub use asset_picker::{
@@ -24,5 +24,5 @@ pub use manager::{DownloadEvent, DownloadManager, DownloadManagerConfig};
 pub use persistence::QueuePersistence;
 pub use queue::DownloadQueue;
 pub use state::{DownloadError, DownloadState};
-pub use task::{DownloadConfig, DownloadProgress, DownloadTask};
+pub use task::{DownloadConfig, DownloadProgress, DownloadTask, PostAction};
 pub use throttle::SpeedLimiter;

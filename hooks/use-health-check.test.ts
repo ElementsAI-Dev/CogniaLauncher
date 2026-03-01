@@ -1,5 +1,6 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useHealthCheck } from './use-health-check';
+import { useHealthCheckStore } from '@/lib/stores/health-check';
 
 // Mock Tauri APIs
 const mockHealthCheckAll = jest.fn();
@@ -14,6 +15,15 @@ jest.mock('@/lib/tauri', () => ({
 describe('useHealthCheck', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Reset Zustand store between tests
+    useHealthCheckStore.setState({
+      systemHealth: null,
+      environmentHealth: {},
+      loading: false,
+      error: null,
+      progress: null,
+      lastCheckedAt: null,
+    });
   });
 
   it('should initialize with default state', () => {
@@ -27,9 +37,13 @@ describe('useHealthCheck', () => {
 
   it('should check all system health', async () => {
     const healthData = {
-      cpu: { status: 'healthy', value: 50 },
-      memory: { status: 'healthy', value: 60 },
-      disk: { status: 'warning', value: 85 },
+      overall_status: 'healthy',
+      environments: [
+        { env_type: 'node', provider_id: 'fnm', status: 'healthy', issues: [], suggestions: [], checked_at: new Date().toISOString() },
+      ],
+      package_managers: [],
+      system_issues: [],
+      checked_at: new Date().toISOString(),
     };
     mockHealthCheckAll.mockResolvedValue(healthData);
 
@@ -106,25 +120,25 @@ describe('useHealthCheck', () => {
   it('should return status color for healthy', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('healthy')).toBe('text-green-600 bg-green-50 border-green-200');
+    expect(result.current.getStatusColor('healthy')).toBe('border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950');
   });
 
   it('should return status color for warning', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('warning')).toBe('text-yellow-600 bg-yellow-50 border-yellow-200');
+    expect(result.current.getStatusColor('warning')).toBe('border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950');
   });
 
   it('should return status color for error', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('error')).toBe('text-red-600 bg-red-50 border-red-200');
+    expect(result.current.getStatusColor('error')).toBe('border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950');
   });
 
   it('should return status color for unknown', () => {
     const { result } = renderHook(() => useHealthCheck());
 
-    expect(result.current.getStatusColor('unknown')).toBe('text-gray-600 bg-gray-50 border-gray-200');
+    expect(result.current.getStatusColor('unknown')).toBe('border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950');
   });
 
   it('should return status icon for healthy', () => {

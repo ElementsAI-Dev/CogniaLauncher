@@ -8,6 +8,10 @@ pub mod metadata;
 pub mod migration;
 pub mod sqlite_db;
 
+use std::sync::Arc;
+
+pub type SharedCacheDb = Arc<SqliteCacheDb>;
+
 // Re-export main types (avoiding glob conflicts)
 pub use db::{CacheEntry, CacheEntryType, CacheIndex, CacheStats};
 pub use download::DownloadCache;

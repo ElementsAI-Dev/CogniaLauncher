@@ -1,7 +1,10 @@
 use crate::SharedSettings;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use tokio::fs;
@@ -33,7 +36,6 @@ pub async fn log_export(
 
     let reader = tokio::io::BufReader::new(file);
     let mut lines = reader.lines();
-    let mut entries: Vec<LogEntry> = Vec::new();
     let mut line_number = 0;
 
     let query_options = LogQueryOptions {
@@ -45,11 +47,20 @@ pub async fn log_export(
         end_time: options.end_time,
         limit: None,
         offset: None,
+        max_scan_lines: None,
     };
     let regex = build_search_regex(
         &query_options.search,
         query_options.use_regex.unwrap_or(false),
     );
+
+    let format = options
+        .format
+        .unwrap_or_else(|| "txt".to_string())
+        .to_lowercase();
+    let is_json = format == "json";
+
+    let mut output_lines: Vec<String> = Vec::new();
 
     while let Some(line) = lines
         .next_line()
@@ -59,41 +70,35 @@ pub async fn log_export(
         line_number += 1;
         if let Some(entry) = parse_log_line(&line, line_number) {
             if matches_filters(&entry, &query_options, regex.as_ref()) {
-                entries.push(entry);
-            }
-        }
-    }
-
-    let format = options
-        .format
-        .unwrap_or_else(|| "txt".to_string())
-        .to_lowercase();
-    let content = if format == "json" {
-        serde_json::to_string_pretty(&entries)
-            .map_err(|e| format!("Failed to serialize log export: {}", e))?
-    } else {
-        entries
-            .iter()
-            .map(|entry| {
-                if entry.target.is_empty() {
-                    format!(
+                if is_json {
+                    output_lines.push(
+                        serde_json::to_string(&entry)
+                            .unwrap_or_else(|_| "{}".to_string()),
+                    );
+                } else if entry.target.is_empty() {
+                    output_lines.push(format!(
                         "[{}][{}] {}",
                         entry.timestamp,
                         entry.level.to_uppercase(),
                         entry.message
-                    )
+                    ));
                 } else {
-                    format!(
+                    output_lines.push(format!(
                         "[{}][{}][{}] {}",
                         entry.timestamp,
                         entry.level.to_uppercase(),
                         entry.target,
                         entry.message
-                    )
+                    ));
                 }
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
+            }
+        }
+    }
+
+    let content = if is_json {
+        format!("[\n  {}\n]", output_lines.join(",\n  "))
+    } else {
+        output_lines.join("\n")
     };
 
     let base_name = options
@@ -131,6 +136,7 @@ pub struct LogQueryOptions {
     pub end_time: Option<i64>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub max_scan_lines: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -374,7 +380,9 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
         .map_err(|e| format!("Failed to read entry: {}", e))?
     {
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "log") {
+        let is_log = path.extension().is_some_and(|ext| ext == "log");
+        let is_gz = path.to_string_lossy().ends_with(".log.gz");
+        if is_log || is_gz {
             if let Ok(metadata) = entry.metadata().await {
                 let modified = metadata
                     .modified()
@@ -403,6 +411,24 @@ pub async fn log_list_files(app: AppHandle) -> Result<Vec<LogFileInfo>, String> 
     Ok(files)
 }
 
+/// Check whether the query has any active filters (level, search, time).
+fn has_active_filters(options: &LogQueryOptions) -> bool {
+    if let Some(ref levels) = options.level_filter {
+        if !levels.is_empty() {
+            return true;
+        }
+    }
+    if let Some(ref search) = options.search {
+        if !search.is_empty() {
+            return true;
+        }
+    }
+    if options.start_time.is_some() || options.end_time.is_some() {
+        return true;
+    }
+    false
+}
+
 #[tauri::command]
 pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQueryResult, String> {
     let log_path = match resolve_log_path(&app, &options.file_name).await {
@@ -424,6 +450,11 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
         });
     }
 
+    let offset = options.offset.unwrap_or(0);
+    let limit = options.limit.unwrap_or(100);
+    let regex = build_search_regex(&options.search, options.use_regex.unwrap_or(false));
+    let filtered = has_active_filters(&options);
+
     // Read and parse log file
     let file = fs::File::open(&log_path)
         .await
@@ -431,52 +462,121 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
 
     let reader = tokio::io::BufReader::new(file);
     let mut lines = reader.lines();
-    let mut all_entries = Vec::new();
-    let mut line_number = 0;
+    let mut line_number = 0usize;
 
-    let regex = build_search_regex(&options.search, options.use_regex.unwrap_or(false));
+    if filtered {
+        // With filters: scan file (optionally limited to last N lines) to get matching entries.
+        // When max_scan_lines is set, first count total lines then skip to the tail region.
+        let skip_lines = if let Some(max_scan) = options.max_scan_lines {
+            // Quick line count pass: count newlines without parsing
+            let count_file = fs::File::open(&log_path)
+                .await
+                .map_err(|e| format!("Failed to open log file for counting: {}", e))?;
+            let count_reader = tokio::io::BufReader::new(count_file);
+            let mut count_lines = count_reader.lines();
+            let mut total_lines = 0usize;
+            while count_lines
+                .next_line()
+                .await
+                .map_err(|e| format!("Failed to count lines: {}", e))?
+                .is_some()
+            {
+                total_lines += 1;
+            }
+            total_lines.saturating_sub(max_scan)
+        } else {
+            0
+        };
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| format!("Failed to read line: {}", e))?
-    {
-        line_number += 1;
+        let mut all_entries = Vec::new();
 
-        if let Some(entry) = parse_log_line(&line, line_number) {
-            if matches_filters(&entry, &options, regex.as_ref()) {
-                all_entries.push(entry);
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|e| format!("Failed to read line: {}", e))?
+        {
+            line_number += 1;
+            if line_number <= skip_lines {
+                continue;
+            }
+            if let Some(entry) = parse_log_line(&line, line_number) {
+                if matches_filters(&entry, &options, regex.as_ref()) {
+                    all_entries.push(entry);
+                }
             }
         }
-    }
 
-    let total_count = all_entries.len();
-    let offset = options.offset.unwrap_or(0);
-    let limit = options.limit.unwrap_or(100);
+        let total_count = all_entries.len();
+        let start = if total_count > offset + limit {
+            total_count - offset - limit
+        } else if total_count > offset {
+            0
+        } else {
+            return Ok(LogQueryResult {
+                entries: Vec::new(),
+                total_count,
+                has_more: false,
+            });
+        };
+        let end = total_count.saturating_sub(offset);
+        let entries = all_entries[start..end].to_vec();
+        let has_more = start > 0;
 
-    // Apply pagination (from end, since logs are chronological)
-    let start = if total_count > offset + limit {
-        total_count - offset - limit
-    } else if total_count > offset {
-        0
-    } else {
-        return Ok(LogQueryResult {
-            entries: Vec::new(),
+        Ok(LogQueryResult {
+            entries,
             total_count,
-            has_more: false,
-        });
-    };
+            has_more,
+        })
+    } else {
+        // No filters: collect all parsed entries into a ring buffer of the last (offset + limit)
+        // entries, avoiding storing the entire file in memory for large files.
+        let need = offset + limit;
+        let mut ring: Vec<LogEntry> = Vec::with_capacity(need + 1);
+        let mut total_count = 0usize;
 
-    let end = total_count.saturating_sub(offset);
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|e| format!("Failed to read line: {}", e))?
+        {
+            line_number += 1;
+            if let Some(entry) = parse_log_line(&line, line_number) {
+                total_count += 1;
+                if ring.len() < need {
+                    ring.push(entry);
+                } else {
+                    // Shift ring: remove oldest, push newest
+                    ring.rotate_left(1);
+                    if let Some(last) = ring.last_mut() {
+                        *last = entry;
+                    }
+                }
+            }
+        }
 
-    let entries: Vec<LogEntry> = all_entries[start..end].to_vec();
-    let has_more = start > 0;
+        if total_count <= offset {
+            return Ok(LogQueryResult {
+                entries: Vec::new(),
+                total_count,
+                has_more: false,
+            });
+        }
 
-    Ok(LogQueryResult {
-        entries,
-        total_count,
-        has_more,
-    })
+        // ring contains the last min(need, total_count) entries in order
+        // We want entries [total_count - offset - limit .. total_count - offset]
+        // which maps to ring indices [ring.len() - offset - limit .. ring.len() - offset]
+        let ring_len = ring.len();
+        let end = ring_len.saturating_sub(offset);
+        let start = end.saturating_sub(limit);
+        let entries = ring[start..end].to_vec();
+        let has_more = total_count > offset + limit;
+
+        Ok(LogQueryResult {
+            entries,
+            total_count,
+            has_more,
+        })
+    }
 }
 
 #[tauri::command]
@@ -596,7 +696,50 @@ pub async fn log_delete_batch(
     })
 }
 
+/// Compress a .log file to .log.gz synchronously, removing the original on success.
+/// Returns the bytes saved (original_size - compressed_size), or 0 on failure.
+fn compress_log_file(path: &std::path::Path) -> u64 {
+    let original_size = match std::fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(_) => return 0,
+    };
+
+    let input = match std::fs::read(path) {
+        Ok(data) => data,
+        Err(_) => return 0,
+    };
+
+    let gz_path = path.with_extension("log.gz");
+    let file = match std::fs::File::create(&gz_path) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    if encoder.write_all(&input).is_err() {
+        let _ = std::fs::remove_file(&gz_path);
+        return 0;
+    }
+    if encoder.finish().is_err() {
+        let _ = std::fs::remove_file(&gz_path);
+        return 0;
+    }
+
+    let compressed_size = std::fs::metadata(&gz_path).map(|m| m.len()).unwrap_or(0);
+    if compressed_size == 0 {
+        let _ = std::fs::remove_file(&gz_path);
+        return 0;
+    }
+
+    // Remove original .log file
+    let _ = std::fs::remove_file(path);
+    original_size.saturating_sub(compressed_size)
+}
+
+const COMPRESS_AFTER_DAYS: i64 = 7;
+
 /// Run log cleanup based on retention policy. Called at startup and on demand.
+/// Files older than 7 days are compressed to .log.gz before retention/size checks.
 pub async fn cleanup_logs_with_policy(
     app: &AppHandle,
     max_retention_days: u32,
@@ -623,14 +766,27 @@ pub async fn cleanup_logs_with_policy(
 
     // Skip the first file (current session log, newest)
     for file in files.iter().skip(1).rev() {
+        let age_days = (now - file.modified) / 86400;
+        let path = log_dir.join(&file.name);
+
+        // Compress uncompressed files older than COMPRESS_AFTER_DAYS
+        if age_days > COMPRESS_AFTER_DAYS && file.name.ends_with(".log") && !file.name.ends_with(".log.gz") {
+            let path_for_compress = path.clone();
+            let saved = tokio::task::spawn_blocking(move || compress_log_file(&path_for_compress))
+                .await
+                .unwrap_or(0);
+            if saved > 0 {
+                freed_bytes += saved;
+                remaining_size -= saved;
+            }
+            continue; // Don't delete right after compressing
+        }
+
         let mut should_delete = false;
 
         // Check retention days (0 = unlimited)
-        if max_retention_days > 0 {
-            let age_days = (now - file.modified) / 86400;
-            if age_days > max_retention_days as i64 {
-                should_delete = true;
-            }
+        if max_retention_days > 0 && age_days > max_retention_days as i64 {
+            should_delete = true;
         }
 
         // Check total size limit (0 = unlimited)
@@ -639,7 +795,6 @@ pub async fn cleanup_logs_with_policy(
         }
 
         if should_delete {
-            let path = log_dir.join(&file.name);
             if fs::remove_file(&path).await.is_ok() {
                 deleted_count += 1;
                 freed_bytes += file.size;
@@ -700,6 +855,7 @@ mod tests {
             end_time: Some(end),
             limit: None,
             offset: None,
+            max_scan_lines: None,
         };
 
         assert!(
