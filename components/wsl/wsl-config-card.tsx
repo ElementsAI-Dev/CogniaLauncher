@@ -66,6 +66,14 @@ export function WslConfigCard({
   };
 
   const handleQuickSet = async (section: string, key: string, value: string) => {
+    const setting = COMMON_WSL2_SETTINGS.find((s) => s.key === key && (s.section ?? 'wsl2') === section);
+    if (setting?.validate) {
+      const error = setting.validate(value);
+      if (error) {
+        toast.error(error);
+        return;
+      }
+    }
     await handleSave(section, key, value);
   };
 
@@ -244,9 +252,43 @@ export function WslConfigCard({
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : setting.type === 'path' ? (
+                        <div className="flex gap-1">
+                          <Input
+                            className="h-7 text-xs flex-1"
+                            placeholder={currentValue || setting.placeholder}
+                            defaultValue={currentValue ?? ''}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const input = e.target as HTMLInputElement;
+                                if (input.value) handleQuickSet(sec, setting.key, input.value);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              if (e.target.value && e.target.value !== currentValue) {
+                                handleQuickSet(sec, setting.key, e.target.value);
+                              }
+                            }}
+                          />
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-7 w-7 shrink-0"
+                            onClick={async () => {
+                              try {
+                                const { open } = await import('@tauri-apps/plugin-dialog');
+                                const selected = await open({ multiple: false });
+                                if (selected) handleQuickSet(sec, setting.key, String(selected));
+                              } catch { /* not in Tauri */ }
+                            }}
+                          >
+                            <span className="text-xs">…</span>
+                          </Button>
+                        </div>
                       ) : (
                         <Input
                           className="h-7 text-xs"
+                          type={setting.type === 'number' ? 'number' : 'text'}
                           placeholder={currentValue || setting.placeholder}
                           defaultValue={currentValue ?? ''}
                           onKeyDown={(e) => {

@@ -1,6 +1,8 @@
 import type {
   LaunchResult,
   ShellInfo,
+  ShellStartupMeasurement,
+  ShellHealthResult,
   TerminalProfile,
   TerminalProfileTemplate,
   PSProfileInfo,
@@ -27,6 +29,10 @@ export interface UseTerminalState {
   frameworkCacheLoading: boolean;
   shellEnvVars: [string, string][];
   proxyEnvVars: [string, string][];
+  startupMeasurements: Record<string, ShellStartupMeasurement>;
+  healthResults: Record<string, ShellHealthResult>;
+  measuringShellId: string | null;
+  checkingHealthShellId: string | null;
   selectedShellId: string | null;
   launchingProfileId: string | null;
   lastLaunchResult: {
@@ -38,6 +44,9 @@ export interface UseTerminalState {
   noProxy: string;
   globalProxy: string;
   proxyConfigSaving: boolean;
+  shellsLoading: boolean;
+  profilesLoading: boolean;
+  psLoading: boolean;
   loading: boolean;
   error: string | null;
 }

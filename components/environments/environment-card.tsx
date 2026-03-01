@@ -31,6 +31,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
+import { isTauri } from "@/lib/tauri";
 import { useEnvironmentStore, getLogicalEnvType } from "@/lib/stores/environment";
 import {
   Download,
@@ -46,7 +47,8 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { EolBadge } from "@/components/environments/eol-badge";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
-import { formatSize } from "@/lib/utils";
+import { formatSize, cn } from "@/lib/utils";
+import { LANGUAGES } from "@/lib/constants/environments";
 
 interface EnvironmentCardProps {
   env: EnvironmentInfo;
@@ -84,6 +86,9 @@ export function EnvironmentCard({
 
   const currentProviderId =
     selectedProviderId || env.provider_id || env.env_type;
+
+  const logicalType = getLogicalEnvType(env.env_type);
+  const langInfo = LANGUAGES.find((l) => l.id === logicalType);
 
   const handleInstall = async (version: string) => {
     if (!onInstall) return;
@@ -142,8 +147,27 @@ export function EnvironmentCard({
     }
   };
 
+  const handleBrowseFolder = async () => {
+    if (!isTauri()) return;
+    try {
+      const dialogModule = await import("@tauri-apps/plugin-dialog").catch(() => null);
+      if (dialogModule?.open) {
+        const selected = await dialogModule.open({
+          directory: true,
+          multiple: false,
+          title: t("environments.details.selectProjectFolder"),
+        });
+        if (selected && typeof selected === "string") {
+          setLocalProjectPath(selected);
+        }
+      }
+    } catch {
+      // Fallback: user types path manually
+    }
+  };
+
   return (
-      <Card className={loading ? "opacity-70" : ""}>
+      <Card className={cn(loading && "opacity-70", langInfo?.color)}>
         {/* Card Header with detected version badge */}
         <div className="p-5 space-y-3">
           {/* Detected Version Badge */}
@@ -151,6 +175,7 @@ export function EnvironmentCard({
             <DetectedVersionBadge
               version={detectedVersion.version}
               source={detectedVersion.source}
+              currentVersion={env.current_version}
               t={t}
             />
           )}
@@ -159,7 +184,12 @@ export function EnvironmentCard({
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold">{env.env_type}</h3>
+                {langInfo && (
+                  <span className="text-lg" role="img" aria-label={langInfo.name}>
+                    {langInfo.icon}
+                  </span>
+                )}
+                <h3 className="text-lg font-semibold">{langInfo?.name || env.env_type}</h3>
                 {env.available ? (
                   <Badge variant="default" className="text-xs">
                     {t("environments.available")}
@@ -371,13 +401,26 @@ export function EnvironmentCard({
                 {t("environments.setLocalVersion")}
               </Label>
               <div className="flex gap-2">
-                <Input
-                  placeholder={t("environments.projectPath")}
-                  value={localProjectPath}
-                  onChange={(e) => setLocalProjectPath(e.target.value)}
-                  className="flex-1"
-                  disabled={loading}
-                />
+                <div className="flex-1 flex gap-1">
+                  <Input
+                    placeholder={t("environments.projectPath")}
+                    value={localProjectPath}
+                    onChange={(e) => setLocalProjectPath(e.target.value)}
+                    className="flex-1"
+                    disabled={loading}
+                  />
+                  {isTauri() && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={handleBrowseFolder}
+                      title={t("environments.details.selectProjectFolder")}
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
                 <Button
                   variant="outline"
                   onClick={handleSetLocal}
@@ -385,7 +428,6 @@ export function EnvironmentCard({
                     !localProjectPath || !env.current_version || loading
                   }
                 >
-                  <FolderOpen className="h-4 w-4 mr-2" />
                   {t("environments.setLocal")}
                 </Button>
               </div>

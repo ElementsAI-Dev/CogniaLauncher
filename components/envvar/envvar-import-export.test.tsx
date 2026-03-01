@@ -264,6 +264,21 @@ describe('EnvVarImportExport', () => {
     });
   });
 
+  it('opens on export tab when defaultTab is export', () => {
+    render(<EnvVarImportExport {...defaultProps} defaultTab="export" />);
+    // The export tab should be selected (has data-state="active")
+    const exportTab = screen.getAllByRole('tab').find((tab) => tab.textContent?.includes('Export'));
+    expect(exportTab).toBeTruthy();
+    expect(exportTab?.getAttribute('data-state')).toBe('active');
+  });
+
+  it('opens on import tab by default', () => {
+    render(<EnvVarImportExport {...defaultProps} />);
+    const importTab = screen.getAllByRole('tab').find((tab) => tab.textContent?.includes('Import'));
+    expect(importTab).toBeTruthy();
+    expect(importTab?.getAttribute('data-state')).toBe('active');
+  });
+
   it('does not import when content is only whitespace', async () => {
     const onImport = jest.fn();
     render(<EnvVarImportExport {...defaultProps} onImport={onImport} />);

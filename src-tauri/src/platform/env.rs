@@ -514,9 +514,14 @@ async fn list_persistent_vars_platform(
             Ok((name, value)) => {
                 let val_str = match value.vtype {
                     winreg::enums::RegType::REG_SZ | winreg::enums::RegType::REG_EXPAND_SZ => {
-                        String::from_utf8_lossy(&value.bytes)
-                            .trim_end_matches('\0')
-                            .to_string()
+                        String::from_utf16_lossy(
+                            &value.bytes
+                                .chunks_exact(2)
+                                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                                .collect::<Vec<u16>>(),
+                        )
+                        .trim_end_matches('\0')
+                        .to_string()
                     }
                     _ => continue,
                 };
@@ -527,6 +532,50 @@ async fn list_persistent_vars_platform(
     }
     result.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(result)
+}
+
+/// List persistent vars with registry type info (Windows only).
+#[cfg(windows)]
+pub async fn list_persistent_vars_with_type(
+    scope: EnvVarScope,
+) -> CogniaResult<Vec<(String, String, String)>> {
+    match scope {
+        EnvVarScope::Process => {
+            let mut v: Vec<(String, String, String)> = get_all_vars()
+                .into_iter()
+                .map(|(k, v)| (k, v, String::new()))
+                .collect();
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(v)
+        }
+        EnvVarScope::User | EnvVarScope::System => {
+            let regkey = open_env_regkey(scope, false)?;
+            let mut result = Vec::new();
+            for item in regkey.enum_values() {
+                match item {
+                    Ok((name, value)) => {
+                        let type_str = match value.vtype {
+                            winreg::enums::RegType::REG_SZ => "REG_SZ",
+                            winreg::enums::RegType::REG_EXPAND_SZ => "REG_EXPAND_SZ",
+                            _ => continue,
+                        };
+                        let val_str = String::from_utf16_lossy(
+                            &value.bytes
+                                .chunks_exact(2)
+                                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                                .collect::<Vec<u16>>(),
+                        )
+                        .trim_end_matches('\0')
+                        .to_string();
+                        result.push((name, val_str, type_str.to_string()));
+                    }
+                    Err(_) => continue,
+                }
+            }
+            result.sort_by(|a, b| a.0.cmp(&b.0));
+            Ok(result)
+        }
+    }
 }
 
 #[cfg(not(windows))]
@@ -903,10 +952,38 @@ async fn set_persistent_var_platform(
     value: &str,
     scope: EnvVarScope,
 ) -> CogniaResult<()> {
+    use winreg::enums::RegType;
+
     let regkey = open_env_regkey(scope, true)?;
-    regkey
-        .set_value(key, &value)
-        .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
+
+    // Preserve the original registry type (REG_EXPAND_SZ vs REG_SZ).
+    // Many system variables (PATH, TEMP, USERPROFILE) use REG_EXPAND_SZ
+    // for %Variable% expansion; writing them back as REG_SZ breaks this.
+    let original_type = regkey
+        .get_raw_value(key)
+        .map(|v| v.vtype)
+        .unwrap_or(RegType::REG_SZ);
+
+    let use_expand = original_type == RegType::REG_EXPAND_SZ
+        || value.contains('%');
+
+    if use_expand {
+        let mut encoded: Vec<u8> = value.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        encoded.push(0);
+        encoded.push(0);
+        let reg_value = winreg::RegValue {
+            vtype: RegType::REG_EXPAND_SZ,
+            bytes: encoded,
+        };
+        regkey
+            .set_raw_value(key, &reg_value)
+            .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
+    } else {
+        regkey
+            .set_value(key, &value)
+            .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
+    }
+
     broadcast_env_change();
     Ok(())
 }
@@ -1070,11 +1147,23 @@ async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<St
 
 #[cfg(windows)]
 async fn set_persistent_path_platform(entries: &[String], scope: EnvVarScope) -> CogniaResult<()> {
+    use winreg::enums::RegType;
+
     let regkey = open_env_regkey(scope, true)?;
     let joined = entries.join(";");
+
+    // PATH is always REG_EXPAND_SZ in the Windows registry
+    let mut encoded: Vec<u8> = joined.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    encoded.push(0);
+    encoded.push(0);
+    let reg_value = winreg::RegValue {
+        vtype: RegType::REG_EXPAND_SZ,
+        bytes: encoded,
+    };
     regkey
-        .set_value("Path", &joined)
+        .set_raw_value("Path", &reg_value)
         .map_err(|e| CogniaError::Internal(format!("Registry write PATH failed: {}", e)))?;
+
     broadcast_env_change();
     Ok(())
 }

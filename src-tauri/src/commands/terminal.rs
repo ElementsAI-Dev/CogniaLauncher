@@ -265,6 +265,36 @@ pub async fn terminal_get_shell_info(shell_id: String) -> Result<ShellInfo, Stri
         .ok_or_else(|| format!("Shell '{}' not found", shell_id))
 }
 
+#[tauri::command]
+pub async fn terminal_check_shell_health(
+    shell_id: String,
+) -> Result<terminal::ShellHealthResult, String> {
+    let shells = terminal::detect_installed_shells()
+        .await
+        .map_err(|e| e.to_string())?;
+    let shell = shells
+        .iter()
+        .find(|s| s.id == shell_id)
+        .ok_or_else(|| format!("Shell '{}' not found", shell_id))?;
+    Ok(terminal::check_shell_health(shell).await)
+}
+
+#[tauri::command]
+pub async fn terminal_measure_startup(
+    shell_id: String,
+) -> Result<terminal::ShellStartupMeasurement, String> {
+    let shells = terminal::detect_installed_shells()
+        .await
+        .map_err(|e| e.to_string())?;
+    let shell = shells
+        .iter()
+        .find(|s| s.id == shell_id)
+        .ok_or_else(|| format!("Shell '{}' not found", shell_id))?;
+    terminal::measure_shell_startup(shell)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============================================================================
 // Terminal Profiles
 // ============================================================================
@@ -774,6 +804,7 @@ mod tests {
             startup_command: None,
             env_type: None,
             env_version: None,
+            color: None,
             is_default: false,
             created_at: "".to_string(),
             updated_at: "".to_string(),

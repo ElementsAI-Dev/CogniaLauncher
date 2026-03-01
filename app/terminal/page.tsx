@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
 import { useTerminal } from '@/hooks/use-terminal';
@@ -33,7 +33,7 @@ import { Monitor, User, FileText, Blocks, Shield, Globe, Variable, RefreshCw, Pl
 
 export default function TerminalPage() {
   const { t } = useLocale();
-  const terminal = useTerminal();
+  const terminal = useTerminal({ t });
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<TerminalProfile | null>(null);
   const [templateProfile, setTemplateProfile] = useState<TerminalProfile | null>(null);
@@ -42,6 +42,8 @@ export default function TerminalPage() {
   const [saveAsTemplateProfileId, setSaveAsTemplateProfileId] = useState<string | null>(null);
   const [saveAsTemplateName, setSaveAsTemplateName] = useState('');
   const [saveAsTemplateDesc, setSaveAsTemplateDesc] = useState('');
+  const [activeTab, setActiveTab] = useState('shells');
+  const [tabLoaded, setTabLoaded] = useState<Record<string, boolean>>({});
 
   const profileDialogKey = `${profileDialogOpen ? 'open' : 'closed'}:${editingProfile?.id ?? 'new'}:${templateProfile?.name ?? 'none'}:${terminal.shells
     .map((shell) => shell.id)
@@ -90,10 +92,26 @@ export default function TerminalPage() {
     setSaveAsTemplateOpen(false);
   }, [saveAsTemplateProfileId, saveAsTemplateName, saveAsTemplateDesc, terminal]);
 
-  useEffect(() => {
-    terminal.loadProxyConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [terminal.loadProxyConfig]);
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+    if (tabLoaded[tab]) return;
+    setTabLoaded((prev) => ({ ...prev, [tab]: true }));
+    switch (tab) {
+      case 'powershell':
+        terminal.fetchPSProfiles();
+        terminal.fetchPSModules();
+        terminal.fetchPSScripts();
+        terminal.fetchExecutionPolicy();
+        break;
+      case 'proxy':
+        terminal.loadProxyConfig();
+        terminal.fetchProxyEnvVars();
+        break;
+      case 'envvars':
+        terminal.fetchShellEnvVars();
+        break;
+    }
+  }, [tabLoaded, terminal]);
 
   const handleSaveProfile = useCallback(async (profile: TerminalProfile) => {
     if (profile.id) {
@@ -128,7 +146,7 @@ export default function TerminalPage() {
         }
       />
 
-      <Tabs defaultValue="shells" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList>
           <TabsTrigger value="shells" className="gap-1.5">
             <Monitor className="h-3.5 w-3.5" />
@@ -163,7 +181,13 @@ export default function TerminalPage() {
         <TabsContent value="shells">
           <TerminalDetectedShells
             shells={terminal.shells}
-            loading={terminal.loading}
+            loading={terminal.shellsLoading}
+            startupMeasurements={terminal.startupMeasurements}
+            measuringShellId={terminal.measuringShellId}
+            onMeasureStartup={terminal.measureStartup}
+            healthResults={terminal.healthResults}
+            checkingHealthShellId={terminal.checkingHealthShellId}
+            onCheckShellHealth={terminal.checkShellHealth}
           />
         </TabsContent>
 
@@ -179,13 +203,25 @@ export default function TerminalPage() {
             onExportAll={async () => {
               const json = await terminal.exportProfiles();
               if (json) {
-                const blob = new Blob([json], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'terminal-profiles.json';
-                a.click();
-                URL.revokeObjectURL(url);
+                try {
+                  const dialogModule = await import('@tauri-apps/plugin-dialog');
+                  const fsModule = await import('@tauri-apps/plugin-fs');
+                  const path = await dialogModule.save({
+                    defaultPath: 'terminal-profiles.json',
+                    filters: [{ name: 'JSON', extensions: ['json'] }],
+                  });
+                  if (path) {
+                    await fsModule.writeTextFile(path, json);
+                  }
+                } catch {
+                  const blob = new Blob([json], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'terminal-profiles.json';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
               }
             }}
             onImport={terminal.importProfiles}

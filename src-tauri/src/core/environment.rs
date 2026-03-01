@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentInfo {
@@ -130,7 +130,7 @@ fn normalize_env_type(input: &str) -> String {
     }
 }
 
-fn candidate_provider_ids(env_type: &str) -> &'static [&'static str] {
+pub(crate) fn candidate_provider_ids(env_type: &str) -> &'static [&'static str] {
     match env_type {
         // Dedicated managers first, then polyglot managers, then system fallback.
         "node" => &["volta", "fnm", "nvm", "mise", "asdf", "system-node"],
@@ -330,13 +330,24 @@ impl EnvironmentManager {
     }
 
     pub async fn list_environments(&self) -> CogniaResult<Vec<EnvironmentInfo>> {
+        self.list_environments_with_concurrency(6).await
+    }
+
+    pub async fn list_environments_with_concurrency(&self, max_concurrency: u32) -> CogniaResult<Vec<EnvironmentInfo>> {
         let all_types = SystemEnvironmentType::all();
         let mut futures = Vec::with_capacity(all_types.len());
+
+        // Limit concurrent provider checks to avoid subprocess storms.
+        // Each check may spawn 2-3 subprocesses (which, is_available, --version).
+        let permits = (max_concurrency as usize).max(1).min(32);
+        let semaphore = Arc::new(Semaphore::new(permits));
 
         for env in &all_types {
             let env_type = env.env_type().to_string();
             let registry = self.registry.clone();
+            let sem = semaphore.clone();
             futures.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.ok();
                 let manager = EnvironmentManager::new(registry);
                 let timeout = tokio::time::timeout(
                     std::time::Duration::from_secs(5),

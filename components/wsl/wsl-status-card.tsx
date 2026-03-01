@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Activity, RefreshCw, Power, Info, Network } from 'lucide-react';
+import { Activity, RefreshCw, Power, Info, Network, Globe } from 'lucide-react';
+import { NETWORKING_MODE_INFO } from '@/lib/constants/wsl';
 import type { WslStatusCardProps } from '@/types/wsl';
 
 export function WslStatusCard({
@@ -16,6 +17,7 @@ export function WslStatusCard({
   onRefresh,
   onShutdownAll,
   getIpAddress,
+  config,
   t,
 }: WslStatusCardProps) {
   const [ipAddress, setIpAddress] = useState<string | null>(null);
@@ -110,6 +112,29 @@ export function WslStatusCard({
             <span className="text-sm font-mono">{ipToShow}</span>
           </div>
         )}
+
+        {(() => {
+          const mode = config?.['wsl2']?.['networkingMode'] ?? 'NAT';
+          const modeInfo = NETWORKING_MODE_INFO[mode] ?? NETWORKING_MODE_INFO['NAT'];
+          return (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" />
+                {t('wsl.networkingModeLabel') || 'Network'}
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-xs font-mono">
+                    {t(modeInfo.labelKey)}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[260px]">
+                  <p className="text-xs">{t(modeInfo.descKey)}</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          );
+        })()}
 
         <Separator />
 

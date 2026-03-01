@@ -1,3 +1,4 @@
+use crate::cache::MetadataCache;
 use crate::core::{
     DetectedEnvironment, EnvCleanupResult, EnvUpdateCheckResult, EnvironmentInfo,
     EnvironmentManager, SharedVersionCache,
@@ -13,6 +14,38 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, RwLock};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
+
+/// TTL constants for environment cache categories (in seconds)
+const ENV_LIST_CACHE_TTL: i64 = 120; // 2 minutes
+const ENV_SYSTEM_DETECT_TTL: i64 = 300; // 5 minutes
+const ENV_INSTALLED_TTL: i64 = 60; // 1 minute
+const ENV_PROVIDERS_TTL: i64 = 600; // 10 minutes (rarely changes)
+
+async fn open_env_metadata_cache(
+    config: &crate::commands::config::SharedSettings,
+    ttl: i64,
+) -> Result<MetadataCache, String> {
+    let s = config.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+    MetadataCache::open_with_ttl(&cache_dir, ttl)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Invalidate environment-related cache keys (called after install/uninstall/switch).
+pub async fn invalidate_env_caches(config: &crate::commands::config::SharedSettings) {
+    if let Ok(mut cache) = open_env_metadata_cache(config, ENV_LIST_CACHE_TTL).await {
+        // Exact key removals
+        let _ = cache.remove("env:list").await;
+        let _ = cache.remove("env:system_all").await;
+        let _ = cache.remove("env:providers").await;
+        // Prefix removals (env:system:node, env:versions:node:fnm, env:available:node:fnm, etc.)
+        let _ = cache.remove_by_prefix("env:system:").await;
+        let _ = cache.remove_by_prefix("env:versions:").await;
+        let _ = cache.remove_by_prefix("env:available:").await;
+    }
+}
 
 /// Cancellation tokens for ongoing installations
 pub type CancellationTokens = Arc<RwLock<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>;
@@ -59,9 +92,32 @@ pub struct EnvInstallProgress {
 }
 
 #[tauri::command]
-pub async fn env_list(registry: State<'_, SharedRegistry>) -> Result<Vec<EnvironmentInfo>, String> {
+pub async fn env_list(
+    force: Option<bool>,
+    registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<Vec<EnvironmentInfo>, String> {
+    let cache_key = "env:list";
+
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_LIST_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<EnvironmentInfo>>(cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
+
     let manager = EnvironmentManager::new(registry.inner().clone());
-    manager.list_environments().await.map_err(|e| e.to_string())
+    let max_concurrency = config.read().await.startup.max_concurrent_scans;
+    let result = manager.list_environments_with_concurrency(max_concurrency).await.map_err(|e| e.to_string())?;
+
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_LIST_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(cache_key, &result, ENV_LIST_CACHE_TTL).await;
+    }
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -83,6 +139,7 @@ pub async fn env_install(
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
     tokens: State<'_, CancellationTokens>,
+    config: State<'_, crate::commands::config::SharedSettings>,
     app: AppHandle,
 ) -> Result<(), String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
@@ -191,6 +248,9 @@ pub async fn env_install(
     // Handle result
     match result {
         Ok(_receipt) => {
+            // Invalidate environment caches after successful install
+            invalidate_env_caches(config.inner()).await;
+
             // Emit final success event
             let _ = app.emit(
                 "env-install-progress",
@@ -233,12 +293,18 @@ pub async fn env_uninstall(
     version: String,
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<(), String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
     manager
         .uninstall_version(&env_type, &version, provider_id.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate environment caches after successful uninstall
+    invalidate_env_caches(config.inner()).await;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -247,12 +313,18 @@ pub async fn env_use_global(
     version: String,
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<(), String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
     manager
         .set_global_version(&env_type, &version, provider_id.as_deref())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate environment caches after version switch
+    invalidate_env_caches(config.inner()).await;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -345,13 +417,26 @@ pub async fn env_available_versions(
     force: Option<bool>,
     registry: State<'_, SharedRegistry>,
     version_cache: State<'_, SharedVersionCache>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<Vec<crate::provider::VersionInfo>, String> {
     let cache_key = format!("{}:{}", env_type, provider_id.as_deref().unwrap_or(""));
+    let metadata_key = format!("env:available:{}:{}", env_type, provider_id.as_deref().unwrap_or("auto"));
 
-    // Return cached data if available and not forced
+    // Layer 1: in-memory VersionCache (fastest, survives within session)
     if !force.unwrap_or(false) {
         if let Some(cached) = version_cache.get(&cache_key).await {
             return Ok(cached);
+        }
+
+        // Layer 2: MetadataCache (SQLite, survives across restarts)
+        if let Ok(mut md_cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
+            if let Ok(Some(cached)) = md_cache.get::<Vec<crate::provider::VersionInfo>>(&metadata_key).await {
+                if !cached.is_stale {
+                    // Warm in-memory cache from disk cache
+                    version_cache.set(cache_key.clone(), cached.data.clone()).await;
+                    return Ok(cached.data);
+                }
+            }
         }
     }
 
@@ -361,14 +446,33 @@ pub async fn env_available_versions(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Write to both cache layers
     version_cache.set(cache_key, versions.clone()).await;
+    if let Ok(mut md_cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
+        let _ = md_cache.set_with_ttl(&metadata_key, &versions, ENV_PROVIDERS_TTL).await;
+    }
+
     Ok(versions)
 }
 
 #[tauri::command]
 pub async fn env_list_providers(
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<Vec<EnvironmentProviderInfo>, String> {
+    let cache_key = "env:providers";
+
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<EnvironmentProviderInfo>>(cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
+
     let registry_guard = registry.inner().read().await;
     let mut providers = Vec::new();
 
@@ -431,6 +535,10 @@ pub async fn env_list_providers(
                 description: description.to_string(),
             });
         }
+    }
+
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
+        let _ = cache.set_with_ttl(cache_key, &providers, ENV_PROVIDERS_TTL).await;
     }
 
     Ok(providers)
@@ -629,8 +737,23 @@ pub struct SystemEnvironmentInfo {
 /// Detect all system-installed environments (not managed by version managers)
 /// This detects environments installed via official installers, package managers, etc.
 #[tauri::command]
-pub async fn env_detect_system_all() -> Result<Vec<SystemEnvironmentInfo>, String> {
+pub async fn env_detect_system_all(
+    force: Option<bool>,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<Vec<SystemEnvironmentInfo>, String> {
     use crate::provider::{SystemEnvironmentProvider, SystemEnvironmentType};
+
+    let cache_key = "env:system_all";
+
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<SystemEnvironmentInfo>>(cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
 
     let mut results = Vec::new();
 
@@ -639,7 +762,6 @@ pub async fn env_detect_system_all() -> Result<Vec<SystemEnvironmentInfo>, Strin
 
         if provider.is_available().await {
             if let Ok(Some(version)) = provider.get_current_version().await {
-                // Get executable path
                 let versions = provider.list_installed_versions().await.unwrap_or_default();
                 let path = versions
                     .first()
@@ -655,12 +777,20 @@ pub async fn env_detect_system_all() -> Result<Vec<SystemEnvironmentInfo>, Strin
         }
     }
 
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+        let _ = cache.set_with_ttl(cache_key, &results, ENV_SYSTEM_DETECT_TTL).await;
+    }
+
     Ok(results)
 }
 
 /// Detect a specific system-installed environment
 #[tauri::command]
-pub async fn env_detect_system(env_type: String) -> Result<Option<SystemEnvironmentInfo>, String> {
+pub async fn env_detect_system(
+    env_type: String,
+    force: Option<bool>,
+    config: State<'_, crate::commands::config::SharedSettings>,
+) -> Result<Option<SystemEnvironmentInfo>, String> {
     use crate::provider::{SystemEnvironmentProvider, SystemEnvironmentType};
 
     let system_type = match env_type.as_str() {
@@ -701,27 +831,43 @@ pub async fn env_detect_system(env_type: String) -> Result<Option<SystemEnvironm
         return Ok(None);
     };
 
-    let provider = SystemEnvironmentProvider::new(system_type);
+    let cache_key = format!("env:system:{}", &env_type);
 
-    if !provider.is_available().await {
-        return Ok(None);
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Option<SystemEnvironmentInfo>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
     }
 
-    if let Ok(Some(version)) = provider.get_current_version().await {
+    let provider = SystemEnvironmentProvider::new(system_type);
+
+    let result = if !provider.is_available().await {
+        None
+    } else if let Ok(Some(version)) = provider.get_current_version().await {
         let versions = provider.list_installed_versions().await.unwrap_or_default();
         let path = versions
             .first()
             .map(|v| v.install_path.to_string_lossy().to_string());
 
-        return Ok(Some(SystemEnvironmentInfo {
+        Some(SystemEnvironmentInfo {
             env_type: system_type.env_type().to_string(),
             version,
             executable_path: path,
             source: "system".to_string(),
-        }));
+        })
+    } else {
+        None
+    };
+
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &result, ENV_SYSTEM_DETECT_TTL).await;
     }
 
-    Ok(None)
+    Ok(result)
 }
 
 /// Get the environment type mapping from provider ID to logical environment type
@@ -847,18 +993,42 @@ pub struct EnvVerifyResult {
 pub async fn env_installed_versions(
     env_type: String,
     provider_id: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<Vec<crate::provider::InstalledVersion>, String> {
+    let cache_key = format!(
+        "env:versions:{}:{}",
+        &env_type,
+        provider_id.as_deref().unwrap_or("auto")
+    );
+
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_INSTALLED_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<crate::provider::InstalledVersion>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
+
     let manager = EnvironmentManager::new(registry.inner().clone());
     let (_logical_env_type, _provider_key, provider) = manager
         .resolve_provider(&env_type, provider_id.as_deref(), None)
         .await
         .map_err(|e| e.to_string())?;
 
-    provider
+    let versions = provider
         .list_installed_versions()
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_INSTALLED_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &versions, ENV_INSTALLED_TTL).await;
+    }
+
+    Ok(versions)
 }
 
 /// Get the current active version for a specific environment provider

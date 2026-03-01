@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Plus, Trash2 } from 'lucide-react';
+import { DestinationPicker } from '@/components/downloads/destination-picker';
 import type { TerminalProfile, ShellInfo } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -45,9 +46,20 @@ export function TerminalProfileDialog({
   const [startupCommand, setStartupCommand] = useState(source?.startupCommand ?? '');
   const [envType, setEnvType] = useState(source?.envType ?? '');
   const [envVersion, setEnvVersion] = useState(source?.envVersion ?? '');
+  const [color, setColor] = useState(source?.color ?? '');
   const [envVars, setEnvVars] = useState<[string, string][]>(
     Object.entries(source?.envVars ?? {}) as [string, string][]
   );
+
+  const PROFILE_COLORS = [
+    { value: '', label: 'None' },
+    { value: '#6366f1', label: 'Indigo' },
+    { value: '#3b82f6', label: 'Blue' },
+    { value: '#22c55e', label: 'Green' },
+    { value: '#f97316', label: 'Orange' },
+    { value: '#a855f7', label: 'Purple' },
+    { value: '#ef4444', label: 'Red' },
+  ];
 
   const handleAddEnvVar = () => {
     setEnvVars((prev) => [...prev, ['', '']]);
@@ -87,6 +99,7 @@ export function TerminalProfileDialog({
       startupCommand: startupCommand.trim() || null,
       envType: envType.trim() || null,
       envVersion: envVersion.trim() || null,
+      color: color || null,
       isDefault: profile?.isDefault ?? false,
       createdAt: profile?.createdAt ?? '',
       updatedAt: profile?.updatedAt ?? '',
@@ -135,14 +148,35 @@ export function TerminalProfileDialog({
             <Input id="args" value={args} onChange={(e) => setArgs(e.target.value)} placeholder="-NoLogo -l" />
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="cwd">{t('terminal.workingDirectory')}</Label>
-            <Input id="cwd" value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="~/projects" />
-          </div>
+          <DestinationPicker
+            value={cwd}
+            onChange={setCwd}
+            placeholder="~/projects"
+            label={t('terminal.workingDirectory')}
+            isDesktop={true}
+            browseTooltip={t('terminal.workingDirectory')}
+            mode="directory"
+          />
 
           <div className="grid gap-2">
             <Label htmlFor="startupCommand">{t('terminal.startupCommand')}</Label>
             <Input id="startupCommand" value={startupCommand} onChange={(e) => setStartupCommand(e.target.value)} placeholder="echo Hello" />
+          </div>
+
+          <div className="grid gap-2">
+            <Label>{t('terminal.profileColor')}</Label>
+            <div className="flex items-center gap-2">
+              {PROFILE_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  className={`h-6 w-6 rounded-full border-2 transition-all ${color === c.value ? 'border-foreground scale-110' : 'border-transparent'} ${!c.value ? 'bg-muted' : ''}`}
+                  style={c.value ? { backgroundColor: c.value } : undefined}
+                  onClick={() => setColor(c.value)}
+                  title={c.label}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

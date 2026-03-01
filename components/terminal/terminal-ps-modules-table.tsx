@@ -208,6 +208,7 @@ export function TerminalPsModulesTable({
                                         size="icon"
                                         variant="ghost"
                                         className="h-7 w-7"
+                                        title={t('terminal.updateModule')}
                                         onClick={(e) => { e.stopPropagation(); onUpdateModule(mod.name); }}
                                       >
                                         <ArrowUpCircle className="h-3.5 w-3.5" />
@@ -223,6 +224,7 @@ export function TerminalPsModulesTable({
                                         size="icon"
                                         variant="ghost"
                                         className="h-7 w-7 text-destructive"
+                                        title={t('terminal.uninstallModule')}
                                         onClick={(e) => { e.stopPropagation(); setUninstallTarget(mod.name); }}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />

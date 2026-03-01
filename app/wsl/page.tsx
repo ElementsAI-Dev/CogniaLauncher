@@ -472,6 +472,7 @@ export default function WslPage() {
               onRefresh={() => refreshStatus()}
               onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
               getIpAddress={() => getIpAddress()}
+              config={config}
               t={t}
             />
             <Card>

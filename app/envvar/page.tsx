@@ -59,6 +59,7 @@ export default function EnvVarPage() {
   const [editKey, setEditKey] = useState<string | undefined>();
   const [editValue, setEditValue] = useState<string | undefined>();
   const [importExportOpen, setImportExportOpen] = useState(false);
+  const [importExportTab, setImportExportTab] = useState<'import' | 'export'>('import');
   const [pathScope, setPathScope] = useState<EnvVarScope>('process');
 
   useEffect(() => {
@@ -153,11 +154,11 @@ export default function EnvVarPage() {
         description={t('envvar.description')}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setImportExportOpen(true)} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => { setImportExportTab('import'); setImportExportOpen(true); }} className="gap-1.5">
               <Upload className="h-3.5 w-3.5" />
               {t('envvar.importExport.import')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setImportExportOpen(true)} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => { setImportExportTab('export'); setImportExportOpen(true); }} className="gap-1.5">
               <Download className="h-3.5 w-3.5" />
               {t('envvar.importExport.export')}
             </Button>
@@ -260,6 +261,7 @@ export default function EnvVarPage() {
         onOpenChange={setImportExportOpen}
         onImport={importEnvFile}
         onExport={exportEnvFile}
+        defaultTab={importExportTab}
         t={t}
       />
     </div>

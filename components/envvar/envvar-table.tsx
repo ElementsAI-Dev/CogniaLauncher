@@ -78,7 +78,6 @@ export function EnvVarTable({
       const { openPath } = await import('@tauri-apps/plugin-opener');
       await openPath(path);
     } catch (err) {
-      console.error('Failed to open path:', err);
       toast.error(String(err));
     }
   }, []);
@@ -89,7 +88,6 @@ export function EnvVarTable({
       const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
       await revealItemInDir(path);
     } catch (err) {
-      console.error('Failed to reveal path:', err);
       toast.error(String(err));
     }
   }, []);

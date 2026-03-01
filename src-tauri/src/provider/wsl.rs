@@ -247,6 +247,10 @@ pub struct WslDistroEnvironment {
     pub gpu_name: Option<String>,
     /// GPU total memory (e.g. "8192 MiB")
     pub gpu_memory: Option<String>,
+    /// Whether Docker socket exists at /var/run/docker.sock (Docker Desktop integration)
+    pub docker_socket: bool,
+    /// Number of running Docker containers (if docker is available)
+    pub docker_container_count: Option<u64>,
 }
 
 impl WslProvider {
@@ -912,6 +916,31 @@ impl WslProvider {
         Ok(())
     }
 
+    /// Clone a distribution by exporting to a temporary tar and re-importing with a new name.
+    /// The new distribution will be WSL 2 by default.
+    pub async fn clone_distro(
+        &self,
+        name: &str,
+        new_name: &str,
+        location: &str,
+    ) -> CogniaResult<String> {
+        let temp_dir = tempfile::tempdir().map_err(|e| {
+            CogniaError::Provider(format!("Failed to create temp directory: {}", e))
+        })?;
+        let tar_path = temp_dir.path().join(format!("{}.tar", name));
+        let tar_str = tar_path.to_string_lossy().to_string();
+
+        // Export the source distro to a temp tar
+        self.export_distro(name, &tar_str, false).await?;
+
+        // Import as new distro
+        self.import_distro(new_name, location, &tar_str, Some(2), false)
+            .await?;
+
+        // temp_dir is cleaned up on drop
+        Ok(format!("Cloned '{}' → '{}'", name, new_name))
+    }
+
     /// Import a distribution in-place from an existing .vhdx file.
     /// The virtual hard disk must be formatted in the ext4 filesystem type.
     pub async fn import_distro_in_place(&self, name: &str, vhdx_path: &str) -> CogniaResult<()> {
@@ -1207,6 +1236,41 @@ impl WslProvider {
             "Could not determine disk usage for '{}'",
             distro
         )))
+    }
+
+    /// Get total disk usage for all WSL distributions by scanning VHDX files.
+    /// Returns (total_bytes, per_distro_list).
+    pub fn get_total_disk_usage() -> CogniaResult<(u64, Vec<(String, u64)>)> {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        if local_app_data.is_empty() {
+            return Ok((0, vec![]));
+        }
+
+        let packages_dir = PathBuf::from(&local_app_data).join("Packages");
+        let mut per_distro: Vec<(String, u64)> = Vec::new();
+        let mut total: u64 = 0;
+
+        if packages_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(&packages_dir) {
+                for entry in entries.flatten() {
+                    let vhdx = entry.path().join("LocalState").join("ext4.vhdx");
+                    if vhdx.exists() {
+                        if let Ok(meta) = std::fs::metadata(&vhdx) {
+                            let size = meta.len();
+                            let name = entry
+                                .file_name()
+                                .to_string_lossy()
+                                .to_string();
+                            per_distro.push((name, size));
+                            total += size;
+                        }
+                    }
+                }
+            }
+        }
+
+        per_distro.sort_by(|a, b| b.1.cmp(&a.1));
+        Ok((total, per_distro))
     }
 
     /// Get the Windows filesystem path (\\wsl$\<distro>) for a distribution.
@@ -1554,7 +1618,13 @@ impl WslProvider {
                 "; command -v docker >/dev/null 2>&1 && echo 'yes' || echo 'no'",
                 "; echo '{d}'",
                 // GPU detection via nvidia-smi (WSL2 GPU passthrough path or system path)
-                "; (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || /usr/lib/wsl/lib/nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null) | head -1 || echo ''"
+                "; (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || /usr/lib/wsl/lib/nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null) | head -1 || echo ''",
+                "; echo '{d}'",
+                // Docker socket check (Docker Desktop integration)
+                "; test -S /var/run/docker.sock && echo 'socket' || echo 'none'",
+                "; echo '{d}'",
+                // Docker running container count
+                "; docker ps -q 2>/dev/null | wc -l || echo '0'"
             ),
             d = delim
         );
@@ -1569,9 +1639,9 @@ impl WslProvider {
         }
 
         let parts: Vec<&str> = stdout.split(delim).collect();
-        if parts.len() < 11 {
+        if parts.len() < 13 {
             return Err(CogniaError::Provider(format!(
-                "Unexpected detection output from '{}': got {} sections, expected 11",
+                "Unexpected detection output from '{}': got {} sections, expected 13",
                 distro,
                 parts.len()
             )));
@@ -1686,6 +1756,14 @@ impl WslProvider {
             }
         };
 
+        // 13. Docker socket check
+        let docker_socket = parts.get(11).map(|s| s.trim() == "socket").unwrap_or(false);
+
+        // 14. Docker container count
+        let docker_container_count = parts
+            .get(12)
+            .and_then(|s| s.trim().parse::<u64>().ok());
+
         Ok(WslDistroEnvironment {
             distro_id,
             distro_id_like,
@@ -1704,6 +1782,8 @@ impl WslProvider {
             docker_available,
             gpu_name,
             gpu_memory,
+            docker_socket,
+            docker_container_count,
         })
     }
 
@@ -4143,5 +4223,124 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
         let provider = WslProvider::new();
         assert!(provider.requires_elevation("install"));
         assert!(!provider.requires_elevation("list"));
+    }
+
+    // ========================================================================
+    // get_total_disk_usage tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_total_disk_usage_returns_ok() {
+        // This test verifies the function doesn't panic and returns a valid result.
+        // Actual sizes depend on the machine, so we just check the structure.
+        let result = WslProvider::get_total_disk_usage();
+        assert!(result.is_ok());
+        let (total, per_distro) = result.unwrap();
+        // Total should equal sum of per-distro entries
+        let sum: u64 = per_distro.iter().map(|(_, s)| s).sum();
+        assert_eq!(total, sum);
+    }
+
+    #[test]
+    fn test_get_total_disk_usage_sorted_desc() {
+        let result = WslProvider::get_total_disk_usage();
+        assert!(result.is_ok());
+        let (_, per_distro) = result.unwrap();
+        // Verify sorted descending by size
+        for window in per_distro.windows(2) {
+            assert!(window[0].1 >= window[1].1);
+        }
+    }
+
+    // ========================================================================
+    // WslDistroEnvironment struct field tests
+    // ========================================================================
+
+    #[test]
+    fn test_distro_environment_has_docker_fields() {
+        // Verify the struct can be constructed with the new Docker fields
+        let env = WslDistroEnvironment {
+            distro_id: "ubuntu".into(),
+            distro_id_like: vec!["debian".into()],
+            pretty_name: "Ubuntu 24.04".into(),
+            version_id: Some("24.04".into()),
+            version_codename: Some("noble".into()),
+            architecture: "x86_64".into(),
+            kernel_version: "5.15.0".into(),
+            package_manager: "apt".into(),
+            init_system: "systemd".into(),
+            default_shell: Some("/bin/bash".into()),
+            default_user: Some("user".into()),
+            uptime_seconds: Some(3600),
+            hostname: Some("myhost".into()),
+            installed_packages: Some(500),
+            docker_available: true,
+            gpu_name: None,
+            gpu_memory: None,
+            docker_socket: true,
+            docker_container_count: Some(3),
+        };
+        assert!(env.docker_socket);
+        assert_eq!(env.docker_container_count, Some(3));
+        assert!(env.docker_available);
+    }
+
+    #[test]
+    fn test_distro_environment_docker_fields_default() {
+        let env = WslDistroEnvironment {
+            distro_id: "alpine".into(),
+            distro_id_like: vec![],
+            pretty_name: "Alpine".into(),
+            version_id: None,
+            version_codename: None,
+            architecture: "x86_64".into(),
+            kernel_version: "5.15.0".into(),
+            package_manager: "apk".into(),
+            init_system: "init".into(),
+            default_shell: None,
+            default_user: None,
+            uptime_seconds: None,
+            hostname: None,
+            installed_packages: None,
+            docker_available: false,
+            gpu_name: None,
+            gpu_memory: None,
+            docker_socket: false,
+            docker_container_count: None,
+        };
+        assert!(!env.docker_socket);
+        assert_eq!(env.docker_container_count, None);
+    }
+
+    // ========================================================================
+    // detect_package_manager_from_id tests for completeness
+    // ========================================================================
+
+    #[test]
+    fn test_detect_pm_new_distros() {
+        assert_eq!(WslProvider::detect_package_manager_from_id("void", &[]), Some("xbps-install"));
+        assert_eq!(WslProvider::detect_package_manager_from_id("nixos", &[]), Some("nix"));
+        assert_eq!(WslProvider::detect_package_manager_from_id("clear-linux-os", &[]), Some("swupd"));
+        assert_eq!(WslProvider::detect_package_manager_from_id("solus", &[]), Some("eopkg"));
+    }
+
+    #[test]
+    fn test_get_package_count_command_coverage() {
+        assert!(WslProvider::get_package_count_command("apt").is_some());
+        assert!(WslProvider::get_package_count_command("pacman").is_some());
+        assert!(WslProvider::get_package_count_command("xbps-install").is_some());
+        assert!(WslProvider::get_package_count_command("nix").is_some());
+        assert!(WslProvider::get_package_count_command("emerge").is_some());
+        assert!(WslProvider::get_package_count_command("unknown").is_none());
+    }
+
+    #[test]
+    fn test_get_distro_update_command_coverage() {
+        assert!(WslProvider::get_distro_update_command("apt").is_some());
+        assert!(WslProvider::get_distro_update_command("pacman").is_some());
+        assert!(WslProvider::get_distro_update_command("xbps-install").is_some());
+        assert!(WslProvider::get_distro_update_command("nix").is_some());
+        assert!(WslProvider::get_distro_update_command("swupd").is_some());
+        assert!(WslProvider::get_distro_update_command("unknown").is_none());
     }
 }

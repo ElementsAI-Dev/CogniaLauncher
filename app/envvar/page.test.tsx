@@ -5,8 +5,11 @@ import EnvVarPage from './page';
 jest.mock('@/hooks/use-envvar', () => ({
   useEnvVar: () => ({
     envVars: {},
+    persistentVars: [],
+    persistentVarsTyped: [],
     pathEntries: [],
     shellProfiles: [],
+    conflicts: [],
     loading: false,
     error: null,
     fetchAllVars: jest.fn().mockResolvedValue({}),
@@ -21,6 +24,10 @@ jest.mock('@/hooks/use-envvar', () => ({
     readShellProfile: jest.fn().mockResolvedValue(''),
     importEnvFile: jest.fn().mockResolvedValue(null),
     exportEnvFile: jest.fn().mockResolvedValue(null),
+    fetchPersistentVars: jest.fn().mockResolvedValue([]),
+    fetchPersistentVarsTyped: jest.fn().mockResolvedValue([]),
+    deduplicatePath: jest.fn().mockResolvedValue(0),
+    detectConflicts: jest.fn().mockResolvedValue([]),
   }),
 }));
 

@@ -31,6 +31,7 @@ interface EnvVarImportExportProps {
   onOpenChange: (open: boolean) => void;
   onImport: (content: string, scope: EnvVarScope) => Promise<EnvVarImportResult | null>;
   onExport: (scope: EnvVarScope, format: EnvFileFormat) => Promise<string | null>;
+  defaultTab?: 'import' | 'export';
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -39,6 +40,7 @@ export function EnvVarImportExport({
   onOpenChange,
   onImport,
   onExport,
+  defaultTab = 'import',
   t,
 }: EnvVarImportExportProps) {
   const [importContent, setImportContent] = useState('');
@@ -111,7 +113,7 @@ export function EnvVarImportExport({
           <DialogDescription>{t('envvar.description')}</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="import" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="import" className="gap-1.5">
               <Upload className="h-3.5 w-3.5" />

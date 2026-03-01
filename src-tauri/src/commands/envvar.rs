@@ -27,6 +27,23 @@ pub struct EnvVarImportResult {
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentEnvVar {
+    pub key: String,
+    pub value: String,
+    pub reg_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVarConflict {
+    pub key: String,
+    pub user_value: String,
+    pub system_value: String,
+    pub effective_value: String,
+}
+
 // ============================================================================
 // Commands
 // ============================================================================
@@ -212,6 +229,70 @@ pub async fn envvar_list_persistent(
     scope: EnvVarScope,
 ) -> Result<Vec<(String, String)>, CogniaError> {
     env::list_persistent_vars(scope).await
+}
+
+#[tauri::command]
+pub async fn envvar_list_persistent_typed(
+    scope: EnvVarScope,
+) -> Result<Vec<PersistentEnvVar>, CogniaError> {
+    #[cfg(windows)]
+    {
+        let items = env::list_persistent_vars_with_type(scope).await?;
+        Ok(items
+            .into_iter()
+            .map(|(key, value, reg_type)| PersistentEnvVar {
+                key,
+                value,
+                reg_type: if reg_type.is_empty() { None } else { Some(reg_type) },
+            })
+            .collect())
+    }
+    #[cfg(not(windows))]
+    {
+        let items = env::list_persistent_vars(scope).await?;
+        Ok(items
+            .into_iter()
+            .map(|(key, value)| PersistentEnvVar {
+                key,
+                value,
+                reg_type: None,
+            })
+            .collect())
+    }
+}
+
+#[tauri::command]
+pub async fn envvar_detect_conflicts() -> Result<Vec<EnvVarConflict>, CogniaError> {
+    let user_vars = env::list_persistent_vars(EnvVarScope::User).await?;
+    let system_vars = env::list_persistent_vars(EnvVarScope::System).await?;
+
+    let system_map: HashMap<String, String> = system_vars.into_iter().collect();
+    let mut conflicts = Vec::new();
+
+    for (key, user_value) in &user_vars {
+        let lookup_key = if cfg!(windows) {
+            // Windows env var names are case-insensitive
+            system_map.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(k, v)| (k.clone(), v.clone()))
+        } else {
+            system_map.get(key).map(|v| (key.clone(), v.clone()))
+        };
+
+        if let Some((sys_key, system_value)) = lookup_key {
+            if *user_value != system_value {
+                let effective = env::get_var(key)
+                    .or_else(|| env::get_var(&sys_key))
+                    .unwrap_or_default();
+                conflicts.push(EnvVarConflict {
+                    key: key.clone(),
+                    user_value: user_value.clone(),
+                    system_value,
+                    effective_value: effective,
+                });
+            }
+        }
+    }
+
+    Ok(conflicts)
 }
 
 #[tauri::command]

@@ -25,9 +25,9 @@ interface UseAutoVersionSwitchOptions {
 export function useAutoVersionSwitch({
   projectPath,
   enabled = true,
-  pollInterval = 5000,
+  pollInterval = 30000,
 }: UseAutoVersionSwitchOptions) {
-  const { detectVersions, setLocalVersion, environments } = useEnvironments();
+  const { detectVersions, setLocalVersion } = useEnvironments();
   const { getEnvSettings } = useEnvironmentStore();
   const lastDetectedRef = useRef<Record<string, string>>({});
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -51,8 +51,8 @@ export function useAutoVersionSwitch({
         // Skip if we already switched to this version
         if (lastDetectedRef.current[envType] === detectedVersion) continue;
         
-        // Find the environment
-        const env = environments.find(e => e.env_type === envType);
+        // Find the environment (use getState to avoid closure dependency)
+        const env = useEnvironmentStore.getState().environments.find(e => e.env_type === envType);
         if (!env) continue;
         
         // Check if the version is installed
@@ -74,7 +74,7 @@ export function useAutoVersionSwitch({
     } catch {
       // Silently fail detection errors
     }
-  }, [projectPath, detectVersions, setLocalVersion, environments, getEnvSettings]);
+  }, [projectPath, detectVersions, setLocalVersion, getEnvSettings]);
 
   useEffect(() => {
     if (!enabled || !projectPath) {

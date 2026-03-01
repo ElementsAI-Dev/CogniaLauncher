@@ -72,6 +72,7 @@ interface EnvironmentState {
   // Update check state
   updateCheckResults: Record<string, EnvUpdateCheckResult>;
   lastEnvUpdateCheck: number | null;
+  lastEnvScanTimestamp: number | null;
   
   // Actions
   setEnvironments: (envs: EnvironmentInfo[]) => void;
@@ -122,6 +123,8 @@ interface EnvironmentState {
   setUpdateCheckResult: (envType: string, result: EnvUpdateCheckResult) => void;
   setAllUpdateCheckResults: (results: EnvUpdateCheckResult[]) => void;
   setLastEnvUpdateCheck: (timestamp: number) => void;
+  setLastEnvScanTimestamp: (timestamp: number | null) => void;
+  isScanFresh: () => boolean;
   
   // Search and filter actions
   setSearchQuery: (query: string) => void;
@@ -159,6 +162,11 @@ export const PROVIDER_ENV_TYPE_MAP: Record<string, string> = {
   'system-dotnet': 'dotnet',
   'system-deno': 'deno',
   'system-bun': 'bun',
+  'sdkman-kotlin': 'kotlin',
+  'sdkman-scala': 'scala',
+  'sdkman-gradle': 'java',
+  'sdkman-maven': 'java',
+  'system-kotlin': 'kotlin',
 };
 
 /**
@@ -233,6 +241,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       // Update check state
       updateCheckResults: {},
       lastEnvUpdateCheck: null,
+      lastEnvScanTimestamp: null,
 
       setEnvironments: (environments) => set({ environments }),
       setSelectedEnv: (selectedEnv) => set({ selectedEnv }),
@@ -420,6 +429,12 @@ export const useEnvironmentStore = create<EnvironmentState>()(
         return { updateCheckResults: map };
       }),
       setLastEnvUpdateCheck: (timestamp) => set({ lastEnvUpdateCheck: timestamp }),
+      setLastEnvScanTimestamp: (lastEnvScanTimestamp) => set({ lastEnvScanTimestamp }),
+      isScanFresh: () => {
+        const ts = get().lastEnvScanTimestamp;
+        if (!ts) return false;
+        return Date.now() - ts < 5 * 60 * 1000; // 5 minutes
+      },
       
       // Search and filter actions
       setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -430,12 +445,15 @@ export const useEnvironmentStore = create<EnvironmentState>()(
     }),
     {
       name: 'cognia-environment-settings',
+      version: 1,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         envSettings: state.envSettings,
         viewMode: state.viewMode,
         updateCheckResults: state.updateCheckResults,
         lastEnvUpdateCheck: state.lastEnvUpdateCheck,
+        environments: state.environments,
+        lastEnvScanTimestamp: state.lastEnvScanTimestamp,
       }),
     }
   )

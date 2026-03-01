@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +22,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Play, Pencil, Trash2, Star, Plus, Loader2, Copy, Download, Upload, MoreVertical, Terminal, LayoutTemplate, Bookmark, Search } from 'lucide-react';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
@@ -64,11 +65,39 @@ export function TerminalProfileList({
 }: TerminalProfileListProps) {
   const { t } = useLocale();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const sortedProfiles = useMemo(() => {
+    let filtered = profiles;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = profiles.filter(
+        (p) => p.name.toLowerCase().includes(q) || p.shellId.toLowerCase().includes(q) || (p.envType && p.envType.toLowerCase().includes(q)),
+      );
+    }
+    return [...filtered].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+    });
+  }, [profiles, search]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium">{t('terminal.profiles')}</h3>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <h3 className="text-lg font-medium shrink-0">{t('terminal.profiles')}</h3>
+          {profiles.length > 0 && (
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                className="pl-8 h-9 text-sm"
+                placeholder={t('terminal.searchProfiles')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {onExportAll && profiles.length > 0 && (
             <Button size="sm" variant="outline" onClick={onExportAll}>
@@ -171,7 +200,7 @@ export function TerminalProfileList({
         </AlertDialogContent>
       </AlertDialog>
 
-      {profiles.length === 0 ? (
+      {sortedProfiles.length === 0 && profiles.length === 0 ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -188,11 +217,14 @@ export function TerminalProfileList({
         </Empty>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {profiles.map((profile) => {
+          {sortedProfiles.map((profile) => {
             const isLaunching = launchingProfileId === profile.id;
 
             return (
-              <Card key={profile.id}>
+              <Card key={profile.id} className="relative overflow-hidden">
+                {profile.color && (
+                  <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l-lg" style={{ backgroundColor: profile.color }} />
+                )}
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">{profile.name}</CardTitle>

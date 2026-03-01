@@ -25,21 +25,21 @@ import {
 import type { InstalledVersion, EnvCleanupResult } from "@/lib/tauri";
 import { formatSize, cn } from "@/lib/utils";
 
-function formatAge(dateStr: string): string {
+function formatAge(dateStr: string, locale?: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   if (isNaN(then)) return dateStr;
   const diffMs = now - then;
   const days = Math.floor(diffMs / 86_400_000);
-  if (days < 1) return "today";
-  if (days === 1) return "1 day ago";
-  if (days < 30) return `${days} days ago`;
+
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+
+  if (days < 1) return rtf.format(0, "day");
+  if (days < 30) return rtf.format(-days, "day");
   const months = Math.floor(days / 30);
-  if (months === 1) return "1 month ago";
-  if (months < 12) return `${months} months ago`;
+  if (months < 12) return rtf.format(-months, "month");
   const years = Math.floor(months / 12);
-  if (years === 1) return "1 year ago";
-  return `${years} years ago`;
+  return rtf.format(-years, "year");
 }
 
 interface CleanupDialogProps {

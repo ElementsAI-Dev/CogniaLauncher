@@ -49,7 +49,6 @@ export function EnvVarShellProfiles({
       const { openPath } = await import('@tauri-apps/plugin-opener');
       await openPath(path);
     } catch (err) {
-      console.error('Failed to open file:', err);
       toast.error(String(err));
     }
   }, []);
@@ -60,7 +59,6 @@ export function EnvVarShellProfiles({
       const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
       await revealItemInDir(path);
     } catch (err) {
-      console.error('Failed to reveal file:', err);
       toast.error(String(err));
     }
   }, []);

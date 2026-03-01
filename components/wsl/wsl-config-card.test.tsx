@@ -135,15 +135,15 @@ describe('WslConfigCard', () => {
 
   // Typed controls tests (Phase 5 enhancements)
   describe('typed quick settings controls', () => {
-    it('renders all 14 quick settings', () => {
+    it('renders all quick settings including new ones', () => {
       render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
 
-      // Text-type settings (wsl2)
+      // Original text-type settings (wsl2)
       expect(screen.getByText('Memory')).toBeInTheDocument();
       expect(screen.getByText('Processors')).toBeInTheDocument();
       expect(screen.getByText('Swap')).toBeInTheDocument();
 
-      // Bool-type settings (wsl2)
+      // Original bool-type settings (wsl2)
       expect(screen.getByText('Localhost Forwarding')).toBeInTheDocument();
       expect(screen.getByText('Nested Virtualization')).toBeInTheDocument();
       expect(screen.getByText('GUI Applications')).toBeInTheDocument();
@@ -152,13 +152,24 @@ describe('WslConfigCard', () => {
       // Select-type settings (wsl2)
       expect(screen.getByText('Networking Mode')).toBeInTheDocument();
 
-      // Experimental section settings
+      // New wsl2 settings
+      expect(screen.getByText('Custom Kernel')).toBeInTheDocument();
+      expect(screen.getByText('Safe Mode')).toBeInTheDocument();
+      expect(screen.getByText('Debug Console')).toBeInTheDocument();
+      expect(screen.getByText('Max Crash Dumps')).toBeInTheDocument();
+      expect(screen.getByText('Default VHD Size')).toBeInTheDocument();
+
+      // Original experimental section settings
       expect(screen.getByText('Auto Memory Reclaim')).toBeInTheDocument();
       expect(screen.getByText('Sparse VHD')).toBeInTheDocument();
       expect(screen.getByText('DNS Tunneling')).toBeInTheDocument();
       expect(screen.getByText('Firewall')).toBeInTheDocument();
       expect(screen.getByText('Auto Proxy')).toBeInTheDocument();
       expect(screen.getByText('Host Address Loopback')).toBeInTheDocument();
+
+      // New experimental settings
+      expect(screen.getByText('Best-Effort DNS Parsing')).toBeInTheDocument();
+      expect(screen.getByText('Ignored Ports')).toBeInTheDocument();
     });
 
     it('renders switch controls for boolean settings', () => {
@@ -166,9 +177,10 @@ describe('WslConfigCard', () => {
 
       // Boolean settings produce switch elements
       const switches = screen.getAllByRole('switch');
-      // 9 boolean settings: localhostForwarding, nestedVirtualization, guiApplications,
-      // dnsProxy (wsl2), sparseVhd, dnsTunneling, firewall, autoProxy, hostAddressLoopback (experimental)
-      expect(switches.length).toBe(9);
+      // 12 boolean settings: localhostForwarding, nestedVirtualization, guiApplications,
+      // dnsProxy, safeMode, debugConsole (wsl2),
+      // sparseVhd, dnsTunneling, firewall, autoProxy, hostAddressLoopback, bestEffortDnsParsing (experimental)
+      expect(switches.length).toBe(12);
     });
 
     it('renders text inputs for memory/processors/swap', () => {

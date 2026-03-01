@@ -53,6 +53,17 @@ jest.mock('sonner', () => ({
   },
 }));
 
+const mockT = (key: string, params?: Record<string, string | number>) => {
+  if (params) {
+    let result = key;
+    for (const [k, v] of Object.entries(params)) {
+      result = result.replace(`{${k}}`, String(v));
+    }
+    return result;
+  }
+  return key;
+};
+
 describe('useTerminal', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -75,7 +86,7 @@ describe('useTerminal', () => {
         }),
     );
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mockTerminalListProfiles).toHaveBeenCalledTimes(1));
 
@@ -100,13 +111,13 @@ describe('useTerminal', () => {
       profileId: 'profile-1',
       result: launchResult,
     });
-    expect(toast.success).toHaveBeenCalledWith('Profile launched');
+    expect(toast.success).toHaveBeenCalledWith('terminal.toastProfileLaunched');
   });
 
   it('launchProfile records failed result when backend throws', async () => {
     mockTerminalLaunchProfileDetailed.mockRejectedValue(new Error('launch failed'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -117,7 +128,7 @@ describe('useTerminal', () => {
     expect(result.current.lastLaunchResult?.profileId).toBe('profile-err');
     expect(result.current.lastLaunchResult?.result.success).toBe(false);
     expect(result.current.lastLaunchResult?.result.stderr).toContain('Error: launch failed');
-    expect(toast.error).toHaveBeenCalledWith('Failed to launch profile: Error: launch failed');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastLaunchFailed');
 
     act(() => {
       result.current.clearLaunchResult();
@@ -175,7 +186,7 @@ describe('useTerminal', () => {
       return powershellFrameworks;
     });
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -197,7 +208,7 @@ describe('useTerminal', () => {
   it('readShellConfig returns content from backend', async () => {
     mockTerminalReadConfig.mockResolvedValue('export PATH="/usr/bin"');
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let content = '';
@@ -212,7 +223,7 @@ describe('useTerminal', () => {
   it('readShellConfig returns empty string and toasts on error', async () => {
     mockTerminalReadConfig.mockRejectedValue(new Error('read failed'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let content = 'should-be-empty';
@@ -221,7 +232,7 @@ describe('useTerminal', () => {
     });
 
     expect(content).toBe('');
-    expect(toast.error).toHaveBeenCalledWith('Failed to read config: Error: read failed');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastReadConfigFailed');
   });
 
   it('parseConfigContent calls terminalParseConfigContent', async () => {
@@ -232,7 +243,7 @@ describe('useTerminal', () => {
     };
     mockTerminalParseConfigContent.mockResolvedValue(mockEntries);
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let entries = null;
@@ -247,7 +258,7 @@ describe('useTerminal', () => {
   it('parseConfigContent returns null and toasts on error', async () => {
     mockTerminalParseConfigContent.mockRejectedValue(new Error('parse error'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let entries: unknown = 'should-be-null';
@@ -256,7 +267,7 @@ describe('useTerminal', () => {
     });
 
     expect(entries).toBeNull();
-    expect(toast.error).toHaveBeenCalledWith('Failed to parse config: Error: parse error');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastParseConfigFailed');
   });
 
   it('fetchConfigEntries calls terminalGetConfigEntries', async () => {
@@ -267,7 +278,7 @@ describe('useTerminal', () => {
     };
     mockTerminalGetConfigEntries.mockResolvedValue(mockEntries);
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let entries = null;
@@ -282,7 +293,7 @@ describe('useTerminal', () => {
   it('fetchConfigEntries returns null and toasts on error', async () => {
     mockTerminalGetConfigEntries.mockRejectedValue(new Error('fetch error'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     let entries: unknown = 'should-be-null';
@@ -291,7 +302,7 @@ describe('useTerminal', () => {
     });
 
     expect(entries).toBeNull();
-    expect(toast.error).toHaveBeenCalledWith('Failed to parse config: Error: fetch error');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastParseConfigFailed');
   });
 
   // ── Framework Cache Management tests ──
@@ -317,7 +328,7 @@ describe('useTerminal', () => {
     ];
     mockTerminalGetFrameworkCacheStats.mockResolvedValue(mockStats);
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -335,7 +346,7 @@ describe('useTerminal', () => {
       () => new Promise((resolve) => { resolveStats = resolve; }),
     );
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     act(() => {
@@ -354,7 +365,7 @@ describe('useTerminal', () => {
   it('fetchFrameworkCacheStats toasts on error', async () => {
     mockTerminalGetFrameworkCacheStats.mockRejectedValue(new Error('cache scan failed'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -364,7 +375,7 @@ describe('useTerminal', () => {
     expect(result.current.frameworkCacheLoading).toBe(false);
     expect(result.current.frameworkCacheStats).toEqual([]);
     expect(toast.error).toHaveBeenCalledWith(
-      'Failed to load framework cache stats: Error: cache scan failed',
+      'terminal.toastLoadCacheStatsFailed',
     );
   });
 
@@ -372,7 +383,7 @@ describe('useTerminal', () => {
     mockTerminalCleanFrameworkCache.mockResolvedValue(5242880); // 5 MB
     mockTerminalGetFrameworkCacheStats.mockResolvedValue([]);
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -380,7 +391,7 @@ describe('useTerminal', () => {
     });
 
     expect(mockTerminalCleanFrameworkCache).toHaveBeenCalledWith('Oh My Posh');
-    expect(toast.success).toHaveBeenCalledWith('Cleaned 5.0 MB from Oh My Posh cache');
+    expect(toast.success).toHaveBeenCalledWith('terminal.toastCacheCleaned');
     // Should refresh stats after clean
     expect(mockTerminalGetFrameworkCacheStats).toHaveBeenCalled();
   });
@@ -388,7 +399,7 @@ describe('useTerminal', () => {
   it('cleanFrameworkCache toasts on error', async () => {
     mockTerminalCleanFrameworkCache.mockRejectedValue(new Error('permission denied'));
 
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     await act(async () => {
@@ -396,12 +407,12 @@ describe('useTerminal', () => {
     });
 
     expect(toast.error).toHaveBeenCalledWith(
-      'Failed to clean Starship cache: Error: permission denied',
+      'terminal.toastCleanCacheFailed',
     );
   });
 
   it('initial state has empty frameworkCacheStats and false frameworkCacheLoading', async () => {
-    const { result } = renderHook(() => useTerminal());
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
     await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
 
     expect(result.current.frameworkCacheStats).toEqual([]);

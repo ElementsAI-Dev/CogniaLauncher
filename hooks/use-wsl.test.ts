@@ -39,6 +39,10 @@ const mockWslDetectDistroEnv = jest.fn();
 const mockWslGetDistroResources = jest.fn();
 const mockWslListUsers = jest.fn();
 const mockWslUpdateDistroPackages = jest.fn();
+const mockWslOpenInExplorer = jest.fn();
+const mockWslOpenInTerminal = jest.fn();
+const mockWslCloneDistro = jest.fn();
+const mockWslTotalDiskUsage = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
@@ -79,6 +83,10 @@ jest.mock('@/lib/tauri', () => ({
   wslGetDistroResources: (...a: unknown[]) => mockWslGetDistroResources(...a),
   wslListUsers: (...a: unknown[]) => mockWslListUsers(...a),
   wslUpdateDistroPackages: (...a: unknown[]) => mockWslUpdateDistroPackages(...a),
+  wslOpenInExplorer: (...a: unknown[]) => mockWslOpenInExplorer(...a),
+  wslOpenInTerminal: (...a: unknown[]) => mockWslOpenInTerminal(...a),
+  wslCloneDistro: (...a: unknown[]) => mockWslCloneDistro(...a),
+  wslTotalDiskUsage: (...a: unknown[]) => mockWslTotalDiskUsage(...a),
 }));
 
 describe('useWsl', () => {
@@ -824,6 +832,92 @@ describe('useWsl', () => {
         await result.current.updateDistroPackages('Ubuntu', 'full');
       }),
     ).rejects.toThrow('Not in Tauri environment');
+  });
+
+  // ── New actions (open in explorer/terminal, clone, auto-refresh) ──
+
+  it('should open in explorer', async () => {
+    mockWslOpenInExplorer.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.openInExplorer('Ubuntu');
+    });
+
+    expect(mockWslOpenInExplorer).toHaveBeenCalledWith('Ubuntu');
+  });
+
+  it('should skip openInExplorer when not in Tauri', async () => {
+    mockIsTauri.mockReturnValue(false);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.openInExplorer('Ubuntu');
+    });
+
+    expect(mockWslOpenInExplorer).not.toHaveBeenCalled();
+  });
+
+  it('should open in terminal', async () => {
+    mockWslOpenInTerminal.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.openInTerminal('Ubuntu');
+    });
+
+    expect(mockWslOpenInTerminal).toHaveBeenCalledWith('Ubuntu');
+  });
+
+  it('should clone distro', async () => {
+    mockWslCloneDistro.mockResolvedValue("Cloned 'Ubuntu' → 'Ubuntu-Copy'");
+
+    const { result } = renderHook(() => useWsl());
+
+    let res;
+    await act(async () => {
+      res = await result.current.cloneDistro('Ubuntu', 'Ubuntu-Copy', 'C:\\WSL');
+    });
+
+    expect(res).toBe("Cloned 'Ubuntu' → 'Ubuntu-Copy'");
+    expect(mockWslCloneDistro).toHaveBeenCalledWith('Ubuntu', 'Ubuntu-Copy', 'C:\\WSL');
+  });
+
+  it('should throw when cloneDistro not in Tauri', async () => {
+    mockIsTauri.mockReturnValue(false);
+
+    const { result } = renderHook(() => useWsl());
+
+    await expect(
+      act(async () => {
+        await result.current.cloneDistro('Ubuntu', 'Ubuntu-Copy', 'C:\\WSL');
+      }),
+    ).rejects.toThrow('Not in Tauri environment');
+  });
+
+  it('should initialize autoRefreshEnabled as false', () => {
+    const { result } = renderHook(() => useWsl());
+
+    expect(result.current.autoRefreshEnabled).toBe(false);
+  });
+
+  it('should toggle auto-refresh', () => {
+    const { result } = renderHook(() => useWsl());
+
+    act(() => {
+      result.current.setAutoRefresh(true);
+    });
+
+    expect(result.current.autoRefreshEnabled).toBe(true);
+
+    act(() => {
+      result.current.setAutoRefresh(false);
+    });
+
+    expect(result.current.autoRefreshEnabled).toBe(false);
   });
 
   // ── Non-Tauri guards ──

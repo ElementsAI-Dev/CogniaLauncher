@@ -76,7 +76,7 @@ export interface ServiceInfo {
 // WSL config setting definitions
 // ============================================================================
 
-export type SettingType = 'text' | 'bool' | 'select';
+export type SettingType = 'text' | 'bool' | 'select' | 'number' | 'path';
 
 /** A WSL2 global setting definition (.wslconfig) */
 export interface WslSettingDef {
@@ -88,6 +88,8 @@ export interface WslSettingDef {
   options?: string[];
   /** INI section this setting belongs to (default: 'wsl2') */
   section?: 'wsl2' | 'experimental';
+  /** Frontend validation: returns error message or null if valid */
+  validate?: (value: string) => string | null;
 }
 
 /** A per-distro quick setting definition (/etc/wsl.conf) */
@@ -124,6 +126,7 @@ export interface WslStatusCardProps {
   onRefresh: () => void;
   onShutdownAll: () => void;
   getIpAddress?: () => Promise<string>;
+  config?: WslConfig | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TerminalProfileList } from './terminal-profile-list';
 import type { LaunchResult, TerminalProfile } from '@/types/tauri';
 
@@ -17,6 +18,7 @@ function makeProfile(partial: Partial<TerminalProfile>): TerminalProfile {
     startupCommand: partial.startupCommand ?? null,
     envType: partial.envType ?? null,
     envVersion: partial.envVersion ?? null,
+    color: partial.color ?? null,
     isDefault: partial.isDefault ?? false,
     createdAt: partial.createdAt ?? '',
     updatedAt: partial.updatedAt ?? '',
@@ -127,7 +129,8 @@ describe('TerminalProfileList', () => {
     expect(screen.getByText(/node 20/)).toBeInTheDocument();
   });
 
-  it('calls onEdit and onDelete with correct arguments', () => {
+  it('calls onEdit and onDelete with correct arguments', async () => {
+    const user = userEvent.setup();
     const onEdit = jest.fn();
     const onDelete = jest.fn();
     const profile = makeProfile({ id: 'edit-me', name: 'Editable' });
@@ -143,22 +146,31 @@ describe('TerminalProfileList', () => {
       />,
     );
 
-    const allButtons = screen.getAllByRole('button');
-    const editBtn = allButtons.find((btn) =>
-      btn.querySelector('.lucide-pencil') !== null
-    );
-    const deleteBtn = allButtons.find((btn) =>
-      btn.classList.contains('text-destructive')
-    );
+    // Open dropdown menu
+    const menuTrigger = screen.getByRole('button', { name: '' });
+    await user.click(menuTrigger);
 
-    if (editBtn) fireEvent.click(editBtn);
+    // Click edit
+    await waitFor(() => {
+      expect(screen.getByText('terminal.edit')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('terminal.edit'));
     expect(onEdit).toHaveBeenCalledWith(profile);
 
-    if (deleteBtn) fireEvent.click(deleteBtn);
-    expect(onDelete).toHaveBeenCalledWith('edit-me');
+    // Re-open dropdown for delete
+    await user.click(menuTrigger);
+    await waitFor(() => {
+      expect(screen.getByText('terminal.delete')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('terminal.delete'));
+    // Delete triggers confirmation dialog, not direct callback
+    await waitFor(() => {
+      expect(screen.getByText('terminal.confirmDelete')).toBeInTheDocument();
+    });
   });
 
-  it('shows set-default button for non-default and default badge for default', () => {
+  it('shows set-default button for non-default and default badge for default', async () => {
+    const user = userEvent.setup();
     const onSetDefault = jest.fn();
     const nonDefaultProfile = makeProfile({ id: 'non', name: 'NonDefault', isDefault: false });
 
@@ -173,11 +185,14 @@ describe('TerminalProfileList', () => {
       />,
     );
 
-    const starButtons = screen.getAllByRole('button').filter((btn) =>
-      btn.querySelector('.lucide-star') !== null
-    );
-    expect(starButtons.length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(starButtons[0]);
+    // Open dropdown to find set-default
+    const menuTrigger = screen.getByRole('button', { name: '' });
+    await user.click(menuTrigger);
+
+    await waitFor(() => {
+      expect(screen.getByText('terminal.setDefault')).toBeInTheDocument();
+    });
+    await user.click(screen.getByText('terminal.setDefault'));
     expect(onSetDefault).toHaveBeenCalledWith('non');
   });
 

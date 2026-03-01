@@ -442,6 +442,198 @@ async fn get_shell_version(executable: &str, args: &[&str]) -> Option<String> {
 }
 
 // ============================================================================
+// Shell Startup Measurement
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellStartupMeasurement {
+    pub shell_id: String,
+    pub with_profile_ms: u64,
+    pub without_profile_ms: u64,
+    pub difference_ms: i64,
+}
+
+/// Measure shell startup time with and without profile loading.
+/// Runs each variant 3 times and takes the median to reduce noise.
+pub async fn measure_shell_startup(shell: &ShellInfo) -> CogniaResult<ShellStartupMeasurement> {
+    let (with_args, without_args): (Vec<&str>, Vec<&str>) = match shell.shell_type {
+        ShellType::Bash => (vec!["-i", "-c", "exit"], vec!["--norc", "--noprofile", "-c", "exit"]),
+        ShellType::Zsh => (vec!["-i", "-c", "exit"], vec!["--no-rcs", "-c", "exit"]),
+        ShellType::Fish => (vec!["-i", "-c", "exit"], vec!["--no-config", "-c", "exit"]),
+        ShellType::PowerShell => (vec!["-Command", "exit"], vec!["-NoProfile", "-Command", "exit"]),
+        ShellType::Cmd => (vec!["/C", "exit"], vec!["/C", "exit"]),
+        ShellType::Nushell => (vec!["-c", "exit"], vec!["--no-config-file", "-c", "exit"]),
+    };
+
+    let timeout = std::time::Duration::from_secs(15);
+    let executable = &shell.executable_path;
+
+    let with_profile_ms = measure_runs(executable, &with_args, timeout).await;
+    let without_profile_ms = measure_runs(executable, &without_args, timeout).await;
+
+    Ok(ShellStartupMeasurement {
+        shell_id: shell.id.clone(),
+        with_profile_ms,
+        without_profile_ms,
+        difference_ms: with_profile_ms as i64 - without_profile_ms as i64,
+    })
+}
+
+/// Run a command 3 times and return the median elapsed time in milliseconds.
+async fn measure_runs(executable: &str, args: &[&str], timeout: std::time::Duration) -> u64 {
+    let mut times = Vec::new();
+    for _ in 0..3 {
+        let start = std::time::Instant::now();
+        let opts = Some(process::ProcessOptions::new().with_timeout(timeout));
+        let _ = process::execute(executable, args, opts).await;
+        times.push(start.elapsed().as_millis() as u64);
+    }
+    times.sort();
+    times.get(1).copied().unwrap_or(0) // median of 3
+}
+
+// ============================================================================
+// Shell Health Check
+// ============================================================================
+
+use crate::core::health_check::{HealthIssue, IssueCategory, Severity};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellHealthResult {
+    pub shell_id: String,
+    pub status: crate::core::health_check::HealthStatus,
+    pub issues: Vec<HealthIssue>,
+}
+
+/// Run health checks for a specific detected shell.
+/// Checks: config file syntax, PATH validity, large config files.
+pub async fn check_shell_health(shell: &ShellInfo) -> ShellHealthResult {
+    let mut issues = Vec::new();
+
+    // 1. Check config file syntax (Bash/Zsh: -n flag, PowerShell: parse check)
+    match shell.shell_type {
+        ShellType::Bash | ShellType::Zsh => {
+            for cf in &shell.config_files {
+                if !cf.exists {
+                    continue;
+                }
+                let flag = if shell.shell_type == ShellType::Bash {
+                    "-n"
+                } else {
+                    "--no-exec"
+                };
+                let opts = Some(
+                    process::ProcessOptions::new()
+                        .with_timeout(std::time::Duration::from_secs(10)),
+                );
+                if let Ok(output) =
+                    process::execute(&shell.executable_path, &[flag, &cf.path], opts).await
+                {
+                    if !output.success {
+                        let stderr = output.stderr.trim().to_string();
+                        issues.push(
+                            HealthIssue::new(
+                                Severity::Warning,
+                                IssueCategory::ConfigError,
+                                format!("Syntax error in {}", cf.path),
+                            )
+                            .with_details(if stderr.is_empty() {
+                                "Shell reported a syntax error but provided no details".into()
+                            } else {
+                                stderr
+                            }),
+                        );
+                    }
+                }
+            }
+        }
+        ShellType::PowerShell => {
+            for cf in &shell.config_files {
+                if !cf.exists {
+                    continue;
+                }
+                let cmd = format!(
+                    "[System.Management.Automation.Language.Parser]::ParseFile('{}', [ref]$null, [ref]$null) | Out-Null; $?",
+                    cf.path.replace('\'', "''")
+                );
+                let opts = Some(
+                    process::ProcessOptions::new()
+                        .with_timeout(std::time::Duration::from_secs(10)),
+                );
+                if let Ok(output) = process::execute(
+                    &shell.executable_path,
+                    &["-NoProfile", "-NonInteractive", "-Command", &cmd],
+                    opts,
+                )
+                .await
+                {
+                    if !output.success || output.stdout.trim() == "False" {
+                        issues.push(
+                            HealthIssue::new(
+                                Severity::Warning,
+                                IssueCategory::ConfigError,
+                                format!("Parse error in {}", cf.path),
+                            )
+                            .with_details(output.stderr.trim().to_string()),
+                        );
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // 2. Check for very large config files (>100KB — may slow startup)
+    for cf in &shell.config_files {
+        if cf.exists && cf.size_bytes > 100 * 1024 {
+            let size_kb = cf.size_bytes / 1024;
+            issues.push(
+                HealthIssue::new(
+                    Severity::Info,
+                    IssueCategory::ConfigError,
+                    format!("{} is {}KB — may slow startup", cf.path, size_kb),
+                )
+                .with_details("Consider splitting large config files into smaller sourced files"),
+            );
+        }
+    }
+
+    // 3. Check PATH for non-existent directories
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let missing_count = path_var
+        .split(separator)
+        .filter(|p| !p.is_empty() && !std::path::Path::new(p).exists())
+        .count();
+    if missing_count > 0 && missing_count <= 10 {
+        issues.push(
+            HealthIssue::new(
+                Severity::Info,
+                IssueCategory::ShellIntegration,
+                format!("{} PATH entries point to non-existent directories", missing_count),
+            )
+            .with_details("Non-existent PATH entries can slightly slow command lookups"),
+        );
+    }
+
+    let status = if issues.iter().any(|i| matches!(i.severity, Severity::Error | Severity::Critical)) {
+        crate::core::health_check::HealthStatus::Error
+    } else if issues.iter().any(|i| matches!(i.severity, Severity::Warning)) {
+        crate::core::health_check::HealthStatus::Warning
+    } else {
+        crate::core::health_check::HealthStatus::Healthy
+    };
+
+    ShellHealthResult {
+        shell_id: shell.id.clone(),
+        status,
+        issues,
+    }
+}
+
+// ============================================================================
 // Terminal Profiles
 // ============================================================================
 
@@ -458,6 +650,8 @@ pub struct TerminalProfile {
     pub startup_command: Option<String>,
     pub env_type: Option<String>,
     pub env_version: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
     pub is_default: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -471,6 +665,17 @@ pub struct TerminalProfileManager {
 }
 
 impl TerminalProfileManager {
+    /// Create an empty placeholder manager for pre-registration before async init.
+    /// Commands will see empty profiles until `new()` replaces the inner value.
+    pub fn empty() -> Self {
+        Self {
+            profiles_path: PathBuf::new(),
+            templates_path: PathBuf::new(),
+            profiles: Vec::new(),
+            custom_templates: Vec::new(),
+        }
+    }
+
     pub async fn new(base_dir: &Path) -> CogniaResult<Self> {
         let profiles_dir = base_dir.join("terminal");
         fs::create_dir_all(&profiles_dir)
@@ -925,6 +1130,7 @@ impl TerminalProfileManager {
             startup_command: template.startup_command.clone(),
             env_type: template.env_type.clone(),
             env_version: template.env_version.clone(),
+            color: None,
             is_default: false,
             created_at: String::new(),
             updated_at: String::new(),
@@ -3500,6 +3706,7 @@ source ~/no_space.nu
             startup_command: Some("nvm use 20".into()),
             env_type: Some("node".into()),
             env_version: Some("20.11.0".into()),
+            color: None,
             is_default: false,
             created_at: String::new(),
             updated_at: String::new(),

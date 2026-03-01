@@ -38,6 +38,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     setLocalVersion,
     detectVersions,
     fetchProviders,
+    cleanupVersions,
   } = useEnvironments();
 
   const {
@@ -202,6 +203,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
             selectedProviderId={currentProviderId}
             onProviderChange={setSelectedProviderId}
             loading={loading}
+            onCleanup={(versions) => cleanupVersions(envType, versions)}
             t={t}
           />
         </TabsContent>

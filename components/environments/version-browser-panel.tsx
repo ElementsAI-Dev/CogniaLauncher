@@ -63,6 +63,8 @@ export function VersionBrowserPanel({
     installingVersion,
     batchProcessing,
     displayVersions,
+    hasMore,
+    totalFiltered,
     selectedForEnv,
     installableCount,
     uninstallableCount,
@@ -74,6 +76,7 @@ export function VersionBrowserPanel({
     handleBatchInstall,
     handleBatchUninstall,
     clearVersionSelection,
+    loadMore,
   } = useVersionBrowser(
     envType,
     open,
@@ -208,11 +211,28 @@ export function VersionBrowserPanel({
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t bg-muted/30">
+        <div className="p-4 border-t bg-muted/30 space-y-2">
+          {hasMore && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={loadMore}
+            >
+              {t("environments.versionBrowser.loadMore", {
+                remaining: totalFiltered - displayVersions.length,
+              })}
+            </Button>
+          )}
           <p className="text-xs text-muted-foreground text-center">
             {t("environments.versionBrowser.totalVersions", {
               count: displayVersions.length,
             })}
+            {totalFiltered > displayVersions.length && (
+              <span>
+                {" "}/ {totalFiltered} {t("environments.versionBrowser.total")}
+              </span>
+            )}
           </p>
         </div>
 

@@ -50,7 +50,7 @@ export function EnvDetailOverview({
   detectedVersion,
   t,
 }: EnvDetailOverviewProps) {
-  const { systemHealth, environmentHealth, loading: healthLoading, checkAll, checkEnvironment, getStatusColor } =
+  const { systemHealth, environmentHealth, loading: healthLoading, checkEnvironment, getStatusColor } =
     useHealthCheck();
 
   // Auto-trigger health check on mount if no cached data for this env
@@ -260,7 +260,7 @@ export function EnvDetailOverview({
             <Button
               variant="outline"
               size="sm"
-              onClick={checkAll}
+              onClick={() => checkEnvironment(envType)}
               disabled={healthLoading}
               className="gap-2"
             >

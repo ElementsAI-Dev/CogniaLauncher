@@ -112,7 +112,12 @@ describe('EnvVarShellProfiles', () => {
 
     await waitFor(() => {
       expect(onReadProfile).toHaveBeenCalledWith('/home/user/.bashrc');
-      expect(screen.getByText('export PATH="/usr/bin:$PATH"')).toBeInTheDocument();
+      // Content is rendered via dangerouslySetInnerHTML with syntax highlighting,
+      // so we check the <pre> element contains the text
+      const pre = document.querySelector('pre.hljs');
+      expect(pre).toBeTruthy();
+      expect(pre?.textContent).toContain('export');
+      expect(pre?.textContent).toContain('PATH');
     });
   });
 

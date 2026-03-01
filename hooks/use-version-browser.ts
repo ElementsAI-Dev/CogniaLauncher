@@ -36,6 +36,7 @@ export function useVersionBrowser(
   const [filter, setFilter] = useState<VersionFilter>('all');
   const [installingVersion, setInstallingVersion] = useState<string | null>(null);
   const [batchProcessing, setBatchProcessing] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(50);
 
   // Get selected versions for this environment type
   const selectedForEnv = useMemo(
@@ -101,8 +102,13 @@ export function useVersionBrowser(
     }
   }, [onInstall, providerId]);
 
+  // Reset display limit when filters change
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [searchQuery, filter]);
+
   // Memoized filtered versions
-  const displayVersions = useMemo(() => {
+  const filteredVersions = useMemo(() => {
     if (filter === 'latest') {
       const latest = versions.find((v) => !v.deprecated && !v.yanked);
       return latest ? [latest] : [];
@@ -127,6 +133,18 @@ export function useVersionBrowser(
       }
     });
   }, [versions, searchQuery, filter, envType]);
+
+  const displayVersions = useMemo(
+    () => filteredVersions.slice(0, displayLimit),
+    [filteredVersions, displayLimit],
+  );
+
+  const hasMore = filteredVersions.length > displayLimit;
+  const totalFiltered = filteredVersions.length;
+
+  const loadMore = useCallback(() => {
+    setDisplayLimit((prev) => prev + 50);
+  }, []);
 
   // Batch install selected versions
   const handleBatchInstall = useCallback(async () => {
@@ -264,6 +282,8 @@ export function useVersionBrowser(
     // Derived
     versions,
     displayVersions,
+    hasMore,
+    totalFiltered,
     selectedForEnv,
     installableCount,
     uninstallableCount,
@@ -278,5 +298,6 @@ export function useVersionBrowser(
     handleBatchInstall,
     handleBatchUninstall,
     clearVersionSelection,
+    loadMore,
   };
 }

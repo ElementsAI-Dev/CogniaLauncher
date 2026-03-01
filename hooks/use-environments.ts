@@ -57,26 +57,36 @@ export function useEnvironments() {
     auto_switch: settings.autoSwitch,
   }), []);
 
-  const fetchEnvironments = useCallback(async () => {
-    setLoading(true);
+  const setLastEnvScanTimestamp = useEnvironmentStore((s) => s.setLastEnvScanTimestamp);
+  const isScanFresh = useEnvironmentStore((s) => s.isScanFresh);
+
+  const fetchEnvironments = useCallback(async (force?: boolean) => {
+    // Skip fetch if store has fresh data and not forced
+    if (!force && isScanFresh() && environments.length > 0) {
+      return environments;
+    }
+
+    // Stale-while-revalidate: if we have cached data (from localStorage persist),
+    // return it immediately and refresh in the background without showing loading state.
+    const hasCachedData = !force && environments.length > 0;
+    if (!hasCachedData) {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const envs = await tauri.envList();
+      const envs = await tauri.envList(force);
       setEnvironments(envs);
-      if (tauri.isTauri()) {
-        await Promise.all(envs.map(async (env) => {
-          const settings = await tauri.envLoadSettings(env.env_type);
-          if (settings) {
-            setEnvSettings(env.env_type, toSettings(settings));
-          }
-        }));
-      }
+      setLastEnvScanTimestamp(Date.now());
+      // Per-env settings are loaded lazily via loadEnvSettings() when the
+      // user opens an environment detail view, avoiding 29+ IPC calls at startup.
+      return envs;
     } catch (err) {
       setError(formatError(err));
+      return hasCachedData ? environments : [];
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setError, setEnvironments, setEnvSettings, toSettings]);
+  }, [setLoading, setError, setEnvironments, setLastEnvScanTimestamp, isScanFresh, environments]);
 
   const loadEnvSettings = useCallback(async (envType: string) => {
     if (!tauri.isTauri()) return null;
@@ -190,6 +200,7 @@ export function useEnvironments() {
       // Refresh environment data after successful install
       const updatedEnv = await tauri.envGet(envType);
       updateEnvironment(updatedEnv);
+      tauri.pluginDispatchEvent('env_version_installed', { envType, version: resolvedVersion }).catch(() => {});
       
       // If not using events (web mode), manually update progress
       if (!unlistenRef.current) {
@@ -237,6 +248,7 @@ export function useEnvironments() {
       await tauri.envUseGlobal(envType, version);
       const env = await tauri.envGet(envType);
       updateEnvironment(env);
+      tauri.pluginDispatchEvent('env_version_switched', { envType, version }).catch(() => {});
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -275,9 +287,9 @@ export function useEnvironments() {
     }
   }, [setAvailableVersions, setError]);
 
-  const fetchProviders = useCallback(async () => {
+  const fetchProviders = useCallback(async (force?: boolean) => {
     try {
-      const providers = await tauri.envListProviders();
+      const providers = await tauri.envListProviders(force);
       setAvailableProviders(providers);
       return providers;
     } catch (err) {
@@ -310,10 +322,10 @@ export function useEnvironments() {
     }
   }, []);
 
-  const getInstalledVersions = useCallback(async (envType: string) => {
+  const getInstalledVersions = useCallback(async (envType: string, force?: boolean) => {
     if (!tauri.isTauri()) return [];
     try {
-      return await tauri.envInstalledVersions(envType);
+      return await tauri.envInstalledVersions(envType, force);
     } catch {
       return [];
     }

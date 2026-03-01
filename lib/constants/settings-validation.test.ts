@@ -25,6 +25,13 @@ describe('VALIDATION_RULES', () => {
     expect(VALIDATION_RULES['mirrors.crates']).toBeDefined();
     expect(VALIDATION_RULES['mirrors.go']).toBeDefined();
   });
+
+  it('has rules for general.update_check_concurrency', () => {
+    const rule = VALIDATION_RULES['general.update_check_concurrency'];
+    expect(rule).toBeDefined();
+    expect(rule.min).toBe(1);
+    expect(rule.max).toBe(32);
+  });
 });
 
 describe('validateField', () => {
@@ -71,5 +78,21 @@ describe('validateField', () => {
 
   it('returns null for valid mirror URL', () => {
     expect(validateField('mirrors.npm', 'https://registry.npmjs.org', mockT)).toBeNull();
+  });
+
+  it('returns error when update_check_concurrency is below min', () => {
+    const result = validateField('general.update_check_concurrency', '0', mockT);
+    expect(result).toContain('min');
+  });
+
+  it('returns error when update_check_concurrency is above max', () => {
+    const result = validateField('general.update_check_concurrency', '64', mockT);
+    expect(result).toContain('max');
+  });
+
+  it('returns null for valid update_check_concurrency', () => {
+    expect(validateField('general.update_check_concurrency', '8', mockT)).toBeNull();
+    expect(validateField('general.update_check_concurrency', '1', mockT)).toBeNull();
+    expect(validateField('general.update_check_concurrency', '32', mockT)).toBeNull();
   });
 });

@@ -9,13 +9,17 @@ import type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  PersistentEnvVar,
+  EnvVarConflict,
 } from '@/types/tauri';
 
 interface EnvVarState {
   envVars: Record<string, string>;
   persistentVars: [string, string][];
+  persistentVarsTyped: PersistentEnvVar[];
   pathEntries: PathEntryInfo[];
   shellProfiles: ShellProfileInfo[];
+  conflicts: EnvVarConflict[];
   loading: boolean;
   error: string | null;
 }
@@ -24,8 +28,10 @@ export function useEnvVar() {
   const [state, setState] = useState<EnvVarState>({
     envVars: {},
     persistentVars: [],
+    persistentVarsTyped: [],
     pathEntries: [],
     shellProfiles: [],
+    conflicts: [],
     loading: false,
     error: null,
   });
@@ -256,6 +262,33 @@ export function useEnvVar() {
     }
   }, [setError]);
 
+  const fetchPersistentVarsTyped = useCallback(async (
+    scope: EnvVarScope,
+  ): Promise<PersistentEnvVar[]> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const persistentVarsTyped = await tauri.envvarListPersistentTyped(scope);
+      setState((s) => ({ ...s, persistentVarsTyped, loading: false }));
+      return persistentVarsTyped;
+    } catch (err) {
+      setError(formatError(err));
+      setLoading(false);
+      return [];
+    }
+  }, [setLoading, setError]);
+
+  const detectConflicts = useCallback(async (): Promise<EnvVarConflict[]> => {
+    try {
+      const conflicts = await tauri.envvarDetectConflicts();
+      setState((s) => ({ ...s, conflicts }));
+      return conflicts;
+    } catch (err) {
+      setError(formatError(err));
+      return [];
+    }
+  }, [setError]);
+
   return {
     ...state,
     fetchAllVars,
@@ -273,5 +306,7 @@ export function useEnvVar() {
     fetchPersistentVars,
     expandPath,
     deduplicatePath,
+    fetchPersistentVarsTyped,
+    detectConflicts,
   };
 }

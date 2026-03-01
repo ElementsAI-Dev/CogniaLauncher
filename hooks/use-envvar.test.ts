@@ -13,25 +13,35 @@ const mockEnvvarExportEnvFile = jest.fn();
 const mockEnvvarListPersistent = jest.fn();
 const mockEnvvarExpand = jest.fn();
 const mockEnvvarDeduplicatePath = jest.fn();
+const mockEnvvarListPersistentTyped = jest.fn();
+const mockEnvvarDetectConflicts = jest.fn();
+const mockEnvvarAddPathEntry = jest.fn();
+const mockEnvvarRemovePathEntry = jest.fn();
+const mockEnvvarReorderPath = jest.fn();
+const mockEnvvarReadShellProfile = jest.fn();
+const mockEnvvarSetPersistent = jest.fn();
+const mockEnvvarRemovePersistent = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   envvarListAll: (...args: unknown[]) => mockEnvvarListAll(...args),
   envvarGet: (...args: unknown[]) => mockEnvvarGet(...args),
   envvarSetProcess: (...args: unknown[]) => mockEnvvarSetProcess(...args),
   envvarRemoveProcess: (...args: unknown[]) => mockEnvvarRemoveProcess(...args),
-  envvarSetPersistent: jest.fn(),
-  envvarRemovePersistent: jest.fn(),
+  envvarSetPersistent: (...args: unknown[]) => mockEnvvarSetPersistent(...args),
+  envvarRemovePersistent: (...args: unknown[]) => mockEnvvarRemovePersistent(...args),
   envvarGetPath: (...args: unknown[]) => mockEnvvarGetPath(...args),
-  envvarAddPathEntry: jest.fn(),
-  envvarRemovePathEntry: jest.fn(),
-  envvarReorderPath: jest.fn(),
+  envvarAddPathEntry: (...args: unknown[]) => mockEnvvarAddPathEntry(...args),
+  envvarRemovePathEntry: (...args: unknown[]) => mockEnvvarRemovePathEntry(...args),
+  envvarReorderPath: (...args: unknown[]) => mockEnvvarReorderPath(...args),
   envvarListShellProfiles: (...args: unknown[]) => mockEnvvarListShellProfiles(...args),
-  envvarReadShellProfile: jest.fn(),
+  envvarReadShellProfile: (...args: unknown[]) => mockEnvvarReadShellProfile(...args),
   envvarImportEnvFile: (...args: unknown[]) => mockEnvvarImportEnvFile(...args),
   envvarExportEnvFile: (...args: unknown[]) => mockEnvvarExportEnvFile(...args),
   envvarListPersistent: (...args: unknown[]) => mockEnvvarListPersistent(...args),
   envvarExpand: (...args: unknown[]) => mockEnvvarExpand(...args),
   envvarDeduplicatePath: (...args: unknown[]) => mockEnvvarDeduplicatePath(...args),
+  envvarListPersistentTyped: (...args: unknown[]) => mockEnvvarListPersistentTyped(...args),
+  envvarDetectConflicts: (...args: unknown[]) => mockEnvvarDetectConflicts(...args),
 }));
 
 jest.mock('@/lib/errors', () => ({
@@ -48,8 +58,10 @@ describe('useEnvVar', () => {
 
     expect(result.current.envVars).toEqual({});
     expect(result.current.persistentVars).toEqual([]);
+    expect(result.current.persistentVarsTyped).toEqual([]);
     expect(result.current.pathEntries).toEqual([]);
     expect(result.current.shellProfiles).toEqual([]);
+    expect(result.current.conflicts).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -244,5 +256,268 @@ describe('useEnvVar', () => {
 
     expect(result.current.persistentVars).toEqual([]);
     expect(result.current.error).toBe('Error: registry access denied');
+  });
+
+  it('should fetch persistent vars with type info', async () => {
+    const mockTyped = [
+      { key: 'PATH', value: 'C:\\Windows', regType: 'REG_EXPAND_SZ' },
+      { key: 'FOO', value: 'bar', regType: 'REG_SZ' },
+    ];
+    mockEnvvarListPersistentTyped.mockResolvedValue(mockTyped);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPersistentVarsTyped('user');
+    });
+
+    expect(result.current.persistentVarsTyped).toEqual(mockTyped);
+    expect(mockEnvvarListPersistentTyped).toHaveBeenCalledWith('user');
+  });
+
+  it('should handle fetchPersistentVarsTyped error', async () => {
+    mockEnvvarListPersistentTyped.mockRejectedValue(new Error('typed fetch failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPersistentVarsTyped('system');
+    });
+
+    expect(result.current.persistentVarsTyped).toEqual([]);
+    expect(result.current.error).toBe('Error: typed fetch failed');
+  });
+
+  it('should detect conflicts', async () => {
+    const mockConflicts = [
+      { key: 'PATH', userValue: '/home/bin', systemValue: '/usr/bin', effectiveValue: '/home/bin' },
+    ];
+    mockEnvvarDetectConflicts.mockResolvedValue(mockConflicts);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.detectConflicts();
+    });
+
+    expect(result.current.conflicts).toEqual(mockConflicts);
+    expect(mockEnvvarDetectConflicts).toHaveBeenCalled();
+  });
+
+  it('should handle detectConflicts error', async () => {
+    mockEnvvarDetectConflicts.mockRejectedValue(new Error('conflict detection failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.detectConflicts();
+    });
+
+    expect(result.current.conflicts).toEqual([]);
+    expect(result.current.error).toBe('Error: conflict detection failed');
+  });
+
+  it('should set a persistent (user) var via envvarSetPersistent', async () => {
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.setVar('MY_VAR', 'val', 'user');
+    });
+
+    expect(success).toBe(true);
+    // Should NOT update local envVars for non-process scope
+    expect(result.current.envVars).toEqual({});
+  });
+
+  it('should handle setVar error', async () => {
+    mockEnvvarSetProcess.mockRejectedValue(new Error('set failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.setVar('K', 'V', 'process');
+    });
+
+    expect(success).toBe(false);
+    expect(result.current.error).toBe('Error: set failed');
+  });
+
+  it('should remove a persistent (user) var', async () => {
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.removeVar('MY_VAR', 'user');
+    });
+
+    expect(success).toBe(true);
+  });
+
+  it('should handle removeVar error', async () => {
+    mockEnvvarRemoveProcess.mockRejectedValue(new Error('remove failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.removeVar('K', 'process');
+    });
+
+    expect(success).toBe(false);
+    expect(result.current.error).toBe('Error: remove failed');
+  });
+
+  it('should handle getVar error', async () => {
+    mockEnvvarGet.mockRejectedValue(new Error('get failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let val: string | null = 'initial';
+    await act(async () => {
+      val = await result.current.getVar('BAD');
+    });
+
+    expect(val).toBeNull();
+    expect(result.current.error).toBe('Error: get failed');
+  });
+
+  it('should handle fetchPath error', async () => {
+    mockEnvvarGetPath.mockRejectedValue(new Error('path failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPath('process');
+    });
+
+    expect(result.current.pathEntries).toEqual([]);
+    expect(result.current.error).toBe('Error: path failed');
+  });
+
+  it('should handle addPathEntry error', async () => {
+    mockEnvvarAddPathEntry.mockRejectedValue(new Error('add path failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.addPathEntry('/bad', 'process');
+    });
+
+    expect(success).toBe(false);
+    expect(result.current.error).toBe('Error: add path failed');
+  });
+
+  it('should handle removePathEntry error', async () => {
+    mockEnvvarRemovePathEntry.mockRejectedValue(new Error('remove path failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.removePathEntry('/bad', 'process');
+    });
+
+    expect(success).toBe(false);
+    expect(result.current.error).toBe('Error: remove path failed');
+  });
+
+  it('should handle reorderPath error', async () => {
+    mockEnvvarReorderPath.mockRejectedValue(new Error('reorder failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.reorderPath(['/a'], 'process');
+    });
+
+    expect(success).toBe(false);
+    expect(result.current.error).toBe('Error: reorder failed');
+  });
+
+  it('should handle readShellProfile error', async () => {
+    mockEnvvarReadShellProfile.mockRejectedValue(new Error('read failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let content: string | null = 'initial';
+    await act(async () => {
+      content = await result.current.readShellProfile('/bad');
+    });
+
+    expect(content).toBeNull();
+    expect(result.current.error).toBe('Error: read failed');
+  });
+
+  it('should handle importEnvFile error', async () => {
+    mockEnvvarImportEnvFile.mockRejectedValue(new Error('import failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let res = null;
+    await act(async () => {
+      res = await result.current.importEnvFile('FOO=bar', 'process');
+    });
+
+    expect(res).toBeNull();
+    expect(result.current.error).toBe('Error: import failed');
+  });
+
+  it('should handle exportEnvFile error', async () => {
+    mockEnvvarExportEnvFile.mockRejectedValue(new Error('export failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let content: string | null = 'initial';
+    await act(async () => {
+      content = await result.current.exportEnvFile('process', 'dotenv');
+    });
+
+    expect(content).toBeNull();
+    expect(result.current.error).toBe('Error: export failed');
+  });
+
+  it('should handle expandPath error', async () => {
+    mockEnvvarExpand.mockRejectedValue(new Error('expand failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let expanded: string | null = 'initial';
+    await act(async () => {
+      expanded = await result.current.expandPath('~/bad');
+    });
+
+    expect(expanded).toBeNull();
+    expect(result.current.error).toBe('Error: expand failed');
+  });
+
+  it('should handle deduplicatePath error', async () => {
+    mockEnvvarDeduplicatePath.mockRejectedValue(new Error('dedup failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let removed = -1;
+    await act(async () => {
+      removed = await result.current.deduplicatePath('user');
+    });
+
+    expect(removed).toBe(0);
+    expect(result.current.error).toBe('Error: dedup failed');
+  });
+
+  it('should handle fetchShellProfiles error', async () => {
+    mockEnvvarListShellProfiles.mockRejectedValue(new Error('profiles failed'));
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchShellProfiles();
+    });
+
+    expect(result.current.shellProfiles).toEqual([]);
+    expect(result.current.error).toBe('Error: profiles failed');
   });
 });

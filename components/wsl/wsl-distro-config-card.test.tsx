@@ -88,9 +88,9 @@ describe("WslDistroConfigCard", () => {
     render(<WslDistroConfigCard {...defaultProps} />);
     await waitFor(() => {
       const switches = screen.getAllByRole("switch");
-      // 8 boolean quick settings: systemd, automount, generateHosts, generateResolvConf,
-      // interop, appendWindowsPath, gpuEnabled, useWindowsTimezone
-      expect(switches).toHaveLength(8);
+      // 10 boolean quick settings: systemd, automount, generateHosts, generateResolvConf,
+      // interop, appendWindowsPath, gpuEnabled, useWindowsTimezone, mountFsTab, protectBinfmt
+      expect(switches).toHaveLength(10);
     });
   });
 
@@ -118,7 +118,7 @@ describe("WslDistroConfigCard", () => {
     };
     render(<WslDistroConfigCard {...props} />);
     await waitFor(() => {
-      expect(screen.getAllByRole("switch")).toHaveLength(8);
+      expect(screen.getAllByRole("switch")).toHaveLength(10);
     });
     // Toggle systemd (currently false → true)
     await userEvent.click(screen.getAllByRole("switch")[0]);

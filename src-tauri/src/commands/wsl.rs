@@ -699,3 +699,73 @@ pub async fn wsl_update_distro_packages(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Open a WSL distribution's filesystem in Windows Explorer.
+/// Uses the \\wsl.localhost\<distro> UNC path.
+#[tauri::command]
+pub async fn wsl_open_in_explorer(name: String) -> Result<(), String> {
+    let path = WslProvider::get_distro_filesystem_path(&name);
+    tauri_plugin_opener::open_path(&path, None::<&str>)
+        .map_err(|e| format!("Failed to open in Explorer: {}", e))
+}
+
+/// Open a WSL distribution in Windows Terminal or fall back to cmd.
+/// Tries `wt.exe -d <path>` first, then `cmd /c start wsl -d <name>`.
+#[tauri::command]
+pub async fn wsl_open_in_terminal(name: String) -> Result<(), String> {
+    use crate::platform::process;
+
+    let wsl_path = WslProvider::get_distro_filesystem_path(&name);
+
+    // Try Windows Terminal first
+    if process::which("wt.exe").await.is_some() {
+        let result = process::execute(
+            "wt.exe",
+            &["-d", &wsl_path],
+            Some(
+                crate::platform::process::ProcessOptions::new()
+                    .with_timeout(std::time::Duration::from_secs(10)),
+            ),
+        )
+        .await;
+        if result.is_ok() {
+            return Ok(());
+        }
+    }
+
+    // Fallback: launch wsl.exe -d <name> directly via opener
+    tauri_plugin_opener::open_path(
+        &format!("wsl.exe -d {}", name),
+        None::<&str>,
+    )
+    .map_err(|_| {
+        // Last resort: use cmd /c start
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "wsl.exe", "-d", &name])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to open terminal: {}", e))
+    })
+    .or_else(|r| r)
+}
+
+/// Get total disk usage across all WSL distributions.
+/// Returns (total_bytes, per-distro breakdown).
+#[tauri::command]
+pub async fn wsl_total_disk_usage() -> Result<(u64, Vec<(String, u64)>), String> {
+    WslProvider::get_total_disk_usage().map_err(|e| e.to_string())
+}
+
+/// Clone a WSL distribution by exporting to a temp tar and re-importing under a new name.
+#[tauri::command]
+pub async fn wsl_clone_distro(
+    name: String,
+    new_name: String,
+    location: String,
+) -> Result<String, String> {
+    let provider = get_provider();
+    provider
+        .clone_distro(&name, &new_name, &location)
+        .await
+        .map_err(|e| e.to_string())
+}

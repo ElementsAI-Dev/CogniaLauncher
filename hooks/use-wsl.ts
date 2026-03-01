@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import * as tauri from '@/lib/tauri';
 import type {
   WslDistroStatus,
@@ -69,6 +69,11 @@ export interface UseWslReturn {
   getDistroResources: (distro: string) => Promise<WslDistroResources | null>;
   listUsers: (distro: string) => Promise<WslUser[]>;
   updateDistroPackages: (distro: string, mode: string) => Promise<WslPackageUpdateResult>;
+  openInExplorer: (name: string) => Promise<void>;
+  openInTerminal: (name: string) => Promise<void>;
+  cloneDistro: (name: string, newName: string, location: string) => Promise<string>;
+  autoRefreshEnabled: boolean;
+  setAutoRefresh: (enabled: boolean) => void;
 }
 
 /**
@@ -559,6 +564,43 @@ export function useWsl(): UseWslReturn {
     return await tauri.wslUpdateDistroPackages(distro, mode);
   }, []);
 
+  const [autoRefreshEnabled, setAutoRefresh] = useState(false);
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (autoRefreshEnabled && tauri.isTauri()) {
+      autoRefreshRef.current = setInterval(async () => {
+        try {
+          const result = await tauri.wslListDistros();
+          setDistros(result);
+          const running = await tauri.wslListRunning();
+          setRunningDistros(running);
+        } catch { /* ignore polling errors */ }
+      }, 10000);
+    }
+    return () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+        autoRefreshRef.current = null;
+      }
+    };
+  }, [autoRefreshEnabled]);
+
+  const openInExplorer = useCallback(async (name: string): Promise<void> => {
+    if (!tauri.isTauri()) return;
+    await tauri.wslOpenInExplorer(name);
+  }, []);
+
+  const openInTerminal = useCallback(async (name: string): Promise<void> => {
+    if (!tauri.isTauri()) return;
+    await tauri.wslOpenInTerminal(name);
+  }, []);
+
+  const cloneDistro = useCallback(async (name: string, newName: string, location: string): Promise<string> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    return await tauri.wslCloneDistro(name, newName, location);
+  }, []);
+
   return {
     available,
     distros,
@@ -608,5 +650,10 @@ export function useWsl(): UseWslReturn {
     getDistroResources,
     listUsers,
     updateDistroPackages,
+    openInExplorer,
+    openInTerminal,
+    cloneDistro,
+    autoRefreshEnabled,
+    setAutoRefresh,
   };
 }

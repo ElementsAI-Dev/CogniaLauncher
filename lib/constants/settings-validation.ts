@@ -40,6 +40,7 @@ export const VALIDATION_RULES: Record<string, ValidationRule> = {
   "general.cache_auto_clean_threshold": { min: 0, max: 100 },
   "general.cache_monitor_interval": { min: 0, max: 3600 },
   "general.download_speed_limit": { min: 0, max: 1073741824 },
+  "general.update_check_concurrency": { min: 1, max: 32 },
 };
 
 export function validateField(

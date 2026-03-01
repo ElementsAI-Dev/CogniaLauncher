@@ -1,21 +1,35 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Terminal, Star } from 'lucide-react';
-import type { ShellInfo } from '@/types/tauri';
+import { Terminal, Star, Timer, Loader2, Stethoscope, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import type { ShellInfo, ShellStartupMeasurement, ShellHealthResult } from '@/types/tauri';
 import { useLocale } from '@/components/providers/locale-provider';
 
 interface TerminalDetectedShellsProps {
   shells: ShellInfo[];
   loading?: boolean;
+  startupMeasurements?: Record<string, ShellStartupMeasurement>;
+  measuringShellId?: string | null;
+  onMeasureStartup?: (shellId: string) => void;
+  healthResults?: Record<string, ShellHealthResult>;
+  checkingHealthShellId?: string | null;
+  onCheckShellHealth?: (shellId: string) => void;
 }
 
-export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShellsProps) {
+const STATUS_ICONS = {
+  healthy: <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />,
+  warning: <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />,
+  error: <XCircle className="h-3.5 w-3.5 text-destructive" />,
+  unknown: null,
+};
+
+export function TerminalDetectedShells({ shells, loading, startupMeasurements = {}, measuringShellId, onMeasureStartup, healthResults = {}, checkingHealthShellId, onCheckShellHealth }: TerminalDetectedShellsProps) {
   const { t } = useLocale();
 
   if (loading) {
@@ -88,6 +102,84 @@ export function TerminalDetectedShells({ shells, loading }: TerminalDetectedShel
                 </TooltipContent>
               </Tooltip>
             </div>
+            {onMeasureStartup && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => onMeasureStartup(shell.id)}
+                  disabled={measuringShellId === shell.id}
+                >
+                  {measuringShellId === shell.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Timer className="h-3 w-3" />
+                  )}
+                  {t('terminal.measureStartup')}
+                </Button>
+                {startupMeasurements[shell.id] && (
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {startupMeasurements[shell.id].withProfileMs}ms
+                    </Badge>
+                    {startupMeasurements[shell.id].differenceMs > 50 && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                            +{startupMeasurements[shell.id].differenceMs}ms
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">
+                          {t('terminal.startupWithProfile')}: {startupMeasurements[shell.id].withProfileMs}ms | {t('terminal.startupWithoutProfile')}: {startupMeasurements[shell.id].withoutProfileMs}ms
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {onCheckShellHealth && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => onCheckShellHealth(shell.id)}
+                  disabled={checkingHealthShellId === shell.id}
+                >
+                  {checkingHealthShellId === shell.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Stethoscope className="h-3 w-3" />
+                  )}
+                  {t('terminal.healthCheck')}
+                </Button>
+                {healthResults[shell.id] && (
+                  <div className="flex items-center gap-1">
+                    {STATUS_ICONS[healthResults[shell.id].status]}
+                    <span className="text-xs text-muted-foreground">
+                      {healthResults[shell.id].issues.length === 0
+                        ? t('terminal.healthHealthy')
+                        : t('terminal.healthIssues', { count: healthResults[shell.id].issues.length })}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+            {healthResults[shell.id]?.issues.length > 0 && (
+              <div className="space-y-1">
+                {healthResults[shell.id].issues.map((issue, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5 text-xs">
+                    <span className={cn(
+                      'mt-0.5 h-1.5 w-1.5 rounded-full shrink-0',
+                      issue.severity === 'warning' ? 'bg-yellow-500' : issue.severity === 'error' ? 'bg-destructive' : 'bg-blue-400'
+                    )} />
+                    <span className="text-muted-foreground">{issue.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {shell.configFiles.length > 0 && (
               <div>
                 <span className="text-muted-foreground">{t('terminal.configFiles')}: </span>

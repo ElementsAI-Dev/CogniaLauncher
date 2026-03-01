@@ -127,7 +127,7 @@ describe('TerminalPsModulesTable', () => {
     expect(onFetchScripts).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onUninstallModule when uninstall button clicked', () => {
+  it('calls onUninstallModule when uninstall button clicked and confirmed', () => {
     const onUninstallModule = jest.fn().mockResolvedValue(undefined);
 
     render(
@@ -143,6 +143,9 @@ describe('TerminalPsModulesTable', () => {
     const uninstallButtons = screen.getAllByTitle('terminal.uninstallModule');
     expect(uninstallButtons.length).toBeGreaterThanOrEqual(1);
     fireEvent.click(uninstallButtons[0]);
+    // Uninstall opens a confirmation dialog — confirm it
+    const confirmButton = screen.getByRole('button', { name: 'terminal.uninstallModule' });
+    fireEvent.click(confirmButton);
     expect(onUninstallModule).toHaveBeenCalledWith('PSReadLine');
   });
 

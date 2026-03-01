@@ -21,7 +21,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Plus, Bookmark } from 'lucide-react';
+import { AlertCircle, Plus, Bookmark, FolderOpen, X } from 'lucide-react';
+import { isTauri } from '@/lib/tauri';
 
 export default function EnvironmentsPage() {
   const {
@@ -66,7 +67,7 @@ export default function EnvironmentsPage() {
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
 
   // Project path and auto version switch
-  const { projectPath } = useProjectPath();
+  const { projectPath, setProjectPath } = useProjectPath();
   useAutoVersionSwitch({ projectPath, enabled: true });
 
   // Track initialization to prevent duplicate fetches on re-renders
@@ -77,9 +78,29 @@ export default function EnvironmentsPage() {
       initializedRef.current = true;
       fetchEnvironments();
       fetchProviders();
-      detectVersions('.');
+      detectVersions(projectPath || '.');
     }
-  }, [fetchEnvironments, fetchProviders, detectVersions]);
+  }, [fetchEnvironments, fetchProviders, detectVersions, projectPath]);
+
+  const handleBrowseProjectPath = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const dialogModule = await import("@tauri-apps/plugin-dialog").catch(() => null);
+      if (dialogModule?.open) {
+        const selected = await dialogModule.open({
+          directory: true,
+          multiple: false,
+          title: t("environments.selectProjectPath"),
+        });
+        if (selected && typeof selected === "string") {
+          setProjectPath(selected);
+          await detectVersions(selected);
+        }
+      }
+    } catch {
+      // Fallback: user stays with current path
+    }
+  }, [setProjectPath, detectVersions, t]);
 
   const getDetectedForEnv = (envType: string) => {
     return detectedVersions.find((d) => d.env_type === envType) || null;
@@ -119,16 +140,17 @@ export default function EnvironmentsPage() {
   const currentDetailsEnv = getEnvByType(detailsPanelEnvType);
 
   const handleRefresh = useCallback(async () => {
-    await fetchEnvironments();
-    await detectVersions('.');
-  }, [fetchEnvironments, detectVersions]);
+    await fetchEnvironments(true);
+    await detectVersions(projectPath || '.');
+  }, [fetchEnvironments, detectVersions, projectPath]);
 
   // Filter and sort environments
   const filteredEnvironments = useMemo(() => {
     return environments
       .filter((env) => {
-        // Only show available/detected environments
-        if (!env.available) return false;
+        // Status filter
+        if (statusFilter === 'available' && !env.available) return false;
+        if (statusFilter === 'unavailable' && env.available) return false;
         // Search filter
         if (searchQuery) {
           const query = searchQuery.toLowerCase();
@@ -151,7 +173,7 @@ export default function EnvironmentsPage() {
             return a.env_type.localeCompare(b.env_type);
         }
       });
-  }, [environments, searchQuery, sortBy]);
+  }, [environments, searchQuery, statusFilter, sortBy]);
 
   const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
     await installVersion(provider, version, provider);
@@ -257,6 +279,40 @@ export default function EnvironmentsPage() {
         />
         </div>
 
+        {/* Project Path Selector */}
+        {isTauri() && (
+          <div className="flex items-center gap-2 text-sm">
+            <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-muted-foreground shrink-0">{t('environments.projectPath')}:</span>
+            {projectPath ? (
+              <>
+                <code className="font-mono text-xs bg-muted px-2 py-1 rounded truncate max-w-[400px]" title={projectPath}>
+                  {projectPath}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => { setProjectPath(null); detectVersions('.'); }}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </>
+            ) : (
+              <span className="text-muted-foreground text-xs">{t('environments.noProjectSelected')}</span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1.5 shrink-0"
+              onClick={handleBrowseProjectPath}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t('environments.selectProject')}
+            </Button>
+          </div>
+        )}
+
         <EnvUpdatesSummary
           results={updateCheckResults}
           loading={loading}
@@ -360,7 +416,7 @@ export default function EnvironmentsPage() {
           onSetLocal={(version, projectPath) => handleSetLocalVersion(currentDetailsEnv.env_type, version, projectPath)}
           onUninstall={(version) => handleUninstallVersion(currentDetailsEnv.env_type, version)}
           onRefresh={async () => {
-            await fetchEnvironments();
+            await fetchEnvironments(true);
           }}
         />
       )}
