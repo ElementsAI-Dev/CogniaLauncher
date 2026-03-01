@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **src-tauri**
 
-> Last Updated: 2026-02-24 | v1.5.0
+> Last Updated: 2026-03-02 | v1.6.0
 > Tauri 2.9 + Rust backend for CogniaLauncher
 
 ---
@@ -897,6 +897,49 @@ src-tauri/
 │   └── default.json
 └── icons/                   # App icons
 ```
+
+---
+
+## Troubleshooting
+
+### Common Build Errors
+
+**"Rust toolchain not found"**
+```bash
+# Install Rust via rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+```
+
+**"error: linking with `cc` failed" (Windows)**
+- Install Visual Studio Build Tools with C++ workload
+- Or use: `rustup default stable-x86_64-pc-windows-msvc`
+
+**"error: failed to run custom build command for `tauri`"**
+```bash
+# Clean and rebuild
+cargo clean
+pnpm tauri build
+```
+
+### Runtime Issues
+
+**"Provider not available" errors**
+- Check if required tools are installed (node, python, etc.)
+- Use `pnpm tauri dev` and check browser console for errors
+
+**Debug logging**
+```rust
+// Enable verbose logging in src/lib.rs
+.setup(|app| {
+    // Check app data dir for logs
+    Ok(())
+})
+```
+
+**Database locked errors**
+- Close any running instances of the app
+- Delete `~/.cognia/cache.db` if corrupted
 
 ---
 

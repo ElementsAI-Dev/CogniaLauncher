@@ -1,11 +1,19 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-02-24 | v1.5.0
+> Last Updated: 2026-03-02 | v1.6.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-03-02 (v1.6.0)
+- **NEW: Toolbox Feature**: Built-in developer tools (password generator, UUID generator, color picker, timestamp converter, hash generator, Lorem generator)
+- **NEW: Plugin System**: Extensible plugin architecture with plugin registry, manifest parsing, and UI rendering
+- **NEW: Environment Variables UI**: Shell profiles management, PATH editor, import/export functionality
+- **NEW: Terminal UI**: Terminal profile management, PowerShell modules table, detected shells display
+- **Enhanced Docs Viewer**: Home cards, improved search, markdown enhancements
+- **Enhanced Downloads**: Batch import dialog for download tasks
 
 ### 2026-02-24 (v1.5.0)
 - **NEW: Git Integration**: Full Git management with 17 commands (repo info, branches, tags, log, blame, stash, contributors)
@@ -179,6 +187,7 @@ pnpm exec tsc --noEmit
 
 # Desktop (Tauri)
 pnpm tauri dev        # Dev mode with hot reload
+pnpm tauri dev --debug # Dev mode with browser devtools
 pnpm tauri build      # Build desktop installer
 pnpm tauri info       # Check Tauri environment
 

@@ -2,7 +2,7 @@
 
 [Root](../CLAUDE.md) > **openspec**
 
-> Last Updated: 2026-02-23
+> Last Updated: 2026-03-02
 > OpenSpec change management and specifications for CogniaLauncher
 
 ---
@@ -364,6 +364,24 @@ openspec show [change] --json | jq '.deltas'
 # Check specific requirement
 openspec show [spec] --json -r 1
 ```
+
+---
+
+## Quick Reference Card
+
+| Action | Command |
+|--------|---------|
+| List specs | `openspec list --specs` |
+| List changes | `openspec list` |
+| Show item | `openspec show <name>` |
+| Validate | `openspec validate <name> --strict` |
+| Archive | `openspec archive <change-id>` |
+
+| Delta Format | Use For |
+|--------------|---------|
+| `## ADDED Requirements` | New features |
+| `## MODIFIED Requirements` | Changed behavior |
+| `## REMOVED Requirements` | Deprecated features |
 
 ---
 
