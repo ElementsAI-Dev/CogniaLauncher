@@ -136,10 +136,10 @@ export function useProviderDetail(providerId: string) {
   }, [providerId, fetchProvider]);
 
   // Fetch installed packages for this provider
-  const fetchInstalledPackages = useCallback(async () => {
+  const fetchInstalledPackages = useCallback(async (force?: boolean) => {
     setLoadingPackages(true);
     try {
-      const packages = await tauri.packageList(providerId);
+      const packages = await tauri.packageList(providerId, force);
       setInstalledPackages(packages);
       return packages;
     } catch (err) {
@@ -438,7 +438,7 @@ export function useProviderDetail(providerId: string) {
 
     const promises: Promise<unknown>[] = [
       checkAvailability(),
-      fetchInstalledPackages(),
+      fetchInstalledPackages(true),
       runHealthCheck(),
       fetchHistory(),
       checkUpdates(),

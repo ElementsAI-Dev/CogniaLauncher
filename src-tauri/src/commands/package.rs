@@ -1,3 +1,4 @@
+use crate::cache::MetadataCache;
 use crate::config::Settings;
 use crate::core::Orchestrator;
 use crate::platform::env::Platform;
@@ -12,54 +13,107 @@ use tokio::sync::RwLock;
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
 
+/// TTL constants for different cache categories (in seconds)
+const SEARCH_CACHE_TTL: i64 = 300; // 5 minutes
+const INSTALLED_CACHE_TTL: i64 = 60; // 1 minute (changes frequently)
+const INFO_CACHE_TTL: i64 = 3600; // 1 hour
+const VERSIONS_CACHE_TTL: i64 = 1800; // 30 minutes
+const STATUS_CACHE_TTL: i64 = 120; // 2 minutes
+
+/// Open a MetadataCache with a custom TTL, reading cache_dir from settings.
+async fn open_metadata_cache(
+    settings: &SharedSettings,
+    ttl: i64,
+) -> Result<MetadataCache, String> {
+    let s = settings.read().await;
+    let cache_dir = s.get_cache_dir();
+    drop(s);
+    MetadataCache::open_with_ttl(&cache_dir, ttl)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Invalidate package-related cache entries (used after install/uninstall).
+pub async fn invalidate_package_caches(settings: &SharedSettings) {
+    if let Ok(mut cache) = open_metadata_cache(settings, INFO_CACHE_TTL).await {
+        // Remove all installed-package cache entries (pkg:installed:all, pkg:installed:npm, etc.)
+        let _ = cache.remove_by_prefix("pkg:installed:").await;
+        // Remove provider status cache (exact key)
+        let _ = cache.remove("pkg:status_all").await;
+    }
+}
+
 #[tauri::command]
 pub async fn package_search(
     query: String,
     provider: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<Vec<PackageSummary>, String> {
-    let reg = registry.read().await;
+    let cache_key = format!(
+        "pkg:search:{}:{}",
+        provider.as_deref().unwrap_or("all"),
+        &query
+    );
 
-    // Single provider search
-    if let Some(provider_id) = provider {
-        if let Some(p) = reg.get(&provider_id) {
-            return p
-                .search(&query, SearchOptions::default())
-                .await
-                .map_err(|e| e.to_string());
-        }
-        return Err(format!("Provider not found: {}", provider_id));
-    }
-
-    // Parallel search across all available providers
-    let providers: Vec<_> = reg.list().iter().filter_map(|id| reg.get(id)).collect();
-
-    let search_futures: Vec<_> = providers
-        .iter()
-        .map(|p| {
-            let query = query.clone();
-            let provider = Arc::clone(p);
-            async move {
-                if provider.is_available().await {
-                    provider
-                        .search(
-                            &query,
-                            SearchOptions {
-                                limit: Some(5),
-                                page: None,
-                            },
-                        )
-                        .await
-                        .ok()
-                } else {
-                    None
+    // Try cache first (unless forced)
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_metadata_cache(settings.inner(), SEARCH_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<PackageSummary>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
                 }
             }
-        })
-        .collect();
+        }
+    }
 
-    let all_results = join_all(search_futures).await;
-    let results: Vec<PackageSummary> = all_results.into_iter().flatten().flatten().collect();
+    // Perform actual search
+    let results = {
+        let reg = registry.read().await;
+
+        if let Some(ref provider_id) = provider {
+            if let Some(p) = reg.get(provider_id) {
+                p.search(&query, SearchOptions::default())
+                    .await
+                    .map_err(|e| e.to_string())?
+            } else {
+                return Err(format!("Provider not found: {}", provider_id));
+            }
+        } else {
+            let providers: Vec<_> = reg.list().iter().filter_map(|id| reg.get(id)).collect();
+            let search_futures: Vec<_> = providers
+                .iter()
+                .map(|p| {
+                    let query = query.clone();
+                    let provider = Arc::clone(p);
+                    async move {
+                        if provider.is_available().await {
+                            provider
+                                .search(
+                                    &query,
+                                    SearchOptions {
+                                        limit: Some(5),
+                                        page: None,
+                                    },
+                                )
+                                .await
+                                .ok()
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect();
+            let all_results = join_all(search_futures).await;
+            all_results.into_iter().flatten().flatten().collect()
+        }
+    };
+
+    // Store in cache
+    if let Ok(mut cache) = open_metadata_cache(settings.inner(), SEARCH_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &results, SEARCH_CACHE_TTL).await;
+    }
 
     Ok(results)
 }
@@ -68,26 +122,50 @@ pub async fn package_search(
 pub async fn package_info(
     name: String,
     provider: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<PackageInfo, String> {
-    let reg = registry.read().await;
+    let cache_key = format!(
+        "pkg:info:{}:{}",
+        provider.as_deref().unwrap_or("auto"),
+        &name
+    );
 
-    if let Some(provider_id) = provider {
-        if let Some(p) = reg.get(&provider_id) {
-            return p.get_package_info(&name).await.map_err(|e| e.to_string());
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_metadata_cache(settings.inner(), INFO_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<PackageInfo>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
         }
-        return Err(format!("Provider not found: {}", provider_id));
     }
 
-    if let Some(p) = reg
-        .find_for_package(&name)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return p.get_package_info(&name).await.map_err(|e| e.to_string());
+    let info = {
+        let reg = registry.read().await;
+        if let Some(provider_id) = provider.as_deref() {
+            if let Some(p) = reg.get(provider_id) {
+                p.get_package_info(&name).await.map_err(|e| e.to_string())?
+            } else {
+                return Err(format!("Provider not found: {}", provider_id));
+            }
+        } else if let Some(p) = reg
+            .find_for_package(&name)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            p.get_package_info(&name).await.map_err(|e| e.to_string())?
+        } else {
+            return Err(format!("Package not found: {}", name));
+        }
+    };
+
+    if let Ok(mut cache) = open_metadata_cache(settings.inner(), INFO_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &info, INFO_CACHE_TTL).await;
     }
 
-    Err(format!("Package not found: {}", name))
+    Ok(info)
 }
 
 #[tauri::command]
@@ -96,13 +174,17 @@ pub async fn package_install(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<Vec<String>, String> {
-    let settings = settings.read().await.clone();
-    let orchestrator = Orchestrator::new(registry.inner().clone(), settings);
+    let cloned_settings = settings.read().await.clone();
+    let orchestrator = Orchestrator::new(registry.inner().clone(), cloned_settings);
 
     let receipts = orchestrator
         .install(&packages)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Invalidate package caches after successful install
+    invalidate_package_caches(settings.inner()).await;
+
     Ok(receipts
         .into_iter()
         .map(|r| format!("{}@{}", r.name, r.version))
@@ -115,42 +197,92 @@ pub async fn package_uninstall(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
-    let settings = settings.read().await.clone();
-    let orchestrator = Orchestrator::new(registry.inner().clone(), settings);
-    orchestrator
+    let cloned_settings = settings.read().await.clone();
+    let orchestrator = Orchestrator::new(registry.inner().clone(), cloned_settings);
+    let result = orchestrator
         .uninstall(&packages)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate package caches after successful uninstall
+    invalidate_package_caches(settings.inner()).await;
+
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn package_list(
     provider: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<Vec<InstalledPackage>, String> {
-    let reg = registry.read().await;
-    let mut all_packages = Vec::new();
+    let cache_key = format!(
+        "pkg:installed:{}",
+        provider.as_deref().unwrap_or("all")
+    );
 
-    let providers: Vec<&str> = if let Some(ref id) = provider {
-        vec![id.as_str()]
-    } else {
-        reg.list()
-    };
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_metadata_cache(settings.inner(), INSTALLED_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<InstalledPackage>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
 
-    for provider_id in providers {
-        if let Some(p) = reg.get(provider_id) {
-            if p.is_available().await {
-                if let Ok(mut packages) = p
-                    .list_installed(InstalledFilter {
+    let all_packages = {
+        let reg = registry.read().await;
+
+        let provider_ids: Vec<String> = if let Some(ref id) = provider {
+            vec![id.clone()]
+        } else {
+            reg.list().into_iter().map(|s| s.to_string()).collect()
+        };
+
+        // Collect Arc<dyn Provider> references under the read lock, then release it
+        let providers_to_check: Vec<_> = provider_ids
+            .iter()
+            .filter_map(|id| reg.get(id))
+            .collect();
+        drop(reg);
+
+        // Limit concurrent provider checks to avoid subprocess storms
+        let max_concurrency = settings.read().await.startup.max_concurrent_scans;
+        let permits = (max_concurrency as usize).max(1).min(32);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(permits));
+        let mut tasks = Vec::with_capacity(providers_to_check.len());
+
+        for p in providers_to_check {
+            let sem = semaphore.clone();
+            tasks.push(tokio::spawn(async move {
+                let _permit = sem.acquire().await.ok();
+                if p.is_available().await {
+                    p.list_installed(InstalledFilter {
                         global_only: true,
                         ..Default::default()
                     })
                     .await
-                {
-                    all_packages.append(&mut packages);
+                    .unwrap_or_default()
+                } else {
+                    Vec::new()
                 }
+            }));
+        }
+
+        let results = join_all(tasks).await;
+        let mut pkgs = Vec::new();
+        for result in results {
+            if let Ok(mut packages) = result {
+                pkgs.append(&mut packages);
             }
         }
+        pkgs
+    };
+
+    if let Ok(mut cache) = open_metadata_cache(settings.inner(), INSTALLED_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &all_packages, INSTALLED_CACHE_TTL).await;
     }
 
     Ok(all_packages)
@@ -185,7 +317,7 @@ pub async fn provider_system_list(
     Ok(reg.get_system_provider_ids())
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ProviderStatusInfo {
     pub id: String,
     pub display_name: String,
@@ -195,34 +327,54 @@ pub struct ProviderStatusInfo {
 
 #[tauri::command]
 pub async fn provider_status_all(
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<Vec<ProviderStatusInfo>, String> {
-    let reg = registry.read().await;
+    let cache_key = "pkg:status_all";
 
-    let providers = reg.list_all_info();
-    let to_check: Vec<_> = providers
-        .into_iter()
-        .map(|info| {
-            let provider = reg.get(&info.id);
-            (info, provider)
-        })
-        .collect();
-    drop(reg);
-
-    let futures = to_check.into_iter().map(|(info, provider)| async move {
-        let installed = match provider {
-            Some(p) => p.is_available().await,
-            None => false,
-        };
-        ProviderStatusInfo {
-            id: info.id,
-            display_name: info.display_name,
-            installed,
-            platforms: info.platforms,
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_metadata_cache(settings.inner(), STATUS_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<ProviderStatusInfo>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
         }
-    });
+    }
 
-    Ok(join_all(futures).await)
+    let results = {
+        let reg = registry.read().await;
+        let providers = reg.list_all_info();
+        let to_check: Vec<_> = providers
+            .into_iter()
+            .map(|info| {
+                let provider = reg.get(&info.id);
+                (info, provider)
+            })
+            .collect();
+        drop(reg);
+
+        let futures = to_check.into_iter().map(|(info, provider)| async move {
+            let installed = match provider {
+                Some(p) => p.is_available().await,
+                None => false,
+            };
+            ProviderStatusInfo {
+                id: info.id,
+                display_name: info.display_name,
+                installed,
+                platforms: info.platforms,
+            }
+        });
+        join_all(futures).await
+    };
+
+    if let Ok(mut cache) = open_metadata_cache(settings.inner(), STATUS_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(cache_key, &results, STATUS_CACHE_TTL).await;
+    }
+
+    Ok(results)
 }
 
 #[tauri::command]
@@ -280,36 +432,56 @@ pub async fn package_check_installed(
 pub async fn package_versions(
     name: String,
     provider: Option<String>,
+    force: Option<bool>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<Vec<String>, String> {
-    let reg = registry.read().await;
+    let cache_key = format!(
+        "pkg:versions:{}:{}",
+        provider.as_deref().unwrap_or("auto"),
+        &name
+    );
 
-    if let Some(provider_id) = provider {
-        if let Some(p) = reg.get(&provider_id) {
-            let versions = p
-                .get_versions(&name)
+    if !force.unwrap_or(false) {
+        if let Ok(mut cache) = open_metadata_cache(settings.inner(), VERSIONS_CACHE_TTL).await {
+            if let Ok(Some(cached)) = cache.get::<Vec<String>>(&cache_key).await {
+                if !cached.is_stale {
+                    return Ok(cached.data);
+                }
+            }
+        }
+    }
+
+    let versions = {
+        let reg = registry.read().await;
+        if let Some(ref provider_id) = provider {
+            if let Some(p) = reg.get(provider_id.as_str()) {
+                p.get_versions(&name)
+                    .await
+                    .map(|v| v.into_iter().map(|vi| vi.version).collect())
+                    .map_err(|e| e.to_string())?
+            } else {
+                return Err(format!("Provider not found: {}", provider_id));
+            }
+        } else if let Some(p) = reg
+            .find_for_package(&name)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            p.get_versions(&name)
                 .await
                 .map(|v| v.into_iter().map(|vi| vi.version).collect())
-                .map_err(|e| e.to_string())?;
-            return Ok(versions);
+                .map_err(|e| e.to_string())?
+        } else {
+            vec![]
         }
-        return Err(format!("Provider not found: {}", provider_id));
+    };
+
+    if let Ok(mut cache) = open_metadata_cache(settings.inner(), VERSIONS_CACHE_TTL).await {
+        let _ = cache.set_with_ttl(&cache_key, &versions, VERSIONS_CACHE_TTL).await;
     }
 
-    if let Some(p) = reg
-        .find_for_package(&name)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        let versions = p
-            .get_versions(&name)
-            .await
-            .map(|v| v.into_iter().map(|vi| vi.version).collect())
-            .map_err(|e| e.to_string())?;
-        return Ok(versions);
-    }
-
-    Ok(vec![])
+    Ok(versions)
 }
 
 #[tauri::command]

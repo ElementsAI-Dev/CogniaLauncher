@@ -17,6 +17,64 @@ pub struct PluginManifest {
     /// Optional UI configuration for iframe-mode plugins
     #[serde(default)]
     pub ui: Option<UiConfig>,
+    /// Optional dependency declarations
+    #[serde(default)]
+    pub dependencies: PluginDependencies,
+    /// Per-plugin settings schema (rendered as a form in the UI)
+    #[serde(default)]
+    pub settings: Vec<SettingDeclaration>,
+}
+
+/// A setting declared by a plugin in plugin.toml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingDeclaration {
+    pub id: String,
+    /// Type: "string", "number", "boolean", "select"
+    #[serde(alias = "type", rename = "type")]
+    pub setting_type: String,
+    #[serde(alias = "label_en")]
+    pub label_en: String,
+    #[serde(default, alias = "label_zh")]
+    pub label_zh: Option<String>,
+    #[serde(default)]
+    pub description_en: Option<String>,
+    #[serde(default)]
+    pub description_zh: Option<String>,
+    #[serde(default)]
+    pub default: Option<serde_json::Value>,
+    #[serde(default)]
+    pub required: bool,
+    /// For "number" type
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    /// For "select" type
+    #[serde(default)]
+    pub options: Vec<SettingOption>,
+}
+
+/// Option for a "select" type setting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingOption {
+    pub value: String,
+    pub label_en: String,
+    #[serde(default)]
+    pub label_zh: Option<String>,
+}
+
+/// Dependencies declared by a plugin
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PluginDependencies {
+    /// Other plugin IDs this plugin depends on
+    #[serde(alias = "requires_plugins")]
+    pub requires_plugins: Vec<String>,
+    /// Provider IDs this plugin needs (e.g. "npm", "pip")
+    #[serde(alias = "requires_providers")]
+    pub requires_providers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +96,9 @@ pub struct PluginMeta {
     /// URL to check for updates (returns JSON with latest version + download URL)
     #[serde(alias = "update_url")]
     pub update_url: Option<String>,
+    /// System events this plugin wants to listen for (e.g. ["package_installed", "env_changed"])
+    #[serde(default, alias = "listen_events")]
+    pub listen_events: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

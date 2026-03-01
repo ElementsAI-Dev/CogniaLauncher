@@ -28,6 +28,7 @@ interface PackageState {
   updateCheckErrors: UpdateCheckError[];
   isCheckingUpdates: boolean;
   lastUpdateCheck: number | null;
+  lastScanTimestamp: number | null;
 
   setSearchResults: (results: PackageSummary[]) => void;
   setInstalledPackages: (packages: InstalledPackage[]) => void;
@@ -51,11 +52,13 @@ interface PackageState {
   setUpdateCheckErrors: (errors: UpdateCheckError[]) => void;
   setIsCheckingUpdates: (checking: boolean) => void;
   setLastUpdateCheck: (timestamp: number | null) => void;
+  setLastScanTimestamp: (timestamp: number | null) => void;
+  isScanFresh: () => boolean;
 }
 
 export const usePackageStore = create<PackageState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       searchResults: [],
       installedPackages: [],
       selectedPackage: null,
@@ -74,6 +77,7 @@ export const usePackageStore = create<PackageState>()(
       updateCheckErrors: [],
       isCheckingUpdates: false,
       lastUpdateCheck: null,
+      lastScanTimestamp: null,
 
       setSearchResults: (searchResults) => set({ searchResults }),
       setInstalledPackages: (installedPackages) => set({ installedPackages }),
@@ -111,14 +115,23 @@ export const usePackageStore = create<PackageState>()(
       setUpdateCheckErrors: (updateCheckErrors) => set({ updateCheckErrors }),
       setIsCheckingUpdates: (isCheckingUpdates) => set({ isCheckingUpdates }),
       setLastUpdateCheck: (lastUpdateCheck) => set({ lastUpdateCheck }),
+      setLastScanTimestamp: (lastScanTimestamp) => set({ lastScanTimestamp }),
+      isScanFresh: () => {
+        const ts = get().lastScanTimestamp;
+        if (!ts) return false;
+        return Date.now() - ts < 5 * 60 * 1000; // 5 minutes
+      },
     }),
     {
       name: 'cognia-packages',
+      version: 1,
       partialize: (state) => ({
         pinnedPackages: state.pinnedPackages,
         selectedProvider: state.selectedProvider,
         searchQuery: state.searchQuery,
         bookmarkedPackages: state.bookmarkedPackages,
+        installedPackages: state.installedPackages,
+        lastScanTimestamp: state.lastScanTimestamp,
       }),
     }
   )

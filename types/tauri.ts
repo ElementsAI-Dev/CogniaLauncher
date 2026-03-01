@@ -1021,6 +1021,9 @@ export interface DownloadRequest {
   headers?: Record<string, string>;
   autoExtract?: boolean;
   extractDest?: string;
+  segments?: number;
+  mirrorUrls?: string[];
+  postAction?: 'none' | 'open_file' | 'reveal_in_folder';
 }
 
 export interface VerifyResult {
@@ -1394,6 +1397,10 @@ export interface WslDistroEnvironment {
   gpuName?: string;
   /** GPU total memory (e.g. "8192 MiB") */
   gpuMemory?: string;
+  /** Whether Docker socket exists at /var/run/docker.sock (Docker Desktop integration) */
+  dockerSocket: boolean;
+  /** Number of running Docker containers (if docker is available) */
+  dockerContainerCount?: number;
 }
 
 /** Live resource usage from a running WSL distribution */
@@ -1628,6 +1635,71 @@ export interface GitCloneProgress {
   message: string;
 }
 
+/** Git submodule information */
+export interface GitSubmoduleInfo {
+  path: string;
+  hash: string;
+  status: string;
+  describe: string;
+}
+
+/** Git worktree information */
+export interface GitWorktreeInfo {
+  path: string;
+  head: string;
+  branch: string | null;
+  isBare: boolean;
+  isDetached: boolean;
+}
+
+/** Git hook information */
+export interface GitHookInfo {
+  name: string;
+  enabled: boolean;
+  hasContent: boolean;
+  fileName: string;
+}
+
+/** Git LFS file entry */
+export interface GitLfsFile {
+  oid: string;
+  name: string;
+  pointerStatus: string;
+}
+
+/** Git merge/rebase state */
+export interface GitMergeRebaseState {
+  state: 'none' | 'merging' | 'rebasing' | 'cherry_picking' | 'reverting';
+  onto: string | null;
+  progress: number | null;
+  total: number | null;
+}
+
+/** Git repository statistics */
+export interface GitRepoStats {
+  sizeOnDisk: string;
+  objectCount: number;
+  packCount: number;
+  looseObjects: number;
+  commitCount: number;
+  isShallow: boolean;
+}
+
+/** Git bisect session state */
+export interface GitBisectState {
+  active: boolean;
+  currentHash: string | null;
+  stepsTaken: number;
+  remainingEstimate: number | null;
+}
+
+/** Git interactive rebase todo item */
+export interface GitRebaseTodoItem {
+  action: 'pick' | 'reword' | 'edit' | 'squash' | 'fixup' | 'drop';
+  hash: string;
+  message: string;
+}
+
 // ============================================================================
 // Launch Types
 // ============================================================================
@@ -1734,6 +1806,19 @@ export interface EnvVarImportResult {
   errors: string[];
 }
 
+export interface PersistentEnvVar {
+  key: string;
+  value: string;
+  regType?: string;
+}
+
+export interface EnvVarConflict {
+  key: string;
+  userValue: string;
+  systemValue: string;
+  effectiveValue: string;
+}
+
 // ============================================================================
 // Terminal Management
 // ============================================================================
@@ -1756,6 +1841,19 @@ export interface ShellInfo {
   isDefault: boolean;
 }
 
+export interface ShellStartupMeasurement {
+  shellId: string;
+  withProfileMs: number;
+  withoutProfileMs: number;
+  differenceMs: number;
+}
+
+export interface ShellHealthResult {
+  shellId: string;
+  status: 'healthy' | 'warning' | 'error' | 'unknown';
+  issues: HealthIssue[];
+}
+
 export interface TerminalProfile {
   id: string;
   name: string;
@@ -1766,6 +1864,7 @@ export interface TerminalProfile {
   startupCommand: string | null;
   envType: string | null;
   envVersion: string | null;
+  color?: string | null;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;

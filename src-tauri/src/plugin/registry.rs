@@ -284,11 +284,14 @@ mod tests {
                 min_cognia_version: None,
                 icon: None,
                 update_url: None,
+                listen_events: vec![],
             },
             tools,
             permissions: PluginPermissions::default(),
             locales: std::collections::HashMap::new(),
             ui: None,
+            dependencies: Default::default(),
+            settings: vec![],
         }
     }
 

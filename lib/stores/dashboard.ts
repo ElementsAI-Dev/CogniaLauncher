@@ -25,7 +25,8 @@ export type WidgetType =
   | 'wsl-status'
   | 'health-check'
   | 'updates-available'
-  | 'welcome';
+  | 'welcome'
+  | 'toolbox-favorites';
 
 export interface WidgetDefinition {
   type: WidgetType;
@@ -172,6 +173,15 @@ export const WIDGET_DEFINITIONS: Record<WidgetType, WidgetDefinition> = {
     defaultSize: 'full',
     minSize: 'lg',
     category: 'overview',
+  },
+  'toolbox-favorites': {
+    type: 'toolbox-favorites',
+    titleKey: 'dashboard.widgets.toolboxFavorites',
+    descriptionKey: 'dashboard.widgets.toolboxFavoritesDesc',
+    icon: 'Wrench',
+    defaultSize: 'md',
+    minSize: 'sm',
+    category: 'tools',
   },
 };
 

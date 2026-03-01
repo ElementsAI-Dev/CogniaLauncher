@@ -387,11 +387,20 @@ fn emit_update_check_progress(app_handle: &AppHandle, progress: &UpdateCheckProg
 #[tauri::command]
 pub async fn check_updates(
     packages: Option<Vec<String>>,
+    concurrency: Option<usize>,
     app_handle: AppHandle,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<UpdateCheckSummary, String> {
     use futures::stream::{self, StreamExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let max_concurrent = {
+        let s = settings.read().await;
+        concurrency
+            .unwrap_or(s.general.update_check_concurrency as usize)
+            .clamp(1, 32)
+    };
 
     let reg = registry.read().await;
 
@@ -511,11 +520,9 @@ pub async fn check_updates(
     let errors = Arc::new(tokio::sync::Mutex::new(collect_errors));
     let checked = Arc::new(AtomicUsize::new(0));
 
-    let concurrency = 8; // Max parallel version checks
-
     stream::iter(check_items.into_iter().enumerate())
         .for_each_concurrent(
-            concurrency,
+            max_concurrent,
             |(idx, (provider_id, pkg_name, pkg_version))| {
                 let reg_ref = &reg;
                 let app_handle = &app_handle;

@@ -6,6 +6,7 @@ use crate::plugin::manifest::PluginManifest;
 use crate::plugin::permissions::PermissionManager;
 use crate::plugin::registry::{PluginInfo, PluginRegistry, PluginSource, PluginToolInfo};
 use crate::provider::registry::ProviderRegistry;
+use crate::resolver::version::Version;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -86,12 +87,37 @@ pub struct PluginDeps {
     pub settings: Arc<RwLock<Settings>>,
 }
 
+/// Per-plugin health tracking for circuit breaker
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginHealth {
+    pub consecutive_failures: u32,
+    pub total_calls: u64,
+    pub failed_calls: u64,
+    pub total_duration_ms: u64,
+    pub last_error: Option<String>,
+    pub auto_disabled: bool,
+}
+
+impl PluginHealth {
+    pub fn avg_duration_ms(&self) -> u64 {
+        if self.total_calls == 0 { 0 } else { self.total_duration_ms / self.total_calls }
+    }
+
+    pub fn error_rate(&self) -> f64 {
+        if self.total_calls == 0 { 0.0 } else { self.failed_calls as f64 / self.total_calls as f64 }
+    }
+}
+
+const MAX_CONSECUTIVE_FAILURES: u32 = 3;
+
 /// Central plugin manager that coordinates registry, loader, and permissions
 pub struct PluginManager {
     registry: Arc<RwLock<PluginRegistry>>,
     loader: PluginLoader,
     permissions: Arc<RwLock<PermissionManager>>,
     plugins_dir: PathBuf,
+    health: HashMap<String, PluginHealth>,
 }
 
 impl PluginManager {
@@ -117,6 +143,7 @@ impl PluginManager {
             loader,
             permissions,
             plugins_dir,
+            health: HashMap::new(),
         }
     }
 
@@ -182,12 +209,8 @@ impl PluginManager {
                     log::warn!("Failed to create data dir for plugin '{}': {}", plugin_id, e);
                 }
 
-                // Load WASM if enabled
-                if enabled {
-                    if let Err(e) = self.loader.load(plugin_id, &wasm_path) {
-                        log::warn!("Failed to load plugin '{}': {}", plugin_id, e);
-                    }
-                }
+                // WASM is loaded lazily on first call_tool — skip eager loading
+                let _ = (enabled, wasm_path);
             }
         }
 
@@ -243,6 +266,19 @@ impl PluginManager {
                     "Plugin '{}' is already installed",
                     plugin_id
                 )));
+            }
+        }
+
+        // Check dependencies (warn but don't block)
+        if !manifest.dependencies.requires_plugins.is_empty() {
+            let reg = self.registry.read().await;
+            for dep in &manifest.dependencies.requires_plugins {
+                if !reg.contains(dep) {
+                    log::warn!(
+                        "Plugin '{}' requires plugin '{}' which is not installed",
+                        plugin_id, dep
+                    );
+                }
             }
         }
 
@@ -393,6 +429,9 @@ impl PluginManager {
             plugin.wasm_path.clone()
         };
 
+        // Clear circuit breaker state so re-enabled plugins get a fresh start
+        self.reset_plugin_health(plugin_id);
+
         // Load WASM if not already loaded
         if !self.loader.is_loaded(plugin_id) {
             self.loader.load(plugin_id, &wasm_path)?;
@@ -450,15 +489,27 @@ impl PluginManager {
         self.loader.reload(plugin_id, &wasm_path)
     }
 
-    /// Call a tool function on a loaded plugin
+    /// Call a tool function on a loaded plugin with circuit breaker protection
     pub async fn call_tool(
         &mut self,
         plugin_id: &str,
         tool_entry: &str,
         input: &str,
     ) -> CogniaResult<String> {
-        // Verify plugin is loaded and enabled
-        {
+        // Check circuit breaker — reject if auto-disabled
+        if let Some(h) = self.health.get(plugin_id) {
+            if h.auto_disabled {
+                return Err(CogniaError::Plugin(format!(
+                    "Plugin '{}' was auto-disabled after {} consecutive failures. Last error: {}",
+                    plugin_id,
+                    MAX_CONSECUTIVE_FAILURES,
+                    h.last_error.as_deref().unwrap_or("unknown"),
+                )));
+            }
+        }
+
+        // Verify plugin exists and is enabled, get wasm_path for lazy load
+        let wasm_path = {
             let reg = self.registry.read().await;
             let plugin = reg.get(plugin_id).ok_or_else(|| {
                 CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
@@ -483,10 +534,229 @@ impl PluginManager {
                     tool_entry, plugin_id
                 )));
             }
+
+            plugin.wasm_path.clone()
+        };
+
+        // Lazy load WASM on first call
+        if !self.loader.is_loaded(plugin_id) {
+            self.loader.load(plugin_id, &wasm_path)?;
+            self.loader.call_if_exists(plugin_id, "cognia_on_enable", "{}");
+            log::info!("Lazy-loaded WASM for plugin '{}'", plugin_id);
         }
 
-        // Call the WASM function (async to set current_plugin_id for host function permission checks)
-        self.loader.call_function(plugin_id, tool_entry, input).await
+        // Call the WASM function with health tracking
+        let start = std::time::Instant::now();
+        let result = self.loader.call_function(plugin_id, tool_entry, input).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+
+        let health = self.health.entry(plugin_id.to_string()).or_default();
+        health.total_calls += 1;
+        health.total_duration_ms += duration_ms;
+
+        match &result {
+            Ok(_) => {
+                health.consecutive_failures = 0;
+                health.last_error = None;
+            }
+            Err(e) => {
+                health.failed_calls += 1;
+                health.consecutive_failures += 1;
+                health.last_error = Some(e.to_string());
+
+                if health.consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    health.auto_disabled = true;
+                    log::warn!(
+                        "Plugin '{}' auto-disabled after {} consecutive failures",
+                        plugin_id,
+                        MAX_CONSECUTIVE_FAILURES,
+                    );
+                    // Also disable in registry so it won't show as enabled
+                    let mut reg = self.registry.write().await;
+                    if let Some(plugin) = reg.get_mut(plugin_id) {
+                        plugin.enabled = false;
+                    }
+                    self.loader.unload(plugin_id);
+                    let _ = self.save_state().await;
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Get health metrics for a specific plugin
+    pub fn get_plugin_health(&self, plugin_id: &str) -> PluginHealth {
+        self.health.get(plugin_id).cloned().unwrap_or_default()
+    }
+
+    /// Get health metrics for all plugins
+    pub fn get_all_health(&self) -> HashMap<String, PluginHealth> {
+        self.health.clone()
+    }
+
+    /// Reset the auto-disabled state for a plugin (allows re-enabling after crash)
+    pub fn reset_plugin_health(&mut self, plugin_id: &str) {
+        if let Some(h) = self.health.get_mut(plugin_id) {
+            h.consecutive_failures = 0;
+            h.auto_disabled = false;
+            h.last_error = None;
+        }
+    }
+
+    /// Dispatch a system event to all enabled plugins that listen for it.
+    /// Calls the optional `cognia_on_event` WASM export with JSON payload.
+    pub async fn dispatch_event(&mut self, event_name: &str, payload: &serde_json::Value) {
+        let listeners: Vec<(String, PathBuf)> = {
+            let reg = self.registry.read().await;
+            reg.iter()
+                .filter(|(_, p)| {
+                    p.enabled && p.manifest.plugin.listen_events.iter().any(|e| e == event_name || e == "*")
+                })
+                .map(|(id, p)| (id.clone(), p.wasm_path.clone()))
+                .collect()
+        };
+
+        for (plugin_id, wasm_path) in &listeners {
+            // Lazy load if needed
+            if !self.loader.is_loaded(plugin_id) {
+                if let Err(e) = self.loader.load(plugin_id, wasm_path) {
+                    log::warn!("Failed to lazy-load plugin '{}' for event dispatch: {}", plugin_id, e);
+                    continue;
+                }
+            }
+
+            let input = serde_json::json!({
+                "event": event_name,
+                "payload": payload,
+            }).to_string();
+
+            self.loader.call_if_exists(plugin_id, "cognia_on_event", &input);
+        }
+
+        if !listeners.is_empty() {
+            log::debug!("Dispatched event '{}' to {} plugin(s)", event_name, listeners.len());
+        }
+    }
+
+    /// Get the settings schema declared in a plugin's manifest
+    pub async fn get_plugin_settings_schema(
+        &self,
+        plugin_id: &str,
+    ) -> CogniaResult<Vec<crate::plugin::manifest::SettingDeclaration>> {
+        let reg = self.registry.read().await;
+        let plugin = reg.get(plugin_id).ok_or_else(|| {
+            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
+        })?;
+        Ok(plugin.manifest.settings.clone())
+    }
+
+    /// Get current setting values for a plugin (from {data_dir}/settings.json)
+    pub async fn get_plugin_settings_values(
+        &self,
+        plugin_id: &str,
+    ) -> CogniaResult<HashMap<String, serde_json::Value>> {
+        let data_dir = self.get_plugin_data_dir(plugin_id).await;
+        let settings_path = data_dir.join("settings.json");
+        if !settings_path.exists() {
+            return Ok(HashMap::new());
+        }
+        let content = tokio::fs::read_to_string(&settings_path)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to read settings: {}", e)))?;
+        serde_json::from_str(&content)
+            .map_err(|e| CogniaError::Plugin(format!("Invalid settings JSON: {}", e)))
+    }
+
+    /// Set a single setting value for a plugin
+    pub async fn set_plugin_setting(
+        &mut self,
+        plugin_id: &str,
+        key: &str,
+        value: serde_json::Value,
+    ) -> CogniaResult<()> {
+        let data_dir = self.get_plugin_data_dir(plugin_id).await;
+        let _ = tokio::fs::create_dir_all(&data_dir).await;
+        let settings_path = data_dir.join("settings.json");
+
+        let mut settings: HashMap<String, serde_json::Value> = if settings_path.exists() {
+            let content = tokio::fs::read_to_string(&settings_path).await.unwrap_or_default();
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+
+        settings.insert(key.to_string(), value);
+
+        let content = serde_json::to_string_pretty(&settings)
+            .map_err(|e| CogniaError::Plugin(format!("Failed to serialize settings: {}", e)))?;
+        tokio::fs::write(&settings_path, content)
+            .await
+            .map_err(|e| CogniaError::Plugin(format!("Failed to write settings: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Export a plugin's directory + data as a zip file
+    pub async fn export_plugin_data(&self, plugin_id: &str) -> CogniaResult<PathBuf> {
+        let plugin_dir = {
+            let reg = self.registry.read().await;
+            let plugin = reg.get(plugin_id).ok_or_else(|| {
+                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
+            })?;
+            plugin.plugin_dir.clone()
+        };
+        let data_dir = self.get_plugin_data_dir(plugin_id).await;
+
+        let temp_dir = tempfile::tempdir()
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create temp dir: {}", e)))?;
+        let zip_path = temp_dir.into_path().join(format!("{}.zip", plugin_id));
+
+        let file = std::fs::File::create(&zip_path)
+            .map_err(|e| CogniaError::Plugin(format!("Failed to create zip: {}", e)))?;
+        let mut zip_writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        // Add plugin dir contents under "plugin/"
+        Self::zip_dir_recursive(&mut zip_writer, &plugin_dir, "plugin", &options)?;
+
+        // Add data dir contents under "data/" if it exists
+        if data_dir.exists() {
+            Self::zip_dir_recursive(&mut zip_writer, &data_dir, "data", &options)?;
+        }
+
+        zip_writer.finish()
+            .map_err(|e| CogniaError::Plugin(format!("Failed to finalize zip: {}", e)))?;
+
+        log::info!("Exported plugin '{}' to {}", plugin_id, zip_path.display());
+        Ok(zip_path)
+    }
+
+    fn zip_dir_recursive(
+        zip: &mut zip::ZipWriter<std::fs::File>,
+        src_dir: &Path,
+        prefix: &str,
+        options: &zip::write::SimpleFileOptions,
+    ) -> CogniaResult<()> {
+        if !src_dir.exists() {
+            return Ok(());
+        }
+        for entry in walkdir::WalkDir::new(src_dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let relative = path.strip_prefix(src_dir).unwrap_or(path);
+            let archive_path = format!("{}/{}", prefix, relative.to_string_lossy().replace('\\', "/"));
+
+            if path.is_file() {
+                zip.start_file(&archive_path, *options)
+                    .map_err(|e| CogniaError::Plugin(format!("Zip error: {}", e)))?;
+                let data = std::fs::read(path)
+                    .map_err(|e| CogniaError::Plugin(format!("Read error: {}", e)))?;
+                std::io::Write::write_all(zip, &data)
+                    .map_err(|e| CogniaError::Plugin(format!("Write error: {}", e)))?;
+            }
+        }
+        Ok(())
     }
 
     /// List all registered plugins
@@ -626,8 +896,10 @@ impl PluginManager {
             .await
             .map_err(|e| CogniaError::Plugin(format!("Invalid update response: {}", e)))?;
 
-        // Compare versions (simple string comparison; plugins should use semver)
-        if info.version != current_version && info.version > current_version {
+        // Compare versions using proper semver parsing
+        let current: Version = current_version.parse().unwrap_or(Version::new(0, 0, 0));
+        let latest: Version = info.version.parse().unwrap_or(Version::new(0, 0, 0));
+        if latest > current {
             Ok(Some(PluginUpdateInfo {
                 plugin_id: plugin_id.to_string(),
                 current_version,
@@ -724,6 +996,40 @@ impl PluginManager {
             update_info.latest_version
         );
         Ok(())
+    }
+
+    /// Check for updates across all plugins that have an update_url
+    pub async fn check_all_updates(&self) -> Vec<PluginUpdateInfo> {
+        let plugin_ids: Vec<String> = {
+            let reg = self.registry.read().await;
+            reg.iter()
+                .filter(|(_, p)| p.manifest.plugin.update_url.is_some())
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+
+        let mut updates = Vec::new();
+        for plugin_id in &plugin_ids {
+            match self.check_update(plugin_id).await {
+                Ok(Some(info)) => updates.push(info),
+                Ok(None) => {}
+                Err(e) => log::warn!("Failed to check update for '{}': {}", plugin_id, e),
+            }
+        }
+        updates
+    }
+
+    /// Update all plugins that have available updates
+    pub async fn update_all(&mut self) -> Vec<Result<String, String>> {
+        let updates = self.check_all_updates().await;
+        let mut results = Vec::new();
+        for update in &updates {
+            match self.update_plugin(&update.plugin_id).await {
+                Ok(()) => results.push(Ok(update.plugin_id.clone())),
+                Err(e) => results.push(Err(format!("{}: {}", update.plugin_id, e))),
+            }
+        }
+        results
     }
 
     /// Get the granted permissions list for a plugin (for iframe bridge)

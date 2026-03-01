@@ -1,4 +1,27 @@
+import {
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  HelpCircle,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { HealthStatus, Severity } from "@/types/tauri";
+
+/**
+ * Map health status to a Lucide icon component.
+ */
+export function getStatusIcon(status: HealthStatus): LucideIcon {
+  switch (status) {
+    case "healthy":
+      return CheckCircle2;
+    case "warning":
+      return AlertTriangle;
+    case "error":
+      return AlertCircle;
+    default:
+      return HelpCircle;
+  }
+}
 
 /**
  * Map health status to CSS border/background color classes.

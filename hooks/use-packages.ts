@@ -105,16 +105,27 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchInstalledPackages = useCallback(async (provider?: string) => {
-    store.setLoading(true);
+  const fetchInstalledPackages = useCallback(async (provider?: string, force?: boolean) => {
+    // Skip fetch if store has fresh data and not forced
+    if (!force && store.isScanFresh() && store.installedPackages.length > 0 && !provider) {
+      return store.installedPackages;
+    }
+
+    // Stale-while-revalidate: if we have cached data (from localStorage persist),
+    // skip loading state and return cached data on error for instant perceived startup.
+    const hasCachedData = !force && store.installedPackages.length > 0 && !provider;
+    if (!hasCachedData) {
+      store.setLoading(true);
+    }
     store.setError(null);
     try {
-      const packages = await tauri.packageList(provider);
+      const packages = await tauri.packageList(provider, force);
       store.setInstalledPackages(packages);
+      store.setLastScanTimestamp(Date.now());
       return packages;
     } catch (err) {
       store.setError(formatError(err));
-      return [];
+      return hasCachedData ? store.installedPackages : [];
     } finally {
       store.setLoading(false);
     }
@@ -127,7 +138,8 @@ export function usePackages() {
     normalized.forEach((p) => store.addInstalling(p));
     try {
       const installed = await tauri.packageInstall(packages);
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
+      tauri.pluginDispatchEvent('package_installed', { packages }).catch(() => {});
       return installed;
     } catch (err) {
       store.setError(formatError(err));
@@ -144,7 +156,7 @@ export function usePackages() {
     normalized.forEach((p) => store.addInstalling(p));
     try {
       const result = await tauri.batchInstall(packages, { dryRun, force });
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -160,7 +172,7 @@ export function usePackages() {
     store.setError(null);
     try {
       const result = await tauri.batchUpdate(packages);
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -175,7 +187,8 @@ export function usePackages() {
     store.setError(null);
     try {
       await tauri.packageUninstall(packages);
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
+      tauri.pluginDispatchEvent('package_uninstalled', { packages }).catch(() => {});
     } catch (err) {
       store.setError(formatError(err));
       throw err;
@@ -187,7 +200,7 @@ export function usePackages() {
     store.setError(null);
     try {
       const result = await tauri.batchUninstall(packages, force);
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -275,7 +288,7 @@ export function usePackages() {
     store.addInstalling(name);
     try {
       await tauri.packageRollback(name, toVersion);
-      await fetchInstalledPackages();
+      await fetchInstalledPackages(undefined, true);
     } catch (err) {
       store.setError(formatError(err));
       throw err;

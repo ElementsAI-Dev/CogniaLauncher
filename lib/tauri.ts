@@ -170,6 +170,14 @@ export type {
   GitReflogEntry,
   GitCloneOptions,
   GitCloneProgress,
+  GitSubmoduleInfo,
+  GitWorktreeInfo,
+  GitHookInfo,
+  GitLfsFile,
+  GitMergeRebaseState,
+  GitRepoStats,
+  GitBisectState,
+  GitRebaseTodoItem,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -181,9 +189,13 @@ export type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  PersistentEnvVar,
+  EnvVarConflict,
   ShellType,
   ShellConfigFile,
   ShellInfo,
+  ShellStartupMeasurement,
+  ShellHealthResult,
   TerminalProfile,
   TerminalProfileTemplate,
   PSProfileInfo,
@@ -346,6 +358,14 @@ import type {
   GitReflogEntry,
   GitCloneOptions,
   GitCloneProgress,
+  GitSubmoduleInfo,
+  GitWorktreeInfo,
+  GitHookInfo,
+  GitLfsFile,
+  GitMergeRebaseState,
+  GitRepoStats,
+  GitBisectState,
+  GitRebaseTodoItem,
   LaunchRequest,
   LaunchResult,
   ActivationScript,
@@ -357,6 +377,8 @@ import type {
   PathEntryInfo,
   ShellProfileInfo,
   EnvVarImportResult,
+  PersistentEnvVar,
+  EnvVarConflict,
   ShellType,
   ShellInfo,
   TerminalProfile,
@@ -467,7 +489,7 @@ export const envResolveAlias = (envType: string, alias: string) =>
   invoke<string>('env_resolve_alias', { envType, alias });
 
 // Environment commands
-export const envList = () => invoke<EnvironmentInfo[]>('env_list');
+export const envList = (force?: boolean) => invoke<EnvironmentInfo[]>('env_list', { force });
 export const envGet = (envType: string) => invoke<EnvironmentInfo>('env_get', { envType });
 export const envInstall = (envType: string, version: string, providerId?: string) => invoke<void>('env_install', { envType, version, providerId });
 export const envUninstall = (envType: string, version: string) => invoke<void>('env_uninstall', { envType, version });
@@ -476,7 +498,7 @@ export const envUseLocal = (envType: string, version: string, projectPath: strin
 export const envDetect = (envType: string, startPath: string) => invoke<DetectedEnvironment | null>('env_detect', { envType, startPath });
 export const envDetectAll = (startPath: string) => invoke<DetectedEnvironment[]>('env_detect_all', { startPath });
 export const envAvailableVersions = (envType: string, providerId?: string, force?: boolean) => invoke<VersionInfo[]>('env_available_versions', { envType, providerId, force });
-export const envListProviders = () => invoke<EnvironmentProviderInfo[]>('env_list_providers');
+export const envListProviders = (force?: boolean) => invoke<EnvironmentProviderInfo[]>('env_list_providers', { force });
 
 // Environment settings commands
 export const envSaveSettings = (settings: EnvironmentSettingsConfig) => 
@@ -490,11 +512,11 @@ export const envGetDetectionSources = (envType: string) => invoke<string[]>('env
 export const envGetAllDetectionSources = () => invoke<Record<string, string[]>>('env_get_all_detection_sources');
 
 // System environment detection commands
-export const envDetectSystemAll = () => 
-  invoke<SystemEnvironmentInfo[]>('env_detect_system_all');
+export const envDetectSystemAll = (force?: boolean) => 
+  invoke<SystemEnvironmentInfo[]>('env_detect_system_all', { force });
 
-export const envDetectSystem = (envType: string) => 
-  invoke<SystemEnvironmentInfo | null>('env_detect_system', { envType });
+export const envDetectSystem = (envType: string, force?: boolean) => 
+  invoke<SystemEnvironmentInfo | null>('env_detect_system', { envType, force });
 
 export const envGetTypeMapping = () => 
   invoke<EnvironmentTypeMapping>('env_get_type_mapping');
@@ -503,8 +525,8 @@ export const envGetTypeMapping = () =>
 export const envVerifyInstall = (envType: string, version: string) =>
   invoke<EnvVerifyResult>('env_verify_install', { envType, version });
 
-export const envInstalledVersions = (envType: string) =>
-  invoke<InstalledVersion[]>('env_installed_versions', { envType });
+export const envInstalledVersions = (envType: string, force?: boolean) =>
+  invoke<InstalledVersion[]>('env_installed_versions', { envType, force });
 
 export const envCurrentVersion = (envType: string) =>
   invoke<string | null>('env_current_version', { envType });
@@ -613,14 +635,14 @@ export const goCacheInfo = () =>
   invoke<GoCacheInfo>('go_cache_info');
 
 // Package commands
-export const packageSearch = (query: string, provider?: string) => invoke<PackageSummary[]>('package_search', { query, provider });
-export const packageInfo = (name: string, provider?: string) => invoke<PackageInfo>('package_info', { name, provider });
+export const packageSearch = (query: string, provider?: string, force?: boolean) => invoke<PackageSummary[]>('package_search', { query, provider, force });
+export const packageInfo = (name: string, provider?: string, force?: boolean) => invoke<PackageInfo>('package_info', { name, provider, force });
 export const packageInstall = (packages: string[]) => invoke<string[]>('package_install', { packages });
 export const packageUninstall = (packages: string[]) => invoke<void>('package_uninstall', { packages });
-export const packageList = (provider?: string) => invoke<InstalledPackage[]>('package_list', { provider });
+export const packageList = (provider?: string, force?: boolean) => invoke<InstalledPackage[]>('package_list', { provider, force });
 export const providerList = () => invoke<ProviderInfo[]>('provider_list');
 export const packageCheckInstalled = (name: string) => invoke<boolean>('package_check_installed', { name });
-export const packageVersions = (name: string, provider?: string) => invoke<VersionInfo[]>('package_versions', { name, provider });
+export const packageVersions = (name: string, provider?: string, force?: boolean) => invoke<VersionInfo[]>('package_versions', { name, provider, force });
 
 // App initialization status
 export interface AppInitStatus {
@@ -629,6 +651,21 @@ export interface AppInitStatus {
 }
 
 export const appCheckInit = () => invoke<AppInitStatus>('app_check_init');
+
+// Init progress events
+export interface InitProgressEvent {
+  phase: string;
+  progress: number;
+  message: string;
+}
+
+export async function listenInitProgress(
+  callback: (event: InitProgressEvent) => void
+): Promise<UnlistenFn> {
+  return listen<InitProgressEvent>('init-progress', (event) => {
+    callback(event.payload);
+  });
+}
 
 // Config commands
 export const configGet = (key: string) => invoke<string | null>('config_get', { key });
@@ -883,7 +920,7 @@ export const providerEnable = (providerId: string) => invoke<void>('provider_ena
 export const providerDisable = (providerId: string) => invoke<void>('provider_disable', { providerId });
 export const providerCheck = (providerId: string) => invoke<boolean>('provider_check', { providerId });
 export const providerSystemList = () => invoke<string[]>('provider_system_list');
-export const providerStatusAll = () => invoke<ProviderStatusInfo[]>('provider_status_all');
+export const providerStatusAll = (force?: boolean) => invoke<ProviderStatusInfo[]>('provider_status_all', { force });
 
 // Listen for batch progress events
 export async function listenBatchProgress(
@@ -910,7 +947,7 @@ export const batchUpdate = (packages?: string[]) =>
   invoke<BatchResult>('batch_update', { packages });
 
 // Update checking commands
-export const checkUpdates = (packages?: string[]) => invoke<UpdateCheckSummary>('check_updates', { packages });
+export const checkUpdates = (packages?: string[], concurrency?: number) => invoke<UpdateCheckSummary>('check_updates', { packages, concurrency });
 
 // Listen for update check progress events
 export async function listenUpdateCheckProgress(
@@ -1866,6 +1903,22 @@ export const wslListUsers = (distro: string) =>
 export const wslUpdateDistroPackages = (distro: string, mode: string) =>
   invoke<WslPackageUpdateResult>('wsl_update_distro_packages', { distro, mode });
 
+/** Open a WSL distribution's filesystem in Windows Explorer */
+export const wslOpenInExplorer = (name: string) =>
+  invoke<void>('wsl_open_in_explorer', { name });
+
+/** Open a WSL distribution in Windows Terminal or fallback shell */
+export const wslOpenInTerminal = (name: string) =>
+  invoke<void>('wsl_open_in_terminal', { name });
+
+/** Clone a WSL distribution (export → import under a new name) */
+export const wslCloneDistro = (name: string, newName: string, location: string) =>
+  invoke<string>('wsl_clone_distro', { name, newName, location });
+
+/** Get total disk usage across all WSL distributions */
+export const wslTotalDiskUsage = () =>
+  invoke<[number, [string, number][]]>('wsl_total_disk_usage');
+
 // ============================================================================
 // Launch Commands
 // ============================================================================
@@ -2147,20 +2200,20 @@ export const gitDiscardChanges = (path: string, files: string[]) =>
   invoke<string>('git_discard_changes', { path, files });
 
 /** Create a commit */
-export const gitCommit = (path: string, message: string, amend?: boolean) =>
-  invoke<string>('git_commit', { path, message, amend });
+export const gitCommit = (path: string, message: string, amend?: boolean, allowEmpty?: boolean, signoff?: boolean, noVerify?: boolean) =>
+  invoke<string>('git_commit', { path, message, amend, allowEmpty, signoff, noVerify });
 
 /** Push to remote */
-export const gitPush = (path: string, remote?: string, branch?: string, forceLease?: boolean) =>
-  invoke<string>('git_push', { path, remote, branch, forceLease });
+export const gitPush = (path: string, remote?: string, branch?: string, force?: boolean, forceLease?: boolean, setUpstream?: boolean) =>
+  invoke<string>('git_push', { path, remote, branch, force, forceLease, setUpstream });
 
 /** Pull from remote */
-export const gitPull = (path: string, remote?: string, branch?: string, rebase?: boolean) =>
-  invoke<string>('git_pull', { path, remote, branch, rebase });
+export const gitPull = (path: string, remote?: string, branch?: string, rebase?: boolean, autostash?: boolean) =>
+  invoke<string>('git_pull', { path, remote, branch, rebase, autostash });
 
 /** Fetch from remote */
-export const gitFetch = (path: string, remote?: string) =>
-  invoke<string>('git_fetch', { path, remote });
+export const gitFetch = (path: string, remote?: string, prune?: boolean, all?: boolean) =>
+  invoke<string>('git_fetch', { path, remote, prune, all });
 
 /** Clone a repository */
 export const gitClone = (url: string, destPath: string, options?: GitCloneOptions) =>
@@ -2267,6 +2320,308 @@ export const gitGetReflog = (path: string, limit?: number) =>
 export const gitClean = (path: string, directories?: boolean) =>
   invoke<string>('git_clean', { path, directories });
 
+/** Dry-run clean: preview which files would be removed */
+export const gitCleanDryRun = (path: string, directories?: boolean) =>
+  invoke<string[]>('git_clean_dry_run', { path, directories });
+
+/** Stash specific files */
+export const gitStashPushFiles = (path: string, files: string[], message?: string, includeUntracked?: boolean) =>
+  invoke<string>('git_stash_push_files', { path, files, message, includeUntracked });
+
+/** List submodules */
+export const gitListSubmodules = (path: string) =>
+  invoke<GitSubmoduleInfo[]>('git_list_submodules', { path });
+
+/** Add a submodule */
+export const gitAddSubmodule = (path: string, url: string, subpath: string) =>
+  invoke<string>('git_add_submodule', { path, url, subpath });
+
+/** Update submodules */
+export const gitUpdateSubmodules = (path: string, init?: boolean, recursive?: boolean) =>
+  invoke<string>('git_update_submodules', { path, init, recursive });
+
+/** Remove a submodule */
+export const gitRemoveSubmodule = (path: string, subpath: string) =>
+  invoke<string>('git_remove_submodule', { path, subpath });
+
+/** Sync submodule URLs */
+export const gitSyncSubmodules = (path: string) =>
+  invoke<string>('git_sync_submodules', { path });
+
+/** List worktrees */
+export const gitListWorktrees = (path: string) =>
+  invoke<GitWorktreeInfo[]>('git_list_worktrees', { path });
+
+/** Add a worktree */
+export const gitAddWorktree = (path: string, dest: string, branch?: string, newBranch?: string) =>
+  invoke<string>('git_add_worktree', { path, dest, branch, newBranch });
+
+/** Remove a worktree */
+export const gitRemoveWorktree = (path: string, dest: string, force?: boolean) =>
+  invoke<string>('git_remove_worktree', { path, dest, force });
+
+/** Prune stale worktrees */
+export const gitPruneWorktrees = (path: string) =>
+  invoke<string>('git_prune_worktrees', { path });
+
+/** Read .gitignore content */
+export const gitGetGitignore = (path: string) =>
+  invoke<string>('git_get_gitignore', { path });
+
+/** Write .gitignore content */
+export const gitSetGitignore = (path: string, content: string) =>
+  invoke<void>('git_set_gitignore', { path, content });
+
+/** Check which files are ignored */
+export const gitCheckIgnore = (path: string, files: string[]) =>
+  invoke<string[]>('git_check_ignore', { path, files });
+
+/** Append patterns to .gitignore */
+export const gitAddToGitignore = (path: string, patterns: string[]) =>
+  invoke<void>('git_add_to_gitignore', { path, patterns });
+
+/** List git hooks */
+export const gitListHooks = (path: string) =>
+  invoke<GitHookInfo[]>('git_list_hooks', { path });
+
+/** Get hook file content */
+export const gitGetHookContent = (path: string, name: string) =>
+  invoke<string>('git_get_hook_content', { path, name });
+
+/** Set hook file content */
+export const gitSetHookContent = (path: string, name: string, content: string) =>
+  invoke<void>('git_set_hook_content', { path, name, content });
+
+/** Toggle hook enabled/disabled */
+export const gitToggleHook = (path: string, name: string, enabled: boolean) =>
+  invoke<void>('git_toggle_hook', { path, name, enabled });
+
+/** Check if git-lfs is available */
+export const gitLfsIsAvailable = () =>
+  invoke<boolean>('git_lfs_is_available');
+
+/** Get LFS version */
+export const gitLfsGetVersion = () =>
+  invoke<string | null>('git_lfs_get_version');
+
+/** Get LFS tracked patterns */
+export const gitLfsTrackedPatterns = (path: string) =>
+  invoke<string[]>('git_lfs_tracked_patterns', { path });
+
+/** List LFS files */
+export const gitLfsLsFiles = (path: string) =>
+  invoke<GitLfsFile[]>('git_lfs_ls_files', { path });
+
+/** Track a pattern with LFS */
+export const gitLfsTrack = (path: string, pattern: string) =>
+  invoke<string>('git_lfs_track', { path, pattern });
+
+/** Untrack a pattern from LFS */
+export const gitLfsUntrack = (path: string, pattern: string) =>
+  invoke<string>('git_lfs_untrack', { path, pattern });
+
+/** Install LFS hooks */
+export const gitLfsInstall = (path: string) =>
+  invoke<string>('git_lfs_install', { path });
+
+/** Rebase current branch onto target */
+export const gitRebase = (path: string, onto: string) =>
+  invoke<string>('git_rebase', { path, onto });
+
+/** Abort rebase */
+export const gitRebaseAbort = (path: string) =>
+  invoke<string>('git_rebase_abort', { path });
+
+/** Continue rebase */
+export const gitRebaseContinue = (path: string) =>
+  invoke<string>('git_rebase_continue', { path });
+
+/** Skip current rebase commit */
+export const gitRebaseSkip = (path: string) =>
+  invoke<string>('git_rebase_skip', { path });
+
+/** Squash last N commits */
+export const gitSquash = (path: string, count: number, message: string) =>
+  invoke<string>('git_squash', { path, count, message });
+
+/** Get merge/rebase state */
+export const gitGetMergeRebaseState = (path: string) =>
+  invoke<GitMergeRebaseState>('git_get_merge_rebase_state', { path });
+
+/** Get conflicted files */
+export const gitGetConflictedFiles = (path: string) =>
+  invoke<string[]>('git_get_conflicted_files', { path });
+
+/** Resolve conflict using ours */
+export const gitResolveFileOurs = (path: string, file: string) =>
+  invoke<string>('git_resolve_file_ours', { path, file });
+
+/** Resolve conflict using theirs */
+export const gitResolveFileTheirs = (path: string, file: string) =>
+  invoke<string>('git_resolve_file_theirs', { path, file });
+
+/** Mark file as resolved */
+export const gitResolveFileMark = (path: string, file: string) =>
+  invoke<string>('git_resolve_file_mark', { path, file });
+
+/** Abort merge */
+export const gitMergeAbort = (path: string) =>
+  invoke<string>('git_merge_abort', { path });
+
+/** Continue merge */
+export const gitMergeContinue = (path: string) =>
+  invoke<string>('git_merge_continue', { path });
+
+// ============================================================================
+// Git Advanced Commands (cherry-pick abort/continue, revert abort, stash branch,
+// local config, shallow management, repo stats, describe, remote prune,
+// verify commit/tag, interactive rebase, bisect, sparse-checkout, archive, patch)
+// ============================================================================
+
+/** Abort cherry-pick */
+export const gitCherryPickAbort = (path: string) =>
+  invoke<string>('git_cherry_pick_abort', { path });
+
+/** Continue cherry-pick */
+export const gitCherryPickContinue = (path: string) =>
+  invoke<string>('git_cherry_pick_continue', { path });
+
+/** Abort revert */
+export const gitRevertAbort = (path: string) =>
+  invoke<string>('git_revert_abort', { path });
+
+/** Create branch from stash */
+export const gitStashBranch = (path: string, branchName: string, stashId?: string) =>
+  invoke<string>('git_stash_branch', { path, branchName, stashId });
+
+/** Get local (per-repo) config */
+export const gitGetLocalConfig = (path: string) =>
+  invoke<GitConfigEntry[]>('git_get_local_config', { path });
+
+/** Set local config value */
+export const gitSetLocalConfig = (path: string, key: string, value: string) =>
+  invoke<void>('git_set_local_config', { path, key, value });
+
+/** Remove local config key */
+export const gitRemoveLocalConfig = (path: string, key: string) =>
+  invoke<void>('git_remove_local_config', { path, key });
+
+/** Get local config value */
+export const gitGetLocalConfigValue = (path: string, key: string) =>
+  invoke<string | null>('git_get_local_config_value', { path, key });
+
+/** Check if repo is shallow */
+export const gitIsShallow = (path: string) =>
+  invoke<boolean>('git_is_shallow', { path });
+
+/** Deepen shallow clone */
+export const gitDeepen = (path: string, depth: number) =>
+  invoke<string>('git_deepen', { path, depth });
+
+/** Convert shallow clone to full */
+export const gitUnshallow = (path: string) =>
+  invoke<string>('git_unshallow', { path });
+
+/** Get repository statistics */
+export const gitGetRepoStats = (path: string) =>
+  invoke<GitRepoStats>('git_get_repo_stats', { path });
+
+/** Run git fsck */
+export const gitFsck = (path: string) =>
+  invoke<string[]>('git_fsck', { path });
+
+/** Get git describe */
+export const gitDescribe = (path: string) =>
+  invoke<string | null>('git_describe', { path });
+
+/** Prune stale remote-tracking branches */
+export const gitRemotePrune = (path: string, remote: string) =>
+  invoke<string>('git_remote_prune', { path, remote });
+
+/** Verify commit signature */
+export const gitVerifyCommit = (path: string, hash: string) =>
+  invoke<string>('git_verify_commit', { path, hash });
+
+/** Verify tag signature */
+export const gitVerifyTag = (path: string, tag: string) =>
+  invoke<string>('git_verify_tag', { path, tag });
+
+/** Get interactive rebase todo preview */
+export const gitGetRebaseTodoPreview = (path: string, base: string) =>
+  invoke<GitRebaseTodoItem[]>('git_get_rebase_todo_preview', { path, base });
+
+/** Start interactive rebase */
+export const gitStartInteractiveRebase = (path: string, base: string, todo: GitRebaseTodoItem[]) =>
+  invoke<string>('git_start_interactive_rebase', { path, base, todo });
+
+/** Start bisect session */
+export const gitBisectStart = (path: string, badRef: string, goodRef: string) =>
+  invoke<string>('git_bisect_start', { path, badRef, goodRef });
+
+/** Mark current commit as good in bisect */
+export const gitBisectGood = (path: string) =>
+  invoke<string>('git_bisect_good', { path });
+
+/** Mark current commit as bad in bisect */
+export const gitBisectBad = (path: string) =>
+  invoke<string>('git_bisect_bad', { path });
+
+/** Skip current commit in bisect */
+export const gitBisectSkip = (path: string) =>
+  invoke<string>('git_bisect_skip', { path });
+
+/** Reset (end) bisect session */
+export const gitBisectReset = (path: string) =>
+  invoke<string>('git_bisect_reset', { path });
+
+/** Get bisect log */
+export const gitBisectLog = (path: string) =>
+  invoke<string>('git_bisect_log', { path });
+
+/** Get current bisect state */
+export const gitGetBisectState = (path: string) =>
+  invoke<GitBisectState>('git_get_bisect_state', { path });
+
+/** Check if sparse-checkout is enabled */
+export const gitIsSparseCheckout = (path: string) =>
+  invoke<boolean>('git_is_sparse_checkout', { path });
+
+/** Initialize sparse-checkout */
+export const gitSparseCheckoutInit = (path: string, cone?: boolean) =>
+  invoke<string>('git_sparse_checkout_init', { path, cone });
+
+/** Set sparse-checkout patterns */
+export const gitSparseCheckoutSet = (path: string, patterns: string[]) =>
+  invoke<string>('git_sparse_checkout_set', { path, patterns });
+
+/** Add sparse-checkout patterns */
+export const gitSparseCheckoutAdd = (path: string, patterns: string[]) =>
+  invoke<string>('git_sparse_checkout_add', { path, patterns });
+
+/** List sparse-checkout patterns */
+export const gitSparseCheckoutList = (path: string) =>
+  invoke<string[]>('git_sparse_checkout_list', { path });
+
+/** Disable sparse-checkout */
+export const gitSparseCheckoutDisable = (path: string) =>
+  invoke<string>('git_sparse_checkout_disable', { path });
+
+/** Create archive of repository */
+export const gitArchive = (path: string, format: string, outputPath: string, refName: string, prefix?: string) =>
+  invoke<string>('git_archive', { path, format, outputPath, refName, prefix });
+
+/** Create patch files from commit range */
+export const gitFormatPatch = (path: string, range: string, outputDir: string) =>
+  invoke<string[]>('git_format_patch', { path, range, outputDir });
+
+/** Apply a patch file */
+export const gitApplyPatch = (path: string, patchPath: string, checkOnly?: boolean) =>
+  invoke<string>('git_apply_patch', { path, patchPath, checkOnly });
+
+/** Apply a mailbox patch (git am) */
+export const gitApplyMailbox = (path: string, patchPath: string) =>
+  invoke<string>('git_apply_mailbox', { path, patchPath });
+
 // ============================================================================
 // Environment Variable Management
 // ============================================================================
@@ -2343,6 +2698,14 @@ export const envvarExpand = (path: string) =>
 export const envvarDeduplicatePath = (scope: EnvVarScope) =>
   invoke<number>('envvar_deduplicate_path', { scope });
 
+/** List persistent vars with registry type info (Windows: REG_SZ/REG_EXPAND_SZ) */
+export const envvarListPersistentTyped = (scope: EnvVarScope) =>
+  invoke<PersistentEnvVar[]>('envvar_list_persistent_typed', { scope });
+
+/** Detect conflicts between User and System environment variables */
+export const envvarDetectConflicts = () =>
+  invoke<EnvVarConflict[]>('envvar_detect_conflicts');
+
 // ============================================================================
 // Terminal Management
 // ============================================================================
@@ -2354,6 +2717,14 @@ export const terminalDetectShells = () =>
 /** Get info for a specific shell by id */
 export const terminalGetShellInfo = (shellId: string) =>
   invoke<ShellInfo>('terminal_get_shell_info', { shellId });
+
+/** Measure shell startup time (with and without profile) */
+export const terminalMeasureStartup = (shellId: string) =>
+  invoke<ShellStartupMeasurement>('terminal_measure_startup', { shellId });
+
+/** Check shell health (config syntax, PATH, large files) */
+export const terminalCheckShellHealth = (shellId: string) =>
+  invoke<ShellHealthResult>('terminal_check_shell_health', { shellId });
 
 /** List all terminal profiles */
 export const terminalListProfiles = () =>
@@ -2639,6 +3010,46 @@ export const pluginUpdate = (pluginId: string) =>
 /** Get a static asset from a plugin's UI directory */
 export const pluginGetUiAsset = (pluginId: string, assetPath: string) =>
   invoke<number[]>('plugin_get_ui_asset', { pluginId, assetPath });
+
+/** Get health metrics for a specific plugin */
+export const pluginGetHealth = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginHealth>('plugin_get_health', { pluginId });
+
+/** Get health metrics for all plugins */
+export const pluginGetAllHealth = () =>
+  invoke<Record<string, import('@/types/plugin').PluginHealth>>('plugin_get_all_health');
+
+/** Reset auto-disabled state for a plugin */
+export const pluginResetHealth = (pluginId: string) =>
+  invoke<void>('plugin_reset_health', { pluginId });
+
+/** Export a plugin's directory + data as a zip file */
+export const pluginExportData = (pluginId: string) =>
+  invoke<string>('plugin_export_data', { pluginId });
+
+/** Get settings schema for a plugin */
+export const pluginGetSettingsSchema = (pluginId: string) =>
+  invoke<import('@/types/plugin').PluginSettingDeclaration[]>('plugin_get_settings_schema', { pluginId });
+
+/** Get current settings values for a plugin */
+export const pluginGetSettingsValues = (pluginId: string) =>
+  invoke<Record<string, unknown>>('plugin_get_settings_values', { pluginId });
+
+/** Set a single setting value for a plugin */
+export const pluginSetSetting = (pluginId: string, key: string, value: unknown) =>
+  invoke<void>('plugin_set_setting', { pluginId, key, value });
+
+/** Check for updates across all plugins */
+export const pluginCheckAllUpdates = () =>
+  invoke<import('@/types/plugin').PluginUpdateInfo[]>('plugin_check_all_updates');
+
+/** Update all plugins that have available updates */
+export const pluginUpdateAll = () =>
+  invoke<Array<{ Ok?: string; Err?: string }>>('plugin_update_all');
+
+/** Dispatch a system event to all listening plugins */
+export const pluginDispatchEvent = (eventName: string, payload: unknown = {}) =>
+  invoke<void>('plugin_dispatch_event', { eventName, payload });
 
 // ============================================================================
 // Winget-specific commands

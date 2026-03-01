@@ -1,4 +1,4 @@
-use crate::plugin::manager::{PluginManager, PluginUpdateInfo};
+use crate::plugin::manager::{PluginHealth, PluginManager, PluginUpdateInfo};
 use crate::plugin::manifest::PluginManifest;
 use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::permissions::PluginPermissionState;
@@ -352,4 +352,115 @@ pub async fn plugin_get_ui_asset(
     tokio::fs::read(&full_path)
         .await
         .map_err(|e| format!("Failed to read asset: {}", e))
+}
+
+/// Get health metrics for a specific plugin
+#[tauri::command]
+pub async fn plugin_get_health(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<PluginHealth, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.get_plugin_health(&plugin_id))
+}
+
+/// Get health metrics for all plugins
+#[tauri::command]
+pub async fn plugin_get_all_health(
+    manager: State<'_, SharedPluginManager>,
+) -> Result<HashMap<String, PluginHealth>, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.get_all_health())
+}
+
+/// Reset the auto-disabled state for a plugin
+#[tauri::command]
+pub async fn plugin_reset_health(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<(), String> {
+    let mut mgr = manager.write().await;
+    mgr.reset_plugin_health(&plugin_id);
+    Ok(())
+}
+
+/// Export a plugin's directory + data as a zip file, returns the zip path
+#[tauri::command]
+pub async fn plugin_export_data(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<String, String> {
+    let mgr = manager.read().await;
+    let path = mgr.export_plugin_data(&plugin_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Get settings schema for a plugin
+#[tauri::command]
+pub async fn plugin_get_settings_schema(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<Vec<crate::plugin::manifest::SettingDeclaration>, String> {
+    let mgr = manager.read().await;
+    mgr.get_plugin_settings_schema(&plugin_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get current settings values for a plugin
+#[tauri::command]
+pub async fn plugin_get_settings_values(
+    plugin_id: String,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    let mgr = manager.read().await;
+    mgr.get_plugin_settings_values(&plugin_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Set a single setting value for a plugin
+#[tauri::command]
+pub async fn plugin_set_setting(
+    plugin_id: String,
+    key: String,
+    value: serde_json::Value,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<(), String> {
+    let mut mgr = manager.write().await;
+    mgr.set_plugin_setting(&plugin_id, &key, value)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check for updates across all plugins
+#[tauri::command]
+pub async fn plugin_check_all_updates(
+    manager: State<'_, SharedPluginManager>,
+) -> Result<Vec<PluginUpdateInfo>, String> {
+    let mgr = manager.read().await;
+    Ok(mgr.check_all_updates().await)
+}
+
+/// Update all plugins that have available updates
+#[tauri::command]
+pub async fn plugin_update_all(
+    manager: State<'_, SharedPluginManager>,
+) -> Result<Vec<Result<String, String>>, String> {
+    let mut mgr = manager.write().await;
+    Ok(mgr.update_all().await)
+}
+
+/// Dispatch a system event to all listening plugins
+#[tauri::command]
+pub async fn plugin_dispatch_event(
+    event_name: String,
+    payload: serde_json::Value,
+    manager: State<'_, SharedPluginManager>,
+) -> Result<(), String> {
+    let mut mgr = manager.write().await;
+    mgr.dispatch_event(&event_name, &payload).await;
+    Ok(())
 }

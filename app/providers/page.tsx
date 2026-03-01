@@ -83,7 +83,7 @@ export default function ProvidersPage() {
   const handleCheckAllStatus = useCallback(async () => {
     setIsCheckingStatus(true);
     try {
-      const statusResults = await tauri.providerStatusAll();
+      const statusResults = await tauri.providerStatusAll(true);
       const newStatus: Record<string, boolean> = {};
       for (const status of statusResults) {
         newStatus[status.id] = status.installed;

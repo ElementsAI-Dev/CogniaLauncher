@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Bar, BarChart, XAxis, CartesianGrid } from "recharts";
+import { Bar, BarChart, Area, AreaChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   ChartContainer,
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useDownloadStore } from "@/lib/stores/download";
+import { formatBytes } from "@/lib/utils";
 import { Download, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 interface DownloadStatsWidgetProps {
@@ -22,6 +23,7 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
   const tasks = useDownloadStore((s) => s.tasks);
   const history = useDownloadStore((s) => s.history);
   const stats = useDownloadStore((s) => s.stats);
+  const speedHistory = useDownloadStore((s) => s.speedHistory);
 
   const { chartData, summaryStats } = useMemo(() => {
     const completed = tasks.filter((t) => t.state === "completed").length;
@@ -49,6 +51,15 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
   const chartConfig: ChartConfig = {
     count: { label: t("dashboard.widgets.downloadCount"), color: "var(--chart-1)" },
   };
+
+  const speedChartConfig: ChartConfig = {
+    speed: { label: t("dashboard.widgets.speedChart"), color: "var(--chart-2)" },
+  };
+
+  const speedChartData = useMemo(
+    () => speedHistory.map((s, i) => ({ idx: i, speed: s })),
+    [speedHistory]
+  );
 
   return (
     <Card className={className}>
@@ -113,6 +124,39 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
               <Bar dataKey="count" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartContainer>
+        )}
+
+        {speedChartData.length > 1 && (
+          <>
+            <p className="text-xs text-muted-foreground mt-4 mb-1">
+              {t("dashboard.widgets.speedChart")}
+            </p>
+            <ChartContainer config={speedChartConfig} className="h-[80px] w-full aspect-auto">
+              <AreaChart data={speedChartData} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="speedFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <YAxis
+                  hide
+                  domain={[0, "auto"]}
+                />
+                <ChartTooltip
+                  content={<ChartTooltipContent formatter={(value) => `${formatBytes(Number(value))}/s`} />}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="speed"
+                  stroke="var(--chart-2)"
+                  fill="url(#speedFill)"
+                  strokeWidth={1.5}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ChartContainer>
+          </>
         )}
       </CardContent>
     </Card>

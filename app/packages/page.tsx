@@ -104,7 +104,7 @@ export default function PackagesPage() {
         key: 'r',
         ctrlKey: true,
         action: () => {
-          fetchInstalledPackages();
+          fetchInstalledPackages(undefined, true);
           fetchProviders();
         },
         description: 'Refresh',
