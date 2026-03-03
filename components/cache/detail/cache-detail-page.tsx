@@ -314,7 +314,7 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
                 <SelectItem value="created_asc">{t('cache.sortOldest')}</SelectItem>
                 <SelectItem value="size_desc">{t('cache.sortLargest')}</SelectItem>
                 <SelectItem value="size_asc">{t('cache.sortSmallest')}</SelectItem>
-                <SelectItem value="hit_count_desc">{t('cache.sortMostAccessed')}</SelectItem>
+                <SelectItem value="hits_desc">{t('cache.sortMostAccessed')}</SelectItem>
               </SelectContent>
             </Select>
           </div>

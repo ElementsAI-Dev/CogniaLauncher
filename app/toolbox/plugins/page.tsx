@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +81,7 @@ export default function PluginsPage() {
     checkUpdate,
     updatePlugin,
     getHealth,
+    getAllHealth,
     resetHealth,
     getSettingsSchema,
     getSettingsValues,
@@ -89,6 +90,7 @@ export default function PluginsPage() {
     checkAllUpdates,
     updateAll,
     pendingUpdates,
+    healthMap,
   } = usePlugins();
 
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
@@ -110,6 +112,7 @@ export default function PluginsPage() {
   const [settingsDialogPlugin, setSettingsDialogPlugin] = useState<string | null>(null);
   const [settingsSchema, setSettingsSchema] = useState<PluginSettingDeclaration[]>([]);
   const [settingsValues, setSettingsValues] = useState<Record<string, unknown>>({});
+  const hasFetchedPluginsRef = useRef(false);
   const [scaffoldForm, setScaffoldForm] = useState({
     name: '', id: '', description: '', author: '', outputDir: '',
     language: 'typescript' as PluginLanguage,
@@ -119,8 +122,13 @@ export default function PluginsPage() {
   });
 
   useEffect(() => {
-    if (isDesktop) fetchPlugins();
-  }, [isDesktop, fetchPlugins]);
+    if (!isDesktop || hasFetchedPluginsRef.current) return;
+    hasFetchedPluginsRef.current = true;
+    void (async () => {
+      await fetchPlugins();
+      await getAllHealth();
+    })();
+  }, [isDesktop, fetchPlugins, getAllHealth]);
 
   const handleInstall = useCallback(async () => {
     if (!installSource.trim()) return;
@@ -267,9 +275,14 @@ export default function PluginsPage() {
 
   const getHealthStatus = useCallback((plugin: PluginInfo): 'good' | 'warning' | 'critical' => {
     if (!plugin.enabled) return 'good';
-    // We don't have health data in plugin list, so default to good
+    const health = healthMap[plugin.id];
+    if (!health) return 'good';
+    if (health.autoDisabled || health.consecutiveFailures >= 3) return 'critical';
+    const errorRate = health.totalCalls > 0 ? health.failedCalls / health.totalCalls : 0;
+    const avgDuration = health.totalCalls > 0 ? health.totalDurationMs / health.totalCalls : 0;
+    if (errorRate >= 0.2 || avgDuration >= 5000) return 'warning';
     return 'good';
-  }, []);
+  }, [healthMap]);
 
   if (!isDesktop) {
     return (
@@ -315,7 +328,12 @@ export default function PluginsPage() {
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={() => fetchPlugins()}
+              onClick={() => {
+                void (async () => {
+                  await fetchPlugins();
+                  await getAllHealth();
+                })();
+              }}
               disabled={loading}
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />

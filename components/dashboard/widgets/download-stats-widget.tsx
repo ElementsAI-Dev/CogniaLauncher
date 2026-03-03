@@ -26,15 +26,17 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
   const speedHistory = useDownloadStore((s) => s.speedHistory);
 
   const { chartData, summaryStats } = useMemo(() => {
-    const completed = tasks.filter((t) => t.state === "completed").length;
-    const failed = tasks.filter((t) => t.state === "failed").length;
-    const active = tasks.filter((t) => t.state === "downloading" || t.state === "queued").length;
-    const paused = tasks.filter((t) => t.state === "paused").length;
+    const taskList = tasks ?? [];
+    const historyList = history ?? [];
+    const completed = taskList.filter((t) => t.state === "completed").length;
+    const failed = taskList.filter((t) => t.state === "failed").length;
+    const active = taskList.filter((t) => t.state === "downloading" || t.state === "queued").length;
+    const paused = taskList.filter((t) => t.state === "paused").length;
 
     const summary = {
       active,
-      completed: completed + (history?.filter((h) => h.status === "completed").length || 0),
-      failed: failed + (history?.filter((h) => h.status === "failed").length || 0),
+      completed: completed + historyList.filter((h) => h.status === "completed").length,
+      failed: failed + historyList.filter((h) => h.status === "failed").length,
       paused,
     };
 
@@ -57,7 +59,7 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
   };
 
   const speedChartData = useMemo(
-    () => speedHistory.map((s, i) => ({ idx: i, speed: s })),
+    () => (speedHistory ?? []).map((s, i) => ({ idx: i, speed: s })),
     [speedHistory]
   );
 

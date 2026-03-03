@@ -3,12 +3,12 @@ use crate::error::{CogniaError, CogniaResult};
 use crate::plugin::host_functions::HostContext;
 use crate::plugin::loader::PluginLoader;
 use crate::plugin::manifest::PluginManifest;
-use crate::plugin::permissions::PermissionManager;
+use crate::plugin::permissions::{PermissionEnforcementMode, PermissionManager};
 use crate::plugin::registry::{PluginInfo, PluginRegistry, PluginSource, PluginToolInfo};
 use crate::provider::registry::ProviderRegistry;
 use crate::resolver::version::Version;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -116,6 +116,7 @@ pub struct PluginManager {
     registry: Arc<RwLock<PluginRegistry>>,
     loader: PluginLoader,
     permissions: Arc<RwLock<PermissionManager>>,
+    settings: Arc<RwLock<Settings>>,
     plugins_dir: PathBuf,
     health: HashMap<String, PluginHealth>,
 }
@@ -124,6 +125,7 @@ impl PluginManager {
     pub fn new(base_dir: &Path, deps: PluginDeps) -> Self {
         let plugins_dir = base_dir.join("plugins");
         let data_dir = base_dir.join("plugin-data");
+        let settings = deps.settings.clone();
 
         let permissions = Arc::new(RwLock::new(PermissionManager::new(data_dir)));
         let registry = Arc::new(RwLock::new(PluginRegistry::new(plugins_dir.clone())));
@@ -142,6 +144,7 @@ impl PluginManager {
             registry,
             loader,
             permissions,
+            settings,
             plugins_dir,
             health: HashMap::new(),
         }
@@ -149,6 +152,17 @@ impl PluginManager {
 
     /// Initialize: discover plugins, restore persisted state, load enabled ones
     pub async fn init(&mut self) -> CogniaResult<()> {
+        let mode = {
+            let settings = self.settings.read().await;
+            PermissionEnforcementMode::from_config_value(
+                &settings.plugin.permission_enforcement_mode,
+            )
+        };
+        {
+            let mut perms = self.permissions.write().await;
+            perms.set_mode(mode);
+        }
+
         // Ensure plugins directory exists
         if !self.plugins_dir.exists() {
             tokio::fs::create_dir_all(&self.plugins_dir)
@@ -327,7 +341,9 @@ impl PluginManager {
         self.loader.load(&plugin_id, &wasm_path)?;
 
         // Call optional lifecycle hook
-        self.loader.call_if_exists(&plugin_id, "cognia_on_install", "{}");
+        self.loader
+            .call_if_exists(&plugin_id, "cognia_on_install", "{}")
+            .await;
 
         // Persist state
         let _ = self.save_state().await;
@@ -384,7 +400,9 @@ impl PluginManager {
     /// Uninstall a plugin
     pub async fn uninstall(&mut self, plugin_id: &str) -> CogniaResult<()> {
         // Call optional lifecycle hook before unload
-        self.loader.call_if_exists(plugin_id, "cognia_on_uninstall", "{}");
+        self.loader
+            .call_if_exists(plugin_id, "cognia_on_uninstall", "{}")
+            .await;
 
         // Unload WASM
         self.loader.unload(plugin_id);
@@ -438,7 +456,9 @@ impl PluginManager {
         }
 
         // Call optional lifecycle hook
-        self.loader.call_if_exists(plugin_id, "cognia_on_enable", "{}");
+        self.loader
+            .call_if_exists(plugin_id, "cognia_on_enable", "{}")
+            .await;
 
         // Persist state
         let _ = self.save_state().await;
@@ -457,7 +477,9 @@ impl PluginManager {
         }
 
         // Call optional lifecycle hook before unload
-        self.loader.call_if_exists(plugin_id, "cognia_on_disable", "{}");
+        self.loader
+            .call_if_exists(plugin_id, "cognia_on_disable", "{}")
+            .await;
 
         // Unload WASM
         self.loader.unload(plugin_id);
@@ -541,9 +563,13 @@ impl PluginManager {
         // Lazy load WASM on first call
         if !self.loader.is_loaded(plugin_id) {
             self.loader.load(plugin_id, &wasm_path)?;
-            self.loader.call_if_exists(plugin_id, "cognia_on_enable", "{}");
+            self.loader
+                .call_if_exists(plugin_id, "cognia_on_enable", "{}")
+                .await;
             log::info!("Lazy-loaded WASM for plugin '{}'", plugin_id);
         }
+
+        self.loader.clear_emitted_events().await;
 
         // Call the WASM function with health tracking
         let start = std::time::Instant::now();
@@ -582,6 +608,22 @@ impl PluginManager {
             }
         }
 
+        loop {
+            let emitted_events = self.loader.drain_emitted_events().await;
+            if emitted_events.is_empty() {
+                break;
+            }
+
+            for emitted in emitted_events {
+                self.dispatch_event_with_meta(
+                    &emitted.event_name,
+                    &emitted.payload,
+                    Some(&emitted.source_plugin_id),
+                    Some(&emitted.timestamp),
+                ).await;
+            }
+        }
+
         result
     }
 
@@ -607,35 +649,82 @@ impl PluginManager {
     /// Dispatch a system event to all enabled plugins that listen for it.
     /// Calls the optional `cognia_on_event` WASM export with JSON payload.
     pub async fn dispatch_event(&mut self, event_name: &str, payload: &serde_json::Value) {
-        let listeners: Vec<(String, PathBuf)> = {
-            let reg = self.registry.read().await;
-            reg.iter()
-                .filter(|(_, p)| {
-                    p.enabled && p.manifest.plugin.listen_events.iter().any(|e| e == event_name || e == "*")
-                })
-                .map(|(id, p)| (id.clone(), p.wasm_path.clone()))
-                .collect()
-        };
+        self.dispatch_event_with_meta(event_name, payload, None, None)
+            .await;
+    }
 
-        for (plugin_id, wasm_path) in &listeners {
-            // Lazy load if needed
-            if !self.loader.is_loaded(plugin_id) {
-                if let Err(e) = self.loader.load(plugin_id, wasm_path) {
-                    log::warn!("Failed to lazy-load plugin '{}' for event dispatch: {}", plugin_id, e);
-                    continue;
-                }
+    async fn dispatch_event_with_meta(
+        &mut self,
+        event_name: &str,
+        payload: &serde_json::Value,
+        source_plugin_id: Option<&str>,
+        timestamp: Option<&str>,
+    ) {
+        let mut queue: VecDeque<(String, serde_json::Value, Option<String>, Option<String>)> =
+            VecDeque::new();
+        queue.push_back((
+            event_name.to_string(),
+            payload.clone(),
+            source_plugin_id.map(|s| s.to_string()),
+            timestamp.map(|t| t.to_string()),
+        ));
+
+        let mut processed = 0u32;
+        while let Some((queued_event, queued_payload, queued_source, queued_timestamp)) =
+            queue.pop_front()
+        {
+            processed += 1;
+            if processed > 64 {
+                log::warn!("Plugin event dispatch stopped after 64 events to avoid infinite loops");
+                break;
             }
 
-            let input = serde_json::json!({
-                "event": event_name,
-                "payload": payload,
-            }).to_string();
+            let listeners: Vec<(String, PathBuf)> = {
+                let reg = self.registry.read().await;
+                reg.iter()
+                    .filter(|(_, p)| {
+                        p.enabled && p.manifest.plugin.listen_events.iter().any(|e| e == &queued_event || e == "*")
+                    })
+                    .map(|(id, p)| (id.clone(), p.wasm_path.clone()))
+                    .collect()
+            };
 
-            self.loader.call_if_exists(plugin_id, "cognia_on_event", &input);
-        }
+            for (plugin_id, wasm_path) in &listeners {
+                // Lazy load if needed
+                if !self.loader.is_loaded(plugin_id) {
+                    if let Err(e) = self.loader.load(plugin_id, wasm_path) {
+                        log::warn!("Failed to lazy-load plugin '{}' for event dispatch: {}", plugin_id, e);
+                        continue;
+                    }
+                }
 
-        if !listeners.is_empty() {
-            log::debug!("Dispatched event '{}' to {} plugin(s)", event_name, listeners.len());
+                let input = serde_json::json!({
+                    "event": queued_event.clone(),
+                    "payload": queued_payload.clone(),
+                    "sourcePluginId": queued_source.clone(),
+                    "timestamp": queued_timestamp
+                        .clone()
+                        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+                }).to_string();
+
+                self.loader
+                    .call_if_exists(plugin_id, "cognia_on_event", &input)
+                    .await;
+            }
+
+            if !listeners.is_empty() {
+                log::debug!("Dispatched event '{}' to {} plugin(s)", queued_event, listeners.len());
+            }
+
+            let emitted = self.loader.drain_emitted_events().await;
+            for event in emitted {
+                queue.push_back((
+                    event.event_name,
+                    event.payload,
+                    Some(event.source_plugin_id),
+                    Some(event.timestamp),
+                ));
+            }
         }
     }
 
@@ -710,7 +799,7 @@ impl PluginManager {
 
         let temp_dir = tempfile::tempdir()
             .map_err(|e| CogniaError::Plugin(format!("Failed to create temp dir: {}", e)))?;
-        let zip_path = temp_dir.into_path().join(format!("{}.zip", plugin_id));
+        let zip_path = temp_dir.keep().join(format!("{}.zip", plugin_id));
 
         let file = std::fs::File::create(&zip_path)
             .map_err(|e| CogniaError::Plugin(format!("Failed to create zip: {}", e)))?;

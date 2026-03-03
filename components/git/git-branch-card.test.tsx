@@ -105,7 +105,18 @@ describe('GitBranchCard', () => {
     fireEvent.change(input, { target: { value: 'new-branch' } });
     fireEvent.click(screen.getByText('git.branchAction.create'));
     await waitFor(() => {
-      expect(onCreate).toHaveBeenCalledWith('new-branch');
+      expect(onCreate).toHaveBeenCalledWith('new-branch', undefined);
+    });
+  });
+
+  it('calls onCreate with start point', async () => {
+    const onCreate = jest.fn().mockResolvedValue('created');
+    render(<GitBranchCard branches={branches} onCreate={onCreate} />);
+    fireEvent.change(screen.getByPlaceholderText('git.branchAction.newBranchName'), { target: { value: 'release' } });
+    fireEvent.change(screen.getByPlaceholderText('start-point (optional)'), { target: { value: 'main' } });
+    fireEvent.click(screen.getByText('git.branchAction.create'));
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith('release', 'main');
     });
   });
 
@@ -124,5 +135,59 @@ describe('GitBranchCard', () => {
     await waitFor(() => {
       expect(input).toHaveValue('');
     });
+  });
+
+  it('calls onRename when rename action is confirmed', async () => {
+    const onRename = jest.fn().mockResolvedValue('renamed');
+    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('feature/renamed');
+    render(<GitBranchCard branches={branches} onRename={onRename} />);
+
+    fireEvent.click(screen.getAllByTitle('git.branchAction.rename')[0]);
+
+    await waitFor(() => {
+      expect(onRename).toHaveBeenCalledWith('main', 'feature/renamed');
+    });
+
+    promptSpy.mockRestore();
+  });
+
+  it('calls onSetUpstream when upstream value is entered', async () => {
+    const onSetUpstream = jest.fn().mockResolvedValue('set');
+    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('origin/feature-test');
+    render(<GitBranchCard branches={branches} onSetUpstream={onSetUpstream} />);
+
+    fireEvent.click(screen.getAllByTitle('git.branchAction.setUpstream')[1]);
+
+    await waitFor(() => {
+      expect(onSetUpstream).toHaveBeenCalledWith('feature/test', 'origin/feature-test');
+    });
+
+    promptSpy.mockRestore();
+  });
+
+  it('passes force delete flag when enabled', async () => {
+    const onDelete = jest.fn().mockResolvedValue('deleted');
+    render(<GitBranchCard branches={branches} onDelete={onDelete} />);
+
+    fireEvent.click(screen.getByLabelText('delete --force'));
+    fireEvent.click(screen.getByTitle('git.branchAction.delete'));
+
+    await waitFor(() => {
+      expect(onDelete).toHaveBeenCalledWith('feature/test', true);
+    });
+  });
+
+  it('calls delete remote branch action', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const onDeleteRemote = jest.fn().mockResolvedValue('deleted remote');
+    render(<GitBranchCard branches={branches} onDeleteRemote={onDeleteRemote} />);
+
+    fireEvent.click(screen.getByTitle('git.branchAction.deleteRemote'));
+
+    await waitFor(() => {
+      expect(onDeleteRemote).toHaveBeenCalledWith('origin', 'main');
+    });
+
+    confirmSpy.mockRestore();
   });
 });

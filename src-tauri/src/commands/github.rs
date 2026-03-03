@@ -138,6 +138,24 @@ async fn make_github_provider(token: Option<String>) -> GitHubProvider {
     GitHubProvider::new().with_token(effective_token)
 }
 
+async fn enqueue_github_download(
+    manager: &State<'_, SharedDownloadManager>,
+    url: String,
+    destination: &str,
+    file_name: String,
+    provider: String,
+    headers: std::collections::HashMap<String, String>,
+) -> Result<String, String> {
+    let full_path = PathBuf::from(destination).join(&file_name);
+    let task = DownloadTask::builder(url, full_path, file_name)
+        .with_provider(provider)
+        .with_headers(headers)
+        .build();
+
+    let mgr = manager.read().await;
+    Ok(mgr.add_task(task).await)
+}
+
 #[tauri::command]
 pub async fn github_validate_repo(repo: String, token: Option<String>) -> Result<bool, String> {
     let provider = make_github_provider(token).await;
@@ -205,8 +223,6 @@ pub async fn github_download_asset(
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
     let provider = make_github_provider(token).await;
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&asset_name);
 
     // For authenticated requests, use the API URL for asset downloads
     let download_url = if provider.has_token() {
@@ -216,13 +232,15 @@ pub async fn github_download_asset(
     };
 
     let headers = provider.get_download_headers();
-    let task = DownloadTask::builder(download_url, full_path, asset_name)
-        .with_provider(format!("github:{}", repo))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_github_download(
+        &manager,
+        download_url,
+        &destination,
+        asset_name,
+        format!("github:{}", repo),
+        headers,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -245,17 +263,16 @@ pub async fn github_download_source(
         ext
     );
 
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&file_name);
-
     let headers = provider.get_source_download_headers();
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(format!("github:{}", repo))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_github_download(
+        &manager,
+        url,
+        &destination,
+        file_name,
+        format!("github:{}", repo),
+        headers,
+    )
+    .await
 }
 
 #[tauri::command]

@@ -41,6 +41,11 @@ export const VALIDATION_RULES: Record<string, ValidationRule> = {
   "general.cache_monitor_interval": { min: 0, max: 3600 },
   "general.download_speed_limit": { min: 0, max: 1073741824 },
   "general.update_check_concurrency": { min: 1, max: 32 },
+  "startup.max_concurrent_scans": { min: 1, max: 16 },
+  "startup.startup_timeout_secs": { min: 5, max: 120 },
+  "backup.auto_backup_interval_hours": { min: 1, max: 720 },
+  "backup.max_backups": { min: 0, max: 1000 },
+  "backup.retention_days": { min: 0, max: 3650 },
 };
 
 export function validateField(

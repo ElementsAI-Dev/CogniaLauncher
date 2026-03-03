@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EnvironmentDetailsPanel } from "./environment-details-panel";
 import { useEnvironmentStore } from "@/lib/stores/environment";
 import { useEnvironments } from "@/hooks/use-environments";
@@ -9,6 +9,14 @@ jest.mock("@/lib/stores/environment", () => ({
 
 jest.mock("@/hooks/use-environments", () => ({
   useEnvironments: jest.fn(),
+}));
+
+jest.mock("@/hooks/use-auto-version", () => ({
+  useProjectPath: () => ({
+    projectPath: "/test/project",
+    setProjectPath: jest.fn(),
+    clearProjectPath: jest.fn(),
+  }),
 }));
 
 jest.mock("@/lib/tauri", () => ({
@@ -92,6 +100,7 @@ describe("EnvironmentDetailsPanel", () => {
   const mockOnSetLocal = jest.fn();
   const mockLoadEnvSettings = jest.fn();
   const mockSaveEnvSettings = jest.fn();
+  const mockDetectVersions = jest.fn();
 
   const defaultEnv = {
     env_type: "Node",
@@ -133,7 +142,10 @@ describe("EnvironmentDetailsPanel", () => {
     mockUseEnvironments.mockReturnValue({
       loadEnvSettings: mockLoadEnvSettings,
       saveEnvSettings: mockSaveEnvSettings,
+      detectVersions: mockDetectVersions,
     });
+    mockSaveEnvSettings.mockResolvedValue(undefined);
+    mockDetectVersions.mockResolvedValue([]);
     mockOnSetGlobal.mockResolvedValue(undefined);
     mockOnSetLocal.mockResolvedValue(undefined);
   });
@@ -392,5 +404,26 @@ describe("EnvironmentDetailsPanel", () => {
     );
 
     expect(screen.getByText("Set as Global")).toBeInTheDocument();
+  });
+
+  it("re-detects versions after updating auto switch settings", async () => {
+    render(
+      <EnvironmentDetailsPanel
+        env={defaultEnv}
+        detectedVersion={null}
+        open={true}
+        onOpenChange={mockOnOpenChange}
+        onSetGlobal={mockOnSetGlobal}
+        onSetLocal={mockOnSetLocal}
+      />,
+    );
+
+    const [firstSwitch] = screen.getAllByRole("switch");
+    fireEvent.click(firstSwitch);
+
+    await waitFor(() => {
+      expect(mockSaveEnvSettings).toHaveBeenCalled();
+      expect(mockDetectVersions).toHaveBeenCalledWith("/test/project");
+    });
   });
 });

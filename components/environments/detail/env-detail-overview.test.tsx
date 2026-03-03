@@ -21,7 +21,6 @@ const defaultProps = {
     total_size: 0,
     version_count: 0,
   },
-  detectedVersion: null,
   t: (key: string) => key,
 };
 

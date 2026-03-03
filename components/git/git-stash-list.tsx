@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Archive, Play, Trash2, Plus, FileText } from 'lucide-react';
+import { Archive, Play, Trash2, Plus, FileText, Undo2, GitBranch } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -14,12 +14,16 @@ import type { GitStashListProps } from '@/types/git';
 export function GitStashList({
   stashes,
   onApply,
+  onPop,
   onDrop,
   onSave,
+  onBranchFromStash,
+  onPushFiles,
   onShowDiff,
 }: GitStashListProps) {
   const { t } = useLocale();
   const [stashMsg, setStashMsg] = useState('');
+  const [stashFiles, setStashFiles] = useState('');
   const [includeUntracked, setIncludeUntracked] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -43,6 +47,16 @@ export function GitStashList({
     }
   };
 
+  const handlePop = async (id: string) => {
+    if (!onPop) return;
+    try {
+      const msg = await onPop(id);
+      toast.success(t('git.stash.popSuccess'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   const handleSave = async () => {
     if (!onSave) return;
     setSaving(true);
@@ -54,6 +68,47 @@ export function GitStashList({
       toast.error(String(e));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveFiles = async () => {
+    if (!onPushFiles) return;
+    const files = stashFiles
+      .split(',')
+      .map((file) => file.trim())
+      .filter(Boolean);
+    if (files.length === 0) return;
+    setSaving(true);
+    try {
+      const msg = await onPushFiles(files, stashMsg || undefined, includeUntracked);
+      toast.success(t('git.stashAction.saveSuccess'), { description: msg });
+      setStashMsg('');
+      setStashFiles('');
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBranchFromStash = async (stashId: string) => {
+    if (!onBranchFromStash) return;
+    const branchName = window.prompt(t('git.stashBranch.branchName'));
+    if (!branchName || !branchName.trim()) return;
+    try {
+      const msg = await onBranchFromStash(branchName.trim(), stashId);
+      toast.success(t('git.stashBranch.success'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleShowDiff = async (stashId: string) => {
+    if (!onShowDiff) return;
+    try {
+      await onShowDiff(stashId);
+    } catch (e) {
+      toast.error(String(e));
     }
   };
 
@@ -82,10 +137,21 @@ export function GitStashList({
                       variant="ghost"
                       size="icon"
                       className="h-5 w-5"
-                      onClick={() => onShowDiff(s.id)}
+                      onClick={() => handleShowDiff(s.id)}
                       title={t('git.stashAction.showDiff')}
                     >
                       <FileText className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onBranchFromStash && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => handleBranchFromStash(s.id)}
+                      title={t('git.stashBranch.title')}
+                    >
+                      <GitBranch className="h-3 w-3" />
                     </Button>
                   )}
                   {onApply && (
@@ -97,6 +163,17 @@ export function GitStashList({
                       title={t('git.actions.stashApply')}
                     >
                       <Play className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onPop && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => handlePop(s.id)}
+                      title={t('git.stash.popSuccess')}
+                    >
+                      <Undo2 className="h-3 w-3" />
                     </Button>
                   )}
                   {onDrop && (
@@ -137,7 +214,31 @@ export function GitStashList({
                 <Plus className="h-3 w-3 mr-1" />
                 {t('git.stashAction.save')}
               </Button>
+              {onPushFiles && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={handleSaveFiles}
+                  disabled={saving}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Stash Files
+                </Button>
+              )}
             </div>
+            {onPushFiles && (
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="file1.ts,file2.ts"
+                  value={stashFiles}
+                  onChange={(e) => setStashFiles(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveFiles()}
+                  className="flex-1 h-7 text-xs font-mono"
+                  disabled={saving}
+                />
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Checkbox
                 id="includeUntracked"

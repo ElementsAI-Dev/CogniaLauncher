@@ -1,6 +1,27 @@
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
 import type { DownloadTask } from "@/types/tauri";
 
+export interface DownloadPreflightInput {
+  destinationPath: string;
+  expectedBytes?: number | null;
+  checkDiskSpace: (path: string, required: number) => Promise<boolean>;
+}
+
+export interface DownloadPreflightResult {
+  allowed: boolean;
+  reason: "ok" | "unknown_size" | "insufficient_space" | "check_failed";
+  requiredBytes?: number;
+  error?: string;
+}
+
+export interface DownloadPreflightUiOptions {
+  t: (key: string) => string;
+  onInfo?: (message: string) => void;
+  onError?: (message: string) => void;
+  warnUnknownSize?: boolean;
+  unknownSizeWarningRef?: { current: boolean };
+}
+
 /**
  * Validate whether a string is a valid URL
  */
@@ -25,6 +46,21 @@ export function inferNameFromUrl(url: string): string {
     const parts = url.split("/").filter(Boolean);
     return parts[parts.length - 1] || "download";
   }
+}
+
+/**
+ * Join destination directory and filename with platform-friendly separators.
+ */
+export function joinDestinationPath(basePath: string, itemName: string): string {
+  const trimmedBase = basePath.trim().replace(/[\\/]+$/g, "");
+  const trimmedName = itemName.trim().replace(/^[\\/]+/g, "");
+
+  if (!trimmedBase) return trimmedName;
+  if (!trimmedName) return trimmedBase;
+
+  const separator =
+    trimmedBase.includes("\\") && !trimmedBase.includes("/") ? "\\" : "/";
+  return `${trimmedBase}${separator}${trimmedName}`;
 }
 
 /**
@@ -55,4 +91,94 @@ export function findClosestPriority(priority: number): string {
     diff: Math.abs(Number(o.value) - priority),
   })).sort((a, b) => a.diff - b.diff);
   return sorted[0].value;
+}
+
+/**
+ * Run pre-download disk-space checks.
+ *
+ * Policy:
+ * - known size: strict check, block when insufficient or check fails
+ * - unknown size: allow and mark as warning scenario
+ */
+export async function runDownloadPreflight(
+  input: DownloadPreflightInput
+): Promise<DownloadPreflightResult> {
+  const { destinationPath, expectedBytes, checkDiskSpace } = input;
+
+  if (
+    expectedBytes == null ||
+    !Number.isFinite(expectedBytes) ||
+    expectedBytes <= 0
+  ) {
+    return {
+      allowed: true,
+      reason: "unknown_size",
+    };
+  }
+
+  try {
+    const ok = await checkDiskSpace(destinationPath, expectedBytes);
+    if (!ok) {
+      return {
+        allowed: false,
+        reason: "insufficient_space",
+        requiredBytes: expectedBytes,
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: "ok",
+      requiredBytes: expectedBytes,
+    };
+  } catch (err) {
+    return {
+      allowed: false,
+      reason: "check_failed",
+      requiredBytes: expectedBytes,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Run preflight and map result to user-facing feedback.
+ */
+export async function runDownloadPreflightWithUi(
+  input: DownloadPreflightInput,
+  options: DownloadPreflightUiOptions
+): Promise<boolean> {
+  const {
+    t,
+    onInfo = () => {},
+    onError = () => {},
+    warnUnknownSize = true,
+    unknownSizeWarningRef,
+  } = options;
+
+  const result = await runDownloadPreflight(input);
+
+  if (result.reason === "unknown_size") {
+    if (warnUnknownSize) {
+      const alreadyWarned = unknownSizeWarningRef?.current ?? false;
+      if (!alreadyWarned) {
+        onInfo(t("downloads.preflight.unknownSizeWarning"));
+        if (unknownSizeWarningRef) {
+          unknownSizeWarningRef.current = true;
+        }
+      }
+    }
+    return true;
+  }
+
+  if (!result.allowed) {
+    if (result.reason === "insufficient_space") {
+      onError(t("downloads.errors.insufficientSpace"));
+    } else {
+      onError(result.error ?? t("downloads.disk.checkSpace"));
+    }
+    return false;
+  }
+
+  return true;
 }

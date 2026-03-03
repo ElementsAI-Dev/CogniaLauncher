@@ -63,16 +63,170 @@ const BRIDGE_SCRIPT = `
       read: function() { return rpc('clipboard.read', {}); },
       write: function(text) { return rpc('clipboard.write', { text: text }); }
     },
+    asset: {
+      read: function(path) { return rpc('asset.read', { path: path }); }
+    },
     callTool: function(entry, input) { return rpc('callTool', { entry: entry, input: input }); },
     theme: {
       current: function() { return rpc('theme.current', {}); }
     }
   };
+
+  function isRelativeAssetPath(value) {
+    if (!value) return false;
+    return !(
+      value.startsWith('http://') ||
+      value.startsWith('https://') ||
+      value.startsWith('data:') ||
+      value.startsWith('blob:') ||
+      value.startsWith('mailto:') ||
+      value.startsWith('javascript:') ||
+      value.startsWith('#') ||
+      value.startsWith('/')
+    );
+  }
+
+  function normalizeAssetPath(value) {
+    if (!value) return '';
+    var clean = value.split('#')[0].split('?')[0].trim();
+    if (clean.startsWith('./')) clean = clean.slice(2);
+    return clean;
+  }
+
+  async function hydrateAssets() {
+    var selectors = ['script[src]', 'link[href]', 'img[src]', 'source[src]', 'video[src]', 'audio[src]'];
+    for (var i = 0; i < selectors.length; i++) {
+      var nodes = document.querySelectorAll(selectors[i]);
+      for (var j = 0; j < nodes.length; j++) {
+        var node = nodes[j];
+        var attr = node.hasAttribute('src') ? 'src' : 'href';
+        var raw = node.getAttribute(attr);
+        if (!raw || !isRelativeAssetPath(raw)) continue;
+        var path = normalizeAssetPath(raw);
+        if (!path) continue;
+        try {
+          var result = await window.cognia.asset.read(path);
+          if (result && result.dataUrl) {
+            node.setAttribute(attr, result.dataUrl);
+          }
+        } catch (err) {
+          console.warn('[cognia bridge] failed to hydrate asset:', path, err);
+        }
+      }
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    hydrateAssets();
+  });
 })();
 </script>
 `;
 
-const CSP_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:;">';
+const CSP_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' data: blob:; style-src \'unsafe-inline\' data: blob:; img-src data: blob:; font-src data: blob:;">';
+
+export function isRelativeAssetPath(value: string): boolean {
+  return !(
+    value.startsWith('http://') ||
+    value.startsWith('https://') ||
+    value.startsWith('data:') ||
+    value.startsWith('blob:') ||
+    value.startsWith('mailto:') ||
+    value.startsWith('javascript:') ||
+    value.startsWith('#') ||
+    value.startsWith('/')
+  );
+}
+
+export function normalizeAssetPath(value: string): string {
+  let clean = value.split('#')[0]?.split('?')[0]?.trim() ?? '';
+  if (clean.startsWith('./')) {
+    clean = clean.slice(2);
+  }
+  return clean;
+}
+
+export function guessMimeType(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  switch (ext) {
+    case 'js': return 'text/javascript';
+    case 'css': return 'text/css';
+    case 'json': return 'application/json';
+    case 'svg': return 'image/svg+xml';
+    case 'png': return 'image/png';
+    case 'jpg':
+    case 'jpeg': return 'image/jpeg';
+    case 'gif': return 'image/gif';
+    case 'webp': return 'image/webp';
+    case 'woff': return 'font/woff';
+    case 'woff2': return 'font/woff2';
+    case 'ttf': return 'font/ttf';
+    case 'ico': return 'image/x-icon';
+    case 'html': return 'text/html';
+    default: return 'application/octet-stream';
+  }
+}
+
+export function bytesToDataUrl(bytes: number[], mimeType: string): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+export async function inlinePluginAssets(
+  html: string,
+  pluginId: string,
+  getUiAsset: (pluginId: string, assetPath: string) => Promise<number[] | null>,
+): Promise<string> {
+  if (typeof DOMParser === 'undefined') {
+    return html;
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const selectors: Array<{ selector: string; attribute: 'src' | 'href' }> = [
+    { selector: 'script[src]', attribute: 'src' },
+    { selector: 'link[href]', attribute: 'href' },
+    { selector: 'img[src]', attribute: 'src' },
+    { selector: 'source[src]', attribute: 'src' },
+    { selector: 'video[src]', attribute: 'src' },
+    { selector: 'audio[src]', attribute: 'src' },
+  ];
+  const cache = new Map<string, string>();
+
+  for (const { selector, attribute } of selectors) {
+    const nodes = Array.from(doc.querySelectorAll(selector));
+    for (const node of nodes) {
+      const raw = node.getAttribute(attribute);
+      if (!raw || !isRelativeAssetPath(raw)) {
+        continue;
+      }
+      const normalizedPath = normalizeAssetPath(raw);
+      if (!normalizedPath) {
+        continue;
+      }
+
+      if (!cache.has(raw)) {
+        const bytes = await getUiAsset(pluginId, normalizedPath);
+        if (!bytes || bytes.length === 0) {
+          continue;
+        }
+        cache.set(raw, bytesToDataUrl(bytes, guessMimeType(normalizedPath)));
+      }
+
+      const dataUrl = cache.get(raw);
+      if (dataUrl) {
+        node.setAttribute(attribute, dataUrl);
+      }
+    }
+  }
+
+  return doc.documentElement ? `<!DOCTYPE html>\n${doc.documentElement.outerHTML}` : html;
+}
 
 // ============================================================================
 // Component
@@ -86,7 +240,7 @@ interface PluginIframeViewProps {
 
 export function PluginIframeView({ pluginId, toolEntry, className }: PluginIframeViewProps) {
   const { t } = useLocale();
-  const { callTool, getLocales, translatePluginKey } = usePlugins();
+  const { callTool, getLocales, translatePluginKey, getUiAsset } = usePlugins();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [entry, setEntry] = useState<PluginUiEntry | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,9 +251,10 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
     let cancelled = false;
 
     pluginGetUiEntry(pluginId)
-      .then((data) => {
+      .then(async (data) => {
         if (!cancelled) {
-          setEntry(data);
+          const html = await inlinePluginAssets(data.html, pluginId, getUiAsset);
+          setEntry({ ...data, html });
           setLoading(false);
         }
       })
@@ -111,7 +266,7 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
       });
 
     return () => { cancelled = true; };
-  }, [pluginId]);
+  }, [pluginId, getUiAsset]);
 
   // Handle postMessage from iframe
   const handleMessage = useCallback(
@@ -185,6 +340,25 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
             }
             break;
 
+          case 'asset.read': {
+            const path = normalizeAssetPath(msg.params?.path ?? '');
+            if (!path) {
+              respond(undefined, 'asset path is required');
+              break;
+            }
+            const bytes = await getUiAsset(pluginId, path);
+            if (!bytes || bytes.length === 0) {
+              respond(undefined, `asset not found: ${path}`);
+              break;
+            }
+            const mimeType = guessMimeType(path);
+            respond({
+              dataUrl: bytesToDataUrl(bytes, mimeType),
+              mimeType,
+            });
+            break;
+          }
+
           // Call back into WASM
           case 'callTool': {
             const result = await callTool(pluginId, msg.params?.entry ?? toolEntry, msg.params?.input ?? '');
@@ -206,7 +380,7 @@ export function PluginIframeView({ pluginId, toolEntry, className }: PluginIfram
         respond(undefined, (e as Error).message ?? String(e));
       }
     },
-    [pluginId, toolEntry, entry, callTool, getLocales, translatePluginKey],
+    [pluginId, toolEntry, entry, callTool, getLocales, translatePluginKey, getUiAsset],
   );
 
   useEffect(() => {

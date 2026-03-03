@@ -25,7 +25,7 @@ import { useLocale } from '@/components/providers/locale-provider';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
-import type { PackageSummary, InstalledPackage, UpdateInfo, ResolutionResult, BatchResult } from '@/lib/tauri';
+import type { PackageSummary, InstalledPackage, ResolutionResult, BatchResult } from '@/lib/tauri';
 import type { ExportedPackageList } from '@/hooks/use-package-export';
 
 export default function PackagesPage() {
@@ -61,6 +61,7 @@ export default function PackagesPage() {
     clearPackageSelection,
     bookmarkedPackages,
     toggleBookmark,
+    availableUpdates: updates,
     updateCheckProgress,
     isCheckingUpdates,
     updateCheckErrors,
@@ -72,7 +73,6 @@ export default function PackagesPage() {
   const [activeTab, setActiveTab] = useState('installed');
   const [selectedPackage, setSelectedPackage] = useState<PackageSummary | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [updates, setUpdates] = useState<UpdateInfo[]>([]);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [dependencyResolution, setDependencyResolution] = useState<ResolutionResult | null>(null);
   const [resolvingDeps, setResolvingDeps] = useState(false);
@@ -137,7 +137,6 @@ export default function PackagesPage() {
     try {
       const packageNames = installedPackages.map(p => p.name);
       const foundUpdates = await checkForUpdates(packageNames);
-      setUpdates(foundUpdates);
       if (foundUpdates.length > 0) {
         toast.success(t('packages.updatesFound', { count: foundUpdates.length }));
       } else {
@@ -148,14 +147,13 @@ export default function PackagesPage() {
     }
   };
 
-  const handleUpdatePackage = async (name: string, version: string) => {
+  const handleUpdatePackage = async (name: string, version: string, provider?: string) => {
     try {
-      const provider = updates.find((update) => update.name === name)?.provider;
       const packageId = provider ? `${provider}:${name}` : name;
       await installPackages([`${packageId}@${version}`]);
       toast.success(t('packages.updateSuccess', { name, version }));
-      setUpdates(prev => prev.filter(u => u.name !== name));
       await fetchInstalledPackages();
+      await handleCheckUpdates();
     } catch (err) {
       toast.error(t('packages.updateFailed', { name, error: String(err) }));
     }
@@ -273,8 +271,7 @@ export default function PackagesPage() {
       await fetchInstalledPackages();
       // Refresh updates after batch update completes
       const packageNames = installedPackages.map(p => p.name);
-      const availableUpdates = await checkForUpdates(packageNames);
-      setUpdates(availableUpdates);
+      await checkForUpdates(packageNames);
     }
     if (result.failed.length > 0) {
       toast.error(t('packages.batchUpdateFailed', { count: result.failed.length }));
@@ -572,7 +569,7 @@ export default function PackagesPage() {
                 {availableUpdates.length > 0 && (
                   <div className="space-y-2">
                     {availableUpdates.map((update) => (
-                      <Card key={update.name}>
+                      <Card key={`${update.provider}:${update.name}`}>
                         <CardHeader className="py-3">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="flex items-center gap-3">
@@ -598,7 +595,7 @@ export default function PackagesPage() {
                               </Button>
                               <Button
                                 size="sm"
-                                onClick={() => handleUpdatePackage(update.name, update.latest_version)}
+                                onClick={() => handleUpdatePackage(update.name, update.latest_version, update.provider)}
                               >
                                 <ArrowUp className="h-4 w-4 mr-1" />
                                 {t('common.update')}

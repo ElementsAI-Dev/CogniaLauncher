@@ -14,6 +14,7 @@ const mockCacheCleanEnhanced = jest.fn();
 const mockCacheVerify = jest.fn();
 const mockDeleteCacheEntries = jest.fn();
 const mockDeleteCacheEntry = jest.fn();
+const mockListenCacheChanged = jest.fn().mockResolvedValue(() => {});
 
 jest.mock("@/lib/tauri", () => ({
   get isTauri() {
@@ -39,6 +40,9 @@ jest.mock("@/lib/tauri", () => ({
   },
   get deleteCacheEntry() {
     return mockDeleteCacheEntry;
+  },
+  get listenCacheChanged() {
+    return mockListenCacheChanged;
   },
 }));
 
@@ -111,6 +115,7 @@ describe("CacheDetailPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri = false;
+    mockListenCacheChanged.mockResolvedValue(() => {});
     mockCacheInfo.mockResolvedValue(cacheInfoData);
     mockGetCacheAccessStats.mockResolvedValue(accessStatsData);
     mockListCacheEntries.mockResolvedValue(entriesResult);

@@ -16,6 +16,7 @@ import { useActiveHeading } from '@/hooks/use-active-heading';
 
 interface DocsTocProps {
   content: string;
+  headings?: TocItem[];
   className?: string;
   mode?: DocsTocMode;
 }
@@ -66,9 +67,12 @@ function TocNav({
   );
 }
 
-export function DocsToc({ content, className, mode = 'both' }: DocsTocProps) {
+export function DocsToc({ content, headings: headingsProp, className, mode = 'both' }: DocsTocProps) {
   const { t } = useLocale();
-  const headings = useMemo(() => extractHeadings(content), [content]);
+  const headings = useMemo(
+    () => headingsProp ?? extractHeadings(content),
+    [content, headingsProp]
+  );
   const headingIds = useMemo(() => headings.map((h) => h.id), [headings]);
   const [mobileOpen, setMobileOpen] = useState(false);
 

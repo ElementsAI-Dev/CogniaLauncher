@@ -109,7 +109,7 @@ describe("LogEntry", () => {
       }
 
       // Copy button should be in the DOM
-      const copyButton = screen.queryByRole("button");
+      const copyButton = screen.queryByLabelText("Copy log entry");
       expect(copyButton).toBeInTheDocument();
     });
 

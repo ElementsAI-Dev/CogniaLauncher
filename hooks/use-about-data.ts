@@ -6,6 +6,11 @@ import { isTauri } from '@/lib/platform';
 import { APP_VERSION } from '@/lib/app-version';
 import { toast } from 'sonner';
 import type { SystemInfo, UpdateStatus } from '@/types/about';
+import {
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
 
 export type { SystemInfo, UpdateStatus };
 
@@ -111,6 +116,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        cacheInternalSizeHuman: '0 B',
+        cacheExternalSizeHuman: '0 B',
+        cacheTotalSizeHuman: '0 B',
         components: [],
         battery: null,
         disks: [],
@@ -122,13 +130,14 @@ export function useAboutData(locale: string): UseAboutDataReturn {
 
     setSystemLoading(true);
     try {
-      const [platformResult, cogniaDirResult, componentsResult, batteryResult, disksResult, networksResult] = await Promise.allSettled([
+      const [platformResult, cogniaDirResult, componentsResult, batteryResult, disksResult, networksResult, cacheStatsResult] = await Promise.allSettled([
         tauri.getPlatformInfo(),
         tauri.getCogniaDir(),
         tauri.getComponentsInfo(),
         tauri.getBatteryInfo(),
         tauri.getDiskInfo(),
         tauri.getNetworkInterfaces(),
+        tauri.getCombinedCacheStats(),
       ]);
 
       const platformInfo = platformResult.status === 'fulfilled' ? platformResult.value : null;
@@ -137,6 +146,7 @@ export function useAboutData(locale: string): UseAboutDataReturn {
       const battery = batteryResult.status === 'fulfilled' ? batteryResult.value : null;
       const disks = disksResult.status === 'fulfilled' ? disksResult.value : [];
       const networks = networksResult.status === 'fulfilled' ? networksResult.value : [];
+      const cacheStats = cacheStatsResult.status === 'fulfilled' ? cacheStatsResult.value : null;
 
       if (!platformInfo) {
         throw new Error('Failed to load platform info');
@@ -170,6 +180,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: platformInfo.appVersion || APP_VERSION,
         homeDir: cogniaDir,
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        cacheInternalSizeHuman: cacheStats?.internalSizeHuman || '0 B',
+        cacheExternalSizeHuman: cacheStats?.externalSizeHuman || '0 B',
+        cacheTotalSizeHuman: cacheStats?.totalSizeHuman || '0 B',
         components,
         battery,
         disks,
@@ -206,6 +219,9 @@ export function useAboutData(locale: string): UseAboutDataReturn {
         appVersion: APP_VERSION,
         homeDir: '~/.cognia',
         locale: locale === 'zh' ? 'zh-CN' : 'en-US',
+        cacheInternalSizeHuman: '0 B',
+        cacheExternalSizeHuman: '0 B',
+        cacheTotalSizeHuman: '0 B',
         components: [],
         battery: null,
         disks: [],
@@ -225,6 +241,21 @@ export function useAboutData(locale: string): UseAboutDataReturn {
   // Load system info when locale changes
   useEffect(() => {
     loadSystemInfo();
+  }, [loadSystemInfo]);
+
+  useEffect(() => {
+    if (!tauri.isTauri()) return;
+    void ensureCacheInvalidationBridge();
+    const dispose = subscribeInvalidation(
+      'about_cache_stats',
+      withThrottle(() => {
+        void loadSystemInfo();
+      }, 500),
+    );
+
+    return () => {
+      dispose();
+    };
   }, [loadSystemInfo]);
 
   const handleUpdate = useCallback(async (t: (key: string) => string) => {

@@ -11,7 +11,6 @@ global.ResizeObserver = class ResizeObserver {
 
 jest.mock("@/lib/tauri", () => ({
   isTauri: () => false,
-  batchUpdate: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock("sonner", () => ({
@@ -43,11 +42,11 @@ const sampleUpdates: UpdateInfo[] = [
 
 describe("ProviderUpdatesTab", () => {
   const defaultProps = {
-    providerId: "npm",
     availableUpdates: [] as UpdateInfo[],
     loadingUpdates: false,
     onCheckUpdates: jest.fn(() => Promise.resolve([] as UpdateInfo[])),
-    onRefreshPackages: jest.fn(() => Promise.resolve([])),
+    onUpdatePackage: jest.fn(() => Promise.resolve()),
+    onUpdateAllPackages: jest.fn(() => Promise.resolve()),
     t: mockT,
   };
 

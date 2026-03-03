@@ -43,6 +43,12 @@ const mockMessages = {
         copyUrl: 'Copy URL',
         urlCopied: 'Copied to clipboard',
         calculateChecksum: 'Calculate Checksum',
+        verifyFile: 'Verify File',
+        verifySuccess: 'Verification passed',
+        verifyResult: 'Verification Result',
+        verifyValid: 'Valid',
+        actualChecksum: 'Actual Checksum',
+        extractedFiles: 'Extracted files: {count}',
         checksumResult: 'Checksum: {checksum}',
         calculating: 'Calculating...',
       },
@@ -51,9 +57,11 @@ const mockMessages = {
         setPriority: 'Set Priority',
         open: 'Open File',
         reveal: 'Show in Folder',
+        extract: 'Extract Archive',
       },
       toast: {
         started: 'Download started',
+        extracted: 'Archive extracted successfully',
       },
       priorityCritical: 'Critical',
       priorityHigh: 'High',
@@ -199,6 +207,37 @@ describe('DownloadDetailDialog', () => {
     });
   });
 
+  it('verifies checksum when verify button is clicked', async () => {
+    const onVerify = jest.fn().mockResolvedValue({
+      valid: true,
+      actualChecksum: 'sha256abc',
+      expectedChecksum: 'sha256abc',
+      error: null,
+    });
+    renderDialog({ onVerifyFile: onVerify });
+
+    await userEvent.click(screen.getByText('Verify File'));
+
+    await waitFor(() => {
+      expect(onVerify).toHaveBeenCalledWith('/downloads/file.zip', 'sha256abc');
+      expect(screen.getByText('Verification Result')).toBeInTheDocument();
+      expect(screen.getByText(/Valid/)).toBeInTheDocument();
+      expect(screen.getByText(/Actual Checksum/)).toBeInTheDocument();
+    });
+  });
+
+  it('extracts archive when extract button is clicked', async () => {
+    const onExtract = jest.fn().mockResolvedValue(['/downloads/out/file.txt']);
+    renderDialog({ onExtractArchive: onExtract });
+
+    await userEvent.click(screen.getByText('Extract Archive'));
+
+    await waitFor(() => {
+      expect(onExtract).toHaveBeenCalled();
+      expect(screen.getByText('Extracted files: 1')).toBeInTheDocument();
+    });
+  });
+
   it('renders nothing when task is null', () => {
     const { container } = renderDialog({ task: null });
     // Dialog should not render any dialog content
@@ -208,7 +247,9 @@ describe('DownloadDetailDialog', () => {
   it('shows retries count', () => {
     renderDialog();
 
-    expect(screen.getByText(/0 \/ 3/)).toBeInTheDocument();
+    const retriesLabel = screen.getByText('Retry Attempts');
+    expect(retriesLabel).toBeInTheDocument();
+    expect(retriesLabel.closest('div')).toHaveTextContent('0');
   });
 
   it('shows timestamps', () => {

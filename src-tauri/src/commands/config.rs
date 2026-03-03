@@ -72,6 +72,14 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "appearance.interface_density",
     "appearance.language",
     "appearance.reduced_motion",
+    "updates.check_on_start",
+    "updates.auto_install",
+    "updates.notify",
+    "tray.minimize_to_tray",
+    "tray.start_minimized",
+    "tray.show_notifications",
+    "tray.click_behavior",
+    "tray.menu_items",
     "paths.root",
     "paths.cache",
     "paths.environments",
@@ -93,21 +101,16 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "startup.integrity_check",
 ];
 
-#[tauri::command]
-pub async fn config_list(
-    settings: State<'_, SharedSettings>,
-) -> Result<Vec<(String, String)>, String> {
-    let s = settings.read().await;
-
+fn collect_config_list(settings: &Settings) -> Vec<(String, String)> {
     let mut result: Vec<(String, String)> = CONFIG_LIST_STATIC_KEYS
         .iter()
-        .filter_map(|k| s.get_value(k).map(|v| (k.to_string(), v)))
+        .filter_map(|k| settings.get_value(k).map(|v| (k.to_string(), v)))
         .collect();
 
     // Add default mirror keys (even if empty, frontend expects them)
     for key in DEFAULT_MIRROR_KEYS {
         let provider = key.split('.').nth(1).unwrap_or_default();
-        let config = s.mirrors.get(provider).cloned().unwrap_or_default();
+        let config = settings.mirrors.get(provider).cloned().unwrap_or_default();
         result.push((key.to_string(), config.url));
         result.push((format!("{}.enabled", key), config.enabled.to_string()));
         result.push((format!("{}.priority", key), config.priority.to_string()));
@@ -116,7 +119,7 @@ pub async fn config_list(
 
     // Add provider tokens/URLs (GitHub, GitLab)
     for provider_name in &["github", "gitlab"] {
-        if let Some(ps) = s.providers.get(*provider_name) {
+        if let Some(ps) = settings.providers.get(*provider_name) {
             if let Some(token) = ps.extra.get("token").and_then(|v| v.as_str()) {
                 if !token.is_empty() {
                     // Mask token for display (show first 4 chars + asterisks)
@@ -137,7 +140,7 @@ pub async fn config_list(
     }
 
     // Add any additional configured mirrors that aren't in defaults
-    for (provider, config) in &s.mirrors {
+    for (provider, config) in &settings.mirrors {
         let key = format!("mirrors.{}", provider);
         if DEFAULT_MIRROR_KEYS.contains(&key.as_str()) || config.url.is_empty() {
             continue;
@@ -148,7 +151,20 @@ pub async fn config_list(
         result.push((format!("{}.verify_ssl", key), config.verify_ssl.to_string()));
     }
 
-    Ok(result)
+    result
+}
+
+#[tauri::command]
+pub async fn config_list(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<(String, String)>, String> {
+    let s = settings.read().await;
+    Ok(collect_config_list(&s))
+}
+
+#[tauri::command]
+pub fn config_list_defaults() -> Result<Vec<(String, String)>, String> {
+    Ok(collect_config_list(&Settings::default()))
 }
 
 #[tauri::command]
@@ -250,6 +266,7 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
 #[cfg(test)]
 mod tests {
     use super::CONFIG_LIST_STATIC_KEYS;
+    use super::config_list_defaults;
 
     #[test]
     fn config_list_static_keys_include_terminal_proxy_settings() {
@@ -264,6 +281,33 @@ mod tests {
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.no_proxy"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.timeout"));
         assert!(CONFIG_LIST_STATIC_KEYS.contains(&"network.retries"));
+    }
+
+    #[test]
+    fn config_list_static_keys_include_updates_and_tray_settings() {
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.check_on_start"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.auto_install"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"updates.notify"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.minimize_to_tray"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.start_minimized"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.show_notifications"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.click_behavior"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"tray.menu_items"));
+    }
+
+    #[test]
+    fn config_list_defaults_returns_known_default_keys() {
+        let defaults = config_list_defaults().unwrap();
+        let map: std::collections::HashMap<_, _> = defaults.into_iter().collect();
+
+        assert_eq!(
+            map.get("updates.check_on_start").map(std::string::String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            map.get("tray.click_behavior").map(std::string::String::as_str),
+            Some("toggle_window")
+        );
     }
 }
 

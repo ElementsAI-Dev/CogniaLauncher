@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { CachePathInfo } from '@/lib/tauri';
 import type { CachePathCardProps } from '@/types/cache';
+import { emitInvalidations } from '@/lib/cache/invalidation';
 import { CacheMigrationDialog } from './cache-migration-dialog';
 
 export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardProps) {
@@ -52,6 +53,10 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
       setNewPath('');
       fetchPathInfo();
       onPathChanged?.();
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-path:changed',
+      );
     } catch (e) {
       toast.error(`${t('cache.pathChangeFailed')}: ${String(e)}`);
     } finally {
@@ -68,6 +73,10 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
       toast.success(t('cache.pathReset'));
       fetchPathInfo();
       onPathChanged?.();
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-path:reset',
+      );
     } catch (e) {
       toast.error(`${t('cache.pathResetFailed')}: ${String(e)}`);
     } finally {

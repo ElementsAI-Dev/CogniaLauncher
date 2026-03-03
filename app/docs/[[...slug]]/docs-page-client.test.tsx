@@ -16,7 +16,9 @@ jest.mock('@/components/docs', () => ({
   DocsSidebar: ({ searchIndex }: { searchIndex?: unknown[] }) => (
     <div data-testid="sidebar" data-index-count={searchIndex?.length ?? 0} />
   ),
-  DocsMobileSidebar: () => <div data-testid="mobile-sidebar" />,
+  DocsMobileSidebar: ({ searchIndex }: { searchIndex?: unknown[] }) => (
+    <div data-testid="mobile-sidebar" data-index-count={searchIndex?.length ?? 0} />
+  ),
   DocsToc: ({ mode }: { mode?: string }) => <div data-testid={`toc-${mode}`} />,
   DocsNavFooter: ({ prev, next }: { prev?: { slug: string }; next?: { slug: string } }) => (
     <div data-testid="nav-footer" data-prev={prev?.slug ?? ''} data-next={next?.slug ?? ''} />
@@ -102,6 +104,7 @@ describe('DocsPageClient', () => {
     const index = [{ slug: 'x', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
     render(<DocsPageClient contentZh="# A" contentEn="# B" slug={['guide']} searchIndex={index} />);
     expect(screen.getByTestId('sidebar')).toHaveAttribute('data-index-count', '1');
+    expect(screen.getByTestId('mobile-sidebar')).toHaveAttribute('data-index-count', '1');
   });
 
   it('passes basePath to MarkdownRenderer', () => {

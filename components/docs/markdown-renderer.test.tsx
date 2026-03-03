@@ -260,7 +260,7 @@ describe('MarkdownRenderer', () => {
   it('resolves relative ../ links with basePath', () => {
     render(<MarkdownRenderer content="[Home](../index)" basePath="guide/sub" />);
     const link = screen.getByText('Home');
-    expect(link).toHaveAttribute('href', '/docs/guide/index');
+    expect(link).toHaveAttribute('href', '/docs/guide');
   });
 
   it('resolves bare filename links with basePath', () => {

@@ -157,27 +157,26 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 
 ---
 
-## Git 管理 — 17 条
+## Git 管理 — 143 条（按能力分组）
 
-| 命令 | 描述 |
-|------|------|
-| `git_is_available` | 检查 git 是否可用 |
-| `git_get_version` | 获取 git 版本 |
-| `git_get_executable_path` | 获取 git 路径 |
-| `git_install` | 安装 git |
-| `git_update` | 更新 git |
-| `git_get_config` | 获取全局配置 |
-| `git_set_config` | 设置全局配置 |
-| `git_remove_config` | 删除配置项 |
-| `git_get_repo_info` | 获取仓库信息 |
-| `git_get_log` | 获取提交日志 |
-| `git_get_branches` | 获取分支列表 |
-| `git_get_remotes` | 获取远程仓库 |
-| `git_get_tags` | 获取标签列表 |
-| `git_get_stashes` | 获取 stash 列表 |
-| `git_get_contributors` | 获取贡献者 |
-| `git_get_file_history` | 获取文件修改历史 |
-| `git_get_blame` | 获取 blame 信息 |
+> 统计口径：`src-tauri/src/commands/git.rs` 中 `fn git_*` 共 143 条，并与 `src-tauri/src/lib.rs` `invoke_handler`、`lib/tauri.ts` 保持 1:1 对齐。
+
+| 分组 | 数量 | 命令（完整） |
+|------|------|------|
+| 核心与全局配置 | 13 | `git_is_available`, `git_get_version`, `git_get_executable_path`, `git_install`, `git_update`, `git_get_config`, `git_set_config`, `git_remove_config`, `git_get_config_value`, `git_get_config_file_path`, `git_list_aliases`, `git_set_config_if_unset`, `git_open_config_in_editor` |
+| 仓库读取与分析 | 20 | `git_get_repo_info`, `git_get_log`, `git_get_branches`, `git_get_remotes`, `git_get_tags`, `git_get_stashes`, `git_get_contributors`, `git_get_file_history`, `git_get_blame`, `git_get_commit_detail`, `git_get_status`, `git_get_graph_log`, `git_get_ahead_behind`, `git_get_activity`, `git_get_file_stats`, `git_search_commits`, `git_get_diff`, `git_get_diff_between`, `git_get_commit_diff`, `git_get_reflog` |
+| 核心写操作与同步 | 27 | `git_checkout_branch`, `git_create_branch`, `git_delete_branch`, `git_stash_apply`, `git_stash_pop`, `git_stash_drop`, `git_stash_save`, `git_create_tag`, `git_delete_tag`, `git_stage_files`, `git_stage_all`, `git_unstage_files`, `git_discard_changes`, `git_commit`, `git_push`, `git_pull`, `git_fetch`, `git_init`, `git_merge`, `git_revert`, `git_cherry_pick`, `git_reset`, `git_push_tags`, `git_stash_show`, `git_clean`, `git_clean_dry_run`, `git_stash_push_files` |
+| 克隆与 URL 工具 | 4 | `git_clone`, `git_cancel_clone`, `git_extract_repo_name`, `git_validate_url` |
+| 远端与分支维护 | 8 | `git_remote_add`, `git_remote_remove`, `git_remote_rename`, `git_remote_set_url`, `git_branch_rename`, `git_branch_set_upstream`, `git_delete_remote_branch`, `git_remote_prune` |
+| Submodules | 5 | `git_list_submodules`, `git_add_submodule`, `git_update_submodules`, `git_remove_submodule`, `git_sync_submodules` |
+| Worktrees | 4 | `git_list_worktrees`, `git_add_worktree`, `git_remove_worktree`, `git_prune_worktrees` |
+| .gitignore 与 Hooks | 8 | `git_get_gitignore`, `git_set_gitignore`, `git_check_ignore`, `git_add_to_gitignore`, `git_list_hooks`, `git_get_hook_content`, `git_set_hook_content`, `git_toggle_hook` |
+| Git LFS | 7 | `git_lfs_is_available`, `git_lfs_get_version`, `git_lfs_tracked_patterns`, `git_lfs_ls_files`, `git_lfs_track`, `git_lfs_untrack`, `git_lfs_install` |
+| 冲突处理与 Rebase 流程 | 16 | `git_rebase`, `git_rebase_abort`, `git_rebase_continue`, `git_rebase_skip`, `git_squash`, `git_get_merge_rebase_state`, `git_get_conflicted_files`, `git_resolve_file_ours`, `git_resolve_file_theirs`, `git_resolve_file_mark`, `git_merge_abort`, `git_merge_continue`, `git_cherry_pick_abort`, `git_cherry_pick_continue`, `git_revert_abort`, `git_stash_branch` |
+| Local Config / Shallow / Stats / Signature | 12 | `git_get_local_config`, `git_set_local_config`, `git_remove_local_config`, `git_get_local_config_value`, `git_is_shallow`, `git_deepen`, `git_unshallow`, `git_get_repo_stats`, `git_fsck`, `git_describe`, `git_verify_commit`, `git_verify_tag` |
+| Interactive Rebase 与 Bisect | 9 | `git_get_rebase_todo_preview`, `git_start_interactive_rebase`, `git_bisect_start`, `git_bisect_good`, `git_bisect_bad`, `git_bisect_skip`, `git_bisect_reset`, `git_bisect_log`, `git_get_bisect_state` |
+| Sparse Checkout | 6 | `git_is_sparse_checkout`, `git_sparse_checkout_init`, `git_sparse_checkout_set`, `git_sparse_checkout_add`, `git_sparse_checkout_list`, `git_sparse_checkout_disable` |
+| Archive 与 Patch | 4 | `git_archive`, `git_format_patch`, `git_apply_patch`, `git_apply_mailbox` |
 
 ---
 

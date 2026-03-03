@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useDownloads, formatBytes, formatSpeed, formatDuration } from './use-downloads';
 
 // Mock Tauri APIs
@@ -23,6 +23,10 @@ const mockDownloadResumeAll = jest.fn();
 const mockDownloadCancelAll = jest.fn();
 const mockDownloadClearFinished = jest.fn();
 const mockDownloadRetryFailed = jest.fn();
+const mockDownloadSetPriority = jest.fn();
+const mockDownloadRetry = jest.fn();
+const mockDownloadCalculateChecksum = jest.fn();
+const mockDownloadExtract = jest.fn();
 const mockDownloadVerifyFile = jest.fn();
 const mockDownloadOpenFile = jest.fn();
 const mockDownloadRevealFile = jest.fn();
@@ -42,6 +46,8 @@ const mockListenDownloadTaskPaused = jest.fn();
 const mockListenDownloadTaskResumed = jest.fn();
 const mockListenDownloadTaskCancelled = jest.fn();
 const mockListenDownloadQueueUpdated = jest.fn();
+const mockListenDownloadTaskExtracting = jest.fn();
+const mockListenDownloadTaskExtracted = jest.fn();
 const mockIsTauri = jest.fn(() => true);
 
 jest.mock('@/lib/tauri', () => ({
@@ -67,6 +73,10 @@ jest.mock('@/lib/tauri', () => ({
   downloadCancelAll: (...args: unknown[]) => mockDownloadCancelAll(...args),
   downloadClearFinished: (...args: unknown[]) => mockDownloadClearFinished(...args),
   downloadRetryFailed: (...args: unknown[]) => mockDownloadRetryFailed(...args),
+  downloadSetPriority: (...args: unknown[]) => mockDownloadSetPriority(...args),
+  downloadRetry: (...args: unknown[]) => mockDownloadRetry(...args),
+  downloadCalculateChecksum: (...args: unknown[]) => mockDownloadCalculateChecksum(...args),
+  downloadExtract: (...args: unknown[]) => mockDownloadExtract(...args),
   downloadVerifyFile: (...args: unknown[]) => mockDownloadVerifyFile(...args),
   downloadOpenFile: (...args: unknown[]) => mockDownloadOpenFile(...args),
   downloadRevealFile: (...args: unknown[]) => mockDownloadRevealFile(...args),
@@ -86,6 +96,8 @@ jest.mock('@/lib/tauri', () => ({
   listenDownloadTaskResumed: (...args: unknown[]) => mockListenDownloadTaskResumed(...args),
   listenDownloadTaskCancelled: (...args: unknown[]) => mockListenDownloadTaskCancelled(...args),
   listenDownloadQueueUpdated: (...args: unknown[]) => mockListenDownloadQueueUpdated(...args),
+  listenDownloadTaskExtracting: (...args: unknown[]) => mockListenDownloadTaskExtracting(...args),
+  listenDownloadTaskExtracted: (...args: unknown[]) => mockListenDownloadTaskExtracted(...args),
 }));
 
 // Mock download store
@@ -232,6 +244,8 @@ describe('useDownloads', () => {
     mockListenDownloadTaskResumed.mockResolvedValue(() => {});
     mockListenDownloadTaskCancelled.mockResolvedValue(() => {});
     mockListenDownloadQueueUpdated.mockResolvedValue(() => {});
+    mockListenDownloadTaskExtracting.mockResolvedValue(() => {});
+    mockListenDownloadTaskExtracted.mockResolvedValue(() => {});
   });
 
   it('should return download methods', () => {
@@ -246,6 +260,49 @@ describe('useDownloads', () => {
     expect(result.current).toHaveProperty('refreshHistory');
     expect(result.current).toHaveProperty('clearHistory');
     expect(result.current).toHaveProperty('setSpeedLimit');
+  });
+
+  it('loads history during runtime initialization', async () => {
+    renderHook(() => useDownloads());
+
+    await waitFor(() => {
+      expect(mockDownloadHistoryList).toHaveBeenCalled();
+      expect(mockDownloadHistoryStats).toHaveBeenCalled();
+    });
+  });
+
+  it('should not start runtime effects when enableRuntime is false', async () => {
+    renderHook(() => useDownloads({ enableRuntime: false }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockDownloadList).not.toHaveBeenCalled();
+    expect(mockDownloadStats).not.toHaveBeenCalled();
+    expect(mockDownloadGetSpeedLimit).not.toHaveBeenCalled();
+    expect(mockDownloadGetMaxConcurrent).not.toHaveBeenCalled();
+    expect(mockListenDownloadTaskAdded).not.toHaveBeenCalled();
+    expect(mockListenDownloadTaskProgress).not.toHaveBeenCalled();
+  });
+
+  it('should keep action methods available when runtime is disabled', async () => {
+    mockDownloadAdd.mockResolvedValue('task-runtime-off');
+    const { result } = renderHook(() => useDownloads({ enableRuntime: false }));
+
+    await act(async () => {
+      await result.current.addDownload({
+        url: 'https://example.com/runtime-off.zip',
+        destination: '/downloads',
+        name: 'runtime-off.zip',
+      });
+    });
+
+    expect(mockDownloadAdd).toHaveBeenCalledWith({
+      url: 'https://example.com/runtime-off.zip',
+      destination: '/downloads',
+      name: 'runtime-off.zip',
+    });
   });
 
   it('should add a download', async () => {
@@ -336,9 +393,73 @@ describe('useDownloads', () => {
     expect(mockSetHistory).toHaveBeenCalledWith(history);
   });
 
+  it('refreshes history after failed event', async () => {
+    const history = [{ id: 'h-failed' }];
+    const historyStats = { totalCount: 1 };
+    mockDownloadHistoryList.mockResolvedValue(history);
+    mockDownloadHistoryStats.mockResolvedValue(historyStats);
+
+    renderHook(() => useDownloads());
+
+    await waitFor(() => {
+      expect(mockListenDownloadTaskFailed).toHaveBeenCalled();
+    });
+
+    const failedCallback = mockListenDownloadTaskFailed.mock.calls[0]?.[0] as
+      | ((taskId: string, error: string) => void)
+      | undefined;
+    expect(failedCallback).toBeDefined();
+
+    act(() => {
+      failedCallback?.('task-1', 'boom');
+    });
+
+    await waitFor(() => {
+      expect(mockDownloadHistoryList).toHaveBeenCalled();
+      expect(mockDownloadHistoryStats).toHaveBeenCalled();
+      expect(mockSetHistory).toHaveBeenCalledWith(history);
+      expect(mockSetHistoryStats).toHaveBeenCalledWith(historyStats);
+    });
+  });
+
+  it('refreshes history after cancelled event', async () => {
+    const history = [{ id: 'h-cancelled' }];
+    const historyStats = { totalCount: 1 };
+    mockDownloadHistoryList.mockResolvedValue(history);
+    mockDownloadHistoryStats.mockResolvedValue(historyStats);
+
+    renderHook(() => useDownloads());
+
+    await waitFor(() => {
+      expect(mockListenDownloadTaskCancelled).toHaveBeenCalled();
+    });
+
+    const cancelledCallback = mockListenDownloadTaskCancelled.mock.calls[0]?.[0] as
+      | ((taskId: string) => void)
+      | undefined;
+    expect(cancelledCallback).toBeDefined();
+
+    act(() => {
+      cancelledCallback?.('task-1');
+    });
+
+    await waitFor(() => {
+      expect(mockDownloadHistoryList).toHaveBeenCalled();
+      expect(mockDownloadHistoryStats).toHaveBeenCalled();
+      expect(mockSetHistory).toHaveBeenCalledWith(history);
+      expect(mockSetHistoryStats).toHaveBeenCalledWith(historyStats);
+    });
+  });
+
   it('should clear history', async () => {
     mockDownloadHistoryClear.mockResolvedValue(5);
+    mockDownloadHistoryList.mockResolvedValue([]);
+    mockDownloadHistoryStats.mockResolvedValue(null);
+    mockDownloadStats.mockResolvedValue(null);
     const { result } = renderHook(() => useDownloads());
+    mockDownloadHistoryList.mockClear();
+    mockDownloadHistoryStats.mockClear();
+    mockDownloadStats.mockClear();
 
     await act(async () => {
       await result.current.clearHistory();
@@ -346,6 +467,9 @@ describe('useDownloads', () => {
 
     expect(mockDownloadHistoryClear).toHaveBeenCalled();
     expect(mockClearHistory).toHaveBeenCalled();
+    expect(mockDownloadHistoryList).toHaveBeenCalled();
+    expect(mockDownloadHistoryStats).toHaveBeenCalled();
+    expect(mockDownloadStats).toHaveBeenCalled();
   });
 
   it('should set speed limit', async () => {
@@ -599,7 +723,13 @@ describe('useDownloads', () => {
 
   it('should remove a history record', async () => {
     mockDownloadHistoryRemove.mockResolvedValue(true);
+    mockDownloadHistoryList.mockResolvedValue([]);
+    mockDownloadHistoryStats.mockResolvedValue(null);
+    mockDownloadStats.mockResolvedValue(null);
     const { result } = renderHook(() => useDownloads());
+    mockDownloadHistoryList.mockClear();
+    mockDownloadHistoryStats.mockClear();
+    mockDownloadStats.mockClear();
 
     let removed: boolean = false;
     await act(async () => {
@@ -608,6 +738,9 @@ describe('useDownloads', () => {
 
     expect(mockDownloadHistoryRemove).toHaveBeenCalledWith('h1');
     expect(mockRemoveHistoryRecord).toHaveBeenCalledWith('h1');
+    expect(mockDownloadHistoryList).toHaveBeenCalled();
+    expect(mockDownloadHistoryStats).toHaveBeenCalled();
+    expect(mockDownloadStats).toHaveBeenCalled();
     expect(removed).toBe(true);
   });
 

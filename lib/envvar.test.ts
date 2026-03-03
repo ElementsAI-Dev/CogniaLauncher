@@ -3,6 +3,7 @@ import {
   getEnvFileExtension,
   downloadEnvFile,
   ENV_FORMAT_EXTENSIONS,
+  buildEnvVarRows,
 } from './envvar';
 import type { EnvFileFormat } from '@/types/tauri';
 
@@ -126,5 +127,85 @@ describe('downloadEnvFile', () => {
 
     expect(appendChildSpy).toHaveBeenCalled();
     expect(removeChildSpy).toHaveBeenCalled();
+  });
+});
+
+describe('buildEnvVarRows', () => {
+  it('builds all-scope rows without key deduplication', () => {
+    const rows = buildEnvVarRows({
+      scopeFilter: 'all',
+      processVars: { PATH: 'proc-path', HOME: '/home/user' },
+      userPersistentVars: [
+        { key: 'PATH', value: 'user-path', regType: 'REG_EXPAND_SZ' },
+      ],
+      systemPersistentVars: [
+        { key: 'PATH', value: 'sys-path', regType: 'REG_SZ' },
+      ],
+      conflicts: [],
+    });
+
+    const pathRows = rows.filter((row) => row.key === 'PATH');
+    expect(pathRows).toHaveLength(3);
+    expect(pathRows.map((row) => row.scope)).toEqual(['process', 'user', 'system']);
+  });
+
+  it('sorts by key (case-insensitive) then scope order', () => {
+    const rows = buildEnvVarRows({
+      scopeFilter: 'all',
+      processVars: { zebra: 'z', Alpha: 'a' },
+      userPersistentVars: [{ key: 'alpha', value: 'ua' }],
+      systemPersistentVars: [{ key: 'ALPHA', value: 'sa' }],
+      conflicts: [],
+    });
+
+    expect(rows[0]).toMatchObject({ key: 'Alpha', scope: 'process' });
+    expect(rows[1]).toMatchObject({ key: 'alpha', scope: 'user' });
+    expect(rows[2]).toMatchObject({ key: 'ALPHA', scope: 'system' });
+    expect(rows[3]).toMatchObject({ key: 'zebra', scope: 'process' });
+  });
+
+  it('marks user/system conflict rows from conflict list', () => {
+    const rows = buildEnvVarRows({
+      scopeFilter: 'all',
+      processVars: { PATH: 'proc-path' },
+      userPersistentVars: [{ key: 'PATH', value: 'user-path' }],
+      systemPersistentVars: [{ key: 'Path', value: 'sys-path' }],
+      conflicts: [
+        {
+          key: 'PATH',
+          userValue: 'user-path',
+          systemValue: 'sys-path',
+          effectiveValue: 'user-path',
+        },
+      ],
+    });
+
+    const processPath = rows.find((row) => row.scope === 'process' && row.key === 'PATH');
+    const userPath = rows.find((row) => row.scope === 'user' && row.key === 'PATH');
+    const systemPath = rows.find((row) => row.scope === 'system' && row.key === 'Path');
+
+    expect(processPath?.conflict).toBeUndefined();
+    expect(userPath?.conflict).toBe(true);
+    expect(systemPath?.conflict).toBe(true);
+  });
+
+  it('returns scope-only rows for user/system filters', () => {
+    const userRows = buildEnvVarRows({
+      scopeFilter: 'user',
+      processVars: { A: '1' },
+      userPersistentVars: [{ key: 'U', value: '2' }],
+      systemPersistentVars: [{ key: 'S', value: '3' }],
+      conflicts: [],
+    });
+    const systemRows = buildEnvVarRows({
+      scopeFilter: 'system',
+      processVars: { A: '1' },
+      userPersistentVars: [{ key: 'U', value: '2' }],
+      systemPersistentVars: [{ key: 'S', value: '3' }],
+      conflicts: [],
+    });
+
+    expect(userRows).toEqual([{ key: 'U', value: '2', scope: 'user', regType: undefined, conflict: false }]);
+    expect(systemRows).toEqual([{ key: 'S', value: '3', scope: 'system', regType: undefined, conflict: false }]);
   });
 });

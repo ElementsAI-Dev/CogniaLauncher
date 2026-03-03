@@ -18,7 +18,7 @@ import { isInputFocused } from "@/lib/utils/dom";
 
 interface SettingsSearchProps {
   search: UseSettingsSearchReturn;
-  onNavigateToSetting?: (section: SettingsSection, key: string) => void;
+  onNavigateToSetting?: (section: SettingsSection, key: string, focusId?: string) => void;
   t: TranslateFunction;
   className?: string;
 }
@@ -60,6 +60,15 @@ export function SettingsSearch({
   const handleResultClick = useCallback(
     (result: SettingsSearchResult) => {
       if (onNavigateToSetting) {
+        if (result.setting.focusId) {
+          onNavigateToSetting(
+            result.setting.section,
+            result.setting.key,
+            result.setting.focusId,
+          );
+          return;
+        }
+
         onNavigateToSetting(result.setting.section, result.setting.key);
       }
     },

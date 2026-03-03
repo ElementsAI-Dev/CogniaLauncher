@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { DocsSidebar } from './docs-sidebar';
+import { DocsMobileSidebar, DocsSidebar } from './docs-sidebar';
 
 // Mock DocsSearch to avoid useRouter dependency in sidebar tests
 jest.mock('./docs-search', () => ({
@@ -46,6 +46,14 @@ jest.mock('@/components/ui/collapsible', () => ({
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="collapsible-content">{children}</div>
   ),
+}));
+
+jest.mock('@/components/ui/sheet', () => ({
+  Sheet: ({ children }: { children: React.ReactNode }) => <div data-testid="sheet">{children}</div>,
+  SheetTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SheetContent: ({ children }: { children: React.ReactNode }) => <div data-testid="sheet-content">{children}</div>,
+  SheetHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
 }));
 
 // Use a small controlled DOC_NAV for testing
@@ -181,6 +189,13 @@ describe('DocsSidebar', () => {
   it('passes searchIndex to DocsSearch', () => {
     const index = [{ slug: 'test', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
     render(<DocsSidebar searchIndex={index} />);
+    const search = screen.getByTestId('docs-search');
+    expect(search).toHaveAttribute('data-has-index', 'true');
+  });
+
+  it('passes searchIndex to DocsSearch in mobile sidebar', () => {
+    const index = [{ slug: 'test', headingsZh: [], headingsEn: [], excerptZh: '', excerptEn: '' }];
+    render(<DocsMobileSidebar searchIndex={index} />);
     const search = screen.getByTestId('docs-search');
     expect(search).toHaveAttribute('data-has-index', 'true');
   });

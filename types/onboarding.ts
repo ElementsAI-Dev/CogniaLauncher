@@ -17,12 +17,16 @@ export interface BubbleHintDef {
   descKey: string;
   /** Preferred popover placement relative to the target */
   side: 'top' | 'bottom' | 'left' | 'right';
-  /** Only show this hint when on this route (pathname startsWith match) */
+  /** Only show this hint when on this route */
   route?: string;
+  /** Route matching strategy (defaults to exact) */
+  routeMatch?: 'exact' | 'prefix';
   /** Only show after onboarding wizard has been completed or skipped */
   showAfterOnboarding: boolean;
   /** Delay in ms before the hint appears after conditions are met */
   delay?: number;
+  /** Auto-dismiss timeout in ms after hint is visible (defaults to 6000) */
+  autoDismissMs?: number;
 }
 
 export interface BubbleHintProps {
@@ -132,8 +136,12 @@ export interface EnvironmentDetectionStepProps {
 
 export interface DetectedEnv {
   name: string;
+  envType?: string;
   version: string;
   available: boolean;
+  source?: string;
+  sourcePath?: string | null;
+  scope?: 'system' | 'managed';
 }
 
 export interface MirrorsStepProps {

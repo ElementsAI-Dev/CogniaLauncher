@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef } from 'react';
 import { usePackageStore } from '@/lib/stores/packages';
 import * as tauri from '@/lib/tauri';
 import { formatError } from '@/lib/errors';
-import type { UnlistenFn } from '@tauri-apps/api/event';
+import { usePackageUpdates, type CheckPackageUpdatesOptions } from '@/hooks/use-package-updates';
+import {
+  type CacheInvalidationEvent,
+  emitInvalidations,
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
+
+const PROVIDER_CACHE_TTL_MS = 10 * 60 * 1000;
+const SUGGESTION_CACHE_TTL_MS = 30 * 1000;
 
 export const normalizePackageId = (pkg: string) => {
   const colonIndex = pkg.indexOf(':');
@@ -39,6 +49,11 @@ export const normalizePackageId = (pkg: string) => {
 
 export function usePackages() {
   const store = usePackageStore();
+  const { checkUpdates: runUpdateCheck } = usePackageUpdates();
+  const installedPackagesInFlightRef = useRef<Map<string, Promise<tauri.InstalledPackage[]>>>(new Map());
+  const providerFetchInFlightRef = useRef<Promise<tauri.ProviderInfo[]> | null>(null);
+  const providerCacheTimestampRef = useRef<number | null>(null);
+  const suggestionCacheRef = useRef<Map<string, { items: tauri.SearchSuggestion[]; timestamp: number }>>(new Map());
 
   const searchPackages = useCallback(async (query: string, provider?: string) => {
     store.setLoading(true);
@@ -82,8 +97,17 @@ export function usePackages() {
 
   const getSuggestions = useCallback(async (query: string) => {
     if (query.length < 2) return [];
+    const normalized = query.trim().toLowerCase();
+    const now = Date.now();
+    const cached = suggestionCacheRef.current.get(normalized);
+    if (cached && now - cached.timestamp < SUGGESTION_CACHE_TTL_MS) {
+      return cached.items;
+    }
+
     try {
-      return await tauri.searchSuggestions(query, 10);
+      const suggestions = await tauri.searchSuggestions(query, 10);
+      suggestionCacheRef.current.set(normalized, { items: suggestions, timestamp: now });
+      return suggestions;
     } catch {
       return [];
     }
@@ -106,30 +130,48 @@ export function usePackages() {
   }, []);
 
   const fetchInstalledPackages = useCallback(async (provider?: string, force?: boolean) => {
+    const state = usePackageStore.getState();
+
     // Skip fetch if store has fresh data and not forced
-    if (!force && store.isScanFresh() && store.installedPackages.length > 0 && !provider) {
-      return store.installedPackages;
+    if (!force && !provider && state.isScanFresh() && state.installedPackages.length > 0) {
+      return state.installedPackages;
     }
 
     // Stale-while-revalidate: if we have cached data (from localStorage persist),
     // skip loading state and return cached data on error for instant perceived startup.
-    const hasCachedData = !force && store.installedPackages.length > 0 && !provider;
+    const hasCachedData = !force && !provider && state.installedPackages.length > 0;
+    const requestKey = `${provider ?? '__all__'}:${force ? 'force' : 'normal'}`;
+    const inFlight = installedPackagesInFlightRef.current.get(requestKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
     if (!hasCachedData) {
-      store.setLoading(true);
+      state.setLoading(true);
     }
-    store.setError(null);
-    try {
-      const packages = await tauri.packageList(provider, force);
-      store.setInstalledPackages(packages);
-      store.setLastScanTimestamp(Date.now());
-      return packages;
-    } catch (err) {
-      store.setError(formatError(err));
-      return hasCachedData ? store.installedPackages : [];
-    } finally {
-      store.setLoading(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    state.setError(null);
+
+    const request = tauri.packageList(provider, force)
+      .then((packages) => {
+        const latest = usePackageStore.getState();
+        latest.setInstalledPackages(packages);
+        if (!provider) {
+          latest.setLastScanTimestamp(Date.now());
+        }
+        return packages;
+      })
+      .catch((err) => {
+        const latest = usePackageStore.getState();
+        latest.setError(formatError(err));
+        return hasCachedData ? latest.installedPackages : [];
+      })
+      .finally(() => {
+        installedPackagesInFlightRef.current.delete(requestKey);
+        usePackageStore.getState().setLoading(false);
+      });
+
+    installedPackagesInFlightRef.current.set(requestKey, request);
+    return request;
   }, []);
 
   const installPackages = useCallback(async (packages: string[]) => {
@@ -140,6 +182,10 @@ export function usePackages() {
       const installed = await tauri.packageInstall(packages);
       await fetchInstalledPackages(undefined, true);
       tauri.pluginDispatchEvent('package_installed', { packages }).catch(() => {});
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:install',
+      );
       return installed;
     } catch (err) {
       store.setError(formatError(err));
@@ -157,6 +203,10 @@ export function usePackages() {
     try {
       const result = await tauri.batchInstall(packages, { dryRun, force });
       await fetchInstalledPackages(undefined, true);
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:batch-install',
+      );
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -173,6 +223,10 @@ export function usePackages() {
     try {
       const result = await tauri.batchUpdate(packages);
       await fetchInstalledPackages(undefined, true);
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:batch-update',
+      );
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -189,6 +243,10 @@ export function usePackages() {
       await tauri.packageUninstall(packages);
       await fetchInstalledPackages(undefined, true);
       tauri.pluginDispatchEvent('package_uninstalled', { packages }).catch(() => {});
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:uninstall',
+      );
     } catch (err) {
       store.setError(formatError(err));
       throw err;
@@ -201,6 +259,10 @@ export function usePackages() {
     try {
       const result = await tauri.batchUninstall(packages, force);
       await fetchInstalledPackages(undefined, true);
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:batch-uninstall',
+      );
       return result;
     } catch (err) {
       store.setError(formatError(err));
@@ -210,57 +272,77 @@ export function usePackages() {
   }, [fetchInstalledPackages]);
 
   const fetchProviders = useCallback(async () => {
-    try {
-      const providers = await tauri.providerList();
-      store.setProviders(providers);
-      return providers;
-    } catch (err) {
-      store.setError(formatError(err));
-      return [];
+    const state = usePackageStore.getState();
+    const now = Date.now();
+    const isProvidersCacheFresh =
+      providerCacheTimestampRef.current !== null &&
+      now - providerCacheTimestampRef.current < PROVIDER_CACHE_TTL_MS;
+
+    if (isProvidersCacheFresh && state.providers.length > 0) {
+      return state.providers;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
-  const progressUnlistenRef = useRef<UnlistenFn | null>(null);
+    if (providerFetchInFlightRef.current) {
+      return providerFetchInFlightRef.current;
+    }
 
-  // Clean up progress listener on unmount
-  useEffect(() => {
-    return () => {
-      progressUnlistenRef.current?.();
-      progressUnlistenRef.current = null;
-    };
-  }, []);
-
-  const checkForUpdates = useCallback(async (packages?: string[]) => {
-    store.setIsCheckingUpdates(true);
-    store.setError(null);
-    store.setUpdateCheckProgress(null);
-    store.setUpdateCheckErrors([]);
-
-    // Set up progress listener
-    let unlisten: UnlistenFn | null = null;
     try {
-      unlisten = await tauri.listenUpdateCheckProgress((progress) => {
-        store.setUpdateCheckProgress(progress);
+      const request = tauri.providerList().then((providers) => {
+        const latest = usePackageStore.getState();
+        latest.setProviders(providers);
+        providerCacheTimestampRef.current = Date.now();
+        return providers;
       });
-      progressUnlistenRef.current = unlisten;
+      providerFetchInFlightRef.current = request;
+      return await request;
+    } catch (err) {
+      state.setError(formatError(err));
+      return [];
+    } finally {
+      providerFetchInFlightRef.current = null;
+    }
+  }, []);
 
-      const summary = await tauri.checkUpdates(packages);
-      store.setAvailableUpdates(summary.updates);
-      store.setUpdateCheckErrors(summary.errors);
-      store.setLastUpdateCheck(Date.now());
+  useEffect(() => {
+    if (!tauri.isTauri()) return;
+    void ensureCacheInvalidationBridge();
+
+    const dispose = subscribeInvalidation(
+      ['package_data', 'provider_data'],
+      withThrottle((event: CacheInvalidationEvent) => {
+        if (event.domain === 'provider_data') {
+          providerCacheTimestampRef.current = null;
+          void fetchProviders();
+          return;
+        }
+
+        if (event.domain === 'package_data') {
+          usePackageStore.getState().setLastScanTimestamp(null);
+          void fetchInstalledPackages(undefined, true);
+        }
+      }, 500),
+    );
+
+    return () => {
+      dispose();
+    };
+  }, [fetchInstalledPackages, fetchProviders]);
+
+  const checkForUpdates = useCallback(async (
+    packages?: string[],
+    options?: Omit<CheckPackageUpdatesOptions, 'packages'>
+  ) => {
+    try {
+      const summary = await runUpdateCheck({
+        ...options,
+        packages,
+      });
       return summary.updates;
     } catch (err) {
       store.setError(formatError(err));
       return [];
-    } finally {
-      store.setIsCheckingUpdates(false);
-      // Clean up listener
-      unlisten?.();
-      progressUnlistenRef.current = null;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [runUpdateCheck, store]);
 
   const pinPackage = useCallback(async (name: string, version?: string) => {
     try {
@@ -289,6 +371,10 @@ export function usePackages() {
     try {
       await tauri.packageRollback(name, toVersion);
       await fetchInstalledPackages(undefined, true);
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'packages:rollback',
+      );
     } catch (err) {
       store.setError(formatError(err));
       throw err;

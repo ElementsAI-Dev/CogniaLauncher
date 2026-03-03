@@ -5,7 +5,11 @@ import type {
   GitLabReleaseInfo,
   GitLabBranchInfo,
   GitLabTagInfo,
+  GitLabPipelineInfo,
+  GitLabJobInfo,
   GitLabProjectInfo,
+  GitLabPackageInfo,
+  GitLabPackageFileInfo,
 } from "@/types/gitlab";
 
 beforeAll(() => {
@@ -31,16 +35,26 @@ const mockUseGitLabDownloads = {
   projectInfo: null as GitLabProjectInfo | null,
   isValidating: false,
   isValid: false as boolean | null,
-  sourceType: "release" as "release" | "branch" | "tag",
+  sourceType: "release" as "release" | "branch" | "tag" | "pipeline" | "package",
   setSourceType: jest.fn(),
   branches: [] as GitLabBranchInfo[],
   tags: [] as GitLabTagInfo[],
+  pipelines: [] as GitLabPipelineInfo[],
+  jobs: [] as GitLabJobInfo[],
+  packages: [] as GitLabPackageInfo[],
+  packageFiles: [] as GitLabPackageFileInfo[],
   loading: false,
   error: null as string | null,
   releases: [] as GitLabReleaseInfo[],
   validateAndFetch: jest.fn(),
+  fetchPipelines: jest.fn().mockResolvedValue([]),
+  fetchPipelineJobs: jest.fn().mockResolvedValue([]),
+  fetchPackages: jest.fn().mockResolvedValue([]),
+  fetchPackageFiles: jest.fn().mockResolvedValue([]),
   downloadAsset: jest.fn(),
   downloadSource: jest.fn(),
+  downloadJobArtifacts: jest.fn(),
+  downloadPackageFile: jest.fn(),
   saveToken: jest.fn().mockResolvedValue(undefined),
   saveInstanceUrl: jest.fn().mockResolvedValue(undefined),
   clearSavedToken: jest.fn().mockResolvedValue(undefined),
@@ -51,8 +65,10 @@ jest.mock("@/hooks/use-gitlab-downloads", () => ({
   useGitLabDownloads: () => mockUseGitLabDownloads,
 }));
 
+const mockIsTauri = jest.fn(() => false);
+
 jest.mock("@/lib/tauri", () => ({
-  isTauri: () => false,
+  isTauri: () => mockIsTauri(),
 }));
 
 jest.mock("sonner", () => ({
@@ -60,6 +76,7 @@ jest.mock("sonner", () => ({
 }));
 
 function resetMocks() {
+  mockIsTauri.mockReturnValue(false);
   mockUseGitLabDownloads.projectInput = "";
   mockUseGitLabDownloads.parsedProject = null;
   mockUseGitLabDownloads.projectInfo = null;
@@ -67,11 +84,17 @@ function resetMocks() {
   mockUseGitLabDownloads.releases = [];
   mockUseGitLabDownloads.branches = [];
   mockUseGitLabDownloads.tags = [];
+  mockUseGitLabDownloads.pipelines = [];
+  mockUseGitLabDownloads.jobs = [];
+  mockUseGitLabDownloads.packages = [];
+  mockUseGitLabDownloads.packageFiles = [];
   mockUseGitLabDownloads.error = null;
   mockUseGitLabDownloads.token = "";
   mockUseGitLabDownloads.instanceUrl = "";
   mockUseGitLabDownloads.loading = false;
   mockUseGitLabDownloads.sourceType = "release";
+  mockUseGitLabDownloads.fetchPackages.mockResolvedValue([]);
+  mockUseGitLabDownloads.fetchPackageFiles.mockResolvedValue([]);
 }
 
 function renderDialog(overrides: Partial<typeof mockUseGitLabDownloads> = {}) {
@@ -332,5 +355,156 @@ describe("GitLabDownloadDialog", () => {
       new Date(testRelease.releasedAt!).toLocaleDateString(),
     );
     expect(dateEl).toBeInTheDocument();
+  });
+
+  it("renders pipeline tab with pipeline list", () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "pipeline",
+      pipelines: [
+        { id: 101, refName: "main", status: "success", source: "push", createdAt: null, webUrl: null },
+      ],
+    });
+
+    expect(screen.getByText("#101")).toBeInTheDocument();
+    expect(screen.getByText("success")).toBeInTheDocument();
+  });
+
+  it("fetches pipeline jobs when selecting a pipeline", async () => {
+    mockUseGitLabDownloads.fetchPipelineJobs.mockResolvedValue([
+      {
+        id: 201,
+        name: "build",
+        stage: "build",
+        status: "success",
+        refName: "main",
+        hasArtifacts: true,
+        webUrl: null,
+        finishedAt: null,
+      },
+    ]);
+
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "pipeline",
+      pipelines: [
+        { id: 101, refName: "main", status: "success", source: "push", createdAt: null, webUrl: null },
+      ],
+    });
+
+    await userEvent.click(screen.getByText("#101"));
+
+    expect(mockUseGitLabDownloads.fetchPipelineJobs).toHaveBeenCalledWith(101);
+  });
+
+  it("renders package tab with package list", () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    expect(screen.getByText("cli-bundle")).toBeInTheDocument();
+    expect(screen.getByText("v1.2.3")).toBeInTheDocument();
+  });
+
+  it("shows select-package hint before a package is chosen", () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    expect(screen.getByText("downloads.gitlab.selectPackage")).toBeInTheDocument();
+  });
+
+  it("fetches package files when selecting a package", async () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    await userEvent.click(screen.getByText("cli-bundle"));
+
+    expect(mockUseGitLabDownloads.fetchPackageFiles).toHaveBeenCalledWith(301);
+  });
+
+  it("applies package type filter when clicking apply", async () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    await userEvent.type(
+      screen.getByPlaceholderText("downloads.gitlab.packageTypePlaceholder"),
+      "generic",
+    );
+    await userEvent.click(screen.getByText("downloads.gitlab.applyPackageType"));
+
+    expect(mockUseGitLabDownloads.fetchPackages).toHaveBeenCalledWith("generic");
+  });
+
+  it("applies package type filter when pressing Enter", async () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    await userEvent.type(
+      screen.getByPlaceholderText("downloads.gitlab.packageTypePlaceholder"),
+      "generic{enter}",
+    );
+
+    expect(mockUseGitLabDownloads.fetchPackages).toHaveBeenCalledWith("generic");
+  });
+
+  it("clears package type filter and reloads all package types", async () => {
+    renderDialog({
+      parsedProject: { namespace: "owner", project: "test-project", fullName: "owner/test-project" },
+      isValid: true,
+      sourceType: "package",
+      packages: [
+        { id: 301, name: "cli-bundle", version: "1.2.3", packageType: "generic", createdAt: null },
+      ],
+    });
+
+    const filterInput = screen.getByPlaceholderText(
+      "downloads.gitlab.packageTypePlaceholder",
+    ) as HTMLInputElement;
+    await userEvent.type(filterInput, "generic");
+    await userEvent.click(screen.getByRole("button", { name: "common.clear" }));
+
+    expect(filterInput.value).toBe("");
+    expect(mockUseGitLabDownloads.fetchPackages).toHaveBeenCalledWith(undefined);
+  });
+
+  it("saves instance URL when save url button is clicked", async () => {
+    mockIsTauri.mockReturnValue(true);
+    renderDialog({ instanceUrl: "https://gitlab.example.com" });
+
+    await userEvent.click(screen.getByText("downloads.auth.title"));
+    await userEvent.click(screen.getByText("downloads.gitlab.saveInstanceUrl"));
+
+    expect(mockUseGitLabDownloads.saveInstanceUrl).toHaveBeenCalled();
   });
 });

@@ -11,6 +11,12 @@ import type {
   CacheAccessStats,
 } from '@/lib/tauri';
 import { ENTRIES_PER_PAGE, formatCacheDate } from '@/lib/constants/cache';
+import {
+  emitInvalidations,
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
 
 interface UseCacheDetailOptions {
   cacheType: 'download' | 'metadata';
@@ -19,6 +25,7 @@ interface UseCacheDetailOptions {
 
 export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   const initializedRef = useRef(false);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cache info state
   const [cacheInfo, setCacheInfo] = useState<CacheInfo | null>(null);
@@ -88,6 +95,16 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
     }
   }, [entryTypeFilter, searchQuery, sortBy, page]);
 
+  const scheduleRefresh = useCallback(() => {
+    if (!isTauri() || !initializedRef.current) return;
+    if (refreshTimeoutRef.current) return;
+
+    refreshTimeoutRef.current = setTimeout(() => {
+      refreshTimeoutRef.current = null;
+      void Promise.all([fetchInfo(), fetchEntries()]);
+    }, 350);
+  }, [fetchEntries, fetchInfo]);
+
   // Initialize
   useEffect(() => {
     if (!initializedRef.current) {
@@ -115,6 +132,26 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
+  // Keep detail page synchronized with cache mutations
+  useEffect(() => {
+    if (!isTauri()) return;
+    void ensureCacheInvalidationBridge();
+    const dispose = subscribeInvalidation(
+      ['cache_overview', 'cache_entries'],
+      withThrottle(() => {
+        scheduleRefresh();
+      }, 350),
+    );
+
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+        refreshTimeoutRef.current = null;
+      }
+      dispose();
+    };
+  }, [scheduleRefresh]);
+
   // Computed stats
   const cacheStats = cacheInfo
     ? cacheType === 'download'
@@ -140,6 +177,10 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
       toast.success(t('cache.freed', { size: result.freed_human }));
       setSelectedKeys(new Set());
       await Promise.all([fetchInfo(), fetchEntries(true)]);
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-detail:clean',
+      );
     } catch (err) {
       toast.error(`${t('cache.clearCache')}: ${err}`);
     } finally {
@@ -176,6 +217,10 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
       toast.success(t('cache.detail.batchDeleteSuccess', { count: deleted }));
       setSelectedKeys(new Set());
       await Promise.all([fetchInfo(), fetchEntries()]);
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-detail:batch-delete',
+      );
     } catch (err) {
       toast.error(`${t('cache.deleteEntriesFailed')}: ${err}`);
     } finally {
@@ -191,6 +236,10 @@ export function useCacheDetail({ cacheType, t }: UseCacheDetailOptions) {
       toast.success(t('cache.detail.deleteEntrySuccess'));
       setDetailEntry(null);
       await Promise.all([fetchInfo(), fetchEntries()]);
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-detail:single-delete',
+      );
     } catch (err) {
       toast.error(`${t('cache.detail.deleteEntryFailed')}: ${err}`);
     }

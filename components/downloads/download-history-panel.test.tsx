@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DownloadHistoryPanel } from "./download-history-panel";
 import type { HistoryRecord, HistoryStats } from "@/lib/stores/download";
@@ -218,8 +218,10 @@ describe("DownloadHistoryPanel", () => {
       />,
     );
 
+    await userEvent.click(screen.getByRole("button", { name: "downloads.historyPanel.clear" }));
+    const confirmDialog = await screen.findByRole("alertdialog");
     await userEvent.click(
-      screen.getByText("downloads.historyPanel.clear"),
+      within(confirmDialog).getAllByRole("button", { name: "downloads.historyPanel.clear" })[0],
     );
 
     expect(onClearHistory).toHaveBeenCalledTimes(1);

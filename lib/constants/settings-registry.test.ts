@@ -22,6 +22,8 @@ describe('Settings Registry', () => {
         'tray',
         'paths',
         'provider',
+        'backup',
+        'startup',
         'system',
       ];
 
@@ -55,13 +57,13 @@ describe('Settings Registry', () => {
 
     it('all labelKeys follow expected pattern', () => {
       SETTINGS_SECTIONS.forEach((section) => {
-        expect(section.labelKey).toMatch(/^settings\./);
+        expect(section.labelKey).toMatch(/^[a-z]+\./);
       });
     });
 
     it('all descKeys follow expected pattern', () => {
       SETTINGS_SECTIONS.forEach((section) => {
-        expect(section.descKey).toMatch(/^settings\./);
+        expect(section.descKey).toMatch(/^[a-z]+\./);
       });
     });
   });
@@ -169,6 +171,8 @@ describe('Settings Registry', () => {
         'tray',
         'paths',
         'provider',
+        'backup',
+        'startup',
         'system',
       ];
       
@@ -199,6 +203,8 @@ describe('Settings Registry', () => {
         'tray',
         'paths',
         'provider',
+        'backup',
+        'startup',
         'system',
       ];
 
@@ -250,6 +256,8 @@ describe('Settings Registry', () => {
         'tray',
         'paths',
         'provider',
+        'backup',
+        'startup',
         'system',
       ];
 

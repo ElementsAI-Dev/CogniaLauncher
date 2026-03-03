@@ -67,7 +67,10 @@
     "done": "完成",
     "all": "全部",
     "saved": "已保存",
-    "deleted": "已删除"
+    "deleted": "已删除",
+    "created": "创建时间",
+    "started": "开始时间",
+    "completed": "完成时间"
   },
   "breadcrumbs": {
     "label": "面包屑"
@@ -645,6 +648,8 @@
   "environments": {
     "title": "环境",
     "description": "管理开发环境",
+    "desktopOnly": "需要桌面应用",
+    "desktopOnlyDescription": "该功能仅在桌面模式下可用。",
     "noEnvironments": "未检测到环境管理器。请安装 nvm、pyenv 或 rustup 以开始使用。",
     "emptyState": {
       "title": "未配置环境",
@@ -2458,6 +2463,9 @@
     "hardwareInfo": "硬件",
     "runtimeInfo": "运行时",
     "homeDirectory": "主目录",
+    "cacheTotalSize": "缓存总大小",
+    "cacheInternalSize": "内部缓存",
+    "cacheExternalSize": "外部缓存",
     "locale": "语言环境",
     "copySystemInfo": "复制系统信息",
     "copiedToClipboard": "已复制到剪贴板",
@@ -2883,12 +2891,21 @@
       "copyUrl": "复制链接",
       "urlCopied": "已复制到剪贴板",
       "calculateChecksum": "计算校验和",
+      "verifyFile": "校验文件",
+      "verifySuccess": "校验通过",
+      "verifyResult": "校验结果",
+      "verifyValid": "是否有效",
+      "actualChecksum": "实际校验和",
+      "extractedFiles": "已解压文件：{count}",
       "checksumCopied": "校验和已复制到剪贴板",
       "checksumResult": "校验和: {checksum}",
       "calculating": "计算中...",
       "serverFilename": "服务器文件名",
       "supportsResumeYes": "是",
       "supportsResumeNo": "否"
+    },
+    "preflight": {
+      "unknownSizeWarning": "文件大小未知，已提示后继续下载。"
     },
     "validation": {
       "invalidUrl": "请输入有效的URL"
@@ -3039,6 +3056,7 @@
       "releaseNotes": "发布说明",
       "selectRecommended": "选择推荐",
       "saveToken": "保存",
+      "saveInstanceUrl": "保存地址",
       "clearToken": "清除",
       "tokenSaved": "令牌已保存",
       "tokenCleared": "令牌已清除",
@@ -3080,15 +3098,20 @@
       "pipelines": "流水线",
       "jobs": "任务",
       "packages": "软件包",
+      "packageType": "软件包类型",
+      "packageTypePlaceholder": "全部类型（如 generic、npm、maven）",
+      "applyPackageType": "应用",
       "noPipelines": "未找到流水线",
       "noJobs": "该流水线没有任务",
       "noPackages": "注册表中没有软件包",
       "selectPipeline": "选择流水线以查看任务",
+      "selectPackage": "选择软件包以查看文件",
       "downloadArtifacts": "下载产物",
       "artifactsAdded": "任务产物已添加到下载队列",
       "packageFiles": "软件包文件",
       "noPackageFiles": "该软件包没有文件",
       "packageFileAdded": "软件包文件已添加到下载队列",
+      "packageFilesAdded": "已将 {count} 个软件包文件添加到下载队列",
       "searchProjects": "搜索项目...",
       "instanceUrlSaved": "实例 URL 已保存"
     },
@@ -3215,7 +3238,9 @@
       "http_sslVerify": "SSL 验证",
       "color_ui": "颜色输出",
       "gpg_program": "GPG 程序",
-      "gpg_format": "GPG 格式"
+      "gpg_format": "GPG 格式",
+      "applySafeDefaults": "应用安全默认配置",
+      "safeDefaultsApplied": "已应用 {count} 项安全默认配置"
     },
     "alias": {
       "title": "Git 别名",
@@ -3595,6 +3620,16 @@
       "untrusted": "不受信任",
       "verifyCommit": "验证提交",
       "verifyTag": "验证标签"
+    },
+    "quickOps": {
+      "title": "快速变基与压缩",
+      "description": "使用明确参数执行常用历史改写操作。",
+      "rebase": "变基当前分支",
+      "squash": "压缩最近提交",
+      "countPlaceholder": "提交数量（>=2）",
+      "rebaseSuccess": "变基完成",
+      "squashSuccess": "压缩完成",
+      "squashCountInvalid": "提交数量必须大于等于 2"
     },
     "interactiveRebase": {
       "title": "交互式变基",
@@ -4171,6 +4206,9 @@
     "install": "安装发行版",
     "installing": "正在安装发行版...",
     "installSuccess": "发行版 '{name}' 安装成功",
+    "installWithLocation": "安装到指定位置",
+    "installWithLocationDesc": "将该发行版安装到自定义主机目录。",
+    "installWithLocationSuccess": "发行版 '{name}' 已安装到指定位置",
     "unregister": "注销",
     "unregisterConfirm": "确定要注销 '{name}' 吗？所有数据将被永久删除。",
     "unregisterSuccess": "发行版 '{name}' 已注销",
@@ -4180,8 +4218,10 @@
     "shutdownConfirm": "关闭所有运行中的 WSL 实例？",
     "shutdownSuccess": "所有 WSL 实例已关闭",
     "launch": "启动",
+    "launchSuccess": "发行版 '{name}' 已启动",
     "launchAs": "以用户身份启动",
     "setDefault": "设为默认",
+    "defaultBadge": "默认",
     "setDefaultSuccess": "已将 '{name}' 设为默认发行版",
     "setVersion": "设置 WSL 版本",
     "setVersionSuccess": "已将 '{name}' 的 WSL 版本设为 {version}",
@@ -4210,6 +4250,8 @@
     "updating": "正在更新 WSL 内核...",
     "updateSuccess": "WSL 内核更新成功",
     "status": "WSL 状态",
+    "versionInfo": "版本信息",
+    "totalDiskUsage": "总磁盘占用",
     "kernelVersion": "内核版本",
     "wslgVersion": "WSLg 版本",
     "networkingModeLabel": "网络模式",
@@ -4380,6 +4422,7 @@
       "terminalEmpty": "在此发行版中执行命令。在上方输入命令并按回车键。",
       "filesystem": "文件系统浏览器",
       "filesystemHint": "点击浏览或按回车键加载目录。",
+      "filesystemNotRunning": "请先启动发行版再浏览文件系统。",
       "browse": "浏览",
       "refresh": "刷新",
       "emptyDir": "此目录为空。",
@@ -4464,6 +4507,7 @@
     "clone": "克隆",
     "cloneDesc": "复制此发行版（导出 → 导入）",
     "cloneName": "新发行版名称",
+    "cloneNameMustDiffer": "新发行版名称必须与源发行版不同。",
     "cloneLocation": "安装位置",
     "cloneSuccess": "发行版 '{name}' 克隆成功",
     "openInExplorer": "在资源管理器中打开",
@@ -4582,8 +4626,11 @@
     "envDetectedCount": "检测到 {count} 个环境",
     "envAvailable": "可用",
     "envNotFound": "未找到",
+    "envSourceLabel": "来源：{source}",
+    "envScopeSystem": "系统",
+    "envScopeManaged": "托管",
     "envRescan": "重新扫描",
-    "envWebModeNote": "完整检测功能仅在桌面应用中可用。网页模式显示有限结果。",
+    "envWebModeNote": "环境检测仅在桌面应用中可用。网页模式不会显示检测结果。",
     "mirrorsTitle": "镜像配置",
     "mirrorsDesc": "根据您的地区选择镜像预设，以加速包下载。",
     "mirrorPresetDesc_default": "直接使用官方包注册表",

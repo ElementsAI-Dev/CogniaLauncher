@@ -1,5 +1,5 @@
 use crate::error::{CogniaError, CogniaResult};
-use crate::plugin::host_functions::{self, HostContext};
+use crate::plugin::host_functions::{self, EmittedPluginEvent, HostContext};
 use extism::{Manifest, Plugin, Wasm};
 use std::collections::HashMap;
 use std::path::Path;
@@ -99,6 +99,14 @@ impl PluginLoader {
         Ok(result.to_string())
     }
 
+    pub async fn clear_emitted_events(&self) {
+        self.host_context.clear_emitted_events().await;
+    }
+
+    pub async fn drain_emitted_events(&self) -> Vec<EmittedPluginEvent> {
+        self.host_context.drain_emitted_events().await
+    }
+
     /// Check if a plugin is loaded
     pub fn is_loaded(&self, plugin_id: &str) -> bool {
         self.instances.contains_key(plugin_id)
@@ -112,7 +120,13 @@ impl PluginLoader {
 
     /// Call a function on a plugin if it exists, ignoring if the function is not exported.
     /// Used for optional lifecycle hooks (cognia_on_install, cognia_on_enable, etc.)
-    pub fn call_if_exists(&mut self, plugin_id: &str, function_name: &str, input: &str) -> Option<String> {
+    pub async fn call_if_exists(
+        &mut self,
+        plugin_id: &str,
+        function_name: &str,
+        input: &str,
+    ) -> Option<String> {
+        self.host_context.set_current_plugin(plugin_id).await;
         let plugin = self.instances.get_mut(plugin_id)?;
         if !plugin.function_exists(function_name) {
             return None;

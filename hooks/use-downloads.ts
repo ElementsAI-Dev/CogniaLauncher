@@ -11,12 +11,17 @@ import type {
   DiskSpace,
 } from '@/lib/stores/download';
 
+interface UseDownloadsOptions {
+  enableRuntime?: boolean;
+}
+
 /**
  * Hook for managing downloads with Tauri backend integration
  */
-export function useDownloads() {
+export function useDownloads(options: UseDownloadsOptions = {}) {
   const store = useDownloadStore();
   const unlistenRefs = useRef<(() => void)[]>([]);
+  const { enableRuntime = true } = options;
 
   // Refresh tasks from backend
   const refreshTasks = useCallback(async () => {
@@ -65,7 +70,7 @@ export function useDownloads() {
 
   // Setup event listeners
   useEffect(() => {
-    if (!tauri.isTauri()) return;
+    if (!enableRuntime || !tauri.isTauri()) return;
 
     const setupListeners = async () => {
       try {
@@ -99,6 +104,7 @@ export function useDownloads() {
             state: 'failed',
             error,
           });
+          refreshHistory();
         });
 
         const unlistenPaused = await tauri.listenDownloadTaskPaused((taskId) => {
@@ -111,6 +117,7 @@ export function useDownloads() {
 
         const unlistenCancelled = await tauri.listenDownloadTaskCancelled((taskId) => {
           store.updateTask(taskId, { state: 'cancelled' });
+          refreshHistory();
         });
 
         const unlistenQueueUpdated = await tauri.listenDownloadQueueUpdated((stats) => {
@@ -118,7 +125,7 @@ export function useDownloads() {
         });
 
         const unlistenExtracting = await tauri.listenDownloadTaskExtracting((taskId) => {
-          store.updateTask(taskId, { state: 'extracting' as DownloadTask['state'] });
+          store.updateTask(taskId, { state: 'extracting' });
         });
 
         const unlistenExtracted = await tauri.listenDownloadTaskExtracted(() => {
@@ -150,12 +157,15 @@ export function useDownloads() {
       unlistenRefs.current = [];
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTasks, refreshHistory]);
+  }, [enableRuntime, refreshTasks, refreshHistory]);
 
   // Initial data fetch and sync settings from backend
   useEffect(() => {
+    if (!enableRuntime) return;
+
     refreshTasks();
     refreshStats();
+    refreshHistory();
 
     // Sync speed limit and concurrency from backend
     const syncSettings = async () => {
@@ -184,12 +194,12 @@ export function useDownloads() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTasks, refreshStats]);
+  }, [enableRuntime, refreshTasks, refreshStats, refreshHistory]);
 
   // Clipboard URL monitoring
   const seenUrlsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!tauri.isTauri() || !store.clipboardMonitor) return;
+    if (!enableRuntime || !tauri.isTauri() || !store.clipboardMonitor) return;
 
     const DOWNLOAD_EXTENSIONS = /\.(zip|tar\.gz|tgz|tar\.xz|tar\.bz2|7z|rar|exe|msi|dmg|pkg|deb|rpm|appimage|iso|img|bin|gz|xz|bz2|zst)$/i;
 
@@ -230,7 +240,7 @@ export function useDownloads() {
 
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.clipboardMonitor]);
+  }, [enableRuntime, store.clipboardMonitor]);
 
   // Add a new download
   const addDownload = useCallback(
@@ -453,9 +463,10 @@ export function useDownloads() {
       if (!tauri.isTauri()) return 0;
       const count = await tauri.downloadHistoryClear(days);
       store.clearHistory();
+      await Promise.all([refreshHistory(), refreshStats()]);
       return count;
     },
-    [store]
+    [store, refreshHistory, refreshStats]
   );
 
   // Remove history record
@@ -465,10 +476,11 @@ export function useDownloads() {
       const removed = await tauri.downloadHistoryRemove(id);
       if (removed) {
         store.removeHistoryRecord(id);
+        await Promise.all([refreshHistory(), refreshStats()]);
       }
       return removed;
     },
-    [store]
+    [store, refreshHistory, refreshStats]
   );
 
   // Get disk space

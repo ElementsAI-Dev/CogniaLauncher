@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -38,6 +38,7 @@ import {
 import { usePackages } from "@/hooks/use-packages";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import type { UpdateInfo } from "@/types/tauri";
 
 // Map environment types to their associated package manager provider IDs
 const ENV_TYPE_TO_PROVIDERS: Record<string, string[]> = {
@@ -71,12 +72,12 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
     installPackages,
     uninstallPackages,
     checkForUpdates,
-    availableUpdates,
-    isCheckingUpdates,
   } = usePackages();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeView, setActiveView] = useState("installed");
+  const [providerUpdates, setProviderUpdates] = useState<UpdateInfo[]>([]);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
 
   const relevantProviders = ENV_TYPE_TO_PROVIDERS[envType] || [];
   const [selectedProvider, setSelectedProvider] = useState(
@@ -88,8 +89,17 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   useEffect(() => {
     if (activeProvider) {
       fetchInstalledPackages(activeProvider);
+      setProviderUpdates([]);
     }
   }, [activeProvider, fetchInstalledPackages]);
+
+  const visibleUpdates = useMemo(
+    () => providerUpdates.filter((update) => update.provider === activeProvider),
+    [providerUpdates, activeProvider],
+  );
+
+  const isPackageInstalling = (provider: string, name: string) =>
+    installing.includes(`${provider}:${name}`) || installing.includes(name);
 
   const handleSearch = async (query: string) => {
     if (!query.trim()) return;
@@ -98,10 +108,18 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   };
 
   const handleInstall = async (packageName: string) => {
+    await handleInstallWithProvider(activeProvider, packageName);
+  };
+
+  const handleInstallWithProvider = async (
+    provider: string,
+    packageName: string,
+    version?: string,
+  ) => {
     try {
-      const pkgSpec = activeProvider
-        ? `${activeProvider}:${packageName}`
-        : packageName;
+      const pkgSpec = version
+        ? `${provider}:${packageName}@${version}`
+        : `${provider}:${packageName}`;
       await installPackages([pkgSpec]);
       toast.success(
         t("environments.detail.packageInstalled", { name: packageName }),
@@ -126,7 +144,18 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
   };
 
   const handleCheckUpdates = async () => {
-    await checkForUpdates();
+    if (!activeProvider) return;
+    setIsCheckingUpdates(true);
+    try {
+      const packageNames = installedPackages.map((pkg) => pkg.name);
+      const updates = await checkForUpdates(packageNames, {
+        providerId: activeProvider,
+        syncStore: false,
+      });
+      setProviderUpdates(updates);
+    } finally {
+      setIsCheckingUpdates(false);
+    }
   };
 
   if (relevantProviders.length === 0) {
@@ -265,7 +294,7 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
       )}
 
       {/* Available Updates */}
-      {availableUpdates.length > 0 && activeView === "installed" && (
+      {visibleUpdates.length > 0 && activeView === "installed" && (
         <Card className="border-yellow-200 dark:border-yellow-800 bg-yellow-50/50 dark:bg-yellow-950/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -275,9 +304,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {availableUpdates.slice(0, 10).map((update) => (
+              {visibleUpdates.slice(0, 10).map((update) => (
                 <div
-                  key={update.name}
+                  key={`${update.provider}:${update.name}`}
                   className="flex items-center justify-between p-2 rounded bg-background/60"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -290,10 +319,16 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                     variant="outline"
                     size="sm"
                     className="gap-1 shrink-0 text-xs h-7"
-                    onClick={() => handleInstall(`${update.name}@${update.latest_version}`)}
-                    disabled={installing.includes(update.name)}
+                    onClick={() =>
+                      handleInstallWithProvider(
+                        update.provider,
+                        update.name,
+                        update.latest_version,
+                      )
+                    }
+                    disabled={isPackageInstalling(update.provider, update.name)}
                   >
-                    {installing.includes(update.name) ? (
+                    {isPackageInstalling(update.provider, update.name) ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
                     ) : (
                       <ArrowUpCircle className="h-3 w-3" />
@@ -302,9 +337,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                   </Button>
                 </div>
               ))}
-              {availableUpdates.length > 10 && (
+              {visibleUpdates.length > 10 && (
                 <p className="text-xs text-muted-foreground text-center">
-                  +{availableUpdates.length - 10} more
+                  +{visibleUpdates.length - 10} more
                 </p>
               )}
             </div>
@@ -355,9 +390,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
                               onClick={() => handleUninstall(pkg.name)}
-                              disabled={installing.includes(pkg.name)}
+                              disabled={isPackageInstalling(pkg.provider, pkg.name)}
                             >
-                              {installing.includes(pkg.name) ? (
+                              {isPackageInstalling(pkg.provider, pkg.name) ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : (
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -414,9 +449,9 @@ export function EnvDetailPackages({ envType, t }: EnvDetailPackagesProps) {
                           size="sm"
                           className="gap-1.5 shrink-0"
                           onClick={() => handleInstall(pkg.name)}
-                          disabled={installing.includes(pkg.name)}
+                          disabled={isPackageInstalling(activeProvider, pkg.name)}
                         >
-                          {installing.includes(pkg.name) ? (
+                          {isPackageInstalling(activeProvider, pkg.name) ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           ) : (
                             <Download className="h-3.5 w-3.5" />

@@ -16,7 +16,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocale } from "@/components/providers/locale-provider";
 import { DestinationPicker } from "./destination-picker";
-import { isValidUrl, inferNameFromUrl } from "@/lib/downloads";
+import { inferNameFromUrl, isValidUrl, joinDestinationPath } from "@/lib/downloads";
 import { isTauri } from "@/lib/tauri";
 import type { DownloadRequest } from "@/lib/stores/download";
 import { FileDown, Trash2 } from "lucide-react";
@@ -68,7 +68,7 @@ export function BatchImportDialog({
         .filter((p) => p.valid)
         .map((p) => ({
           url: p.url,
-          destination: `${destination.trim()}/${p.name}`,
+          destination: joinDestinationPath(destination, p.name),
           name: p.name,
         }));
       await onSubmit(requests);

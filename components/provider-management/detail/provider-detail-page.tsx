@@ -63,6 +63,8 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     installPackage,
     uninstallPackage,
     checkUpdates,
+    updatePackage,
+    updateAllPackages,
     runHealthCheck,
     fetchHistory,
     fetchEnvironmentInfo,
@@ -232,11 +234,11 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
 
         <TabsContent value="updates">
           <ProviderUpdatesTab
-            providerId={providerId}
             availableUpdates={availableUpdates}
             loadingUpdates={loadingUpdates}
             onCheckUpdates={checkUpdates}
-            onRefreshPackages={fetchInstalledPackages}
+            onUpdatePackage={updatePackage}
+            onUpdateAllPackages={updateAllPackages}
             t={t}
           />
         </TabsContent>

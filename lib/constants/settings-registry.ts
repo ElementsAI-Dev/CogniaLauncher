@@ -54,6 +54,8 @@ export type SettingType = 'input' | 'switch' | 'select';
 export interface SettingDefinition {
   /** Unique key matching the config key, e.g., 'general.parallel_downloads' */
   key: string;
+  /** Optional DOM id used for focusing from search navigation */
+  focusId?: string;
   /** Section this setting belongs to */
   section: SettingsSection;
   /** i18n key for the label */
@@ -77,6 +79,83 @@ export interface SectionDefinition {
   icon: string;
   order: number;
 }
+
+const SETTING_FOCUS_IDS: Record<string, string> = {
+  // General
+  "general.parallel_downloads": "parallel-downloads",
+  "general.min_install_space_mb": "min-install-space",
+  "general.metadata_cache_ttl": "metadata-cache-ttl",
+  "general.resolve_strategy": "resolve-strategy",
+  "general.auto_update_metadata": "auto-update-metadata",
+  "general.cache_max_size": "cache-max-size",
+  "general.cache_max_age_days": "cache-max-age-days",
+  "general.auto_clean_cache": "auto-clean-cache",
+  "general.cache_auto_clean_threshold": "cache-auto-clean-threshold",
+  "general.cache_monitor_interval": "cache-monitor-interval",
+  "general.cache_monitor_external": "cache-monitor-external",
+  "general.download_speed_limit": "download-speed-limit",
+  "general.update_check_concurrency": "update-check-concurrency",
+
+  // Network
+  "network.timeout": "network-timeout",
+  "network.retries": "network-retries",
+  "network.proxy": "network-proxy",
+  "network.no_proxy": "network-no-proxy",
+
+  // Security
+  "security.allow_http": "allow-http",
+  "security.verify_certificates": "verify-certs",
+  "security.allow_self_signed": "allow-self-signed",
+
+  // Mirrors
+  "mirrors.npm": "mirrors-npm",
+  "mirrors.pypi": "mirrors-pypi",
+  "mirrors.crates": "mirrors-crates",
+  "mirrors.go": "mirrors-go",
+
+  // Appearance
+  "appearance.theme": "theme-select",
+  "appearance.chart_color_theme": "chart-color-theme",
+  "appearance.language": "language-select",
+  "appearance.accent_color": "accent-color-label",
+  "appearance.interface_radius": "interface-radius-label",
+  "appearance.interface_density": "interface-density",
+  "appearance.reduced_motion": "reduced-motion",
+
+  // Updates
+  "updates.check_on_start": "check-updates-on-start",
+  "updates.auto_install": "auto-install-updates",
+  "updates.notify": "notify-on-updates",
+
+  // Tray
+  "tray.minimize_to_tray": "minimize-to-tray",
+  "tray.start_minimized": "start-minimized",
+  "tray.autostart": "autostart",
+  "tray.show_notifications": "show-notifications",
+  "tray.click_behavior": "tray-click-behavior",
+  "tray.menu_customize": "tray-click-behavior",
+
+  // Paths
+  "paths.root": "paths-root",
+  "paths.cache": "paths-cache",
+  "paths.environments": "paths-environments",
+
+  // Providers
+  "provider_settings.disabled_providers": "disabled-providers",
+
+  // Backup policy
+  "backup.auto_backup_enabled": "backup-auto-enabled",
+  "backup.auto_backup_interval_hours": "backup-auto-interval-hours",
+  "backup.max_backups": "backup-max-backups",
+  "backup.retention_days": "backup-retention-days",
+
+  // Startup
+  "startup.scan_environments": "startup-scan-environments",
+  "startup.scan_packages": "startup-scan-packages",
+  "startup.max_concurrent_scans": "startup-max-concurrent-scans",
+  "startup.startup_timeout_secs": "startup-timeout-secs",
+  "startup.integrity_check": "startup-integrity-check",
+};
 
 /**
  * Section definitions with display order
@@ -171,7 +250,7 @@ export const SETTINGS_SECTIONS: SectionDefinition[] = [
 /**
  * Complete registry of all settings items
  */
-export const SETTINGS_REGISTRY: SettingDefinition[] = [
+const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
   // General Settings
   {
     key: 'general.parallel_downloads',
@@ -573,6 +652,44 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
     advanced: true,
   },
 
+  // Backup Settings
+  {
+    key: 'backup.auto_backup_enabled',
+    section: 'backup',
+    labelKey: 'settings.backupAutoBackupEnabled',
+    descKey: 'settings.backupAutoBackupEnabledDesc',
+    type: 'switch',
+    keywords: ['backup', 'auto', 'schedule', '备份', '自动', '计划'],
+    tauriOnly: true,
+  },
+  {
+    key: 'backup.auto_backup_interval_hours',
+    section: 'backup',
+    labelKey: 'settings.backupAutoBackupIntervalHours',
+    descKey: 'settings.backupAutoBackupIntervalHoursDesc',
+    type: 'input',
+    keywords: ['backup', 'interval', 'hours', 'frequency', '备份', '间隔', '小时', '频率'],
+    tauriOnly: true,
+  },
+  {
+    key: 'backup.max_backups',
+    section: 'backup',
+    labelKey: 'settings.backupMaxBackups',
+    descKey: 'settings.backupMaxBackupsDesc',
+    type: 'input',
+    keywords: ['backup', 'limit', 'max', 'count', '备份', '数量', '上限'],
+    tauriOnly: true,
+  },
+  {
+    key: 'backup.retention_days',
+    section: 'backup',
+    labelKey: 'settings.backupRetentionDays',
+    descKey: 'settings.backupRetentionDaysDesc',
+    type: 'input',
+    keywords: ['backup', 'retention', 'days', 'cleanup', '备份', '保留', '天数', '清理'],
+    tauriOnly: true,
+  },
+
   // Startup Settings
   {
     key: 'startup.scan_environments',
@@ -616,6 +733,11 @@ export const SETTINGS_REGISTRY: SettingDefinition[] = [
   },
 ];
 
+export const SETTINGS_REGISTRY: SettingDefinition[] = SETTINGS_REGISTRY_BASE.map((setting) => ({
+  ...setting,
+  focusId: SETTING_FOCUS_IDS[setting.key] ?? setting.focusId,
+}));
+
 /**
  * Get settings by section
  */
@@ -634,5 +756,5 @@ export function getSectionById(id: SettingsSection): SectionDefinition | undefin
  * Get all section IDs in order
  */
 export function getOrderedSectionIds(): SettingsSection[] {
-  return SETTINGS_SECTIONS.sort((a, b) => a.order - b.order).map((s) => s.id);
+  return [...SETTINGS_SECTIONS].sort((a, b) => a.order - b.order).map((s) => s.id);
 }

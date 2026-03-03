@@ -8,7 +8,8 @@ use crate::provider::{
     Provider, ProviderRegistry,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, RwLock};
@@ -50,26 +51,46 @@ pub async fn invalidate_env_caches(config: &crate::commands::config::SharedSetti
 /// Cancellation tokens for ongoing installations
 pub type CancellationTokens = Arc<RwLock<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>;
 
+fn sanitize_detection_sources(
+    env_type: &str,
+    detection_files: &[DetectionFileConfig],
+) -> Vec<String> {
+    let logical_env_type = EnvironmentManager::logical_env_type(env_type);
+    let allowed_sources = crate::core::project_env_detect::default_detection_sources(&logical_env_type);
+    let allowed: HashSet<&str> = allowed_sources.iter().copied().collect();
+
+    let mut enabled = Vec::new();
+    for detection_file in detection_files {
+        if detection_file.enabled
+            && allowed.contains(detection_file.file_name.as_str())
+            && !enabled.contains(&detection_file.file_name)
+        {
+            enabled.push(detection_file.file_name.clone());
+        }
+    }
+
+    if enabled.is_empty() {
+        crate::core::project_env_detect::default_enabled_detection_sources(&logical_env_type)
+    } else {
+        enabled
+    }
+}
+
 async fn enabled_detection_sources_for_env_type(
     env_type: &str,
     config: &crate::commands::config::SharedSettings,
 ) -> Vec<String> {
-    let key = format!("env_settings.{}", env_type);
+    let logical_env_type = EnvironmentManager::logical_env_type(env_type);
+    let key = format!("env_settings.{}", logical_env_type);
     let s = config.read().await;
 
     if let Some(value) = s.get_value(&key) {
         if let Ok(settings) = serde_json::from_str::<EnvironmentSettings>(&value) {
-            let enabled: Vec<String> = settings
-                .detection_files
-                .into_iter()
-                .filter(|f| f.enabled)
-                .map(|f| f.file_name)
-                .collect();
-            return enabled;
+            return sanitize_detection_sources(&logical_env_type, &settings.detection_files);
         }
     }
 
-    crate::core::project_env_detect::default_enabled_detection_sources(env_type)
+    crate::core::project_env_detect::default_enabled_detection_sources(&logical_env_type)
 }
 
 /// Get a cancellation key for an installation

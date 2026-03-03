@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDownloads } from '@/hooks/use-downloads';
 import { isTauri } from '@/lib/tauri';
@@ -36,6 +37,7 @@ import {
   ListPlus,
 } from 'lucide-react';
 import { EMPTY_QUEUE_STATS } from '@/lib/constants/downloads';
+import { runDownloadPreflightWithUi } from '@/lib/downloads';
 import type { DownloadRequest, DownloadTask, HistoryRecord } from '@/lib/stores/download';
 
 export default function DownloadsPage() {
@@ -56,7 +58,7 @@ export default function DownloadsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [batchImportOpen, setBatchImportOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragUrl, setDragUrl] = useState<string | null>(null);
+  const [initialUrl, setInitialUrl] = useState<string | null>(null);
 
   const {
     tasks,
@@ -67,6 +69,7 @@ export default function DownloadsPage() {
     maxConcurrent,
     isLoading,
     error,
+    selectedTaskIds,
     addDownload,
     pauseDownload,
     resumeDownload,
@@ -92,7 +95,17 @@ export default function DownloadsPage() {
     searchHistory,
     clearHistory,
     removeHistoryRecord,
-  } = useDownloads();
+    batchPause,
+    batchResume,
+    batchCancel,
+    batchRemove,
+    selectTask,
+    deselectTask,
+    deselectAllTasks,
+    checkDiskSpace,
+    verifyFile,
+    extractArchive,
+  } = useDownloads({ enableRuntime: false });
 
   const queueStats = stats ?? EMPTY_QUEUE_STATS;
 
@@ -164,6 +177,13 @@ export default function DownloadsPage() {
 
   const hasQueueFilters = queueSearchQuery !== '' || statusFilter !== 'all';
 
+  const selectedCount = selectedTaskIds.size;
+  const selectedVisibleCount = filteredTasks.filter((task) =>
+    selectedTaskIds.has(task.id)
+  ).length;
+  const allVisibleSelected =
+    filteredTasks.length > 0 && selectedVisibleCount === filteredTasks.length;
+
   const handleClearQueueFilters = useCallback(() => {
     setQueueSearchQuery('');
     setStatusFilter('all');
@@ -191,14 +211,49 @@ export default function DownloadsPage() {
       || e.dataTransfer.getData('text');
 
     if (url && /^https?:\/\//i.test(url.trim())) {
-      setDragUrl(url.trim());
+      setInitialUrl(url.trim());
       setAddDialogOpen(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleClipboardDownloadUrl = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      if (typeof customEvent.detail !== 'string' || !customEvent.detail.trim()) {
+        return;
+      }
+      setInitialUrl(customEvent.detail.trim());
+      setAddDialogOpen(true);
+    };
+
+    window.addEventListener(
+      'clipboard-download-url',
+      handleClipboardDownloadUrl as EventListener
+    );
+    return () => {
+      window.removeEventListener(
+        'clipboard-download-url',
+        handleClipboardDownloadUrl as EventListener
+      );
+    };
   }, []);
 
   const handleAdd = useCallback(
     async (request: DownloadRequest) => {
       try {
+        const pass = await runDownloadPreflightWithUi(
+          {
+            destinationPath: request.destination,
+            checkDiskSpace,
+          },
+          {
+            t,
+            onInfo: (message) => toast(message),
+            onError: (message) => toast.error(message),
+          }
+        );
+        if (!pass) return;
+
         await addDownload(request);
         toast.success(t('downloads.toast.added'));
         await refreshTasks();
@@ -207,7 +262,7 @@ export default function DownloadsPage() {
         toast.error(String(err));
       }
     },
-    [addDownload, refreshTasks, refreshStats, t]
+    [addDownload, checkDiskSpace, refreshTasks, refreshStats, t]
   );
 
   const handlePauseAll = useCallback(async () => {
@@ -265,6 +320,65 @@ export default function DownloadsPage() {
       await setMaxConcurrent(Math.max(1, concurrent));
     }
   }, [maxConcurrentInput, setMaxConcurrent, setSpeedLimit, speedLimitInput, speedUnit, t]);
+
+  const handleBatchPause = useCallback(async () => {
+    if (selectedCount === 0) return;
+    const count = await batchPause();
+    await Promise.all([refreshTasks(), refreshStats()]);
+    if (count > 0) {
+      toast.success(t('downloads.toast.paused'));
+    }
+    deselectAllTasks();
+  }, [batchPause, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+
+  const handleBatchResume = useCallback(async () => {
+    if (selectedCount === 0) return;
+    const count = await batchResume();
+    await Promise.all([refreshTasks(), refreshStats()]);
+    if (count > 0) {
+      toast.success(t('downloads.toast.resumed'));
+    }
+    deselectAllTasks();
+  }, [batchResume, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+
+  const handleBatchCancel = useCallback(async () => {
+    if (selectedCount === 0) return;
+    const count = await batchCancel();
+    await Promise.all([refreshTasks(), refreshStats()]);
+    if (count > 0) {
+      toast.success(t('downloads.toast.cancelled'));
+    }
+    deselectAllTasks();
+  }, [batchCancel, deselectAllTasks, refreshStats, refreshTasks, selectedCount, t]);
+
+  const handleBatchRemove = useCallback(async () => {
+    if (selectedCount === 0) return;
+    const count = await batchRemove();
+    if (count > 0) {
+      toast.success(t('downloads.toast.cleared', { count }));
+      await refreshStats();
+    }
+    deselectAllTasks();
+  }, [batchRemove, deselectAllTasks, refreshStats, selectedCount, t]);
+
+  const handleToggleSelectAllVisible = useCallback(
+    (checked: boolean) => {
+      if (checked) {
+        filteredTasks.forEach((task) => {
+          if (!selectedTaskIds.has(task.id)) {
+            selectTask(task.id);
+          }
+        });
+      } else {
+        filteredTasks.forEach((task) => {
+          if (selectedTaskIds.has(task.id)) {
+            deselectTask(task.id);
+          }
+        });
+      }
+    },
+    [deselectTask, filteredTasks, selectTask, selectedTaskIds]
+  );
 
   return (
     <div
@@ -353,6 +467,12 @@ export default function DownloadsPage() {
             onSearchChange={setQueueSearchQuery}
             statusFilter={statusFilter}
             onStatusChange={setStatusFilter}
+            selectedCount={selectedCount}
+            onBatchPause={handleBatchPause}
+            onBatchResume={handleBatchResume}
+            onBatchCancel={handleBatchCancel}
+            onBatchRemove={handleBatchRemove}
+            onClearSelection={deselectAllTasks}
             onPauseAll={handlePauseAll}
             onResumeAll={handleResumeAll}
             onCancelAll={handleCancelAll}
@@ -389,6 +509,21 @@ export default function DownloadsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={
+                              allVisibleSelected
+                                ? true
+                                : selectedVisibleCount > 0
+                                  ? 'indeterminate'
+                                  : false
+                            }
+                            onCheckedChange={(checked) =>
+                              handleToggleSelectAllVisible(checked === true)
+                            }
+                            aria-label="Select all visible tasks"
+                          />
+                        </TableHead>
                         <TableHead>{t('downloads.name')}</TableHead>
                         <TableHead>{t('downloads.provider')}</TableHead>
                         <TableHead>{t('downloads.status')}</TableHead>
@@ -403,6 +538,14 @@ export default function DownloadsPage() {
                         <DownloadTaskRow
                           key={task.id}
                           task={task}
+                          selected={selectedTaskIds.has(task.id)}
+                          onSelectedChange={(selected) => {
+                            if (selected) {
+                              selectTask(task.id);
+                            } else {
+                              deselectTask(task.id);
+                            }
+                          }}
                           onPause={pauseDownload}
                           onResume={resumeDownload}
                           onCancel={cancelDownload}
@@ -444,8 +587,8 @@ export default function DownloadsPage() {
             historyStats={historyStats}
             historyQuery={historyQuery}
             onHistoryQueryChange={setHistoryQuery}
-            onClearHistory={() => clearHistory()}
-            onRemoveRecord={removeHistoryRecord}
+            onClearHistory={async () => void clearHistory()}
+            onRemoveRecord={async (id) => void removeHistoryRecord(id)}
             t={t}
           />
         </TabsContent>
@@ -455,15 +598,16 @@ export default function DownloadsPage() {
         open={addDialogOpen}
         onOpenChange={(open) => {
           setAddDialogOpen(open);
-          if (!open) setDragUrl(null);
+          if (!open) setInitialUrl(null);
         }}
         onSubmit={handleAdd}
-        initialUrl={dragUrl ?? undefined}
+        initialUrl={initialUrl ?? undefined}
       />
 
       <GitHubDownloadDialog
         open={githubDialogOpen}
         onOpenChange={setGithubDialogOpen}
+        checkDiskSpace={checkDiskSpace}
         onDownloadStarted={() => {
           refreshTasks();
           refreshStats();
@@ -473,6 +617,7 @@ export default function DownloadsPage() {
       <GitLabDownloadDialog
         open={gitlabDialogOpen}
         onOpenChange={setGitlabDialogOpen}
+        checkDiskSpace={checkDiskSpace}
         onDownloadStarted={() => {
           refreshTasks();
           refreshStats();
@@ -488,6 +633,8 @@ export default function DownloadsPage() {
         onOpenFile={openFile}
         onRevealFile={revealFile}
         onCalculateChecksum={calculateChecksum}
+        onVerifyFile={verifyFile}
+        onExtractArchive={extractArchive}
       />
 
       <BatchImportDialog
@@ -495,8 +642,24 @@ export default function DownloadsPage() {
         onOpenChange={setBatchImportOpen}
         onSubmit={async (requests) => {
           let added = 0;
+          const unknownSizeWarningRef = { current: false };
+
           for (const req of requests) {
             try {
+              const pass = await runDownloadPreflightWithUi(
+                {
+                  destinationPath: req.destination,
+                  checkDiskSpace,
+                },
+                {
+                  t,
+                  onInfo: (message) => toast(message),
+                  onError: (message) => toast.error(message),
+                  unknownSizeWarningRef,
+                }
+              );
+              if (!pass) continue;
+
               await addDownload(req);
               added++;
             } catch (err) {

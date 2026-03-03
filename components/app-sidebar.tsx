@@ -218,6 +218,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={pathname === "/cache"}
                       tooltip={t("nav.cache")}
+                      data-tour="nav-cache"
                     >
                       <HardDrive className="h-4 w-4" />
                       <span>{t("nav.cache")}</span>

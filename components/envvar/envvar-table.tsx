@@ -39,29 +39,27 @@ import { Copy, Pencil, Trash2, Check, X, Variable, FolderOpen, ExternalLink } fr
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { isTauri } from '@/lib/tauri';
-
 import type { EnvVarScope } from '@/types/tauri';
+import type { EnvVarRow } from '@/lib/envvar';
 
 interface EnvVarTableProps {
-  envVars: Record<string, string>;
-  persistentVars?: [string, string][];
-  scope?: EnvVarScope | 'all';
+  rows: EnvVarRow[];
+  scopeFilter: EnvVarScope | 'all';
   searchQuery: string;
-  onEdit: (key: string, value: string) => void;
-  onDelete: (key: string) => void;
+  onEdit: (key: string, value: string, scope: EnvVarScope) => void;
+  onDelete: (key: string, scope: EnvVarScope) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function EnvVarTable({
-  envVars,
-  persistentVars = [],
-  scope = 'all',
+  rows,
+  scopeFilter,
   searchQuery,
   onEdit,
   onDelete,
   t,
 }: EnvVarTableProps) {
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingRow, setEditingRow] = useState<{ key: string; scope: EnvVarScope } | null>(null);
   const [editValue, setEditValue] = useState('');
 
   const looksLikePath = useCallback((value: string): boolean => {
@@ -92,25 +90,27 @@ export function EnvVarTable({
     }
   }, []);
 
-  const isPersistentScope = scope === 'user' || scope === 'system';
+  const isPersistentScope = scopeFilter === 'user' || scopeFilter === 'system';
 
-  const filteredVars = useMemo(() => {
-    const entries = isPersistentScope ? persistentVars : Object.entries(envVars);
-    if (!searchQuery) return entries;
+  const filteredRows = useMemo(() => {
+    if (!searchQuery) return rows;
     const query = searchQuery.toLowerCase();
-    return entries.filter(
-      ([key, value]) =>
-        key.toLowerCase().includes(query) || value.toLowerCase().includes(query),
+    return rows.filter(
+      (row) =>
+        row.key.toLowerCase().includes(query) || row.value.toLowerCase().includes(query),
     );
-  }, [envVars, persistentVars, isPersistentScope, searchQuery]);
+  }, [rows, searchQuery]);
 
-  const scopeBadgeLabel = useMemo(() => {
+  const getScopeBadgeLabel = useCallback((scope: EnvVarScope) => {
     switch (scope) {
-      case 'user': return t('envvar.scopes.user');
-      case 'system': return t('envvar.scopes.system');
-      default: return t('envvar.scopes.process');
+      case 'user':
+        return t('envvar.scopes.user');
+      case 'system':
+        return t('envvar.scopes.system');
+      default:
+        return t('envvar.scopes.process');
     }
-  }, [scope, t]);
+  }, [t]);
 
   const handleCopy = useCallback((value: string) => {
     navigator.clipboard.writeText(value).then(() => {
@@ -118,25 +118,25 @@ export function EnvVarTable({
     });
   }, [t]);
 
-  const handleStartEdit = useCallback((key: string, currentValue: string) => {
-    setEditingKey(key);
-    setEditValue(currentValue);
+  const handleStartEdit = useCallback((row: EnvVarRow) => {
+    setEditingRow({ key: row.key, scope: row.scope });
+    setEditValue(row.value);
   }, []);
 
   const handleSaveEdit = useCallback(() => {
-    if (editingKey) {
-      onEdit(editingKey, editValue);
-      setEditingKey(null);
+    if (editingRow) {
+      onEdit(editingRow.key, editValue, editingRow.scope);
+      setEditingRow(null);
       setEditValue('');
     }
-  }, [editingKey, editValue, onEdit]);
+  }, [editingRow, editValue, onEdit]);
 
   const handleCancelEdit = useCallback(() => {
-    setEditingKey(null);
+    setEditingRow(null);
     setEditValue('');
   }, []);
 
-  if (filteredVars.length === 0) {
+  if (filteredRows.length === 0) {
     return (
       <Empty className="border-none py-8">
         <EmptyHeader>
@@ -168,13 +168,31 @@ export function EnvVarTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredVars.map(([key, value]) => (
-              <TableRow key={key} className="group">
+            {filteredRows.map((row, index) => {
+              const rowId = `${row.scope}:${row.key}:${index}`;
+              const isEditing = editingRow?.key === row.key && editingRow.scope === row.scope;
+              const value = row.value;
+              return (
+              <TableRow key={rowId} className="group">
                 <TableCell className="font-mono text-xs py-2">
-                  <span className="break-all">{key}</span>
+                  <div className="space-y-1">
+                    <span className="break-all">{row.key}</span>
+                    <div className="flex items-center gap-1">
+                      {row.conflict && (
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                          {t('envvar.conflicts.title')}
+                        </Badge>
+                      )}
+                      {row.regType && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                          {row.regType}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell className="py-2">
-                  {editingKey === key ? (
+                  {isEditing ? (
                     <div className="flex items-center gap-1">
                       <Input
                         value={editValue}
@@ -200,7 +218,7 @@ export function EnvVarTable({
                           className={cn(
                             'text-xs text-muted-foreground break-all line-clamp-2 cursor-pointer hover:text-foreground',
                           )}
-                          onDoubleClick={() => !isPersistentScope && handleStartEdit(key, value)}
+                          onDoubleClick={() => handleStartEdit(row)}
                         >
                           {value || <span className="italic opacity-50">(empty)</span>}
                         </span>
@@ -215,7 +233,7 @@ export function EnvVarTable({
                 </TableCell>
                 <TableCell className="py-2">
                   <Badge variant="secondary" className="text-[10px]">
-                    {scopeBadgeLabel}
+                    {getScopeBadgeLabel(row.scope)}
                   </Badge>
                 </TableCell>
                 <TableCell className="py-2 text-right">
@@ -250,7 +268,7 @@ export function EnvVarTable({
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEdit(key, value)}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEdit(row)}>
                           <Pencil className="h-3 w-3" />
                         </Button>
                       </TooltipTrigger>
@@ -275,7 +293,7 @@ export function EnvVarTable({
                         <AlertDialogFooter>
                           <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                           <AlertDialogAction
-                            onClick={() => onDelete(key)}
+                            onClick={() => onDelete(row.key, row.scope)}
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                           >
                             {t('envvar.actions.delete')}
@@ -286,7 +304,7 @@ export function EnvVarTable({
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
           </TableBody>
         </Table>
       </div>

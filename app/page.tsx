@@ -11,6 +11,12 @@ import { usePackages } from '@/hooks/use-packages';
 import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useDashboardStore } from '@/lib/stores/dashboard';
+import { isTauri } from '@/lib/tauri';
+import {
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
 import { Settings2, Pencil, Check, AlertCircle, X } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -38,6 +44,7 @@ export default function DashboardPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [dismissedError, setDismissedError] = useState(false);
   const initialFetchDone = useRef(false);
+  const cacheRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCustomizing = useDashboardStore((s) => s.isCustomizing);
   const isEditMode = useDashboardStore((s) => s.isEditMode);
   const setIsCustomizing = useDashboardStore((s) => s.setIsCustomizing);
@@ -72,6 +79,35 @@ export default function DashboardPage() {
 
     loadData();
   }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
+
+  const scheduleCacheInfoRefresh = useCallback(() => {
+    if (!isTauri()) return;
+    if (cacheRefreshTimeoutRef.current) return;
+
+    cacheRefreshTimeoutRef.current = setTimeout(() => {
+      cacheRefreshTimeoutRef.current = null;
+      void fetchCacheInfo();
+    }, 350);
+  }, [fetchCacheInfo]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    void ensureCacheInvalidationBridge();
+    const dispose = subscribeInvalidation(
+      ['cache_overview', 'about_cache_stats'],
+      withThrottle(() => {
+        scheduleCacheInfoRefresh();
+      }, 350),
+    );
+
+    return () => {
+      if (cacheRefreshTimeoutRef.current) {
+        clearTimeout(cacheRefreshTimeoutRef.current);
+        cacheRefreshTimeoutRef.current = null;
+      }
+      dispose();
+    };
+  }, [scheduleCacheInfoRefresh]);
 
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshing(true);

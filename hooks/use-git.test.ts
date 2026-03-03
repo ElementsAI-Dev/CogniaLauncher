@@ -170,6 +170,7 @@ describe('useGit', () => {
     });
     expect(result.current.repoPath).toBe('/my/repo');
     expect(tauri.gitGetRepoInfo).toHaveBeenCalledWith('/my/repo');
+    expect(tauri.gitGetStatus).toHaveBeenCalledWith('/my/repo');
   });
 
   // ===== refreshAll =====
@@ -192,6 +193,7 @@ describe('useGit', () => {
       msg = await result.current.checkoutBranch('feature');
     });
     expect(tauri.gitCheckoutBranch).toHaveBeenCalledWith('/repo', 'feature');
+    expect(tauri.gitGetStatus).toHaveBeenCalled();
     expect(msg!).toBe('Switched');
   });
 
@@ -221,6 +223,7 @@ describe('useGit', () => {
       await result.current.stashSave('WIP', true);
     });
     expect(tauri.gitStashSave).toHaveBeenCalledWith('/repo', 'WIP', true);
+    expect(tauri.gitGetStatus).toHaveBeenCalled();
   });
 
   it('stashApply calls tauri', async () => {
@@ -230,6 +233,17 @@ describe('useGit', () => {
       await result.current.stashApply('stash@{0}');
     });
     expect(tauri.gitStashApply).toHaveBeenCalledWith('/repo', 'stash@{0}');
+    expect(tauri.gitGetStatus).toHaveBeenCalled();
+  });
+
+  it('stashPop calls tauri and refreshes status', async () => {
+    const { result } = renderHook(() => useGit());
+    await act(async () => { await result.current.setRepoPath('/repo'); });
+    await act(async () => {
+      await result.current.stashPop('stash@{0}');
+    });
+    expect(tauri.gitStashPop).toHaveBeenCalledWith('/repo', 'stash@{0}');
+    expect(tauri.gitGetStatus).toHaveBeenCalled();
   });
 
   // ===== Tag operations =====

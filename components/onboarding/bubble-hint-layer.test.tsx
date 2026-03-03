@@ -38,12 +38,24 @@ jest.mock("@/lib/constants/onboarding", () => ({
       delay: 500,
     },
     {
-      id: "hint-settings",
+      id: "hint-settings-exact",
       target: '[data-hint="settings"]',
-      titleKey: "hint.settings.title",
-      descKey: "hint.settings.desc",
+      titleKey: "hint.settings.exact.title",
+      descKey: "hint.settings.exact.desc",
       side: "right",
       route: "/settings",
+      routeMatch: "exact",
+      showAfterOnboarding: true,
+      delay: 500,
+    },
+    {
+      id: "hint-settings-prefix",
+      target: '[data-hint="settings-prefix"]',
+      titleKey: "hint.settings.prefix.title",
+      descKey: "hint.settings.prefix.desc",
+      side: "right",
+      route: "/settings",
+      routeMatch: "prefix",
       showAfterOnboarding: true,
       delay: 500,
     },
@@ -127,8 +139,23 @@ describe("BubbleHintLayer", () => {
 
   it("does not render hints for a different route", () => {
     render(<BubbleHintLayer />);
-    // hint-settings requires route "/settings" but we're at "/"
-    expect(screen.queryByTestId("bubble-hint-hint-settings")).not.toBeInTheDocument();
+    // settings hints require route "/settings*" but we're at "/"
+    expect(screen.queryByTestId("bubble-hint-hint-settings-exact")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bubble-hint-hint-settings-prefix")).not.toBeInTheDocument();
+  });
+
+  it("respects exact route matching", () => {
+    (usePathname as jest.Mock).mockReturnValue("/settings/profile");
+    render(<BubbleHintLayer maxConcurrent={5} />);
+
+    expect(screen.queryByTestId("bubble-hint-hint-settings-exact")).not.toBeInTheDocument();
+  });
+
+  it("respects prefix route matching", () => {
+    (usePathname as jest.Mock).mockReturnValue("/settings/profile");
+    render(<BubbleHintLayer maxConcurrent={5} />);
+
+    expect(screen.getByTestId("bubble-hint-hint-settings-prefix")).toBeInTheDocument();
   });
 
   it("filters out dismissed hints", () => {

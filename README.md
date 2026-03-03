@@ -247,6 +247,14 @@ NEXT_PUBLIC_APP_NAME=React Quick Starter
 # Private variables (not exposed to browser)
 DATABASE_URL=postgresql://...
 API_SECRET_KEY=your-secret-key
+
+# Optional: override dev asset origin (highest priority)
+# Use full origin, e.g. http://localhost:3100
+NEXT_DEV_ORIGIN=http://localhost:3100
+
+# Optional: Tauri dev host/port for assetPrefix auto-resolution
+TAURI_DEV_HOST=localhost
+TAURI_DEV_PORT=3100
 ```
 
 **Important**:
@@ -254,6 +262,8 @@ API_SECRET_KEY=your-secret-key
 - Only variables prefixed with `NEXT_PUBLIC_` are exposed to the browser
 - Never commit `.env.local` to version control
 - Use `.env.example` to document required variables
+- In development, asset URL resolution priority is `NEXT_DEV_ORIGIN` > `TAURI_DEV_HOST + (TAURI_DEV_PORT | PORT | npm_config_port | 3000)`
+- Non-Tauri web development falls back to relative assets (no forced cross-port asset prefix)
 
 ### Tauri Configuration
 

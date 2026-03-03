@@ -8,17 +8,19 @@ jest.mock("@/components/providers/locale-provider", () => ({
 let mockSystemHealth: Record<string, unknown> | null = null;
 let mockLoading = false;
 const mockCheckAll = jest.fn();
+let mockCheckAllImpl = mockCheckAll;
+const mockIsTauri = jest.fn(() => false);
 
 jest.mock("@/hooks/use-health-check", () => ({
   useHealthCheck: () => ({
     systemHealth: mockSystemHealth,
     loading: mockLoading,
-    checkAll: mockCheckAll,
+    checkAll: mockCheckAllImpl,
   }),
 }));
 
 jest.mock("@/lib/tauri", () => ({
-  isTauri: () => false,
+  isTauri: () => mockIsTauri(),
 }));
 
 jest.mock("next/link", () => {
@@ -33,6 +35,8 @@ describe("HealthCheckWidget", () => {
   beforeEach(() => {
     mockSystemHealth = null;
     mockLoading = false;
+    mockCheckAllImpl = mockCheckAll;
+    mockIsTauri.mockReturnValue(false);
     jest.clearAllMocks();
   });
 
@@ -135,6 +139,23 @@ describe("HealthCheckWidget", () => {
     const refreshButton = screen.getAllByRole("button")[0];
     fireEvent.click(refreshButton);
     expect(mockCheckAll).toHaveBeenCalledTimes(1);
+    expect(mockCheckAll).toHaveBeenCalledWith({ force: true });
+  });
+
+  it("auto-checks only once in desktop mode across rerenders", () => {
+    mockIsTauri.mockReturnValue(true);
+    const firstCheckAll = jest.fn();
+    const secondCheckAll = jest.fn();
+    mockCheckAllImpl = firstCheckAll;
+
+    const { rerender } = render(<HealthCheckWidget />);
+    expect(firstCheckAll).toHaveBeenCalledTimes(1);
+
+    mockCheckAllImpl = secondCheckAll;
+    rerender(<HealthCheckWidget />);
+
+    expect(firstCheckAll).toHaveBeenCalledTimes(1);
+    expect(secondCheckAll).not.toHaveBeenCalled();
   });
 
   it("accepts className prop", () => {

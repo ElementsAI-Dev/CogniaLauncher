@@ -72,8 +72,8 @@ export function useGitLfs(repoPath: string | null): UseGitLfsReturn {
   return {
     lfsAvailable,
     lfsVersion,
-    trackedPatterns,
-    lfsFiles,
+    trackedPatterns: repoPath ? trackedPatterns : [],
+    lfsFiles: repoPath ? lfsFiles : [],
     checkAvailability,
     refreshTrackedPatterns,
     refreshLfsFiles,

@@ -116,6 +116,9 @@ export interface WslDistroCardProps {
   onExport: (name: string) => void;
   onUnregister: (name: string) => void;
   onChangeDefaultUser?: (name: string) => void;
+  onOpenInExplorer?: (name: string) => void;
+  onOpenInTerminal?: (name: string) => void;
+  onClone?: (name: string) => void;
   getDiskUsage?: (name: string) => Promise<WslDiskUsage | null>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
@@ -150,6 +153,7 @@ export interface WslOnlineListProps {
   installedNames: string[];
   loading: boolean;
   onInstall: (name: string) => void;
+  onInstallWithLocation?: (name: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -178,6 +182,22 @@ export interface WslImportInPlaceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (name: string, vhdxPath: string) => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslInstallLocationDialogProps {
+  open: boolean;
+  distroName: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (name: string, location: string) => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+export interface WslCloneDialogProps {
+  open: boolean;
+  distroName: string;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (name: string, newName: string, location: string) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 

@@ -1,33 +1,46 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import EnvVarPage from './page';
 
-// Mock hooks and modules
+const mockFetchAllVars = jest.fn().mockResolvedValue({});
+const mockSetVar = jest.fn().mockResolvedValue(true);
+const mockRemoveVar = jest.fn().mockResolvedValue(true);
+const mockFetchPath = jest.fn().mockResolvedValue([]);
+const mockAddPathEntry = jest.fn().mockResolvedValue(true);
+const mockRemovePathEntry = jest.fn().mockResolvedValue(true);
+const mockReorderPath = jest.fn().mockResolvedValue(true);
+const mockFetchShellProfiles = jest.fn().mockResolvedValue([]);
+const mockReadShellProfile = jest.fn().mockResolvedValue('');
+const mockImportEnvFile = jest.fn().mockResolvedValue(null);
+const mockExportEnvFile = jest.fn().mockResolvedValue(null);
+const mockFetchPersistentVarsTyped = jest.fn().mockResolvedValue([]);
+const mockDeduplicatePath = jest.fn().mockResolvedValue(0);
+const mockDetectConflicts = jest.fn().mockResolvedValue([]);
+let mockIsTauri = false;
+
 jest.mock('@/hooks/use-envvar', () => ({
   useEnvVar: () => ({
     envVars: {},
-    persistentVars: [],
-    persistentVarsTyped: [],
     pathEntries: [],
     shellProfiles: [],
     conflicts: [],
     loading: false,
     error: null,
-    fetchAllVars: jest.fn().mockResolvedValue({}),
+    fetchAllVars: mockFetchAllVars,
     getVar: jest.fn(),
-    setVar: jest.fn().mockResolvedValue(true),
-    removeVar: jest.fn().mockResolvedValue(true),
-    fetchPath: jest.fn().mockResolvedValue([]),
-    addPathEntry: jest.fn().mockResolvedValue(true),
-    removePathEntry: jest.fn().mockResolvedValue(true),
-    reorderPath: jest.fn().mockResolvedValue(true),
-    fetchShellProfiles: jest.fn().mockResolvedValue([]),
-    readShellProfile: jest.fn().mockResolvedValue(''),
-    importEnvFile: jest.fn().mockResolvedValue(null),
-    exportEnvFile: jest.fn().mockResolvedValue(null),
+    setVar: mockSetVar,
+    removeVar: mockRemoveVar,
+    fetchPath: mockFetchPath,
+    addPathEntry: mockAddPathEntry,
+    removePathEntry: mockRemovePathEntry,
+    reorderPath: mockReorderPath,
+    fetchShellProfiles: mockFetchShellProfiles,
+    readShellProfile: mockReadShellProfile,
+    importEnvFile: mockImportEnvFile,
+    exportEnvFile: mockExportEnvFile,
     fetchPersistentVars: jest.fn().mockResolvedValue([]),
-    fetchPersistentVarsTyped: jest.fn().mockResolvedValue([]),
-    deduplicatePath: jest.fn().mockResolvedValue(0),
-    detectConflicts: jest.fn().mockResolvedValue([]),
+    fetchPersistentVarsTyped: mockFetchPersistentVarsTyped,
+    deduplicatePath: mockDeduplicatePath,
+    detectConflicts: mockDetectConflicts,
   }),
 }));
 
@@ -36,7 +49,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
 }));
 
 jest.mock('@/lib/tauri', () => ({
-  isTauri: () => false,
+  isTauri: () => mockIsTauri,
 }));
 
 jest.mock('sonner', () => ({
@@ -44,6 +57,11 @@ jest.mock('sonner', () => ({
 }));
 
 describe('EnvVarPage', () => {
+  beforeEach(() => {
+    mockIsTauri = false;
+    jest.clearAllMocks();
+  });
+
   it('should render desktop-required empty state in web mode', () => {
     render(<EnvVarPage />);
     expect(screen.getByText('envvar.emptyState.title')).toBeInTheDocument();
@@ -53,5 +71,17 @@ describe('EnvVarPage', () => {
   it('should render page header', () => {
     render(<EnvVarPage />);
     expect(screen.getByText('envvar.title')).toBeInTheDocument();
+  });
+
+  it('should load process and persistent typed data on desktop init', async () => {
+    mockIsTauri = true;
+    render(<EnvVarPage />);
+
+    await waitFor(() => {
+      expect(mockFetchAllVars).toHaveBeenCalledTimes(1);
+      expect(mockFetchPersistentVarsTyped).toHaveBeenCalledWith('user');
+      expect(mockFetchPersistentVarsTyped).toHaveBeenCalledWith('system');
+      expect(mockDetectConflicts).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import * as tauri from '@/lib/tauri';
 import type {
   GitSubmoduleInfo,
@@ -142,6 +142,30 @@ export function useGitAdvanced(repoPath: string | null): UseGitAdvancedReturn {
   });
   const [sparsePatterns, setSparsePatterns] = useState<string[]>([]);
   const [isSparseCheckoutState, setIsSparseCheckout] = useState(false);
+
+  useEffect(() => {
+    if (repoPath) return;
+    setSubmodules([]);
+    setWorktrees([]);
+    setHooks([]);
+    setMergeRebaseState({
+      state: 'none',
+      onto: null,
+      progress: null,
+      total: null,
+    });
+    setConflictedFiles([]);
+    setLocalConfig([]);
+    setRepoStats(null);
+    setBisectState({
+      active: false,
+      currentHash: null,
+      stepsTaken: 0,
+      remainingEstimate: null,
+    });
+    setSparsePatterns([]);
+    setIsSparseCheckout(false);
+  }, [repoPath]);
 
   // --- Submodule actions ---
   const refreshSubmodules = useCallback(async () => {

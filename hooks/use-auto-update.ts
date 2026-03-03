@@ -15,7 +15,12 @@ export interface UpdateInfo {
   error: string | null;
 }
 
-export function useAutoUpdate() {
+interface UseAutoUpdateOptions {
+  ready?: boolean;
+}
+
+export function useAutoUpdate(options: UseAutoUpdateOptions = {}) {
+  const { ready = true } = options;
   const { appSettings } = useSettingsStore();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo>({
     currentVersion: null,
@@ -86,6 +91,7 @@ export function useAutoUpdate() {
   // Check for updates on app start if enabled
   useEffect(() => {
     if (
+      ready &&
       appSettings.checkUpdatesOnStart &&
       !hasCheckedOnStartRef.current &&
       isTauri()
@@ -98,7 +104,7 @@ export function useAutoUpdate() {
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [appSettings.checkUpdatesOnStart, checkForUpdates]);
+  }, [appSettings.checkUpdatesOnStart, checkForUpdates, ready]);
 
   return {
     ...updateInfo,

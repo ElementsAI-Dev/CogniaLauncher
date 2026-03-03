@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BubbleHint } from "./bubble-hint";
 import type { BubbleHintDef } from "@/types/onboarding";
@@ -222,6 +222,47 @@ describe("BubbleHint", () => {
     render(<BubbleHint hint={topHint} onDismiss={jest.fn()} />);
     await screen.findByText("Customize Dashboard", {}, { timeout: 2000 });
     expect(screen.getByRole("status")).toBeInTheDocument();
+
+    document.body.removeChild(target);
+    window.IntersectionObserver = originalIO;
+  });
+
+  it("auto dismisses and marks hint as handled after autoDismissMs", async () => {
+    const target = document.createElement("div");
+    target.setAttribute("data-hint", "test-target");
+    target.style.width = "100px";
+    target.style.height = "50px";
+    document.body.appendChild(target);
+
+    const originalIO = window.IntersectionObserver;
+    window.IntersectionObserver = jest.fn((callback) => {
+      callback(
+        [{ isIntersecting: true }] as IntersectionObserverEntry[],
+        {} as IntersectionObserver,
+      );
+      return {
+        observe: jest.fn(),
+        disconnect: jest.fn(),
+        unobserve: jest.fn(),
+        root: null,
+        rootMargin: "",
+        thresholds: [],
+        takeRecords: () => [],
+      };
+    }) as unknown as typeof IntersectionObserver;
+
+    const onDismiss = jest.fn();
+    render(
+      <BubbleHint
+        hint={{ ...mockHint, autoDismissMs: 30 }}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    await screen.findByText("Customize Dashboard", {}, { timeout: 2000 });
+    await waitFor(() => {
+      expect(onDismiss).toHaveBeenCalledWith("test-hint");
+    });
 
     document.body.removeChild(target);
     window.IntersectionObserver = originalIO;

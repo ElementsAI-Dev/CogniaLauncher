@@ -186,9 +186,32 @@ export function getLogicalEnvType(
   return PROVIDER_ENV_TYPE_MAP[providerEnvType] || providerEnvType;
 }
 
+function normalizeEnvType(envType: string): string {
+  return envType.trim().toLowerCase();
+}
+
+type ProviderAlias = Pick<EnvironmentProviderInfo, 'id' | 'env_type'>;
+
+function normalizeProviderAliases(providers: ProviderAlias[]): ProviderAlias[] {
+  return providers.map((provider) => ({
+    id: normalizeEnvType(provider.id),
+    env_type: normalizeEnvType(provider.env_type),
+  }));
+}
+
+function resolveLogicalEnvSettingsType(
+  envType: string,
+  availableProviders: ProviderAlias[],
+): string {
+  const normalizedEnvType = normalizeEnvType(envType);
+  return normalizeEnvType(
+    getLogicalEnvType(normalizedEnvType, normalizeProviderAliases(availableProviders)),
+  );
+}
+
 // Helper to get default settings for an environment type
 function getDefaultEnvSettings(envType: string): EnvironmentSettings {
-  const normalizedEnvType = PROVIDER_ENV_TYPE_MAP[envType.toLowerCase()] || envType.toLowerCase();
+  const normalizedEnvType = PROVIDER_ENV_TYPE_MAP[normalizeEnvType(envType)] || normalizeEnvType(envType);
   const detectionFiles = (DEFAULT_DETECTION_FILES[normalizedEnvType] || []).map((fileName, idx) => ({
     fileName,
     enabled: idx < 2, // Enable first two by default
@@ -199,6 +222,79 @@ function getDefaultEnvSettings(envType: string): EnvironmentSettings {
     detectionFiles,
     autoSwitch: false,
   };
+}
+
+function resolveEnvSettingsEntry(
+  envSettings: Record<string, EnvironmentSettings>,
+  envType: string,
+  availableProviders: ProviderAlias[],
+): {
+  logicalEnvType: string;
+  sourceKey: string | null;
+  settings: EnvironmentSettings;
+} {
+  const normalizedEnvType = normalizeEnvType(envType);
+  const logicalEnvType = resolveLogicalEnvSettingsType(normalizedEnvType, availableProviders);
+
+  if (envSettings[logicalEnvType]) {
+    return {
+      logicalEnvType,
+      sourceKey: logicalEnvType,
+      settings: envSettings[logicalEnvType],
+    };
+  }
+
+  if (envSettings[normalizedEnvType]) {
+    return {
+      logicalEnvType,
+      sourceKey: normalizedEnvType,
+      settings: envSettings[normalizedEnvType],
+    };
+  }
+
+  for (const [key, settings] of Object.entries(envSettings)) {
+    if (resolveLogicalEnvSettingsType(key, availableProviders) === logicalEnvType) {
+      return {
+        logicalEnvType,
+        sourceKey: key,
+        settings,
+      };
+    }
+  }
+
+  return {
+    logicalEnvType,
+    sourceKey: null,
+    settings: getDefaultEnvSettings(logicalEnvType),
+  };
+}
+
+function upsertEnvSettings(
+  envSettings: Record<string, EnvironmentSettings>,
+  envType: string,
+  availableProviders: ProviderAlias[],
+  updater: (settings: EnvironmentSettings, logicalEnvType: string) => EnvironmentSettings,
+): Record<string, EnvironmentSettings> {
+  const normalizedEnvType = normalizeEnvType(envType);
+  const { logicalEnvType, sourceKey, settings } = resolveEnvSettingsEntry(
+    envSettings,
+    normalizedEnvType,
+    availableProviders,
+  );
+  const nextEnvSettings = {
+    ...envSettings,
+    [logicalEnvType]: updater(settings, logicalEnvType),
+  };
+
+  // Migrate legacy provider-id keys to logical env-type keys after write.
+  if (sourceKey && sourceKey !== logicalEnvType) {
+    delete nextEnvSettings[sourceKey];
+  }
+  if (normalizedEnvType !== logicalEnvType) {
+    delete nextEnvSettings[normalizedEnvType];
+  }
+
+  return nextEnvSettings;
 }
 
 export const useEnvironmentStore = create<EnvironmentState>()(
@@ -268,100 +364,116 @@ export const useEnvironmentStore = create<EnvironmentState>()(
       // Environment settings actions
       getEnvSettings: (envType: string) => {
         const state = get();
-        return state.envSettings[envType] || getDefaultEnvSettings(envType);
+        return resolveEnvSettingsEntry(
+          state.envSettings,
+          envType,
+          state.availableProviders,
+        ).settings;
       },
 
       setEnvSettings: (envType, settings) => set((state) => ({
-        envSettings: {
-          ...state.envSettings,
-          [envType]: settings,
-        },
+        envSettings: upsertEnvSettings(
+          state.envSettings,
+          envType,
+          state.availableProviders,
+          () => settings,
+        ),
       })),
       
       setEnvVariables: (envType, variables) => set((state) => ({
-        envSettings: {
-          ...state.envSettings,
-          [envType]: {
-            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+        envSettings: upsertEnvSettings(
+          state.envSettings,
+          envType,
+          state.availableProviders,
+          (current) => ({
+            ...current,
             envVariables: variables,
-          },
-        },
+          }),
+        ),
       })),
       
       addEnvVariable: (envType, variable) => set((state) => {
-        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
         return {
-          envSettings: {
-            ...state.envSettings,
-            [envType]: {
+          envSettings: upsertEnvSettings(
+            state.envSettings,
+            envType,
+            state.availableProviders,
+            (current) => ({
               ...current,
               envVariables: [...current.envVariables, variable],
-            },
-          },
+            }),
+          ),
         };
       }),
       
       removeEnvVariable: (envType, key) => set((state) => {
-        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
         return {
-          envSettings: {
-            ...state.envSettings,
-            [envType]: {
+          envSettings: upsertEnvSettings(
+            state.envSettings,
+            envType,
+            state.availableProviders,
+            (current) => ({
               ...current,
               envVariables: current.envVariables.filter((v) => v.key !== key),
-            },
-          },
+            }),
+          ),
         };
       }),
       
       updateEnvVariable: (envType, key, updates) => set((state) => {
-        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
         return {
-          envSettings: {
-            ...state.envSettings,
-            [envType]: {
+          envSettings: upsertEnvSettings(
+            state.envSettings,
+            envType,
+            state.availableProviders,
+            (current) => ({
               ...current,
               envVariables: current.envVariables.map((v) =>
                 v.key === key ? { ...v, ...updates } : v
               ),
-            },
-          },
+            }),
+          ),
         };
       }),
       
       setDetectionFiles: (envType, files) => set((state) => ({
-        envSettings: {
-          ...state.envSettings,
-          [envType]: {
-            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+        envSettings: upsertEnvSettings(
+          state.envSettings,
+          envType,
+          state.availableProviders,
+          (current) => ({
+            ...current,
             detectionFiles: files,
-          },
-        },
+          }),
+        ),
       })),
       
       toggleDetectionFile: (envType, fileName, enabled) => set((state) => {
-        const current = state.envSettings[envType] || getDefaultEnvSettings(envType);
         return {
-          envSettings: {
-            ...state.envSettings,
-            [envType]: {
+          envSettings: upsertEnvSettings(
+            state.envSettings,
+            envType,
+            state.availableProviders,
+            (current) => ({
               ...current,
               detectionFiles: current.detectionFiles.map((f) =>
                 f.fileName === fileName ? { ...f, enabled } : f
               ),
-            },
-          },
+            }),
+          ),
         };
       }),
       
       setAutoSwitch: (envType, enabled) => set((state) => ({
-        envSettings: {
-          ...state.envSettings,
-          [envType]: {
-            ...(state.envSettings[envType] || getDefaultEnvSettings(envType)),
+        envSettings: upsertEnvSettings(
+          state.envSettings,
+          envType,
+          state.availableProviders,
+          (current) => ({
+            ...current,
             autoSwitch: enabled,
-          },
-        },
+          }),
+        ),
       })),
       
       // Installation state

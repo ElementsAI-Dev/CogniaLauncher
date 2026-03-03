@@ -36,7 +36,14 @@ describe('resolveDocLink', () => {
   it('resolves ../ relative links with basePath', () => {
     expect(resolveDocLink('../index', 'guide/sub')).toEqual({
       type: 'internal',
-      resolved: '/docs/guide/index',
+      resolved: '/docs/guide',
+    });
+  });
+
+  it('resolves multi-level ../ relative links with basePath', () => {
+    expect(resolveDocLink('../../overview.md', 'guide/sub/deep')).toEqual({
+      type: 'internal',
+      resolved: '/docs/guide/overview',
     });
   });
 
@@ -76,9 +83,16 @@ describe('resolveDocLink', () => {
   });
 
   it('resolves .md link with path separators', () => {
-    expect(resolveDocLink('sub/page.md', 'docs')).toEqual({
+    expect(resolveDocLink('sub/page.md', 'guide')).toEqual({
       type: 'internal',
-      resolved: '/docs/sub/page',
+      resolved: '/docs/guide/sub/page',
+    });
+  });
+
+  it('preserves query and hash suffix on internal links', () => {
+    expect(resolveDocLink('../index.md?tab=api#overview', 'guide/sub')).toEqual({
+      type: 'internal',
+      resolved: '/docs/guide?tab=api#overview',
     });
   });
 });

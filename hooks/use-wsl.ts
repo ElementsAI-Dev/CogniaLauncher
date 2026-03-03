@@ -8,6 +8,7 @@ import type {
   WslImportOptions,
   WslExecResult,
   WslDiskUsage,
+  WslTotalDiskUsage,
   WslConfig,
   WslDistroConfig,
   WslMountOptions,
@@ -64,7 +65,10 @@ export interface UseWslReturn {
   moveDistro: (name: string, location: string) => Promise<string>;
   resizeDistro: (name: string, size: string) => Promise<string>;
   installWslOnly: () => Promise<string>;
+  installOnlineDistro: (name: string) => Promise<void>;
+  unregisterDistro: (name: string) => Promise<void>;
   installWithLocation: (name: string, location: string) => Promise<string>;
+  getTotalDiskUsage: () => Promise<WslTotalDiskUsage | null>;
   detectDistroEnv: (distro: string) => Promise<WslDistroEnvironment | null>;
   getDistroResources: (distro: string) => Promise<WslDistroResources | null>;
   listUsers: (distro: string) => Promise<WslUser[]>;
@@ -327,12 +331,12 @@ export function useWsl(): UseWslReturn {
     try {
       setError(null);
       await tauri.wslLaunch(name, user);
-      await refreshRunning();
+      await Promise.all([refreshDistros(), refreshRunning()]);
     } catch (err) {
       setError(String(err));
       throw err;
     }
-  }, [refreshRunning]);
+  }, [refreshDistros, refreshRunning]);
 
   const execCommand = useCallback(async (distro: string, command: string, user?: string): Promise<WslExecResult> => {
     if (!tauri.isTauri()) return { stdout: '', stderr: 'Not in Tauri environment', exitCode: 1 };
@@ -521,14 +525,51 @@ export function useWsl(): UseWslReturn {
     }
   }, []);
 
+  const installOnlineDistro = useCallback(async (name: string): Promise<void> => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.packageInstall([`wsl:${name}`]);
+      await refreshDistros();
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
+
+  const unregisterDistro = useCallback(async (name: string): Promise<void> => {
+    if (!tauri.isTauri()) return;
+    try {
+      setError(null);
+      await tauri.packageUninstall([`wsl:${name}`]);
+      await refreshDistros();
+      await refreshRunning();
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros, refreshRunning]);
+
   const installWithLocation = useCallback(async (name: string, location: string): Promise<string> => {
     if (!tauri.isTauri()) return '';
     try {
       setError(null);
-      return await tauri.wslInstallWithLocation(name, location);
+      const result = await tauri.wslInstallWithLocation(name, location);
+      await refreshDistros();
+      return result;
     } catch (err) {
       setError(String(err));
       throw err;
+    }
+  }, [refreshDistros]);
+
+  const getTotalDiskUsage = useCallback(async (): Promise<WslTotalDiskUsage | null> => {
+    if (!tauri.isTauri()) return null;
+    try {
+      const [totalBytes, perDistro] = await tauri.wslTotalDiskUsage();
+      return { totalBytes, perDistro };
+    } catch {
+      return null;
     }
   }, []);
 
@@ -588,18 +629,38 @@ export function useWsl(): UseWslReturn {
 
   const openInExplorer = useCallback(async (name: string): Promise<void> => {
     if (!tauri.isTauri()) return;
-    await tauri.wslOpenInExplorer(name);
+    try {
+      setError(null);
+      await tauri.wslOpenInExplorer(name);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
   }, []);
 
   const openInTerminal = useCallback(async (name: string): Promise<void> => {
     if (!tauri.isTauri()) return;
-    await tauri.wslOpenInTerminal(name);
+    try {
+      setError(null);
+      await tauri.wslOpenInTerminal(name);
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
   }, []);
 
   const cloneDistro = useCallback(async (name: string, newName: string, location: string): Promise<string> => {
     if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
-    return await tauri.wslCloneDistro(name, newName, location);
-  }, []);
+    try {
+      setError(null);
+      const result = await tauri.wslCloneDistro(name, newName, location);
+      await refreshDistros();
+      return result;
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
 
   return {
     available,
@@ -645,7 +706,10 @@ export function useWsl(): UseWslReturn {
     moveDistro,
     resizeDistro,
     installWslOnly,
+    installOnlineDistro,
+    unregisterDistro,
     installWithLocation,
+    getTotalDiskUsage,
     detectDistroEnv,
     getDistroResources,
     listUsers,

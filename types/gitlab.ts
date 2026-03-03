@@ -104,6 +104,6 @@ export interface GitLabPackageFileInfo {
   createdAt: string | null;
 }
 
-export type GitLabSourceType = 'release' | 'branch' | 'tag';
+export type GitLabSourceType = 'release' | 'branch' | 'tag' | 'pipeline' | 'package';
 
 export type GitLabArchiveFormat = 'zip' | 'tar.gz' | 'tar.bz2' | 'tar';

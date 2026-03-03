@@ -37,6 +37,7 @@ import {
   WslChangeUserDialog,
   WslMoveDialog,
   WslResizeDialog,
+  WslCloneDialog,
   WslDistroOverview,
   WslDistroTerminal,
   WslDistroFilesystem,
@@ -61,6 +62,7 @@ import {
   MoveRight,
   Expand,
   HardDrive,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroDetailPageProps } from '@/types/wsl';
@@ -98,6 +100,10 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
     listUsers,
     getDistroResources,
     updateDistroPackages,
+    openInExplorer,
+    openInTerminal,
+    cloneDistro,
+    unregisterDistro,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -105,6 +111,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const [changeUserOpen, setChangeUserOpen] = useState(false);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [resizeDialogOpen, setResizeDialogOpen] = useState(false);
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     | { type: 'unregister' | 'terminate' }
     | { type: 'move'; location: string }
@@ -145,32 +152,29 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
   const handleLaunch = useCallback(async () => {
     try {
       await launch(distroName);
-      toast.success(`${distroName} launched`);
-      await handleRefresh();
+      toast.success(t('wsl.launchSuccess').replace('{name}', distroName));
     } catch (err) {
       toast.error(String(err));
     }
-  }, [launch, distroName, handleRefresh]);
+  }, [distroName, launch, t]);
 
   const handleTerminate = useCallback(async () => {
     try {
       await terminate(distroName);
       toast.success(t('wsl.terminateSuccess').replace('{name}', distroName));
-      await handleRefresh();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [terminate, distroName, t, handleRefresh]);
+  }, [terminate, distroName, t]);
 
   const handleSetDefault = useCallback(async () => {
     try {
       await setDefault(distroName);
       toast.success(t('wsl.setDefaultSuccess').replace('{name}', distroName));
-      await handleRefresh();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [setDefault, distroName, t, handleRefresh]);
+  }, [setDefault, distroName, t]);
 
   const handleSetVersion = useCallback(async () => {
     try {
@@ -180,11 +184,10 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
           .replace('{name}', distroName)
           .replace('{version}', String(targetVersion))
       );
-      await handleRefresh();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [setVersion, distroName, targetVersion, t, handleRefresh]);
+  }, [setVersion, distroName, targetVersion, t]);
 
   const handleExport = useCallback(
     async (name: string, filePath: string, asVhd: boolean) => {
@@ -200,15 +203,14 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
 
   const handleUnregister = useCallback(async () => {
     try {
-      const { packageUninstall } = await import('@/lib/tauri');
-      await packageUninstall([`wsl:${distroName}`]);
+      await unregisterDistro(distroName);
       toast.success(t('wsl.unregisterSuccess').replace('{name}', distroName));
       // Navigate back after unregister
       router.push('/wsl');
     } catch (err) {
       toast.error(String(err));
     }
-  }, [distroName, router, t]);
+  }, [distroName, router, t, unregisterDistro]);
 
   const handleChangeDefaultUserConfirm = useCallback(async (distro: string, username: string) => {
     try {
@@ -235,6 +237,33 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
       toast.error(String(err));
     }
   }, [distroName, setSparse, t]);
+
+  const handleOpenInExplorer = useCallback(async () => {
+    try {
+      await openInExplorer(distroName);
+      toast.success(t('wsl.openInExplorer'));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [distroName, openInExplorer, t]);
+
+  const handleOpenInTerminal = useCallback(async () => {
+    try {
+      await openInTerminal(distroName);
+      toast.success(t('wsl.openInTerminal'));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [distroName, openInTerminal, t]);
+
+  const handleCloneConfirm = useCallback(async (name: string, newName: string, location: string) => {
+    try {
+      const result = await cloneDistro(name, newName, location);
+      toast.success(t('wsl.cloneSuccess').replace('{name}', newName) + (result ? `\n${result}` : ''));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [cloneDistro, t]);
 
   const handleMoveConfirm = useCallback((location: string) => {
     setConfirmAction({ type: 'move', location });
@@ -371,7 +400,7 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
                 </Badge>
                 {distro?.isDefault && (
                   <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">
-                    Default
+                    {t('wsl.defaultBadge')}
                   </Badge>
                 )}
               </div>
@@ -418,6 +447,14 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             <Button variant="outline" size="sm" onClick={() => setExportOpen(true)} className="gap-1.5">
               <Download className="h-3.5 w-3.5" />
               {t('wsl.export')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleOpenInExplorer} className="gap-1.5">
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t('wsl.openInExplorer')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleOpenInTerminal} className="gap-1.5">
+              <TerminalSquare className="h-3.5 w-3.5" />
+              {t('wsl.openInTerminal')}
             </Button>
             <Button
               variant="outline"
@@ -503,6 +540,15 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             >
               <HardDrive className="h-3.5 w-3.5" />
               {t('wsl.setSparseDisable')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="justify-start gap-1.5"
+              onClick={() => setCloneDialogOpen(true)}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {t('wsl.clone')}
             </Button>
           </div>
           {(moveHint || resizeHint || sparseHint) && (
@@ -685,6 +731,15 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
         distroName={distroName}
         onOpenChange={setResizeDialogOpen}
         onConfirm={handleResizeConfirm}
+        t={t}
+      />
+
+      {/* Clone Dialog */}
+      <WslCloneDialog
+        open={cloneDialogOpen}
+        distroName={distroName}
+        onOpenChange={setCloneDialogOpen}
+        onConfirm={handleCloneConfirm}
         t={t}
       />
     </div>

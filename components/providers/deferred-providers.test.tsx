@@ -68,9 +68,9 @@ describe("DeferredProviders", () => {
     expect(screen.getByTestId("fallback")).toBeInTheDocument();
     expect(screen.queryByTestId("child")).not.toBeInTheDocument();
 
-    // Advance past the 16ms setTimeout
+    // Advance past the 100ms setTimeout fallback used by component
     act(() => {
-      jest.advanceTimersByTime(20);
+      jest.advanceTimersByTime(120);
     });
 
     expect(screen.getByTestId("child")).toBeInTheDocument();

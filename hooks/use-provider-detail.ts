@@ -1,8 +1,16 @@
 'use client';
 
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as tauri from '@/lib/tauri';
 import { formatError } from '@/lib/errors';
+import { usePackages } from '@/hooks/use-packages';
+import { usePackageUpdates } from '@/hooks/use-package-updates';
+import {
+  emitInvalidations,
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
 import type {
   ProviderInfo,
   InstalledPackage,
@@ -85,13 +93,21 @@ export function useProviderDetail(providerId: string) {
   const [loadingEnvironment, setLoadingEnvironment] = useState(false);
 
   const initializedRef = useRef(false);
+  const {
+    fetchProviders: fetchSharedProviders,
+    fetchInstalledPackages: fetchSharedInstalledPackages,
+    searchPackages: searchSharedPackages,
+    fetchPackageInfo: fetchSharedPackageInfo,
+    fetchPackageVersions: fetchSharedPackageVersions,
+  } = usePackages();
+  const { checkUpdates: runUpdateCheck } = usePackageUpdates();
 
   // Fetch provider info from the list
   const fetchProvider = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const providers = await tauri.providerList();
+      const providers = await fetchSharedProviders();
       const found = providers.find((p) => p.id === providerId);
       if (found) {
         setProvider(found);
@@ -105,7 +121,7 @@ export function useProviderDetail(providerId: string) {
     } finally {
       setLoading(false);
     }
-  }, [providerId]);
+  }, [fetchSharedProviders, providerId]);
 
   // Check availability
   const checkAvailability = useCallback(async () => {
@@ -129,6 +145,10 @@ export function useProviderDetail(providerId: string) {
       }
       // Refresh provider info
       await fetchProvider();
+      emitInvalidations(
+        ['provider_data', 'package_data', 'environment_data'],
+        'provider-detail:toggle-provider',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -139,7 +159,7 @@ export function useProviderDetail(providerId: string) {
   const fetchInstalledPackages = useCallback(async (force?: boolean) => {
     setLoadingPackages(true);
     try {
-      const packages = await tauri.packageList(providerId, force);
+      const packages = await fetchSharedInstalledPackages(providerId, force);
       setInstalledPackages(packages);
       return packages;
     } catch (err) {
@@ -148,7 +168,7 @@ export function useProviderDetail(providerId: string) {
     } finally {
       setLoadingPackages(false);
     }
-  }, [providerId]);
+  }, [fetchSharedInstalledPackages, providerId]);
 
   // Search packages within this provider
   const searchPackages = useCallback(async (query: string) => {
@@ -160,7 +180,7 @@ export function useProviderDetail(providerId: string) {
     setLoadingSearch(true);
     setSearchQuery(query);
     try {
-      const results = await tauri.packageSearch(query, providerId);
+      const results = await searchSharedPackages(query, providerId);
       setSearchResults(results);
       return results;
     } catch (err) {
@@ -169,7 +189,7 @@ export function useProviderDetail(providerId: string) {
     } finally {
       setLoadingSearch(false);
     }
-  }, [providerId]);
+  }, [providerId, searchSharedPackages]);
 
   // Install a package via this provider (optionally with version)
   const installPackage = useCallback(async (packageName: string, version?: string) => {
@@ -178,6 +198,10 @@ export function useProviderDetail(providerId: string) {
       const spec = `${providerId}:${name}`;
       await tauri.packageInstall([spec]);
       await fetchInstalledPackages();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:install-package',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -190,6 +214,10 @@ export function useProviderDetail(providerId: string) {
       const spec = `${providerId}:${packageName}`;
       await tauri.packageUninstall([spec]);
       await fetchInstalledPackages();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:uninstall-package',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -202,6 +230,10 @@ export function useProviderDetail(providerId: string) {
       const specs = packageNames.map((name) => `${providerId}:${name}`);
       const result = await tauri.batchUninstall(specs);
       await fetchInstalledPackages();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:batch-uninstall',
+      );
       return result;
     } catch (err) {
       setError(formatError(err));
@@ -212,22 +244,22 @@ export function useProviderDetail(providerId: string) {
   // Fetch detailed info for a specific package
   const fetchPackageInfo = useCallback(async (packageName: string): Promise<PackageInfo | null> => {
     try {
-      return await tauri.packageInfo(packageName, providerId);
+      return await fetchSharedPackageInfo(packageName, providerId);
     } catch (err) {
       setError(formatError(err));
       return null;
     }
-  }, [providerId]);
+  }, [fetchSharedPackageInfo, providerId]);
 
   // Fetch available versions for a package
   const fetchPackageVersions = useCallback(async (packageName: string): Promise<VersionInfo[]> => {
     try {
-      return await tauri.packageVersions(packageName, providerId);
+      return await fetchSharedPackageVersions(packageName, providerId);
     } catch (err) {
       setError(formatError(err));
       return [];
     }
-  }, [providerId]);
+  }, [fetchSharedPackageVersions, providerId]);
 
   // Resolve dependencies for packages
   const fetchDependencies = useCallback(async (packageNames: string[]): Promise<ResolutionResult | null> => {
@@ -281,6 +313,10 @@ export function useProviderDetail(providerId: string) {
     try {
       await tauri.packageRollback(packageName, toVersion);
       await fetchInstalledPackages();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:rollback-package',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -301,17 +337,19 @@ export function useProviderDetail(providerId: string) {
   const checkUpdates = useCallback(async () => {
     setLoadingUpdates(true);
     try {
-      const summary = await tauri.checkUpdates();
-      const providerUpdates = summary.updates.filter((u) => u.provider === providerId);
-      setAvailableUpdates(providerUpdates);
-      return providerUpdates;
+      const summary = await runUpdateCheck({
+        providerId,
+        syncStore: false,
+      });
+      setAvailableUpdates(summary.updates);
+      return summary.updates;
     } catch (err) {
       setError(formatError(err));
       return [];
     } finally {
       setLoadingUpdates(false);
     }
-  }, [providerId]);
+  }, [providerId, runUpdateCheck]);
 
   // Update a single package
   const updatePackage = useCallback(async (packageName: string): Promise<BatchResult | null> => {
@@ -319,6 +357,10 @@ export function useProviderDetail(providerId: string) {
       const spec = `${providerId}:${packageName}`;
       const result = await tauri.batchUpdate([spec]);
       await fetchInstalledPackages();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:update-package',
+      );
       return result;
     } catch (err) {
       setError(formatError(err));
@@ -333,6 +375,10 @@ export function useProviderDetail(providerId: string) {
       const result = await tauri.batchUpdate(specs);
       await fetchInstalledPackages();
       await checkUpdates();
+      emitInvalidations(
+        ['package_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'provider-detail:update-all-packages',
+      );
       return result;
     } catch (err) {
       setError(formatError(err));
@@ -451,6 +497,21 @@ export function useProviderDetail(providerId: string) {
 
     await Promise.allSettled(promises);
   }, [fetchProvider, checkAvailability, fetchInstalledPackages, runHealthCheck, fetchHistory, checkUpdates, fetchPinnedPackages, fetchEnvironmentInfo]);
+
+  useEffect(() => {
+    if (!tauri.isTauri()) return;
+    void ensureCacheInvalidationBridge();
+    const dispose = subscribeInvalidation(
+      ['provider_data', 'package_data', 'environment_data'],
+      withThrottle(() => {
+        void refreshAll();
+      }, 500),
+    );
+
+    return () => {
+      dispose();
+    };
+  }, [refreshAll]);
 
   return {
     // State

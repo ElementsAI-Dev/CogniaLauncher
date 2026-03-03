@@ -205,6 +205,24 @@ async fn make_gitlab_provider(token: Option<String>, instance_url: Option<String
         .with_instance_url(effective_url)
 }
 
+async fn enqueue_gitlab_download(
+    manager: &State<'_, SharedDownloadManager>,
+    url: String,
+    destination: &str,
+    file_name: String,
+    provider: String,
+    headers: std::collections::HashMap<String, String>,
+) -> Result<String, String> {
+    let full_path = PathBuf::from(destination).join(&file_name);
+    let task = DownloadTask::builder(url, full_path, file_name)
+        .with_provider(provider)
+        .with_headers(headers)
+        .build();
+
+    let mgr = manager.read().await;
+    Ok(mgr.add_task(task).await)
+}
+
 #[tauri::command]
 pub async fn gitlab_validate_project(
     project: String,
@@ -315,17 +333,17 @@ pub async fn gitlab_download_asset(
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<String, String> {
     let provider = make_gitlab_provider(token, instance_url).await;
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&asset_name);
 
     let headers = provider.get_download_headers();
-    let task = DownloadTask::builder(asset_url, full_path, asset_name)
-        .with_provider(format!("gitlab:{}", project))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_gitlab_download(
+        &manager,
+        asset_url,
+        &destination,
+        asset_name,
+        format!("gitlab:{}", project),
+        headers,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -354,17 +372,16 @@ pub async fn gitlab_download_source(
         ext
     );
 
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&file_name);
-
     let headers = provider.get_download_headers();
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(format!("gitlab:{}", project))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_gitlab_download(
+        &manager,
+        url,
+        &destination,
+        file_name,
+        format!("gitlab:{}", project),
+        headers,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -562,17 +579,16 @@ pub async fn gitlab_download_job_artifacts(
     let url = provider.get_job_artifacts_url(&project, job_id);
     let file_name = format!("{}-artifacts-{}.zip", job_name, job_id);
 
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&file_name);
-
     let headers = provider.get_download_headers();
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(format!("gitlab:{}", project))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_gitlab_download(
+        &manager,
+        url,
+        &destination,
+        file_name,
+        format!("gitlab:{}", project),
+        headers,
+    )
+    .await
 }
 
 // ============================================================================
@@ -666,17 +682,16 @@ pub async fn gitlab_download_package_file(
     let provider = make_gitlab_provider(token, instance_url).await;
     let url = provider.get_package_file_url(&project, package_id, &file_name);
 
-    let dest_path = PathBuf::from(&destination);
-    let full_path = dest_path.join(&file_name);
-
     let headers = provider.get_download_headers();
-    let task = DownloadTask::builder(url, full_path, file_name)
-        .with_provider(format!("gitlab:{}", project))
-        .with_headers(headers)
-        .build();
-
-    let mgr = manager.read().await;
-    Ok(mgr.add_task(task).await)
+    enqueue_gitlab_download(
+        &manager,
+        url,
+        &destination,
+        file_name,
+        format!("gitlab:{}", project),
+        headers,
+    )
+    .await
 }
 
 #[tauri::command]

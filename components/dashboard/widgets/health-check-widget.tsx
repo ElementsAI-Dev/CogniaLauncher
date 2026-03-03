@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction, CardFooter } from '@/components/ui/card';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -24,11 +24,12 @@ interface HealthCheckWidgetProps {
 export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
   const { t } = useLocale();
   const { systemHealth, loading, checkAll } = useHealthCheck();
+  const hasAutoCheckedRef = useRef(false);
 
   useEffect(() => {
-    if (isTauri()) {
-      checkAll();
-    }
+    if (!isTauri() || hasAutoCheckedRef.current) return;
+    hasAutoCheckedRef.current = true;
+    checkAll();
   }, [checkAll]);
 
   const overallStatus: HealthStatus = systemHealth?.overall_status ?? 'unknown';
@@ -55,7 +56,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            onClick={checkAll}
+            onClick={() => checkAll({ force: true })}
             disabled={loading}
           >
             {loading ? (

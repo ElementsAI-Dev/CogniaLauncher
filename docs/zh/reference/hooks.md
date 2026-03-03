@@ -1,6 +1,6 @@
 # React Hooks 参考
 
-CogniaLauncher 包含 30 个自定义 React Hooks，封装业务逻辑和 Tauri API 调用。
+CogniaLauncher 包含 29 个自定义 React Hooks，封装业务逻辑和 Tauri API 调用。
 
 ---
 
@@ -19,7 +19,6 @@ CogniaLauncher 包含 30 个自定义 React Hooks，封装业务逻辑和 Tauri 
 | `useEnvironments` | `use-environments.ts` | 环境列表和版本管理 |
 | `useLaunch` | `use-launch.ts` | 程序启动和环境激活 |
 | `useAutoVersion` | `use-auto-version.ts` | 自动版本检测和切换 |
-| `useVersionCache` | `use-version-cache.ts` | 版本列表缓存 |
 | `useRustup` | `use-rustup.ts` | Rustup 工具链/组件/目标管理 |
 
 ## 包管理

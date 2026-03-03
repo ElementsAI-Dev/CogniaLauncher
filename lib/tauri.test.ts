@@ -21,7 +21,13 @@ import type {
   GoCacheInfo,
 } from './tauri';
 
-import { isTauri, getAppVersion, openExternal } from './tauri';
+const mockInvoke = jest.fn();
+
+jest.mock('@tauri-apps/api/core', () => ({
+  invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+
+import { cacheOptimize, getCacheSizeHistory, getAppVersion, isTauri, openExternal } from './tauri';
 
 describe('Tauri Utility Functions', () => {
   describe('isTauri', () => {
@@ -109,6 +115,74 @@ describe('Tauri Utility Functions', () => {
       // Restore original
       global.window.open = originalOpen;
     });
+  });
+});
+
+describe('Cache Payload Normalization', () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+  });
+
+  it('normalizes snake_case optimize payload to camelCase', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      size_before: 1024,
+      size_before_human: '1 KB',
+      size_after: 512,
+      size_after_human: '512 B',
+      size_saved: 512,
+      size_saved_human: '512 B',
+    });
+
+    const result = await cacheOptimize();
+
+    expect(mockInvoke).toHaveBeenCalledWith('cache_optimize');
+    expect(result).toEqual({
+      sizeBefore: 1024,
+      sizeBeforeHuman: '1 KB',
+      sizeAfter: 512,
+      sizeAfterHuman: '512 B',
+      sizeSaved: 512,
+      sizeSavedHuman: '512 B',
+    });
+  });
+
+  it('normalizes mixed cache size history payloads to camelCase', async () => {
+    mockInvoke.mockResolvedValueOnce([
+      {
+        timestamp: '2026-03-01T00:00:00Z',
+        internal_size: 100,
+        internal_size_human: '100 B',
+        download_count: 1,
+        metadata_count: 2,
+      },
+      {
+        timestamp: '2026-03-02T00:00:00Z',
+        internalSize: 200,
+        internalSizeHuman: '200 B',
+        downloadCount: 3,
+        metadataCount: 4,
+      },
+    ]);
+
+    const result = await getCacheSizeHistory(7);
+
+    expect(mockInvoke).toHaveBeenCalledWith('get_cache_size_history', { days: 7 });
+    expect(result).toEqual([
+      {
+        timestamp: '2026-03-01T00:00:00Z',
+        internalSize: 100,
+        internalSizeHuman: '100 B',
+        downloadCount: 1,
+        metadataCount: 2,
+      },
+      {
+        timestamp: '2026-03-02T00:00:00Z',
+        internalSize: 200,
+        internalSizeHuman: '200 B',
+        downloadCount: 3,
+        metadataCount: 4,
+      },
+    ]);
   });
 });
 

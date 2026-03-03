@@ -70,3 +70,5 @@ plugin-sdk/**/target/
 plugin-sdk-ts/**/node_modules/
 plugin-sdk-ts/**/dist/
 plugin-sdk-ts/**/*.wasm
+
+openspec

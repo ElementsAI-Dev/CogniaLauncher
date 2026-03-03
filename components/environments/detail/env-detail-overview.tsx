@@ -23,11 +23,9 @@ import {
   Loader2,
   RefreshCw,
   Terminal,
-  FileCode,
 } from "lucide-react";
 import type {
   EnvironmentInfo,
-  DetectedEnvironment,
   HealthStatus,
 } from "@/lib/tauri";
 import { useHealthCheck } from "@/hooks/use-health-check";
@@ -40,14 +38,12 @@ import { toast } from "sonner";
 interface EnvDetailOverviewProps {
   envType: string;
   env: EnvironmentInfo | null;
-  detectedVersion: DetectedEnvironment | null;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function EnvDetailOverview({
   envType,
   env,
-  detectedVersion,
   t,
 }: EnvDetailOverviewProps) {
   const { systemHealth, environmentHealth, loading: healthLoading, checkEnvironment, getStatusColor } =
@@ -157,32 +153,6 @@ export function EnvDetailOverview({
           </CardContent>
         </Card>
       </div>
-
-      {/* Detected Version Alert */}
-      {detectedVersion && (
-        <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/30">
-          <CardContent className="flex items-center gap-3 py-4">
-            <FileCode className="h-5 w-5 text-green-600 dark:text-green-400" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-green-700 dark:text-green-300">
-                {t("environments.detail.detectedInProject")}
-              </p>
-              <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                {t("environments.detectedVersion", {
-                  version: detectedVersion.version,
-                  source: detectedVersion.source.replace("_", " "),
-                })}
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className="font-mono border-green-300 dark:border-green-700"
-            >
-              {detectedVersion.version}
-            </Badge>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Update Checker */}
       <UpdateCheckerCard env={env} t={t} />

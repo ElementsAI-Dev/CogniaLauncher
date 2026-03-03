@@ -68,6 +68,13 @@ describe('useOnboarding', () => {
     expect(result.current.shouldShowWizard).toBe(false);
   });
 
+  it('should NOT auto-open wizard while tour is active', () => {
+    useOnboardingStore.setState({ completed: false, skipped: false, wizardOpen: false, tourActive: true });
+    const { result } = renderHook(() => useOnboarding());
+
+    expect(result.current.shouldShowWizard).toBe(false);
+  });
+
   it('should open and close wizard', () => {
     useOnboardingStore.setState({ completed: true, wizardOpen: false });
     const { result } = renderHook(() => useOnboarding());
@@ -200,5 +207,22 @@ describe('useOnboarding', () => {
     });
     expect(result.current.tourActive).toBe(false);
     expect(result.current.tourCompleted).toBe(false);
+  });
+
+  it('should keep current tour step when startTour is called again while active', () => {
+    useOnboardingStore.setState({ completed: true, wizardOpen: false, tourActive: false, tourStep: 0 });
+    const { result } = renderHook(() => useOnboarding());
+
+    act(() => {
+      result.current.startTour();
+      result.current.nextTourStep();
+    });
+    expect(result.current.tourStep).toBe(1);
+
+    act(() => {
+      result.current.startTour();
+    });
+    expect(result.current.tourActive).toBe(true);
+    expect(result.current.tourStep).toBe(1);
   });
 });

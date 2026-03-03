@@ -11,6 +11,22 @@ const mockUninstallPackages = jest.fn().mockResolvedValue(undefined);
 const mockBatchInstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockBatchUpdate = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockBatchUninstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
+const mockPackageStoreState = {
+  selectedPackages: [] as string[],
+  clearPackageSelection: jest.fn(),
+  bookmarkedPackages: [] as string[],
+  toggleBookmark: jest.fn(),
+  availableUpdates: [] as Array<{
+    name: string;
+    provider: string;
+    current_version: string;
+    latest_version: string;
+  }>,
+  updateCheckProgress: null as null | { phase: string; current: number; total: number },
+  isCheckingUpdates: false,
+  updateCheckErrors: [] as Array<{ provider: string; package: string | null; message: string }>,
+  lastUpdateCheck: null as number | null,
+};
 
 jest.mock('@/hooks/use-packages', () => ({
   usePackages: () => ({
@@ -48,16 +64,7 @@ jest.mock('@/hooks/use-packages', () => ({
 }));
 
 jest.mock('@/lib/stores/packages', () => ({
-  usePackageStore: () => ({
-    selectedPackages: [],
-    clearPackageSelection: jest.fn(),
-    bookmarkedPackages: [],
-    toggleBookmark: jest.fn(),
-    updateCheckProgress: null,
-    isCheckingUpdates: false,
-    updateCheckErrors: [],
-    lastUpdateCheck: null,
-  }),
+  usePackageStore: () => mockPackageStoreState,
 }));
 
 jest.mock('@/hooks/use-keyboard-shortcuts', () => ({
@@ -160,6 +167,13 @@ jest.mock('@/components/packages/stats-overview', () => ({
 describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPackageStoreState.selectedPackages = [];
+    mockPackageStoreState.bookmarkedPackages = [];
+    mockPackageStoreState.availableUpdates = [];
+    mockPackageStoreState.updateCheckProgress = null;
+    mockPackageStoreState.isCheckingUpdates = false;
+    mockPackageStoreState.updateCheckErrors = [];
+    mockPackageStoreState.lastUpdateCheck = null;
   });
 
   it('renders page title and description', () => {
@@ -261,6 +275,31 @@ describe('PackagesPage', () => {
     await user.click(screen.getByRole('button', { name: /check for updates/i }));
     await waitFor(() => {
       expect(mockCheckForUpdates).toHaveBeenCalled();
+    });
+  });
+
+  it('uses update provider when updating a single package', async () => {
+    mockPackageStoreState.availableUpdates = [
+      {
+        name: 'shared-name',
+        provider: 'pip',
+        current_version: '1.0.0',
+        latest_version: '2.0.0',
+      },
+    ];
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/Updates/));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /common.update/i })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /common.update/i }));
+
+    await waitFor(() => {
+      expect(mockInstallPackages).toHaveBeenCalledWith(['pip:shared-name@2.0.0']);
     });
   });
 

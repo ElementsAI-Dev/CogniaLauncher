@@ -44,8 +44,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.dashboardCustomizeDesc',
     side: 'bottom',
     route: '/',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 800,
+    autoDismissMs: 6000,
   },
   {
     id: 'dashboard-drag',
@@ -54,8 +56,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.dashboardDragDesc',
     side: 'top',
     route: '/',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 500,
+    autoDismissMs: 6000,
   },
   {
     id: 'env-version-switcher',
@@ -64,8 +68,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.envVersionSwitcherDesc',
     side: 'bottom',
     route: '/environments',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 600,
+    autoDismissMs: 6000,
   },
   {
     id: 'packages-search',
@@ -74,8 +80,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.packagesSearchDesc',
     side: 'bottom',
     route: '/packages',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 500,
+    autoDismissMs: 6000,
   },
   {
     id: 'cache-overview',
@@ -84,8 +92,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.cacheOverviewDesc',
     side: 'bottom',
     route: '/cache',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 500,
+    autoDismissMs: 6000,
   },
   {
     id: 'downloads-concurrent',
@@ -94,8 +104,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.downloadsConcurrentDesc',
     side: 'left',
     route: '/downloads',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 600,
+    autoDismissMs: 6000,
   },
   {
     id: 'settings-mirrors',
@@ -104,8 +116,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.settingsMirrorsDesc',
     side: 'top',
     route: '/settings',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 500,
+    autoDismissMs: 6000,
   },
   {
     id: 'providers-status',
@@ -114,8 +128,10 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     descKey: 'onboarding.hints.providersStatusDesc',
     side: 'bottom',
     route: '/providers',
+    routeMatch: 'exact',
     showAfterOnboarding: true,
     delay: 500,
+    autoDismissMs: 6000,
   },
   {
     id: 'command-palette-shortcut',
@@ -125,6 +141,7 @@ export const BUBBLE_HINTS: BubbleHintDef[] = [
     side: 'bottom',
     showAfterOnboarding: true,
     delay: 1500,
+    autoDismissMs: 6000,
   },
 ];
 

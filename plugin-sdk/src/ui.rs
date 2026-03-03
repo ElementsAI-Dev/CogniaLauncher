@@ -109,6 +109,33 @@ pub enum UiBlock {
     },
     #[serde(rename = "actions")]
     Actions { buttons: Vec<ActionButton> },
+    #[serde(rename = "tabs")]
+    Tabs {
+        tabs: Vec<TabItem>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultTab")]
+        default_tab: Option<String>,
+    },
+    #[serde(rename = "accordion")]
+    Accordion {
+        items: Vec<AccordionItem>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        collapsible: Option<bool>,
+    },
+    #[serde(rename = "copy-button")]
+    CopyButton {
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
+    #[serde(rename = "file-input")]
+    FileInput {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        accept: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        multiple: Option<bool>,
+    },
     #[serde(rename = "group")]
     Group {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,6 +219,31 @@ pub struct ActionButton {
     pub icon: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabItem {
+    pub id: String,
+    pub label: String,
+    pub children: Vec<UiBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccordionItem {
+    pub id: String,
+    pub title: String,
+    pub children: Vec<UiBlock>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UiSelectedFile {
+    pub name: String,
+    pub size: u64,
+    #[serde(default, rename = "type")]
+    pub file_type: Option<String>,
+    #[serde(default)]
+    pub data_url: Option<String>,
+}
+
 // ============================================================================
 // Action Payload (deserialized from input when user interacts)
 // ============================================================================
@@ -206,6 +258,12 @@ pub struct UiAction {
     pub form_id: Option<String>,
     #[serde(default)]
     pub form_data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub file_input_id: Option<String>,
+    #[serde(default)]
+    pub files: Option<Vec<UiSelectedFile>>,
+    #[serde(default)]
+    pub tab_id: Option<String>,
     #[serde(default)]
     pub state: Option<serde_json::Value>,
 }
@@ -307,6 +365,49 @@ pub fn group(direction: &str, gap: Option<u32>, children: Vec<UiBlock>) -> UiBlo
         direction: Some(direction.to_string()),
         gap,
         children,
+    }
+}
+
+pub fn tabs(tab_items: Vec<TabItem>, default_tab: Option<&str>) -> UiBlock {
+    UiBlock::Tabs {
+        tabs: tab_items,
+        default_tab: default_tab.map(|d| d.to_string()),
+    }
+}
+
+pub fn tab_item(id: &str, label: &str, children: Vec<UiBlock>) -> TabItem {
+    TabItem {
+        id: id.to_string(),
+        label: label.to_string(),
+        children,
+    }
+}
+
+pub fn accordion(items: Vec<AccordionItem>, collapsible: Option<bool>) -> UiBlock {
+    UiBlock::Accordion { items, collapsible }
+}
+
+pub fn accordion_item(id: &str, title: &str, children: Vec<UiBlock>) -> AccordionItem {
+    AccordionItem {
+        id: id.to_string(),
+        title: title.to_string(),
+        children,
+    }
+}
+
+pub fn copy_button(content: &str, label: Option<&str>) -> UiBlock {
+    UiBlock::CopyButton {
+        content: content.to_string(),
+        label: label.map(|v| v.to_string()),
+    }
+}
+
+pub fn file_input(id: &str, label: &str, accept: Option<&str>, multiple: Option<bool>) -> UiBlock {
+    UiBlock::FileInput {
+        id: id.to_string(),
+        label: label.to_string(),
+        accept: accept.map(|v| v.to_string()),
+        multiple,
     }
 }
 
@@ -412,5 +513,43 @@ mod tests {
         let json = serde_json::to_string(&block).unwrap();
         assert!(json.contains("\"type\":\"key-value\""));
         assert!(json.contains("\"key\":\"OS\""));
+    }
+
+    #[test]
+    fn test_tabs_block() {
+        let block = tabs(
+            vec![tab_item("overview", "Overview", vec![text("Hello", None)])],
+            Some("overview"),
+        );
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"tabs\""));
+        assert!(json.contains("\"defaultTab\":\"overview\""));
+    }
+
+    #[test]
+    fn test_accordion_block() {
+        let block = accordion(
+            vec![accordion_item("item-1", "Item 1", vec![text("Body", None)])],
+            Some(true),
+        );
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"accordion\""));
+        assert!(json.contains("\"collapsible\":true"));
+    }
+
+    #[test]
+    fn test_copy_button_block() {
+        let block = copy_button("secret", Some("Copy"));
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"copy-button\""));
+        assert!(json.contains("\"content\":\"secret\""));
+    }
+
+    #[test]
+    fn test_file_input_block() {
+        let block = file_input("upload", "Upload File", Some(".json"), Some(true));
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"file-input\""));
+        assert!(json.contains("\"id\":\"upload\""));
     }
 }

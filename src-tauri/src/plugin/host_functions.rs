@@ -12,6 +12,15 @@ use tokio::sync::RwLock;
 // Host Context — shared state available to all host functions
 // ============================================================================
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmittedPluginEvent {
+    pub source_plugin_id: String,
+    pub event_name: String,
+    pub payload: serde_json::Value,
+    pub timestamp: String,
+}
+
 /// Shared context passed to host functions via Extism UserData.
 /// This gives WASM plugins controlled access to the launcher's core APIs.
 #[derive(Clone)]
@@ -23,6 +32,8 @@ pub struct HostContext {
     pub plugin_registry: Arc<RwLock<CogniaPluginRegistry>>,
     /// The ID of the plugin currently executing (set before each call)
     pub current_plugin_id: Arc<RwLock<String>>,
+    /// Events emitted by plugins during host function calls.
+    pub emitted_events: Arc<RwLock<Vec<EmittedPluginEvent>>>,
 }
 
 impl HostContext {
@@ -38,6 +49,7 @@ impl HostContext {
             permissions,
             plugin_registry,
             current_plugin_id: Arc::new(RwLock::new(String::new())),
+            emitted_events: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -45,6 +57,21 @@ impl HostContext {
     pub async fn set_current_plugin(&self, plugin_id: &str) {
         let mut id = self.current_plugin_id.write().await;
         *id = plugin_id.to_string();
+    }
+
+    pub async fn push_emitted_event(&self, event: EmittedPluginEvent) {
+        let mut events = self.emitted_events.write().await;
+        events.push(event);
+    }
+
+    pub async fn clear_emitted_events(&self) {
+        let mut events = self.emitted_events.write().await;
+        events.clear();
+    }
+
+    pub async fn drain_emitted_events(&self) -> Vec<EmittedPluginEvent> {
+        let mut events = self.emitted_events.write().await;
+        std::mem::take(&mut *events)
     }
 }
 
@@ -1534,6 +1561,12 @@ host_fn!(pub cognia_event_emit(user_data: HostContext; input: String) -> String 
 
     rt.block_on(async {
         let plugin_id = ctx.current_plugin_id.read().await.clone();
+        ctx.push_emitted_event(EmittedPluginEvent {
+            source_plugin_id: plugin_id.clone(),
+            event_name: req.name.clone(),
+            payload: req.payload.clone(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }).await;
         log::info!("[plugin:{}] event_emit: {} payload={}", plugin_id, req.name, req.payload);
         Ok::<_, ExtismError>(())
     })?;
@@ -1907,6 +1940,28 @@ mod tests {
             ctx.set_current_plugin("shared-id").await;
             let id = ctx2.current_plugin_id.read().await.clone();
             assert_eq!(id, "shared-id");
+        });
+    }
+
+    #[test]
+    fn test_emitted_event_queue_roundtrip() {
+        let ctx = make_host_context();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            ctx.push_emitted_event(EmittedPluginEvent {
+                source_plugin_id: "plugin-a".to_string(),
+                event_name: "hello".to_string(),
+                payload: serde_json::json!({ "x": 1 }),
+                timestamp: "2026-01-01T00:00:00Z".to_string(),
+            }).await;
+
+            let events = ctx.drain_emitted_events().await;
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].source_plugin_id, "plugin-a");
+            assert_eq!(events[0].event_name, "hello");
+
+            let empty = ctx.drain_emitted_events().await;
+            assert!(empty.is_empty());
         });
     }
 }

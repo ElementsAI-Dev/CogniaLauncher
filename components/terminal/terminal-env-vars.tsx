@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Search, Copy, RefreshCw } from 'lucide-react';
+import { Search, Copy, RefreshCw, ExternalLink } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import { categorizeVar, ENV_VAR_CATEGORY_KEYS, type EnvVarCategory } from '@/lib/constants/terminal';
@@ -85,10 +86,18 @@ export function TerminalEnvVars({
               <Badge variant="secondary" className="text-xs">{shellEnvVars.length}</Badge>
             )}
           </div>
-          <Button size="sm" variant="outline" onClick={onFetchShellEnvVars}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
-            {t('common.refresh')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onFetchShellEnvVars}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1" />
+              {t('common.refresh')}
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/envvar" className="gap-1.5">
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t('nav.envvar')}
+              </Link>
+            </Button>
+          </div>
         </div>
         <CardDescription>{t('terminal.shellEnvVarsDesc')}</CardDescription>
       </CardHeader>

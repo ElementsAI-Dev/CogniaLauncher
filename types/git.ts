@@ -5,6 +5,7 @@
 
 import type {
   GitBranchInfo,
+  GitBisectState,
   GitBlameEntry,
   GitCloneOptions,
   GitCommitDetail,
@@ -14,12 +15,18 @@ import type {
   GitDayActivity,
   GitFileStatEntry,
   GitGraphEntry,
+  GitHookInfo,
+  GitLfsFile,
+  GitRebaseTodoItem,
   GitReflogEntry,
   GitRemoteInfo,
   GitRepoInfo,
+  GitRepoStats,
   GitStashEntry,
   GitStatusFile,
+  GitSubmoduleInfo,
   GitTagInfo,
+  GitWorktreeInfo,
 } from './tauri';
 import type { CloneHistoryEntry } from '@/lib/stores/git';
 
@@ -43,7 +50,9 @@ export interface GitBranchCardProps {
   onCheckout?: (name: string) => Promise<string>;
   onCreate?: (name: string, startPoint?: string) => Promise<string>;
   onDelete?: (name: string, force?: boolean) => Promise<string>;
+  onDeleteRemote?: (remote: string, branch: string) => Promise<string>;
   onRename?: (oldName: string, newName: string) => Promise<string>;
+  onSetUpstream?: (branch: string, upstream: string) => Promise<string>;
 }
 
 export interface GitCloneDialogProps {
@@ -75,6 +84,7 @@ export interface GitCommitGraphProps {
   onSelectCommit?: (hash: string) => void;
   selectedHash?: string | null;
   branches?: GitBranchInfo[];
+  refreshKey?: number;
   onCopyHash?: (hash: string) => void;
   onCreateBranch?: (hash: string) => void;
   onCreateTag?: (hash: string) => void;
@@ -106,6 +116,7 @@ export interface GitConfigCardProps {
 export interface GitGlobalSettingsCardProps {
   onGetConfigValue: (key: string) => Promise<string | null>;
   onSetConfig: (key: string, value: string) => Promise<void>;
+  onSetConfigIfUnset?: (key: string, value: string) => Promise<boolean>;
 }
 
 export interface GitAliasCardProps {
@@ -149,6 +160,7 @@ export interface GitRemoteCardProps {
   onRemove?: (name: string) => Promise<string>;
   onRename?: (oldName: string, newName: string) => Promise<string>;
   onSetUrl?: (name: string, url: string) => Promise<string>;
+  onPrune?: (name: string) => Promise<string>;
 }
 
 export interface GitRepoInfoCardProps {
@@ -173,6 +185,8 @@ export interface GitStashListProps {
   onPop?: (stashId?: string) => Promise<string>;
   onDrop?: (stashId?: string) => Promise<string>;
   onSave?: (message?: string, includeUntracked?: boolean) => Promise<string>;
+  onBranchFromStash?: (branchName: string, stashId?: string) => Promise<string>;
+  onPushFiles?: (files: string[], message?: string, includeUntracked?: boolean) => Promise<string>;
   onShowDiff?: (stashId?: string) => Promise<string>;
 }
 
@@ -267,11 +281,153 @@ export type DiffViewMode = 'unified' | 'split';
 export interface GitRepoActionBarProps {
   repoPath: string | null;
   currentBranch?: string;
+  remotes?: GitRemoteInfo[];
   aheadBehind?: { ahead: number; behind: number };
   loading?: boolean;
-  onPush?: (remote?: string, branch?: string, forceLease?: boolean) => Promise<string>;
-  onPull?: (remote?: string, branch?: string, rebase?: boolean) => Promise<string>;
-  onFetch?: (remote?: string) => Promise<string>;
+  onPush?: (
+    remote?: string,
+    branch?: string,
+    force?: boolean,
+    forceLease?: boolean,
+    setUpstream?: boolean,
+  ) => Promise<string>;
+  onPull?: (
+    remote?: string,
+    branch?: string,
+    rebase?: boolean,
+    autostash?: boolean,
+  ) => Promise<string>;
+  onFetch?: (remote?: string, prune?: boolean, all?: boolean) => Promise<string>;
   onClean?: (directories?: boolean) => Promise<string>;
+  onCleanPreview?: (directories?: boolean) => Promise<string[]>;
   onRefresh?: () => void;
+}
+
+export interface GitSubmodulesCardProps {
+  submodules: GitSubmoduleInfo[];
+  loading?: boolean;
+  onRefresh?: () => Promise<void>;
+  onAdd?: (url: string, subpath: string) => Promise<string>;
+  onUpdate?: (init?: boolean, recursive?: boolean) => Promise<string>;
+  onRemove?: (subpath: string) => Promise<string>;
+  onSync?: () => Promise<string>;
+}
+
+export interface GitWorktreesCardProps {
+  worktrees: GitWorktreeInfo[];
+  loading?: boolean;
+  onRefresh?: () => Promise<void>;
+  onAdd?: (dest: string, branch?: string, newBranch?: string) => Promise<string>;
+  onRemove?: (dest: string, force?: boolean) => Promise<string>;
+  onPrune?: () => Promise<string>;
+}
+
+export interface GitGitignoreCardProps {
+  loading?: boolean;
+  onGetGitignore: () => Promise<string>;
+  onSetGitignore: (content: string) => Promise<void>;
+  onCheckIgnore: (files: string[]) => Promise<string[]>;
+  onAddToGitignore: (patterns: string[]) => Promise<void>;
+}
+
+export interface GitHooksCardProps {
+  hooks: GitHookInfo[];
+  loading?: boolean;
+  onRefresh?: () => Promise<void>;
+  onGetContent: (name: string) => Promise<string>;
+  onSetContent: (name: string, content: string) => Promise<void>;
+  onToggle: (name: string, enabled: boolean) => Promise<void>;
+}
+
+export interface GitLfsCardProps {
+  lfsAvailable: boolean | null;
+  lfsVersion: string | null;
+  trackedPatterns: string[];
+  lfsFiles: GitLfsFile[];
+  loading?: boolean;
+  onCheckAvailability: () => Promise<void>;
+  onRefreshTrackedPatterns: () => Promise<void>;
+  onRefreshLfsFiles: () => Promise<void>;
+  onTrack: (pattern: string) => Promise<string>;
+  onUntrack: (pattern: string) => Promise<string>;
+  onInstall: () => Promise<string>;
+}
+
+export interface GitLocalConfigCardProps {
+  config: GitConfigEntry[];
+  loading?: boolean;
+  onRefresh: () => Promise<void>;
+  onSet: (key: string, value: string) => Promise<void>;
+  onRemove: (key: string) => Promise<void>;
+  onGetValue: (key: string) => Promise<string | null>;
+}
+
+export interface GitRepoStatsCardProps {
+  repoStats: GitRepoStats | null;
+  loading?: boolean;
+  onRefresh: () => Promise<void>;
+  onFsck: () => Promise<string[]>;
+  onDescribe: () => Promise<string | null>;
+  onIsShallow: () => Promise<boolean>;
+  onDeepen: (depth: number) => Promise<string>;
+  onUnshallow: () => Promise<string>;
+}
+
+export interface GitSparseCheckoutCardProps {
+  isSparseCheckout: boolean;
+  sparsePatterns: string[];
+  loading?: boolean;
+  onRefresh: () => Promise<void>;
+  onInit: (cone?: boolean) => Promise<string>;
+  onSet: (patterns: string[]) => Promise<string>;
+  onAdd: (patterns: string[]) => Promise<string>;
+  onDisable: () => Promise<string>;
+}
+
+export interface GitRemotePruneCardProps {
+  remotes: GitRemoteInfo[];
+  loading?: boolean;
+  onPrune: (remote: string) => Promise<string>;
+}
+
+export interface GitSignatureVerifyCardProps {
+  loading?: boolean;
+  onVerifyCommit: (hash: string) => Promise<string>;
+  onVerifyTag: (tag: string) => Promise<string>;
+}
+
+export interface GitInteractiveRebaseCardProps {
+  loading?: boolean;
+  onPreview: (base: string) => Promise<GitRebaseTodoItem[]>;
+  onStart: (base: string, todo: GitRebaseTodoItem[]) => Promise<string>;
+}
+
+export interface GitRebaseSquashCardProps {
+  loading?: boolean;
+  onRebase: (onto: string) => Promise<string>;
+  onSquash: (count: number, message: string) => Promise<string>;
+}
+
+export interface GitBisectCardProps {
+  bisectState: GitBisectState;
+  loading?: boolean;
+  onRefreshState: () => Promise<void>;
+  onStart: (badRef: string, goodRef: string) => Promise<string>;
+  onGood: () => Promise<string>;
+  onBad: () => Promise<string>;
+  onSkip: () => Promise<string>;
+  onReset: () => Promise<string>;
+  onLog: () => Promise<string>;
+}
+
+export interface GitArchiveCardProps {
+  loading?: boolean;
+  onArchive: (format: string, outputPath: string, refName: string, prefix?: string) => Promise<string>;
+}
+
+export interface GitPatchCardProps {
+  loading?: boolean;
+  onFormatPatch: (range: string, outputDir: string) => Promise<string[]>;
+  onApplyPatch: (patchPath: string, checkOnly?: boolean) => Promise<string>;
+  onApplyMailbox: (patchPath: string) => Promise<string>;
 }

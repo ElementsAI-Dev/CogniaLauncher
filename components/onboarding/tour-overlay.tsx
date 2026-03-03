@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
 import { TOUR_STEPS, TOUR_PADDING, POPOVER_OFFSET } from '@/lib/constants/onboarding';
 import { ChevronLeft, ChevronRight, X, Check } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type { TourOverlayProps, TourStepDef, TargetRect } from '@/types/onboarding';
 
 export function TourOverlay({
@@ -20,6 +20,7 @@ export function TourOverlay({
 }: TourOverlayProps) {
   const { t } = useLocale();
   const router = useRouter();
+  const pathname = usePathname();
   const targetRectRef = useRef<TargetRect | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -30,9 +31,9 @@ export function TourOverlay({
 
   // Navigate to the required route for the current step
   useEffect(() => {
-    if (!active || !step?.route) return;
+    if (!active || !step?.route || pathname === step.route) return;
     router.push(step.route);
-  }, [active, step, router]);
+  }, [active, pathname, step, router]);
 
   // Find and track the target element, update DOM directly to avoid setState-in-effect lint
   useEffect(() => {

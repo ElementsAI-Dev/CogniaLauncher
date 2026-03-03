@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import DashboardPage from "./page";
 import { LocaleProvider } from "@/components/providers/locale-provider";
 
@@ -8,9 +8,27 @@ jest.mock("next/navigation", () => ({
 }));
 
 // Mock the Tauri API
+const mockIsTauri = jest.fn().mockReturnValue(false);
+const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
+const mockSubscribeInvalidation = jest.fn(() => () => {});
+
 jest.mock("@/lib/tauri", () => ({
-  isTauri: jest.fn().mockReturnValue(false),
+  isTauri: (...args: unknown[]) => mockIsTauri(...args),
 }));
+
+jest.mock("@/lib/cache/invalidation", () => ({
+  ensureCacheInvalidationBridge: (...args: Parameters<typeof mockEnsureCacheInvalidationBridge>) =>
+    mockEnsureCacheInvalidationBridge(...args),
+  subscribeInvalidation: (...args: Parameters<typeof mockSubscribeInvalidation>) =>
+    mockSubscribeInvalidation(...args),
+  withThrottle: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
+}));
+
+const mockFetchEnvironments = jest.fn().mockResolvedValue(undefined);
+const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
+const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
+const mockFetchCacheInfo = jest.fn().mockResolvedValue(undefined);
+const mockFetchPlatformInfo = jest.fn().mockResolvedValue(undefined);
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/use-environments", () => ({
@@ -25,7 +43,8 @@ jest.mock("@/hooks/use-environments", () => ({
         installed_versions: ["18.0.0", "20.0.0"],
       },
     ],
-    fetchEnvironments: jest.fn().mockResolvedValue(undefined),
+    fetchEnvironments: (...args: Parameters<typeof mockFetchEnvironments>) =>
+      mockFetchEnvironments(...args),
     loading: false,
     error: null,
   }),
@@ -36,8 +55,10 @@ jest.mock("@/hooks/use-packages", () => ({
     installedPackages: [
       { name: "typescript", version: "5.0.0", provider: "npm" },
     ],
-    fetchInstalledPackages: jest.fn().mockResolvedValue(undefined),
-    fetchProviders: jest.fn().mockResolvedValue(undefined),
+    fetchInstalledPackages: (...args: Parameters<typeof mockFetchInstalledPackages>) =>
+      mockFetchInstalledPackages(...args),
+    fetchProviders: (...args: Parameters<typeof mockFetchProviders>) =>
+      mockFetchProviders(...args),
     providers: [{ id: "npm", display_name: "NPM" }],
     loading: false,
     error: null,
@@ -52,9 +73,11 @@ jest.mock("@/hooks/use-settings", () => ({
       total_size: 3072,
       total_size_human: "3 KB",
     },
-    fetchCacheInfo: jest.fn().mockResolvedValue(undefined),
+    fetchCacheInfo: (...args: Parameters<typeof mockFetchCacheInfo>) =>
+      mockFetchCacheInfo(...args),
     platformInfo: { os: "Test OS", arch: "x64" },
-    fetchPlatformInfo: jest.fn().mockResolvedValue(undefined),
+    fetchPlatformInfo: (...args: Parameters<typeof mockFetchPlatformInfo>) =>
+      mockFetchPlatformInfo(...args),
     cogniaDir: "/mock/cognia/dir",
     loading: false,
     error: null,
@@ -196,6 +219,7 @@ function renderWithProviders(ui: React.ReactElement) {
 describe("Dashboard Page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
   });
 
   it("renders the dashboard title", async () => {
@@ -296,5 +320,47 @@ describe("Dashboard Page", () => {
       const matches = screen.getAllByText("3 KB");
       expect(matches.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  it("refreshes cache info on invalidation events with throttling", async () => {
+    mockIsTauri.mockReturnValue(true);
+    const dispose = jest.fn();
+    let callback: (() => void) | undefined;
+    mockSubscribeInvalidation.mockImplementation((...args: unknown[]) => {
+      callback = args[1] as (() => void) | undefined;
+      return dispose;
+    });
+
+    const { unmount } = renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockSubscribeInvalidation).toHaveBeenCalledTimes(1);
+    });
+
+    jest.useFakeTimers();
+    try {
+      mockFetchCacheInfo.mockClear();
+
+      act(() => {
+        callback?.();
+        callback?.();
+        callback?.();
+      });
+
+      expect(mockFetchCacheInfo).not.toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(350);
+      });
+
+      await waitFor(() => {
+        expect(mockFetchCacheInfo).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+
+    unmount();
+    expect(dispose).toHaveBeenCalled();
   });
 });

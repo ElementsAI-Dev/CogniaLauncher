@@ -28,6 +28,9 @@ export interface SystemInfo {
   appVersion: string;
   homeDir: string;
   locale: string;
+  cacheInternalSizeHuman?: string;
+  cacheExternalSizeHuman?: string;
+  cacheTotalSizeHuman?: string;
   components: ComponentInfo[];
   battery: BatteryInfo | null;
   disks: DiskInfo[];

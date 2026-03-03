@@ -26,6 +26,7 @@ import {
   ExternalLink,
   FolderOpen,
   RefreshCw,
+  Archive,
   Shield,
   Loader2,
   Clock,
@@ -36,7 +37,7 @@ import {
   Download,
   Ban,
 } from "lucide-react";
-import type { DownloadTask } from "@/types/tauri";
+import type { DownloadTask, VerifyResult } from "@/types/tauri";
 import { formatEta } from "@/lib/utils";
 import { getStateBadgeVariant, findClosestPriority } from "@/lib/downloads";
 import { PRIORITY_OPTIONS } from "@/lib/constants/downloads";
@@ -50,6 +51,8 @@ interface DownloadDetailDialogProps {
   onOpenFile?: (path: string) => Promise<void>;
   onRevealFile?: (path: string) => Promise<void>;
   onCalculateChecksum?: (path: string) => Promise<string>;
+  onVerifyFile?: (path: string, expectedChecksum: string) => Promise<VerifyResult>;
+  onExtractArchive?: (archivePath: string, destPath: string) => Promise<string[]>;
 }
 
 function getStateIcon(state: DownloadTask["state"]) {
@@ -79,10 +82,16 @@ export function DownloadDetailDialog({
   onOpenFile,
   onRevealFile,
   onCalculateChecksum,
+  onVerifyFile,
+  onExtractArchive,
 }: DownloadDetailDialogProps) {
   const { t } = useLocale();
   const [checksumResult, setChecksumResult] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedFiles, setExtractedFiles] = useState<string[] | null>(null);
 
   const isTerminal =
     task?.state === "failed" ||
@@ -139,6 +148,46 @@ export function DownloadDetailDialog({
       setIsCalculating(false);
     }
   }, [task, onCalculateChecksum]);
+
+  const handleVerifyFile = useCallback(async () => {
+    if (!task || !onVerifyFile || !task.expectedChecksum) return;
+    setIsVerifying(true);
+    setVerifyResult(null);
+    try {
+      const result = await onVerifyFile(task.destination, task.expectedChecksum);
+      setVerifyResult(result);
+      if (result.valid) {
+        toast.success(t("downloads.detail.verifySuccess"));
+      } else {
+        toast.error(result.error ?? t("downloads.errors.checksumMismatch"));
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [task, onVerifyFile, t]);
+
+  const handleExtractArchive = useCallback(async () => {
+    if (!task || !onExtractArchive) return;
+    setIsExtracting(true);
+    setExtractedFiles(null);
+    try {
+      const destinationDir =
+        task.destination.replace(/[\\/][^\\/]+$/, "") || task.destination;
+      const files = await onExtractArchive(task.destination, destinationDir);
+      setExtractedFiles(files);
+      toast.success(t("downloads.toast.extracted"));
+    } catch (err) {
+      toast.error(
+        t("downloads.errors.extractFailed", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [task, onExtractArchive, t]);
 
   if (!task) return null;
 
@@ -369,6 +418,38 @@ export function DownloadDetailDialog({
                 {t("downloads.detail.calculateChecksum")}
               </Button>
             )}
+
+            {task.state === "completed" && onVerifyFile && task.expectedChecksum && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleVerifyFile}
+                disabled={isVerifying}
+              >
+                {isVerifying ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Shield className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {t("downloads.detail.verifyFile")}
+              </Button>
+            )}
+
+            {task.state === "completed" && onExtractArchive && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExtractArchive}
+                disabled={isExtracting}
+              >
+                {isExtracting ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Archive className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {t("downloads.actions.extract")}
+              </Button>
+            )}
           </div>
 
           {/* Checksum Result */}
@@ -376,6 +457,38 @@ export function DownloadDetailDialog({
             <div className="rounded-md bg-muted p-3">
               <p className="text-xs text-muted-foreground mb-1">SHA256</p>
               <p className="font-mono text-xs break-all select-all">{checksumResult}</p>
+            </div>
+          )}
+
+          {verifyResult && (
+            <div className="rounded-md bg-muted p-3 space-y-1">
+              <p className="text-xs text-muted-foreground">{t("downloads.detail.verifyResult")}</p>
+              <p className="text-xs">
+                {t("downloads.detail.verifyValid")}:{" "}
+                <span className={verifyResult.valid ? "text-green-600" : "text-destructive"}>
+                  {verifyResult.valid ? t("common.yes") : t("common.no")}
+                </span>
+              </p>
+              <p className="text-xs break-all">
+                {t("downloads.detail.checksum")}: {verifyResult.expectedChecksum}
+              </p>
+              {verifyResult.actualChecksum && (
+                <p className="text-xs break-all">
+                  {t("downloads.detail.actualChecksum")}: {verifyResult.actualChecksum}
+                </p>
+              )}
+              {verifyResult.error && (
+                <p className="text-xs text-destructive">{verifyResult.error}</p>
+              )}
+            </div>
+          )}
+
+          {extractedFiles && (
+            <div className="rounded-md bg-muted p-3 space-y-1">
+              <p className="text-xs text-muted-foreground">{t("downloads.actions.extract")}</p>
+              <p className="text-xs">
+                {t("downloads.detail.extractedFiles", { count: extractedFiles.length })}
+              </p>
             </div>
           )}
         </div>

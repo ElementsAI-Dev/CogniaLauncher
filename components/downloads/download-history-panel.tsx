@@ -53,8 +53,8 @@ interface DownloadHistoryPanelProps {
   historyStats: HistoryStats | null;
   historyQuery: string;
   onHistoryQueryChange: (query: string) => void;
-  onClearHistory: () => void;
-  onRemoveRecord: (id: string) => void;
+  onClearHistory: () => void | Promise<void>;
+  onRemoveRecord: (id: string) => void | Promise<void>;
   t: (key: string) => string;
 }
 
@@ -249,6 +249,8 @@ export function DownloadHistoryPanel({
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => onRemoveRecord(record.id)}
+                            aria-label={t("downloads.actions.remove")}
+                            title={t("downloads.actions.remove")}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

@@ -1,8 +1,11 @@
 import {
   isValidUrl,
   inferNameFromUrl,
+  joinDestinationPath,
   getStateBadgeVariant,
   findClosestPriority,
+  runDownloadPreflight,
+  runDownloadPreflightWithUi,
 } from './downloads';
 
 describe('isValidUrl', () => {
@@ -72,6 +75,20 @@ describe('inferNameFromUrl', () => {
     expect(
       inferNameFromUrl('https://github.com/owner/repo/releases/download/v1.0.0/app-windows-x64.exe')
     ).toBe('app-windows-x64.exe');
+  });
+});
+
+describe('joinDestinationPath', () => {
+  it('joins POSIX paths without duplicating separators', () => {
+    expect(joinDestinationPath('/downloads/', 'file.zip')).toBe('/downloads/file.zip');
+  });
+
+  it('joins Windows paths with backslashes', () => {
+    expect(joinDestinationPath('C:\\Downloads\\', 'file.zip')).toBe('C:\\Downloads\\file.zip');
+  });
+
+  it('normalizes leading separators from filename', () => {
+    expect(joinDestinationPath('/downloads', '/nested/file.zip')).toBe('/downloads/nested/file.zip');
   });
 });
 
@@ -145,5 +162,148 @@ describe('findClosestPriority', () => {
 
   it('returns low for negative value', () => {
     expect(findClosestPriority(-5)).toBe('1');
+  });
+});
+
+describe('runDownloadPreflight', () => {
+  it('allows with unknown size', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(true);
+
+    const result = await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: null,
+      checkDiskSpace,
+    });
+
+    expect(result).toEqual({
+      allowed: true,
+      reason: 'unknown_size',
+    });
+    expect(checkDiskSpace).not.toHaveBeenCalled();
+  });
+
+  it('blocks when known size is insufficient', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(false);
+
+    const result = await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: 1024,
+      checkDiskSpace,
+    });
+
+    expect(result).toEqual({
+      allowed: false,
+      reason: 'insufficient_space',
+      requiredBytes: 1024,
+    });
+    expect(checkDiskSpace).toHaveBeenCalledWith('C:/downloads', 1024);
+  });
+
+  it('allows when known size is sufficient', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(true);
+
+    const result = await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: 2048,
+      checkDiskSpace,
+    });
+
+    expect(result).toEqual({
+      allowed: true,
+      reason: 'ok',
+      requiredBytes: 2048,
+    });
+    expect(checkDiskSpace).toHaveBeenCalledWith('C:/downloads', 2048);
+  });
+
+  it('blocks when disk check throws', async () => {
+    const checkDiskSpace = jest.fn().mockRejectedValue(new Error('disk check failed'));
+
+    const result = await runDownloadPreflight({
+      destinationPath: 'C:/downloads',
+      expectedBytes: 123,
+      checkDiskSpace,
+    });
+
+    expect(result).toEqual({
+      allowed: false,
+      reason: 'check_failed',
+      requiredBytes: 123,
+      error: 'disk check failed',
+    });
+  });
+});
+
+describe('runDownloadPreflightWithUi', () => {
+  const t = (key: string) => key;
+
+  it('shows unknown-size warning only once with shared ref', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(true);
+    const onInfo = jest.fn();
+    const onError = jest.fn();
+    const unknownSizeWarningRef = { current: false };
+
+    const first = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: null,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError, unknownSizeWarningRef }
+    );
+
+    const second = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: undefined,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError, unknownSizeWarningRef }
+    );
+
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+    expect(onInfo).toHaveBeenCalledTimes(1);
+    expect(onInfo).toHaveBeenCalledWith('downloads.preflight.unknownSizeWarning');
+    expect(onError).not.toHaveBeenCalled();
+    expect(checkDiskSpace).not.toHaveBeenCalled();
+  });
+
+  it('shows insufficient-space error when check returns false', async () => {
+    const checkDiskSpace = jest.fn().mockResolvedValue(false);
+    const onInfo = jest.fn();
+    const onError = jest.fn();
+
+    const ok = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: 1024,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError }
+    );
+
+    expect(ok).toBe(false);
+    expect(onError).toHaveBeenCalledWith('downloads.errors.insufficientSpace');
+    expect(onInfo).not.toHaveBeenCalled();
+  });
+
+  it('shows check-failed error message when disk check throws', async () => {
+    const checkDiskSpace = jest.fn().mockRejectedValue(new Error('disk exploded'));
+    const onInfo = jest.fn();
+    const onError = jest.fn();
+
+    const ok = await runDownloadPreflightWithUi(
+      {
+        destinationPath: 'C:/downloads',
+        expectedBytes: 2048,
+        checkDiskSpace,
+      },
+      { t, onInfo, onError }
+    );
+
+    expect(ok).toBe(false);
+    expect(onError).toHaveBeenCalledWith('disk exploded');
+    expect(onInfo).not.toHaveBeenCalled();
   });
 });

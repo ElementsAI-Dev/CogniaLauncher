@@ -12,6 +12,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use crate::SharedSettings;
 use tauri::{
     image::Image,
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
@@ -671,7 +672,11 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
             } = event
             {
                 let app = tray.app_handle();
-                handle_tray_click(app, click_behavior);
+                let behavior = app
+                    .try_state::<SharedTrayState>()
+                    .and_then(|state| state.try_read().ok().map(|guard| guard.click_behavior))
+                    .unwrap_or(click_behavior);
+                handle_tray_click(app, behavior);
             }
         })
         .build(app)?;
@@ -847,6 +852,12 @@ pub async fn tray_set_click_behavior(
             .map_err(|e| e.to_string())?;
     }
 
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.click_behavior = behavior;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -953,24 +964,40 @@ pub fn tray_rebuild(app: AppHandle<Wry>) -> Result<(), String> {
 /// Set minimize-to-tray behavior
 #[tauri::command]
 pub async fn tray_set_minimize_to_tray(
+    app: AppHandle<Wry>,
     state: State<'_, SharedTrayState>,
     enabled: bool,
 ) -> Result<(), String> {
     let mut guard = state.write().await;
     guard.minimize_to_tray = enabled;
     info!("Minimize to tray set to {}", enabled);
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.minimize_to_tray = enabled;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
 /// Set start-minimized behavior
 #[tauri::command]
 pub async fn tray_set_start_minimized(
+    app: AppHandle<Wry>,
     state: State<'_, SharedTrayState>,
     enabled: bool,
 ) -> Result<(), String> {
     let mut guard = state.write().await;
     guard.start_minimized = enabled;
     info!("Start minimized set to {}", enabled);
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.start_minimized = enabled;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
@@ -1007,8 +1034,15 @@ pub async fn tray_set_menu_config(
 ) -> Result<(), String> {
     {
         let mut guard = state.write().await;
-        guard.menu_config = config;
+        guard.menu_config = config.clone();
     }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.menu_items = config.items.clone();
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
     update_menu_state(&app);
     info!("Tray menu config updated");
     Ok(())
@@ -1026,10 +1060,18 @@ pub async fn tray_reset_menu_config(
     app: AppHandle<Wry>,
     state: State<'_, SharedTrayState>,
 ) -> Result<(), String> {
+    let default = TrayMenuConfig::default();
     {
         let mut guard = state.write().await;
-        guard.menu_config = TrayMenuConfig::default();
+        guard.menu_config = default.clone();
     }
+
+    if let Some(settings) = app.try_state::<SharedSettings>() {
+        let mut settings_guard = settings.write().await;
+        settings_guard.tray.menu_items = default.items;
+        settings_guard.save().await.map_err(|e| e.to_string())?;
+    }
+
     update_menu_state(&app);
     info!("Tray menu config reset to defaults");
     Ok(())

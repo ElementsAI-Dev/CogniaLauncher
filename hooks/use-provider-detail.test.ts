@@ -1,17 +1,17 @@
 import { renderHook, act } from '@testing-library/react';
 import { useProviderDetail } from './use-provider-detail';
 
-const mockProviderList = jest.fn();
+const mockFetchSharedProviders = jest.fn();
 const mockProviderCheck = jest.fn();
 const mockProviderEnable = jest.fn();
 const mockProviderDisable = jest.fn();
-const mockPackageList = jest.fn();
-const mockPackageSearch = jest.fn();
+const mockFetchSharedInstalledPackages = jest.fn();
+const mockSearchSharedPackages = jest.fn();
 const mockPackageInstall = jest.fn();
 const mockPackageUninstall = jest.fn();
 const mockBatchUninstall = jest.fn();
-const mockPackageInfo = jest.fn();
-const mockPackageVersions = jest.fn();
+const mockFetchSharedPackageInfo = jest.fn();
+const mockFetchSharedPackageVersions = jest.fn();
 const mockResolveDependencies = jest.fn();
 const mockPackagePin = jest.fn();
 const mockPackageUnpin = jest.fn();
@@ -25,19 +25,35 @@ const mockGetInstallHistory = jest.fn();
 const mockEnvListProviders = jest.fn();
 const mockEnvGet = jest.fn();
 const mockEnvAvailableVersions = jest.fn();
+const mockEmitInvalidations = jest.fn();
+const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
+const mockSubscribeInvalidation = jest.fn(() => () => {});
+const mockRunUpdateCheck = jest.fn();
+
+jest.mock('@/hooks/use-packages', () => ({
+  usePackages: () => ({
+    fetchProviders: (...args: unknown[]) => mockFetchSharedProviders(...args),
+    fetchInstalledPackages: (...args: unknown[]) => mockFetchSharedInstalledPackages(...args),
+    searchPackages: (...args: unknown[]) => mockSearchSharedPackages(...args),
+    fetchPackageInfo: (...args: unknown[]) => mockFetchSharedPackageInfo(...args),
+    fetchPackageVersions: (...args: unknown[]) => mockFetchSharedPackageVersions(...args),
+  }),
+}));
+
+jest.mock('@/hooks/use-package-updates', () => ({
+  usePackageUpdates: () => ({
+    checkUpdates: (...args: unknown[]) => mockRunUpdateCheck(...args),
+  }),
+}));
 
 jest.mock('@/lib/tauri', () => ({
-  providerList: (...args: unknown[]) => mockProviderList(...args),
+  isTauri: () => true,
   providerCheck: (...args: unknown[]) => mockProviderCheck(...args),
   providerEnable: (...args: unknown[]) => mockProviderEnable(...args),
   providerDisable: (...args: unknown[]) => mockProviderDisable(...args),
-  packageList: (...args: unknown[]) => mockPackageList(...args),
-  packageSearch: (...args: unknown[]) => mockPackageSearch(...args),
   packageInstall: (...args: unknown[]) => mockPackageInstall(...args),
   packageUninstall: (...args: unknown[]) => mockPackageUninstall(...args),
   batchUninstall: (...args: unknown[]) => mockBatchUninstall(...args),
-  packageInfo: (...args: unknown[]) => mockPackageInfo(...args),
-  packageVersions: (...args: unknown[]) => mockPackageVersions(...args),
   resolveDependencies: (...args: unknown[]) => mockResolveDependencies(...args),
   packagePin: (...args: unknown[]) => mockPackagePin(...args),
   packageUnpin: (...args: unknown[]) => mockPackageUnpin(...args),
@@ -51,6 +67,16 @@ jest.mock('@/lib/tauri', () => ({
   envListProviders: (...args: unknown[]) => mockEnvListProviders(...args),
   envGet: (...args: unknown[]) => mockEnvGet(...args),
   envAvailableVersions: (...args: unknown[]) => mockEnvAvailableVersions(...args),
+}));
+
+jest.mock('@/lib/cache/invalidation', () => ({
+  emitInvalidations: (...args: Parameters<typeof mockEmitInvalidations>) =>
+    mockEmitInvalidations(...args),
+  ensureCacheInvalidationBridge: (...args: Parameters<typeof mockEnsureCacheInvalidationBridge>) =>
+    mockEnsureCacheInvalidationBridge(...args),
+  subscribeInvalidation: (...args: Parameters<typeof mockSubscribeInvalidation>) =>
+    mockSubscribeInvalidation(...args),
+  withThrottle: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }));
 
 jest.mock('@/lib/errors', () => ({
@@ -84,7 +110,7 @@ describe('useProviderDetail', () => {
 
   it('should fetch provider info', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
-    mockProviderList.mockResolvedValue([providerInfo]);
+    mockFetchSharedProviders.mockResolvedValue([providerInfo]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -98,7 +124,7 @@ describe('useProviderDetail', () => {
   });
 
   it('should set error if provider not found', async () => {
-    mockProviderList.mockResolvedValue([]);
+    mockFetchSharedProviders.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -140,7 +166,7 @@ describe('useProviderDetail', () => {
 
   it('should toggle provider enabled', async () => {
     mockProviderEnable.mockResolvedValue(undefined);
-    mockProviderList.mockResolvedValue([{ id: PROVIDER_ID, enabled: true }]);
+    mockFetchSharedProviders.mockResolvedValue([{ id: PROVIDER_ID, enabled: true }]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -153,7 +179,7 @@ describe('useProviderDetail', () => {
 
   it('should toggle provider disabled', async () => {
     mockProviderDisable.mockResolvedValue(undefined);
-    mockProviderList.mockResolvedValue([{ id: PROVIDER_ID, enabled: false }]);
+    mockFetchSharedProviders.mockResolvedValue([{ id: PROVIDER_ID, enabled: false }]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -166,7 +192,7 @@ describe('useProviderDetail', () => {
 
   it('should fetch installed packages', async () => {
     const packages = [{ name: 'express', version: '4.18.0' }];
-    mockPackageList.mockResolvedValue(packages);
+    mockFetchSharedInstalledPackages.mockResolvedValue(packages);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -181,7 +207,7 @@ describe('useProviderDetail', () => {
 
   it('should search packages', async () => {
     const results = [{ name: 'react', description: 'UI library' }];
-    mockPackageSearch.mockResolvedValue(results);
+    mockSearchSharedPackages.mockResolvedValue(results);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -193,7 +219,7 @@ describe('useProviderDetail', () => {
     expect(found).toEqual(results);
     expect(result.current.searchResults).toEqual(results);
     expect(result.current.searchQuery).toBe('react');
-    expect(mockPackageSearch).toHaveBeenCalledWith('react', PROVIDER_ID);
+    expect(mockSearchSharedPackages).toHaveBeenCalledWith('react', PROVIDER_ID);
   });
 
   it('should clear search results for empty query', async () => {
@@ -211,7 +237,7 @@ describe('useProviderDetail', () => {
 
   it('should install package', async () => {
     mockPackageInstall.mockResolvedValue(undefined);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -224,7 +250,7 @@ describe('useProviderDetail', () => {
 
   it('should install package without version', async () => {
     mockPackageInstall.mockResolvedValue(undefined);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -237,7 +263,7 @@ describe('useProviderDetail', () => {
 
   it('should uninstall package', async () => {
     mockPackageUninstall.mockResolvedValue(undefined);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -251,7 +277,7 @@ describe('useProviderDetail', () => {
   it('should batch uninstall packages', async () => {
     const batchResult = { success: 2, failed: 0 };
     mockBatchUninstall.mockResolvedValue(batchResult);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -266,7 +292,7 @@ describe('useProviderDetail', () => {
 
   it('should fetch package info', async () => {
     const info = { name: 'express', version: '4.18.0', description: 'Web framework' };
-    mockPackageInfo.mockResolvedValue(info);
+    mockFetchSharedPackageInfo.mockResolvedValue(info);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -276,12 +302,12 @@ describe('useProviderDetail', () => {
     });
 
     expect(fetched).toEqual(info);
-    expect(mockPackageInfo).toHaveBeenCalledWith('express', PROVIDER_ID);
+    expect(mockFetchSharedPackageInfo).toHaveBeenCalledWith('express', PROVIDER_ID);
   });
 
   it('should fetch package versions', async () => {
     const versions = [{ version: '4.18.0' }, { version: '4.17.0' }];
-    mockPackageVersions.mockResolvedValue(versions);
+    mockFetchSharedPackageVersions.mockResolvedValue(versions);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -334,7 +360,7 @@ describe('useProviderDetail', () => {
 
   it('should rollback package', async () => {
     mockPackageRollback.mockResolvedValue(undefined);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -362,11 +388,13 @@ describe('useProviderDetail', () => {
   it('should check updates filtered by provider', async () => {
     const summary = {
       updates: [
-        { name: 'express', provider: 'npm', current: '4.17.0', latest: '4.18.0' },
-        { name: 'flask', provider: 'pip', current: '2.0', latest: '3.0' },
+        { name: 'express', provider: 'npm', current_version: '4.17.0', latest_version: '4.18.0' },
       ],
+      total_checked: 1,
+      total_providers: 1,
+      errors: [],
     };
-    mockCheckUpdates.mockResolvedValue(summary);
+    mockRunUpdateCheck.mockResolvedValue(summary);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -378,12 +406,16 @@ describe('useProviderDetail', () => {
     expect(updates).toHaveLength(1);
     expect(updates![0].name).toBe('express');
     expect(result.current.availableUpdates).toHaveLength(1);
+    expect(mockRunUpdateCheck).toHaveBeenCalledWith({
+      providerId: PROVIDER_ID,
+      syncStore: false,
+    });
   });
 
   it('should update package', async () => {
     const updateResult = { success: 1 };
     mockBatchUpdate.mockResolvedValue(updateResult);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -399,8 +431,13 @@ describe('useProviderDetail', () => {
   it('should update all packages', async () => {
     const updateResult = { success: 2 };
     mockBatchUpdate.mockResolvedValue(updateResult);
-    mockPackageList.mockResolvedValue([]);
-    mockCheckUpdates.mockResolvedValue({ updates: [] });
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -482,12 +519,17 @@ describe('useProviderDetail', () => {
 
   it('should initialize all data', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
-    mockProviderList.mockResolvedValue([providerInfo]);
+    mockFetchSharedProviders.mockResolvedValue([providerInfo]);
     mockProviderCheck.mockResolvedValue(true);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
-    mockCheckUpdates.mockResolvedValue({ updates: [] });
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
     mockGetPinnedPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
@@ -502,12 +544,17 @@ describe('useProviderDetail', () => {
 
   it('should not initialize twice (init guard)', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
-    mockProviderList.mockResolvedValue([providerInfo]);
+    mockFetchSharedProviders.mockResolvedValue([providerInfo]);
     mockProviderCheck.mockResolvedValue(true);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
-    mockCheckUpdates.mockResolvedValue({ updates: [] });
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
     mockGetPinnedPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
@@ -516,24 +563,29 @@ describe('useProviderDetail', () => {
       await result.current.initialize();
     });
 
-    const callCount = mockProviderList.mock.calls.length;
+    const callCount = mockFetchSharedProviders.mock.calls.length;
 
     await act(async () => {
       await result.current.initialize();
     });
 
     // Should not call again
-    expect(mockProviderList.mock.calls.length).toBe(callCount);
+    expect(mockFetchSharedProviders.mock.calls.length).toBe(callCount);
   });
 
   it('should refreshAll bypass init guard', async () => {
     const providerInfo = { id: PROVIDER_ID, name: 'npm', is_environment_provider: false };
-    mockProviderList.mockResolvedValue([providerInfo]);
+    mockFetchSharedProviders.mockResolvedValue([providerInfo]);
     mockProviderCheck.mockResolvedValue(true);
-    mockPackageList.mockResolvedValue([]);
+    mockFetchSharedInstalledPackages.mockResolvedValue([]);
     mockHealthCheckPackageManager.mockResolvedValue(null);
     mockGetInstallHistory.mockResolvedValue([]);
-    mockCheckUpdates.mockResolvedValue({ updates: [] });
+    mockRunUpdateCheck.mockResolvedValue({
+      updates: [],
+      total_checked: 0,
+      total_providers: 1,
+      errors: [],
+    });
     mockGetPinnedPackages.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
@@ -542,12 +594,12 @@ describe('useProviderDetail', () => {
       await result.current.refreshAll();
     });
 
-    expect(mockProviderList).toHaveBeenCalled();
+    expect(mockFetchSharedProviders).toHaveBeenCalled();
     expect(mockProviderCheck).toHaveBeenCalled();
   });
 
   it('should handle error in fetchInstalledPackages', async () => {
-    mockPackageList.mockRejectedValue(new Error('List failed'));
+    mockFetchSharedInstalledPackages.mockRejectedValue(new Error('List failed'));
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -579,3 +631,4 @@ describe('useProviderDetail', () => {
     expect(result.current.searchQuery).toBe('react');
   });
 });
+

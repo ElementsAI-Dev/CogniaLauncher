@@ -46,6 +46,7 @@ export default function ToolboxPage() {
   } = useToolbox();
 
   const searchRef = useRef<import('@/components/toolbox/tool-search-bar').ToolSearchBarRef>(null);
+  const hasFetchedPluginsRef = useRef(false);
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -55,9 +56,9 @@ export default function ToolboxPage() {
 
   // Fetch plugins on mount (desktop only)
   useEffect(() => {
-    if (isDesktop) {
-      fetchPlugins();
-    }
+    if (!isDesktop || hasFetchedPluginsRef.current) return;
+    hasFetchedPluginsRef.current = true;
+    fetchPlugins();
   }, [isDesktop, fetchPlugins]);
 
   const handleOpenTool = useCallback(

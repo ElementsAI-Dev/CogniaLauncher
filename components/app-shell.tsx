@@ -29,6 +29,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
+import { useAutoUpdate } from "@/hooks/use-auto-update";
 import { useAppInit } from "@/hooks/use-app-init";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { isTauri } from "@/lib/platform";
@@ -57,6 +58,8 @@ export function AppShell({ children }: AppShellProps) {
 
   // Check desktop mode - safe to call during render as it's synchronous
   const isDesktopMode = isTauri();
+  const autoUpdateReady = !isDesktopMode || Object.keys(config).length > 0;
+  useAutoUpdate({ ready: autoUpdateReady });
 
   // Window controls (Tauri window management, maximize padding, etc.)
   const windowControls = useWindowControls();
@@ -181,36 +184,40 @@ export function AppShell({ children }: AppShellProps) {
         <CrashRecoveryDialog t={t} />
         <FeedbackDialog />
 
-        {/* Onboarding wizard - shown on first run or when re-triggered from settings */}
-        <OnboardingWizard
-          open={onboarding.shouldShowWizard}
-          currentStep={onboarding.currentStep}
-          totalSteps={onboarding.totalSteps}
-          progress={onboarding.progress}
-          isFirstStep={onboarding.isFirstStep}
-          isLastStep={onboarding.isLastStep}
-          tourCompleted={onboarding.tourCompleted}
-          onNext={onboarding.next}
-          onPrev={onboarding.prev}
-          onGoTo={onboarding.goTo}
-          onComplete={onboarding.complete}
-          onSkip={onboarding.skip}
-          onStartTour={onboarding.startTour}
-          onClose={onboarding.closeWizard}
-        />
+        {onboarding.isHydrated && (
+          <>
+            {/* Onboarding wizard - shown on first run or when re-triggered from settings */}
+            <OnboardingWizard
+              open={onboarding.shouldShowWizard}
+              currentStep={onboarding.currentStep}
+              totalSteps={onboarding.totalSteps}
+              progress={onboarding.progress}
+              isFirstStep={onboarding.isFirstStep}
+              isLastStep={onboarding.isLastStep}
+              tourCompleted={onboarding.tourCompleted}
+              onNext={onboarding.next}
+              onPrev={onboarding.prev}
+              onGoTo={onboarding.goTo}
+              onComplete={onboarding.complete}
+              onSkip={onboarding.skip}
+              onStartTour={onboarding.startTour}
+              onClose={onboarding.closeWizard}
+            />
 
-        {/* Guided tour overlay */}
-        <TourOverlay
-          active={onboarding.tourActive}
-          currentStep={onboarding.tourStep}
-          onNext={onboarding.nextTourStep}
-          onPrev={onboarding.prevTourStep}
-          onComplete={onboarding.completeTour}
-          onStop={onboarding.stopTour}
-        />
+            {/* Guided tour overlay */}
+            <TourOverlay
+              active={onboarding.tourActive}
+              currentStep={onboarding.tourStep}
+              onNext={onboarding.nextTourStep}
+              onPrev={onboarding.prevTourStep}
+              onComplete={onboarding.completeTour}
+              onStop={onboarding.stopTour}
+            />
 
-        {/* Contextual bubble hints — non-blocking floating tips */}
-        <BubbleHintLayer />
+            {/* Contextual bubble hints — non-blocking floating tips */}
+            <BubbleHintLayer />
+          </>
+        )}
       </div>
     </>
   );

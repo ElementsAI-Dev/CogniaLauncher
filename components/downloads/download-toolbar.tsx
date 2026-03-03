@@ -40,6 +40,12 @@ export interface DownloadToolbarProps {
   onSearchChange: (query: string) => void;
   statusFilter: StatusFilter;
   onStatusChange: (status: StatusFilter) => void;
+  selectedCount: number;
+  onBatchPause: () => void;
+  onBatchResume: () => void;
+  onBatchCancel: () => void;
+  onBatchRemove: () => void;
+  onClearSelection: () => void;
   onPauseAll: () => void;
   onResumeAll: () => void;
   onCancelAll: () => void;
@@ -55,6 +61,12 @@ export function DownloadToolbar({
   onSearchChange,
   statusFilter,
   onStatusChange,
+  selectedCount,
+  onBatchPause,
+  onBatchResume,
+  onBatchCancel,
+  onBatchRemove,
+  onClearSelection,
   onPauseAll,
   onResumeAll,
   onCancelAll,
@@ -66,6 +78,7 @@ export function DownloadToolbar({
 }: DownloadToolbarProps) {
   const finishedCount = stats.completed + stats.cancelled + stats.failed;
   const activeCount = stats.downloading + stats.queued + stats.paused;
+  const hasSelection = selectedCount > 0;
 
   return (
     <div className="space-y-4">
@@ -153,6 +166,62 @@ export function DownloadToolbar({
       </div>
 
       <Separator />
+
+      {hasSelection && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">
+            {selectedCount} {t("common.selected")}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBatchPause}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <Pause className="h-4 w-4" />
+            {t("downloads.actions.pause")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBatchResume}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <Play className="h-4 w-4" />
+            {t("downloads.actions.resume")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onBatchCancel}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <X className="h-4 w-4" />
+            {t("downloads.actions.cancel")}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={onBatchRemove}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("downloads.actions.remove")}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearSelection}
+            disabled={isLoading}
+          >
+            {t("common.clear")}
+          </Button>
+        </div>
+      )}
 
       <Tabs
         value={statusFilter}

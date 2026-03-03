@@ -122,6 +122,8 @@ describe('useOnboardingStore', () => {
       expect(state.visitedSteps).toEqual([]);
       expect(state.wizardOpen).toBe(true);
       expect(state.tourCompleted).toBe(false);
+      expect(state.tourActive).toBe(false);
+      expect(state.tourStep).toBe(0);
     });
   });
 
@@ -170,6 +172,15 @@ describe('useOnboardingStore', () => {
       expect(state.tourActive).toBe(false);
       expect(state.tourCompleted).toBe(false);
       expect(state.tourStep).toBe(0);
+    });
+
+    it('startTour is idempotent while already active', () => {
+      useOnboardingStore.getState().startTour();
+      useOnboardingStore.getState().nextTourStep();
+      useOnboardingStore.getState().startTour();
+      const state = useOnboardingStore.getState();
+      expect(state.tourActive).toBe(true);
+      expect(state.tourStep).toBe(1);
     });
   });
 

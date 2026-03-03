@@ -32,6 +32,13 @@ jest.mock("@/hooks/use-mobile", () => ({
   useDebounce: (value: string) => value,
 }));
 
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: jest.fn(),
+  });
+});
+
 const mockProviders = [
   {
     id: "pip",

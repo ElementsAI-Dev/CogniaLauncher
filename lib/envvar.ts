@@ -1,4 +1,9 @@
-import type { EnvFileFormat } from '@/types/tauri';
+import type {
+  EnvFileFormat,
+  EnvVarConflict,
+  EnvVarScope,
+  PersistentEnvVar,
+} from '@/types/tauri';
 
 /**
  * Validation result for environment variable key.
@@ -6,6 +11,101 @@ import type { EnvFileFormat } from '@/types/tauri';
 export type EnvVarKeyValidation =
   | { valid: true }
   | { valid: false; error: 'empty' | 'invalid' };
+
+export interface EnvVarRow {
+  key: string;
+  value: string;
+  scope: EnvVarScope;
+  regType?: string;
+  conflict?: boolean;
+}
+
+interface BuildEnvVarRowsInput {
+  processVars: Record<string, string>;
+  userPersistentVars: PersistentEnvVar[];
+  systemPersistentVars: PersistentEnvVar[];
+  scopeFilter: EnvVarScope | 'all';
+  conflicts?: EnvVarConflict[];
+}
+
+const ENV_SCOPE_ORDER: Record<EnvVarScope, number> = {
+  process: 0,
+  user: 1,
+  system: 2,
+};
+
+function normalizeConflictKeys(conflicts: EnvVarConflict[]): Set<string> {
+  return new Set(conflicts.map((item) => item.key.toLowerCase()));
+}
+
+/**
+ * Build render rows for env-var table.
+ * In "all" scope, entries are expanded by source scope without key-level deduplication.
+ */
+export function buildEnvVarRows({
+  processVars,
+  userPersistentVars,
+  systemPersistentVars,
+  scopeFilter,
+  conflicts = [],
+}: BuildEnvVarRowsInput): EnvVarRow[] {
+  const rows: EnvVarRow[] = [];
+  const conflictKeys = normalizeConflictKeys(conflicts);
+
+  const maybeSetConflict = (row: EnvVarRow): EnvVarRow => {
+    if (row.scope === 'user' || row.scope === 'system') {
+      return {
+        ...row,
+        conflict: conflictKeys.has(row.key.toLowerCase()),
+      };
+    }
+    return row;
+  };
+
+  if (scopeFilter === 'all' || scopeFilter === 'process') {
+    rows.push(
+      ...Object.entries(processVars).map(([key, value]) => ({
+        key,
+        value,
+        scope: 'process' as const,
+      })),
+    );
+  }
+
+  if (scopeFilter === 'all' || scopeFilter === 'user') {
+    rows.push(
+      ...userPersistentVars.map((item) =>
+        maybeSetConflict({
+          key: item.key,
+          value: item.value,
+          scope: 'user',
+          regType: item.regType,
+        }),
+      ),
+    );
+  }
+
+  if (scopeFilter === 'all' || scopeFilter === 'system') {
+    rows.push(
+      ...systemPersistentVars.map((item) =>
+        maybeSetConflict({
+          key: item.key,
+          value: item.value,
+          scope: 'system',
+          regType: item.regType,
+        }),
+      ),
+    );
+  }
+
+  rows.sort((a, b) => {
+    const byKey = a.key.localeCompare(b.key, undefined, { sensitivity: 'base' });
+    if (byKey !== 0) return byKey;
+    return ENV_SCOPE_ORDER[a.scope] - ENV_SCOPE_ORDER[b.scope];
+  });
+
+  return rows;
+}
 
 /**
  * Validate an environment variable key.

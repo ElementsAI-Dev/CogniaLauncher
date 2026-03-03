@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  type KeyboardEvent,
+} from "react";
 import {
   Dialog,
   DialogContent,
@@ -26,14 +32,15 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { useGitLabDownloads } from "@/hooks/use-gitlab-downloads";
 import { isTauri } from "@/lib/tauri";
+import { GITLAB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
+import { runDownloadPreflightWithUi } from "@/lib/downloads";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 import { RepoValidationInput } from "./repo-validation-input";
 import { DestinationPicker } from "./destination-picker";
 import { RefListSelector, type RefItem } from "./ref-list-selector";
 import {
   ArchiveFormatSelector,
-  type ArchiveFormat,
 } from "./archive-format-selector";
 import {
   Loader2,
@@ -57,6 +64,7 @@ import {
 import type {
   GitLabAssetInfo,
   GitLabArchiveFormat,
+  GitLabJobInfo,
   GitLabSourceType,
 } from "@/types/gitlab";
 
@@ -64,12 +72,14 @@ interface GitLabDownloadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDownloadStarted?: (taskId: string) => void;
+  checkDiskSpace?: (path: string, required: number) => Promise<boolean>;
 }
 
 export function GitLabDownloadDialog({
   open,
   onOpenChange,
   onDownloadStarted,
+  checkDiskSpace,
 }: GitLabDownloadDialogProps) {
   const { t } = useLocale();
   const isDesktop = isTauri();
@@ -90,11 +100,21 @@ export function GitLabDownloadDialog({
     branches,
     tags,
     releases,
+    pipelines,
+    jobs,
+    packages,
+    packageFiles,
     loading,
     error,
     validateAndFetch,
+    fetchPipelines,
+    fetchPipelineJobs,
+    fetchPackages,
+    fetchPackageFiles,
     downloadAsset,
     downloadSource,
+    downloadJobArtifacts,
+    downloadPackageFile,
     saveToken,
     saveInstanceUrl,
     clearSavedToken,
@@ -106,20 +126,18 @@ export function GitLabDownloadDialog({
   const [selectedAssets, setSelectedAssets] = useState<GitLabAssetInfo[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number | null>(null);
+  const [selectedJobs, setSelectedJobs] = useState<GitLabJobInfo[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [selectedPackageFileIds, setSelectedPackageFileIds] = useState<Set<number>>(new Set());
+  const [packageTypeFilter, setPackageTypeFilter] = useState("");
   const [archiveFormat, setArchiveFormat] =
     useState<GitLabArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [packageFilesLoading, setPackageFilesLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [showToken, setShowToken] = useState(false);
-
-  const GITLAB_ARCHIVE_FORMATS: ArchiveFormat[] = useMemo(
-    () => [
-      { value: "zip", label: "ZIP" },
-      { value: "tar.gz", label: "TAR.GZ" },
-      { value: "tar.bz2", label: "TAR.BZ2" },
-    ],
-    [],
-  );
 
   const currentRelease = useMemo(() => {
     return releases.find((r) => r.tagName === selectedRelease);
@@ -132,6 +150,11 @@ export function GitLabDownloadDialog({
     setSelectedAssets([]);
     setSelectedBranch(null);
     setSelectedTag(null);
+    setSelectedPipelineId(null);
+    setSelectedJobs([]);
+    setSelectedPackageId(null);
+    setSelectedPackageFileIds(new Set());
+    setPackageTypeFilter("");
     onOpenChange(false);
   }, [reset, onOpenChange]);
 
@@ -162,6 +185,143 @@ export function GitLabDownloadDialog({
     toast.success(t("downloads.gitlab.tokenCleared"));
   }, [clearSavedToken, t]);
 
+  const handleSaveInstanceUrl = useCallback(async () => {
+    await saveInstanceUrl();
+    toast.success(t("downloads.gitlab.instanceUrlSaved"));
+  }, [saveInstanceUrl, t]);
+
+  const checkDiskSpaceForDownload = useCallback(
+    async (path: string, required: number): Promise<boolean> => {
+      if (!checkDiskSpace) return true;
+      return checkDiskSpace(path, required);
+    },
+    [checkDiskSpace],
+  );
+
+  const handleSelectPipeline = useCallback(
+    async (pipelineId: number) => {
+      setSelectedPipelineId(pipelineId);
+      setSelectedJobs([]);
+      setJobsLoading(true);
+      try {
+        await fetchPipelineJobs(pipelineId);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setJobsLoading(false);
+      }
+    },
+    [fetchPipelineJobs],
+  );
+
+  const toggleJobSelection = useCallback((job: GitLabJobInfo) => {
+    if (!job.hasArtifacts) return;
+    setSelectedJobs((prev) => {
+      const exists = prev.some((j) => j.id === job.id);
+      if (exists) {
+        return prev.filter((j) => j.id !== job.id);
+      }
+      return [...prev, job];
+    });
+  }, []);
+
+  const handleSelectPackage = useCallback(
+    async (packageId: number) => {
+      setSelectedPackageId(packageId);
+      setSelectedPackageFileIds(new Set());
+      setPackageFilesLoading(true);
+      try {
+        await fetchPackageFiles(packageId);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      } finally {
+        setPackageFilesLoading(false);
+      }
+    },
+    [fetchPackageFiles],
+  );
+
+  const togglePackageFileSelection = useCallback((fileId: number) => {
+    setSelectedPackageFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedPackageId == null) return;
+    const exists = packages.some((pkg) => pkg.id === selectedPackageId);
+    if (!exists) {
+      setSelectedPackageId(null);
+      setSelectedPackageFileIds(new Set());
+    }
+  }, [packages, selectedPackageId]);
+
+  useEffect(() => {
+    if (selectedPackageId == null) {
+      setSelectedPackageFileIds(new Set());
+      return;
+    }
+
+    const availableIds = new Set(packageFiles.map((file) => file.id));
+    setSelectedPackageFileIds((prev) => {
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (availableIds.has(id)) {
+          next.add(id);
+        }
+      });
+      if (next.size === prev.size) {
+        return prev;
+      }
+      return next;
+    });
+  }, [packageFiles, selectedPackageId]);
+
+  const applyPackageTypeFilter = useCallback(
+    async (filterValue: string) => {
+      setSelectedPackageId(null);
+      setSelectedPackageFileIds(new Set());
+      try {
+        const normalizedType = filterValue.trim();
+        await fetchPackages(normalizedType || undefined);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [fetchPackages],
+  );
+
+  const handleRefreshPackages = useCallback(async () => {
+    await applyPackageTypeFilter(packageTypeFilter);
+  }, [applyPackageTypeFilter, packageTypeFilter]);
+
+  const handleApplyPackageTypeFilter = useCallback(async () => {
+    await applyPackageTypeFilter(packageTypeFilter);
+  }, [applyPackageTypeFilter, packageTypeFilter]);
+
+  const handleClearPackageTypeFilter = useCallback(async () => {
+    setPackageTypeFilter("");
+    await applyPackageTypeFilter("");
+  }, [applyPackageTypeFilter]);
+
+  const handlePackageTypeFilterKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      void handleApplyPackageTypeFilter();
+    },
+    [handleApplyPackageTypeFilter],
+  );
+
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
       toast.error(t("downloads.gitlab.noDestination"));
@@ -171,8 +331,31 @@ export function GitLabDownloadDialog({
     setIsDownloading(true);
 
     try {
+      const unknownSizeWarningRef = { current: false };
+      const ensurePreflight = async (
+        expectedBytes?: number | null,
+      ): Promise<boolean> => {
+        return runDownloadPreflightWithUi(
+          {
+            destinationPath: destination,
+            expectedBytes,
+            checkDiskSpace: checkDiskSpaceForDownload,
+          },
+          {
+            t,
+            onInfo: (message) => toast(message),
+            onError: (message) => toast.error(message),
+            unknownSizeWarningRef,
+          },
+        );
+      };
+
       if (sourceType === "release" && selectedAssets.length > 0) {
         for (const asset of selectedAssets) {
+          const preflightOk = await ensurePreflight();
+          if (!preflightOk) {
+            return;
+          }
           const taskId = await downloadAsset(asset, destination);
           onDownloadStarted?.(taskId);
         }
@@ -180,6 +363,10 @@ export function GitLabDownloadDialog({
           t("downloads.gitlab.assetsAdded", { count: selectedAssets.length }),
         );
       } else if (sourceType === "branch" && selectedBranch) {
+        const preflightOk = await ensurePreflight();
+        if (!preflightOk) {
+          return;
+        }
         const taskId = await downloadSource(
           selectedBranch,
           archiveFormat,
@@ -188,6 +375,10 @@ export function GitLabDownloadDialog({
         onDownloadStarted?.(taskId);
         toast.success(t("downloads.gitlab.sourceAdded"));
       } else if (sourceType === "tag" && selectedTag) {
+        const preflightOk = await ensurePreflight();
+        if (!preflightOk) {
+          return;
+        }
         const taskId = await downloadSource(
           selectedTag,
           archiveFormat,
@@ -195,6 +386,54 @@ export function GitLabDownloadDialog({
         );
         onDownloadStarted?.(taskId);
         toast.success(t("downloads.gitlab.sourceAdded"));
+      } else if (sourceType === "pipeline" && selectedJobs.length > 0) {
+        const artifactJobs = selectedJobs.filter((job) => job.hasArtifacts);
+        if (artifactJobs.length === 0) {
+          toast.error(t("downloads.gitlab.noSelection"));
+          return;
+        }
+
+        for (const job of artifactJobs) {
+          const preflightOk = await ensurePreflight();
+          if (!preflightOk) {
+            return;
+          }
+          const taskId = await downloadJobArtifacts(job, destination);
+          onDownloadStarted?.(taskId);
+        }
+
+        toast.success(
+          t("downloads.gitlab.artifactsAdded", { count: artifactJobs.length }),
+        );
+      } else if (
+        sourceType === "package" &&
+        selectedPackageId != null &&
+        selectedPackageFileIds.size > 0
+      ) {
+        const selectedFiles = packageFiles.filter((file) =>
+          selectedPackageFileIds.has(file.id),
+        );
+        if (selectedFiles.length === 0) {
+          toast.error(t("downloads.gitlab.noSelection"));
+          return;
+        }
+
+        for (const file of selectedFiles) {
+          const preflightOk = await ensurePreflight(file.size);
+          if (!preflightOk) {
+            return;
+          }
+          const taskId = await downloadPackageFile(
+            selectedPackageId,
+            file.fileName,
+            destination,
+          );
+          onDownloadStarted?.(taskId);
+        }
+
+        toast.success(
+          t("downloads.gitlab.packageFilesAdded", { count: selectedFiles.length }),
+        );
       } else {
         toast.error(t("downloads.gitlab.noSelection"));
         return;
@@ -215,16 +454,27 @@ export function GitLabDownloadDialog({
     archiveFormat,
     downloadAsset,
     downloadSource,
+    downloadJobArtifacts,
+    checkDiskSpaceForDownload,
     onDownloadStarted,
     handleClose,
     t,
+    selectedJobs,
+    selectedPackageId,
+    selectedPackageFileIds,
+    packageFiles,
+    downloadPackageFile,
   ]);
 
   const canDownload =
     destination.trim() &&
     ((sourceType === "release" && selectedAssets.length > 0) ||
       (sourceType === "branch" && selectedBranch) ||
-      (sourceType === "tag" && selectedTag));
+      (sourceType === "tag" && selectedTag) ||
+      (sourceType === "pipeline" && selectedJobs.length > 0) ||
+      (sourceType === "package" &&
+        selectedPackageId != null &&
+        selectedPackageFileIds.size > 0));
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -344,13 +594,24 @@ export function GitLabDownloadDialog({
                     <Globe className="h-3 w-3" />
                     {t("downloads.auth.instanceUrl")}
                   </Label>
-                  <Input
-                    type="text"
-                    value={instanceUrl}
-                    onChange={(e) => setInstanceUrl(e.target.value)}
-                    placeholder={t("downloads.auth.instanceUrlPlaceholder")}
-                    className="text-sm"
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="text"
+                      value={instanceUrl}
+                      onChange={(e) => setInstanceUrl(e.target.value)}
+                      placeholder={t("downloads.auth.instanceUrlPlaceholder")}
+                      className="text-sm"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSaveInstanceUrl}
+                      disabled={!isDesktop}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      {t("downloads.gitlab.saveInstanceUrl")}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CollapsibleContent>
@@ -370,7 +631,7 @@ export function GitLabDownloadDialog({
               onValueChange={(v) => setSourceType(v as GitLabSourceType)}
               className="flex-1 flex flex-col overflow-hidden"
             >
-              <TabsList className="grid w-full grid-cols-3">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="release" className="gap-2">
                   <Package className="h-4 w-4" />
                   {t("downloads.gitlab.releases")}
@@ -390,6 +651,20 @@ export function GitLabDownloadDialog({
                   {t("downloads.gitlab.tags")}
                   <Badge variant="secondary" className="ml-1">
                     {tags.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="pipeline" className="gap-2">
+                  <Package className="h-4 w-4" />
+                  {t("downloads.gitlab.pipelines")}
+                  <Badge variant="secondary" className="ml-1">
+                    {pipelines.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="package" className="gap-2">
+                  <FileArchive className="h-4 w-4" />
+                  {t("downloads.gitlab.packages")}
+                  <Badge variant="secondary" className="ml-1">
+                    {packages.length}
                   </Badge>
                 </TabsTrigger>
               </TabsList>
@@ -610,6 +885,251 @@ export function GitLabDownloadDialog({
                         label={t("downloads.gitlab.format")}
                       />
                     )}
+                  </TabsContent>
+
+                  {/* Pipelines Tab */}
+                  <TabsContent
+                    value="pipeline"
+                    className="flex-1 overflow-hidden mt-2 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Label>{t("downloads.gitlab.pipelines")}</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await fetchPipelines();
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : String(err));
+                          }
+                        }}
+                      >
+                        {t("common.refresh")}
+                      </Button>
+                    </div>
+
+                    <ScrollArea className="h-[140px] border rounded-md">
+                      {pipelines.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.noPipelines")}
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-1">
+                          {pipelines.map((pipeline) => (
+                            <button
+                              type="button"
+                              key={pipeline.id}
+                              className={cn(
+                                "w-full text-left p-2 rounded-md border transition-colors",
+                                selectedPipelineId === pipeline.id
+                                  ? "bg-primary/10 border-primary"
+                                  : "hover:bg-muted border-transparent",
+                              )}
+                              onClick={() => handleSelectPipeline(pipeline.id)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium">#{pipeline.id}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {pipeline.status}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {pipeline.refName || "—"}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+
+                    <Label>{t("downloads.gitlab.jobs")}</Label>
+                    <ScrollArea className="h-[160px] border rounded-md">
+                      {jobsLoading ? (
+                        <div className="p-4 space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-10 w-full" />
+                          ))}
+                        </div>
+                      ) : !selectedPipelineId ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.selectPipeline")}
+                        </div>
+                      ) : jobs.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.noJobs")}
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-1">
+                          {jobs.map((job) => {
+                            const checked = selectedJobs.some((j) => j.id === job.id);
+                            return (
+                              <label
+                                key={job.id}
+                                className={cn(
+                                  "flex items-center gap-2 p-2 rounded-md border",
+                                  checked
+                                    ? "bg-primary/10 border-primary"
+                                    : "border-transparent hover:bg-muted",
+                                  !job.hasArtifacts && "opacity-60",
+                                )}
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  disabled={!job.hasArtifacts}
+                                  onCheckedChange={() => toggleJobSelection(job)}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium truncate">{job.name}</div>
+                                  <div className="text-xs text-muted-foreground truncate">
+                                    {job.stage || "—"} · {job.status}
+                                  </div>
+                                </div>
+                                <Badge
+                                  variant={job.hasArtifacts ? "secondary" : "outline"}
+                                  className="text-xs"
+                                >
+                                  {job.hasArtifacts
+                                    ? t("downloads.gitlab.downloadArtifacts")
+                                    : t("common.none")}
+                                </Badge>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </TabsContent>
+
+                  {/* Packages Tab */}
+                  <TabsContent
+                    value="package"
+                    className="flex-1 overflow-hidden mt-2 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Label>{t("downloads.gitlab.packages")}</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshPackages}
+                      >
+                        {t("common.refresh")}
+                      </Button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={packageTypeFilter}
+                        onChange={(e) => setPackageTypeFilter(e.target.value)}
+                        onKeyDown={handlePackageTypeFilterKeyDown}
+                        placeholder={t("downloads.gitlab.packageTypePlaceholder")}
+                        aria-label={t("downloads.gitlab.packageType")}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleApplyPackageTypeFilter}
+                      >
+                        {t("downloads.gitlab.applyPackageType")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleClearPackageTypeFilter}
+                        disabled={!packageTypeFilter.trim()}
+                      >
+                        {t("common.clear")}
+                      </Button>
+                    </div>
+
+                    <ScrollArea className="h-[140px] border rounded-md">
+                      {packages.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.noPackages")}
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-1">
+                          {packages.map((pkg) => (
+                            <button
+                              type="button"
+                              key={pkg.id}
+                              className={cn(
+                                "w-full text-left p-2 rounded-md border transition-colors",
+                                selectedPackageId === pkg.id
+                                  ? "bg-primary/10 border-primary"
+                                  : "hover:bg-muted border-transparent",
+                              )}
+                              onClick={() => handleSelectPackage(pkg.id)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium truncate">
+                                  {pkg.name}
+                                </span>
+                                <Badge variant="outline" className="text-xs">
+                                  {pkg.packageType}
+                                </Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                v{pkg.version}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+
+                    <Label>{t("downloads.gitlab.packageFiles")}</Label>
+                    <ScrollArea className="h-[160px] border rounded-md">
+                      {packageFilesLoading ? (
+                        <div className="p-4 space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-10 w-full" />
+                          ))}
+                        </div>
+                      ) : !selectedPackageId ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.selectPackage")}
+                        </div>
+                      ) : packageFiles.length === 0 ? (
+                        <div className="p-4 text-center text-muted-foreground">
+                          {t("downloads.gitlab.noPackageFiles")}
+                        </div>
+                      ) : (
+                        <div className="p-2 space-y-1">
+                          {packageFiles.map((file) => {
+                            const checked = selectedPackageFileIds.has(file.id);
+                            return (
+                              <label
+                                key={file.id}
+                                className={cn(
+                                  "flex items-center gap-2 p-2 rounded-md border",
+                                  checked
+                                    ? "bg-primary/10 border-primary"
+                                    : "border-transparent hover:bg-muted",
+                                )}
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={() => togglePackageFileSelection(file.id)}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-medium truncate">
+                                    {file.fileName}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {formatBytes(file.size)}
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
                   </TabsContent>
                 </>
               )}

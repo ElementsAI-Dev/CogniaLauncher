@@ -97,6 +97,20 @@ export function BubbleHint({ hint, onDismiss }: BubbleHintProps) {
     };
   }, [visible, targetEl, hint.side]);
 
+  // Auto-dismiss after it has been shown once to avoid repeated prompting.
+  useEffect(() => {
+    if (!visible) return;
+
+    const autoDismissMs = hint.autoDismissMs ?? 6000;
+    if (autoDismissMs <= 0) return;
+
+    const timer = setTimeout(() => {
+      onDismiss(hint.id);
+    }, autoDismissMs);
+
+    return () => clearTimeout(timer);
+  }, [visible, hint.autoDismissMs, hint.id, onDismiss]);
+
   const handleDismiss = useCallback(() => {
     onDismiss(hint.id);
   }, [onDismiss, hint.id]);

@@ -5,9 +5,14 @@ jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
 }));
 
+jest.mock('sonner', () => ({
+  toast: { success: jest.fn(), error: jest.fn() },
+}));
+
 describe('GitGlobalSettingsCard', () => {
   const mockGetConfigValue = jest.fn().mockResolvedValue(null);
   const mockSetConfig = jest.fn().mockResolvedValue(undefined);
+  const mockSetConfigIfUnset = jest.fn().mockResolvedValue(false);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -159,5 +164,28 @@ describe('GitGlobalSettingsCard', () => {
         expect(mockSetConfig).toHaveBeenCalled();
       });
     }
+  });
+
+  it('applies safe defaults through setConfigIfUnset', async () => {
+    render(
+      <GitGlobalSettingsCard
+        onGetConfigValue={mockGetConfigValue}
+        onSetConfig={mockSetConfig}
+        onSetConfigIfUnset={mockSetConfigIfUnset}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'git.settings.applySafeDefaults' })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'git.settings.applySafeDefaults' }));
+
+    await waitFor(() => {
+      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('init.defaultBranch', 'main');
+      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('push.default', 'simple');
+      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('push.autoSetupRemote', 'true');
+      expect(mockSetConfigIfUnset).toHaveBeenCalledWith('fetch.prune', 'true');
+    });
   });
 });

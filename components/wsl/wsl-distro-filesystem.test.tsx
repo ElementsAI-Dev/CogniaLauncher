@@ -14,6 +14,7 @@ jest.mock("sonner", () => ({
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
     "wsl.detail.filesystem": "Filesystem",
+    "wsl.detail.filesystemNotRunning": "Start distro first",
     "wsl.detail.refresh": "Refresh",
     "wsl.detail.browse": "Browse",
     "wsl.detail.emptyDir": "Directory is empty",
@@ -178,5 +179,15 @@ describe("WslDistroFilesystem", () => {
       // First data row should be the directory "etc"
       expect(rows[1]).toHaveTextContent("etc");
     });
+  });
+
+  it("disables browsing when distro is not running", async () => {
+    render(<WslDistroFilesystem {...defaultProps} isRunning={false} />);
+
+    expect(screen.getByText("Start distro first")).toBeInTheDocument();
+    expect(screen.getByText("Browse")).toBeDisabled();
+
+    await userEvent.click(screen.getByText("Browse"));
+    expect(defaultProps.onExec).not.toHaveBeenCalled();
   });
 });

@@ -19,3 +19,5 @@ export { WslImportInPlaceDialog } from './wsl-import-in-place-dialog';
 export { WslMountDialog } from './wsl-mount-dialog';
 export { WslMoveDialog } from './wsl-move-dialog';
 export { WslResizeDialog } from './wsl-resize-dialog';
+export { WslInstallLocationDialog } from './wsl-install-location-dialog';
+export { WslCloneDialog } from './wsl-clone-dialog';

@@ -18,6 +18,7 @@ import {
   type EnvironmentSettings,
 } from "@/lib/stores/environment";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useProjectPath } from "@/hooks/use-auto-version";
 import { toast } from "sonner";
 import { EnvVarsEditor } from "@/components/environments/shared/env-vars-editor";
 import { DetectionFilesList } from "@/components/environments/shared/detection-files-list";
@@ -30,7 +31,8 @@ interface EnvDetailSettingsProps {
 
 export function EnvDetailSettings({ envType, t }: EnvDetailSettingsProps) {
   const { getEnvSettings } = useEnvironmentStore();
-  const { loadEnvSettings, saveEnvSettings } = useEnvironments();
+  const { loadEnvSettings, saveEnvSettings, detectVersions } = useEnvironments();
+  const { projectPath } = useProjectPath();
   const envSettings = getEnvSettings(envType);
 
   const loadedRef = useRef(false);
@@ -45,6 +47,7 @@ export function EnvDetailSettings({ envType, t }: EnvDetailSettingsProps) {
   const updateSettings = async (nextSettings: EnvironmentSettings) => {
     try {
       await saveEnvSettings(envType, nextSettings);
+      await detectVersions(projectPath || ".");
     } catch (err) {
       toast.error(String(err));
     }

@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useHealthCheck } from './use-health-check';
 import { useHealthCheckStore } from '@/lib/stores/health-check';
+import type { SystemHealthResult } from '@/types/tauri';
 
 // Mock Tauri APIs
 const mockHealthCheckAll = jest.fn();
@@ -12,9 +13,24 @@ jest.mock('@/lib/tauri', () => ({
   healthCheckEnvironment: (...args: unknown[]) => mockHealthCheckEnvironment(...args),
 }));
 
+const tauri = jest.requireMock('@/lib/tauri') as {
+  isTauri: jest.Mock;
+};
+
+const createHealthData = (): SystemHealthResult => ({
+  overall_status: 'healthy',
+  environments: [
+    { env_type: 'node', provider_id: 'fnm', status: 'healthy', issues: [], suggestions: [], checked_at: new Date().toISOString() },
+  ],
+  package_managers: [],
+  system_issues: [],
+  checked_at: new Date().toISOString(),
+});
+
 describe('useHealthCheck', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    tauri.isTauri.mockReturnValue(true);
     // Reset Zustand store between tests
     useHealthCheckStore.setState({
       systemHealth: null,
@@ -36,15 +52,7 @@ describe('useHealthCheck', () => {
   });
 
   it('should check all system health', async () => {
-    const healthData = {
-      overall_status: 'healthy',
-      environments: [
-        { env_type: 'node', provider_id: 'fnm', status: 'healthy', issues: [], suggestions: [], checked_at: new Date().toISOString() },
-      ],
-      package_managers: [],
-      system_issues: [],
-      checked_at: new Date().toISOString(),
-    };
+    const healthData = createHealthData();
     mockHealthCheckAll.mockResolvedValue(healthData);
 
     const { result } = renderHook(() => useHealthCheck());
@@ -57,6 +65,78 @@ describe('useHealthCheck', () => {
       expect(result.current.systemHealth).toEqual(healthData);
     });
     expect(mockHealthCheckAll).toHaveBeenCalled();
+  });
+
+  it('should skip checkAll when cached health data is still fresh', async () => {
+    const cached = createHealthData();
+    useHealthCheckStore.setState({
+      systemHealth: cached,
+      lastCheckedAt: Date.now(),
+    });
+
+    const { result } = renderHook(() => useHealthCheck());
+
+    await act(async () => {
+      await result.current.checkAll();
+    });
+
+    expect(mockHealthCheckAll).not.toHaveBeenCalled();
+    expect(result.current.systemHealth).toEqual(cached);
+  });
+
+  it('should force checkAll even when cached health data is fresh', async () => {
+    const cached = createHealthData();
+    const refreshed = {
+      ...createHealthData(),
+      overall_status: 'warning',
+    };
+
+    useHealthCheckStore.setState({
+      systemHealth: cached,
+      lastCheckedAt: Date.now(),
+    });
+    mockHealthCheckAll.mockResolvedValue(refreshed);
+
+    const { result } = renderHook(() => useHealthCheck());
+
+    await act(async () => {
+      await result.current.checkAll({ force: true });
+    });
+
+    expect(mockHealthCheckAll).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(result.current.systemHealth).toEqual(refreshed);
+    });
+  });
+
+  it('should dedupe concurrent checkAll calls into one in-flight request', async () => {
+    const healthData = createHealthData();
+    let resolveRequest!: (value: unknown) => void;
+
+    mockHealthCheckAll.mockImplementation(
+      () => new Promise((resolve) => { resolveRequest = resolve; }),
+    );
+
+    const { result } = renderHook(() => useHealthCheck());
+    let firstPromise!: Promise<void>;
+    let secondPromise!: Promise<void>;
+
+    act(() => {
+      firstPromise = result.current.checkAll();
+      secondPromise = result.current.checkAll();
+    });
+
+    expect(mockHealthCheckAll).toHaveBeenCalledTimes(1);
+    expect(secondPromise).toBe(firstPromise);
+
+    await act(async () => {
+      resolveRequest(healthData);
+      await firstPromise;
+    });
+
+    await waitFor(() => {
+      expect(result.current.systemHealth).toEqual(healthData);
+    });
   });
 
   it('should check environment health', async () => {
@@ -115,6 +195,23 @@ describe('useHealthCheck', () => {
     await act(async () => {
       resolvePromise!({ environments: [] });
     });
+  });
+
+  it('should keep checkAll callback stable across store updates', () => {
+    const { result } = renderHook(() => useHealthCheck());
+    const initialCheckAll = result.current.checkAll;
+
+    act(() => {
+      useHealthCheckStore.getState().setLoading(true);
+    });
+
+    expect(result.current.checkAll).toBe(initialCheckAll);
+
+    act(() => {
+      useHealthCheckStore.getState().setLoading(false);
+    });
+
+    expect(result.current.checkAll).toBe(initialCheckAll);
   });
 
   it('should return status color for healthy', () => {

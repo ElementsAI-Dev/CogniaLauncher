@@ -9,6 +9,7 @@ import {
   LogProvider,
   TrayProvider,
   DeferredProviders,
+  DownloadRuntimeProvider,
 } from "@/components/providers";
 import en from "@/messages/en.json";
 import zh from "@/messages/zh.json";
@@ -45,9 +46,11 @@ export default function RootLayout({
           <LocaleProvider initialLocale="en" messages={{ en, zh }}>
             <DeferredProviders>
               <TrayProvider>
-                <LogProvider>
-                  <AppShell>{children}</AppShell>
-                </LogProvider>
+                <DownloadRuntimeProvider>
+                  <LogProvider>
+                    <AppShell>{children}</AppShell>
+                  </LogProvider>
+                </DownloadRuntimeProvider>
               </TrayProvider>
             </DeferredProviders>
           </LocaleProvider>

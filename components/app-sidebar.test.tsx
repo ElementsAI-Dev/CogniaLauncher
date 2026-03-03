@@ -32,8 +32,13 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 jest.mock("@/components/ui/sidebar", () => ({
-  Sidebar: ({ children }: { children: React.ReactNode }) => (
-    <nav data-testid="sidebar">{children}</nav>
+  Sidebar: ({ children, ...props }: { children: React.ReactNode } & React.HTMLAttributes<HTMLElement>) => (
+    <nav
+      data-testid="sidebar"
+      data-tour={(props as { "data-tour"?: string })["data-tour"]}
+    >
+      {children}
+    </nav>
   ),
   SidebarContent: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
@@ -59,10 +64,18 @@ jest.mock("@/components/ui/sidebar", () => ({
   SidebarMenuButton: ({
     children,
     isActive,
+    ...props
   }: {
     children: React.ReactNode;
     isActive?: boolean;
-  }) => <div data-active={isActive}>{children}</div>,
+  } & React.HTMLAttributes<HTMLDivElement>) => (
+    <div
+      data-active={isActive}
+      data-tour={(props as { "data-tour"?: string })["data-tour"]}
+    >
+      {children}
+    </div>
+  ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => (
     <li>{children}</li>
   ),
@@ -72,10 +85,18 @@ jest.mock("@/components/ui/sidebar", () => ({
   SidebarMenuSubButton: ({
     children,
     isActive,
+    ...props
   }: {
     children: React.ReactNode;
     isActive?: boolean;
-  }) => <div data-active={isActive}>{children}</div>,
+  } & React.HTMLAttributes<HTMLDivElement>) => (
+    <div
+      data-active={isActive}
+      data-tour={(props as { "data-tour"?: string })["data-tour"]}
+    >
+      {children}
+    </div>
+  ),
   SidebarMenuSubItem: ({ children }: { children: React.ReactNode }) => (
     <li>{children}</li>
   ),
@@ -219,5 +240,17 @@ describe("AppSidebar", () => {
     expect(links.some((l) => l.getAttribute("href") === "/environments/rust")).toBe(false);
     // go is not in mock environments at all, should NOT appear
     expect(links.some((l) => l.getAttribute("href") === "/environments/go")).toBe(false);
+  });
+
+  it("exposes required tour targets including nav-cache", () => {
+    render(<AppSidebar />);
+
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-tour", "sidebar");
+    expect(document.querySelector('[data-tour="nav-environments"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="nav-packages"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="nav-providers"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="nav-cache"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="nav-downloads"]')).toBeInTheDocument();
+    expect(document.querySelector('[data-tour="nav-settings"]')).toBeInTheDocument();
   });
 });

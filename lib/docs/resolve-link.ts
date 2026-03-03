@@ -3,30 +3,70 @@ export interface ResolvedLink {
   resolved: string;
 }
 
+function splitHref(href: string): { pathname: string; suffix: string } {
+  const queryIndex = href.indexOf('?');
+  const hashIndex = href.indexOf('#');
+  let splitIndex = -1;
+
+  if (queryIndex !== -1 && hashIndex !== -1) {
+    splitIndex = Math.min(queryIndex, hashIndex);
+  } else if (queryIndex !== -1) {
+    splitIndex = queryIndex;
+  } else if (hashIndex !== -1) {
+    splitIndex = hashIndex;
+  }
+
+  if (splitIndex === -1) {
+    return { pathname: href, suffix: '' };
+  }
+
+  return {
+    pathname: href.slice(0, splitIndex),
+    suffix: href.slice(splitIndex),
+  };
+}
+
+function normalizeDocPath(pathname: string, basePath?: string): string {
+  const withoutExt = pathname.replace(/\.md$/i, '');
+  const baseSegments = (basePath ?? '').split('/').filter(Boolean);
+  const sourceSegments = withoutExt.split('/').filter(Boolean);
+  const segments = withoutExt.startsWith('/') ? [] : [...baseSegments];
+
+  for (const segment of sourceSegments) {
+    if (segment === '.') continue;
+    if (segment === '..') {
+      if (segments.length > 0) {
+        segments.pop();
+      }
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  if (segments[segments.length - 1] === 'index') {
+    segments.pop();
+  }
+
+  return segments.join('/');
+}
+
 export function resolveDocLink(href: string, basePath?: string): ResolvedLink {
   if (href.startsWith('#')) {
     return { type: 'anchor', resolved: href };
   }
 
-  if (href.endsWith('.md') || href.startsWith('../') || href.startsWith('./')) {
-    let resolved = href.replace(/\.md$/, '');
-    if (resolved.startsWith('../')) {
-      // Go up one directory from basePath, then append rest
-      const parentDir = basePath?.split('/').slice(0, -1).join('/') ?? '';
-      resolved = resolved.replace(/^\.\.\//, '');
-      resolved = parentDir ? `${parentDir}/${resolved}` : resolved;
-    } else if (resolved.startsWith('./')) {
-      resolved = resolved.replace(/^\.\//, '');
-      resolved = basePath ? `${basePath}/${resolved}` : resolved;
-    } else if (!resolved.includes('/') && basePath) {
-      // Bare filename like "configuration" — resolve relative to basePath
-      resolved = `${basePath}/${resolved}`;
-    }
-    return { type: 'internal', resolved: `/docs/${resolved}` };
-  }
-
   if (href.startsWith('http://') || href.startsWith('https://')) {
     return { type: 'external', resolved: href };
+  }
+
+  const { pathname, suffix } = splitHref(href);
+  const isInternalDocPath =
+    pathname.endsWith('.md') || pathname.startsWith('./') || pathname.startsWith('../');
+
+  if (isInternalDocPath) {
+    const resolvedPath = normalizeDocPath(pathname, basePath);
+    const resolved = resolvedPath.length > 0 ? `/docs/${resolvedPath}` : '/docs';
+    return { type: 'internal', resolved: `${resolved}${suffix}` };
   }
 
   return { type: 'plain', resolved: href };

@@ -1934,6 +1934,7 @@ fn get_provider_env_vars(provider: external::ExternalCacheProvider) -> Vec<Strin
 // ============================================================================
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheOptimizeResult {
     pub size_before: u64,
     pub size_before_human: String,
@@ -1991,4 +1992,33 @@ pub async fn get_cache_size_history(
         .get_size_snapshots(days)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CacheOptimizeResult;
+    use serde_json::Value;
+
+    #[test]
+    fn cache_optimize_result_serializes_in_camel_case() {
+        let payload = CacheOptimizeResult {
+            size_before: 100,
+            size_before_human: "100 B".to_string(),
+            size_after: 80,
+            size_after_human: "80 B".to_string(),
+            size_saved: 20,
+            size_saved_human: "20 B".to_string(),
+        };
+
+        let value = serde_json::to_value(payload).expect("serialize cache optimize result");
+
+        assert!(matches!(value.get("sizeBefore"), Some(Value::Number(_))));
+        assert!(matches!(value.get("sizeBeforeHuman"), Some(Value::String(_))));
+        assert!(matches!(value.get("sizeAfter"), Some(Value::Number(_))));
+        assert!(matches!(value.get("sizeAfterHuman"), Some(Value::String(_))));
+        assert!(matches!(value.get("sizeSaved"), Some(Value::Number(_))));
+        assert!(matches!(value.get("sizeSavedHuman"), Some(Value::String(_))));
+        assert!(value.get("size_before").is_none());
+        assert!(value.get("size_before_human").is_none());
+    }
 }

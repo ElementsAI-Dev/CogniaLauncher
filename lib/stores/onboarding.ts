@@ -134,13 +134,19 @@ export const useOnboardingStore = create<OnboardingState>()(
           visitedSteps: [],
           wizardOpen: true,
           tourCompleted: false,
+          tourActive: false,
+          tourStep: 0,
         }),
 
       startTour: () =>
-        set({
-          tourActive: true,
-          tourStep: 0,
-        }),
+        set((state) => (
+          state.tourActive
+            ? state
+            : {
+                tourActive: true,
+                tourStep: 0,
+              }
+        )),
 
       nextTourStep: () =>
         set((state) => ({

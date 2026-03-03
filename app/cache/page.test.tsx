@@ -1,6 +1,9 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import CachePage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
+
+const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
+const mockSubscribeInvalidation = jest.fn(() => () => {});
 
 // Mock the Tauri API
 jest.mock('@/lib/tauri', () => ({
@@ -70,8 +73,6 @@ jest.mock('@/lib/tauri', () => ({
     total_count: 0,
   }),
   deleteCacheEntries: jest.fn().mockResolvedValue(0),
-  listenCacheAutoCleaned: jest.fn().mockResolvedValue(() => {}),
-  listenCacheChanged: jest.fn().mockResolvedValue(() => {}),
   cacheOptimize: jest.fn().mockResolvedValue({
     sizeBefore: 1048576,
     sizeBeforeHuman: '1 MB',
@@ -91,6 +92,15 @@ jest.mock('@/lib/tauri', () => ({
     tableCounts: { cache_entries: 10 },
   }),
   getCacheSizeHistory: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('@/lib/cache/invalidation', () => ({
+  emitInvalidations: jest.fn(),
+  ensureCacheInvalidationBridge: (...args: Parameters<typeof mockEnsureCacheInvalidationBridge>) =>
+    mockEnsureCacheInvalidationBridge(...args),
+  subscribeInvalidation: (...args: Parameters<typeof mockSubscribeInvalidation>) =>
+    mockSubscribeInvalidation(...args),
+  withThrottle: <T extends (...args: unknown[]) => unknown>(fn: T) => fn,
 }));
 
 // Mock useSettings hook
@@ -591,6 +601,180 @@ describe('CachePage', () => {
       await waitFor(() => {
         expect(screen.getByLabelText('Metadata Cache TTL')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Browser Auto Refresh', () => {
+    it('debounces search and resets browser query from first page', async () => {
+      const tauri = jest.requireMock('@/lib/tauri') as {
+        listCacheEntries: jest.Mock;
+      };
+
+      tauri.listCacheEntries.mockResolvedValue({
+        entries: [
+          {
+            key: 'entry-1',
+            entry_type: 'download',
+            size_human: '1 KB',
+            hit_count: 1,
+          },
+        ],
+        total_count: 40,
+      });
+
+      renderWithProviders(<CachePage />);
+
+      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      fireEvent.click(openBrowserBtn);
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalled();
+      });
+
+      const nextBtn = screen.getByRole('button', { name: /common\.next/i });
+      fireEvent.click(nextBtn);
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
+          offset: 20,
+        }));
+      });
+
+      tauri.listCacheEntries.mockClear();
+
+      jest.useFakeTimers();
+      try {
+        const searchInput = screen.getByPlaceholderText('cache.searchPlaceholder');
+        fireEvent.change(searchInput, { target: { value: 'react' } });
+
+        act(() => {
+          jest.advanceTimersByTime(299);
+        });
+        expect(tauri.listCacheEntries).not.toHaveBeenCalled();
+
+        act(() => {
+          jest.advanceTimersByTime(1);
+        });
+
+        await waitFor(() => {
+          expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
+            search: 'react',
+            offset: 0,
+          }));
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('auto-refreshes browser entries immediately for type/sort changes and resets to first page', async () => {
+      const tauri = jest.requireMock('@/lib/tauri') as {
+        listCacheEntries: jest.Mock;
+      };
+
+      tauri.listCacheEntries.mockResolvedValue({
+        entries: [],
+        total_count: 40,
+      });
+
+      renderWithProviders(<CachePage />);
+
+      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      fireEvent.click(openBrowserBtn);
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalled();
+      });
+
+      const nextBtn = screen.getByRole('button', { name: /common\.next/i });
+      fireEvent.click(nextBtn);
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
+          offset: 20,
+        }));
+      });
+
+      const [typeSelect, sortSelect] = screen.getAllByRole('combobox');
+
+      tauri.listCacheEntries.mockClear();
+      fireEvent.change(typeSelect, { target: { value: 'metadata' } });
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
+          entryType: 'metadata',
+          offset: 0,
+        }));
+      });
+
+      tauri.listCacheEntries.mockClear();
+      fireEvent.change(sortSelect, { target: { value: 'size_asc' } });
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalledWith(expect.objectContaining({
+          sortBy: 'size_asc',
+          offset: 0,
+        }));
+      });
+    });
+
+    it('auto-refreshes browser entries on cache invalidation while dialog is open', async () => {
+      const tauri = jest.requireMock('@/lib/tauri') as {
+        listCacheEntries: jest.Mock;
+      };
+
+      tauri.listCacheEntries.mockResolvedValue({
+        entries: [],
+        total_count: 0,
+      });
+
+      let invalidationHandler: (() => void) | undefined;
+      mockSubscribeInvalidation.mockImplementation((...args: unknown[]) => {
+        const domains = args[0];
+        const handler = args[1] as (() => void) | undefined;
+        const matchesCacheEntries =
+          (Array.isArray(domains) && domains.includes('cache_entries')) ||
+          domains === 'cache_entries';
+        if (matchesCacheEntries) {
+          invalidationHandler = handler;
+        }
+        return () => {};
+      });
+
+      renderWithProviders(<CachePage />);
+
+      const openBrowserBtn = await screen.findByRole('button', { name: /browse entries/i });
+      fireEvent.click(openBrowserBtn);
+
+      await waitFor(() => {
+        expect(tauri.listCacheEntries).toHaveBeenCalled();
+      });
+
+      await waitFor(() => {
+        expect(mockSubscribeInvalidation).toHaveBeenCalled();
+      });
+      tauri.listCacheEntries.mockClear();
+
+      jest.useFakeTimers();
+      try {
+        act(() => {
+          invalidationHandler?.();
+          invalidationHandler?.();
+          invalidationHandler?.();
+          jest.advanceTimersByTime(349);
+        });
+        expect(tauri.listCacheEntries).not.toHaveBeenCalled();
+
+        act(() => {
+          jest.advanceTimersByTime(1);
+        });
+
+        await waitFor(() => {
+          expect(tauri.listCacheEntries).toHaveBeenCalledTimes(1);
+        });
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 });

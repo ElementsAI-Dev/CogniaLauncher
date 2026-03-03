@@ -5,12 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Globe, Plus, Trash2 } from 'lucide-react';
+import { Globe, Plus, Trash2, Pencil, Link2, Scissors } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { GitRemoteCardProps } from '@/types/git';
 
-export function GitRemoteCard({ remotes, onAdd, onRemove }: GitRemoteCardProps) {
+export function GitRemoteCard({ remotes, onAdd, onRemove, onRename, onSetUrl, onPrune }: GitRemoteCardProps) {
   const { t } = useLocale();
   const [newName, setNewName] = useState('');
   const [newUrl, setNewUrl] = useState('');
@@ -41,6 +41,40 @@ export function GitRemoteCard({ remotes, onAdd, onRemove }: GitRemoteCardProps) 
     }
   };
 
+  const handleRename = async (name: string) => {
+    if (!onRename) return;
+    const next = window.prompt(t('git.remoteAction.rename'), name);
+    if (!next || next.trim() === '' || next.trim() === name) return;
+    try {
+      const msg = await onRename(name, next.trim());
+      toast.success(t('git.remoteAction.renameSuccess'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleSetUrl = async (name: string, currentUrl: string) => {
+    if (!onSetUrl) return;
+    const next = window.prompt(t('git.remoteAction.setUrl'), currentUrl);
+    if (!next || next.trim() === '' || next.trim() === currentUrl) return;
+    try {
+      const msg = await onSetUrl(name, next.trim());
+      toast.success(msg);
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handlePrune = async (name: string) => {
+    if (!onPrune) return;
+    try {
+      const msg = await onPrune(name);
+      toast.success(t('git.remotePrune.success'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -59,6 +93,28 @@ export function GitRemoteCard({ remotes, onAdd, onRemove }: GitRemoteCardProps) 
               <div key={r.name} className="space-y-1 group">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold">{r.name}</span>
+                  {onRename && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleRename(r.name)}
+                      title={t('git.remoteAction.rename')}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onSetUrl && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleSetUrl(r.name, r.pushUrl || r.fetchUrl)}
+                      title={t('git.remoteAction.setUrl')}
+                    >
+                      <Link2 className="h-3 w-3" />
+                    </Button>
+                  )}
                   {onRemove && (
                     <Button
                       variant="ghost"
@@ -68,6 +124,17 @@ export function GitRemoteCard({ remotes, onAdd, onRemove }: GitRemoteCardProps) 
                       title={t('git.remoteAction.remove')}
                     >
                       <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {onPrune && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handlePrune(r.name)}
+                      title={t('git.remotePrune.title')}
+                    >
+                      <Scissors className="h-3 w-3" />
                     </Button>
                   )}
                 </div>

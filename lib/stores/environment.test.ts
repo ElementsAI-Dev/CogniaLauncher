@@ -138,6 +138,19 @@ describe('useEnvironmentStore', () => {
       expect(settings.detectionFiles).toBeDefined();
     });
 
+    it('resolves provider-id keyed settings via logical env type', () => {
+      const legacySettings = {
+        envVariables: [{ key: 'NODE_ENV', value: 'legacy', enabled: true }],
+        detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+        autoSwitch: true,
+      };
+      useEnvironmentStore.setState({
+        envSettings: { fnm: legacySettings },
+      });
+
+      expect(useEnvironmentStore.getState().getEnvSettings('node')).toEqual(legacySettings);
+    });
+
     it('should add environment variable', () => {
       useEnvironmentStore.getState().addEnvVariable('node', { key: 'NODE_ENV', value: 'production', enabled: true });
       
@@ -467,6 +480,38 @@ describe('useEnvironmentStore', () => {
       };
       useEnvironmentStore.getState().setEnvSettings('node', settings);
       expect(useEnvironmentStore.getState().getEnvSettings('node')).toEqual(settings);
+    });
+
+    it('normalizes provider-id writes to logical env settings key', () => {
+      const settings = {
+        envVariables: [{ key: 'NODE_ENV', value: 'production', enabled: true }],
+        detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+        autoSwitch: true,
+      };
+
+      useEnvironmentStore.getState().setEnvSettings('fnm', settings);
+
+      const state = useEnvironmentStore.getState();
+      expect(state.envSettings.node).toEqual(settings);
+      expect(state.envSettings.fnm).toBeUndefined();
+    });
+
+    it('migrates legacy provider-id key when updating logical env settings', () => {
+      useEnvironmentStore.setState({
+        envSettings: {
+          fnm: {
+            envVariables: [],
+            detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+            autoSwitch: false,
+          },
+        },
+      });
+
+      useEnvironmentStore.getState().setAutoSwitch('node', true);
+
+      const state = useEnvironmentStore.getState();
+      expect(state.envSettings.node?.autoSwitch).toBe(true);
+      expect(state.envSettings.fnm).toBeUndefined();
     });
   });
 

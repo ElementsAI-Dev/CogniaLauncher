@@ -11,6 +11,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
 
 const mockSetCachePath = jest.fn();
 const mockResetCachePath = jest.fn();
+const mockEmitInvalidations = jest.fn();
 
 jest.mock("@/lib/tauri", () => ({
   get isTauri() {
@@ -29,6 +30,11 @@ jest.mock("@/lib/tauri", () => ({
 
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
+}));
+
+jest.mock("@/lib/cache/invalidation", () => ({
+  emitInvalidations: (...args: Parameters<typeof mockEmitInvalidations>) =>
+    mockEmitInvalidations(...args),
 }));
 
 jest.mock("./cache-migration-dialog", () => ({
@@ -262,6 +268,10 @@ describe("CachePathCard", () => {
     await act(async () => {});
     expect(mockSetCachePath).toHaveBeenCalledWith("D:\\NewPath");
     expect(toast.success).toHaveBeenCalled();
+    expect(mockEmitInvalidations).toHaveBeenCalledWith(
+      ["cache_overview", "cache_entries", "about_cache_stats"],
+      "cache-path:changed",
+    );
   });
 
   it("calls resetCachePath when reset clicked", async () => {
@@ -282,6 +292,10 @@ describe("CachePathCard", () => {
     await act(async () => {});
     expect(mockResetCachePath).toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalled();
+    expect(mockEmitInvalidations).toHaveBeenCalledWith(
+      ["cache_overview", "cache_entries", "about_cache_stats"],
+      "cache-path:reset",
+    );
   });
 
   it("opens migration dialog when migration button clicked", async () => {

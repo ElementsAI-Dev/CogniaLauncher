@@ -13,18 +13,27 @@ import { EnvironmentToolbar } from '@/components/environments/environment-toolba
 import { EnvUpdatesSummary } from '@/components/environments/env-updates-summary';
 import { ProfileManager } from '@/components/environments/profile-manager';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from '@/components/ui/empty';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from '@/hooks/use-environments';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
+import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Plus, Bookmark, FolderOpen, X } from 'lucide-react';
+import { AlertCircle, Plus, Bookmark, FolderOpen, X, Monitor } from 'lucide-react';
 import { isTauri } from '@/lib/tauri';
 
 export default function EnvironmentsPage() {
+  const isDesktop = isTauri();
   const {
     environments,
     detectedVersions,
@@ -37,6 +46,8 @@ export default function EnvironmentsPage() {
     setGlobalVersion,
     setLocalVersion,
     detectVersions,
+    loadEnvSettings,
+    saveEnvSettings,
     fetchProviders,
     openAddDialog,
     checkAllEnvUpdates,
@@ -65,25 +76,28 @@ export default function EnvironmentsPage() {
   const { t } = useLocale();
   const [selectedProviders, setSelectedProviders] = useState<Record<string, string>>({});
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const { getProjectDetectedForEnv } = useEnvironmentDetection({
+    detectedVersions,
+    availableProviders,
+  });
 
   // Project path and auto version switch
   const { projectPath, setProjectPath } = useProjectPath();
-  useAutoVersionSwitch({ projectPath, enabled: true });
+  useAutoVersionSwitch({ projectPath, enabled: isDesktop });
 
   // Track initialization to prevent duplicate fetches on re-renders
   const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      fetchEnvironments();
-      fetchProviders();
-      detectVersions(projectPath || '.');
-    }
-  }, [fetchEnvironments, fetchProviders, detectVersions, projectPath]);
+    if (!isDesktop || initializedRef.current) return;
+    initializedRef.current = true;
+    fetchEnvironments();
+    fetchProviders();
+    detectVersions(projectPath || '.');
+  }, [fetchEnvironments, fetchProviders, detectVersions, projectPath, isDesktop]);
 
   const handleBrowseProjectPath = useCallback(async () => {
-    if (!isTauri()) return;
+    if (!isDesktop) return;
     try {
       const dialogModule = await import("@tauri-apps/plugin-dialog").catch(() => null);
       if (dialogModule?.open) {
@@ -100,11 +114,7 @@ export default function EnvironmentsPage() {
     } catch {
       // Fallback: user stays with current path
     }
-  }, [setProjectPath, detectVersions, t]);
-
-  const getDetectedForEnv = (envType: string) => {
-    return detectedVersions.find((d) => d.env_type === envType) || null;
-  };
+  }, [setProjectPath, detectVersions, t, isDesktop]);
 
   const getEnvByType = (envType: string | null) => {
     if (!envType) return null;
@@ -175,19 +185,24 @@ export default function EnvironmentsPage() {
       });
   }, [environments, searchQuery, statusFilter, sortBy]);
 
-  const handleAddEnvironment = useCallback(async (_language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
+  const handleAddEnvironment = useCallback(async (language: string, provider: string, version: string, options: AddEnvironmentOptions) => {
     await installVersion(provider, version, provider);
-    
-    // Apply autoSwitch setting
-    if (options.autoSwitch) {
-      const { setEnvSettings, getEnvSettings } = useEnvironmentStore.getState();
-      const currentSettings = getEnvSettings(provider);
-      setEnvSettings(provider, {
+
+    // Persist auto-switch preference through the backend-backed settings path
+    // so detection behavior and UI stay consistent across restarts.
+    try {
+      const logicalEnvType = language.trim().toLowerCase();
+      const currentSettings = await loadEnvSettings(logicalEnvType)
+        ?? useEnvironmentStore.getState().getEnvSettings(logicalEnvType);
+
+      await saveEnvSettings(logicalEnvType, {
         ...currentSettings,
         autoSwitch: options.autoSwitch,
       });
+    } catch {
+      // Settings persistence should not block installation success flow
     }
-    
+
     // Set as default/global version after successful installation
     if (options.setAsDefault) {
       try {
@@ -203,7 +218,16 @@ export default function EnvironmentsPage() {
         // Setting as default is best-effort, don't fail the whole operation
       }
     }
-  }, [installVersion, setGlobalVersion]);
+
+    await detectVersions(projectPath || '.');
+  }, [
+    detectVersions,
+    installVersion,
+    loadEnvSettings,
+    projectPath,
+    saveEnvSettings,
+    setGlobalVersion,
+  ]);
 
   // Memoized handlers to prevent unnecessary re-renders
   const handleInstallVersion = useCallback(async (envType: string, version: string, providerId?: string) => {
@@ -234,6 +258,26 @@ export default function EnvironmentsPage() {
       await uninstallVersion(v.envType, v.version);
     }
   }, [uninstallVersion]);
+
+  if (!isDesktop) {
+    return (
+      <div className="p-4 md:p-6">
+        <PageHeader
+          title={t('environments.title')}
+          description={t('environments.description')}
+        />
+        <Empty className="border-none py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Monitor />
+            </EmptyMedia>
+            <EmptyTitle>{t('environments.desktopOnly')}</EmptyTitle>
+            <EmptyDescription>{t('environments.desktopOnlyDescription')}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <EnvironmentErrorBoundary
@@ -280,7 +324,7 @@ export default function EnvironmentsPage() {
         </div>
 
         {/* Project Path Selector */}
-        {isTauri() && (
+        {isDesktop && (
           <div className="flex items-center gap-2 text-sm">
             <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground shrink-0">{t('environments.projectPath')}:</span>
@@ -358,11 +402,11 @@ export default function EnvironmentsPage() {
         <div className={viewMode === 'grid' ? 'grid gap-4 grid-cols-1 lg:grid-cols-2' : 'space-y-3'}>
           {filteredEnvironments.map((env) => (
             <EnvironmentCardErrorBoundary key={env.env_type} envType={env.env_type} t={t}>
-              <EnvironmentCard
-                env={env}
-                detectedVersion={getDetectedForEnv(env.env_type)}
-                onInstall={(version, providerId) => handleInstallVersion(env.env_type, version, providerId)}
-                onUninstall={(version) => handleUninstallVersion(env.env_type, version)}
+                <EnvironmentCard
+                  env={env}
+                  detectedVersion={getProjectDetectedForEnv(env.env_type)}
+                  onInstall={(version, providerId) => handleInstallVersion(env.env_type, version, providerId)}
+                  onUninstall={(version) => handleUninstallVersion(env.env_type, version)}
                 onSetGlobal={(version) => handleSetGlobalVersion(env.env_type, version)}
                 onSetLocal={(version, projectPath) => handleSetLocalVersion(env.env_type, version, projectPath)}
                 loading={loading}
@@ -409,7 +453,7 @@ export default function EnvironmentsPage() {
       {currentDetailsEnv && (
         <EnvironmentDetailsPanel
           env={currentDetailsEnv}
-          detectedVersion={getDetectedForEnv(currentDetailsEnv.env_type)}
+          detectedVersion={getProjectDetectedForEnv(currentDetailsEnv.env_type)}
           open={detailsPanelOpen}
           onOpenChange={(open) => !open && closeDetailsPanel()}
           onSetGlobal={(version) => handleSetGlobalVersion(currentDetailsEnv.env_type, version)}

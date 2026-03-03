@@ -27,6 +27,7 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **List Installed** — View all WSL distributions and their status
 - **Online Search** — Browse available distributions for installation
 - **Install** — One-click install new distributions
+- **Install to Custom Location** — Install a selected distro into a user-specified host directory
 - **Uninstall** — Unregister and delete distributions
 - **Set Default** — Set the default distribution
 
@@ -47,15 +48,19 @@ CogniaLauncher provides comprehensive Windows Subsystem for Linux (WSL) manageme
 - **Terminate** — Terminate a specific distribution
 - **Shutdown WSL** — Shut down all running distributions
 - **View Running** — List currently running distributions
+- **Open in Explorer** — Open distribution filesystem in Windows Explorer
+- **Open in Terminal** — Open distribution directly in Windows Terminal (or fallback shell)
 
 ### Disk Management
 
 - **Mount Disk** — Mount a physical disk to WSL
 - **Unmount Disk** — Unmount a disk from WSL
 - **Disk Usage** — View distribution disk usage
+- **Total Disk Usage** — View aggregated usage across all installed distributions
 - **Migrate Distribution** — Use `wsl --manage <distro> --move <location>`
 - **Resize Virtual Disk** — Use `wsl --manage <distro> --resize <size>`
 - **Sparse Mode** — Enable/disable VHD auto-reclaim
+- **Clone Distribution** — Duplicate an existing distro via export/import flow
 
 ### Network & Users
 
@@ -101,8 +106,12 @@ The following operations show a confirmation dialog in the UI with admin privile
 | `wsl_export` | Export distribution |
 | `wsl_import` | Import distribution |
 | `wsl_import_in_place` | In-place import |
+| `wsl_install_with_location` | Install distro at custom location |
 | `wsl_update` | Update WSL |
 | `wsl_launch` | Launch distribution |
+| `wsl_open_in_explorer` | Open distro filesystem in Explorer |
+| `wsl_open_in_terminal` | Open distro in terminal |
+| `wsl_clone_distro` | Clone a distribution |
 | `wsl_mount` | Mount disk |
 | `wsl_unmount` | Unmount disk |
 | `wsl_get_ip` | Get IP address |
@@ -110,5 +119,7 @@ The following operations show a confirmation dialog in the UI with admin privile
 | `wsl_get_distro_config` | Read distribution configuration |
 | `wsl_set_distro_config` | Write distribution configuration |
 | `wsl_get_capabilities` | Get runtime command capabilities |
+| `wsl_get_version_info` | Get detailed WSL component versions |
+| `wsl_total_disk_usage` | Get total disk usage across distributions |
 | `wsl_move_distro` | Migrate distribution disk location |
 | `wsl_resize_distro` | Resize distribution virtual disk |

@@ -1,8 +1,12 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DownloadsPage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import type { DownloadTask, HistoryRecord, QueueStats } from '@/lib/stores/download';
+
+let mockGitHubDialogProps: { open: boolean; checkDiskSpace?: unknown } | null = null;
+let mockGitLabDialogProps: { open: boolean; checkDiskSpace?: unknown } | null = null;
+let mockCheckDiskSpace: jest.Mock;
 
 jest.mock('@/hooks/use-downloads', () => ({
   useDownloads: jest.fn(),
@@ -19,6 +23,33 @@ jest.mock('sonner', () => ({
   },
 }));
 
+jest.mock('@/components/downloads', () => {
+  const actual = jest.requireActual('@/components/downloads');
+  return {
+    ...actual,
+    GitHubDownloadDialog: ({
+      open,
+      checkDiskSpace,
+    }: {
+      open: boolean;
+      checkDiskSpace?: unknown;
+    }) => {
+      mockGitHubDialogProps = { open, checkDiskSpace };
+      return open ? <div data-testid="mock-github-dialog">mock-github-dialog</div> : null;
+    },
+    GitLabDownloadDialog: ({
+      open,
+      checkDiskSpace,
+    }: {
+      open: boolean;
+      checkDiskSpace?: unknown;
+    }) => {
+      mockGitLabDialogProps = { open, checkDiskSpace };
+      return open ? <div data-testid="mock-gitlab-dialog">mock-gitlab-dialog</div> : null;
+    },
+  };
+});
+
 const mockMessages = {
   en: {
     common: {
@@ -28,6 +59,8 @@ const mockMessages = {
       add: 'Add',
       save: 'Save',
       actions: 'Actions',
+      clear: 'Clear',
+      selected: 'selected',
     },
     downloads: {
       title: 'Downloads',
@@ -108,6 +141,9 @@ const mockMessages = {
         noResults: 'No downloads match your search',
         noResultsDesc: 'Try adjusting your search or filters',
         clearFilters: 'Clear Filters',
+      },
+      preflight: {
+        unknownSizeWarning: 'File size unknown, continuing with caution',
       },
       provider: 'Provider',
       providerPlaceholder: 'Optional: e.g., npm, github',
@@ -248,6 +284,7 @@ function setupMocks() {
     isTauri: jest.Mock;
   };
 
+  mockCheckDiskSpace = jest.fn();
   isTauri.mockReturnValue(true);
   useDownloads.mockReturnValue({
     tasks: [mockTask, mockTaskPaused],
@@ -283,7 +320,7 @@ function setupMocks() {
     clearHistory: jest.fn(),
     removeHistoryRecord: jest.fn(),
     getDiskSpace: jest.fn(),
-    checkDiskSpace: jest.fn(),
+    checkDiskSpace: mockCheckDiskSpace,
     getSpeedLimit: jest.fn(),
     getMaxConcurrent: jest.fn(),
     verifyFile: jest.fn(),
@@ -308,6 +345,8 @@ function setupMocks() {
 describe('DownloadsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGitHubDialogProps = null;
+    mockGitLabDialogProps = null;
     setupMocks();
   });
 
@@ -316,6 +355,23 @@ describe('DownloadsPage', () => {
 
     expect(screen.getByRole('heading', { name: /downloads/i })).toBeInTheDocument();
     expect(screen.getByText(/manage download tasks/i)).toBeInTheDocument();
+  });
+
+  it('uses non-runtime downloads hook mode on page', () => {
+    const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
+      useDownloads: jest.Mock;
+    };
+
+    renderWithProviders(<DownloadsPage />);
+
+    expect(useDownloads).toHaveBeenCalledWith({ enableRuntime: false });
+  });
+
+  it('passes checkDiskSpace down to provider dialogs', () => {
+    renderWithProviders(<DownloadsPage />);
+
+    expect(mockGitHubDialogProps?.checkDiskSpace).toBe(mockCheckDiskSpace);
+    expect(mockGitLabDialogProps?.checkDiskSpace).toBe(mockCheckDiskSpace);
   });
 
   it('renders queue task rows', () => {
@@ -418,5 +474,55 @@ describe('DownloadsPage', () => {
       expect(screen.getByText('file.zip')).toBeInTheDocument();
       expect(screen.getByText('other.zip')).toBeInTheDocument();
     });
+  });
+
+  it('opens add dialog and prefills URL from clipboard-download-url event', async () => {
+    renderWithProviders(<DownloadsPage />);
+
+    const url = 'https://example.com/from-clipboard.zip';
+    act(() => {
+      window.dispatchEvent(new CustomEvent('clipboard-download-url', { detail: url }));
+    });
+
+    await waitFor(() => {
+      const input = screen.getByLabelText('URL') as HTMLInputElement;
+      expect(input).toBeInTheDocument();
+      expect(input.value).toBe(url);
+    });
+  });
+
+  it('triggers batch actions from toolbar when tasks are selected', async () => {
+    const { useDownloads } = jest.requireMock('@/hooks/use-downloads') as {
+      useDownloads: jest.Mock;
+    };
+    const existing = useDownloads();
+    const batchPause = jest.fn().mockResolvedValue(1);
+    const batchResume = jest.fn().mockResolvedValue(1);
+    const batchCancel = jest.fn().mockResolvedValue(1);
+    const batchRemove = jest.fn().mockResolvedValue(1);
+
+    useDownloads.mockReturnValue({
+      ...existing,
+      selectedTaskIds: new Set(['task-1']),
+      batchPause,
+      batchResume,
+      batchCancel,
+      batchRemove,
+    });
+
+    renderWithProviders(<DownloadsPage />);
+
+    const selectionBar = screen.getByText('1 selected').closest('div');
+    expect(selectionBar).toBeTruthy();
+
+    await userEvent.click(within(selectionBar as HTMLElement).getByRole('button', { name: 'Pause' }));
+    await userEvent.click(within(selectionBar as HTMLElement).getByRole('button', { name: 'Resume' }));
+    await userEvent.click(within(selectionBar as HTMLElement).getByRole('button', { name: 'Cancel' }));
+    await userEvent.click(within(selectionBar as HTMLElement).getByRole('button', { name: 'Remove' }));
+
+    expect(batchPause).toHaveBeenCalled();
+    expect(batchResume).toHaveBeenCalled();
+    expect(batchCancel).toHaveBeenCalled();
+    expect(batchRemove).toHaveBeenCalled();
   });
 });

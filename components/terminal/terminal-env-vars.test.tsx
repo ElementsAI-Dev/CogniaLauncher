@@ -92,8 +92,8 @@ describe('TerminalEnvVars', () => {
       />,
     );
 
-    const copyButtons = screen.getAllByRole('button').filter(
-      (btn) => !btn.textContent?.includes('common.refresh'),
+    const copyButtons = screen.getAllByRole('button').filter((btn) =>
+      !!btn.querySelector('.lucide-copy'),
     );
     fireEvent.click(copyButtons[0]);
 
@@ -115,8 +115,8 @@ describe('TerminalEnvVars', () => {
       />,
     );
 
-    const copyButtons = screen.getAllByRole('button').filter(
-      (btn) => !btn.textContent?.includes('common.refresh'),
+    const copyButtons = screen.getAllByRole('button').filter((btn) =>
+      !!btn.querySelector('.lucide-copy'),
     );
     fireEvent.click(copyButtons[0]);
 
@@ -138,5 +138,16 @@ describe('TerminalEnvVars', () => {
 
     expect(screen.getByText('EDITOR')).toBeInTheDocument();
     expect(screen.queryByText('PATH')).not.toBeInTheDocument();
+  });
+
+  it('renders manage-envvars navigation link', () => {
+    render(
+      <TerminalEnvVars
+        shellEnvVars={mockVars}
+        onFetchShellEnvVars={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: /nav\.envvar/i })).toHaveAttribute('href', '/envvar');
   });
 });

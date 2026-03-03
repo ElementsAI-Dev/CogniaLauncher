@@ -103,6 +103,17 @@ describe('useDownloadStore', () => {
         expect(useDownloadStore.getState().tasks).toEqual(tasks);
       });
 
+      it('should clean stale selectedTaskIds when tasks refresh', () => {
+        useDownloadStore.getState().selectTask('task-1');
+        useDownloadStore.getState().selectTask('task-stale');
+
+        useDownloadStore.getState().setTasks([createMockTask({ id: 'task-1' })]);
+
+        const selected = useDownloadStore.getState().selectedTaskIds;
+        expect(selected.has('task-1')).toBe(true);
+        expect(selected.has('task-stale')).toBe(false);
+      });
+
       it('should replace existing tasks', () => {
         const oldTasks = [createMockTask({ id: 'old-task' })];
         const newTasks = [createMockTask({ id: 'new-task' })];

@@ -73,20 +73,16 @@ function NavSection({
   locale: string;
   defaultOpen: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [userOpen, setUserOpen] = useState(defaultOpen);
+  const open = defaultOpen || userOpen;
   const title = locale === 'en' ? (item.titleEn ?? item.title) : item.title;
-
-  // Keep section open when it becomes active via navigation
-  if (defaultOpen && !open) {
-    setOpen(true);
-  }
 
   if (!item.children || item.children.length === 0) {
     return <NavItem item={item} locale={locale} />;
   }
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={open} onOpenChange={setUserOpen}>
       <CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors">
         <span>{title}</span>
         <ChevronRight
@@ -161,7 +157,7 @@ export function DocsSidebar({ className, searchIndex }: DocsSidebarProps) {
   );
 }
 
-export function DocsMobileSidebar() {
+export function DocsMobileSidebar({ searchIndex }: { searchIndex?: DocSearchEntry[] }) {
   const { t, locale, isSectionActive } = useSidebarState();
   const [open, setOpen] = useState(false);
 
@@ -178,7 +174,7 @@ export function DocsMobileSidebar() {
           <SheetTitle>{t('docs.title')}</SheetTitle>
         </SheetHeader>
         <div className="px-2 pt-2">
-          <DocsSearch />
+          <DocsSearch searchIndex={searchIndex} />
         </div>
         <ScrollArea className="h-[calc(100vh-8rem)]">
           <div className="p-2" onClick={() => setOpen(false)}>

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { usePluginStore } from '@/lib/stores/plugin';
 import {
   pluginList,
@@ -29,6 +29,7 @@ import {
   pluginUpdateAll,
   pluginDispatchEvent,
   pluginGetUiAsset,
+  isTauri,
 } from '@/lib/tauri';
 import type {
   ScaffoldConfig,
@@ -38,33 +39,60 @@ import type {
   PluginHealth,
   PluginSettingDeclaration,
 } from '@/types/plugin';
-import { isTauri } from '@/lib/tauri';
 import { toast } from 'sonner';
 
 export function usePlugins() {
-  const store = usePluginStore();
+  const plugins = usePluginStore((state) => state.installedPlugins);
+  const pluginTools = usePluginStore((state) => state.pluginTools);
+  const loading = usePluginStore((state) => state.loading);
+  const error = usePluginStore((state) => state.error);
+  const healthMap = usePluginStore((state) => state.healthMap);
+  const pendingUpdates = usePluginStore((state) => state.pendingUpdates);
 
-  const fetchPlugins = useCallback(async () => {
-    if (!isTauri()) return;
-    store.setLoading(true);
-    store.setError(null);
-    try {
-      const [plugins, tools] = await Promise.all([
-        pluginList(),
-        pluginListAllTools(),
-      ]);
-      store.setInstalledPlugins(plugins);
-      store.setPluginTools(tools);
-    } catch (e) {
-      store.setError((e as Error).message ?? String(e));
-    } finally {
-      store.setLoading(false);
+  const setInstalledPlugins = usePluginStore((state) => state.setInstalledPlugins);
+  const setPluginTools = usePluginStore((state) => state.setPluginTools);
+  const setLoading = usePluginStore((state) => state.setLoading);
+  const setError = usePluginStore((state) => state.setError);
+  const updatePluginInStore = usePluginStore((state) => state.updatePlugin);
+  const removePlugin = usePluginStore((state) => state.removePlugin);
+  const setHealthMap = usePluginStore((state) => state.setHealthMap);
+  const setPluginHealth = usePluginStore((state) => state.setPluginHealth);
+  const setPendingUpdates = usePluginStore((state) => state.setPendingUpdates);
+
+  const fetchPluginsInFlightRef = useRef<Promise<void> | null>(null);
+
+  const fetchPlugins = useCallback(() => {
+    if (!isTauri()) return Promise.resolve();
+    if (fetchPluginsInFlightRef.current) {
+      return fetchPluginsInFlightRef.current;
     }
-  }, [store]);
+
+    const request = (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [installedPlugins, tools] = await Promise.all([
+          pluginList(),
+          pluginListAllTools(),
+        ]);
+        setInstalledPlugins(installedPlugins);
+        setPluginTools(tools);
+      } catch (e) {
+        setError((e as Error).message ?? String(e));
+      } finally {
+        setLoading(false);
+      }
+    })().finally(() => {
+      fetchPluginsInFlightRef.current = null;
+    });
+
+    fetchPluginsInFlightRef.current = request;
+    return request;
+  }, [setError, setInstalledPlugins, setLoading, setPluginTools]);
 
   const installPlugin = useCallback(async (source: string) => {
     if (!isTauri()) return;
-    store.setLoading(true);
+    setLoading(true);
     try {
       const pluginId = await pluginInstall(source);
       toast.success(`Plugin installed: ${pluginId}`);
@@ -73,15 +101,15 @@ export function usePlugins() {
     } catch (e) {
       const msg = (e as Error).message ?? String(e);
       toast.error(`Install failed: ${msg}`);
-      store.setError(msg);
+      setError(msg);
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store, fetchPlugins]);
+  }, [fetchPlugins, setError, setLoading]);
 
   const importLocalPlugin = useCallback(async (path: string) => {
     if (!isTauri()) return;
-    store.setLoading(true);
+    setLoading(true);
     try {
       const pluginId = await pluginImportLocal(path);
       toast.success(`Plugin imported: ${pluginId}`);
@@ -90,48 +118,48 @@ export function usePlugins() {
     } catch (e) {
       const msg = (e as Error).message ?? String(e);
       toast.error(`Import failed: ${msg}`);
-      store.setError(msg);
+      setError(msg);
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store, fetchPlugins]);
+  }, [fetchPlugins, setError, setLoading]);
 
   const uninstallPlugin = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
     try {
       await pluginUninstall(pluginId);
-      store.removePlugin(pluginId);
+      removePlugin(pluginId);
       toast.success(`Plugin uninstalled: ${pluginId}`);
     } catch (e) {
       toast.error(`Uninstall failed: ${(e as Error).message ?? String(e)}`);
     }
-  }, [store]);
+  }, [removePlugin]);
 
   const enablePlugin = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
     try {
       await pluginEnable(pluginId);
-      store.updatePlugin(pluginId, { enabled: true });
+      updatePluginInStore(pluginId, { enabled: true });
       // Refresh tools since enabling a plugin adds its tools
       const tools = await pluginListAllTools();
-      store.setPluginTools(tools);
+      setPluginTools(tools);
     } catch (e) {
       toast.error(`Enable failed: ${(e as Error).message ?? String(e)}`);
     }
-  }, [store]);
+  }, [setPluginTools, updatePluginInStore]);
 
   const disablePlugin = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
     try {
       await pluginDisable(pluginId);
-      store.updatePlugin(pluginId, { enabled: false });
+      updatePluginInStore(pluginId, { enabled: false });
       // Refresh tools since disabling removes its tools
       const tools = await pluginListAllTools();
-      store.setPluginTools(tools);
+      setPluginTools(tools);
     } catch (e) {
       toast.error(`Disable failed: ${(e as Error).message ?? String(e)}`);
     }
-  }, [store]);
+  }, [setPluginTools, updatePluginInStore]);
 
   const reloadPlugin = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
@@ -186,7 +214,7 @@ export function usePlugins() {
       params?: Record<string, string>,
     ): string => {
       if (!locales) return key;
-      const strings = locales[locale] ?? locales['en'] ?? {};
+      const strings = locales[locale] ?? locales.en ?? {};
       let text = strings[key] ?? key;
       if (params) {
         for (const [k, v] of Object.entries(params)) {
@@ -200,7 +228,7 @@ export function usePlugins() {
 
   const scaffoldPlugin = useCallback(async (config: ScaffoldConfig): Promise<ScaffoldResult | null> => {
     if (!isTauri()) return null;
-    store.setLoading(true);
+    setLoading(true);
     try {
       const result = await pluginScaffold(config);
       toast.success(`Plugin scaffolded at: ${result.pluginDir}`);
@@ -208,12 +236,12 @@ export function usePlugins() {
     } catch (e) {
       const msg = (e as Error).message ?? String(e);
       toast.error(`Scaffold failed: ${msg}`);
-      store.setError(msg);
+      setError(msg);
       return null;
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store]);
+  }, [setError, setLoading]);
 
   const validatePlugin = useCallback(async (path: string): Promise<ValidationResult | null> => {
     if (!isTauri()) return null;
@@ -237,7 +265,7 @@ export function usePlugins() {
 
   const updatePlugin = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
-    store.setLoading(true);
+    setLoading(true);
     try {
       await pluginUpdate(pluginId);
       toast.success(`Plugin updated: ${pluginId}`);
@@ -245,35 +273,35 @@ export function usePlugins() {
     } catch (e) {
       const msg = (e as Error).message ?? String(e);
       toast.error(`Update failed: ${msg}`);
-      store.setError(msg);
+      setError(msg);
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store, fetchPlugins]);
+  }, [fetchPlugins, setError, setLoading]);
 
   const getHealth = useCallback(async (pluginId: string): Promise<PluginHealth | null> => {
     if (!isTauri()) return null;
     try {
       const health = await pluginGetHealth(pluginId);
-      store.setPluginHealth(pluginId, health);
+      setPluginHealth(pluginId, health);
       return health;
     } catch (e) {
       toast.error(`Health check failed: ${(e as Error).message ?? String(e)}`);
       return null;
     }
-  }, [store]);
+  }, [setPluginHealth]);
 
   const getAllHealth = useCallback(async () => {
     if (!isTauri()) return null;
     try {
-      const healthMap = await pluginGetAllHealth();
-      store.setHealthMap(healthMap);
-      return healthMap;
+      const healthMapResult = await pluginGetAllHealth();
+      setHealthMap(healthMapResult);
+      return healthMapResult;
     } catch (e) {
       toast.error(`Health check failed: ${(e as Error).message ?? String(e)}`);
       return null;
     }
-  }, [store]);
+  }, [setHealthMap]);
 
   const resetHealth = useCallback(async (pluginId: string) => {
     if (!isTauri()) return;
@@ -330,22 +358,22 @@ export function usePlugins() {
 
   const checkAllUpdates = useCallback(async (): Promise<PluginUpdateInfo[]> => {
     if (!isTauri()) return [];
-    store.setLoading(true);
+    setLoading(true);
     try {
       const updates = await pluginCheckAllUpdates();
-      store.setPendingUpdates(updates);
+      setPendingUpdates(updates);
       return updates;
     } catch (e) {
       toast.error(`Update check failed: ${(e as Error).message ?? String(e)}`);
       return [];
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store]);
+  }, [setLoading, setPendingUpdates]);
 
   const updateAll = useCallback(async () => {
     if (!isTauri()) return;
-    store.setLoading(true);
+    setLoading(true);
     try {
       const results = await pluginUpdateAll();
       const successes = results.filter((r) => r.Ok).length;
@@ -355,14 +383,14 @@ export function usePlugins() {
       } else {
         toast.success(`All ${successes} plugins updated`);
       }
-      store.setPendingUpdates([]);
+      setPendingUpdates([]);
       await fetchPlugins();
     } catch (e) {
       toast.error(`Batch update failed: ${(e as Error).message ?? String(e)}`);
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store, fetchPlugins]);
+  }, [fetchPlugins, setLoading, setPendingUpdates]);
 
   const dispatchEvent = useCallback(async (eventName: string, payload: unknown = {}) => {
     if (!isTauri()) return;
@@ -383,10 +411,10 @@ export function usePlugins() {
   }, []);
 
   return {
-    plugins: store.installedPlugins,
-    pluginTools: store.pluginTools,
-    loading: store.loading,
-    error: store.error,
+    plugins,
+    pluginTools,
+    loading,
+    error,
     fetchPlugins,
     installPlugin,
     importLocalPlugin,
@@ -404,8 +432,8 @@ export function usePlugins() {
     validatePlugin,
     checkUpdate,
     updatePlugin,
-    healthMap: store.healthMap,
-    pendingUpdates: store.pendingUpdates,
+    healthMap,
+    pendingUpdates,
     getHealth,
     getAllHealth,
     resetHealth,

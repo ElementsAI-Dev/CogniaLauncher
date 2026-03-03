@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -28,6 +29,7 @@ import {
   Palette,
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
+import { toast } from 'sonner';
 import type { GitGlobalSettingsCardProps } from '@/types/git';
 
 interface SettingValue {
@@ -49,13 +51,22 @@ const SETTING_KEYS = [
 
 type SettingKey = typeof SETTING_KEYS[number];
 
+const SAFE_DEFAULT_SETTINGS: ReadonlyArray<readonly [SettingKey, string]> = [
+  ['init.defaultBranch', 'main'],
+  ['push.default', 'simple'],
+  ['push.autoSetupRemote', 'true'],
+  ['fetch.prune', 'true'],
+];
+
 export function GitGlobalSettingsCard({
   onGetConfigValue,
   onSetConfig,
+  onSetConfigIfUnset,
 }: GitGlobalSettingsCardProps) {
   const { t } = useLocale();
   const [settings, setSettings] = useState<Record<string, SettingValue>>({});
   const [initialized, setInitialized] = useState(false);
+  const [applyingDefaults, setApplyingDefaults] = useState(false);
   const initRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -113,6 +124,26 @@ export function GitGlobalSettingsCard({
   const handleToggle = useCallback(async (key: SettingKey, checked: boolean) => {
     await handleChange(key, checked ? 'true' : 'false');
   }, [handleChange]);
+
+  const handleApplySafeDefaults = useCallback(async () => {
+    if (!onSetConfigIfUnset) return;
+    setApplyingDefaults(true);
+    try {
+      let appliedCount = 0;
+      for (const [key, value] of SAFE_DEFAULT_SETTINGS) {
+        const wasSet = await onSetConfigIfUnset(key, value);
+        if (wasSet) {
+          appliedCount += 1;
+        }
+      }
+      await loadAllSettings();
+      toast.success(t('git.settings.safeDefaultsApplied', { count: String(appliedCount) }));
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setApplyingDefaults(false);
+    }
+  }, [loadAllSettings, onSetConfigIfUnset, t]);
 
   const renderTextSetting = (key: SettingKey, placeholder?: string, type?: string) => (
     <div className="grid grid-cols-[180px_1fr] items-center gap-3">
@@ -203,11 +234,24 @@ export function GitGlobalSettingsCard({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="gap-3">
         <CardTitle className="flex items-center gap-2">
           <Settings2 className="h-5 w-5" />
           {t('git.settings.title')}
         </CardTitle>
+        {onSetConfigIfUnset && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs self-start"
+            disabled={applyingDefaults}
+            onClick={() => {
+              void handleApplySafeDefaults();
+            }}
+          >
+            {t('git.settings.applySafeDefaults')}
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" defaultValue={['identity', 'commit', 'core']} className="w-full">

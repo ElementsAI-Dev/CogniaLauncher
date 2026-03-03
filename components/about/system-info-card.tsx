@@ -605,6 +605,24 @@ export function SystemInfoCard({
               unknownText={unknownText}
             />
             <InfoRow
+              label={t("about.cacheTotalSize")}
+              value={systemInfo?.cacheTotalSizeHuman}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.cacheInternalSize")}
+              value={systemInfo?.cacheInternalSizeHuman}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
+              label={t("about.cacheExternalSize")}
+              value={systemInfo?.cacheExternalSizeHuman}
+              isLoading={systemLoading}
+              unknownText={unknownText}
+            />
+            <InfoRow
               label={t("about.uptime")}
               value={
                 systemInfo?.uptime

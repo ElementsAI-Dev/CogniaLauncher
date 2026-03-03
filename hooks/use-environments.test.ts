@@ -13,30 +13,35 @@ const mockEnvListProviders = jest.fn();
 const mockEnvDetectAll = jest.fn();
 const mockEnvLoadSettings = jest.fn();
 const mockEnvSaveSettings = jest.fn();
+const mockEnvGetDetectionSources = jest.fn();
 const mockEnvInstallCancel = jest.fn();
 const mockEnvVerifyInstall = jest.fn();
 const mockEnvInstalledVersions = jest.fn();
 const mockEnvCurrentVersion = jest.fn();
 const mockEnvResolveAlias = jest.fn();
+const mockPluginDispatchEvent = jest.fn(() => Promise.resolve());
+const mockIsTauri = jest.fn(() => true);
 
 jest.mock('@/lib/tauri', () => ({
-  isTauri: jest.fn(() => true),
-  envList: (...args: unknown[]) => mockEnvList(...args),
-  envInstall: (...args: unknown[]) => mockEnvInstall(...args),
-  envUninstall: (...args: unknown[]) => mockEnvUninstall(...args),
-  envUseGlobal: (...args: unknown[]) => mockEnvUseGlobal(...args),
-  envUseLocal: (...args: unknown[]) => mockEnvUseLocal(...args),
-  envGet: (...args: unknown[]) => mockEnvGet(...args),
-  envAvailableVersions: (...args: unknown[]) => mockEnvAvailableVersions(...args),
-  envListProviders: (...args: unknown[]) => mockEnvListProviders(...args),
-  envDetectAll: (...args: unknown[]) => mockEnvDetectAll(...args),
-  envLoadSettings: (...args: unknown[]) => mockEnvLoadSettings(...args),
-  envSaveSettings: (...args: unknown[]) => mockEnvSaveSettings(...args),
-  envInstallCancel: (...args: unknown[]) => mockEnvInstallCancel(...args),
-  envVerifyInstall: (...args: unknown[]) => mockEnvVerifyInstall(...args),
-  envInstalledVersions: (...args: unknown[]) => mockEnvInstalledVersions(...args),
-  envCurrentVersion: (...args: unknown[]) => mockEnvCurrentVersion(...args),
-  envResolveAlias: (...args: unknown[]) => mockEnvResolveAlias(...args),
+  isTauri: (...args: Parameters<typeof mockIsTauri>) => mockIsTauri(...args),
+  envList: (...args: Parameters<typeof mockEnvList>) => mockEnvList(...args),
+  envInstall: (...args: Parameters<typeof mockEnvInstall>) => mockEnvInstall(...args),
+  envUninstall: (...args: Parameters<typeof mockEnvUninstall>) => mockEnvUninstall(...args),
+  envUseGlobal: (...args: Parameters<typeof mockEnvUseGlobal>) => mockEnvUseGlobal(...args),
+  envUseLocal: (...args: Parameters<typeof mockEnvUseLocal>) => mockEnvUseLocal(...args),
+  envGet: (...args: Parameters<typeof mockEnvGet>) => mockEnvGet(...args),
+  envAvailableVersions: (...args: Parameters<typeof mockEnvAvailableVersions>) => mockEnvAvailableVersions(...args),
+  envListProviders: (...args: Parameters<typeof mockEnvListProviders>) => mockEnvListProviders(...args),
+  envDetectAll: (...args: Parameters<typeof mockEnvDetectAll>) => mockEnvDetectAll(...args),
+  envLoadSettings: (...args: Parameters<typeof mockEnvLoadSettings>) => mockEnvLoadSettings(...args),
+  envSaveSettings: (...args: Parameters<typeof mockEnvSaveSettings>) => mockEnvSaveSettings(...args),
+  envGetDetectionSources: (...args: Parameters<typeof mockEnvGetDetectionSources>) => mockEnvGetDetectionSources(...args),
+  envInstallCancel: (...args: Parameters<typeof mockEnvInstallCancel>) => mockEnvInstallCancel(...args),
+  envVerifyInstall: (...args: Parameters<typeof mockEnvVerifyInstall>) => mockEnvVerifyInstall(...args),
+  envInstalledVersions: (...args: Parameters<typeof mockEnvInstalledVersions>) => mockEnvInstalledVersions(...args),
+  envCurrentVersion: (...args: Parameters<typeof mockEnvCurrentVersion>) => mockEnvCurrentVersion(...args),
+  envResolveAlias: (...args: Parameters<typeof mockEnvResolveAlias>) => mockEnvResolveAlias(...args),
+  pluginDispatchEvent: (...args: Parameters<typeof mockPluginDispatchEvent>) => mockPluginDispatchEvent(...args),
   listenEnvInstallProgress: jest.fn(() => Promise.resolve(() => {})),
 }));
 
@@ -44,13 +49,31 @@ jest.mock('@/lib/tauri', () => ({
 const mockStoreActions = {
   setLoading: jest.fn(),
   setError: jest.fn(),
-  setEnvironments: jest.fn(),
+  setEnvironments: jest.fn((envs: unknown) => {
+    mockStoreState.environments = (envs as typeof mockStoreState.environments) ?? [];
+  }),
   setEnvSettings: jest.fn(),
   updateEnvironment: jest.fn(),
   setDetectedVersions: jest.fn(),
-  setAvailableVersions: jest.fn(),
-  setAvailableProviders: jest.fn(),
+  setAvailableVersions: jest.fn((envType: unknown, versions: unknown) => {
+    if (typeof envType === 'string') {
+      mockStoreState.availableVersions = {
+        ...mockStoreState.availableVersions,
+        [envType]: versions,
+      };
+    }
+  }),
+  setAvailableProviders: jest.fn((providers: unknown) => {
+    mockStoreState.availableProviders = (providers as typeof mockStoreState.availableProviders) ?? [];
+  }),
   setCurrentInstallation: jest.fn(),
+  setLastEnvScanTimestamp: jest.fn(),
+  isScanFresh: jest.fn(() => false),
+  getEnvSettings: jest.fn(() => ({
+    autoSwitch: false,
+    envVariables: [],
+    detectionFiles: [],
+  })),
   openProgressDialog: jest.fn(),
   closeProgressDialog: jest.fn(),
   updateInstallationProgress: jest.fn(),
@@ -58,7 +81,7 @@ const mockStoreActions = {
 
 const mockStoreState = {
   environments: [],
-  availableProviders: [],
+  availableProviders: [] as Array<{ id: string; display_name: string; description: string; env_type: string }>,
   currentInstallation: null as { envType: string; version: string } | null,
   loading: false,
   error: null,
@@ -82,6 +105,16 @@ const mockStoreState = {
 // The hook uses both selector calls and a full store call
 // We need to handle both patterns
 jest.mock('@/lib/stores/environment', () => ({
+  getLogicalEnvType: (
+    providerEnvType: string,
+    providers?: Array<{ id: string; env_type: string }>,
+  ) => {
+    if (providers) {
+      const provider = providers.find((item) => item.id === providerEnvType);
+      if (provider) return provider.env_type;
+    }
+    return providerEnvType;
+  },
   useEnvironmentStore: Object.assign(
     jest.fn((selector?: (state: Record<string, unknown>) => unknown) => {
       const fullState = { ...mockStoreState, ...mockStoreActions };
@@ -106,6 +139,10 @@ jest.mock('@/lib/utils', () => ({
 describe('useEnvironments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(true);
+    mockEnvGetDetectionSources.mockResolvedValue([]);
+    mockEnvSaveSettings.mockResolvedValue(undefined);
+    mockEnvLoadSettings.mockResolvedValue(null);
     mockStoreState.environments = [];
     mockStoreState.availableProviders = [];
     mockStoreState.currentInstallation = null;
@@ -146,6 +183,28 @@ describe('useEnvironments', () => {
     expect(mockEnvList).toHaveBeenCalled();
     expect(mockStoreActions.setEnvironments).toHaveBeenCalledWith(envs);
     expect(mockStoreActions.setLoading).toHaveBeenCalledWith(true);
+  });
+
+  it('should short-circuit desktop-only calls in web mode', async () => {
+    mockIsTauri.mockReturnValue(false);
+    const { result } = renderHook(() => useEnvironments());
+
+    let envs;
+    let providers;
+    let detected;
+    await act(async () => {
+      envs = await result.current.fetchEnvironments();
+      providers = await result.current.fetchProviders();
+      detected = await result.current.detectVersions('/project');
+    });
+
+    expect(envs).toEqual([]);
+    expect(providers).toEqual([]);
+    expect(detected).toEqual([]);
+    expect(mockEnvList).not.toHaveBeenCalled();
+    expect(mockEnvListProviders).not.toHaveBeenCalled();
+    expect(mockEnvDetectAll).not.toHaveBeenCalled();
+    expect(mockStoreActions.setError).not.toHaveBeenCalled();
   });
 
   it('should handle fetch environments error', async () => {
@@ -218,6 +277,147 @@ describe('useEnvironments', () => {
     expect(returnedDetected).toEqual(detected);
   });
 
+  it('loads default detection settings from backend detection sources when no saved settings exist', async () => {
+    mockEnvLoadSettings.mockResolvedValue(null);
+    mockEnvGetDetectionSources.mockResolvedValue(['.nvmrc', '.node-version', '.tool-versions']);
+    const { result } = renderHook(() => useEnvironments());
+
+    let loaded;
+    await act(async () => {
+      loaded = await result.current.loadEnvSettings('node');
+    });
+
+    expect(mockEnvLoadSettings).toHaveBeenCalledWith('node');
+    expect(mockEnvGetDetectionSources).toHaveBeenCalledWith('node');
+    expect(loaded).toEqual({
+      autoSwitch: false,
+      envVariables: [],
+      detectionFiles: [
+        { fileName: '.nvmrc', enabled: true },
+        { fileName: '.node-version', enabled: true },
+        { fileName: '.tool-versions', enabled: false },
+      ],
+    });
+    expect(mockStoreActions.setEnvSettings).toHaveBeenCalledWith('node', loaded);
+  });
+
+  it('filters stale detection files against backend authoritative sources on load', async () => {
+    mockEnvLoadSettings.mockResolvedValue({
+      env_type: 'java',
+      env_variables: [],
+      detection_files: [
+        { file_name: '.java-version', enabled: true },
+        { file_name: 'build.gradle.kts (sourceCompatibility)', enabled: true },
+        { file_name: 'pom.xml (java.version)', enabled: true },
+      ],
+      auto_switch: true,
+    });
+    mockEnvGetDetectionSources.mockResolvedValue([
+      '.java-version',
+      '.sdkmanrc',
+      '.tool-versions',
+      'pom.xml (java.version)',
+      'build.gradle (sourceCompatibility)',
+      'mise.toml',
+    ]);
+    const { result } = renderHook(() => useEnvironments());
+
+    let loaded;
+    await act(async () => {
+      loaded = await result.current.loadEnvSettings('java');
+    });
+
+    expect(mockEnvGetDetectionSources).toHaveBeenCalledWith('java');
+    expect(loaded).toEqual({
+      autoSwitch: true,
+      envVariables: [],
+      detectionFiles: [
+        { fileName: '.java-version', enabled: true },
+        { fileName: '.sdkmanrc', enabled: false },
+        { fileName: '.tool-versions', enabled: false },
+        { fileName: 'pom.xml (java.version)', enabled: true },
+        { fileName: 'build.gradle (sourceCompatibility)', enabled: false },
+        { fileName: 'mise.toml', enabled: false },
+      ],
+    });
+  });
+
+  it('normalizes provider id to logical env type when saving env settings', async () => {
+    mockStoreState.availableProviders = [
+      { id: 'fnm', display_name: 'fnm', description: '', env_type: 'node' },
+    ];
+    const { result } = renderHook(() => useEnvironments());
+    const settings = {
+      autoSwitch: true,
+      envVariables: [],
+      detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+    };
+
+    await act(async () => {
+      await result.current.saveEnvSettings('fnm', settings);
+    });
+
+    expect(mockEnvSaveSettings).toHaveBeenCalledWith({
+      env_type: 'node',
+      env_variables: [],
+      detection_files: [{ file_name: '.nvmrc', enabled: true }],
+      auto_switch: true,
+    });
+    expect(mockStoreActions.setEnvSettings).toHaveBeenCalledWith('node', settings);
+  });
+
+  it('invalidates detected versions cache after saving env settings', async () => {
+    const detected = [{ env_type: 'node', version: '20.10.0', source: '.nvmrc', source_path: '/project/.nvmrc' }];
+    mockEnvDetectAll.mockResolvedValue(detected);
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await result.current.detectVersions('/project');
+      await result.current.saveEnvSettings('node', {
+        autoSwitch: true,
+        envVariables: [],
+        detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+      });
+      await result.current.detectVersions('/project');
+    });
+
+    expect(mockEnvDetectAll).toHaveBeenCalledTimes(2);
+  });
+
+  it('sanitizes unknown detection files before saving settings', async () => {
+    mockEnvGetDetectionSources.mockResolvedValue(['.nvmrc', '.node-version']);
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await result.current.saveEnvSettings('node', {
+        autoSwitch: true,
+        envVariables: [],
+        detectionFiles: [
+          { fileName: '.nvmrc', enabled: true },
+          { fileName: 'unknown-file', enabled: true },
+        ],
+      });
+    });
+
+    expect(mockEnvSaveSettings).toHaveBeenCalledWith({
+      env_type: 'node',
+      env_variables: [],
+      detection_files: [
+        { file_name: '.nvmrc', enabled: true },
+        { file_name: '.node-version', enabled: false },
+      ],
+      auto_switch: true,
+    });
+    expect(mockStoreActions.setEnvSettings).toHaveBeenCalledWith('node', {
+      autoSwitch: true,
+      envVariables: [],
+      detectionFiles: [
+        { fileName: '.nvmrc', enabled: true },
+        { fileName: '.node-version', enabled: false },
+      ],
+    });
+  });
+
   it('should fetch available versions', async () => {
     const versions = [
       { version: '20.10.0', release_date: '2023-11-22', deprecated: false, yanked: false },
@@ -230,8 +430,24 @@ describe('useEnvironments', () => {
       returnedVersions = await result.current.fetchAvailableVersions('node');
     });
 
-    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('node');
+    expect(mockEnvAvailableVersions).toHaveBeenCalledWith('node', undefined, undefined);
     expect(mockStoreActions.setAvailableVersions).toHaveBeenCalledWith('node', versions);
+    expect(returnedVersions).toEqual(versions);
+  });
+
+  it('should use cached available versions when not forced', async () => {
+    const versions = [
+      { version: '18.0.0', release_date: null, deprecated: false, yanked: false },
+    ];
+    mockStoreState.availableVersions = { node: versions };
+    const { result } = renderHook(() => useEnvironments());
+
+    let returnedVersions;
+    await act(async () => {
+      returnedVersions = await result.current.fetchAvailableVersions('node');
+    });
+
+    expect(mockEnvAvailableVersions).not.toHaveBeenCalled();
     expect(returnedVersions).toEqual(versions);
   });
 
@@ -248,6 +464,21 @@ describe('useEnvironments', () => {
 
     expect(mockEnvListProviders).toHaveBeenCalled();
     expect(mockStoreActions.setAvailableProviders).toHaveBeenCalledWith(providers);
+  });
+
+  it('should cache providers between calls', async () => {
+    const providers = [
+      { id: 'fnm', display_name: 'fnm', description: 'Fast Node Manager', env_type: 'node' },
+    ];
+    mockEnvListProviders.mockResolvedValue(providers);
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await result.current.fetchProviders();
+      await result.current.fetchProviders();
+    });
+
+    expect(mockEnvListProviders).toHaveBeenCalledTimes(1);
   });
 
   it('should verify install', async () => {
@@ -274,7 +505,7 @@ describe('useEnvironments', () => {
       returned = await result.current.getInstalledVersions('node');
     });
 
-    expect(mockEnvInstalledVersions).toHaveBeenCalledWith('node');
+    expect(mockEnvInstalledVersions).toHaveBeenCalledWith('node', undefined);
     expect(returned).toEqual(versions);
   });
 

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -39,6 +39,10 @@ jest.mock("@/components/providers/locale-provider", () => ({
       return translations[key] || key;
     },
   }),
+}));
+
+jest.mock("@/hooks/use-mobile", () => ({
+  useDebounce: (value: string) => value,
 }));
 
 describe("LogToolbar", () => {
@@ -106,7 +110,9 @@ describe("LogToolbar", () => {
       const searchInput = screen.getByPlaceholderText("Search logs...");
       await user.type(searchInput, "error");
 
-      expect(useLogStore.getState().filter.search).toBe("error");
+      await waitFor(() => {
+        expect(useLogStore.getState().filter.search).toBe("error");
+      });
     });
 
     it("clears search when input is cleared", async () => {
@@ -120,7 +126,9 @@ describe("LogToolbar", () => {
       const searchInput = screen.getByPlaceholderText("Search logs...");
       await user.clear(searchInput);
 
-      expect(useLogStore.getState().filter.search).toBe("");
+      await waitFor(() => {
+        expect(useLogStore.getState().filter.search).toBe("");
+      });
     });
   });
 
@@ -282,7 +290,7 @@ describe("LogToolbar", () => {
       const user = userEvent.setup();
       render(<LogToolbar />);
       await user.click(screen.getByText("Advanced"));
-      const regexSwitch = screen.getByRole("switch");
+      const regexSwitch = screen.getByLabelText("Regex");
       await user.click(regexSwitch);
       expect(useLogStore.getState().filter.useRegex).toBe(true);
     });

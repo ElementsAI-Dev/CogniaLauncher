@@ -29,9 +29,9 @@ describe("DetectedVersionBadge", () => {
 
   it("replaces underscores in source with spaces", () => {
     render(
-      <DetectedVersionBadge {...defaultProps} source="tool_versions" />,
+      <DetectedVersionBadge {...defaultProps} source="tool_versions_file" />,
     );
-    expect(screen.getByText(/tool versions/)).toBeInTheDocument();
+    expect(screen.getByText(/tool versions file/)).toBeInTheDocument();
   });
 
   it("renders Scan icon in full mode", () => {
@@ -46,5 +46,29 @@ describe("DetectedVersionBadge", () => {
     );
     // Compact mode should not have the Scan icon svg
     expect(container.querySelector("svg")).toBeNull();
+  });
+
+  it("shows mismatch warning when current version is not compatible", () => {
+    render(
+      <DetectedVersionBadge
+        {...defaultProps}
+        currentVersion="10.0.0"
+        version="1"
+      />,
+    );
+    expect(screen.getByText("environments.versionMismatch")).toBeInTheDocument();
+  });
+
+  it("does not show mismatch warning for v-prefix compatible versions", () => {
+    render(
+      <DetectedVersionBadge
+        {...defaultProps}
+        currentVersion="20.10.0"
+        version="v20.10.0"
+      />,
+    );
+    expect(
+      screen.queryByText("environments.versionMismatch"),
+    ).not.toBeInTheDocument();
   });
 });

@@ -92,4 +92,52 @@ describe('GitStashList', () => {
       expect(input).toHaveValue('');
     });
   });
+
+  it('calls onPop when pop button clicked', async () => {
+    const onPop = jest.fn().mockResolvedValue('popped');
+    render(<GitStashList stashes={stashes} onPop={onPop} />);
+
+    fireEvent.click(screen.getAllByTitle('git.stash.popSuccess')[0]);
+
+    await waitFor(() => {
+      expect(onPop).toHaveBeenCalledWith('stash@{0}');
+    });
+  });
+
+  it('calls onShowDiff when diff button clicked', async () => {
+    const onShowDiff = jest.fn().mockResolvedValue('diff');
+    render(<GitStashList stashes={stashes} onShowDiff={onShowDiff} />);
+
+    fireEvent.click(screen.getAllByTitle('git.stashAction.showDiff')[0]);
+
+    await waitFor(() => {
+      expect(onShowDiff).toHaveBeenCalledWith('stash@{0}');
+    });
+  });
+
+  it('calls onBranchFromStash when branch action confirmed', async () => {
+    const onBranchFromStash = jest.fn().mockResolvedValue('branched');
+    const promptSpy = jest.spyOn(window, 'prompt').mockReturnValue('feature/from-stash');
+    render(<GitStashList stashes={stashes} onBranchFromStash={onBranchFromStash} />);
+
+    fireEvent.click(screen.getAllByTitle('git.stashBranch.title')[0]);
+
+    await waitFor(() => {
+      expect(onBranchFromStash).toHaveBeenCalledWith('feature/from-stash', 'stash@{0}');
+    });
+
+    promptSpy.mockRestore();
+  });
+
+  it('calls onPushFiles with selected files', async () => {
+    const onPushFiles = jest.fn().mockResolvedValue('saved');
+    render(<GitStashList stashes={stashes} onSave={jest.fn().mockResolvedValue('saved')} onPushFiles={onPushFiles} />);
+
+    fireEvent.change(screen.getByPlaceholderText('file1.ts,file2.ts'), { target: { value: 'src/a.ts,src/b.ts' } });
+    fireEvent.click(screen.getByText('Stash Files'));
+
+    await waitFor(() => {
+      expect(onPushFiles).toHaveBeenCalledWith(['src/a.ts', 'src/b.ts'], undefined, false);
+    });
+  });
 });

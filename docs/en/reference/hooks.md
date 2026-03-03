@@ -1,6 +1,6 @@
 # React Hooks Reference
 
-CogniaLauncher includes 30 custom React Hooks that encapsulate business logic and Tauri API calls.
+CogniaLauncher includes 29 custom React Hooks that encapsulate business logic and Tauri API calls.
 
 ---
 
@@ -19,7 +19,6 @@ CogniaLauncher includes 30 custom React Hooks that encapsulate business logic an
 | `useEnvironments` | `use-environments.ts` | Environment list and version management |
 | `useLaunch` | `use-launch.ts` | Program launch and environment activation |
 | `useAutoVersion` | `use-auto-version.ts` | Auto version detection and switching |
-| `useVersionCache` | `use-version-cache.ts` | Version list caching |
 | `useRustup` | `use-rustup.ts` | Rustup toolchain/component/target management |
 
 ## Package Management

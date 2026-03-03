@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { CacheProviderIcon } from "@/components/provider-management/provider-icon";
 import {
   Card,
@@ -46,13 +46,10 @@ import {
   XCircle,
   FolderOpen,
 } from "lucide-react";
-import { toast } from "sonner";
-import { isTauri } from "@/lib/tauri";
-import type { ExternalCacheInfo } from "@/lib/tauri";
-import * as tauri from "@/lib/tauri";
 import { formatBytes } from "@/lib/utils";
-import { getCategoryLabel, groupCachesByCategory, CACHE_CATEGORY_ORDER } from "@/lib/constants/cache";
+import { getCategoryLabel } from "@/lib/constants/cache";
 import type { ExternalCacheSectionProps } from "@/types/cache";
+import { useExternalCache } from "@/hooks/use-external-cache";
 
 export function ExternalCacheSection({
   useTrash,
@@ -60,95 +57,31 @@ export function ExternalCacheSection({
 }: ExternalCacheSectionProps) {
   const { t } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [cleaning, setCleaning] = useState<string | null>(null);
-  const [cleaningAll, setCleaningAll] = useState(false);
-  const [externalCaches, setExternalCaches] = useState<ExternalCacheInfo[]>([]);
-
-  const fetchExternalCaches = useCallback(async () => {
-    if (!isTauri()) return;
-    setLoading(true);
-    try {
-      const caches = await tauri.discoverExternalCaches();
-      setExternalCaches(caches);
-    } catch (err) {
-      console.error("Failed to discover external caches:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    caches: externalCaches,
+    loading,
+    cleaning,
+    cleanableCount,
+    totalSize,
+    grouped,
+    orderedCategories,
+    fetchExternalCaches,
+    handleCleanSingle,
+    handleCleanAll,
+  } = useExternalCache({
+    t,
+    includePathInfos: false,
+    autoFetch: false,
+    useTrash,
+    setUseTrash,
+  });
 
   useEffect(() => {
     if (isOpen && externalCaches.length === 0) {
-      fetchExternalCaches();
+      void fetchExternalCaches();
     }
   }, [isOpen, externalCaches.length, fetchExternalCaches]);
-
-  const handleCleanCache = async (provider: string) => {
-    if (!isTauri()) return;
-    setCleaning(provider);
-    try {
-      const result = await tauri.cleanExternalCache(provider, useTrash);
-      if (result.success) {
-        toast.success(
-          t("cache.externalCleanSuccess", {
-            provider: result.displayName,
-            size: result.freedHuman,
-          }),
-        );
-      } else {
-        toast.error(
-          t("cache.externalCleanFailed", {
-            provider: result.displayName,
-            error: result.error ?? "Unknown error",
-          }),
-        );
-      }
-      await fetchExternalCaches();
-    } catch (err) {
-      toast.error(`${t("cache.externalCleanFailed")}: ${err}`);
-    } finally {
-      setCleaning(null);
-    }
-  };
-
-  const handleCleanAll = async () => {
-    if (!isTauri()) return;
-    setCleaningAll(true);
-    try {
-      const results = await tauri.cleanAllExternalCaches(useTrash);
-      const successCount = results.filter((r) => r.success).length;
-      const totalFreed = results.reduce((acc, r) => acc + r.freedBytes, 0);
-      const freedHuman = formatBytes(totalFreed);
-
-      if (successCount === results.length) {
-        toast.success(
-          t("cache.externalCleanAllSuccess", {
-            count: successCount,
-            size: freedHuman,
-          }),
-        );
-      } else {
-        toast.warning(
-          t("cache.externalCleanAllPartial", {
-            success: successCount,
-            total: results.length,
-          }),
-        );
-      }
-      await fetchExternalCaches();
-    } catch (err) {
-      toast.error(`${t("cache.externalCleanAllFailed")}: ${err}`);
-    } finally {
-      setCleaningAll(false);
-    }
-  };
-
-  const totalExternalSize = externalCaches.reduce((acc, c) => acc + c.size, 0);
-  const canCleanCount = externalCaches.filter((c) => c.canClean).length;
-
-  const groupedCaches = groupCachesByCategory(externalCaches, "package_manager");
-  const categoryOrder = CACHE_CATEGORY_ORDER;
+  const cleaningAll = cleaning === "all";
 
   return (
     <Card>
@@ -163,7 +96,7 @@ export function ExternalCacheSection({
                 </CardTitle>
                 {externalCaches.length > 0 && (
                   <Badge variant="secondary" className="ml-2">
-                    {formatBytes(totalExternalSize)}
+                    {formatBytes(totalSize)}
                   </Badge>
                 )}
               </div>
@@ -207,13 +140,13 @@ export function ExternalCacheSection({
                   </TooltipTrigger>
                   <TooltipContent>{t("common.refresh")}</TooltipContent>
                 </Tooltip>
-                {canCleanCount > 0 && (
+                {cleanableCount > 0 && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         variant="destructive"
                         size="sm"
-                        disabled={cleaningAll || canCleanCount === 0}
+                        disabled={cleaningAll || cleanableCount === 0}
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
                         {cleaningAll
@@ -228,7 +161,7 @@ export function ExternalCacheSection({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           {t("cache.externalCleanAllDesc", {
-                            count: canCleanCount,
+                            count: cleanableCount,
                           })}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -267,14 +200,13 @@ export function ExternalCacheSection({
               </Empty>
             ) : (
               <div className="space-y-4">
-                {categoryOrder
-                  .filter((cat) => groupedCaches[cat]?.length > 0)
+                {orderedCategories
                   .map((cat) => (
                     <div key={cat} className="space-y-2">
                       <h4 className="text-sm font-medium text-muted-foreground px-1">
                         {getCategoryLabel(cat, t)}
                       </h4>
-                      {groupedCaches[cat].map((cache) => (
+                      {grouped[cat].map((cache) => (
                         <div
                           key={cache.provider}
                           className="flex items-center justify-between p-3 rounded-lg border bg-card"
@@ -316,7 +248,7 @@ export function ExternalCacheSection({
                                     cleaning === cache.provider
                                   }
                                   onClick={() =>
-                                    handleCleanCache(cache.provider)
+                                    handleCleanSingle(cache.provider)
                                   }
                                 >
                                   <Trash2 className="h-4 w-4 mr-1" />

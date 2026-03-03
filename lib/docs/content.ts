@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { extractHeadingTexts } from './headings';
 
 const DOCS_ROOT = path.join(process.cwd(), 'docs');
 
@@ -58,21 +59,6 @@ export interface DocSearchEntry {
   excerptEn: string;
 }
 
-function extractHeadingsFromMarkdown(content: string): string[] {
-  const headings: string[] = [];
-  const lines = content.split('\n');
-  let inCode = false;
-  for (const line of lines) {
-    if (line.startsWith('```')) { inCode = !inCode; continue; }
-    if (inCode) continue;
-    const match = line.match(/^#{1,4}\s+(.+)$/);
-    if (match) {
-      headings.push(match[1].replace(/\*\*(.+?)\*\*/g, '$1').replace(/`(.+?)`/g, '$1').trim());
-    }
-  }
-  return headings;
-}
-
 function extractExcerpt(content: string, maxLen = 200): string {
   const lines = content.split('\n');
   let inCode = false;
@@ -100,8 +86,8 @@ export function buildSearchIndex(): DocSearchEntry[] {
     const en = getDocContent(slugArr, 'en');
     entries.push({
       slug,
-      headingsZh: zh ? extractHeadingsFromMarkdown(zh) : [],
-      headingsEn: en ? extractHeadingsFromMarkdown(en) : [],
+      headingsZh: zh ? extractHeadingTexts(zh, { minLevel: 1, maxLevel: 4 }) : [],
+      headingsEn: en ? extractHeadingTexts(en, { minLevel: 1, maxLevel: 4 }) : [],
       excerptZh: zh ? extractExcerpt(zh) : '',
       excerptEn: en ? extractExcerpt(en) : '',
     });

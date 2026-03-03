@@ -2,6 +2,10 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Scan, AlertTriangle } from "lucide-react";
+import {
+  formatDetectionSource,
+  isDetectedVersionCompatible,
+} from "@/lib/environment-detection";
 
 interface DetectedVersionBadgeProps {
   version: string;
@@ -18,8 +22,10 @@ export function DetectedVersionBadge({
   t,
   compact = false,
 }: DetectedVersionBadgeProps) {
-  const formattedSource = source.replace("_", " ");
-  const isMismatch = currentVersion != null && currentVersion !== version && !currentVersion.startsWith(version);
+  const formattedSource = formatDetectionSource(source);
+  const isMismatch =
+    currentVersion != null &&
+    !isDetectedVersionCompatible(currentVersion, version);
 
   if (compact) {
     return (

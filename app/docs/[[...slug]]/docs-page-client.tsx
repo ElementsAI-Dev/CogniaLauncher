@@ -15,6 +15,7 @@ import {
 } from '@/components/docs';
 import { getDocTitle, getAdjacentDocs, arrayToSlug } from '@/lib/docs/navigation';
 import { estimateReadingTime } from '@/lib/docs/reading-time';
+import { extractHeadings } from '@/lib/docs/headings';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Clock } from 'lucide-react';
 import type { DocSearchEntry } from '@/lib/docs/content';
@@ -40,6 +41,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
   const content = (locale === 'en' ? (contentEn ?? contentZh) : (contentZh ?? contentEn)) ?? '';
 
   const readingTime = useMemo(() => estimateReadingTime(content), [content]);
+  const headings = useMemo(() => extractHeadings(content), [content]);
 
   return (
     <div className="flex h-full">
@@ -50,7 +52,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
           <main className="p-6 max-w-4xl mx-auto">
             <div className="flex items-center justify-between gap-2 mb-2">
               <DocsBreadcrumb slug={currentSlug} className="mb-0" />
-              <DocsMobileSidebar />
+              <DocsMobileSidebar searchIndex={searchIndex} />
             </div>
             <PageHeader
               title={title}
@@ -62,7 +64,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
                 </span>
               }
             />
-            <DocsToc content={content} mode="mobile" />
+            <DocsToc content={content} headings={headings} mode="mobile" />
             <div className="mt-6">
               <MarkdownRenderer content={content} basePath={basePath} />
             </div>
@@ -71,7 +73,7 @@ export function DocsPageClient({ contentZh, contentEn, slug, basePath, searchInd
           </main>
         </ScrollArea>
       </div>
-      <DocsToc content={content} mode="desktop" className="border-l border-border pr-4 pt-6" />
+      <DocsToc content={content} headings={headings} mode="desktop" className="border-l border-border pr-4 pt-6" />
     </div>
   );
 }

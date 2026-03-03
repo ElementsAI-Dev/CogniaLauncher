@@ -186,6 +186,17 @@ import { cognia } from '@cognia/plugin-sdk';
 | `emitStr(name, message)` | none | Emit string event |
 | `getPluginId()` | none | Get plugin ID |
 
+### cognia.ui (declarative)
+
+`cognia.ui.render(blocks)` returns JSON payload for `ui_mode = "declarative"` tools.
+
+| Function | Description |
+|----------|-------------|
+| `text`, `heading`, `markdown`, `divider`, `alert`, `badge`, `progress`, `code`, `table`, `keyValue` | Display blocks |
+| `actions`, `button`, `group` | Interactive/layout blocks |
+| `tabs`, `accordion`, `copyButton`, `fileInput` | Extended interactive blocks |
+| `renderWithState`, `parseAction` | Stateful rendering and action parsing |
+
 ## Rust SDK Comparison
 
 This TypeScript SDK mirrors the Rust SDK (`plugin-sdk/`) 1:1:

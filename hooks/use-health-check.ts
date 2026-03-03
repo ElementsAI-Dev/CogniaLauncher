@@ -16,7 +16,7 @@ interface UseHealthCheckReturn {
   loading: boolean;
   error: string | null;
   progress: HealthCheckProgress | null;
-  checkAll: () => Promise<void>;
+  checkAll: (options?: { force?: boolean }) => Promise<void>;
   checkEnvironment: (envType: string) => Promise<void>;
   getStatusColor: (status: HealthStatus) => string;
   getStatusIcon: (status: HealthStatus) => string;
@@ -28,8 +28,19 @@ interface UseHealthCheckReturn {
  * Uses Zustand store for persistence across navigations.
  */
 export function useHealthCheck(): UseHealthCheckReturn {
-  const store = useHealthCheckStore();
+  const systemHealth = useHealthCheckStore((state) => state.systemHealth);
+  const environmentHealth = useHealthCheckStore((state) => state.environmentHealth);
+  const loading = useHealthCheckStore((state) => state.loading);
+  const error = useHealthCheckStore((state) => state.error);
+  const progress = useHealthCheckStore((state) => state.progress);
+  const clearResults = useHealthCheckStore((state) => state.clearResults);
+  const setSystemHealth = useHealthCheckStore((state) => state.setSystemHealth);
+  const setEnvironmentHealth = useHealthCheckStore((state) => state.setEnvironmentHealth);
+  const setLoading = useHealthCheckStore((state) => state.setLoading);
+  const setError = useHealthCheckStore((state) => state.setError);
+  const setProgress = useHealthCheckStore((state) => state.setProgress);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const checkAllInFlightRef = useRef<Promise<void> | null>(null);
 
   // Listen for health check progress events
   useEffect(() => {
@@ -61,45 +72,62 @@ export function useHealthCheck(): UseHealthCheckReturn {
     };
   }, []);
 
-  const checkAll = useCallback(async () => {
+  const checkAll = useCallback((options?: { force?: boolean }) => {
     if (!isTauri()) {
-      store.setError('Health check is only available in desktop app');
-      return;
+      setError('Health check is only available in desktop app');
+      return Promise.resolve();
     }
 
-    store.setLoading(true);
-    store.setError(null);
-    store.setProgress(null);
+    const force = options?.force ?? false;
+    const state = useHealthCheckStore.getState();
 
-    try {
-      const result = await healthCheckAll();
-      store.setSystemHealth(result);
-    } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      store.setLoading(false);
-      store.setProgress(null);
+    if (!force && state.systemHealth && !state.isStale()) {
+      return Promise.resolve();
     }
-  }, [store]);
+
+    if (checkAllInFlightRef.current) {
+      return checkAllInFlightRef.current;
+    }
+
+    const request = (async () => {
+      setLoading(true);
+      setError(null);
+      setProgress(null);
+
+      try {
+        const result = await healthCheckAll();
+        setSystemHealth(result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+        setProgress(null);
+        checkAllInFlightRef.current = null;
+      }
+    })();
+
+    checkAllInFlightRef.current = request;
+    return request;
+  }, [setError, setLoading, setProgress, setSystemHealth]);
 
   const checkEnvironment = useCallback(async (envType: string) => {
     if (!isTauri()) {
-      store.setError('Health check is only available in desktop app');
+      setError('Health check is only available in desktop app');
       return;
     }
 
-    store.setLoading(true);
-    store.setError(null);
+    setLoading(true);
+    setError(null);
 
     try {
       const result = await healthCheckEnvironment(envType);
-      store.setEnvironmentHealth(envType, result);
+      setEnvironmentHealth(envType, result);
     } catch (err) {
-      store.setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
-      store.setLoading(false);
+      setLoading(false);
     }
-  }, [store]);
+  }, [setEnvironmentHealth, setError, setLoading]);
 
   const getStatusIcon = useCallback((status: HealthStatus): string => {
     switch (status) {
@@ -116,15 +144,15 @@ export function useHealthCheck(): UseHealthCheckReturn {
   }, []);
 
   return {
-    systemHealth: store.systemHealth,
-    environmentHealth: store.environmentHealth,
-    loading: store.loading,
-    error: store.error,
-    progress: store.progress,
+    systemHealth,
+    environmentHealth,
+    loading,
+    error,
+    progress,
     checkAll,
     checkEnvironment,
     getStatusColor,
     getStatusIcon,
-    clearResults: store.clearResults,
+    clearResults,
   };
 }

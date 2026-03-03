@@ -14,102 +14,131 @@ describe('GitRepoActionBar', () => {
     repoPath: '/test/repo',
     currentBranch: 'main',
     loading: false,
+    remotes: [
+      { name: 'origin', fetchUrl: 'https://example.com/repo.git', pushUrl: 'https://example.com/repo.git' },
+    ],
   };
 
-  it('renders push button when onPush provided', () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    render(<GitRepoActionBar {...baseProps} onPush={onPush} />);
+  it('renders core action buttons', () => {
+    render(
+      <GitRepoActionBar
+        {...baseProps}
+        onPush={jest.fn().mockResolvedValue('ok')}
+        onPull={jest.fn().mockResolvedValue('ok')}
+        onFetch={jest.fn().mockResolvedValue('ok')}
+        onClean={jest.fn().mockResolvedValue('ok')}
+      />,
+    );
+
     expect(screen.getByText('git.actions.push')).toBeInTheDocument();
-  });
-
-  it('renders pull button when onPull provided', () => {
-    const onPull = jest.fn().mockResolvedValue('pulled');
-    render(<GitRepoActionBar {...baseProps} onPull={onPull} />);
     expect(screen.getByText('git.actions.pull')).toBeInTheDocument();
-  });
-
-  it('renders fetch button when onFetch provided', () => {
-    const onFetch = jest.fn().mockResolvedValue('fetched');
-    render(<GitRepoActionBar {...baseProps} onFetch={onFetch} />);
     expect(screen.getByText('git.actions.fetch')).toBeInTheDocument();
-  });
-
-  it('renders clean button when onClean provided', () => {
-    const onClean = jest.fn().mockResolvedValue('cleaned');
-    render(<GitRepoActionBar {...baseProps} onClean={onClean} />);
     expect(screen.getByText('git.actions.clean')).toBeInTheDocument();
   });
 
-  it('renders refresh button when onRefresh provided', () => {
-    const onRefresh = jest.fn();
-    render(<GitRepoActionBar {...baseProps} onRefresh={onRefresh} />);
-    expect(screen.getByText('git.refresh')).toBeInTheDocument();
-  });
-
-  it('does not render buttons when callbacks not provided', () => {
-    render(<GitRepoActionBar repoPath="/test/repo" />);
-    expect(screen.queryByText('git.actions.push')).not.toBeInTheDocument();
-    expect(screen.queryByText('git.actions.pull')).not.toBeInTheDocument();
-    expect(screen.queryByText('git.actions.fetch')).not.toBeInTheDocument();
-  });
-
-  it('disables buttons when repoPath is null', () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    render(<GitRepoActionBar repoPath={null} onPush={onPush} />);
+  it('disables actions when repoPath is null', () => {
+    render(<GitRepoActionBar repoPath={null} onPush={jest.fn().mockResolvedValue('ok')} />);
     expect(screen.getByText('git.actions.push').closest('button')).toBeDisabled();
   });
 
-  it('disables buttons when loading', () => {
+  it('passes push options through', async () => {
     const onPush = jest.fn().mockResolvedValue('pushed');
-    render(<GitRepoActionBar {...baseProps} loading={true} onPush={onPush} />);
-    expect(screen.getByText('git.actions.push').closest('button')).toBeDisabled();
-  });
+    render(<GitRepoActionBar {...baseProps} onPush={onPush} />);
 
-  it('calls onPush when push button clicked', async () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    const onRefresh = jest.fn();
-    render(<GitRepoActionBar {...baseProps} onPush={onPush} onRefresh={onRefresh} />);
+    fireEvent.change(screen.getByPlaceholderText('remote'), { target: { value: 'upstream' } });
+    fireEvent.change(screen.getByPlaceholderText('branch'), { target: { value: 'release/1.0' } });
+    fireEvent.click(screen.getByLabelText('push --force'));
+    fireEvent.click(screen.getByLabelText('git.pushAction.forceLease'));
+    fireEvent.click(screen.getByLabelText('push --set-upstream'));
     fireEvent.click(screen.getByText('git.actions.push'));
+
     await waitFor(() => {
-      expect(onPush).toHaveBeenCalled();
+      expect(onPush).toHaveBeenCalledWith('upstream', 'release/1.0', true, true, true);
     });
   });
 
-  it('calls onRefresh after successful action', async () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    const onRefresh = jest.fn();
-    render(<GitRepoActionBar {...baseProps} onPush={onPush} onRefresh={onRefresh} />);
-    fireEvent.click(screen.getByText('git.actions.push'));
-    await waitFor(() => {
-      expect(onRefresh).toHaveBeenCalled();
-    });
-  });
-
-  it('shows ahead count badge on push button', () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    render(<GitRepoActionBar {...baseProps} onPush={onPush} aheadBehind={{ ahead: 5, behind: 0 }} />);
-    expect(screen.getByText('5')).toBeInTheDocument();
-  });
-
-  it('shows behind count badge on pull button', () => {
+  it('passes pull options through', async () => {
     const onPull = jest.fn().mockResolvedValue('pulled');
-    render(<GitRepoActionBar {...baseProps} onPull={onPull} aheadBehind={{ ahead: 0, behind: 3 }} />);
-    expect(screen.getByText('3')).toBeInTheDocument();
+    render(<GitRepoActionBar {...baseProps} onPull={onPull} />);
+
+    fireEvent.change(screen.getByPlaceholderText('remote'), { target: { value: 'origin' } });
+    fireEvent.change(screen.getByPlaceholderText('branch'), { target: { value: 'main' } });
+    fireEvent.click(screen.getByLabelText('git.pullAction.rebase'));
+    fireEvent.click(screen.getByLabelText('pull --autostash'));
+    fireEvent.click(screen.getByText('git.actions.pull'));
+
+    await waitFor(() => {
+      expect(onPull).toHaveBeenCalledWith('origin', 'main', true, true);
+    });
   });
 
-  it('does not show ahead badge when ahead is 0', () => {
-    const onPush = jest.fn().mockResolvedValue('pushed');
-    const { container } = render(<GitRepoActionBar {...baseProps} onPush={onPush} aheadBehind={{ ahead: 0, behind: 0 }} />);
-    // Only the push button text should be there, no extra badge content
-    const badges = container.querySelectorAll('[class*="text-\\[10px\\]"]');
-    expect(badges.length).toBe(0);
+  it('passes fetch options through', async () => {
+    const onFetch = jest.fn().mockResolvedValue('fetched');
+    render(<GitRepoActionBar {...baseProps} onFetch={onFetch} />);
+
+    fireEvent.click(screen.getByLabelText('fetch --prune'));
+    fireEvent.click(screen.getByLabelText('fetch --all'));
+    fireEvent.click(screen.getByText('git.actions.fetch'));
+
+    await waitFor(() => {
+      expect(onFetch).toHaveBeenCalledWith(undefined, true, true);
+    });
+  });
+
+  it('passes clean directories flag through', async () => {
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+    const onClean = jest.fn().mockResolvedValue('cleaned');
+    const onCleanPreview = jest.fn().mockResolvedValue(['tmp/file.tmp']);
+    render(
+      <GitRepoActionBar
+        {...baseProps}
+        onClean={onClean}
+        onCleanPreview={onCleanPreview}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('clean -d'));
+    fireEvent.click(screen.getByText('git.actions.clean'));
+
+    await waitFor(() => {
+      expect(onCleanPreview).toHaveBeenCalledWith(true);
+      expect(onClean).toHaveBeenCalledWith(true);
+    });
+    confirmSpy.mockRestore();
+  });
+
+  it('syncs remote and branch inputs when repository context changes', async () => {
+    const { rerender } = render(<GitRepoActionBar {...baseProps} onPush={jest.fn().mockResolvedValue('ok')} />);
+
+    const remoteInput = screen.getByPlaceholderText('remote') as HTMLInputElement;
+    const branchInput = screen.getByPlaceholderText('branch') as HTMLInputElement;
+
+    expect(remoteInput.value).toBe('origin');
+    expect(branchInput.value).toBe('main');
+
+    rerender(
+      <GitRepoActionBar
+        repoPath="/another/repo"
+        currentBranch="develop"
+        loading={false}
+        remotes={[{ name: 'upstream', fetchUrl: 'https://example.com/upstream.git', pushUrl: 'https://example.com/upstream.git' }]}
+        onPush={jest.fn().mockResolvedValue('ok')}
+      />,
+    );
+
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText('remote') as HTMLInputElement).value).toBe('upstream');
+      expect((screen.getByPlaceholderText('branch') as HTMLInputElement).value).toBe('develop');
+    });
   });
 
   it('shows toast error when action fails', async () => {
     const { toast } = jest.requireMock('sonner');
     const onPush = jest.fn().mockRejectedValue(new Error('push failed'));
     render(<GitRepoActionBar {...baseProps} onPush={onPush} />);
+
     fireEvent.click(screen.getByText('git.actions.push'));
+
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled();
     });

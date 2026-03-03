@@ -10,6 +10,7 @@ pub mod orchestrator;
 pub mod profiles;
 pub mod project_env_detect;
 pub mod shim;
+pub mod system_info;
 pub mod terminal;
 
 pub use batch::*;
@@ -22,3 +23,4 @@ pub use orchestrator::*;
 pub use profiles::*;
 pub use project_env_detect::*;
 pub use shim::*;
+pub use system_info::*;

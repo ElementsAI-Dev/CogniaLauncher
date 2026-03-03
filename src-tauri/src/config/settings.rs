@@ -1,5 +1,6 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
+use crate::tray::{TrayClickBehavior, TrayMenuItemId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,11 +16,71 @@ pub struct Settings {
     pub security: SecuritySettings,
     pub provider_settings: GlobalProviderSettings,
     pub appearance: AppearanceSettings,
+    pub updates: UpdateSettings,
+    pub tray: TraySettings,
     pub terminal: TerminalSettings,
     pub log: LogSettings,
     pub backup: BackupSettings,
     pub plugin: PluginSettings,
     pub startup: StartupSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UpdateSettings {
+    /// Check for application updates when the app starts
+    pub check_on_start: bool,
+    /// Automatically download and install updates
+    pub auto_install: bool,
+    /// Show notifications when updates are available
+    pub notify: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self {
+            check_on_start: true,
+            auto_install: false,
+            notify: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TraySettings {
+    /// Hide to tray instead of closing the window
+    pub minimize_to_tray: bool,
+    /// Start the app hidden in the tray
+    pub start_minimized: bool,
+    /// Show desktop notifications from tray actions
+    pub show_notifications: bool,
+    /// Left-click behavior for tray icon
+    pub click_behavior: TrayClickBehavior,
+    /// Ordered list of tray menu items
+    pub menu_items: Vec<TrayMenuItemId>,
+}
+
+impl Default for TraySettings {
+    fn default() -> Self {
+        Self {
+            minimize_to_tray: true,
+            start_minimized: false,
+            show_notifications: true,
+            click_behavior: TrayClickBehavior::ToggleWindow,
+            menu_items: vec![
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::QuickNav,
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::CheckUpdates,
+                TrayMenuItemId::OpenLogs,
+                TrayMenuItemId::AlwaysOnTop,
+                TrayMenuItemId::Autostart,
+                TrayMenuItemId::Quit,
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +116,8 @@ pub struct PluginSettings {
     pub auto_load_on_startup: bool,
     pub max_execution_timeout_secs: u64,
     pub sandbox_fs: bool,
+    /// Permission enforcement mode for plugins: "compat" or "strict".
+    pub permission_enforcement_mode: String,
 }
 
 impl Default for PluginSettings {
@@ -63,6 +126,7 @@ impl Default for PluginSettings {
             auto_load_on_startup: true,
             max_execution_timeout_secs: 30,
             sandbox_fs: true,
+            permission_enforcement_mode: "compat".to_string(),
         }
     }
 }
@@ -396,6 +460,53 @@ impl Settings {
         self.get_root_dir().join("state")
     }
 
+    fn parse_tray_menu_items(value: &str) -> CogniaResult<Vec<TrayMenuItemId>> {
+        fn parse_item(item: &str) -> CogniaResult<TrayMenuItemId> {
+            match item {
+                "show_hide" => Ok(TrayMenuItemId::ShowHide),
+                "quick_nav" => Ok(TrayMenuItemId::QuickNav),
+                "downloads" => Ok(TrayMenuItemId::Downloads),
+                "settings" => Ok(TrayMenuItemId::Settings),
+                "check_updates" => Ok(TrayMenuItemId::CheckUpdates),
+                "open_logs" => Ok(TrayMenuItemId::OpenLogs),
+                "always_on_top" => Ok(TrayMenuItemId::AlwaysOnTop),
+                "autostart" => Ok(TrayMenuItemId::Autostart),
+                "quit" => Ok(TrayMenuItemId::Quit),
+                _ => Err(CogniaError::Config(format!(
+                    "Invalid tray menu item id: {}",
+                    item
+                ))),
+            }
+        }
+
+        let mut items = if value.trim().starts_with('[') {
+            let raw: Vec<String> = serde_json::from_str(value)
+                .map_err(|_| CogniaError::Config("Invalid tray menu_items JSON array".into()))?;
+            let mut parsed = Vec::with_capacity(raw.len());
+            for item in raw {
+                parsed.push(parse_item(item.trim())?);
+            }
+            parsed
+        } else {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Vec::new()
+            } else {
+                let mut parsed = Vec::new();
+                for item in trimmed.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                    parsed.push(parse_item(item)?);
+                }
+                parsed
+            }
+        };
+
+        if !items.contains(&TrayMenuItemId::Quit) {
+            items.push(TrayMenuItemId::Quit);
+        }
+
+        Ok(items)
+    }
+
     pub fn get_value(&self, key: &str) -> Option<String> {
         let parts: Vec<&str> = key.split('.').collect();
 
@@ -482,6 +593,23 @@ impl Settings {
             ["appearance", "interface_density"] => Some(self.appearance.interface_density.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
+            ["updates", "check_on_start"] => Some(self.updates.check_on_start.to_string()),
+            ["updates", "auto_install"] => Some(self.updates.auto_install.to_string()),
+            ["updates", "notify"] => Some(self.updates.notify.to_string()),
+            ["tray", "minimize_to_tray"] => Some(self.tray.minimize_to_tray.to_string()),
+            ["tray", "start_minimized"] => Some(self.tray.start_minimized.to_string()),
+            ["tray", "show_notifications"] => Some(self.tray.show_notifications.to_string()),
+            ["tray", "click_behavior"] => Some(
+                match self.tray.click_behavior {
+                    TrayClickBehavior::ToggleWindow => "toggle_window",
+                    TrayClickBehavior::ShowMenu => "show_menu",
+                    TrayClickBehavior::DoNothing => "do_nothing",
+                }
+                .to_string(),
+            ),
+            ["tray", "menu_items"] => {
+                Some(serde_json::to_string(&self.tray.menu_items).unwrap_or_else(|_| "[]".into()))
+            }
             ["terminal", "default_shell"] => Some(self.terminal.default_shell.clone()),
             ["terminal", "default_profile_id"] => self
                 .terminal
@@ -515,6 +643,7 @@ impl Settings {
             ["plugin", "auto_load_on_startup"] => Some(self.plugin.auto_load_on_startup.to_string()),
             ["plugin", "max_execution_timeout_secs"] => Some(self.plugin.max_execution_timeout_secs.to_string()),
             ["plugin", "sandbox_fs"] => Some(self.plugin.sandbox_fs.to_string()),
+            ["plugin", "permission_enforcement_mode"] => Some(self.plugin.permission_enforcement_mode.clone()),
             ["startup", "scan_environments"] => Some(self.startup.scan_environments.to_string()),
             ["startup", "scan_packages"] => Some(self.startup.scan_packages.to_string()),
             ["startup", "max_concurrent_scans"] => Some(self.startup.max_concurrent_scans.to_string()),
@@ -762,6 +891,47 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["updates", "check_on_start"] => {
+                self.updates.check_on_start = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["updates", "auto_install"] => {
+                self.updates.auto_install = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["updates", "notify"] => {
+                self.updates.notify = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["tray", "minimize_to_tray"] => {
+                self.tray.minimize_to_tray = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["tray", "start_minimized"] => {
+                self.tray.start_minimized = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["tray", "show_notifications"] => {
+                self.tray.show_notifications = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["tray", "click_behavior"] => {
+                self.tray.click_behavior = match value {
+                    "toggle_window" => TrayClickBehavior::ToggleWindow,
+                    "show_menu" => TrayClickBehavior::ShowMenu,
+                    "do_nothing" => TrayClickBehavior::DoNothing,
+                    _ => return Err(CogniaError::Config("Invalid tray click behavior value".into())),
+                };
+            }
+            ["tray", "menu_items"] => {
+                self.tray.menu_items = Self::parse_tray_menu_items(value)?;
+            }
             ["terminal", "default_shell"] => {
                 self.terminal.default_shell = value.to_string();
             }
@@ -859,6 +1029,16 @@ impl Settings {
                 self.plugin.sandbox_fs = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["plugin", "permission_enforcement_mode"] => {
+                let mode = value.trim().to_ascii_lowercase();
+                if mode != "compat" && mode != "strict" {
+                    return Err(CogniaError::Config(
+                        "Invalid value for permission_enforcement_mode (expected compat|strict)"
+                            .into(),
+                    ));
+                }
+                self.plugin.permission_enforcement_mode = mode;
             }
             ["startup", "scan_environments"] => {
                 self.startup.scan_environments = value
@@ -974,6 +1154,14 @@ mod tests {
         assert_eq!(s.general.parallel_downloads, 4);
         assert_eq!(s.general.resolve_strategy, ResolveStrategy::Latest);
         assert_eq!(s.general.min_install_space_mb, 100);
+        assert!(s.updates.check_on_start);
+        assert!(!s.updates.auto_install);
+        assert!(s.updates.notify);
+        assert!(s.tray.minimize_to_tray);
+        assert!(!s.tray.start_minimized);
+        assert!(s.tray.show_notifications);
+        assert_eq!(s.tray.click_behavior, TrayClickBehavior::ToggleWindow);
+        assert!(s.tray.menu_items.contains(&TrayMenuItemId::Quit));
         assert!(s.mirrors.is_empty());
         assert!(s.providers.is_empty());
     }
@@ -1975,6 +2163,100 @@ mod tests {
         assert_eq!(parsed.backup.retention_days, 90);
     }
 
+    // ===== UpdateSettings defaults and get/set =====
+
+    #[test]
+    fn test_default_update_settings() {
+        let u = UpdateSettings::default();
+        assert!(u.check_on_start);
+        assert!(!u.auto_install);
+        assert!(u.notify);
+    }
+
+    #[test]
+    fn test_get_set_updates_values() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("updates.check_on_start"), Some("true".into()));
+        assert_eq!(s.get_value("updates.auto_install"), Some("false".into()));
+        assert_eq!(s.get_value("updates.notify"), Some("true".into()));
+
+        s.set_value("updates.check_on_start", "false").unwrap();
+        s.set_value("updates.auto_install", "true").unwrap();
+        s.set_value("updates.notify", "false").unwrap();
+
+        assert!(!s.updates.check_on_start);
+        assert!(s.updates.auto_install);
+        assert!(!s.updates.notify);
+    }
+
+    // ===== TraySettings defaults and get/set =====
+
+    #[test]
+    fn test_default_tray_settings() {
+        let t = TraySettings::default();
+        assert!(t.minimize_to_tray);
+        assert!(!t.start_minimized);
+        assert!(t.show_notifications);
+        assert_eq!(t.click_behavior, TrayClickBehavior::ToggleWindow);
+        assert!(t.menu_items.contains(&TrayMenuItemId::Quit));
+    }
+
+    #[test]
+    fn test_get_set_tray_values() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("tray.minimize_to_tray"), Some("true".into()));
+        assert_eq!(s.get_value("tray.start_minimized"), Some("false".into()));
+        assert_eq!(s.get_value("tray.show_notifications"), Some("true".into()));
+        assert_eq!(
+            s.get_value("tray.click_behavior"),
+            Some("toggle_window".into())
+        );
+
+        s.set_value("tray.minimize_to_tray", "false").unwrap();
+        s.set_value("tray.start_minimized", "true").unwrap();
+        s.set_value("tray.show_notifications", "false").unwrap();
+        s.set_value("tray.click_behavior", "show_menu").unwrap();
+
+        assert!(!s.tray.minimize_to_tray);
+        assert!(s.tray.start_minimized);
+        assert!(!s.tray.show_notifications);
+        assert_eq!(s.tray.click_behavior, TrayClickBehavior::ShowMenu);
+    }
+
+    #[test]
+    fn test_set_tray_menu_items_json() {
+        let mut s = Settings::default();
+        s.set_value(
+            "tray.menu_items",
+            r#"["show_hide","downloads","settings","quit"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.tray.menu_items,
+            vec![
+                TrayMenuItemId::ShowHide,
+                TrayMenuItemId::Downloads,
+                TrayMenuItemId::Settings,
+                TrayMenuItemId::Quit,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_set_tray_menu_items_keeps_quit() {
+        let mut s = Settings::default();
+        s.set_value("tray.menu_items", "show_hide,downloads").unwrap();
+        assert!(s.tray.menu_items.contains(&TrayMenuItemId::Quit));
+    }
+
+    #[test]
+    fn test_set_invalid_updates_or_tray_values() {
+        let mut s = Settings::default();
+        assert!(s.set_value("updates.check_on_start", "yes").is_err());
+        assert!(s.set_value("tray.click_behavior", "invalid").is_err());
+        assert!(s.set_value("tray.menu_items", r#"["unknown"]"#).is_err());
+    }
+
     // ===== PluginSettings =====
 
     #[test]
@@ -1983,6 +2265,7 @@ mod tests {
         assert!(p.auto_load_on_startup);
         assert_eq!(p.max_execution_timeout_secs, 30);
         assert!(p.sandbox_fs);
+        assert_eq!(p.permission_enforcement_mode, "compat");
     }
 
     #[test]
@@ -2016,6 +2299,18 @@ mod tests {
         assert!(s.set_value("plugin.auto_load_on_startup", "yes").is_err());
         assert!(s.set_value("plugin.max_execution_timeout_secs", "abc").is_err());
         assert!(s.set_value("plugin.sandbox_fs", "maybe").is_err());
+        assert!(s.set_value("plugin.permission_enforcement_mode", "invalid").is_err());
+    }
+
+    #[test]
+    fn test_get_set_plugin_permission_enforcement_mode() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("plugin.permission_enforcement_mode"),
+            Some("compat".into())
+        );
+        s.set_value("plugin.permission_enforcement_mode", "strict").unwrap();
+        assert_eq!(s.plugin.permission_enforcement_mode, "strict");
     }
 
     #[test]
@@ -2024,6 +2319,7 @@ mod tests {
         s.set_value("plugin.auto_load_on_startup", "false").unwrap();
         s.set_value("plugin.max_execution_timeout_secs", "120").unwrap();
         s.set_value("plugin.sandbox_fs", "false").unwrap();
+        s.set_value("plugin.permission_enforcement_mode", "strict").unwrap();
 
         let toml_str = toml::to_string(&s).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
@@ -2031,5 +2327,6 @@ mod tests {
         assert!(!parsed.plugin.auto_load_on_startup);
         assert_eq!(parsed.plugin.max_execution_timeout_secs, 120);
         assert!(!parsed.plugin.sandbox_fs);
+        assert_eq!(parsed.plugin.permission_enforcement_mode, "strict");
     }
 }

@@ -33,12 +33,13 @@ export function BubbleHintLayer({ maxConcurrent = 1 }: BubbleHintLayerProps) {
       // Check onboarding requirement
       if (hint.showAfterOnboarding && !hasBeenThrough) return false;
 
-      // Check route match (startsWith for sub-routes)
+      // Check route match mode (defaults to exact)
       if (hint.route) {
-        // Exact match for root route
-        if (hint.route === '/') {
-          if (pathname !== '/') return false;
-        } else if (!pathname.startsWith(hint.route)) {
+        const routeMatch = hint.routeMatch ?? 'exact';
+        const routeMatches = routeMatch === 'prefix'
+          ? pathname.startsWith(hint.route)
+          : pathname === hint.route;
+        if (!routeMatches) {
           return false;
         }
       }

@@ -32,6 +32,8 @@ import {
   type ParsedAsset,
 } from "@/hooks/use-asset-matcher";
 import { isTauri } from "@/lib/tauri";
+import { GITHUB_ARCHIVE_FORMATS } from "@/lib/constants/downloads";
+import { runDownloadPreflightWithUi } from "@/lib/downloads";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { RepoValidationInput } from "./repo-validation-input";
@@ -70,12 +72,14 @@ interface GitHubDownloadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDownloadStarted?: (taskId: string) => void;
+  checkDiskSpace?: (path: string, required: number) => Promise<boolean>;
 }
 
 export function GitHubDownloadDialog({
   open,
   onOpenChange,
   onDownloadStarted,
+  checkDiskSpace,
 }: GitHubDownloadDialogProps) {
   const { t } = useLocale();
   const isDesktop = isTauri();
@@ -117,14 +121,6 @@ export function GitHubDownloadDialog({
   const [isDownloading, setIsDownloading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [showToken, setShowToken] = useState(false);
-
-  const GITHUB_ARCHIVE_FORMATS: ArchiveFormat[] = useMemo(
-    () => [
-      { value: "zip", label: "ZIP" },
-      { value: "tar.gz", label: "TAR.GZ" },
-    ],
-    [],
-  );
 
   const currentRelease = useMemo(() => {
     return releases.find((r) => r.tagName === selectedRelease);
@@ -175,6 +171,14 @@ export function GitHubDownloadDialog({
     toast.success(t("downloads.github.tokenCleared"));
   }, [clearSavedToken, t]);
 
+  const checkDiskSpaceForDownload = useCallback(
+    async (path: string, required: number): Promise<boolean> => {
+      if (!checkDiskSpace) return true;
+      return checkDiskSpace(path, required);
+    },
+    [checkDiskSpace],
+  );
+
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
       toast.error(t("downloads.github.noDestination"));
@@ -184,8 +188,31 @@ export function GitHubDownloadDialog({
     setIsDownloading(true);
 
     try {
+      const unknownSizeWarningRef = { current: false };
+      const ensurePreflight = async (
+        expectedBytes?: number | null,
+      ): Promise<boolean> => {
+        return runDownloadPreflightWithUi(
+          {
+            destinationPath: destination,
+            expectedBytes,
+            checkDiskSpace: checkDiskSpaceForDownload,
+          },
+          {
+            t,
+            onInfo: (message) => toast(message),
+            onError: (message) => toast.error(message),
+            unknownSizeWarningRef,
+          },
+        );
+      };
+
       if (sourceType === "release" && selectedAssets.length > 0) {
         for (const asset of selectedAssets) {
+          const preflightOk = await ensurePreflight(asset.size);
+          if (!preflightOk) {
+            return;
+          }
           const taskId = await downloadAsset(asset, destination);
           onDownloadStarted?.(taskId);
         }
@@ -193,6 +220,10 @@ export function GitHubDownloadDialog({
           t("downloads.github.assetsAdded", { count: selectedAssets.length }),
         );
       } else if (sourceType === "branch" && selectedBranch) {
+        const preflightOk = await ensurePreflight();
+        if (!preflightOk) {
+          return;
+        }
         const taskId = await downloadSource(
           selectedBranch,
           archiveFormat,
@@ -201,6 +232,10 @@ export function GitHubDownloadDialog({
         onDownloadStarted?.(taskId);
         toast.success(t("downloads.github.sourceAdded"));
       } else if (sourceType === "tag" && selectedTag) {
+        const preflightOk = await ensurePreflight();
+        if (!preflightOk) {
+          return;
+        }
         const taskId = await downloadSource(
           selectedTag,
           archiveFormat,
@@ -228,6 +263,7 @@ export function GitHubDownloadDialog({
     archiveFormat,
     downloadAsset,
     downloadSource,
+    checkDiskSpaceForDownload,
     onDownloadStarted,
     handleClose,
     t,
@@ -640,7 +676,7 @@ export function GitHubDownloadDialog({
                         onFormatChange={(v) =>
                           setArchiveFormat(v as GitHubArchiveFormat)
                         }
-                        formats={GITHUB_ARCHIVE_FORMATS}
+                        formats={GITHUB_ARCHIVE_FORMATS as ArchiveFormat[]}
                         idPrefix="format"
                         label={t("downloads.github.format")}
                       />
@@ -670,7 +706,7 @@ export function GitHubDownloadDialog({
                         onFormatChange={(v) =>
                           setArchiveFormat(v as GitHubArchiveFormat)
                         }
-                        formats={GITHUB_ARCHIVE_FORMATS}
+                        formats={GITHUB_ARCHIVE_FORMATS as ArchiveFormat[]}
                         idPrefix="tag-format"
                         label={t("downloads.github.format")}
                       />

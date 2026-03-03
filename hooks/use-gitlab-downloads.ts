@@ -9,6 +9,10 @@ import type {
   GitLabProjectInfo,
   GitLabSourceType,
   GitLabArchiveFormat,
+  GitLabPipelineInfo,
+  GitLabJobInfo,
+  GitLabPackageInfo,
+  GitLabPackageFileInfo,
 } from '@/types/gitlab';
 
 interface UseGitLabDownloadsReturn {
@@ -27,11 +31,21 @@ interface UseGitLabDownloadsReturn {
   branches: GitLabBranchInfo[];
   tags: GitLabTagInfo[];
   releases: GitLabReleaseInfo[];
+  pipelines: GitLabPipelineInfo[];
+  jobs: GitLabJobInfo[];
+  packages: GitLabPackageInfo[];
+  packageFiles: GitLabPackageFileInfo[];
   loading: boolean;
   error: string | null;
   validateAndFetch: () => Promise<void>;
+  fetchPipelines: (refName?: string, status?: string) => Promise<GitLabPipelineInfo[]>;
+  fetchPipelineJobs: (pipelineId: number) => Promise<GitLabJobInfo[]>;
+  fetchPackages: (packageType?: string) => Promise<GitLabPackageInfo[]>;
+  fetchPackageFiles: (packageId: number) => Promise<GitLabPackageFileInfo[]>;
   downloadAsset: (asset: GitLabAssetInfo, destination: string) => Promise<string>;
   downloadSource: (refName: string, format: GitLabArchiveFormat, destination: string) => Promise<string>;
+  downloadJobArtifacts: (job: GitLabJobInfo, destination: string) => Promise<string>;
+  downloadPackageFile: (packageId: number, fileName: string, destination: string) => Promise<string>;
   saveToken: () => Promise<void>;
   saveInstanceUrl: () => Promise<void>;
   clearSavedToken: () => Promise<void>;
@@ -50,6 +64,10 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
   const [branches, setBranches] = useState<GitLabBranchInfo[]>([]);
   const [tags, setTags] = useState<GitLabTagInfo[]>([]);
   const [releases, setReleases] = useState<GitLabReleaseInfo[]>([]);
+  const [pipelines, setPipelines] = useState<GitLabPipelineInfo[]>([]);
+  const [jobs, setJobs] = useState<GitLabJobInfo[]>([]);
+  const [packages, setPackages] = useState<GitLabPackageInfo[]>([]);
+  const [packageFiles, setPackageFiles] = useState<GitLabPackageFileInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +82,10 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     setBranches([]);
     setTags([]);
     setReleases([]);
+    setPipelines([]);
+    setJobs([]);
+    setPackages([]);
+    setPackageFiles([]);
     setError(null);
   }, []);
 
@@ -115,16 +137,22 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
 
       setLoading(true);
 
-      const [releasesData, branchesData, tagsData, info] = await Promise.all([
+      const [releasesData, branchesData, tagsData, pipelinesData, packagesData, info] = await Promise.all([
         tauri.gitlabListReleases(parsed.fullName, authToken, instUrl).catch(() => []),
         tauri.gitlabListBranches(parsed.fullName, authToken, instUrl).catch(() => []),
         tauri.gitlabListTags(parsed.fullName, authToken, instUrl).catch(() => []),
+        tauri.gitlabListPipelines(parsed.fullName, undefined, undefined, authToken, instUrl).catch(() => []),
+        tauri.gitlabListPackages(parsed.fullName, undefined, authToken, instUrl).catch(() => []),
         tauri.gitlabGetProjectInfo(parsed.fullName, authToken, instUrl).catch(() => null),
       ]);
 
       setReleases(releasesData);
       setBranches(branchesData);
       setTags(tagsData);
+      setPipelines(pipelinesData);
+      setJobs([]);
+      setPackages(packagesData);
+      setPackageFiles([]);
       setProjectInfo(info);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -173,6 +201,134 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     [parsedProject, token, instanceUrl]
   );
 
+  const fetchPipelines = useCallback(
+    async (refName?: string, status?: string): Promise<GitLabPipelineInfo[]> => {
+      if (!isTauri() || !parsedProject) {
+        return [];
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      const result = await tauri.gitlabListPipelines(
+        parsedProject.fullName,
+        refName,
+        status,
+        authToken,
+        instUrl
+      );
+      setPipelines(result);
+      return result;
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
+  const fetchPipelineJobs = useCallback(
+    async (pipelineId: number): Promise<GitLabJobInfo[]> => {
+      if (!isTauri() || !parsedProject) {
+        return [];
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      const result = await tauri.gitlabListPipelineJobs(
+        parsedProject.fullName,
+        pipelineId,
+        authToken,
+        instUrl
+      );
+      setJobs(result);
+      return result;
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
+  const fetchPackages = useCallback(
+    async (packageType?: string): Promise<GitLabPackageInfo[]> => {
+      if (!isTauri() || !parsedProject) {
+        return [];
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      const result = await tauri.gitlabListPackages(
+        parsedProject.fullName,
+        packageType,
+        authToken,
+        instUrl
+      );
+      setPackages(result);
+      setPackageFiles([]);
+      return result;
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
+  const fetchPackageFiles = useCallback(
+    async (packageId: number): Promise<GitLabPackageFileInfo[]> => {
+      if (!isTauri() || !parsedProject) {
+        return [];
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      const result = await tauri.gitlabListPackageFiles(
+        parsedProject.fullName,
+        packageId,
+        authToken,
+        instUrl
+      );
+      setPackageFiles(result);
+      return result;
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
+  const downloadJobArtifacts = useCallback(
+    async (job: GitLabJobInfo, destination: string): Promise<string> => {
+      if (!isTauri() || !parsedProject) {
+        throw new Error('Not available');
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      return tauri.gitlabDownloadJobArtifacts(
+        parsedProject.fullName,
+        job.id,
+        job.name,
+        destination,
+        authToken,
+        instUrl
+      );
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
+  const downloadPackageFile = useCallback(
+    async (packageId: number, fileName: string, destination: string): Promise<string> => {
+      if (!isTauri() || !parsedProject) {
+        throw new Error('Not available');
+      }
+
+      const tauri = await import('@/lib/tauri');
+      const authToken = token.trim() || undefined;
+      const instUrl = instanceUrl.trim() || undefined;
+      return tauri.gitlabDownloadPackageFile(
+        parsedProject.fullName,
+        packageId,
+        fileName,
+        destination,
+        authToken,
+        instUrl
+      );
+    },
+    [parsedProject, token, instanceUrl]
+  );
+
   const saveToken = useCallback(async () => {
     if (!isTauri() || !token.trim()) return;
     const tauri = await import('@/lib/tauri');
@@ -200,6 +356,10 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
       setBranches([]);
       setTags([]);
       setReleases([]);
+      setPipelines([]);
+      setJobs([]);
+      setPackages([]);
+      setPackageFiles([]);
     }
   }, [projectInput]);
 
@@ -219,11 +379,21 @@ export function useGitLabDownloads(): UseGitLabDownloadsReturn {
     branches,
     tags,
     releases,
+    pipelines,
+    jobs,
+    packages,
+    packageFiles,
     loading,
     error,
     validateAndFetch,
+    fetchPipelines,
+    fetchPipelineJobs,
+    fetchPackages,
+    fetchPackageFiles,
     downloadAsset,
     downloadSource,
+    downloadJobArtifacts,
+    downloadPackageFile,
     saveToken,
     saveInstanceUrl,
     clearSavedToken,

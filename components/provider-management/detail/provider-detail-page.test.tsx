@@ -53,6 +53,8 @@ const baseHookReturn = {
   installPackage: jest.fn(),
   uninstallPackage: jest.fn(),
   checkUpdates: jest.fn(),
+  updatePackage: jest.fn(),
+  updateAllPackages: jest.fn(),
   runHealthCheck: jest.fn(),
   fetchHistory: jest.fn(),
   fetchEnvironmentInfo: jest.fn(),

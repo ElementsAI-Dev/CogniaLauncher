@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { useGit } from '@/hooks/use-git';
+import { useGitAdvanced } from '@/hooks/use-git-advanced';
+import { useGitLfs } from '@/hooks/use-git-lfs';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
 import { useGitRepoStore } from '@/lib/stores/git';
@@ -35,6 +37,22 @@ import {
   GitMergeDialog,
   GitReflogCard,
   GitRepoActionBar,
+  GitConflictBanner,
+  GitSubmodulesCard,
+  GitWorktreesCard,
+  GitGitignoreCard,
+  GitHooksCard,
+  GitLfsCard,
+  GitLocalConfigCard,
+  GitRepoStatsCard,
+  GitSparseCheckoutCard,
+  GitRemotePruneCard,
+  GitSignatureVerifyCard,
+  GitRebaseSquashCard,
+  GitInteractiveRebaseCard,
+  GitBisectCard,
+  GitArchiveCard,
+  GitPatchCard,
 } from '@/components/git';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -48,7 +66,42 @@ export default function GitPage() {
   const { t } = useLocale();
   const isDesktop = isTauri();
   const git = useGit();
+  const gitAdvanced = useGitAdvanced(git.repoPath);
+  const gitLfs = useGitLfs(git.repoPath);
   const repoStore = useGitRepoStore();
+  const {
+    repoPath,
+    repoInfo,
+    refreshAll,
+    getConfigFilePath,
+    setRepoPath,
+    getAheadBehind,
+    refreshRepoInfo,
+    refreshStatus,
+    refreshBranches,
+    refreshRemotes,
+    refreshTags,
+    refreshStashes,
+    refreshContributors,
+    getLog,
+    getCommitDetail,
+  } = git;
+  const {
+    refreshSubmodules,
+    refreshWorktrees,
+    refreshHooks,
+    refreshMergeRebaseState,
+    refreshConflictedFiles,
+    refreshLocalConfig,
+    refreshRepoStats,
+    refreshBisectState,
+    refreshSparseCheckout,
+  } = gitAdvanced;
+  const {
+    checkAvailability: checkLfsAvailability,
+    refreshTrackedPatterns,
+    refreshLfsFiles,
+  } = gitLfs;
 
   const initializedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<string>('overview');
@@ -62,42 +115,190 @@ export default function GitPage() {
   const [compareTo, setCompareTo] = useState('');
   const [contextLines, setContextLines] = useState<number | undefined>(undefined);
   const [configFilePath, setConfigFilePath] = useState<string | null>(null);
+  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
+
+  const runAction = useCallback(
+    async <T,>(
+      action: () => Promise<T>,
+      options?: {
+        successKey?: string;
+        successDescription?: boolean;
+        onSuccess?: (result: T) => Promise<void> | void;
+      },
+    ): Promise<T> => {
+      try {
+        const result = await action();
+        if (options?.successKey) {
+          const description =
+            options.successDescription && typeof result === 'string'
+              ? { description: result }
+              : undefined;
+          toast.success(t(options.successKey), description);
+        }
+        await options?.onSuccess?.(result);
+        return result;
+      } catch (e) {
+        toast.error(String(e));
+        throw e;
+      }
+    },
+    [t],
+  );
+
+  const refreshAdvancedData = useCallback(async () => {
+    if (!repoPath) return;
+    await Promise.allSettled([
+      refreshSubmodules(),
+      refreshWorktrees(),
+      refreshHooks(),
+      refreshMergeRebaseState(),
+      refreshConflictedFiles(),
+      refreshLocalConfig(),
+      refreshRepoStats(),
+      refreshBisectState(),
+      refreshSparseCheckout(),
+    ]);
+  }, [
+    repoPath,
+    refreshSubmodules,
+    refreshWorktrees,
+    refreshHooks,
+    refreshMergeRebaseState,
+    refreshConflictedFiles,
+    refreshLocalConfig,
+    refreshRepoStats,
+    refreshBisectState,
+    refreshSparseCheckout,
+  ]);
+
+  const refreshLfsData = useCallback(async () => {
+    if (!repoPath) return;
+    await Promise.allSettled([
+      checkLfsAvailability(),
+      refreshTrackedPatterns(),
+      refreshLfsFiles(),
+    ]);
+  }, [
+    repoPath,
+    checkLfsAvailability,
+    refreshTrackedPatterns,
+    refreshLfsFiles,
+  ]);
+
+  const refreshAheadBehind = useCallback(async () => {
+    if (repoInfo?.currentBranch && repoPath) {
+      try {
+        const next = await getAheadBehind(repoInfo.currentBranch);
+        setAheadBehind((prev) =>
+          prev.ahead === next.ahead && prev.behind === next.behind ? prev : next,
+        );
+      } catch {
+        setAheadBehind((prev) =>
+          prev.ahead === 0 && prev.behind === 0 ? prev : { ahead: 0, behind: 0 },
+        );
+      }
+      return;
+    }
+    setAheadBehind((prev) =>
+      prev.ahead === 0 && prev.behind === 0 ? prev : { ahead: 0, behind: 0 },
+    );
+  }, [repoInfo?.currentBranch, repoPath, getAheadBehind]);
+
+  const refreshRepoData = useCallback(() => {
+    void refreshRepoInfo();
+    void refreshStatus();
+    void refreshBranches();
+    void refreshRemotes();
+    void refreshTags();
+    void refreshStashes();
+    void refreshContributors();
+    void refreshAheadBehind();
+    void refreshAdvancedData();
+    void refreshLfsData();
+  }, [
+    refreshRepoInfo,
+    refreshStatus,
+    refreshBranches,
+    refreshRemotes,
+    refreshTags,
+    refreshStashes,
+    refreshContributors,
+    refreshAheadBehind,
+    refreshAdvancedData,
+    refreshLfsData,
+  ]);
+
+  const refreshAfterGraphWrite = useCallback(async () => {
+    await Promise.allSettled([
+      refreshRepoInfo(),
+      refreshStatus(),
+      refreshBranches(),
+      refreshTags(),
+      getLog({ limit: 50 }),
+    ]);
+    await refreshAheadBehind();
+    setGraphRefreshKey((prev) => prev + 1);
+  }, [
+    refreshRepoInfo,
+    refreshStatus,
+    refreshBranches,
+    refreshTags,
+    getLog,
+    refreshAheadBehind,
+  ]);
 
   // Restore last repo on mount
   useEffect(() => {
     if (!initializedRef.current && isDesktop) {
       initializedRef.current = true;
-      git.refreshAll().then(() => {
-        git.getConfigFilePath().then(setConfigFilePath).catch(() => {});
+      refreshAll().then(() => {
+        getConfigFilePath().then(setConfigFilePath).catch(() => {});
         if (repoStore.lastRepoPath) {
-          git.setRepoPath(repoStore.lastRepoPath).catch(() => {});
+          setRepoPath(repoStore.lastRepoPath).catch(() => {});
         }
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDesktop]);
+  }, [getConfigFilePath, isDesktop, refreshAll, repoStore.lastRepoPath, setRepoPath]);
 
   // Fetch ahead/behind when repo info changes
   useEffect(() => {
-    if (git.repoInfo?.currentBranch && git.repoPath) {
-      git.getAheadBehind(git.repoInfo.currentBranch).then(setAheadBehind).catch(() => {});
-    } else {
-      setAheadBehind({ ahead: 0, behind: 0 });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [git.repoInfo?.currentBranch, git.repoPath]);
+    refreshAheadBehind().catch(() => {});
+  }, [refreshAheadBehind]);
+
+  useEffect(() => {
+    if (!repoPath) return;
+    refreshRepoInfo().catch(() => {});
+    refreshStatus().catch(() => {});
+    refreshBranches().catch(() => {});
+    refreshRemotes().catch(() => {});
+    refreshTags().catch(() => {});
+    refreshStashes().catch(() => {});
+    refreshContributors().catch(() => {});
+    refreshAdvancedData().catch(() => {});
+    refreshLfsData().catch(() => {});
+  }, [
+    repoPath,
+    refreshRepoInfo,
+    refreshStatus,
+    refreshBranches,
+    refreshRemotes,
+    refreshTags,
+    refreshStashes,
+    refreshContributors,
+    refreshAdvancedData,
+    refreshLfsData,
+  ]);
 
   const handleSelectCommit = useCallback(async (hash: string) => {
     setSelectedCommitHash(hash);
     setDetailLoading(true);
     try {
-      const detail = await git.getCommitDetail(hash);
+      const detail = await getCommitDetail(hash);
       setCommitDetail(detail);
     } finally {
       setDetailLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [git.getCommitDetail]);
+  }, [getCommitDetail]);
 
   if (!isDesktop) {
     return (
@@ -112,72 +313,91 @@ export default function GitPage() {
 
   const handleInstall = async () => {
     try {
-      const msg = await git.installGit();
-      toast.success(t('git.status.installSuccess'), { description: msg });
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.installGit(),
+        { successKey: 'git.status.installSuccess', successDescription: true },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleUpdate = async () => {
     try {
-      const msg = await git.updateGit();
-      toast.success(t('git.status.updateSuccess'), { description: msg });
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.updateGit(),
+        { successKey: 'git.status.updateSuccess', successDescription: true },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleSelectRepo = async (path: string) => {
     try {
-      await git.setRepoPath(path);
-      repoStore.addRecentRepo(path);
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.setRepoPath(path),
+        {
+          onSuccess: async () => {
+            repoStore.addRecentRepo(path);
+            await refreshAdvancedData();
+            await refreshLfsData();
+          },
+        },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleSetConfig = async (key: string, value: string) => {
     try {
-      await git.setConfigValue(key, value);
-      toast.success(t('git.config.saved'));
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.setConfigValue(key, value),
+        { successKey: 'git.config.saved' },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleRemoveConfig = async (key: string) => {
     try {
-      await git.removeConfigKey(key);
-      toast.success(t('git.config.removed'));
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.removeConfigKey(key),
+        { successKey: 'git.config.removed' },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleSetAlias = async (name: string, command: string) => {
     try {
-      await git.setConfigValue(`alias.${name}`, command);
-      toast.success(t('git.alias.saved'));
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.setConfigValue(`alias.${name}`, command),
+        { successKey: 'git.alias.saved' },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleRemoveAlias = async (name: string) => {
     try {
-      await git.removeConfigKey(`alias.${name}`);
-      toast.success(t('git.alias.removed'));
-    } catch (e) {
-      toast.error(String(e));
+      await runAction(
+        () => git.removeConfigKey(`alias.${name}`),
+        { successKey: 'git.alias.removed' },
+      );
+    } catch {
+      // Error is already handled by runAction.
     }
   };
 
   const handleOpenInEditor = async (): Promise<string> => {
     try {
-      return await git.openConfigInEditor();
-    } catch (e) {
-      toast.error(String(e));
+      return await runAction(() => git.openConfigInEditor());
+    } catch {
       return '';
     }
   };
@@ -190,19 +410,46 @@ export default function GitPage() {
       if (activeTab !== 'changes') {
         setActiveTab('changes');
       }
+    } catch (e) {
+      toast.error(String(e));
     } finally {
       setDiffLoading(false);
     }
   };
 
-  const refreshRepoData = () => {
-    git.refreshRepoInfo();
-    git.refreshStatus();
-    git.refreshBranches();
-    git.refreshRemotes();
-    git.refreshTags();
-    git.refreshStashes();
-    git.refreshContributors();
+  const handleShowStashDiff = async (stashId?: string) => {
+    try {
+      const diff = await runAction(
+        () => git.stashShowDiff(stashId),
+        {
+          onSuccess: async (diff) => {
+            setDiffContent(diff);
+            setActiveTab('changes');
+          },
+        },
+      );
+      return diff;
+    } catch {
+      // Error is already handled by runAction.
+      return '';
+    }
+  };
+
+  const handleAbortOperation = async () => {
+    const state = gitAdvanced.mergeRebaseState.state;
+    if (state === 'merging') return await gitAdvanced.mergeAbort();
+    if (state === 'rebasing') return await gitAdvanced.rebaseAbort();
+    if (state === 'cherry_picking') return await gitAdvanced.cherryPickAbort();
+    if (state === 'reverting') return await gitAdvanced.revertAbort();
+    return '';
+  };
+
+  const handleContinueOperation = async () => {
+    const state = gitAdvanced.mergeRebaseState.state;
+    if (state === 'merging') return await gitAdvanced.mergeContinue();
+    if (state === 'rebasing') return await gitAdvanced.rebaseContinue();
+    if (state === 'cherry_picking') return await gitAdvanced.cherryPickContinue();
+    return '';
   };
 
   return (
@@ -231,6 +478,15 @@ export default function GitPage() {
           <TabsTrigger value="changes" disabled={!git.available || !git.repoPath}>
             {t('git.tabs.changes')}
           </TabsTrigger>
+          <TabsTrigger value="tools" disabled={!git.available || !git.repoPath}>
+            {t('git.tabs.tools')}
+          </TabsTrigger>
+          <TabsTrigger value="advanced" disabled={!git.available || !git.repoPath}>
+            {t('git.tabs.advanced')}
+          </TabsTrigger>
+          <TabsTrigger value="operations" disabled={!git.available || !git.repoPath}>
+            {t('git.tabs.operations')}
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -249,6 +505,7 @@ export default function GitPage() {
               <GitGlobalSettingsCard
                 onGetConfigValue={git.getConfigValue}
                 onSetConfig={handleSetConfig}
+                onSetConfigIfUnset={git.setConfigIfUnset}
               />
               <GitAliasCard
                 onListAliases={git.listAliases}
@@ -277,16 +534,61 @@ export default function GitPage() {
           />
           {git.repoInfo ? (
             <>
+              <GitConflictBanner
+                repoPath={git.repoPath}
+                mergeRebaseState={gitAdvanced.mergeRebaseState}
+                conflictedFiles={gitAdvanced.conflictedFiles}
+                onRefreshState={gitAdvanced.refreshMergeRebaseState}
+                onRefreshConflicts={gitAdvanced.refreshConflictedFiles}
+                onResolveOurs={async (file) => {
+                  const msg = await gitAdvanced.resolveFileOurs(file);
+                  await git.refreshStatus();
+                  return msg;
+                }}
+                onResolveTheirs={async (file) => {
+                  const msg = await gitAdvanced.resolveFileTheirs(file);
+                  await git.refreshStatus();
+                  return msg;
+                }}
+                onMarkResolved={async (file) => {
+                  const msg = await gitAdvanced.resolveFileMark(file);
+                  await git.refreshStatus();
+                  return msg;
+                }}
+                onAbort={async () => {
+                  const msg = await handleAbortOperation();
+                  await git.refreshStatus();
+                  await gitAdvanced.refreshMergeRebaseState();
+                  await gitAdvanced.refreshConflictedFiles();
+                  return msg;
+                }}
+                onContinue={async () => {
+                  const msg = await handleContinueOperation();
+                  await git.refreshStatus();
+                  await gitAdvanced.refreshMergeRebaseState();
+                  await gitAdvanced.refreshConflictedFiles();
+                  return msg;
+                }}
+                onSkip={async () => {
+                  const msg = await gitAdvanced.rebaseSkip();
+                  await git.refreshStatus();
+                  await gitAdvanced.refreshMergeRebaseState();
+                  await gitAdvanced.refreshConflictedFiles();
+                  return msg;
+                }}
+              />
               <GitRepoInfoCard repoInfo={git.repoInfo} />
               <GitRepoActionBar
                 repoPath={git.repoPath}
                 currentBranch={git.repoInfo.currentBranch}
+                remotes={git.remotes}
                 aheadBehind={aheadBehind}
                 loading={git.loading}
                 onPush={git.push}
                 onPull={git.pull}
                 onFetch={git.fetch}
                 onClean={git.cleanUntracked}
+                onCleanPreview={git.cleanDryRun}
                 onRefresh={refreshRepoData}
               />
               <GitStatusFiles
@@ -307,7 +609,9 @@ export default function GitPage() {
                   onCheckout={git.checkoutBranch}
                   onCreate={git.createBranch}
                   onDelete={git.deleteBranch}
+                  onDeleteRemote={git.deleteRemoteBranch}
                   onRename={git.branchRename}
+                  onSetUpstream={git.branchSetUpstream}
                 />
                 <GitRemoteCard
                   remotes={git.remotes}
@@ -315,6 +619,7 @@ export default function GitPage() {
                   onRemove={git.remoteRemove}
                   onRename={git.remoteRename}
                   onSetUrl={git.remoteSetUrl}
+                  onPrune={gitAdvanced.remotePrune}
                 />
                 <GitStashList
                   stashes={git.stashes}
@@ -322,7 +627,9 @@ export default function GitPage() {
                   onPop={git.stashPop}
                   onDrop={git.stashDrop}
                   onSave={git.stashSave}
-                  onShowDiff={git.stashShowDiff}
+                  onBranchFromStash={gitAdvanced.stashBranch}
+                  onPushFiles={git.stashPushFiles}
+                  onShowDiff={handleShowStashDiff}
                 />
                 <GitTagList
                   tags={git.tags}
@@ -363,9 +670,19 @@ export default function GitPage() {
                 branches={git.branches}
                 currentBranch={git.repoInfo.currentBranch}
                 onMerge={async (branch, noFf) => {
-                  const msg = await git.merge(branch, noFf);
-                  toast.success(t('git.mergeAction.success'), { description: msg });
-                  return msg;
+                  try {
+                    return await runAction(
+                      () => git.merge(branch, noFf),
+                      {
+                        successKey: 'git.mergeAction.success',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
+                    return '';
+                  }
                 }}
               />
             )}
@@ -381,39 +698,84 @@ export default function GitPage() {
                 onSelectCommit={handleSelectCommit}
                 selectedHash={selectedCommitHash}
                 branches={git.branches}
+                refreshKey={graphRefreshKey}
                 onCopyHash={(hash) => {
                   navigator.clipboard.writeText(hash);
                   toast.success(t('git.graph.copyHash'));
                 }}
                 onCreateBranch={async (hash) => {
                   const name = prompt(t('git.graph.createBranch'));
-                  if (name) {
-                    try {
-                      const msg = await git.createBranch(name, hash);
-                      toast.success(msg);
-                    } catch (e) { toast.error(String(e)); }
+                  if (!name?.trim()) return;
+                  try {
+                    await runAction(
+                      () => git.createBranch(name.trim(), hash),
+                      {
+                        successKey: 'git.branch.createSuccess',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
                   }
                 }}
                 onCreateTag={async (hash) => {
                   const name = prompt(t('git.graph.createTag'));
-                  if (name) {
-                    try {
-                      const msg = await git.createTag(name, hash);
-                      toast.success(msg);
-                    } catch (e) { toast.error(String(e)); }
+                  if (!name?.trim()) return;
+                  try {
+                    await runAction(
+                      () => git.createTag(name.trim(), hash),
+                      {
+                        successKey: 'git.tag.createSuccess',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
                   }
                 }}
                 onCherryPick={async (hash) => {
                   try {
-                    const msg = await git.cherryPick(hash);
-                    toast.success(msg);
-                  } catch (e) { toast.error(String(e)); }
+                    await runAction(
+                      () => git.cherryPick(hash),
+                      {
+                        successKey: 'git.cherryPickAction.success',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
+                  }
                 }}
                 onRevert={async (hash) => {
                   try {
-                    const msg = await git.revertCommit(hash);
-                    toast.success(msg);
-                  } catch (e) { toast.error(String(e)); }
+                    await runAction(
+                      () => git.revertCommit(hash),
+                      {
+                        successKey: 'git.revertAction.success',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
+                  }
+                }}
+                onResetTo={async (hash) => {
+                  try {
+                    await runAction(
+                      () => git.resetHead('mixed', hash),
+                      {
+                        successKey: 'git.resetAction.success',
+                        successDescription: true,
+                        onSuccess: refreshAfterGraphWrite,
+                      },
+                    );
+                  } catch {
+                    // Error is already handled by runAction.
+                  }
                 }}
               />
             </div>
@@ -488,9 +850,19 @@ export default function GitPage() {
           <GitReflogCard
             onGetReflog={git.getReflog}
             onResetTo={async (hash, mode) => {
-              const msg = await git.resetHead(mode, hash);
-              toast.success(t('git.resetAction.success'), { description: msg });
-              return msg;
+              try {
+                return await runAction(
+                  () => git.resetHead(mode, hash),
+                  {
+                    successKey: 'git.resetAction.success',
+                    successDescription: true,
+                    onSuccess: refreshAfterGraphWrite,
+                  },
+                );
+              } catch {
+                // Error is already handled by runAction.
+                return '';
+              }
             }}
           />
         </TabsContent>
@@ -511,9 +883,19 @@ export default function GitPage() {
             <GitCommitDialog
               stagedCount={git.statusFiles.filter((f) => f.indexStatus !== " " && f.indexStatus !== "?").length}
               onCommit={async (message, amend, allowEmpty, signoff, noVerify) => {
-                const msg = await git.commit(message, amend, allowEmpty, signoff, noVerify);
-                toast.success(t('git.commit.success'), { description: msg });
-                return msg;
+                try {
+                  return await runAction(
+                    () => git.commit(message, amend, allowEmpty, signoff, noVerify),
+                    {
+                      successKey: 'git.commit.success',
+                      successDescription: true,
+                      onSuccess: refreshAfterGraphWrite,
+                    },
+                  );
+                } catch {
+                  // Error is already handled by runAction.
+                  return '';
+                }
               }}
             />
           </div>
@@ -605,6 +987,131 @@ export default function GitPage() {
             diff={diffContent}
             loading={diffLoading}
           />
+        </TabsContent>
+
+        {/* Tools Tab */}
+        <TabsContent value="tools" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <GitSubmodulesCard
+              submodules={gitAdvanced.submodules}
+              onRefresh={gitAdvanced.refreshSubmodules}
+              onAdd={gitAdvanced.addSubmodule}
+              onUpdate={gitAdvanced.updateSubmodules}
+              onRemove={gitAdvanced.removeSubmodule}
+              onSync={gitAdvanced.syncSubmodules}
+            />
+            <GitWorktreesCard
+              worktrees={gitAdvanced.worktrees}
+              onRefresh={gitAdvanced.refreshWorktrees}
+              onAdd={gitAdvanced.addWorktree}
+              onRemove={gitAdvanced.removeWorktree}
+              onPrune={gitAdvanced.pruneWorktrees}
+            />
+            <GitGitignoreCard
+              onGetGitignore={gitAdvanced.getGitignore}
+              onSetGitignore={gitAdvanced.setGitignore}
+              onCheckIgnore={gitAdvanced.checkIgnore}
+              onAddToGitignore={gitAdvanced.addToGitignore}
+            />
+            <GitHooksCard
+              hooks={gitAdvanced.hooks}
+              onRefresh={gitAdvanced.refreshHooks}
+              onGetContent={gitAdvanced.getHookContent}
+              onSetContent={gitAdvanced.setHookContent}
+              onToggle={gitAdvanced.toggleHook}
+            />
+            <GitLfsCard
+              lfsAvailable={gitLfs.lfsAvailable}
+              lfsVersion={gitLfs.lfsVersion}
+              trackedPatterns={gitLfs.trackedPatterns}
+              lfsFiles={gitLfs.lfsFiles}
+              onCheckAvailability={gitLfs.checkAvailability}
+              onRefreshTrackedPatterns={gitLfs.refreshTrackedPatterns}
+              onRefreshLfsFiles={gitLfs.refreshLfsFiles}
+              onTrack={gitLfs.track}
+              onUntrack={gitLfs.untrack}
+              onInstall={gitLfs.install}
+            />
+          </div>
+        </TabsContent>
+
+        {/* Advanced Tab */}
+        <TabsContent value="advanced" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <GitLocalConfigCard
+              config={gitAdvanced.localConfig}
+              onRefresh={gitAdvanced.refreshLocalConfig}
+              onSet={gitAdvanced.setLocalConfig}
+              onRemove={gitAdvanced.removeLocalConfig}
+              onGetValue={gitAdvanced.getLocalConfigValue}
+            />
+            <GitRepoStatsCard
+              repoStats={gitAdvanced.repoStats}
+              onRefresh={gitAdvanced.refreshRepoStats}
+              onFsck={gitAdvanced.fsck}
+              onDescribe={gitAdvanced.describe}
+              onIsShallow={gitAdvanced.isShallow}
+              onDeepen={gitAdvanced.deepen}
+              onUnshallow={gitAdvanced.unshallow}
+            />
+            <GitSparseCheckoutCard
+              isSparseCheckout={gitAdvanced.isSparseCheckout}
+              sparsePatterns={gitAdvanced.sparsePatterns}
+              onRefresh={gitAdvanced.refreshSparseCheckout}
+              onInit={gitAdvanced.sparseCheckoutInit}
+              onSet={gitAdvanced.sparseCheckoutSet}
+              onAdd={gitAdvanced.sparseCheckoutAdd}
+              onDisable={gitAdvanced.sparseCheckoutDisable}
+            />
+            <GitRemotePruneCard
+              remotes={git.remotes}
+              onPrune={gitAdvanced.remotePrune}
+            />
+            <GitSignatureVerifyCard
+              onVerifyCommit={gitAdvanced.verifyCommit}
+              onVerifyTag={gitAdvanced.verifyTag}
+            />
+          </div>
+        </TabsContent>
+
+        {/* Operations Tab */}
+        <TabsContent value="operations" className="space-y-4 mt-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <GitRebaseSquashCard
+              onRebase={async (onto) => {
+                const msg = await gitAdvanced.rebase(onto);
+                await refreshAfterGraphWrite();
+                await refreshAdvancedData();
+                return msg;
+              }}
+              onSquash={async (count, message) => {
+                const msg = await gitAdvanced.squash(count, message);
+                await refreshAfterGraphWrite();
+                await refreshAdvancedData();
+                return msg;
+              }}
+            />
+            <GitInteractiveRebaseCard
+              onPreview={gitAdvanced.getRebaseTodoPreview}
+              onStart={gitAdvanced.startInteractiveRebase}
+            />
+            <GitBisectCard
+              bisectState={gitAdvanced.bisectState}
+              onRefreshState={gitAdvanced.refreshBisectState}
+              onStart={gitAdvanced.bisectStart}
+              onGood={gitAdvanced.bisectGood}
+              onBad={gitAdvanced.bisectBad}
+              onSkip={gitAdvanced.bisectSkip}
+              onReset={gitAdvanced.bisectReset}
+              onLog={gitAdvanced.bisectLog}
+            />
+            <GitArchiveCard onArchive={gitAdvanced.archive} />
+            <GitPatchCard
+              onFormatPatch={gitAdvanced.formatPatch}
+              onApplyPatch={gitAdvanced.applyPatch}
+              onApplyMailbox={gitAdvanced.applyMailbox}
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>

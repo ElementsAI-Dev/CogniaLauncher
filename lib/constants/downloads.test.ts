@@ -16,10 +16,18 @@ describe('DEFAULT_DOWNLOAD_FORM', () => {
     expect(DEFAULT_DOWNLOAD_FORM).toHaveProperty('provider');
   });
 
-  it('has all empty string defaults', () => {
-    Object.values(DEFAULT_DOWNLOAD_FORM).forEach((value) => {
-      expect(value).toBe('');
-    });
+  it('has expected default values', () => {
+    expect(DEFAULT_DOWNLOAD_FORM.url).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.destination).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.name).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.checksum).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.priority).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.provider).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.autoExtract).toBe(false);
+    expect(DEFAULT_DOWNLOAD_FORM.extractDest).toBe('');
+    expect(DEFAULT_DOWNLOAD_FORM.segments).toBe('1');
+    expect(DEFAULT_DOWNLOAD_FORM.mirrorUrls).toEqual([]);
+    expect(DEFAULT_DOWNLOAD_FORM.postAction).toBe('none');
   });
 });
 

@@ -9,6 +9,8 @@ const mockCacheClean = jest.fn();
 const mockCacheInfo = jest.fn();
 const mockGetPlatformInfo = jest.fn();
 const mockGetCogniaDir = jest.fn();
+const mockDownloadSetMaxConcurrent = jest.fn();
+const mockDownloadSetSpeedLimit = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
@@ -19,6 +21,8 @@ jest.mock('@/lib/tauri', () => ({
   cacheInfo: (...args: unknown[]) => mockCacheInfo(...args),
   getPlatformInfo: (...args: unknown[]) => mockGetPlatformInfo(...args),
   getCogniaDir: (...args: unknown[]) => mockGetCogniaDir(...args),
+  downloadSetMaxConcurrent: (...args: unknown[]) => mockDownloadSetMaxConcurrent(...args),
+  downloadSetSpeedLimit: (...args: unknown[]) => mockDownloadSetSpeedLimit(...args),
 }));
 
 // Mock settings store
@@ -29,27 +33,46 @@ const mockSetError = jest.fn();
 const mockSetPlatformInfo = jest.fn();
 const mockSetCacheInfo = jest.fn();
 const mockSetCogniaDir = jest.fn();
+const mockSetAppSettings = jest.fn();
+const mockUseSettingsStore = jest.fn(() => ({
+  config: {},
+  appSettings: {},
+  isLoading: false,
+  error: null,
+  platformInfo: null,
+  cacheInfo: null,
+  setConfig: mockSetConfig,
+  updateConfig: mockUpdateConfig,
+  setLoading: mockSetLoading,
+  setError: mockSetError,
+  setPlatformInfo: mockSetPlatformInfo,
+  setCacheInfo: mockSetCacheInfo,
+  setCogniaDir: mockSetCogniaDir,
+  setAppSettings: mockSetAppSettings,
+}));
+
+(mockUseSettingsStore as unknown as { getState?: () => unknown }).getState = jest.fn(() => ({
+  config: {},
+  appSettings: {},
+  setAppSettings: mockSetAppSettings,
+}));
 
 jest.mock('@/lib/stores/settings', () => ({
-  useSettingsStore: jest.fn(() => ({
-    config: {},
-    isLoading: false,
-    error: null,
-    platformInfo: null,
-    cacheInfo: null,
-    setConfig: mockSetConfig,
-    updateConfig: mockUpdateConfig,
-    setLoading: mockSetLoading,
-    setError: mockSetError,
-    setPlatformInfo: mockSetPlatformInfo,
-    setCacheInfo: mockSetCacheInfo,
-    setCogniaDir: mockSetCogniaDir,
-  })),
+  useSettingsStore: Object.assign(
+    () => mockUseSettingsStore(),
+    {
+      getState: () =>
+        (mockUseSettingsStore as unknown as { getState: () => unknown }).getState(),
+    },
+  ),
 }));
 
 describe('useSettings', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockConfigSet.mockResolvedValue(undefined);
+    mockDownloadSetMaxConcurrent.mockResolvedValue(undefined);
+    mockDownloadSetSpeedLimit.mockResolvedValue(undefined);
   });
 
   it('should return settings methods', () => {
@@ -76,7 +99,6 @@ describe('useSettings', () => {
   });
 
   it('should update config value', async () => {
-    mockConfigSet.mockResolvedValue(undefined);
     const { result } = renderHook(() => useSettings());
 
     await act(async () => {
@@ -85,6 +107,41 @@ describe('useSettings', () => {
 
     expect(mockConfigSet).toHaveBeenCalledWith('theme', 'light');
     expect(mockUpdateConfig).toHaveBeenCalledWith('theme', 'light');
+  });
+
+  it('should sync max concurrent downloads when parallel_downloads changes', async () => {
+    const { result } = renderHook(() => useSettings());
+
+    await act(async () => {
+      await result.current.updateConfigValue('general.parallel_downloads', '6');
+    });
+
+    expect(mockConfigSet).toHaveBeenCalledWith('general.parallel_downloads', '6');
+    expect(mockDownloadSetMaxConcurrent).toHaveBeenCalledWith(6);
+  });
+
+  it('should sync speed limit when download_speed_limit changes', async () => {
+    const { result } = renderHook(() => useSettings());
+
+    await act(async () => {
+      await result.current.updateConfigValue('general.download_speed_limit', '1048576');
+    });
+
+    expect(mockConfigSet).toHaveBeenCalledWith('general.download_speed_limit', '1048576');
+    expect(mockDownloadSetSpeedLimit).toHaveBeenCalledWith(1048576);
+  });
+
+  it('should throw for invalid parallel_downloads runtime value', async () => {
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.updateConfigValue('general.parallel_downloads', 'invalid');
+      })
+    ).rejects.toThrow('Invalid value for general.parallel_downloads');
+
+    expect(mockConfigSet).toHaveBeenCalledWith('general.parallel_downloads', 'invalid');
+    expect(mockDownloadSetMaxConcurrent).not.toHaveBeenCalled();
   });
 
   it('should reset config', async () => {

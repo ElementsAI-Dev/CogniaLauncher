@@ -86,7 +86,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={checkAll}
+            onClick={() => {
+              void checkAll();
+            }}
             disabled={loading}
           >
             {loading ? (

@@ -27,6 +27,7 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 - **列出已安装** — 查看所有 WSL 发行版及其状态
 - **在线搜索** — 浏览可安装的发行版
 - **安装** — 一键安装新发行版
+- **安装到指定位置** — 将选定发行版安装到用户指定的主机目录
 - **卸载** — 注销并删除发行版
 - **设为默认** — 设置默认发行版
 
@@ -47,15 +48,19 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 - **终止** — 终止指定发行版
 - **关闭 WSL** — 关闭所有运行中的发行版
 - **查看运行中** — 列出当前运行的发行版
+- **在资源管理器打开** — 在 Windows 资源管理器中打开发行版文件系统
+- **在终端打开** — 直接在 Windows Terminal（或回退 Shell）中打开发行版
 
 ### 磁盘管理
 
 - **挂载磁盘** — 将物理磁盘挂载到 WSL
 - **卸载磁盘** — 从 WSL 卸载磁盘
 - **磁盘使用** — 查看发行版的磁盘占用
+- **总磁盘占用** — 查看所有已安装发行版的汇总占用
 - **迁移发行版** — 使用 `wsl --manage <distro> --move <location>`
 - **扩容虚拟磁盘** — 使用 `wsl --manage <distro> --resize <size>`
 - **Sparse 模式** — 开启/关闭 VHD 自动回收
+- **克隆发行版** — 通过导出/导入流程复制现有发行版
 
 ### 网络与用户
 
@@ -101,8 +106,12 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 | `wsl_export` | 导出发行版 |
 | `wsl_import` | 导入发行版 |
 | `wsl_import_in_place` | 就地导入 |
+| `wsl_install_with_location` | 按自定义位置安装发行版 |
 | `wsl_update` | 更新 WSL |
 | `wsl_launch` | 启动发行版 |
+| `wsl_open_in_explorer` | 在资源管理器中打开发行版文件系统 |
+| `wsl_open_in_terminal` | 在终端中打开发行版 |
+| `wsl_clone_distro` | 克隆发行版 |
 | `wsl_mount` | 挂载磁盘 |
 | `wsl_unmount` | 卸载磁盘 |
 | `wsl_get_ip` | 获取 IP 地址 |
@@ -110,5 +119,7 @@ CogniaLauncher 提供完整的 Windows Subsystem for Linux (WSL) 管理功能。
 | `wsl_get_distro_config` | 读取发行版配置 |
 | `wsl_set_distro_config` | 写入发行版配置 |
 | `wsl_get_capabilities` | 获取运行时命令能力 |
+| `wsl_get_version_info` | 获取 WSL 组件详细版本信息 |
+| `wsl_total_disk_usage` | 获取所有发行版总磁盘占用 |
 | `wsl_move_distro` | 迁移发行版磁盘位置 |
 | `wsl_resize_distro` | 扩容发行版虚拟磁盘 |

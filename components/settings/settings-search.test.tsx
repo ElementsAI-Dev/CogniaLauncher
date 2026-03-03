@@ -162,6 +162,45 @@ describe("SettingsSearch", () => {
     );
   });
 
+  it("passes focusId when search result defines a focus target", async () => {
+    const user = userEvent.setup();
+    const onNavigateToSetting = jest.fn();
+    const search = createMockSearch({
+      query: "parallel",
+      isSearching: true,
+      totalResults: 1,
+      results: [
+        {
+          setting: {
+            key: "general.parallel_downloads",
+            section: "general",
+            labelKey: "settings.parallelDownloads",
+            descKey: "settings.parallelDownloadsDesc",
+            type: "input",
+            focusId: "parallel-downloads",
+          },
+          matchedIn: ["label"],
+        },
+      ],
+    });
+
+    render(
+      <SettingsSearch
+        search={search}
+        onNavigateToSetting={onNavigateToSetting}
+        t={mockT}
+      />,
+    );
+
+    await user.click(screen.getByText("Parallel Downloads"));
+
+    expect(onNavigateToSetting).toHaveBeenCalledWith(
+      "general",
+      "general.parallel_downloads",
+      "parallel-downloads",
+    );
+  });
+
   it("shows more results indicator when there are more than 8 results", () => {
     const results = Array(10)
       .fill(null)

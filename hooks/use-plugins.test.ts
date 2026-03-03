@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { usePlugins } from '@/hooks/use-plugins';
+import { usePluginStore } from '@/lib/stores/plugin';
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => false),
@@ -42,6 +43,14 @@ const tauri = jest.requireMock('@/lib/tauri');
 describe('usePlugins', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    usePluginStore.setState({
+      installedPlugins: [],
+      pluginTools: [],
+      loading: false,
+      error: null,
+      healthMap: {},
+      pendingUpdates: [],
+    });
   });
 
   it('should return initial state', () => {
@@ -106,6 +115,54 @@ describe('usePlugins', () => {
       await result.current.installPlugin('https://example.com/plugin.zip');
     });
     expect(tauri.pluginInstall).not.toHaveBeenCalled();
+  });
+
+  it('should keep fetchPlugins callback stable across store updates', () => {
+    const { result } = renderHook(() => usePlugins());
+    const initialFetchPlugins = result.current.fetchPlugins;
+
+    act(() => {
+      usePluginStore.getState().setLoading(true);
+    });
+    expect(result.current.fetchPlugins).toBe(initialFetchPlugins);
+
+    act(() => {
+      usePluginStore.getState().setError('test error');
+    });
+    expect(result.current.fetchPlugins).toBe(initialFetchPlugins);
+  });
+
+  it('should dedupe concurrent fetchPlugins calls in desktop mode', async () => {
+    tauri.isTauri.mockReturnValue(true);
+
+    let resolvePlugins!: (value: unknown[]) => void;
+    let resolveTools!: (value: unknown[]) => void;
+
+    tauri.pluginList.mockImplementation(
+      () => new Promise((resolve) => { resolvePlugins = resolve; }),
+    );
+    tauri.pluginListAllTools.mockImplementation(
+      () => new Promise((resolve) => { resolveTools = resolve; }),
+    );
+
+    const { result } = renderHook(() => usePlugins());
+    let firstPromise!: Promise<void>;
+    let secondPromise!: Promise<void>;
+
+    act(() => {
+      firstPromise = result.current.fetchPlugins() as Promise<void>;
+      secondPromise = result.current.fetchPlugins() as Promise<void>;
+    });
+
+    expect(firstPromise).toBe(secondPromise);
+    expect(tauri.pluginList).toHaveBeenCalledTimes(1);
+    expect(tauri.pluginListAllTools).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePlugins([]);
+      resolveTools([]);
+      await firstPromise;
+    });
   });
 
   it('should skip scaffold when not Tauri', async () => {

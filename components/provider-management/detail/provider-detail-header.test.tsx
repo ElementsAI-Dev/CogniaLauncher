@@ -96,13 +96,10 @@ describe("ProviderDetailHeader", () => {
     expect(screen.queryByText("Environment")).not.toBeInTheDocument();
   });
 
-  it("navigates back to providers on back button click", async () => {
-    const user = userEvent.setup();
+  it("navigates back to providers on back button click", () => {
     render(<ProviderDetailHeader {...defaultProps} />);
-    const buttons = screen.getAllByRole("button");
-    // First button is the back button
-    await user.click(buttons[0]);
-    expect(mockPush).toHaveBeenCalledWith("/providers");
+    const providersLink = screen.getByRole("link", { name: "nav.providers" });
+    expect(providersLink).toHaveAttribute("href", "/providers");
   });
 
   it("calls onCheckStatus when check status button is clicked", async () => {

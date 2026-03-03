@@ -14,6 +14,7 @@ const mockT = (key: string) => {
     'wsl.available': 'Available Distributions',
     'wsl.installed': 'Installed',
     'wsl.install': 'Install',
+    'wsl.installWithLocation': 'Install to Location',
     'common.search': 'Search',
     'common.noResults': 'No results found',
   };
@@ -32,6 +33,7 @@ describe('WslOnlineList', () => {
     installedNames: ['Ubuntu'],
     loading: false,
     onInstall: jest.fn(),
+    onInstallWithLocation: jest.fn(),
     t: mockT,
   };
 
@@ -59,14 +61,14 @@ describe('WslOnlineList', () => {
 
   it('calls onInstall when install button clicked for non-installed distro', async () => {
     render(<WslOnlineList {...defaultProps} />);
+    await userEvent.click(screen.getByTestId('install-Debian'));
+    expect(defaultProps.onInstall).toHaveBeenCalledWith('Debian');
+  });
 
-    const installButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.textContent?.includes('Install') && !btn.hasAttribute('disabled'),
-    );
-    if (installButtons.length > 0) {
-      await userEvent.click(installButtons[0]);
-      expect(defaultProps.onInstall).toHaveBeenCalled();
-    }
+  it('calls onInstallWithLocation when location install clicked', async () => {
+    render(<WslOnlineList {...defaultProps} />);
+    await userEvent.click(screen.getByTestId('install-location-Debian'));
+    expect(defaultProps.onInstallWithLocation).toHaveBeenCalledWith('Debian');
   });
 
   it('filters distros by search query', async () => {

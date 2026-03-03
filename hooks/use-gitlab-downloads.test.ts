@@ -7,8 +7,14 @@ const mockGitlabListReleases = jest.fn();
 const mockGitlabListBranches = jest.fn();
 const mockGitlabListTags = jest.fn();
 const mockGitlabGetProjectInfo = jest.fn();
+const mockGitlabListPipelines = jest.fn();
+const mockGitlabListPipelineJobs = jest.fn();
+const mockGitlabListPackages = jest.fn();
+const mockGitlabListPackageFiles = jest.fn();
 const mockGitlabDownloadAsset = jest.fn();
 const mockGitlabDownloadSource = jest.fn();
+const mockGitlabDownloadJobArtifacts = jest.fn();
+const mockGitlabDownloadPackageFile = jest.fn();
 const mockGitlabGetToken = jest.fn();
 const mockGitlabSetToken = jest.fn();
 const mockGitlabClearToken = jest.fn();
@@ -24,8 +30,14 @@ jest.mock('@/lib/tauri', () => ({
   gitlabListBranches: (...args: unknown[]) => mockGitlabListBranches(...args),
   gitlabListTags: (...args: unknown[]) => mockGitlabListTags(...args),
   gitlabGetProjectInfo: (...args: unknown[]) => mockGitlabGetProjectInfo(...args),
+  gitlabListPipelines: (...args: unknown[]) => mockGitlabListPipelines(...args),
+  gitlabListPipelineJobs: (...args: unknown[]) => mockGitlabListPipelineJobs(...args),
+  gitlabListPackages: (...args: unknown[]) => mockGitlabListPackages(...args),
+  gitlabListPackageFiles: (...args: unknown[]) => mockGitlabListPackageFiles(...args),
   gitlabDownloadAsset: (...args: unknown[]) => mockGitlabDownloadAsset(...args),
   gitlabDownloadSource: (...args: unknown[]) => mockGitlabDownloadSource(...args),
+  gitlabDownloadJobArtifacts: (...args: unknown[]) => mockGitlabDownloadJobArtifacts(...args),
+  gitlabDownloadPackageFile: (...args: unknown[]) => mockGitlabDownloadPackageFile(...args),
   gitlabGetToken: (...args: unknown[]) => mockGitlabGetToken(...args),
   gitlabSetToken: (...args: unknown[]) => mockGitlabSetToken(...args),
   gitlabClearToken: (...args: unknown[]) => mockGitlabClearToken(...args),
@@ -39,6 +51,10 @@ describe('useGitLabDownloads', () => {
     mockIsTauri.mockReturnValue(true);
     mockGitlabGetToken.mockResolvedValue(null);
     mockGitlabGetInstanceUrl.mockResolvedValue(null);
+    mockGitlabListPipelines.mockResolvedValue([]);
+    mockGitlabListPipelineJobs.mockResolvedValue([]);
+    mockGitlabListPackages.mockResolvedValue([]);
+    mockGitlabListPackageFiles.mockResolvedValue([]);
   });
 
   it('should initialize with default state', () => {
@@ -55,6 +71,10 @@ describe('useGitLabDownloads', () => {
     expect(result.current.branches).toEqual([]);
     expect(result.current.tags).toEqual([]);
     expect(result.current.releases).toEqual([]);
+    expect(result.current.pipelines).toEqual([]);
+    expect(result.current.jobs).toEqual([]);
+    expect(result.current.packages).toEqual([]);
+    expect(result.current.packageFiles).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -110,6 +130,8 @@ describe('useGitLabDownloads', () => {
     const releases = [{ tag_name: 'v1.0' }];
     const branches = [{ name: 'main' }];
     const tags = [{ name: 'v1.0' }];
+    const pipelines = [{ id: 1, status: 'success' }];
+    const packages = [{ id: 2, name: 'pkg', version: '1.0.0', packageType: 'generic', createdAt: null }];
     const projectInfo = { name: 'project', stars: 100 };
 
     mockGitlabParseUrl.mockResolvedValue(parsed);
@@ -117,6 +139,8 @@ describe('useGitLabDownloads', () => {
     mockGitlabListReleases.mockResolvedValue(releases);
     mockGitlabListBranches.mockResolvedValue(branches);
     mockGitlabListTags.mockResolvedValue(tags);
+    mockGitlabListPipelines.mockResolvedValue(pipelines);
+    mockGitlabListPackages.mockResolvedValue(packages);
     mockGitlabGetProjectInfo.mockResolvedValue(projectInfo);
 
     const { result } = renderHook(() => useGitLabDownloads());
@@ -134,6 +158,8 @@ describe('useGitLabDownloads', () => {
     expect(result.current.releases).toEqual(releases);
     expect(result.current.branches).toEqual(branches);
     expect(result.current.tags).toEqual(tags);
+    expect(result.current.pipelines).toEqual(pipelines);
+    expect(result.current.packages).toEqual(packages);
     expect(result.current.projectInfo).toEqual(projectInfo);
   });
 
@@ -378,6 +404,10 @@ describe('useGitLabDownloads', () => {
     expect(result.current.instanceUrl).toBe('');
     expect(result.current.sourceType).toBe('release');
     expect(result.current.parsedProject).toBeNull();
+    expect(result.current.pipelines).toEqual([]);
+    expect(result.current.jobs).toEqual([]);
+    expect(result.current.packages).toEqual([]);
+    expect(result.current.packageFiles).toEqual([]);
     expect(result.current.error).toBeNull();
   });
 
@@ -436,6 +466,8 @@ describe('useGitLabDownloads', () => {
     mockGitlabListReleases.mockResolvedValue([{ id: 1 }]);
     mockGitlabListBranches.mockResolvedValue([{ name: 'main' }]);
     mockGitlabListTags.mockResolvedValue([{ name: 'v1' }]);
+    mockGitlabListPipelines.mockResolvedValue([{ id: 10 }]);
+    mockGitlabListPackages.mockResolvedValue([{ id: 20 }]);
     mockGitlabGetProjectInfo.mockResolvedValue({ name: 'repo' });
 
     const { result } = renderHook(() => useGitLabDownloads());
@@ -449,6 +481,8 @@ describe('useGitLabDownloads', () => {
     });
 
     expect(result.current.releases.length).toBe(1);
+    expect(result.current.pipelines.length).toBe(1);
+    expect(result.current.packages.length).toBe(1);
 
     act(() => {
       result.current.setProjectInput('');
@@ -457,6 +491,210 @@ describe('useGitLabDownloads', () => {
     await waitFor(() => {
       expect(result.current.parsedProject).toBeNull();
       expect(result.current.releases).toEqual([]);
+      expect(result.current.pipelines).toEqual([]);
+      expect(result.current.jobs).toEqual([]);
+      expect(result.current.packages).toEqual([]);
+      expect(result.current.packageFiles).toEqual([]);
     });
+  });
+
+  it('fetchPipelines should load pipeline list for parsed project', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabListPipelines.mockResolvedValue([{ id: 99, status: 'success' }]);
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    await act(async () => {
+      await result.current.fetchPipelines('main', 'success');
+    });
+
+    expect(mockGitlabListPipelines).toHaveBeenCalledWith(
+      'a/b',
+      'main',
+      'success',
+      undefined,
+      undefined,
+    );
+    expect(result.current.pipelines).toEqual([{ id: 99, status: 'success' }]);
+  });
+
+  it('fetchPipelineJobs should load jobs for a pipeline', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabListPipelineJobs.mockResolvedValue([{ id: 7, name: 'build', hasArtifacts: true }]);
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    await act(async () => {
+      await result.current.fetchPipelineJobs(123);
+    });
+
+    expect(mockGitlabListPipelineJobs).toHaveBeenCalledWith('a/b', 123, undefined, undefined);
+    expect(result.current.jobs).toEqual([{ id: 7, name: 'build', hasArtifacts: true }]);
+  });
+
+  it('fetchPackages should load package list for parsed project', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabListPackages.mockResolvedValue([
+      { id: 11, name: 'pkg', version: '1.0.0', packageType: 'generic', createdAt: null },
+    ]);
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    await act(async () => {
+      await result.current.fetchPackages('generic');
+    });
+
+    expect(mockGitlabListPackages).toHaveBeenCalledWith(
+      'a/b',
+      'generic',
+      undefined,
+      undefined
+    );
+    expect(result.current.packages).toEqual([
+      { id: 11, name: 'pkg', version: '1.0.0', packageType: 'generic', createdAt: null },
+    ]);
+  });
+
+  it('fetchPackageFiles should load files for selected package', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabListPackageFiles.mockResolvedValue([
+      { id: 31, fileName: 'artifact.zip', size: 2048, fileSha256: null, createdAt: null },
+    ]);
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    await act(async () => {
+      await result.current.fetchPackageFiles(11);
+    });
+
+    expect(mockGitlabListPackageFiles).toHaveBeenCalledWith('a/b', 11, undefined, undefined);
+    expect(result.current.packageFiles).toEqual([
+      { id: 31, fileName: 'artifact.zip', size: 2048, fileSha256: null, createdAt: null },
+    ]);
+  });
+
+  it('downloadJobArtifacts should enqueue artifacts download', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabDownloadJobArtifacts.mockResolvedValue('/downloads/build-artifacts-7.zip');
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    let output = '';
+    await act(async () => {
+      output = await result.current.downloadJobArtifacts(
+        { id: 7, name: 'build' } as never,
+        '/downloads'
+      );
+    });
+
+    expect(mockGitlabDownloadJobArtifacts).toHaveBeenCalledWith(
+      'a/b',
+      7,
+      'build',
+      '/downloads',
+      undefined,
+      undefined
+    );
+    expect(output).toBe('/downloads/build-artifacts-7.zip');
+  });
+
+  it('downloadPackageFile should enqueue package file download', async () => {
+    mockGitlabParseUrl.mockResolvedValue({ fullName: 'a/b' });
+    mockGitlabValidateProject.mockResolvedValue(true);
+    mockGitlabListReleases.mockResolvedValue([]);
+    mockGitlabListBranches.mockResolvedValue([]);
+    mockGitlabListTags.mockResolvedValue([]);
+    mockGitlabGetProjectInfo.mockResolvedValue(null);
+    mockGitlabDownloadPackageFile.mockResolvedValue('/downloads/pkg-file.zip');
+
+    const { result } = renderHook(() => useGitLabDownloads());
+
+    act(() => {
+      result.current.setProjectInput('a/b');
+    });
+
+    await act(async () => {
+      await result.current.validateAndFetch();
+    });
+
+    let output = '';
+    await act(async () => {
+      output = await result.current.downloadPackageFile(11, 'pkg-file.zip', '/downloads');
+    });
+
+    expect(mockGitlabDownloadPackageFile).toHaveBeenCalledWith(
+      'a/b',
+      11,
+      'pkg-file.zip',
+      '/downloads',
+      undefined,
+      undefined
+    );
+    expect(output).toBe('/downloads/pkg-file.zip');
   });
 });

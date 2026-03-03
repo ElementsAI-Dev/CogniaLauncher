@@ -495,7 +495,7 @@ export default function SettingsPage() {
 
   // Navigate to setting from search
   const handleNavigateToSetting = useCallback(
-    (section: SettingsSection, key: string) => {
+    (section: SettingsSection, key: string, focusId?: string) => {
       // Expand the section if collapsed
       setCollapsedSections((prev) => {
         const next = new Set(prev);
@@ -511,10 +511,13 @@ export default function SettingsPage() {
       
       // Focus the setting input after a short delay
       setTimeout(() => {
-        const element = document.getElementById(key);
-        if (element) {
+        const candidateIds = focusId && focusId !== key ? [focusId, key] : [focusId ?? key];
+        for (const id of candidateIds) {
+          const element = document.getElementById(id);
+          if (!element) continue;
           element.focus();
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
         }
       }, 300);
     },

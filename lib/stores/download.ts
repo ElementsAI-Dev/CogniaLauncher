@@ -97,7 +97,15 @@ export const useDownloadStore = create<DownloadState>()(
       showHistory: false,
 
       // Queue actions
-      setTasks: (tasks) => set({ tasks }),
+      setTasks: (tasks) =>
+        set((state) => {
+          const validIds = new Set(tasks.map((task) => task.id));
+          const selectedTaskIds = new Set(
+            [...state.selectedTaskIds].filter((id) => validIds.has(id))
+          );
+
+          return { tasks, selectedTaskIds };
+        }),
       
       setStats: (stats) => set({ stats }),
       

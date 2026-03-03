@@ -673,6 +673,7 @@ export async function listenInitProgress(
 export const configGet = (key: string) => invoke<string | null>('config_get', { key });
 export const configSet = (key: string, value: string) => invoke<void>('config_set', { key, value });
 export const configList = () => invoke<[string, string][]>('config_list');
+export const configListDefaults = () => invoke<[string, string][]>('config_list_defaults');
 export const configReset = () => invoke<void>('config_reset');
 export const configExport = () => invoke<string>('config_export');
 export const configImport = (tomlContent: string) => invoke<void>('config_import', { tomlContent });
@@ -867,10 +868,52 @@ export const getExternalCachePaths = () =>
   invoke<ExternalCachePathInfo[]>('get_external_cache_paths');
 
 // Database optimization & size history
-export const cacheOptimize = () =>
-  invoke<CacheOptimizeResult>('cache_optimize');
-export const getCacheSizeHistory = (days?: number) =>
-  invoke<CacheSizeSnapshot[]>('get_cache_size_history', { days });
+type CacheOptimizeResultCompat = Partial<CacheOptimizeResult> & {
+  size_before?: number;
+  size_before_human?: string;
+  size_after?: number;
+  size_after_human?: string;
+  size_saved?: number;
+  size_saved_human?: string;
+};
+
+function normalizeCacheOptimizeResult(result: CacheOptimizeResultCompat): CacheOptimizeResult {
+  return {
+    sizeBefore: result.sizeBefore ?? result.size_before ?? 0,
+    sizeBeforeHuman: result.sizeBeforeHuman ?? result.size_before_human ?? '0 B',
+    sizeAfter: result.sizeAfter ?? result.size_after ?? 0,
+    sizeAfterHuman: result.sizeAfterHuman ?? result.size_after_human ?? '0 B',
+    sizeSaved: result.sizeSaved ?? result.size_saved ?? 0,
+    sizeSavedHuman: result.sizeSavedHuman ?? result.size_saved_human ?? '0 B',
+  };
+}
+
+type CacheSizeSnapshotCompat = Partial<CacheSizeSnapshot> & {
+  internal_size?: number;
+  internal_size_human?: string;
+  download_count?: number;
+  metadata_count?: number;
+};
+
+function normalizeCacheSizeSnapshot(snapshot: CacheSizeSnapshotCompat): CacheSizeSnapshot {
+  return {
+    timestamp: snapshot.timestamp ?? '',
+    internalSize: snapshot.internalSize ?? snapshot.internal_size ?? 0,
+    internalSizeHuman: snapshot.internalSizeHuman ?? snapshot.internal_size_human ?? '0 B',
+    downloadCount: snapshot.downloadCount ?? snapshot.download_count ?? 0,
+    metadataCount: snapshot.metadataCount ?? snapshot.metadata_count ?? 0,
+  };
+}
+
+export const cacheOptimize = async () => {
+  const result = await invoke<CacheOptimizeResultCompat>('cache_optimize');
+  return normalizeCacheOptimizeResult(result);
+};
+
+export const getCacheSizeHistory = async (days?: number) => {
+  const snapshots = await invoke<CacheSizeSnapshotCompat[]>('get_cache_size_history', { days });
+  return snapshots.map(normalizeCacheSizeSnapshot);
+};
 
 // Backup & database maintenance
 export const backupCreate = (contents: BackupContentType[], note?: string) =>

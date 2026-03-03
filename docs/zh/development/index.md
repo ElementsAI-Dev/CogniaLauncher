@@ -8,5 +8,6 @@
 - **[贡献指南](contributing.md)** — 代码风格、提交规范、PR 流程
 - **[添加 Provider](adding-providers.md)** — 实现新的包管理器集成
 - **[添加命令](adding-commands.md)** — 添加 Tauri IPC 命令
+- **[Git 接入矩阵](git-integration-matrix.md)** — command → invoke → hook → page/component 链路基线
 - **[测试指南](testing.md)** — 测试策略与工具
 - **[CI/CD](ci-cd.md)** — 持续集成与部署流水线

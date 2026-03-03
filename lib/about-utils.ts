@@ -36,6 +36,9 @@ export function buildSystemInfoText({
     `${t("about.gpu")}: ${gpuDisplay || unknownText}`,
     `${t("about.uptime")}: ${systemInfo?.uptime ? formatUptime(systemInfo.uptime) : unknownText}`,
     `${t("about.homeDirectory")}: ${systemInfo?.homeDir || "~/.cognia"}`,
+    `${t("about.cacheTotalSize")}: ${systemInfo?.cacheTotalSizeHuman || "0 B"}`,
+    `${t("about.cacheInternalSize")}: ${systemInfo?.cacheInternalSizeHuman || "0 B"}`,
+    `${t("about.cacheExternalSize")}: ${systemInfo?.cacheExternalSizeHuman || "0 B"}`,
     `${t("about.locale")}: ${systemInfo?.locale || "en-US"}`,
   ];
 

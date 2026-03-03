@@ -4,6 +4,24 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionEnforcementMode {
+    #[default]
+    Compat,
+    Strict,
+}
+
+impl PermissionEnforcementMode {
+    pub fn from_config_value(value: &str) -> Self {
+        if value.eq_ignore_ascii_case("strict") {
+            Self::Strict
+        } else {
+            Self::Compat
+        }
+    }
+}
+
 /// Runtime permission state for a loaded plugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginPermissionState {
@@ -64,14 +82,25 @@ pub struct PermissionManager {
     states: HashMap<String, PluginPermissionState>,
     /// Base directory for plugin data isolation
     plugins_data_dir: PathBuf,
+    /// Runtime policy for permission enforcement.
+    mode: PermissionEnforcementMode,
 }
 
 impl PermissionManager {
     pub fn new(plugins_data_dir: PathBuf) -> Self {
+        Self::with_mode(plugins_data_dir, PermissionEnforcementMode::Compat)
+    }
+
+    pub fn with_mode(plugins_data_dir: PathBuf, mode: PermissionEnforcementMode) -> Self {
         Self {
             states: HashMap::new(),
             plugins_data_dir,
+            mode,
         }
+    }
+
+    pub fn set_mode(&mut self, mode: PermissionEnforcementMode) {
+        self.mode = mode;
     }
 
     pub fn register_plugin(&mut self, plugin_id: &str, permissions: PluginPermissions) {
@@ -87,10 +116,43 @@ impl PermissionManager {
         self.states.get(plugin_id)
     }
 
+    fn is_declared_permission(state: &PluginPermissionState, permission: &str) -> bool {
+        match permission {
+            "config_read" => state.declared.config_read,
+            "config_write" => state.declared.config_write,
+            "env_read" => state.declared.env_read,
+            "pkg_search" => state.declared.pkg_search,
+            "pkg_install" => state.declared.pkg_install,
+            "clipboard" => state.declared.clipboard,
+            "notification" => state.declared.notification,
+            "process_exec" => state.declared.process_exec,
+            "fs_read" => !state.declared.fs_read.is_empty(),
+            "fs_write" => !state.declared.fs_write.is_empty(),
+            "http" => !state.declared.http.is_empty(),
+            _ => false,
+        }
+    }
+
     pub fn grant_permission(&mut self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
         let state = self.states.get_mut(plugin_id).ok_or_else(|| {
             CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
         })?;
+
+        let declared = Self::is_declared_permission(state, permission);
+        if !declared {
+            if self.mode == PermissionEnforcementMode::Strict {
+                return Err(CogniaError::PermissionDenied(format!(
+                    "Plugin '{}' did not declare '{}' permission",
+                    plugin_id, permission
+                )));
+            }
+            log::warn!(
+                "Granting undeclared permission '{}' to plugin '{}' in compat mode",
+                permission,
+                plugin_id
+            );
+        }
+
         state.denied.remove(permission);
         state.granted.insert(permission.to_string());
         Ok(())
@@ -110,6 +172,16 @@ impl PermissionManager {
         let state = self.states.get(plugin_id).ok_or_else(|| {
             CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
         })?;
+
+        if self.mode == PermissionEnforcementMode::Strict
+            && !Self::is_declared_permission(state, permission)
+        {
+            return Err(CogniaError::PermissionDenied(format!(
+                "Plugin '{}' did not declare '{}' permission",
+                plugin_id, permission
+            )));
+        }
+
         if state.is_granted(permission) {
             Ok(())
         } else {
@@ -157,6 +229,31 @@ impl PermissionManager {
             )));
         }
 
+        if self.mode == PermissionEnforcementMode::Strict {
+            let rel = canonical
+                .strip_prefix(&data_dir)
+                .unwrap_or_else(|_| Path::new(""))
+                .to_string_lossy()
+                .replace('\\', "/");
+            let rel = rel.trim_start_matches('/').to_string();
+            let allowed_patterns = if write {
+                &state.declared.fs_write
+            } else {
+                &state.declared.fs_read
+            };
+            let allowed = allowed_patterns.iter().any(|pattern| {
+                fs_pattern_matches(pattern, &rel)
+            });
+            if !allowed {
+                return Err(CogniaError::PermissionDenied(format!(
+                    "Plugin '{}' path '{}' does not match declared {} allowlist",
+                    plugin_id,
+                    rel,
+                    perm_key
+                )));
+            }
+        }
+
         Ok(())
     }
 
@@ -176,6 +273,13 @@ impl PermissionManager {
         // Check against allowed domains
         let allowed = &state.declared.http;
         if allowed.is_empty() {
+            if self.mode == PermissionEnforcementMode::Compat {
+                log::warn!(
+                    "Plugin '{}' has runtime http grant but no declared domains; allowing in compat mode",
+                    plugin_id
+                );
+                return Ok(());
+            }
             return Err(CogniaError::PermissionDenied(format!(
                 "Plugin '{}' has no allowed HTTP domains",
                 plugin_id
@@ -209,6 +313,53 @@ impl PermissionManager {
             plugin_id, url
         )))
     }
+}
+
+fn normalize_fs_pattern(pattern: &str) -> String {
+    let mut normalized = pattern.replace('\\', "/").trim().to_string();
+    if let Some(stripped) = normalized.strip_prefix("./") {
+        normalized = stripped.to_string();
+    }
+    if let Some(stripped) = normalized.strip_prefix("data/") {
+        normalized = stripped.to_string();
+    } else if normalized == "data" {
+        normalized.clear();
+    }
+    normalized.trim_start_matches('/').to_string()
+}
+
+fn fs_pattern_matches(pattern: &str, rel_path: &str) -> bool {
+    let normalized_pattern = normalize_fs_pattern(pattern);
+    let normalized_path = rel_path.replace('\\', "/");
+    if normalized_pattern.is_empty() {
+        return normalized_path.is_empty();
+    }
+    wildcard_match(&normalized_pattern, &normalized_path)
+}
+
+fn wildcard_match(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let mut dp = vec![vec![false; t.len() + 1]; p.len() + 1];
+    dp[0][0] = true;
+
+    for i in 1..=p.len() {
+        if p[i - 1] == '*' {
+            dp[i][0] = dp[i - 1][0];
+        }
+    }
+
+    for i in 1..=p.len() {
+        for j in 1..=t.len() {
+            dp[i][j] = match p[i - 1] {
+                '*' => dp[i - 1][j] || dp[i][j - 1],
+                '?' => dp[i - 1][j - 1],
+                c => dp[i - 1][j - 1] && c == t[j - 1],
+            };
+        }
+    }
+
+    dp[p.len()][t.len()]
 }
 
 #[cfg(test)]
@@ -412,6 +563,91 @@ mod tests {
         // but let's test the edge case by manually granting
         mgr.register_plugin("p1", PluginPermissions::default());
         mgr.grant_permission("p1", "http").unwrap();
+        assert!(mgr.check_http_access("p1", "https://example.com").is_ok());
+    }
+
+    #[test]
+    fn test_strict_mode_rejects_undeclared_grant() {
+        let mut mgr = PermissionManager::with_mode(
+            PathBuf::from("/tmp/test-plugins"),
+            PermissionEnforcementMode::Strict,
+        );
+        mgr.register_plugin("p1", PluginPermissions::default());
+        assert!(mgr.grant_permission("p1", "process_exec").is_err());
+    }
+
+    #[test]
+    fn test_strict_mode_rejects_undeclared_check_even_if_granted() {
+        let mut mgr = PermissionManager::with_mode(
+            PathBuf::from("/tmp/test-plugins"),
+            PermissionEnforcementMode::Strict,
+        );
+        mgr.register_plugin("p1", PluginPermissions::default());
+        if let Some(state) = mgr.states.get_mut("p1") {
+            state.granted.insert("process_exec".to_string());
+        }
+
+        assert!(mgr.check_permission("p1", "process_exec").is_err());
+    }
+
+    #[test]
+    fn test_strict_mode_fs_pattern_enforced() {
+        let mut mgr = PermissionManager::with_mode(
+            PathBuf::from("/tmp/test-plugins"),
+            PermissionEnforcementMode::Strict,
+        );
+        mgr.register_plugin("p1", make_perms(|p| {
+            p.fs_read = vec!["logs/*.txt".into()];
+        }));
+
+        let allowed = mgr.get_plugin_data_dir("p1").join("logs/app.txt");
+        let denied = mgr.get_plugin_data_dir("p1").join("cache/app.txt");
+
+        assert!(mgr.check_fs_access("p1", &allowed, false).is_ok());
+        assert!(mgr.check_fs_access("p1", &denied, false).is_err());
+    }
+
+    #[test]
+    fn test_strict_mode_fs_pattern_supports_data_prefix() {
+        let mut mgr = PermissionManager::with_mode(
+            PathBuf::from("/tmp/test-plugins"),
+            PermissionEnforcementMode::Strict,
+        );
+        mgr.register_plugin("p1", make_perms(|p| {
+            p.fs_read = vec!["data/logs/*.txt".into()];
+        }));
+
+        let allowed = mgr.get_plugin_data_dir("p1").join("logs/app.txt");
+        assert!(mgr.check_fs_access("p1", &allowed, false).is_ok());
+    }
+
+    #[test]
+    fn test_strict_mode_http_requires_declared_domains() {
+        let mut mgr = PermissionManager::with_mode(
+            PathBuf::from("/tmp/test-plugins"),
+            PermissionEnforcementMode::Strict,
+        );
+        mgr.register_plugin("p1", PluginPermissions::default());
+        if let Some(state) = mgr.states.get_mut("p1") {
+            state.granted.insert("http".to_string());
+        }
+
         assert!(mgr.check_http_access("p1", "https://example.com").is_err());
+    }
+
+    #[test]
+    fn test_mode_from_config_value() {
+        assert_eq!(
+            PermissionEnforcementMode::from_config_value("strict"),
+            PermissionEnforcementMode::Strict
+        );
+        assert_eq!(
+            PermissionEnforcementMode::from_config_value("compat"),
+            PermissionEnforcementMode::Compat
+        );
+        assert_eq!(
+            PermissionEnforcementMode::from_config_value("unknown"),
+            PermissionEnforcementMode::Compat
+        );
     }
 }

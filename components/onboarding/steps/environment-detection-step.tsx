@@ -1,79 +1,117 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layers, RefreshCw, CheckCircle2, XCircle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { isTauri } from '@/lib/tauri';
+import * as tauri from '@/lib/tauri';
 import { useEnvironmentStore } from '@/lib/stores/environment';
+import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
+import { formatDetectionSource } from '@/lib/environment-detection';
 import type { DetectedEnv, EnvironmentDetectionStepProps } from '@/types/onboarding';
 
 export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
+  const isDesktop = tauri.isTauri();
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState<DetectedEnv[]>([]);
   const [hasRun, setHasRun] = useState(false);
+  const runningRef = useRef(false);
   const storeEnvironments = useEnvironmentStore((s) => s.environments);
+  const storeProviders = useEnvironmentStore((s) => s.availableProviders);
   const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
+  const setAvailableProviders = useEnvironmentStore((s) => s.setAvailableProviders);
+  const { detectSystemEnvironments, buildOnboardingDetections } = useEnvironmentDetection({
+    availableProviders: storeProviders,
+  });
 
   const runDetection = useCallback(async () => {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setDetecting(true);
     try {
-      if (isTauri()) {
-        const { envDetectSystemAll, envList } = await import('@/lib/tauri');
-        const result = await envDetectSystemAll();
-        setDetected(
-          result.map((env) => ({
-            name: env.env_type || 'Unknown',
-            version: env.version || '',
-            available: true,
-          })),
-        );
-        // Sync full environment list to global store so Environments page has data
-        try {
-          const envs = await envList();
-          setEnvironments(envs);
-        } catch {
-          // Non-critical: environments page will fetch on its own mount
-        }
-      } else {
-        // Web mode: simulate detection with common tools
-        await new Promise((r) => setTimeout(r, 1500));
-        setDetected([
-          { name: 'Node.js', version: '(web mode)', available: false },
-          { name: 'Python', version: '(web mode)', available: false },
-          { name: 'Rust', version: '(web mode)', available: false },
-        ]);
+      if (!isDesktop) {
+        setDetected([]);
+        return;
       }
+
+      const [systemResult, environmentsResult, providersResult] = await Promise.allSettled([
+        detectSystemEnvironments(),
+        tauri.envList(),
+        tauri.envListProviders(),
+      ]);
+
+      const systemDetected = systemResult.status === 'fulfilled'
+        ? systemResult.value
+        : [];
+      const environments = environmentsResult.status === 'fulfilled'
+        ? environmentsResult.value
+        : storeEnvironments;
+      const providers = providersResult.status === 'fulfilled'
+        ? providersResult.value
+        : storeProviders;
+
+      if (environmentsResult.status === 'fulfilled') {
+        setEnvironments(environmentsResult.value);
+      }
+      if (providersResult.status === 'fulfilled') {
+        setAvailableProviders(providersResult.value);
+      }
+
+      setDetected(
+        buildOnboardingDetections({
+          environments,
+          systemDetections: systemDetected,
+          providers,
+        }),
+      );
     } catch {
       setDetected([]);
     } finally {
+      runningRef.current = false;
       setDetecting(false);
       setHasRun(true);
     }
-  }, [setEnvironments]);
+  }, [
+    buildOnboardingDetections,
+    detectSystemEnvironments,
+    isDesktop,
+    setAvailableProviders,
+    setEnvironments,
+    storeEnvironments,
+    storeProviders,
+  ]);
 
-  // Use cached store data if available, otherwise auto-detect
+  // Seed from cache for quick first paint, then run full detection once.
   useEffect(() => {
     if (hasRun) return;
-    if (storeEnvironments.length > 0) {
-      // Populate from existing store data
-      setDetected(
-        storeEnvironments
-          .filter((env) => env.available)
-          .map((env) => ({
-            name: env.env_type || 'Unknown',
-            version: env.current_version || '',
-            available: true,
-          })),
-      );
+
+    if (!isDesktop) {
+      setDetected([]);
       setHasRun(true);
-    } else {
-      runDetection();
+      return;
     }
-  }, [hasRun, storeEnvironments, runDetection]);
+
+    if (storeEnvironments.length > 0) {
+      setDetected(
+        buildOnboardingDetections({
+          environments: storeEnvironments,
+          providers: storeProviders,
+        }),
+      );
+    }
+
+    void runDetection();
+  }, [
+    buildOnboardingDetections,
+    hasRun,
+    isDesktop,
+    runDetection,
+    storeEnvironments,
+    storeProviders,
+  ]);
 
   const detectedCount = detected.filter((e) => e.available).length;
 
@@ -100,47 +138,74 @@ export function EnvironmentDetectionStep({ t }: EnvironmentDetectionStepProps) {
         </div>
       ) : (
         <>
-          {hasRun && (
+          {isDesktop && hasRun && (
             <p className="text-sm font-medium">
               {t('onboarding.envDetectedCount', { count: detectedCount })}
             </p>
           )}
-          <div className="w-full max-w-sm space-y-2">
-            {detected.map((env) => (
-              <Card
-                key={env.name}
-                className="py-0"
+          {isDesktop ? (
+            <>
+              <div className="w-full max-w-sm space-y-2">
+                {detected.map((env) => (
+                  <Card
+                    key={env.name}
+                    className="py-0"
+                  >
+                    <CardContent className="flex items-center gap-3 p-3">
+                      {env.available ? (
+                        <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
+                      ) : (
+                        <XCircle className="h-5 w-5 text-muted-foreground shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">{env.name}</div>
+                        {env.version && (
+                          <div className="text-xs text-muted-foreground">{env.version}</div>
+                        )}
+                        {env.source && (
+                          <div className="text-xs text-muted-foreground">
+                            {t('onboarding.envSourceLabel', {
+                              source: formatDetectionSource(env.source),
+                            })}
+                          </div>
+                        )}
+                        {env.sourcePath && (
+                          <div
+                            className="text-[11px] text-muted-foreground/80 truncate"
+                            title={env.sourcePath}
+                          >
+                            {env.sourcePath}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge variant={env.available ? 'default' : 'secondary'}>
+                          {env.available ? t('onboarding.envAvailable') : t('onboarding.envNotFound')}
+                        </Badge>
+                        {env.scope && (
+                          <Badge variant="outline">
+                            {env.scope === 'system'
+                              ? t('onboarding.envScopeSystem')
+                              : t('onboarding.envScopeManaged')}
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={runDetection}
+                disabled={detecting}
+                className="gap-2"
               >
-                <CardContent className="flex items-center gap-3 p-3">
-                  {env.available ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-muted-foreground shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">{env.name}</div>
-                    {env.version && (
-                      <div className="text-xs text-muted-foreground">{env.version}</div>
-                    )}
-                  </div>
-                  <Badge variant={env.available ? 'default' : 'secondary'} className="shrink-0">
-                    {env.available ? t('onboarding.envAvailable') : t('onboarding.envNotFound')}
-                  </Badge>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={runDetection}
-            disabled={detecting}
-            className="gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            {t('onboarding.envRescan')}
-          </Button>
-          {!isTauri() && hasRun && (
+                <RefreshCw className="h-4 w-4" />
+                {t('onboarding.envRescan')}
+              </Button>
+            </>
+          ) : (
             <Alert className="max-w-sm">
               <Info className="h-4 w-4" />
               <AlertDescription className="text-xs">

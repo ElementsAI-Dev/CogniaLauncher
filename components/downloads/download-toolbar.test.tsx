@@ -30,8 +30,14 @@ const mockT = (key: string) => {
     "downloads.actions.pauseAll": "Pause All",
     "downloads.actions.resumeAll": "Resume All",
     "downloads.actions.cancelAll": "Cancel All",
+    "downloads.actions.pause": "Pause",
+    "downloads.actions.resume": "Resume",
+    "downloads.actions.cancel": "Cancel",
+    "downloads.actions.remove": "Remove",
     "downloads.actions.clearFinished": "Clear Finished",
     "downloads.actions.retryFailed": "Retry Failed",
+    "common.selected": "selected",
+    "common.clear": "Clear",
   };
   return translations[key] || key;
 };
@@ -42,6 +48,12 @@ describe("DownloadToolbar", () => {
     onSearchChange: jest.fn(),
     statusFilter: "all" as StatusFilter,
     onStatusChange: jest.fn(),
+    selectedCount: 0,
+    onBatchPause: jest.fn(),
+    onBatchResume: jest.fn(),
+    onBatchCancel: jest.fn(),
+    onBatchRemove: jest.fn(),
+    onClearSelection: jest.fn(),
     onPauseAll: jest.fn(),
     onResumeAll: jest.fn(),
     onCancelAll: jest.fn(),
@@ -141,5 +153,47 @@ describe("DownloadToolbar", () => {
     expect(screen.getByRole("button", { name: /pause all/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /resume all/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /cancel all/i })).toBeDisabled();
+  });
+
+  it("shows batch action bar when items are selected", () => {
+    render(<DownloadToolbar {...defaultProps} selectedCount={2} />);
+
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("calls batch callbacks when batch action buttons are clicked", async () => {
+    const onBatchPause = jest.fn();
+    const onBatchResume = jest.fn();
+    const onBatchCancel = jest.fn();
+    const onBatchRemove = jest.fn();
+    const onClearSelection = jest.fn();
+
+    render(
+      <DownloadToolbar
+        {...defaultProps}
+        selectedCount={1}
+        onBatchPause={onBatchPause}
+        onBatchResume={onBatchResume}
+        onBatchCancel={onBatchCancel}
+        onBatchRemove={onBatchRemove}
+        onClearSelection={onClearSelection}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+    await userEvent.click(screen.getByRole("button", { name: "Resume" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(onBatchPause).toHaveBeenCalled();
+    expect(onBatchResume).toHaveBeenCalled();
+    expect(onBatchCancel).toHaveBeenCalled();
+    expect(onBatchRemove).toHaveBeenCalled();
+    expect(onClearSelection).toHaveBeenCalled();
   });
 });

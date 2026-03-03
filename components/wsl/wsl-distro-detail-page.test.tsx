@@ -30,6 +30,10 @@ const mockUseWslData = {
   listUsers: jest.fn().mockResolvedValue([]),
   getDistroResources: jest.fn().mockResolvedValue(null),
   updateDistroPackages: jest.fn().mockResolvedValue({ packageManager: "apt", command: "", stdout: "", stderr: "", exitCode: 0 }),
+  openInExplorer: jest.fn().mockResolvedValue(undefined),
+  openInTerminal: jest.fn().mockResolvedValue(undefined),
+  cloneDistro: jest.fn().mockResolvedValue(""),
+  unregisterDistro: jest.fn().mockResolvedValue(undefined),
 };
 
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -45,6 +49,9 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "wsl.setDefault": "Set Default",
         "wsl.changeDefaultUser": "Change User",
         "wsl.export": "Export",
+        "wsl.openInExplorer": "Open in Explorer",
+        "wsl.openInTerminal": "Open in Terminal",
+        "wsl.clone": "Clone",
         "wsl.unregister": "Unregister",
         "wsl.detail.tabOverview": "Overview",
         "wsl.detail.tabTerminal": "Terminal",
@@ -206,6 +213,8 @@ describe("WslDistroDetailPage", () => {
       render(<WslDistroDetailPage distroName="Ubuntu" />);
       expect(screen.getByText("Export")).toBeInTheDocument();
       expect(screen.getByText("Unregister")).toBeInTheDocument();
+      expect(screen.getByText("Open in Explorer")).toBeInTheDocument();
+      expect(screen.getByText("Open in Terminal")).toBeInTheDocument();
     });
 
     it("shows Set Default button for non-default distro", () => {

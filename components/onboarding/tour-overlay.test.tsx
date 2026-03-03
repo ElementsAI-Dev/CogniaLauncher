@@ -18,10 +18,14 @@ jest.mock("@/components/providers/locale-provider", () => ({
   }),
 }));
 
+const mockPush = jest.fn();
+const mockPathname = jest.fn(() => "/");
+
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: jest.fn(),
+    push: mockPush,
   }),
+  usePathname: () => mockPathname(),
 }));
 
 jest.mock("@/lib/constants/onboarding", () => ({
@@ -59,6 +63,19 @@ const defaultProps = {
 describe("TourOverlay", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPathname.mockReturnValue("/");
+  });
+
+  it("does not push route when current pathname already matches", () => {
+    mockPathname.mockReturnValue("/");
+    render(<TourOverlay {...defaultProps} />);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("pushes route when step route differs from current pathname", () => {
+    mockPathname.mockReturnValue("/settings");
+    render(<TourOverlay {...defaultProps} />);
+    expect(mockPush).toHaveBeenCalledWith("/");
   });
 
   it("does not render when inactive", () => {

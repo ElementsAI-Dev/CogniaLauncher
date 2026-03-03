@@ -36,7 +36,7 @@ interface SettingsState {
   setAppSettings: (settings: Partial<AppSettings>) => void;
 }
 
-const defaultAppSettings: AppSettings = {
+export const DEFAULT_APP_SETTINGS: AppSettings = {
   checkUpdatesOnStart: true,
   autoInstallUpdates: false,
   notifyOnUpdates: true,
@@ -58,7 +58,7 @@ export const useSettingsStore = create<SettingsState>()(
       cogniaDir: null,
       loading: false,
       error: null,
-      appSettings: defaultAppSettings,
+      appSettings: DEFAULT_APP_SETTINGS,
 
       setConfig: (config) => set({ config }),
       updateConfig: (key, value) => set((state) => ({
@@ -78,6 +78,40 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'cognia-settings',
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState, version) => {
+        const state = (persistedState ?? {}) as Partial<SettingsState> & {
+          appSettings?: Partial<AppSettings>;
+        };
+
+        const appSettings: Partial<AppSettings> = state.appSettings ?? {};
+
+        // Keep backward compatibility with older persisted payloads.
+        // New keys always fall back to defaults.
+        const migrated: AppSettings = {
+          checkUpdatesOnStart:
+            appSettings.checkUpdatesOnStart ?? DEFAULT_APP_SETTINGS.checkUpdatesOnStart,
+          autoInstallUpdates:
+            appSettings.autoInstallUpdates ?? DEFAULT_APP_SETTINGS.autoInstallUpdates,
+          notifyOnUpdates:
+            appSettings.notifyOnUpdates ?? DEFAULT_APP_SETTINGS.notifyOnUpdates,
+          minimizeToTray:
+            appSettings.minimizeToTray ?? DEFAULT_APP_SETTINGS.minimizeToTray,
+          startMinimized:
+            appSettings.startMinimized ?? DEFAULT_APP_SETTINGS.startMinimized,
+          autostart: appSettings.autostart ?? DEFAULT_APP_SETTINGS.autostart,
+          trayClickBehavior:
+            appSettings.trayClickBehavior ?? DEFAULT_APP_SETTINGS.trayClickBehavior,
+          showNotifications:
+            appSettings.showNotifications ?? DEFAULT_APP_SETTINGS.showNotifications,
+        };
+
+        if (version < 2) {
+          return { ...state, appSettings: migrated } as SettingsState;
+        }
+
+        return { ...state, appSettings: migrated } as SettingsState;
+      },
       partialize: (state) => ({
         appSettings: state.appSettings,
       }),

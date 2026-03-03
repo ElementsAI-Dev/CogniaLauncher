@@ -7,6 +7,38 @@ import {
   arrayToSlug,
   type DocNavItem,
 } from './navigation';
+import fs from 'fs';
+import path from 'path';
+
+function getDocSlugsFromFs(locale: 'zh' | 'en'): string[] {
+  const docsDir = path.join(process.cwd(), 'docs', locale);
+  const slugs: string[] = [];
+
+  function scanDir(dir: string, prefix: string[]) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        scanDir(path.join(dir, entry.name), [...prefix, entry.name]);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.md')) {
+        continue;
+      }
+
+      const name = entry.name.replace(/\.md$/, '');
+      if (name === 'index' && prefix.length === 0) {
+        slugs.push('index');
+      } else if (name === 'index') {
+        slugs.push(prefix.join('/'));
+      } else {
+        slugs.push([...prefix, name].join('/'));
+      }
+    }
+  }
+
+  scanDir(docsDir, []);
+  return slugs.sort();
+}
 
 describe('DOC_NAV', () => {
   it('has root index entry', () => {
@@ -52,6 +84,20 @@ describe('DOC_NAV', () => {
       }
     }
     checkTitles(DOC_NAV);
+  });
+
+  it('matches docs/zh slugs exactly', () => {
+    const navSlugs = flattenNav()
+      .map((item) => item.slug!)
+      .sort();
+    const docsZhSlugs = getDocSlugsFromFs('zh');
+    expect(navSlugs).toEqual(docsZhSlugs);
+  });
+
+  it('ensures docs/zh and docs/en slugs stay in sync', () => {
+    const docsZhSlugs = getDocSlugsFromFs('zh');
+    const docsEnSlugs = getDocSlugsFromFs('en');
+    expect(docsZhSlugs).toEqual(docsEnSlugs);
   });
 });
 

@@ -9,8 +9,6 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -18,13 +16,12 @@ import type { EnvironmentInfo, DetectedEnvironment } from "@/lib/tauri";
 import {
   useEnvironmentStore,
   type EnvironmentSettings,
+  type EnvVariable,
 } from "@/lib/stores/environment";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useProjectPath } from "@/hooks/use-auto-version";
 import {
   Globe,
-  Plus,
-  X,
-  FileCode,
   Settings2,
   Cpu,
   HardDrive,
@@ -48,6 +45,11 @@ import { toast } from "sonner";
 import { formatSize } from "@/lib/utils";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { VersionPinningSection } from "@/components/environments/version-pinning-section";
+import {
+  AutoSwitchToggle,
+  DetectionFilesList,
+  EnvVarsEditor,
+} from "@/components/environments/shared";
 
 interface EnvironmentDetailsPanelProps {
   env: EnvironmentInfo | null;
@@ -77,12 +79,11 @@ export function EnvironmentDetailsPanel({
   );
   // Get persisted environment settings from store
   const { getEnvSettings } = useEnvironmentStore();
-  const { loadEnvSettings, saveEnvSettings } = useEnvironments();
+  const { loadEnvSettings, saveEnvSettings, detectVersions } = useEnvironments();
+  const { projectPath } = useProjectPath();
   const envSettings = env ? getEnvSettings(env.env_type) : null;
   const envVariables = envSettings?.envVariables || [];
-  const detectionFileSettings = envSettings?.detectionFiles || [];
-  const [newVarKey, setNewVarKey] = useState("");
-  const [newVarValue, setNewVarValue] = useState("");
+  const detectionFiles = envSettings?.detectionFiles || [];
 
 
   useEffect(() => {
@@ -93,29 +94,26 @@ export function EnvironmentDetailsPanel({
 
   if (!env) return null;
 
-  const detectionFiles = detectionFileSettings;
-
   const updateSettings = async (nextSettings: EnvironmentSettings) => {
     if (!env) return;
     try {
       await saveEnvSettings(env.env_type, nextSettings);
+      await detectVersions(projectPath || ".");
     } catch (err) {
       toast.error(String(err));
     }
   };
 
 
-  const handleAddEnvVariable = async () => {
-    if (!newVarKey.trim() || !envSettings || !env) return;
+  const handleAddEnvVariable = async (variable: EnvVariable) => {
+    if (!envSettings || !env) return;
     await updateSettings({
       ...envSettings,
       envVariables: [
         ...envSettings.envVariables,
-        { key: newVarKey, value: newVarValue, enabled: true },
+        variable,
       ],
     });
-    setNewVarKey("");
-    setNewVarValue("");
     toast.success(t("environments.details.envVarAdded"));
   };
 
@@ -125,6 +123,16 @@ export function EnvironmentDetailsPanel({
       ...envSettings,
       envVariables: envSettings.envVariables.filter(
         (variable) => variable.key !== key,
+      ),
+    });
+  };
+
+  const handleToggleEnvVariable = async (key: string, enabled: boolean) => {
+    if (!envSettings || !env) return;
+    await updateSettings({
+      ...envSettings,
+      envVariables: envSettings.envVariables.map((variable) =>
+        variable.key === key ? { ...variable, enabled } : variable,
       ),
     });
   };
@@ -403,57 +411,13 @@ export function EnvironmentDetailsPanel({
                 </p>
               </div>
 
-              <div className="space-y-2">
-                {envVariables.map((envVar, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                  >
-                    <div className="flex items-center gap-2 text-sm">
-                      <code className="px-2 py-0.5 rounded bg-background font-mono text-xs">
-                        {envVar.key}
-                      </code>
-                      <span className="text-muted-foreground">=</span>
-                      <span className="text-muted-foreground truncate max-w-[200px]">
-                        {envVar.value}
-                      </span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => handleRemoveEnvVariable(envVar.key)}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={t("environments.details.varKey")}
-                    value={newVarKey}
-                    onChange={(e) => setNewVarKey(e.target.value)}
-                    className="w-[120px] h-9 font-mono text-xs"
-                  />
-                  <Input
-                    placeholder={t("environments.details.varValue")}
-                    value={newVarValue}
-                    onChange={(e) => setNewVarValue(e.target.value)}
-                    className="flex-1 h-9"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddEnvVariable}
-                    disabled={!newVarKey.trim()}
-                    className="gap-1"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {t("common.add")}
-                  </Button>
-                </div>
-              </div>
+              <EnvVarsEditor
+                variables={envVariables}
+                onAdd={handleAddEnvVariable}
+                onRemove={handleRemoveEnvVariable}
+                onToggle={handleToggleEnvVariable}
+                t={t}
+              />
             </section>
 
             <Separator />
@@ -461,8 +425,7 @@ export function EnvironmentDetailsPanel({
             {/* Project Detection Section */}
             <section className="space-y-3">
               <div>
-                <h3 className="text-sm font-medium flex items-center gap-2">
-                  <FileCode className="h-4 w-4" />
+                <h3 className="text-sm font-medium">
                   {t("environments.details.projectDetection")}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -470,44 +433,17 @@ export function EnvironmentDetailsPanel({
                 </p>
               </div>
 
-              {/* Auto Switch Toggle */}
-              <div className="flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 text-primary" />
-                  <div>
-                    <span className="text-sm font-medium">
-                      {t("environments.details.autoSwitch")}
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      {t("environments.details.autoSwitchDesc")}
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  checked={envSettings?.autoSwitch || false}
-                  onCheckedChange={handleToggleAutoSwitch}
-                />
-              </div>
+              <AutoSwitchToggle
+                enabled={envSettings?.autoSwitch || false}
+                onToggle={handleToggleAutoSwitch}
+                t={t}
+              />
 
-              <div className="space-y-2">
-                {detectionFiles.map((file, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileCode className="h-4 w-4 text-muted-foreground" />
-                      <code className="font-mono text-sm">{file.fileName}</code>
-                    </div>
-                    <Switch
-                      checked={file.enabled}
-                      onCheckedChange={(checked) =>
-                        handleToggleDetectionFile(file.fileName, checked)
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
+              <DetectionFilesList
+                files={detectionFiles}
+                onToggle={handleToggleDetectionFile}
+                t={t}
+              />
             </section>
           </div>
         </ScrollArea>

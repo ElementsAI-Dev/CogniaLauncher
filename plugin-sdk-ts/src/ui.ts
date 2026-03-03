@@ -124,21 +124,51 @@ export interface UiGroupBlock {
   children: UiBlock[];
 }
 
+export interface UiTabsBlock {
+  type: 'tabs';
+  tabs: { id: string; label: string; children: UiBlock[] }[];
+  defaultTab?: string;
+}
+
+export interface UiAccordionBlock {
+  type: 'accordion';
+  items: { id: string; title: string; children: UiBlock[] }[];
+  collapsible?: boolean;
+}
+
+export interface UiCopyButtonBlock {
+  type: 'copy-button';
+  content: string;
+  label?: string;
+}
+
+export interface UiFileInputBlock {
+  type: 'file-input';
+  id: string;
+  label: string;
+  accept?: string;
+  multiple?: boolean;
+}
+
 export type UiBlock =
   | UiTextBlock | UiHeadingBlock | UiMarkdownBlock | UiDividerBlock
   | UiAlertBlock | UiBadgeBlock | UiProgressBlock | UiImageBlock
   | UiCodeBlock | UiTableBlock | UiKeyValueBlock
-  | UiFormBlock | UiActionsBlock | UiGroupBlock;
+  | UiFormBlock | UiActionsBlock | UiGroupBlock
+  | UiTabsBlock | UiAccordionBlock | UiCopyButtonBlock | UiFileInputBlock;
 
 // ============================================================================
 // Action Payload (parsed from input when user interacts)
 // ============================================================================
 
 export interface UiAction {
-  action: string;
+  action: 'button_click' | 'form_submit' | 'file_selected' | 'tab_change' | string;
   buttonId?: string;
   formId?: string;
   formData?: Record<string, unknown>;
+  fileInputId?: string;
+  files?: { name: string; size: number; type: string; dataUrl: string }[];
+  tabId?: string;
   state?: Record<string, unknown>;
 }
 
@@ -217,6 +247,42 @@ export function button(id: string, label: string, variant?: string, icon?: strin
 export function group(direction: string, children: UiBlock[], gap?: number): UiGroupBlock {
   const block: UiGroupBlock = { type: 'group', direction, children };
   if (gap !== undefined) block.gap = gap;
+  return block;
+}
+
+export function tabs(
+  tabItems: { id: string; label: string; children: UiBlock[] }[],
+  defaultTab?: string,
+): UiTabsBlock {
+  const block: UiTabsBlock = { type: 'tabs', tabs: tabItems };
+  if (defaultTab) block.defaultTab = defaultTab;
+  return block;
+}
+
+export function accordion(
+  items: { id: string; title: string; children: UiBlock[] }[],
+  collapsible?: boolean,
+): UiAccordionBlock {
+  const block: UiAccordionBlock = { type: 'accordion', items };
+  if (collapsible !== undefined) block.collapsible = collapsible;
+  return block;
+}
+
+export function copyButton(content: string, label?: string): UiCopyButtonBlock {
+  const block: UiCopyButtonBlock = { type: 'copy-button', content };
+  if (label) block.label = label;
+  return block;
+}
+
+export function fileInput(
+  id: string,
+  label: string,
+  accept?: string,
+  multiple?: boolean,
+): UiFileInputBlock {
+  const block: UiFileInputBlock = { type: 'file-input', id, label };
+  if (accept) block.accept = accept;
+  if (multiple !== undefined) block.multiple = multiple;
   return block;
 }
 

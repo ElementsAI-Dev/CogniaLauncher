@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { GitCommitGraph } from './git-commit-graph';
 
 jest.mock('@/components/providers/locale-provider', () => ({
@@ -40,6 +41,20 @@ describe('GitCommitGraph', () => {
     render(<GitCommitGraph onLoadGraph={mockOnLoadGraph} />);
     await waitFor(() => {
       expect(mockOnLoadGraph).toHaveBeenCalledWith(100, true, false, undefined);
+    });
+  });
+
+  it('reloads graph data when refreshKey changes', async () => {
+    const { rerender } = render(
+      <GitCommitGraph onLoadGraph={mockOnLoadGraph} refreshKey={0} />,
+    );
+    await waitFor(() => {
+      expect(mockOnLoadGraph).toHaveBeenCalledTimes(2);
+    });
+
+    rerender(<GitCommitGraph onLoadGraph={mockOnLoadGraph} refreshKey={1} />);
+    await waitFor(() => {
+      expect(mockOnLoadGraph).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -191,5 +206,29 @@ describe('GitCommitGraph', () => {
     await waitFor(() => {
       expect(screen.getByRole('listbox')).toBeInTheDocument();
     });
+  });
+
+  it('invokes onResetTo from context menu', async () => {
+    const user = userEvent.setup();
+    const onResetTo = jest.fn();
+    const { container } = render(
+      <GitCommitGraph
+        onLoadGraph={mockOnLoadGraph}
+        onResetTo={onResetTo}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial commit')).toBeInTheDocument();
+    });
+
+    const firstRow = container.querySelector('[data-hash="abc1234"]');
+    const trigger = firstRow?.querySelector('button');
+    expect(trigger).toBeTruthy();
+    await user.click(trigger!);
+
+    const resetItem = await screen.findByRole('menuitem', { name: 'git.resetAction.title' });
+    await user.click(resetItem);
+    expect(onResetTo).toHaveBeenCalledWith('abc1234');
   });
 });

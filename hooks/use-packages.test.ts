@@ -6,13 +6,17 @@ const mockPackageSearch = jest.fn();
 const mockPackageInstall = jest.fn();
 const mockPackageUninstall = jest.fn();
 const mockPackageList = jest.fn();
+const mockProviderList = jest.fn();
+const mockPluginDispatchEvent = jest.fn(() => Promise.resolve());
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: jest.fn(() => true),
-  packageSearch: (...args: unknown[]) => mockPackageSearch(...args),
-  packageInstall: (...args: unknown[]) => mockPackageInstall(...args),
-  packageUninstall: (...args: unknown[]) => mockPackageUninstall(...args),
-  packageList: (...args: unknown[]) => mockPackageList(...args),
+  packageSearch: (...args: Parameters<typeof mockPackageSearch>) => mockPackageSearch(...args),
+  packageInstall: (...args: Parameters<typeof mockPackageInstall>) => mockPackageInstall(...args),
+  packageUninstall: (...args: Parameters<typeof mockPackageUninstall>) => mockPackageUninstall(...args),
+  packageList: (...args: Parameters<typeof mockPackageList>) => mockPackageList(...args),
+  providerList: (...args: Parameters<typeof mockProviderList>) => mockProviderList(...args),
+  pluginDispatchEvent: (...args: Parameters<typeof mockPluginDispatchEvent>) => mockPluginDispatchEvent(...args),
 }));
 
 // Mock package store
@@ -23,22 +27,75 @@ const mockSetError = jest.fn();
 const mockSetSearchQuery = jest.fn();
 const mockAddInstalling = jest.fn();
 const mockRemoveInstalling = jest.fn();
+const mockSetLastScanTimestamp = jest.fn();
+const mockIsScanFresh = jest.fn(() => false);
+const mockSetProviders = jest.fn();
+
+interface MockInstalledPackage {
+  name: string;
+  version: string;
+  [key: string]: unknown;
+}
+
+interface MockProvider {
+  id: string;
+  display_name?: string;
+  [key: string]: unknown;
+}
+
+interface MockStoreState {
+  installedPackages: MockInstalledPackage[];
+  searchResults: unknown[];
+  bookmarkedPackages: string[];
+  providers: MockProvider[];
+  isLoading: boolean;
+  error: string | null;
+}
+
+const mockStoreState: MockStoreState = {
+  installedPackages: [],
+  searchResults: [],
+  bookmarkedPackages: [],
+  providers: [],
+  isLoading: false,
+  error: null,
+};
+
+const mockStoreActions = {
+  setInstalledPackages: (packages: MockInstalledPackage[]) => {
+    mockSetPackages(packages);
+    mockStoreState.installedPackages = packages ?? [];
+  },
+  setSearchResults: (results: unknown[]) => {
+    mockSetSearchResults(results);
+    mockStoreState.searchResults = results ?? [];
+  },
+  setLoading: (...args: unknown[]) => mockSetLoading(...args),
+  setError: (...args: unknown[]) => mockSetError(...args),
+  setSearchQuery: (...args: unknown[]) => mockSetSearchQuery(...args),
+  addInstalling: (...args: unknown[]) => mockAddInstalling(...args),
+  removeInstalling: (...args: unknown[]) => mockRemoveInstalling(...args),
+  setLastScanTimestamp: (...args: unknown[]) => mockSetLastScanTimestamp(...args),
+  isScanFresh: mockIsScanFresh,
+  setProviders: (providers: MockProvider[]) => {
+    mockSetProviders(providers);
+    mockStoreState.providers = providers ?? [];
+  },
+};
 
 jest.mock('@/lib/stores/packages', () => ({
-  usePackageStore: jest.fn(() => ({
-    installedPackages: [],
-    searchResults: [],
-    bookmarkedPackages: [],
-    isLoading: false,
-    error: null,
-    setInstalledPackages: mockSetPackages,
-    setSearchResults: mockSetSearchResults,
-    setLoading: mockSetLoading,
-    setError: mockSetError,
-    setSearchQuery: mockSetSearchQuery,
-    addInstalling: mockAddInstalling,
-    removeInstalling: mockRemoveInstalling,
-  })),
+  usePackageStore: Object.assign(
+    jest.fn((selector?: (state: Record<string, unknown>) => unknown) => {
+      const fullState = { ...mockStoreState, ...mockStoreActions };
+      if (typeof selector === 'function') {
+        return selector(fullState);
+      }
+      return fullState;
+    }),
+    {
+      getState: () => ({ ...mockStoreState, ...mockStoreActions }),
+    },
+  ),
 }));
 
 // Mock error formatter
@@ -49,6 +106,13 @@ jest.mock('@/lib/errors', () => ({
 describe('usePackages', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockStoreState.installedPackages = [];
+    mockStoreState.searchResults = [];
+    mockStoreState.bookmarkedPackages = [];
+    mockStoreState.providers = [];
+    mockStoreState.isLoading = false;
+    mockStoreState.error = null;
+    mockIsScanFresh.mockReturnValue(false);
   });
 
   it('should return package methods', () => {
@@ -113,6 +177,52 @@ describe('usePackages', () => {
 
     expect(mockPackageList).toHaveBeenCalled();
     expect(mockSetPackages).toHaveBeenCalledWith(packages);
+  });
+
+  it('should use cached installed packages when scan is fresh', async () => {
+    const cachedPackages = [{ name: 'cached-pkg', version: '1.0.0' }];
+    mockStoreState.installedPackages = cachedPackages;
+    mockIsScanFresh.mockReturnValue(true);
+    const { result } = renderHook(() => usePackages());
+
+    let returned;
+    await act(async () => {
+      returned = await result.current.fetchInstalledPackages();
+    });
+
+    expect(mockPackageList).not.toHaveBeenCalled();
+    expect(returned).toEqual(cachedPackages);
+  });
+
+  it('should deduplicate concurrent installed package fetches', async () => {
+    let resolveList!: (packages: { name: string; version: string }[]) => void;
+    const listPromise = new Promise<{ name: string; version: string }[]>((resolve) => {
+      resolveList = (packages) => resolve(packages);
+    });
+    mockPackageList.mockReturnValue(listPromise);
+    const { result } = renderHook(() => usePackages());
+
+    const p1 = result.current.fetchInstalledPackages();
+    const p2 = result.current.fetchInstalledPackages();
+    expect(mockPackageList).toHaveBeenCalledTimes(1);
+
+    resolveList([{ name: 'react', version: '19.0.0' }]);
+    await act(async () => {
+      await Promise.all([p1, p2]);
+    });
+  });
+
+  it('should cache providers between calls', async () => {
+    const providers = [{ id: 'npm', display_name: 'npm' }];
+    mockProviderList.mockResolvedValue(providers);
+    const { result } = renderHook(() => usePackages());
+
+    await act(async () => {
+      await result.current.fetchProviders();
+      await result.current.fetchProviders();
+    });
+
+    expect(mockProviderList).toHaveBeenCalledTimes(1);
   });
 
   it('should handle search error', async () => {

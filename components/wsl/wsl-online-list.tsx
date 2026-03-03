@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
-import { Globe, Download, Search } from 'lucide-react';
+import { Globe, Download, Search, FolderOpen } from 'lucide-react';
 import type { WslOnlineListProps } from '@/types/wsl';
 
 export function WslOnlineList({
@@ -16,6 +16,7 @@ export function WslOnlineList({
   installedNames,
   loading,
   onInstall,
+  onInstallWithLocation,
   t,
 }: WslOnlineListProps) {
   const [search, setSearch] = useState('');
@@ -89,16 +90,31 @@ export function WslOnlineList({
                       <p className="text-sm font-medium truncate">{name}</p>
                       <p className="text-xs text-muted-foreground font-mono">{id}</p>
                     </div>
-                    <Button
-                      variant={isInstalled ? 'secondary' : 'outline'}
-                      size="sm"
-                      disabled={isInstalled}
-                      onClick={() => onInstall(id)}
-                      className="gap-1.5 shrink-0 ml-2"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      {isInstalled ? t('wsl.installed') : t('wsl.install')}
-                    </Button>
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {!isInstalled && onInstallWithLocation && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onInstallWithLocation(id)}
+                          className="gap-1.5"
+                          data-testid={`install-location-${id}`}
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" />
+                          {t('wsl.installWithLocation')}
+                        </Button>
+                      )}
+                      <Button
+                        variant={isInstalled ? 'secondary' : 'outline'}
+                        size="sm"
+                        disabled={isInstalled}
+                        onClick={() => onInstall(id)}
+                        className="gap-1.5"
+                        data-testid={`install-${id}`}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {isInstalled ? t('wsl.installed') : t('wsl.install')}
+                      </Button>
+                    </div>
                   </div>
                 );
               })

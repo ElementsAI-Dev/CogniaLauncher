@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TableCell, TableRow } from "@/components/ui/table";
 import {
   Tooltip,
@@ -23,6 +24,8 @@ import type { DownloadTask } from "@/types/tauri";
 
 interface DownloadTaskRowProps {
   task: DownloadTask;
+  selected: boolean;
+  onSelectedChange: (selected: boolean) => void;
   onPause: (taskId: string) => void;
   onResume: (taskId: string) => void;
   onCancel: (taskId: string) => void;
@@ -35,6 +38,8 @@ interface DownloadTaskRowProps {
 
 export function DownloadTaskRow({
   task,
+  selected,
+  onSelectedChange,
   onPause,
   onResume,
   onCancel,
@@ -46,6 +51,13 @@ export function DownloadTaskRow({
 }: DownloadTaskRowProps) {
   return (
     <TableRow>
+      <TableCell className="w-10">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={(checked) => onSelectedChange(checked === true)}
+          aria-label={`Select ${task.name}`}
+        />
+      </TableCell>
       <TableCell className="min-w-[220px]">
         <div className="space-y-1">
           <p
@@ -98,6 +110,8 @@ export function DownloadTaskRow({
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => onPause(task.id)}
+                  aria-label={t("downloads.actions.pause")}
+                  title={t("downloads.actions.pause")}
                 >
                   <Pause className="h-4 w-4" />
                 </Button>
@@ -113,6 +127,8 @@ export function DownloadTaskRow({
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => onResume(task.id)}
+                  aria-label={t("downloads.actions.resume")}
+                  title={t("downloads.actions.resume")}
                 >
                   <Play className="h-4 w-4" />
                 </Button>
@@ -128,6 +144,8 @@ export function DownloadTaskRow({
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => onCancel(task.id)}
+                  aria-label={t("downloads.actions.cancel")}
+                  title={t("downloads.actions.cancel")}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -144,6 +162,8 @@ export function DownloadTaskRow({
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => onOpen(task.destination)}
+                    aria-label={t("downloads.actions.open")}
+                    title={t("downloads.actions.open")}
                   >
                     <ExternalLink className="h-4 w-4" />
                   </Button>
@@ -157,6 +177,8 @@ export function DownloadTaskRow({
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => onReveal(task.destination)}
+                    aria-label={t("downloads.actions.reveal")}
+                    title={t("downloads.actions.reveal")}
                   >
                     <FolderOpen className="h-4 w-4" />
                   </Button>
@@ -172,6 +194,8 @@ export function DownloadTaskRow({
                 size="icon"
                 className="h-8 w-8"
                 onClick={() => onRemove(task.id)}
+                aria-label={t("downloads.actions.remove")}
+                title={t("downloads.actions.remove")}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

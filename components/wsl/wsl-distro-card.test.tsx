@@ -10,8 +10,12 @@ const mockT = (key: string) => {
     'wsl.launch': 'Launch',
     'wsl.terminate': 'Terminate',
     'wsl.setDefault': 'Set as Default',
+    'wsl.defaultBadge': 'Default',
     'wsl.setVersion': 'Set WSL Version',
     'wsl.export': 'Export',
+    'wsl.openInExplorer': 'Open in Explorer',
+    'wsl.openInTerminal': 'Open in Terminal',
+    'wsl.clone': 'Clone',
     'wsl.unregister': 'Unregister',
   };
   return translations[key] || key;

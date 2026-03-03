@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   GitBranch,
   ArrowUpRight,
@@ -12,6 +13,9 @@ import {
   Plus,
   Trash2,
   LogIn,
+  Pencil,
+  Link2,
+  CloudOff,
 } from 'lucide-react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
@@ -23,10 +27,16 @@ export function GitBranchCard({
   onCheckout,
   onCreate,
   onDelete,
+  onDeleteRemote,
+  onRename,
+  onSetUpstream,
 }: GitBranchCardProps) {
   const { t } = useLocale();
   const [newBranch, setNewBranch] = useState('');
+  const [startPoint, setStartPoint] = useState('');
+  const [forceDelete, setForceDelete] = useState(false);
   const [creating, setCreating] = useState(false);
+  const forceDeleteCheckboxId = 'git-branch-force-delete';
   const localBranches = branches.filter((b) => !b.isRemote);
   const remoteBranches = branches.filter((b) => b.isRemote);
 
@@ -44,9 +54,13 @@ export function GitBranchCard({
     if (!onCreate || !newBranch.trim()) return;
     setCreating(true);
     try {
-      const msg = await onCreate(newBranch.trim());
+      const msg = await onCreate(
+        newBranch.trim(),
+        startPoint.trim() ? startPoint.trim() : undefined,
+      );
       toast.success(t('git.branch.createSuccess'), { description: msg });
       setNewBranch('');
+      setStartPoint('');
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -57,8 +71,50 @@ export function GitBranchCard({
   const handleDelete = async (name: string) => {
     if (!onDelete) return;
     try {
-      const msg = await onDelete(name);
+      const msg = await onDelete(name, forceDelete);
       toast.success(t('git.branch.deleteSuccess'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleDeleteRemote = async (qualifiedName: string) => {
+    if (!onDeleteRemote) return;
+    const [remote, ...rest] = qualifiedName.split('/');
+    const branch = rest.join('/');
+    if (!remote || !branch) return;
+
+    const ok = window.confirm(t('git.branchAction.deleteRemoteConfirm'));
+    if (!ok) return;
+
+    try {
+      const msg = await onDeleteRemote(remote, branch);
+      toast.success(t('git.branchAction.deleteRemoteSuccess'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleRename = async (name: string) => {
+    if (!onRename) return;
+    const next = window.prompt(t('git.branchAction.rename'), name);
+    if (!next || next.trim() === '' || next.trim() === name) return;
+    try {
+      const msg = await onRename(name, next.trim());
+      toast.success(t('git.branchAction.renameSuccess'), { description: msg });
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleSetUpstream = async (name: string, currentUpstream?: string | null) => {
+    if (!onSetUpstream) return;
+    const suggested = currentUpstream && currentUpstream.trim() ? currentUpstream : `origin/${name}`;
+    const upstream = window.prompt(t('git.branchAction.setUpstream'), suggested);
+    if (!upstream || upstream.trim() === '') return;
+    try {
+      const msg = await onSetUpstream(name, upstream.trim());
+      toast.success(msg);
     } catch (e) {
       toast.error(String(e));
     }
@@ -129,6 +185,28 @@ export function GitBranchCard({
                         <span className="text-muted-foreground truncate">→ {b.upstream}</span>
                       )}
                       <span className="text-muted-foreground ml-auto font-mono shrink-0">{b.shortHash}</span>
+                      {onSetUpstream && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleSetUpstream(b.name, b.upstream)}
+                          title={t('git.branchAction.setUpstream')}
+                        >
+                          <Link2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                      {onRename && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleRename(b.name)}
+                          title={t('git.branchAction.rename')}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      )}
                       {!b.isCurrent && onDelete && (
                         <Button
                           variant="ghost"
@@ -152,9 +230,20 @@ export function GitBranchCard({
                 </p>
                 <div className="space-y-1">
                   {remoteBranches.map((b) => (
-                    <div key={b.name} className="flex items-center gap-2 text-xs">
+                    <div key={b.name} className="flex items-center gap-2 text-xs group">
                       <span className="font-mono text-muted-foreground truncate">{b.name}</span>
                       <span className="text-muted-foreground ml-auto font-mono shrink-0">{b.shortHash}</span>
+                      {onDeleteRemote && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-destructive"
+                          onClick={() => handleDeleteRemote(b.name)}
+                          title={t('git.branchAction.deleteRemote')}
+                        >
+                          <CloudOff className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -164,25 +253,49 @@ export function GitBranchCard({
         )}
 
         {onCreate && (
-          <div className="flex items-center gap-2 pt-1 border-t">
-            <Input
-              placeholder={t('git.branchAction.newBranchName')}
-              value={newBranch}
-              onChange={(e) => setNewBranch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              className="flex-1 h-7 text-xs"
-              disabled={creating}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={handleCreate}
-              disabled={creating || !newBranch.trim()}
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              {t('git.branchAction.create')}
-            </Button>
+          <div className="space-y-2 pt-1 border-t">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder={t('git.branchAction.newBranchName')}
+                value={newBranch}
+                onChange={(e) => setNewBranch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                className="flex-1 h-7 text-xs"
+                disabled={creating}
+              />
+              <Input
+                placeholder="start-point (optional)"
+                value={startPoint}
+                onChange={(e) => setStartPoint(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                className="flex-1 h-7 text-xs font-mono"
+                disabled={creating}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleCreate}
+                disabled={creating || !newBranch.trim()}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                {t('git.branchAction.create')}
+              </Button>
+            </div>
+          </div>
+        )}
+        {onDelete && (
+          <div className={`pt-1 ${onCreate ? '' : 'border-t'}`}>
+            <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                id={forceDeleteCheckboxId}
+                checked={forceDelete}
+                onCheckedChange={(v) => setForceDelete(v === true)}
+              />
+              <label htmlFor={forceDeleteCheckboxId} className="cursor-pointer">
+                delete --force
+              </label>
+            </div>
           </div>
         )}
       </CardContent>

@@ -1,11 +1,25 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
-import { useEnvironmentStore, type EnvironmentSettings } from '@/lib/stores/environment';
+import { useCallback, useEffect, useRef } from 'react';
+import {
+  getLogicalEnvType,
+  useEnvironmentStore,
+  type EnvironmentSettings,
+} from '@/lib/stores/environment';
 import * as tauri from '@/lib/tauri';
 import { formatSize, formatSpeed } from '@/lib/utils';
 import { formatError } from '@/lib/errors';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import {
+  type CacheInvalidationEvent,
+  emitInvalidations,
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
+
+const ENV_PROVIDERS_CACHE_TTL_MS = 10 * 60 * 1000;
+const DETECTED_VERSIONS_CACHE_TTL_MS = 10 * 1000;
 
 export function useEnvironments() {
   // Select state values
@@ -16,12 +30,9 @@ export function useEnvironments() {
   // Select stable action references (these don't change between renders)
   const setLoading = useEnvironmentStore((s) => s.setLoading);
   const setError = useEnvironmentStore((s) => s.setError);
-  const setEnvironments = useEnvironmentStore((s) => s.setEnvironments);
   const setEnvSettings = useEnvironmentStore((s) => s.setEnvSettings);
   const updateEnvironment = useEnvironmentStore((s) => s.updateEnvironment);
   const setDetectedVersions = useEnvironmentStore((s) => s.setDetectedVersions);
-  const setAvailableVersions = useEnvironmentStore((s) => s.setAvailableVersions);
-  const setAvailableProviders = useEnvironmentStore((s) => s.setAvailableProviders);
   const setCurrentInstallation = useEnvironmentStore((s) => s.setCurrentInstallation);
   const openProgressDialog = useEnvironmentStore((s) => s.openProgressDialog);
   const closeProgressDialog = useEnvironmentStore((s) => s.closeProgressDialog);
@@ -29,6 +40,29 @@ export function useEnvironments() {
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const environmentListInFlightRef = useRef<Map<string, Promise<tauri.EnvironmentInfo[]>>>(new Map());
+  const availableVersionsInFlightRef = useRef<Map<string, Promise<tauri.VersionInfo[]>>>(new Map());
+  const providersInFlightRef = useRef<Promise<tauri.EnvironmentProviderInfo[]> | null>(null);
+  const providersCacheTimestampRef = useRef<number | null>(null);
+  const detectionSourcesCacheRef = useRef<Map<string, string[]>>(new Map());
+  const detectedVersionsCacheRef = useRef<{
+    path: string;
+    timestamp: number;
+    versions: tauri.DetectedEnvironment[];
+  } | null>(null);
+
+  const normalizeEnvType = useCallback((envType: string): string => (
+    envType.trim().toLowerCase()
+  ), []);
+
+  const toLogicalEnvType = useCallback((envType: string): string => {
+    const normalizedEnvType = normalizeEnvType(envType);
+    const providers = useEnvironmentStore.getState().availableProviders.map((provider) => ({
+      id: provider.id.toLowerCase(),
+      env_type: provider.env_type.toLowerCase(),
+    }));
+    return normalizeEnvType(getLogicalEnvType(normalizedEnvType, providers));
+  }, [normalizeEnvType]);
 
   const toSettings = useCallback((settings: tauri.EnvironmentSettingsConfig): EnvironmentSettings => ({
     envVariables: settings.env_variables.map((variable) => ({
@@ -44,7 +78,7 @@ export function useEnvironments() {
   }), []);
 
   const toSettingsConfig = useCallback((envType: string, settings: EnvironmentSettings): tauri.EnvironmentSettingsConfig => ({
-    env_type: envType,
+    env_type: toLogicalEnvType(envType),
     env_variables: settings.envVariables.map((variable) => ({
       key: variable.key,
       value: variable.value,
@@ -55,57 +89,182 @@ export function useEnvironments() {
       enabled: file.enabled,
     })),
     auto_switch: settings.autoSwitch,
-  }), []);
+  }), [toLogicalEnvType]);
 
-  const setLastEnvScanTimestamp = useEnvironmentStore((s) => s.setLastEnvScanTimestamp);
   const isScanFresh = useEnvironmentStore((s) => s.isScanFresh);
 
   const fetchEnvironments = useCallback(async (force?: boolean) => {
+    if (!tauri.isTauri()) {
+      return [];
+    }
+
+    const state = useEnvironmentStore.getState();
+
     // Skip fetch if store has fresh data and not forced
-    if (!force && isScanFresh() && environments.length > 0) {
-      return environments;
+    if (!force && isScanFresh() && state.environments.length > 0) {
+      return state.environments;
     }
 
     // Stale-while-revalidate: if we have cached data (from localStorage persist),
     // return it immediately and refresh in the background without showing loading state.
-    const hasCachedData = !force && environments.length > 0;
+    const hasCachedData = !force && state.environments.length > 0;
+    const requestKey = force ? 'force' : 'normal';
+    const inFlight = environmentListInFlightRef.current.get(requestKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
     if (!hasCachedData) {
-      setLoading(true);
+      state.setLoading(true);
     }
-    setError(null);
+    state.setError(null);
+
+    const request = tauri.envList(force)
+      .then((envs) => {
+        const latest = useEnvironmentStore.getState();
+        latest.setEnvironments(envs);
+        latest.setLastEnvScanTimestamp(Date.now());
+        // Per-env settings are loaded lazily via loadEnvSettings() when the
+        // user opens an environment detail view, avoiding 29+ IPC calls at startup.
+        return envs;
+      })
+      .catch((err) => {
+        const latest = useEnvironmentStore.getState();
+        latest.setError(formatError(err));
+        return hasCachedData ? latest.environments : [];
+      })
+      .finally(() => {
+        environmentListInFlightRef.current.delete(requestKey);
+        useEnvironmentStore.getState().setLoading(false);
+      });
+
+    environmentListInFlightRef.current.set(requestKey, request);
+    return request;
+  }, [isScanFresh]);
+
+  const getDetectionSources = useCallback(async (envType: string, force?: boolean) => {
+    const logicalEnvType = toLogicalEnvType(envType);
+    const cached = detectionSourcesCacheRef.current.get(logicalEnvType);
+    if (!force && cached) {
+      return cached;
+    }
+
+    const fallback = useEnvironmentStore
+      .getState()
+      .getEnvSettings(logicalEnvType)
+      .detectionFiles
+      .map((file) => file.fileName);
+
+    if (!tauri.isTauri() || typeof tauri.envGetDetectionSources !== 'function') {
+      detectionSourcesCacheRef.current.set(logicalEnvType, fallback);
+      return fallback;
+    }
+
     try {
-      const envs = await tauri.envList(force);
-      setEnvironments(envs);
-      setLastEnvScanTimestamp(Date.now());
-      // Per-env settings are loaded lazily via loadEnvSettings() when the
-      // user opens an environment detail view, avoiding 29+ IPC calls at startup.
-      return envs;
-    } catch (err) {
-      setError(formatError(err));
-      return hasCachedData ? environments : [];
-    } finally {
-      setLoading(false);
+      const sources = await tauri.envGetDetectionSources(logicalEnvType);
+      const unique = Array.from(new Set(sources));
+      detectionSourcesCacheRef.current.set(logicalEnvType, unique);
+      return unique;
+    } catch {
+      detectionSourcesCacheRef.current.set(logicalEnvType, fallback);
+      return fallback;
     }
-  }, [setLoading, setError, setEnvironments, setLastEnvScanTimestamp, isScanFresh, environments]);
+  }, [toLogicalEnvType]);
+
+  const normalizeDetectionFiles = useCallback((
+    sources: string[],
+    detectionFiles: EnvironmentSettings['detectionFiles'],
+    defaultEnableFirstTwo: boolean,
+  ): EnvironmentSettings['detectionFiles'] => {
+    if (sources.length === 0) {
+      return detectionFiles;
+    }
+
+    const savedFlags = new Map(
+      detectionFiles.map((file) => [file.fileName, file.enabled]),
+    );
+
+    return sources.map((fileName, index) => ({
+      fileName,
+      enabled: savedFlags.has(fileName)
+        ? Boolean(savedFlags.get(fileName))
+        : (defaultEnableFirstTwo && index < 2),
+    }));
+  }, []);
 
   const loadEnvSettings = useCallback(async (envType: string) => {
     if (!tauri.isTauri()) return null;
+    const logicalEnvType = toLogicalEnvType(envType);
+    const normalizedInput = normalizeEnvType(envType);
+    const candidateKeys = normalizedInput === logicalEnvType
+      ? [logicalEnvType]
+      : [logicalEnvType, normalizedInput];
+
     try {
-      const settings = await tauri.envLoadSettings(envType);
-      if (settings) {
+      for (const key of candidateKeys) {
+        const settings = await tauri.envLoadSettings(key);
+        if (!settings) {
+          continue;
+        }
+
         const normalized = toSettings(settings);
-        setEnvSettings(envType, normalized);
-        return normalized;
+        const sources = await getDetectionSources(logicalEnvType);
+        const normalizedDetectionFiles = normalizeDetectionFiles(
+          sources,
+          normalized.detectionFiles,
+          false,
+        );
+        const merged: EnvironmentSettings = {
+          ...useEnvironmentStore.getState().getEnvSettings(logicalEnvType),
+          ...normalized,
+          detectionFiles: normalizedDetectionFiles.length > 0
+            ? normalizedDetectionFiles
+            : useEnvironmentStore.getState().getEnvSettings(logicalEnvType).detectionFiles,
+        };
+
+        setEnvSettings(logicalEnvType, merged);
+        return merged;
       }
-      return null;
+
+      const sources = await getDetectionSources(logicalEnvType);
+      const defaults = useEnvironmentStore.getState().getEnvSettings(logicalEnvType);
+      const nextSettings: EnvironmentSettings = {
+        ...defaults,
+        detectionFiles: normalizeDetectionFiles(
+          sources,
+          defaults.detectionFiles,
+          true,
+        ),
+      };
+
+      setEnvSettings(logicalEnvType, nextSettings);
+      return nextSettings;
     } catch (err) {
       setError(formatError(err));
       return null;
     }
-  }, [setEnvSettings, setError, toSettings]);
+  }, [
+    getDetectionSources,
+    normalizeDetectionFiles,
+    normalizeEnvType,
+    setEnvSettings,
+    setError,
+    toLogicalEnvType,
+    toSettings,
+  ]);
 
   const saveEnvSettings = useCallback(async (envType: string, settings: EnvironmentSettings) => {
-    const config = toSettingsConfig(envType, settings);
+    const logicalEnvType = toLogicalEnvType(envType);
+    const sources = await getDetectionSources(logicalEnvType);
+    const normalizedSettings: EnvironmentSettings = {
+      ...settings,
+      detectionFiles: normalizeDetectionFiles(
+        sources,
+        settings.detectionFiles,
+        settings.detectionFiles.length === 0,
+      ),
+    };
+    const config = toSettingsConfig(logicalEnvType, normalizedSettings);
     if (tauri.isTauri()) {
       try {
         await tauri.envSaveSettings(config);
@@ -114,8 +273,17 @@ export function useEnvironments() {
         throw err;
       }
     }
-    setEnvSettings(envType, settings);
-  }, [setError, setEnvSettings, toSettingsConfig]);
+    detectionSourcesCacheRef.current.delete(logicalEnvType);
+    detectedVersionsCacheRef.current = null;
+    setEnvSettings(logicalEnvType, normalizedSettings);
+  }, [
+    getDetectionSources,
+    normalizeDetectionFiles,
+    setError,
+    setEnvSettings,
+    toLogicalEnvType,
+    toSettingsConfig,
+  ]);
 
   const installVersion = useCallback(async (envType: string, version: string, providerId?: string) => {
     const env = environments.find((e) => e.env_type === envType);
@@ -201,6 +369,10 @@ export function useEnvironments() {
       const updatedEnv = await tauri.envGet(envType);
       updateEnvironment(updatedEnv);
       tauri.pluginDispatchEvent('env_version_installed', { envType, version: resolvedVersion }).catch(() => {});
+      emitInvalidations(
+        ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'environments:install-version',
+      );
       
       // If not using events (web mode), manually update progress
       if (!unlistenRef.current) {
@@ -234,6 +406,10 @@ export function useEnvironments() {
       await tauri.envUninstall(envType, version);
       const env = await tauri.envGet(envType);
       updateEnvironment(env);
+      emitInvalidations(
+        ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'environments:uninstall-version',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -249,6 +425,10 @@ export function useEnvironments() {
       const env = await tauri.envGet(envType);
       updateEnvironment(env);
       tauri.pluginDispatchEvent('env_version_switched', { envType, version }).catch(() => {});
+      emitInvalidations(
+        ['environment_data', 'provider_data'],
+        'environments:set-global',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;
@@ -266,8 +446,28 @@ export function useEnvironments() {
   }, [setError]);
 
   const detectVersions = useCallback(async (startPath: string) => {
+    if (!tauri.isTauri()) {
+      return [];
+    }
+
+    const now = Date.now();
+    const cached = detectedVersionsCacheRef.current;
+    if (
+      cached &&
+      cached.path === startPath &&
+      now - cached.timestamp < DETECTED_VERSIONS_CACHE_TTL_MS
+    ) {
+      setDetectedVersions(cached.versions);
+      return cached.versions;
+    }
+
     try {
       const detected = await tauri.envDetectAll(startPath);
+      detectedVersionsCacheRef.current = {
+        path: startPath,
+        timestamp: now,
+        versions: detected,
+      };
       setDetectedVersions(detected);
       return detected;
     } catch (err) {
@@ -277,26 +477,94 @@ export function useEnvironments() {
   }, [setDetectedVersions, setError]);
 
   const fetchAvailableVersions = useCallback(async (envType: string, force?: boolean) => {
+    const cached = useEnvironmentStore.getState().availableVersions[envType];
+    if (!force && cached && cached.length > 0) {
+      return cached;
+    }
+
+    const requestKey = `${envType}:${force ? 'force' : 'normal'}`;
+    const inFlight = availableVersionsInFlightRef.current.get(requestKey);
+    if (inFlight) {
+      return inFlight;
+    }
+
     try {
-      const versions = await tauri.envAvailableVersions(envType, undefined, force);
-      setAvailableVersions(envType, versions);
-      return versions;
+      const request = tauri.envAvailableVersions(envType, undefined, force)
+        .then((versions) => {
+          useEnvironmentStore.getState().setAvailableVersions(envType, versions);
+          return versions;
+        })
+        .finally(() => {
+          availableVersionsInFlightRef.current.delete(requestKey);
+        });
+      availableVersionsInFlightRef.current.set(requestKey, request);
+      return await request;
     } catch (err) {
       setError(formatError(err));
       return [];
     }
-  }, [setAvailableVersions, setError]);
+  }, [setError]);
 
   const fetchProviders = useCallback(async (force?: boolean) => {
+    if (!tauri.isTauri()) {
+      return [];
+    }
+
+    const state = useEnvironmentStore.getState();
+    const now = Date.now();
+    const isProvidersCacheFresh =
+      providersCacheTimestampRef.current !== null &&
+      now - providersCacheTimestampRef.current < ENV_PROVIDERS_CACHE_TTL_MS;
+
+    if (!force && isProvidersCacheFresh && state.availableProviders.length > 0) {
+      return state.availableProviders;
+    }
+
+    if (!force && providersInFlightRef.current) {
+      return providersInFlightRef.current;
+    }
+
     try {
-      const providers = await tauri.envListProviders(force);
-      setAvailableProviders(providers);
-      return providers;
+      const request = tauri.envListProviders(force).then((providers) => {
+        const latest = useEnvironmentStore.getState();
+        latest.setAvailableProviders(providers);
+        providersCacheTimestampRef.current = Date.now();
+        return providers;
+      });
+      providersInFlightRef.current = request;
+      return await request;
     } catch (err) {
       setError(formatError(err));
       return [];
+    } finally {
+      providersInFlightRef.current = null;
     }
-  }, [setAvailableProviders, setError]);
+  }, [setError]);
+
+  useEffect(() => {
+    if (!tauri.isTauri()) return;
+    void ensureCacheInvalidationBridge();
+
+    const dispose = subscribeInvalidation(
+      ['environment_data', 'provider_data'],
+      withThrottle((event: CacheInvalidationEvent) => {
+        if (event.domain === 'provider_data') {
+          providersCacheTimestampRef.current = null;
+          void fetchProviders(true);
+          return;
+        }
+
+        if (event.domain === 'environment_data') {
+          useEnvironmentStore.getState().setLastEnvScanTimestamp(null);
+          void fetchEnvironments(true);
+        }
+      }, 500),
+    );
+
+    return () => {
+      dispose();
+    };
+  }, [fetchEnvironments, fetchProviders]);
 
   const cancelInstallation = useCallback(async () => {
     if (!currentInstallation) return false;
@@ -373,6 +641,10 @@ export function useEnvironments() {
       // Refresh environment data after cleanup
       const env = await tauri.envGet(envType);
       updateEnvironment(env);
+      emitInvalidations(
+        ['environment_data', 'provider_data', 'cache_overview', 'about_cache_stats'],
+        'environments:cleanup-versions',
+      );
       return result;
     } catch (err) {
       setError(formatError(err));
@@ -399,7 +671,12 @@ export function useEnvironments() {
   ) => {
     if (!tauri.isTauri()) return null;
     try {
-      return await tauri.envMigratePackages(envType, fromVersion, toVersion, packages, providerId);
+      const result = await tauri.envMigratePackages(envType, fromVersion, toVersion, packages, providerId);
+      emitInvalidations(
+        ['environment_data', 'provider_data', 'package_data'],
+        'environments:migrate-packages',
+      );
+      return result;
     } catch (err) {
       setError(formatError(err));
       return null;
@@ -433,6 +710,7 @@ export function useEnvironments() {
     setGlobalVersion,
     setLocalVersion,
     detectVersions,
+    getDetectionSources,
     fetchAvailableVersions,
     fetchProviders,
     cancelInstallation,

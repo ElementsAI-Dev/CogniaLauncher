@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
@@ -17,9 +17,25 @@ import type {
 import * as tauri from '@/lib/tauri';
 import type { CleanType, OperationType } from '@/types/cache';
 import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
+import { useDebounce } from '@/hooks/use-mobile';
+import {
+  type CacheInvalidationEvent,
+  emitInvalidations,
+  ensureCacheInvalidationBridge,
+  subscribeInvalidation,
+  withThrottle,
+} from '@/lib/cache/invalidation';
 
 interface UseCachePageOptions {
   t: (key: string, params?: Record<string, string | number>) => string;
+}
+
+interface RefreshOverviewStateOptions {
+  includeCacheInfo?: boolean;
+  includeCacheSettings?: boolean;
+  includeAccessStats?: boolean;
+  includeHotFiles?: boolean;
+  includeMonitor?: boolean;
 }
 
 export function useCachePage({ t }: UseCachePageOptions) {
@@ -67,6 +83,8 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [browserSortBy, setBrowserSortBy] = useState<string>('created_desc');
   const [browserPage, setBrowserPage] = useState(0);
   const [browserSelectedKeys, setBrowserSelectedKeys] = useState<Set<string>>(new Set());
+  const browserSearchRef = useRef(browserSearch);
+  const browserRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hotFiles, setHotFiles] = useState<CacheEntryItem[]>([]);
 
@@ -77,6 +95,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
   const [optimizeLoading, setOptimizeLoading] = useState(false);
   const [dbInfo, setDbInfo] = useState<DatabaseInfo | null>(null);
   const [dbInfoLoading, setDbInfoLoading] = useState(false);
+  const debouncedBrowserSearch = useDebounce(browserSearch, 300);
+
+  useEffect(() => {
+    browserSearchRef.current = browserSearch;
+  }, [browserSearch]);
 
   const fetchAccessStats = useCallback(async () => {
     if (!isTauri()) return;
@@ -101,53 +124,134 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCacheInfo();
-    fetchPlatformInfo();
-    fetchCacheSettings();
-    fetchAccessStats();
-    fetchHotFiles();
-  }, [fetchCacheInfo, fetchPlatformInfo, fetchCacheSettings, fetchAccessStats, fetchHotFiles]);
+  const refreshOverviewState = useCallback(async ({
+    includeCacheInfo = true,
+    includeCacheSettings = false,
+    includeAccessStats = true,
+    includeHotFiles = true,
+    includeMonitor = true,
+  }: RefreshOverviewStateOptions = {}) => {
+    const tasks: Promise<unknown>[] = [];
+    if (includeCacheInfo) {
+      tasks.push(fetchCacheInfo());
+    }
+    if (includeCacheSettings) {
+      tasks.push(fetchCacheSettings());
+    }
+    if (includeAccessStats) {
+      tasks.push(fetchAccessStats());
+    }
+    if (includeHotFiles) {
+      tasks.push(fetchHotFiles());
+    }
+    await Promise.all(tasks);
+    if (includeMonitor) {
+      setMonitorRefreshTrigger((prev) => prev + 1);
+    }
+  }, [fetchAccessStats, fetchCacheInfo, fetchCacheSettings, fetchHotFiles]);
 
-  // Listen to backend cache events for auto-refresh
+  const fetchBrowserEntries = useCallback(async (
+    resetPage = false,
+    explicitPage?: number,
+    searchOverride?: string,
+  ) => {
+    if (!isTauri()) return;
+    setBrowserLoading(true);
+    const page = resetPage ? 0 : (explicitPage ?? browserPage);
+    if (resetPage) setBrowserPage(0);
+    try {
+      const result = await tauri.listCacheEntries({
+        entryType: browserTypeFilter || undefined,
+        search: (searchOverride ?? browserSearchRef.current) || undefined,
+        sortBy: browserSortBy,
+        limit: ENTRIES_PER_PAGE,
+        offset: page * ENTRIES_PER_PAGE,
+      });
+      setBrowserEntries(result.entries);
+      setBrowserTotalCount(result.total_count);
+    } catch (err) {
+      console.error('Failed to fetch cache entries:', err);
+    } finally {
+      setBrowserLoading(false);
+    }
+  }, [browserPage, browserSortBy, browserTypeFilter]);
+
+  const scheduleBrowserRefresh = useCallback(() => {
+    if (!browserOpen || !isTauri()) return;
+    if (browserRefreshTimeoutRef.current) return;
+    browserRefreshTimeoutRef.current = setTimeout(() => {
+      browserRefreshTimeoutRef.current = null;
+      void fetchBrowserEntries(false, undefined, debouncedBrowserSearch);
+    }, 350);
+  }, [browserOpen, debouncedBrowserSearch, fetchBrowserEntries]);
+
+  useEffect(() => {
+    fetchPlatformInfo();
+    void refreshOverviewState({ includeCacheSettings: true, includeMonitor: false });
+  }, [fetchPlatformInfo, refreshOverviewState]);
+
+  // Listen to unified cache invalidation bus for auto-refresh
   useEffect(() => {
     if (!isTauri()) return;
-    let cancelled = false;
-    const unlisteners: (() => void)[] = [];
+    void ensureCacheInvalidationBridge();
 
-    (async () => {
-      const { listenCacheAutoCleaned, listenCacheChanged } = await import('@/lib/tauri');
-
-      if (cancelled) return;
-
-      const unlisten1 = await listenCacheAutoCleaned((event) => {
-        if (event.expiredMetadataRemoved > 0 || event.expiredDownloadsFreed > 0 || event.evictedCount > 0 || event.stalePartialsRemoved > 0) {
-          toast.info(t('cache.autoCleanEvent', { size: event.totalFreedHuman }));
-          fetchCacheInfo();
-          fetchAccessStats();
-          setMonitorRefreshTrigger(prev => prev + 1);
+    const disposeOverview = subscribeInvalidation(
+      ['cache_overview', 'external_cache'],
+      withThrottle((event: CacheInvalidationEvent) => {
+        if (event.domain === 'external_cache') {
+          void refreshOverviewState({
+            includeCacheInfo: false,
+            includeAccessStats: false,
+            includeHotFiles: false,
+          });
+          return;
         }
-      });
-      unlisteners.push(unlisten1);
 
-      const unlisten2 = await listenCacheChanged(() => {
-        fetchCacheInfo();
-        setMonitorRefreshTrigger(prev => prev + 1);
-      });
-      unlisteners.push(unlisten2);
-    })();
+        void refreshOverviewState();
+
+        if (event.reason !== 'backend:auto-cleaned') return;
+        const payload = event.payload as Partial<{
+          expiredMetadataRemoved: number;
+          expiredDownloadsFreed: number;
+          evictedCount: number;
+          stalePartialsRemoved: number;
+          totalFreedHuman: string;
+        }> | undefined;
+        if (!payload) return;
+
+        const hasFreed =
+          (payload.expiredMetadataRemoved ?? 0) > 0 ||
+          (payload.expiredDownloadsFreed ?? 0) > 0 ||
+          (payload.evictedCount ?? 0) > 0 ||
+          (payload.stalePartialsRemoved ?? 0) > 0;
+
+        if (!hasFreed) return;
+        toast.info(t('cache.autoCleanEvent', { size: payload.totalFreedHuman ?? '0 B' }));
+      }, 350),
+    );
+
+    const disposeEntries = subscribeInvalidation(
+      'cache_entries',
+      withThrottle(() => {
+        scheduleBrowserRefresh();
+      }, 350),
+    );
 
     return () => {
-      cancelled = true;
-      unlisteners.forEach(fn => fn());
+      if (browserRefreshTimeoutRef.current) {
+        clearTimeout(browserRefreshTimeoutRef.current);
+        browserRefreshTimeoutRef.current = null;
+      }
+      disposeOverview();
+      disposeEntries();
     };
-  }, [fetchCacheInfo, fetchAccessStats, t]);
+  }, [refreshOverviewState, scheduleBrowserRefresh, t]);
 
   useEffect(() => {
-    if (cacheSettings && !localSettings) {
+    if (cacheSettings && (!localSettings || !settingsDirty)) {
       setLocalSettings(cacheSettings);
     }
-  }, [cacheSettings, localSettings]);
+  }, [cacheSettings, localSettings, settingsDirty]);
 
   const handleClean = async (type: CleanType) => {
     setCleaningType(type);
@@ -155,6 +259,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
     try {
       const result = await cleanCache(type);
       toast.success(t('cache.freed', { size: result.freed_human }));
+      await refreshOverviewState({ includeCacheInfo: false });
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-page:clean',
+      );
     } catch (err) {
       toast.error(`${t('cache.clearing')} ${err}`);
     } finally {
@@ -208,8 +317,12 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const result = await cacheCleanEnhanced(previewType, useTrash);
       const method = useTrash ? t('cache.movedToTrash') : t('cache.permanentlyDeleted');
       toast.success(`${t('cache.freed', { size: result.freed_human })} (${method})`);
-      await fetchCacheInfo();
+      await refreshOverviewState();
       await fetchCleanupHistory();
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-page:enhanced-clean',
+      );
     } catch (err) {
       toast.error(`${t('cache.clearing')}: ${err}`);
     } finally {
@@ -230,27 +343,10 @@ export function useCachePage({ t }: UseCachePageOptions) {
     }
   };
 
-  const fetchBrowserEntries = async (resetPage = false, explicitPage?: number) => {
-    if (!isTauri()) return;
-    setBrowserLoading(true);
-    const page = resetPage ? 0 : (explicitPage ?? browserPage);
-    if (resetPage) setBrowserPage(0);
-    try {
-      const result = await tauri.listCacheEntries({
-        entryType: browserTypeFilter || undefined,
-        search: browserSearch || undefined,
-        sortBy: browserSortBy,
-        limit: ENTRIES_PER_PAGE,
-        offset: page * ENTRIES_PER_PAGE,
-      });
-      setBrowserEntries(result.entries);
-      setBrowserTotalCount(result.total_count);
-    } catch (err) {
-      console.error('Failed to fetch cache entries:', err);
-    } finally {
-      setBrowserLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (!browserOpen || !isTauri()) return;
+    void fetchBrowserEntries(true, 0, debouncedBrowserSearch);
+  }, [browserOpen, debouncedBrowserSearch, browserTypeFilter, browserSortBy, fetchBrowserEntries]);
 
   const handleDeleteSelectedEntries = async () => {
     if (!isTauri() || browserSelectedKeys.size === 0) return;
@@ -260,7 +356,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       toast.success(t('cache.entriesDeleted', { count: deleted }));
       setBrowserSelectedKeys(new Set());
       await fetchBrowserEntries();
-      await fetchCacheInfo();
+      await refreshOverviewState();
+      emitInvalidations(
+        ['cache_entries', 'cache_overview', 'about_cache_stats'],
+        'cache-page:delete-entries',
+      );
     } catch (err) {
       toast.error(`${t('cache.deleteEntriesFailed')}: ${err}`);
     }
@@ -280,11 +380,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
   };
 
   const handleRefresh = async () => {
-    try {
-      await fetchCacheInfo();
-      setMonitorRefreshTrigger(prev => prev + 1);
+    const cacheInfoResult = await fetchCacheInfo();
+    await refreshOverviewState({ includeCacheInfo: false, includeCacheSettings: true });
+    if (cacheInfoResult) {
       toast.success(t('cache.refreshSuccess'));
-    } catch {
+    } else {
       toast.error(t('cache.refreshFailed'));
     }
   };
@@ -296,8 +396,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const { cacheForceClean } = await import('@/lib/tauri');
       const result = await cacheForceClean(useTrash);
       toast.success(t('cache.forceCleanSuccess', { count: result.deleted_count, size: result.freed_human }));
-      fetchCacheInfo();
-      setMonitorRefreshTrigger(prev => prev + 1);
+      await refreshOverviewState();
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'external_cache', 'about_cache_stats'],
+        'cache-page:force-clean',
+      );
     } catch (err) {
       toast.error(`${t('cache.forceCleanFailed')}: ${err}`);
     } finally {
@@ -328,6 +431,11 @@ export function useCachePage({ t }: UseCachePageOptions) {
       const result = await repairCache();
       const repairedCount = result.removed_entries + result.recovered_entries;
       toast.success(t('cache.repairSuccess', { count: repairedCount, size: result.freed_human }));
+      await refreshOverviewState({ includeCacheInfo: false });
+      emitInvalidations(
+        ['cache_overview', 'cache_entries', 'about_cache_stats'],
+        'cache-page:repair',
+      );
     } catch (err) {
       toast.error(`${t('cache.repairFailed')}: ${err}`);
     } finally {

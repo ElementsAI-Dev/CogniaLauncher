@@ -11,6 +11,14 @@ const mockSetGlobalVersion = jest.fn().mockResolvedValue(undefined);
 const mockSetLocalVersion = jest.fn().mockResolvedValue(undefined);
 const mockOpenAddDialog = jest.fn();
 const mockCheckAllEnvUpdates = jest.fn().mockResolvedValue(undefined);
+const mockLoadEnvSettings = jest.fn().mockResolvedValue({
+  autoSwitch: true,
+  envVariables: [],
+  detectionFiles: [{ fileName: '.nvmrc', enabled: true }],
+});
+const mockSaveEnvSettings = jest.fn().mockResolvedValue(undefined);
+const mockIsTauri = jest.fn(() => true);
+const mockGetProjectDetectedForEnv = jest.fn(() => null);
 
 jest.mock('@/hooks/use-environments', () => ({
   useEnvironments: () => ({
@@ -50,13 +58,26 @@ jest.mock('@/hooks/use-environments', () => ({
     setGlobalVersion: mockSetGlobalVersion,
     setLocalVersion: mockSetLocalVersion,
     detectVersions: mockDetectVersions,
+    loadEnvSettings: mockLoadEnvSettings,
+    saveEnvSettings: mockSaveEnvSettings,
     fetchProviders: mockFetchProviders,
     openAddDialog: mockOpenAddDialog,
     checkAllEnvUpdates: mockCheckAllEnvUpdates,
   }),
 }));
 
+jest.mock('@/lib/tauri', () => ({
+  isTauri: () => mockIsTauri(),
+}));
+
+jest.mock('@/hooks/use-environment-detection', () => ({
+  useEnvironmentDetection: () => ({
+    getProjectDetectedForEnv: mockGetProjectDetectedForEnv,
+  }),
+}));
+
 jest.mock('@/lib/stores/environment', () => ({
+  getLogicalEnvType: (value: string) => value.toLowerCase(),
   useEnvironmentStore: Object.assign(
     () => ({
       versionBrowserOpen: false,
@@ -105,6 +126,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'environments.errorBoundary.description': 'Something went wrong',
         'environments.errorBoundary.tryAgain': 'Try Again',
         'environments.profiles.title': 'Profiles',
+        'environments.desktopOnly': 'Desktop App Required',
+        'environments.desktopOnlyDescription': 'This feature is available in desktop mode only',
       };
       return translations[key] || key;
     },
@@ -118,7 +141,24 @@ jest.mock('@/components/environments/environment-card', () => ({
 }));
 
 jest.mock('@/components/environments/add-environment-dialog', () => ({
-  AddEnvironmentDialog: () => <div data-testid="add-dialog" />,
+  AddEnvironmentDialog: ({
+    onAdd,
+  }: {
+    onAdd?: (
+      language: string,
+      provider: string,
+      version: string,
+      options: { autoSwitch: boolean; setAsDefault: boolean }
+    ) => Promise<void>;
+  }) => (
+    <button
+      data-testid="trigger-add-environment"
+      onClick={() => onAdd?.('node', 'nvm', 'lts', { autoSwitch: false, setAsDefault: false })}
+      type="button"
+    >
+      trigger-add
+    </button>
+  ),
 }));
 
 jest.mock('@/components/environments/installation-progress-dialog', () => ({
@@ -170,6 +210,7 @@ jest.mock('@/components/environments/profile-manager', () => ({
 describe('EnvironmentsPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(true);
   });
 
   it('renders page title', () => {
@@ -195,6 +236,22 @@ describe('EnvironmentsPage', () => {
     expect(mockOpenAddDialog).toHaveBeenCalled();
   });
 
+  it('persists auto switch setting via saveEnvSettings in add flow', async () => {
+    const user = userEvent.setup();
+    render(<EnvironmentsPage />);
+
+    await user.click(screen.getByTestId('trigger-add-environment'));
+
+    expect(mockInstallVersion).toHaveBeenCalledWith('nvm', 'lts', 'nvm');
+    expect(mockSaveEnvSettings).toHaveBeenCalledWith(
+      'node',
+      expect.objectContaining({
+        autoSwitch: false,
+      }),
+    );
+    expect(mockDetectVersions).toHaveBeenLastCalledWith('/test/project');
+  });
+
   it('renders environment cards', () => {
     render(<EnvironmentsPage />);
     expect(screen.getByTestId('env-card-node')).toBeInTheDocument();
@@ -215,6 +272,17 @@ describe('EnvironmentsPage', () => {
     render(<EnvironmentsPage />);
     expect(mockFetchEnvironments).toHaveBeenCalled();
     expect(mockFetchProviders).toHaveBeenCalled();
-    expect(mockDetectVersions).toHaveBeenCalledWith('.');
+    expect(mockDetectVersions).toHaveBeenCalledWith('/test/project');
+  });
+
+  it('renders desktop-only fallback in web mode and skips fetching', () => {
+    mockIsTauri.mockReturnValue(false);
+    render(<EnvironmentsPage />);
+
+    expect(screen.getByText('Desktop App Required')).toBeInTheDocument();
+    expect(screen.getByText('This feature is available in desktop mode only')).toBeInTheDocument();
+    expect(mockFetchEnvironments).not.toHaveBeenCalled();
+    expect(mockFetchProviders).not.toHaveBeenCalled();
+    expect(mockDetectVersions).not.toHaveBeenCalled();
   });
 });

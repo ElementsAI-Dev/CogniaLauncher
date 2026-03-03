@@ -19,12 +19,15 @@ import {
   WslChangeUserDialog,
   WslMountDialog,
   WslImportInPlaceDialog,
+  WslInstallLocationDialog,
+  WslCloneDialog,
 } from '@/components/wsl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,9 +43,12 @@ import {
   Upload,
   RefreshCw,
   ArrowUpCircle,
+  Info,
+  HardDrive,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { WslImportOptions, WslMountOptions } from '@/types/tauri';
+import { formatBytes } from '@/lib/utils';
+import type { WslImportOptions, WslMountOptions, WslTotalDiskUsage, WslVersionInfo } from '@/types/tauri';
 
 export default function WslPage() {
   const { t } = useLocale();
@@ -83,6 +89,14 @@ export default function WslPage() {
     setDistroConfigValue,
     installWslOnly,
     listUsers,
+    installOnlineDistro,
+    unregisterDistro,
+    installWithLocation,
+    getVersionInfo,
+    getTotalDiskUsage,
+    openInExplorer,
+    openInTerminal,
+    cloneDistro,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -102,6 +116,28 @@ export default function WslPage() {
   const [changeUserDistro, setChangeUserDistro] = useState('');
   const [mountDialogOpen, setMountDialogOpen] = useState(false);
   const [importInPlaceOpen, setImportInPlaceOpen] = useState(false);
+  const [installLocationDialogOpen, setInstallLocationDialogOpen] = useState(false);
+  const [installLocationDistroName, setInstallLocationDistroName] = useState('');
+  const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
+  const [cloneSourceDistro, setCloneSourceDistro] = useState('');
+  const [versionInfo, setVersionInfo] = useState<WslVersionInfo | null>(null);
+  const [totalDiskUsage, setTotalDiskUsage] = useState<WslTotalDiskUsage | null>(null);
+  const [sidebarMetaLoading, setSidebarMetaLoading] = useState(false);
+
+  const refreshSidebarMeta = useCallback(async () => {
+    if (!isDesktop) return;
+    setSidebarMetaLoading(true);
+    try {
+      const [version, totalUsage] = await Promise.all([
+        getVersionInfo(),
+        getTotalDiskUsage(),
+      ]);
+      setVersionInfo(version);
+      setTotalDiskUsage(totalUsage);
+    } finally {
+      setSidebarMetaLoading(false);
+    }
+  }, [getTotalDiskUsage, getVersionInfo, isDesktop]);
 
   // Auto-select first distro for per-distro config when distros change
   useEffect(() => {
@@ -120,40 +156,53 @@ export default function WslPage() {
     const init = async () => {
       const isAvailable = await checkAvailability();
       if (isAvailable) {
-        await refreshAll();
+        await Promise.all([refreshAll(), refreshSidebarMeta()]);
       }
     };
     init();
-  }, [isDesktop, checkAvailability, refreshAll]);
+  }, [isDesktop, checkAvailability, refreshAll, refreshSidebarMeta]);
 
   const handleRefresh = useCallback(async () => {
     if (activeTab === 'installed') {
-      await refreshDistros();
-      await refreshStatus();
+      await Promise.all([refreshDistros(), refreshStatus(), refreshSidebarMeta()]);
     } else {
       await refreshOnlineDistros();
     }
-  }, [activeTab, refreshDistros, refreshStatus, refreshOnlineDistros]);
+  }, [activeTab, refreshDistros, refreshStatus, refreshOnlineDistros, refreshSidebarMeta]);
 
   const handleInstallOnline = useCallback(async (name: string) => {
     try {
-      const { packageInstall } = await import('@/lib/tauri');
-      await packageInstall([`wsl:${name}`]);
+      await installOnlineDistro(name);
       toast.success(t('wsl.installSuccess').replace('{name}', name));
-      await refreshDistros();
+      await refreshSidebarMeta();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [t, refreshDistros]);
+  }, [installOnlineDistro, refreshSidebarMeta, t]);
+
+  const handleOpenInstallWithLocation = useCallback((name: string) => {
+    setInstallLocationDistroName(name);
+    setInstallLocationDialogOpen(true);
+  }, []);
+
+  const handleInstallWithLocation = useCallback(async (name: string, location: string) => {
+    try {
+      await installWithLocation(name, location);
+      toast.success(t('wsl.installWithLocationSuccess').replace('{name}', name));
+      await refreshSidebarMeta();
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [installWithLocation, refreshSidebarMeta, t]);
 
   const handleLaunch = useCallback(async (name: string) => {
     try {
       await launch(name);
-      toast.success(`${name} launched`);
+      toast.success(t('wsl.launchSuccess').replace('{name}', name));
     } catch (err) {
       toast.error(String(err));
     }
-  }, [launch]);
+  }, [launch, t]);
 
   const handleTerminate = useCallback(async (name: string) => {
     try {
@@ -213,12 +262,20 @@ export default function WslPage() {
     try {
       await importDistro(options);
       toast.success(t('wsl.importSuccess').replace('{name}', options.name));
+      await refreshSidebarMeta();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [importDistro, t]);
+  }, [importDistro, refreshSidebarMeta, t]);
 
-  const handleInstallWslOnly = useCallback(async () => installWslOnly(), [installWslOnly]);
+  const handleInstallWslOnly = useCallback(async () => {
+    const result = await installWslOnly();
+    const nowAvailable = await checkAvailability();
+    if (nowAvailable) {
+      await Promise.all([refreshAll(), refreshSidebarMeta()]);
+    }
+    return result;
+  }, [checkAvailability, installWslOnly, refreshAll, refreshSidebarMeta]);
 
   const handleSetDefaultVersion = useCallback(async (version: number) => {
     try {
@@ -233,11 +290,11 @@ export default function WslPage() {
     try {
       await importInPlace(name, vhdxPath);
       toast.success(t('wsl.importInPlaceSuccess').replace('{name}', name));
-      await refreshDistros();
+      await refreshSidebarMeta();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [importInPlace, refreshDistros, t]);
+  }, [importInPlace, refreshSidebarMeta, t]);
 
   const handleMount = useCallback(async (options: WslMountOptions) => {
     try {
@@ -269,14 +326,13 @@ export default function WslPage() {
 
   const handleUnregister = useCallback(async (name: string) => {
     try {
-      const { packageUninstall } = await import('@/lib/tauri');
-      await packageUninstall([`wsl:${name}`]);
+      await unregisterDistro(name);
       toast.success(t('wsl.unregisterSuccess').replace('{name}', name));
-      await refreshDistros();
+      await refreshSidebarMeta();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [t, refreshDistros]);
+  }, [refreshSidebarMeta, t, unregisterDistro]);
 
   const handleChangeDefaultUserOpen = useCallback((name: string) => {
     setChangeUserDistro(name);
@@ -300,10 +356,44 @@ export default function WslPage() {
     try {
       const result = await updateWsl();
       toast.success(t('wsl.updateSuccess') + (result ? `\n${result}` : ''));
+      await refreshSidebarMeta();
     } catch (err) {
       toast.error(String(err));
     }
-  }, [updateWsl, t]);
+  }, [refreshSidebarMeta, updateWsl, t]);
+
+  const handleOpenInExplorer = useCallback(async (name: string) => {
+    try {
+      await openInExplorer(name);
+      toast.success(t('wsl.openInExplorer'));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [openInExplorer, t]);
+
+  const handleOpenInTerminal = useCallback(async (name: string) => {
+    try {
+      await openInTerminal(name);
+      toast.success(t('wsl.openInTerminal'));
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [openInTerminal, t]);
+
+  const handleCloneOpen = useCallback((name: string) => {
+    setCloneSourceDistro(name);
+    setCloneDialogOpen(true);
+  }, []);
+
+  const handleCloneConfirm = useCallback(async (name: string, newName: string, location: string) => {
+    try {
+      const result = await cloneDistro(name, newName, location);
+      toast.success(t('wsl.cloneSuccess').replace('{name}', newName) + (result ? `\n${result}` : ''));
+      await refreshSidebarMeta();
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [cloneDistro, refreshSidebarMeta, t]);
 
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
@@ -437,6 +527,9 @@ export default function WslPage() {
                         setConfirmAction({ type: 'unregister', name })
                       }
                       onChangeDefaultUser={handleChangeDefaultUserOpen}
+                      onOpenInExplorer={handleOpenInExplorer}
+                      onOpenInTerminal={handleOpenInTerminal}
+                      onClone={handleCloneOpen}
                       getDiskUsage={getDiskUsage}
                       t={t}
                     />
@@ -450,6 +543,7 @@ export default function WslPage() {
                   installedNames={distros.map((d) => d.name)}
                   loading={loading}
                   onInstall={handleInstallOnline}
+                  onInstallWithLocation={handleOpenInstallWithLocation}
                   t={t}
                 />
               </TabsContent>
@@ -475,6 +569,51 @@ export default function WslPage() {
               config={config}
               t={t}
             />
+            <Card>
+              <CardHeader className="pb-3">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Info className="h-4 w-4" />
+                  {t('wsl.versionInfo')}
+                </h3>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t('wsl.wslVersion')}</span>
+                  <span className="font-mono">{versionInfo?.wslVersion ?? status?.version ?? '—'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t('wsl.kernelVersion')}</span>
+                  <span className="font-mono">{versionInfo?.kernelVersion ?? status?.kernelVersion ?? '—'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{t('wsl.wslgVersion')}</span>
+                  <span className="font-mono">{versionInfo?.wslgVersion ?? status?.wslgVersion ?? '—'}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
+                    <HardDrive className="h-3.5 w-3.5" />
+                    {t('wsl.totalDiskUsage')}
+                  </span>
+                  <span className="font-mono">
+                    {totalDiskUsage ? formatBytes(totalDiskUsage.totalBytes) : '—'}
+                  </span>
+                </div>
+                {totalDiskUsage && totalDiskUsage.perDistro.length > 0 && (
+                  <div className="space-y-1">
+                    {totalDiskUsage.perDistro.slice(0, 3).map(([name, bytes]) => (
+                      <div key={name} className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground truncate">{name}</span>
+                        <span className="font-mono">{formatBytes(bytes)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {sidebarMetaLoading && (
+                  <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
+                )}
+              </CardContent>
+            </Card>
             <Card>
               <CardHeader className="pb-3">
                 <h3 className="text-sm font-semibold">{t('wsl.advancedOps')}</h3>
@@ -593,6 +732,24 @@ export default function WslPage() {
         open={importInPlaceOpen}
         onOpenChange={setImportInPlaceOpen}
         onConfirm={handleImportInPlaceConfirm}
+        t={t}
+      />
+
+      {/* Install with Location Dialog */}
+      <WslInstallLocationDialog
+        open={installLocationDialogOpen}
+        distroName={installLocationDistroName}
+        onOpenChange={setInstallLocationDialogOpen}
+        onConfirm={handleInstallWithLocation}
+        t={t}
+      />
+
+      {/* Clone Dialog */}
+      <WslCloneDialog
+        open={cloneDialogOpen}
+        distroName={cloneSourceDistro}
+        onOpenChange={setCloneDialogOpen}
+        onConfirm={handleCloneConfirm}
         t={t}
       />
 

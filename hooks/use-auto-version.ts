@@ -4,6 +4,11 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEnvironmentStore } from '@/lib/stores/environment';
 import { useEnvironments } from './use-environments';
 import * as tauri from '@/lib/tauri';
+import {
+  isDetectedVersionCompatible,
+  matchDetectedByEnvType,
+  toLogicalEnvType,
+} from '@/lib/environment-detection';
 
 interface UseAutoVersionSwitchOptions {
   projectPath: string | null;
@@ -37,35 +42,46 @@ export function useAutoVersionSwitch({
 
     try {
       const detected = await detectVersions(projectPath);
-      
-      for (const detection of detected) {
-        const envType = detection.env_type;
-        const detectedVersion = detection.version;
-        
-        if (!detectedVersion) continue;
-        
-        // Check if auto-switch is enabled for this environment type
-        const settings = getEnvSettings(envType);
-        if (!settings.autoSwitch) continue;
-        
-        // Skip if we already switched to this version
-        if (lastDetectedRef.current[envType] === detectedVersion) continue;
-        
-        // Find the environment (use getState to avoid closure dependency)
-        const env = useEnvironmentStore.getState().environments.find(e => e.env_type === envType);
-        if (!env) continue;
-        
-        // Check if the version is installed
-        const isInstalled = env.installed_versions.some(
-          v => v.version === detectedVersion || v.version.includes(detectedVersion)
+
+      // Read the latest environments/providers from the store to avoid stale closures.
+      const { environments, availableProviders } = useEnvironmentStore.getState();
+
+      for (const env of environments) {
+        const detection = matchDetectedByEnvType(
+          env.env_type,
+          detected,
+          availableProviders,
         );
-        
-        if (isInstalled) {
+        const detectedVersion = detection?.version;
+
+        if (!detectedVersion) continue;
+
+        const normalizedProviderEnvType = env.env_type.trim().toLowerCase();
+        const logicalEnvType = toLogicalEnvType(
+          normalizedProviderEnvType,
+          availableProviders,
+        );
+        const logicalSettings = getEnvSettings(logicalEnvType);
+        const providerSettings = logicalEnvType === normalizedProviderEnvType
+          ? logicalSettings
+          : getEnvSettings(normalizedProviderEnvType);
+
+        if (!(logicalSettings.autoSwitch || providerSettings.autoSwitch)) continue;
+
+        // Skip if we already switched to this version
+        if (lastDetectedRef.current[env.env_type] === detectedVersion) continue;
+
+        // Check if a compatible version is installed and use the exact installed version.
+        const installedVersion = env.installed_versions.find((v) =>
+          isDetectedVersionCompatible(v.version, detectedVersion),
+        )?.version;
+
+        if (installedVersion) {
           // Auto-switch to the detected version using local (project-scoped) version
           // to avoid affecting other terminal sessions or projects
           try {
-            await setLocalVersion(envType, detectedVersion, projectPath);
-            lastDetectedRef.current[envType] = detectedVersion;
+            await setLocalVersion(env.env_type, installedVersion, projectPath);
+            lastDetectedRef.current[env.env_type] = detectedVersion;
           } catch {
             // Silently fail - don't interrupt user workflow
           }

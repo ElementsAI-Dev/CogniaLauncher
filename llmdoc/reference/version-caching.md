@@ -1,31 +1,13 @@
 # Version Caching Reference
 
-## 1. Core Summary
+## 1. Current Status
 
-Time-based version list caching with automatic expiry to reduce backend API calls and improve UI responsiveness.
+The standalone `use-version-cache` hook has been removed.
 
-## 2. Source of Truth
+## 2. Reason
 
-- **Primary Hook:** `lib/hooks/use-version-cache.ts` - Generic cache with expiry
-- **Environment Cache:** `lib/hooks/use-version-cache.ts:79-121` - Environment-specific version cache
-- **Default Expiry:** `lib/hooks/use-version-cache.ts:15` - 5 minutes (300000ms)
-- **Tests:** `lib/hooks/__tests__/use-version-cache.test.ts` - Cache behavior validation
+The hook was no longer used at runtime and created duplicate maintenance cost.
 
-## 3. Cache Operations
+## 3. Current Behavior
 
-**Generic Cache (`useVersionCache`):**
-- `get(key)` - Retrieve cached data or null if expired/missing
-- `set(key, data)` - Store data with current timestamp
-- `invalidate(key)` - Remove specific entry
-- `invalidateAll()` - Clear all cache entries
-- `isValid(key)` - Check if entry exists and not expired
-
-**Environment Cache (`useAvailableVersionsCache`):**
-- `getCachedVersions(envType)` - Get versions if cache valid
-- `setCachedVersions(envType, versions)` - Store with timestamp
-- `isCacheValid(envType)` - Check expiry per environment
-- `invalidateCache(envType?)` - Clear specific or all
-
-## 4. Integration
-
-Works with `useEnvironmentStore` to cache available versions per environment type (nodejs, python, rust).
+Version loading now relies on existing feature hooks and store updates directly, without a dedicated generic in-memory version-cache hook.

@@ -42,15 +42,17 @@ import { toast } from 'sonner';
 import { parseFileEntries } from '@/lib/wsl';
 import type { FileEntry, WslDistroFilesystemProps } from '@/types/wsl';
 
-export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesystemProps) {
+export function WslDistroFilesystem({ distroName, isRunning = true, onExec, t }: WslDistroFilesystemProps) {
   const [currentPath, setCurrentPath] = useState('/');
   const [pathInput, setPathInput] = useState('/');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canBrowse = isRunning;
 
   const loadDirectory = useCallback(async (path: string) => {
+    if (!canBrowse) return;
     setLoading(true);
     setError(null);
     try {
@@ -71,7 +73,7 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
     } finally {
       setLoading(false);
     }
-  }, [distroName, onExec]);
+  }, [canBrowse, distroName, onExec]);
 
   const navigateTo = useCallback((name: string) => {
     let newPath: string;
@@ -86,7 +88,7 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
   }, [currentPath, loadDirectory]);
 
   const handleNavigate = () => {
-    if (pathInput.trim()) {
+    if (canBrowse && pathInput.trim()) {
       loadDirectory(pathInput.trim());
     }
   };
@@ -119,7 +121,7 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
             size="icon"
             className="h-8 w-8 shrink-0"
             onClick={() => loadDirectory('/')}
-            disabled={loading}
+            disabled={loading || !canBrowse}
             title="Home"
           >
             <Home className="h-3.5 w-3.5" />
@@ -129,7 +131,7 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
             size="icon"
             className="h-8 w-8 shrink-0"
             onClick={() => navigateTo('..')}
-            disabled={loading || currentPath === '/'}
+            disabled={loading || currentPath === '/' || !canBrowse}
             title="Up"
           >
             <ArrowUp className="h-3.5 w-3.5" />
@@ -140,13 +142,14 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleNavigate()}
             placeholder="/"
+            disabled={!canBrowse}
           />
           <Button
             variant="outline"
             size="sm"
             className="h-8 gap-1"
             onClick={handleNavigate}
-            disabled={loading}
+            disabled={loading || !canBrowse}
           >
             <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
             {loaded ? t('wsl.detail.refresh') : t('wsl.detail.browse')}
@@ -312,7 +315,20 @@ export function WslDistroFilesystem({ distroName, onExec, t }: WslDistroFilesyst
         )}
 
         {/* Not loaded yet */}
-        {!loaded && !loading && (
+        {!loaded && !loading && !canBrowse && (
+          <Empty className="border-none py-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <AlertCircle />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                {t('wsl.detail.filesystemNotRunning')}
+              </EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        )}
+
+        {!loaded && !loading && canBrowse && (
           <Empty className="border-none py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">

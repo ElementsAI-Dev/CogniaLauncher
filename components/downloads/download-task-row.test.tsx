@@ -40,6 +40,7 @@ function makeTask(overrides: Partial<DownloadTask> = {}): DownloadTask {
 
 function renderRow(task: DownloadTask, handlers?: Partial<Record<string, jest.Mock>>) {
   const defaults = {
+    onSelectedChange: jest.fn(),
     onPause: jest.fn(),
     onResume: jest.fn(),
     onCancel: jest.fn(),
@@ -53,7 +54,7 @@ function renderRow(task: DownloadTask, handlers?: Partial<Record<string, jest.Mo
     ...render(
       <table>
         <tbody>
-          <DownloadTaskRow task={task} t={mockT} {...props} />
+          <DownloadTaskRow task={task} selected={false} t={mockT} {...props} />
         </tbody>
       </table>
     ),
@@ -67,6 +68,19 @@ describe("DownloadTaskRow", () => {
 
     expect(screen.getByText("file.zip")).toBeInTheDocument();
     expect(screen.getByText("https://example.com/file.zip")).toBeInTheDocument();
+  });
+
+  it("renders selection checkbox", () => {
+    renderRow(makeTask());
+    expect(screen.getByRole("checkbox")).toBeInTheDocument();
+  });
+
+  it("calls onSelectedChange when toggling selection checkbox", async () => {
+    const { onSelectedChange } = renderRow(makeTask());
+
+    await userEvent.click(screen.getByRole("checkbox"));
+
+    expect(onSelectedChange).toHaveBeenCalledWith(true);
   });
 
   it("renders provider badge when present", () => {

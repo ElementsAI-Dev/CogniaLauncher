@@ -245,6 +245,14 @@ NEXT_PUBLIC_APP_NAME=React Quick Starter
 # 私有变量（不会暴露给浏览器）
 DATABASE_URL=postgresql://...
 API_SECRET_KEY=your-secret-key
+
+# 可选：覆盖开发态资源 origin（最高优先级）
+# 必须填写完整 origin，例如 http://localhost:3100
+NEXT_DEV_ORIGIN=http://localhost:3100
+
+# 可选：Tauri 开发模式下用于自动解析 assetPrefix 的主机/端口
+TAURI_DEV_HOST=localhost
+TAURI_DEV_PORT=3100
 ```
 
 **重要提示**：
@@ -252,6 +260,8 @@ API_SECRET_KEY=your-secret-key
 - 只有以 `NEXT_PUBLIC_` 为前缀的变量会暴露给浏览器
 - 切勿将 `.env.local` 提交到版本控制
 - 使用 `.env.example` 记录所需的变量
+- 开发态资源地址解析优先级：`NEXT_DEV_ORIGIN` > `TAURI_DEV_HOST + (TAURI_DEV_PORT | PORT | npm_config_port | 3000)`
+- 非 Tauri Web 开发场景会回退为相对资源地址（不会强制跨端口 assetPrefix）
 
 ### Tauri 配置
 

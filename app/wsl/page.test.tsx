@@ -11,6 +11,16 @@ const mockShutdown = jest.fn().mockResolvedValue(undefined);
 const mockUpdateWsl = jest.fn().mockResolvedValue('updated');
 const mockLaunch = jest.fn().mockResolvedValue(undefined);
 const mockTerminate = jest.fn().mockResolvedValue(undefined);
+const mockInstallOnlineDistro = jest.fn().mockResolvedValue(undefined);
+const mockUnregisterDistro = jest.fn().mockResolvedValue(undefined);
+const mockInstallWithLocation = jest.fn().mockResolvedValue('installed');
+const mockInstallWslOnly = jest.fn().mockResolvedValue('installed');
+const mockGetVersionInfo = jest.fn().mockResolvedValue({ wslVersion: '2.4.0', kernelVersion: '6.6.0', wslgVersion: '1.0.0' });
+const mockGetTotalDiskUsage = jest.fn().mockResolvedValue({ totalBytes: 1024, perDistro: [['Ubuntu', 1024]] });
+const mockOpenInExplorer = jest.fn().mockResolvedValue(undefined);
+const mockOpenInTerminal = jest.fn().mockResolvedValue(undefined);
+const mockCloneDistro = jest.fn().mockResolvedValue('cloned');
+let mockAvailable = true;
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -24,14 +34,23 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'wsl.import': 'Import',
         'wsl.notAvailable': 'WSL is not available in the browser',
         'wsl.installSuccess': 'Installed {name}',
+        'wsl.installWithLocation': 'Install to Location',
+        'wsl.installWithLocationSuccess': 'Installed {name} to location',
         'wsl.terminateSuccess': 'Terminated {name}',
         'wsl.shutdownSuccess': 'WSL shutdown complete',
+        'wsl.launchSuccess': '{name} launched',
         'wsl.setDefaultSuccess': 'Set {name} as default',
+        'wsl.defaultBadge': 'Default',
         'wsl.setVersionSuccess': 'Set {name} to WSL {version}',
         'wsl.exportSuccess': 'Exported {name}',
         'wsl.importSuccess': 'Imported {name}',
         'wsl.setDefaultVersionSuccess': 'Set default WSL version to {version}',
         'wsl.updateSuccess': 'WSL updated',
+        'wsl.versionInfo': 'Version Information',
+        'wsl.totalDiskUsage': 'Total Disk Usage',
+        'wsl.wslVersion': 'WSL Version',
+        'wsl.kernelVersion': 'Kernel Version',
+        'wsl.wslgVersion': 'WSLg Version',
         'wsl.importInPlace': 'Import In-Place',
         'wsl.importInPlaceSuccess': 'Imported {name}',
         'wsl.mount': 'Mount',
@@ -56,6 +75,7 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'wsl.unregisterSuccess': 'Unregistered {name}',
         'common.cancel': 'Cancel',
         'common.confirm': 'Confirm',
+        'common.loading': 'Loading...',
       };
       return translations[key] || key;
     },
@@ -70,7 +90,7 @@ jest.mock('@/lib/tauri', () => ({
 
 jest.mock('@/hooks/use-wsl', () => ({
   useWsl: () => ({
-    available: true,
+    available: mockAvailable,
     distros: [
       { name: 'Ubuntu', state: 'Running', version: 2, isDefault: true },
       { name: 'Debian', state: 'Stopped', version: 2, isDefault: false },
@@ -106,7 +126,15 @@ jest.mock('@/hooks/use-wsl', () => ({
     changeDefaultUser: jest.fn().mockResolvedValue(undefined),
     getDistroConfig: jest.fn().mockResolvedValue({}),
     setDistroConfigValue: jest.fn().mockResolvedValue(undefined),
-    installWslOnly: jest.fn().mockResolvedValue(undefined),
+    installWslOnly: mockInstallWslOnly,
+    installOnlineDistro: mockInstallOnlineDistro,
+    unregisterDistro: mockUnregisterDistro,
+    installWithLocation: mockInstallWithLocation,
+    getVersionInfo: mockGetVersionInfo,
+    getTotalDiskUsage: mockGetTotalDiskUsage,
+    openInExplorer: mockOpenInExplorer,
+    openInTerminal: mockOpenInTerminal,
+    cloneDistro: mockCloneDistro,
     listUsers: jest.fn().mockResolvedValue([]),
   }),
 }));
@@ -129,7 +157,19 @@ jest.mock('@/components/wsl', () => ({
       {getIpAddress && <button data-testid="get-ip-btn" onClick={() => getIpAddress()}>Get IP</button>}
     </div>
   ),
-  WslDistroCard: ({ distro, onLaunch, onTerminate, onSetDefault, onExport, onSetVersion, onUnregister, onChangeDefaultUser }: {
+  WslDistroCard: ({
+    distro,
+    onLaunch,
+    onTerminate,
+    onSetDefault,
+    onExport,
+    onSetVersion,
+    onUnregister,
+    onChangeDefaultUser,
+    onOpenInExplorer,
+    onOpenInTerminal,
+    onClone,
+  }: {
     distro: { name: string };
     onLaunch?: (n: string) => void;
     onTerminate?: (n: string) => void;
@@ -138,6 +178,9 @@ jest.mock('@/components/wsl', () => ({
     onSetVersion?: (n: string, v: number) => void;
     onUnregister?: (n: string) => void;
     onChangeDefaultUser?: (n: string) => void;
+    onOpenInExplorer?: (n: string) => void;
+    onOpenInTerminal?: (n: string) => void;
+    onClone?: (n: string) => void;
   }) => (
     <div data-testid={`distro-${distro.name}`}>
       {distro.name}
@@ -148,12 +191,20 @@ jest.mock('@/components/wsl', () => ({
       {onSetVersion && <button data-testid={`version-${distro.name}`} onClick={() => onSetVersion(distro.name, 2)}>Set V2</button>}
       {onUnregister && <button data-testid={`unregister-${distro.name}`} onClick={() => onUnregister(distro.name)}>Unregister</button>}
       {onChangeDefaultUser && <button data-testid={`chuser-${distro.name}`} onClick={() => onChangeDefaultUser(distro.name)}>ChUser</button>}
+      {onOpenInExplorer && <button data-testid={`explorer-${distro.name}`} onClick={() => onOpenInExplorer(distro.name)}>Explorer</button>}
+      {onOpenInTerminal && <button data-testid={`terminal-${distro.name}`} onClick={() => onOpenInTerminal(distro.name)}>Terminal</button>}
+      {onClone && <button data-testid={`clone-${distro.name}`} onClick={() => onClone(distro.name)}>Clone</button>}
     </div>
   ),
-  WslOnlineList: ({ distros, onInstall }: { distros: [string, string][]; onInstall?: (n: string) => void }) => (
+  WslOnlineList: ({ distros, onInstall, onInstallWithLocation }: {
+    distros: [string, string][];
+    onInstall?: (n: string) => void;
+    onInstallWithLocation?: (n: string) => void;
+  }) => (
     <div data-testid="online-list">
       {distros.length} available
       {onInstall && <button data-testid="install-online" onClick={() => onInstall('Fedora')}>Install</button>}
+      {onInstallWithLocation && <button data-testid="install-online-location" onClick={() => onInstallWithLocation('Fedora')}>Install Location</button>}
     </div>
   ),
   WslImportDialog: () => null,
@@ -176,12 +227,15 @@ jest.mock('@/components/wsl', () => ({
   WslChangeUserDialog: () => null,
   WslMountDialog: () => null,
   WslImportInPlaceDialog: () => null,
+  WslInstallLocationDialog: () => null,
+  WslCloneDialog: () => null,
 }));
 
 
 describe('WslPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAvailable = true;
   });
 
   it('renders page title and description', () => {
@@ -242,6 +296,7 @@ describe('WslPage', () => {
 describe('WslPage - Handlers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAvailable = true;
   });
 
   it('launches a distro when launch button is clicked', async () => {
@@ -277,6 +332,29 @@ describe('WslPage - Handlers', () => {
     await user.click(screen.getByRole('button', { name: /update/i }));
     await waitFor(() => {
       expect(mockUpdateWsl).toHaveBeenCalled();
+    });
+  });
+
+  it('installs online distro and refreshes sidebar metadata', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await waitFor(() => {
+      expect(mockGetVersionInfo).toHaveBeenCalled();
+      expect(mockGetTotalDiskUsage).toHaveBeenCalled();
+    });
+    const versionCallsBefore = mockGetVersionInfo.mock.calls.length;
+    const diskCallsBefore = mockGetTotalDiskUsage.mock.calls.length;
+
+    await user.click(screen.getByText(/Available/));
+    await user.click(screen.getByTestId('install-online'));
+
+    await waitFor(() => {
+      expect(mockInstallOnlineDistro).toHaveBeenCalledWith('Fedora');
+    });
+    await waitFor(() => {
+      expect(mockGetVersionInfo.mock.calls.length).toBeGreaterThan(versionCallsBefore);
+      expect(mockGetTotalDiskUsage.mock.calls.length).toBeGreaterThan(diskCallsBefore);
     });
   });
 
@@ -326,17 +404,69 @@ describe('WslPage - Handlers', () => {
     });
   });
 
+  it('unregisters distro and refreshes sidebar metadata after confirm', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await waitFor(() => {
+      expect(mockGetVersionInfo).toHaveBeenCalled();
+      expect(mockGetTotalDiskUsage).toHaveBeenCalled();
+    });
+    const versionCallsBefore = mockGetVersionInfo.mock.calls.length;
+    const diskCallsBefore = mockGetTotalDiskUsage.mock.calls.length;
+
+    await user.click(screen.getByTestId('unregister-Ubuntu'));
+    await user.click(screen.getByRole('button', { name: /Confirm/i }));
+
+    await waitFor(() => {
+      expect(mockUnregisterDistro).toHaveBeenCalledWith('Ubuntu');
+    });
+    await waitFor(() => {
+      expect(mockGetVersionInfo.mock.calls.length).toBeGreaterThan(versionCallsBefore);
+      expect(mockGetTotalDiskUsage.mock.calls.length).toBeGreaterThan(diskCallsBefore);
+    });
+  });
+
   it('executes command via terminal', async () => {
     const user = userEvent.setup();
     render(<WslPage />);
     await user.click(screen.getByTestId('exec-cmd'));
     // exec handler is invoked
   });
+
+  it('opens distro in explorer from card action', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+    await user.click(screen.getByTestId('explorer-Ubuntu'));
+    await waitFor(() => {
+      expect(mockOpenInExplorer).toHaveBeenCalledWith('Ubuntu');
+    });
+  });
+
+  it('opens distro in terminal from card action', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+    await user.click(screen.getByTestId('terminal-Ubuntu'));
+    await waitFor(() => {
+      expect(mockOpenInTerminal).toHaveBeenCalledWith('Ubuntu');
+    });
+  });
+
+  it('clones distro from card action', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+    await user.click(screen.getByTestId('clone-Ubuntu'));
+    // dialog open state is set; confirmation tested in component-level tests
+    await waitFor(() => {
+      expect(screen.getByText('WSL')).toBeInTheDocument();
+    });
+  });
 });
 
 describe('WslPage - Non-Tauri', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockAvailable = true;
     const tauri = jest.requireMock('@/lib/tauri');
     tauri.isTauri.mockReturnValue(false);
   });
@@ -349,5 +479,29 @@ describe('WslPage - Non-Tauri', () => {
   it('shows not available message in browser mode', () => {
     render(<WslPage />);
     expect(screen.getByText('WSL is not available in the browser')).toBeInTheDocument();
+  });
+});
+
+describe('WslPage - WSL Not Installed', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAvailable = false;
+    const tauri = jest.requireMock('@/lib/tauri');
+    tauri.isTauri.mockReturnValue(true);
+  });
+
+  it('installs WSL and refreshes availability and metadata', async () => {
+    const user = userEvent.setup();
+    render(<WslPage />);
+
+    await user.click(screen.getByTestId('install-wsl'));
+
+    await waitFor(() => {
+      expect(mockInstallWslOnly).toHaveBeenCalled();
+      expect(mockCheckAvailability).toHaveBeenCalled();
+      expect(mockRefreshAll).toHaveBeenCalled();
+      expect(mockGetVersionInfo).toHaveBeenCalled();
+      expect(mockGetTotalDiskUsage).toHaveBeenCalled();
+    });
   });
 });

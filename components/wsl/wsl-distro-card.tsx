@@ -24,6 +24,9 @@ import {
   Terminal,
   UserCog,
   HardDrive,
+  FolderOpen,
+  TerminalSquare,
+  Copy,
 } from 'lucide-react';
 import { formatBytes } from '@/lib/utils';
 import type { WslDistroCardProps } from '@/types/wsl';
@@ -38,6 +41,9 @@ export function WslDistroCard({
   onExport,
   onUnregister,
   onChangeDefaultUser,
+  onOpenInExplorer,
+  onOpenInTerminal,
+  onClone,
   getDiskUsage,
   t,
 }: WslDistroCardProps) {
@@ -84,7 +90,7 @@ export function WslDistroCard({
                 </Badge>
                 {distro.isDefault && (
                   <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-300">
-                    Default
+                    {t('wsl.defaultBadge')}
                   </Badge>
                 )}
               </div>
@@ -145,6 +151,24 @@ export function WslDistroCard({
                   <Download className="h-4 w-4 mr-2" />
                   {t('wsl.export')}
                 </DropdownMenuItem>
+                {onOpenInExplorer && (
+                  <DropdownMenuItem onClick={() => onOpenInExplorer(distro.name)}>
+                    <FolderOpen className="h-4 w-4 mr-2" />
+                    {t('wsl.openInExplorer')}
+                  </DropdownMenuItem>
+                )}
+                {onOpenInTerminal && (
+                  <DropdownMenuItem onClick={() => onOpenInTerminal(distro.name)}>
+                    <TerminalSquare className="h-4 w-4 mr-2" />
+                    {t('wsl.openInTerminal')}
+                  </DropdownMenuItem>
+                )}
+                {onClone && (
+                  <DropdownMenuItem onClick={() => onClone(distro.name)}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    {t('wsl.clone')}
+                  </DropdownMenuItem>
+                )}
                 {onChangeDefaultUser && (
                   <DropdownMenuItem onClick={() => onChangeDefaultUser(distro.name)}>
                     <UserCog className="h-4 w-4 mr-2" />

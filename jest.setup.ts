@@ -6,13 +6,68 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 
+// Suppress stale Baseline dataset warnings from transitive Browserslist tooling in tests.
+process.env.BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA = 'true';
+process.env.BROWSERSLIST_IGNORE_OLD_DATA = 'true';
+
 // Mock Next.js Image component
 jest.mock('next/image', () => ({
   __esModule: true,
-  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => {
-    return React.createElement('img', props);
+  default: (
+    props: React.ImgHTMLAttributes<HTMLImageElement> & {
+      unoptimized?: boolean;
+      priority?: boolean;
+      fill?: boolean;
+      loader?: unknown;
+      quality?: number;
+    },
+  ) => {
+    // Strip Next.js-only props so tests don't emit React unknown-prop warnings.
+    const imgProps = { ...props } as Record<string, unknown>;
+    delete imgProps.unoptimized;
+    delete imgProps.priority;
+    delete imgProps.fill;
+    delete imgProps.loader;
+    delete imgProps.quality;
+    return React.createElement('img', imgProps);
   },
 }));
+
+// Mock Recharts responsive container in jsdom to avoid zero-size warnings.
+jest.mock('recharts', () => {
+  const actual = jest.requireActual('recharts');
+
+  return {
+    ...actual,
+    ResponsiveContainer: ({
+      children,
+      width,
+      height,
+      className,
+    }: {
+      children: React.ReactNode | ((size: { width: number; height: number }) => React.ReactNode);
+      width?: number | string;
+      height?: number | string;
+      className?: string;
+    }) => {
+      const resolvedWidth = typeof width === 'number' ? width : 960;
+      const resolvedHeight = typeof height === 'number' ? height : 320;
+      const content =
+        typeof children === 'function'
+          ? children({ width: resolvedWidth, height: resolvedHeight })
+          : children;
+
+      return React.createElement(
+        'div',
+        {
+          className,
+          style: { width: resolvedWidth, height: resolvedHeight },
+        },
+        content,
+      );
+    },
+  };
+});
 
 // Mock Next.js router
 jest.mock('next/navigation', () => ({
@@ -40,6 +95,19 @@ global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
   disconnect() {}
+};
+
+// Silence known third-party warning noise in test output.
+const originalConsoleWarn = console.warn.bind(console);
+console.warn = (...args: unknown[]) => {
+  const firstArg = args[0];
+  if (
+    typeof firstArg === 'string' &&
+    firstArg.includes('[baseline-browser-mapping]')
+  ) {
+    return;
+  }
+  originalConsoleWarn(...args);
 };
 
 // Suppress console errors in tests (optional)

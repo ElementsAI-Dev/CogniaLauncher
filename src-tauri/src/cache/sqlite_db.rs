@@ -1062,6 +1062,7 @@ pub struct DatabaseInfo {
 
 /// Cache size snapshot for trend tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheSizeSnapshot {
     pub timestamp: String,
     pub internal_size: u64,
@@ -1074,6 +1075,25 @@ pub struct CacheSizeSnapshot {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn cache_size_snapshot_serializes_in_camel_case() {
+        let snapshot = CacheSizeSnapshot {
+            timestamp: "2026-03-02T00:00:00Z".to_string(),
+            internal_size: 1024,
+            internal_size_human: "1 KB".to_string(),
+            download_count: 2,
+            metadata_count: 3,
+        };
+
+        let value = serde_json::to_value(snapshot).expect("serialize cache size snapshot");
+        assert!(value.get("internalSize").is_some());
+        assert!(value.get("internalSizeHuman").is_some());
+        assert!(value.get("downloadCount").is_some());
+        assert!(value.get("metadataCount").is_some());
+        assert!(value.get("internal_size").is_none());
+        assert!(value.get("download_count").is_none());
+    }
 
     #[tokio::test]
     async fn test_sqlite_cache_db_operations() {

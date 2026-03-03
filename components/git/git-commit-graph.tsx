@@ -184,6 +184,10 @@ const GraphRow = memo(function GraphRow({
               <RotateCcw className="h-3.5 w-3.5 mr-2" />
               {t('git.graph.revert')}
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onContextAction?.('reset', entry.hash)}>
+              <History className="h-3.5 w-3.5 mr-2" />
+              {t('git.resetAction.title')}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -202,11 +206,13 @@ export function GitCommitGraph({
   onSelectCommit,
   selectedHash,
   branches,
+  refreshKey,
   onCopyHash,
   onCreateBranch,
   onCreateTag,
   onRevert,
   onCherryPick,
+  onResetTo,
 }: GitCommitGraphProps) {
   const { t } = useLocale();
   const [entries, setEntries] = useState<GitGraphEntry[]>([]);
@@ -220,7 +226,7 @@ export function GitCommitGraph({
   const [viewportHeight, setViewportHeight] = useState(600);
   const [focusedIdx, setFocusedIdx] = useState(-1);
 
-  const hasContextMenu = !!(onCopyHash || onCreateBranch || onCreateTag || onRevert || onCherryPick);
+  const hasContextMenu = !!(onCopyHash || onCreateBranch || onCreateTag || onRevert || onCherryPick || onResetTo);
 
   const loadData = useCallback(async (loadLimit: number, allBr: boolean, fp: boolean, br: string) => {
     setLoading(true);
@@ -237,6 +243,12 @@ export function GitCommitGraph({
     loadData(limit, allBranches, firstParent, selectedBranch);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    loadData(limit, allBranches, firstParent, selectedBranch);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const laneMap = useMemo(() => assignLanes(entries), [entries]);
   const hashToIndex = useMemo(() => {
@@ -349,8 +361,9 @@ export function GitCommitGraph({
       case 'tag': onCreateTag?.(hash); break;
       case 'revert': onRevert?.(hash); break;
       case 'cherrypick': onCherryPick?.(hash); break;
+      case 'reset': onResetTo?.(hash); break;
     }
-  }, [onCopyHash, onCreateBranch, onCreateTag, onRevert, onCherryPick]);
+  }, [onCopyHash, onCreateBranch, onCreateTag, onRevert, onCherryPick, onResetTo]);
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

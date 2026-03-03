@@ -135,6 +135,8 @@ export interface UseGitReturn {
   stashShowDiff: (stashId?: string) => Promise<string>;
   getReflog: (limit?: number) => Promise<GitReflogEntry[]>;
   cleanUntracked: (directories?: boolean) => Promise<string>;
+  cleanDryRun: (directories?: boolean) => Promise<string[]>;
+  stashPushFiles: (files: string[], message?: string, includeUntracked?: boolean) => Promise<string>;
 
   // Actions - Refresh all
   refreshAll: () => Promise<void>;
@@ -318,13 +320,14 @@ export function useGit(): UseGitReturn {
       setRepoInfo(info);
 
       // Load repo data in parallel
-      const [branchesData, remotesData, tagsData, stashesData, contributorsData, logData] =
+      const [branchesData, remotesData, tagsData, stashesData, contributorsData, statusData, logData] =
         await Promise.all([
           tauri.gitGetBranches(path).catch(() => []),
           tauri.gitGetRemotes(path).catch(() => []),
           tauri.gitGetTags(path).catch(() => []),
           tauri.gitGetStashes(path).catch(() => []),
           tauri.gitGetContributors(path).catch(() => []),
+          tauri.gitGetStatus(path).catch(() => []),
           tauri.gitGetLog(path, 50).catch(() => []),
         ]);
 
@@ -333,6 +336,7 @@ export function useGit(): UseGitReturn {
       setTags(tagsData);
       setStashes(stashesData);
       setContributors(contributorsData);
+      setStatusFiles(statusData);
       setCommits(logData);
     } catch (e) {
       setError(String(e));
@@ -342,6 +346,7 @@ export function useGit(): UseGitReturn {
       setTags([]);
       setStashes([]);
       setContributors([]);
+      setStatusFiles([]);
       setCommits([]);
     } finally {
       setLoading(false);
@@ -516,13 +521,14 @@ export function useGit(): UseGitReturn {
         const msg = await tauri.gitCheckoutBranch(repoPath, name);
         await refreshRepoInfo();
         await refreshBranches();
+        await refreshStatus();
         return msg;
       } catch (e) {
         setError(String(e));
         throw e;
       }
     },
-    [repoPath, refreshRepoInfo, refreshBranches],
+    [repoPath, refreshRepoInfo, refreshBranches, refreshStatus],
   );
 
   const createBranch = useCallback(
@@ -560,6 +566,7 @@ export function useGit(): UseGitReturn {
       if (!tauri.isTauri() || !repoPath) throw new Error('Not in Tauri environment');
       try {
         const msg = await tauri.gitStashApply(repoPath, stashId);
+        await refreshStatus();
         await refreshRepoInfo();
         return msg;
       } catch (e) {
@@ -567,7 +574,7 @@ export function useGit(): UseGitReturn {
         throw e;
       }
     },
-    [repoPath, refreshRepoInfo],
+    [repoPath, refreshStatus, refreshRepoInfo],
   );
 
   const stashPop = useCallback(
@@ -575,6 +582,7 @@ export function useGit(): UseGitReturn {
       if (!tauri.isTauri() || !repoPath) throw new Error('Not in Tauri environment');
       try {
         const msg = await tauri.gitStashPop(repoPath, stashId);
+        await refreshStatus();
         await refreshRepoInfo();
         await refreshStashes();
         return msg;
@@ -583,7 +591,7 @@ export function useGit(): UseGitReturn {
         throw e;
       }
     },
-    [repoPath, refreshRepoInfo, refreshStashes],
+    [repoPath, refreshStatus, refreshRepoInfo, refreshStashes],
   );
 
   const stashDrop = useCallback(
@@ -606,6 +614,7 @@ export function useGit(): UseGitReturn {
       if (!tauri.isTauri() || !repoPath) throw new Error('Not in Tauri environment');
       try {
         const msg = await tauri.gitStashSave(repoPath, message, includeUntracked);
+        await refreshStatus();
         await refreshStashes();
         await refreshRepoInfo();
         return msg;
@@ -614,7 +623,7 @@ export function useGit(): UseGitReturn {
         throw e;
       }
     },
-    [repoPath, refreshStashes, refreshRepoInfo],
+    [repoPath, refreshStatus, refreshStashes, refreshRepoInfo],
   );
 
   const createTag = useCallback(
@@ -981,6 +990,26 @@ export function useGit(): UseGitReturn {
     [repoPath, refreshStatus, refreshRepoInfo],
   );
 
+  const cleanDryRun = useCallback(
+    async (directories?: boolean): Promise<string[]> => {
+      if (!tauri.isTauri() || !repoPath) return [];
+      return await tauri.gitCleanDryRun(repoPath, directories);
+    },
+    [repoPath],
+  );
+
+  const stashPushFiles = useCallback(
+    async (files: string[], message?: string, includeUntracked?: boolean): Promise<string> => {
+      if (!tauri.isTauri() || !repoPath) throw new Error('No repo');
+      const msg = await tauri.gitStashPushFiles(repoPath, files, message, includeUntracked);
+      await refreshStatus();
+      await refreshRepoInfo();
+      await refreshStashes();
+      return msg;
+    },
+    [repoPath, refreshStatus, refreshRepoInfo, refreshStashes],
+  );
+
   const refreshAll = useCallback(async () => {
     if (!tauri.isTauri()) return;
     setLoading(true);
@@ -1082,5 +1111,7 @@ export function useGit(): UseGitReturn {
     stashShowDiff,
     getReflog,
     cleanUntracked,
+    cleanDryRun,
+    stashPushFiles,
   };
 }

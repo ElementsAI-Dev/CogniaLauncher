@@ -87,79 +87,182 @@ pub struct EnvironmentManager {
     registry: Arc<RwLock<ProviderRegistry>>,
 }
 
-fn normalize_env_type(input: &str) -> String {
-    match input {
-        // Node.js providers
-        "fnm" | "nvm" | "volta" | "system-node" => "node".to_string(),
-        // Python providers
-        "pyenv" | "system-python" => "python".to_string(),
-        // Go providers
-        "goenv" | "system-go" => "go".to_string(),
-        // Rust providers
-        "rustup" | "system-rust" => "rust".to_string(),
-        // Ruby providers
-        "rbenv" | "system-ruby" => "ruby".to_string(),
-        // Java/Kotlin providers
-        "sdkman" | "system-java" => "java".to_string(),
-        "sdkman-kotlin" | "system-kotlin" => "kotlin".to_string(),
-        // Scala providers
-        "sdkman-scala" => "scala".to_string(),
-        // Groovy providers
-        "sdkman-groovy" => "groovy".to_string(),
-        // PHP providers
-        "phpbrew" | "system-php" => "php".to_string(),
-        // .NET providers
-        "dotnet" | "system-dotnet" => "dotnet".to_string(),
-        // Deno providers
-        "deno" | "system-deno" => "deno".to_string(),
-        // Zig providers
-        "zig" | "system-zig" => "zig".to_string(),
-        // Dart/Flutter providers
-        "fvm" | "system-dart" => "dart".to_string(),
-        // Bun providers
-        "system-bun" => "bun".to_string(),
-        // Lua providers
-        "system-lua" => "lua".to_string(),
-        // C/C++ providers
-        "system-c" => "c".to_string(),
-        "system-cpp" | "msvc" | "msys2" | "vcpkg" | "conan" | "xmake" => "cpp".to_string(),
-        _ if input.starts_with("system-") => {
-            input.strip_prefix("system-").unwrap_or(input).to_string()
-        }
-        _ => input.to_string(),
+const PROVIDER_ENV_TYPE_OVERRIDES: &[(&str, &str)] = &[
+    // Node.js providers
+    ("fnm", "node"),
+    ("nvm", "node"),
+    ("volta", "node"),
+    ("system-node", "node"),
+    // Python providers
+    ("pyenv", "python"),
+    ("uv", "python"),
+    ("conda", "python"),
+    ("pipx", "python"),
+    ("system-python", "python"),
+    // Go providers
+    ("goenv", "go"),
+    ("system-go", "go"),
+    // Rust providers
+    ("rustup", "rust"),
+    ("system-rust", "rust"),
+    // Ruby providers
+    ("rbenv", "ruby"),
+    ("system-ruby", "ruby"),
+    // JVM providers
+    ("sdkman", "java"),
+    ("adoptium", "java"),
+    ("system-java", "java"),
+    ("sdkman-kotlin", "kotlin"),
+    ("system-kotlin", "kotlin"),
+    ("sdkman-scala", "scala"),
+    ("system-scala", "scala"),
+    ("sdkman-groovy", "groovy"),
+    ("system-groovy", "groovy"),
+    ("sdkman-gradle", "gradle"),
+    ("sdkman-maven", "maven"),
+    // PHP providers
+    ("phpbrew", "php"),
+    ("system-php", "php"),
+    // .NET providers
+    ("dotnet", "dotnet"),
+    ("system-dotnet", "dotnet"),
+    // Deno providers
+    ("deno", "deno"),
+    ("system-deno", "deno"),
+    // Zig providers
+    ("zig", "zig"),
+    ("system-zig", "zig"),
+    // Dart/Flutter providers
+    ("fvm", "dart"),
+    ("system-dart", "dart"),
+    // Bun providers
+    ("system-bun", "bun"),
+    // Lua providers
+    ("luarocks", "lua"),
+    ("system-lua", "lua"),
+    // C/C++ providers
+    ("system-c", "c"),
+    ("system-cpp", "cpp"),
+    ("msvc", "cpp"),
+    ("msys2", "cpp"),
+    ("vcpkg", "cpp"),
+    ("conan", "cpp"),
+    ("xmake", "cpp"),
+    // Polyglot managers
+    ("mise", "polyglot"),
+    ("asdf", "polyglot"),
+    ("nix", "polyglot"),
+];
+
+fn provider_env_type_override(provider_id: &str) -> Option<&'static str> {
+    PROVIDER_ENV_TYPE_OVERRIDES
+        .iter()
+        .find(|(id, _)| *id == provider_id)
+        .map(|(_, env_type)| *env_type)
+}
+
+pub fn provider_to_env_type(input: &str) -> String {
+    let normalized = input.trim().to_ascii_lowercase();
+
+    if let Some(mapped) = provider_env_type_override(&normalized) {
+        return mapped.to_string();
     }
+
+    if let Some(stripped) = normalized.strip_prefix("system-") {
+        return stripped.to_string();
+    }
+
+    normalized
+}
+
+pub fn provider_env_type_mapping() -> HashMap<String, String> {
+    let mut mapping = HashMap::new();
+    for (provider_id, env_type) in PROVIDER_ENV_TYPE_OVERRIDES {
+        mapping.insert((*provider_id).to_string(), (*env_type).to_string());
+    }
+
+    for env in SystemEnvironmentType::all() {
+        let env_type = env.env_type().to_string();
+        mapping
+            .entry(format!("system-{}", env_type))
+            .or_insert_with(|| env.env_type().to_string());
+    }
+
+    mapping
+}
+
+pub fn env_type_to_default_provider(env_type: &str) -> String {
+    let logical = provider_to_env_type(env_type);
+    match logical.as_str() {
+        "node" => "fnm".to_string(),
+        "python" => "pyenv".to_string(),
+        "go" => "goenv".to_string(),
+        "rust" => "rustup".to_string(),
+        "ruby" => "rbenv".to_string(),
+        "java" => "sdkman".to_string(),
+        "kotlin" => "sdkman-kotlin".to_string(),
+        "scala" => "sdkman-scala".to_string(),
+        "groovy" => "sdkman-groovy".to_string(),
+        "gradle" => "sdkman-gradle".to_string(),
+        "maven" => "sdkman-maven".to_string(),
+        "php" => "phpbrew".to_string(),
+        "dotnet" => "dotnet".to_string(),
+        "deno" => "deno".to_string(),
+        "zig" => "zig".to_string(),
+        "dart" => "fvm".to_string(),
+        "c" => "system-c".to_string(),
+        "cpp" => "system-cpp".to_string(),
+        "bun" => "system-bun".to_string(),
+        _ => logical,
+    }
+}
+
+fn normalize_env_type(input: &str) -> String {
+    provider_to_env_type(input)
 }
 
 pub(crate) fn candidate_provider_ids(env_type: &str) -> &'static [&'static str] {
     match env_type {
         // Dedicated managers first, then polyglot managers, then system fallback.
-        "node" => &["volta", "fnm", "nvm", "mise", "asdf", "system-node"],
-        "python" => &["pyenv", "mise", "asdf", "system-python"],
-        "go" => &["goenv", "mise", "asdf", "system-go"],
-        "rust" => &["rustup", "mise", "asdf", "system-rust"],
-        "ruby" => &["rbenv", "mise", "asdf", "system-ruby"],
-        "java" => &["sdkman", "mise", "asdf", "system-java"],
-        "kotlin" => &["sdkman-kotlin", "mise", "asdf", "system-kotlin"],
-        "scala" => &["sdkman-scala", "mise", "asdf", "system-scala"],
-        "php" => &["phpbrew", "mise", "asdf", "system-php"],
-        "dotnet" => &["dotnet", "mise", "asdf", "system-dotnet"],
-        "deno" => &["deno", "mise", "asdf", "system-deno"],
-        "zig" => &["zig", "mise", "asdf", "system-zig"],
-        "dart" => &["fvm", "mise", "asdf", "system-dart"],
+        "node" => &["volta", "fnm", "nvm", "mise", "asdf", "nix", "system-node"],
+        "python" => &[
+            "uv",
+            "pyenv",
+            "conda",
+            "pipx",
+            "mise",
+            "asdf",
+            "nix",
+            "system-python",
+        ],
+        "go" => &["goenv", "mise", "asdf", "nix", "system-go"],
+        "rust" => &["rustup", "mise", "asdf", "nix", "system-rust"],
+        "ruby" => &["rbenv", "mise", "asdf", "nix", "system-ruby"],
+        "java" => &["adoptium", "sdkman", "mise", "asdf", "nix", "system-java"],
+        "kotlin" => &["sdkman-kotlin", "mise", "asdf", "nix", "system-kotlin"],
+        "scala" => &["sdkman-scala", "mise", "asdf", "nix", "system-scala"],
+        "groovy" => &["sdkman-groovy", "mise", "asdf", "nix", "system-groovy"],
+        "gradle" => &["sdkman-gradle", "mise", "asdf", "nix"],
+        "maven" => &["sdkman-maven", "mise", "asdf", "nix"],
+        "php" => &["phpbrew", "mise", "asdf", "nix", "system-php"],
+        "dotnet" => &["dotnet", "mise", "asdf", "nix", "system-dotnet"],
+        "deno" => &["deno", "mise", "asdf", "nix", "system-deno"],
+        "zig" => &["zig", "mise", "asdf", "nix", "system-zig"],
+        "dart" => &["fvm", "mise", "asdf", "nix", "system-dart"],
         "bun" => &["system-bun"],
-        "lua" => &["mise", "asdf", "system-lua"],
-        "groovy" => &["sdkman-groovy", "mise", "asdf", "system-groovy"],
-        "elixir" => &["mise", "asdf", "system-elixir"],
-        "erlang" => &["mise", "asdf", "system-erlang"],
-        "swift" => &["mise", "asdf", "system-swift"],
-        "julia" => &["mise", "asdf", "system-julia"],
-        "perl" => &["mise", "asdf", "system-perl"],
-        "r" => &["mise", "asdf", "system-r"],
-        "haskell" => &["mise", "asdf", "system-haskell"],
-        "clojure" => &["mise", "asdf", "system-clojure"],
-        "crystal" => &["mise", "asdf", "system-crystal"],
-        "nim" => &["mise", "asdf", "system-nim"],
-        "ocaml" => &["mise", "asdf", "system-ocaml"],
+        "lua" => &["mise", "asdf", "nix", "system-lua"],
+        "elixir" => &["mise", "asdf", "nix", "system-elixir"],
+        "erlang" => &["mise", "asdf", "nix", "system-erlang"],
+        "swift" => &["mise", "asdf", "nix", "system-swift"],
+        "julia" => &["mise", "asdf", "nix", "system-julia"],
+        "perl" => &["mise", "asdf", "nix", "system-perl"],
+        "r" => &["mise", "asdf", "nix", "system-r"],
+        "haskell" => &["mise", "asdf", "nix", "system-haskell"],
+        "clojure" => &["mise", "asdf", "nix", "system-clojure"],
+        "crystal" => &["mise", "asdf", "nix", "system-crystal"],
+        "nim" => &["mise", "asdf", "nix", "system-nim"],
+        "ocaml" => &["mise", "asdf", "nix", "system-ocaml"],
+        "polyglot" => &["mise", "asdf", "nix"],
         "fortran" => &["system-fortran"],
         "c" => &["system-c"],
         "cpp" => &["system-cpp"],
@@ -927,10 +1030,46 @@ mod tests {
     #[test]
     fn normalize_env_type_maps_all_jvm_providers() {
         assert_eq!(normalize_env_type("sdkman"), "java");
+        assert_eq!(normalize_env_type("adoptium"), "java");
         assert_eq!(normalize_env_type("sdkman-kotlin"), "kotlin");
         assert_eq!(normalize_env_type("sdkman-scala"), "scala");
+        assert_eq!(normalize_env_type("sdkman-gradle"), "gradle");
+        assert_eq!(normalize_env_type("sdkman-maven"), "maven");
         assert_eq!(normalize_env_type("system-java"), "java");
         assert_eq!(normalize_env_type("system-kotlin"), "kotlin");
+    }
+
+    #[test]
+    fn normalize_env_type_maps_python_and_polyglot_providers() {
+        assert_eq!(normalize_env_type("uv"), "python");
+        assert_eq!(normalize_env_type("conda"), "python");
+        assert_eq!(normalize_env_type("pipx"), "python");
+        assert_eq!(normalize_env_type("mise"), "polyglot");
+        assert_eq!(normalize_env_type("asdf"), "polyglot");
+        assert_eq!(normalize_env_type("nix"), "polyglot");
+    }
+
+    #[test]
+    fn provider_env_type_mapping_includes_extended_entries() {
+        let mapping = provider_env_type_mapping();
+        assert_eq!(mapping.get("uv"), Some(&"python".to_string()));
+        assert_eq!(mapping.get("pipx"), Some(&"python".to_string()));
+        assert_eq!(mapping.get("adoptium"), Some(&"java".to_string()));
+        assert_eq!(mapping.get("sdkman-gradle"), Some(&"gradle".to_string()));
+        assert_eq!(mapping.get("sdkman-maven"), Some(&"maven".to_string()));
+        assert_eq!(mapping.get("mise"), Some(&"polyglot".to_string()));
+        assert_eq!(mapping.get("asdf"), Some(&"polyglot".to_string()));
+        assert_eq!(mapping.get("nix"), Some(&"polyglot".to_string()));
+    }
+
+    #[test]
+    fn env_type_to_default_provider_returns_expected_values() {
+        assert_eq!(env_type_to_default_provider("fnm"), "fnm");
+        assert_eq!(env_type_to_default_provider("python"), "pyenv");
+        assert_eq!(env_type_to_default_provider("kotlin"), "sdkman-kotlin");
+        assert_eq!(env_type_to_default_provider("sdkman-gradle"), "sdkman-gradle");
+        assert_eq!(env_type_to_default_provider("sdkman-maven"), "sdkman-maven");
+        assert_eq!(env_type_to_default_provider("unknown"), "unknown");
     }
 
     #[test]
@@ -939,6 +1078,22 @@ mod tests {
         assert!(candidates.contains(&"sdkman-scala"));
         assert!(candidates.contains(&"mise"));
         assert!(candidates.contains(&"asdf"));
+    }
+
+    #[test]
+    fn candidate_provider_ids_include_extended_python_candidates() {
+        let candidates = candidate_provider_ids("python");
+        assert!(candidates.contains(&"uv"));
+        assert!(candidates.contains(&"pyenv"));
+        assert!(candidates.contains(&"system-python"));
+    }
+
+    #[test]
+    fn candidate_provider_ids_include_gradle_and_maven() {
+        let gradle_candidates = candidate_provider_ids("gradle");
+        let maven_candidates = candidate_provider_ids("maven");
+        assert!(gradle_candidates.contains(&"sdkman-gradle"));
+        assert!(maven_candidates.contains(&"sdkman-maven"));
     }
 
     #[tokio::test]

@@ -14,16 +14,26 @@ import {
 import { VersionBrowserPanel } from '@/components/environments/version-browser-panel';
 import { InstallationProgressDialog } from '@/components/environments/installation-progress-dialog';
 import { useEnvironments } from '@/hooks/use-environments';
+import { useEnvironmentDetection } from '@/hooks/use-environment-detection';
 import { useEnvironmentStore, getLogicalEnvType } from '@/lib/stores/environment';
 import { useAutoVersionSwitch, useProjectPath } from '@/hooks/use-auto-version';
 import { useLocale } from '@/components/providers/locale-provider';
-import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2 } from 'lucide-react';
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from '@/components/ui/empty';
+import { LayoutDashboard, Layers, Package, Settings2, Terminal, Link2, Monitor } from 'lucide-react';
+import { isTauri } from '@/lib/tauri';
 
 interface EnvDetailPageClientProps {
   envType: string;
 }
 
 export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
+  const isDesktop = isTauri();
   const { t } = useLocale();
 
   const {
@@ -49,22 +59,25 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { getProjectDetectedForEnv } = useEnvironmentDetection({
+    detectedVersions,
+    availableProviders,
+  });
 
   // Project path and auto version switch
   const { projectPath } = useProjectPath();
-  useAutoVersionSwitch({ projectPath, enabled: true });
+  useAutoVersionSwitch({ projectPath, enabled: isDesktop });
 
   // Track initialization
   const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      fetchEnvironments();
-      fetchProviders();
-      detectVersions('.');
-    }
-  }, [fetchEnvironments, fetchProviders, detectVersions]);
+    if (!isDesktop || initializedRef.current) return;
+    initializedRef.current = true;
+    fetchEnvironments();
+    fetchProviders();
+    detectVersions(projectPath || '.');
+  }, [fetchEnvironments, fetchProviders, detectVersions, isDesktop, projectPath]);
 
   // Find current environment data
   // Backend returns env_type as provider ID (e.g., "fnm"), but URL uses language type (e.g., "node")
@@ -73,11 +86,7 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     if (e.env_type === envType) return true;
     return getLogicalEnvType(e.env_type, availableProviders) === envType;
   }) || null;
-  const detectedVersion =
-    detectedVersions.find((d) => {
-      if (d.env_type === envType) return true;
-      return getLogicalEnvType(d.env_type, availableProviders) === envType;
-    }) || null;
+  const detectedVersion = getProjectDetectedForEnv(envType);
 
   // Get providers for this env type
   const getEnvKey = useCallback(
@@ -102,11 +111,11 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
     setIsRefreshing(true);
     try {
       await fetchEnvironments();
-      await detectVersions('.');
+      await detectVersions(projectPath || '.');
     } finally {
       setIsRefreshing(false);
     }
-  }, [fetchEnvironments, detectVersions]);
+  }, [fetchEnvironments, detectVersions, projectPath]);
 
   const handleInstallVersion = useCallback(
     async (version: string, providerId?: string) => {
@@ -140,6 +149,22 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
   const handleOpenVersionBrowser = useCallback(() => {
     openVersionBrowser(envType);
   }, [envType, openVersionBrowser]);
+
+  if (!isDesktop) {
+    return (
+      <div className="p-4 md:p-6">
+        <Empty className="border-none py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Monitor />
+            </EmptyMedia>
+            <EmptyTitle>{t("environments.desktopOnly")}</EmptyTitle>
+            <EmptyDescription>{t("environments.desktopOnlyDescription")}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -185,7 +210,6 @@ export function EnvDetailPageClient({ envType }: EnvDetailPageClientProps) {
           <EnvDetailOverview
             envType={envType}
             env={env}
-            detectedVersion={detectedVersion}
             t={t}
           />
         </TabsContent>

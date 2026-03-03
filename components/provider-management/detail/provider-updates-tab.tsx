@@ -41,24 +41,23 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { UpdateInfo } from "@/types/tauri";
-import * as tauri from "@/lib/tauri";
 import { toast } from "sonner";
 
 interface ProviderUpdatesTabProps {
-  providerId: string;
   availableUpdates: UpdateInfo[];
   loadingUpdates: boolean;
   onCheckUpdates: () => Promise<UpdateInfo[]>;
-  onRefreshPackages: () => Promise<unknown>;
+  onUpdatePackage: (name: string) => Promise<unknown>;
+  onUpdateAllPackages: (packageNames: string[]) => Promise<unknown>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export function ProviderUpdatesTab({
-  providerId,
   availableUpdates,
   loadingUpdates,
   onCheckUpdates,
-  onRefreshPackages,
+  onUpdatePackage,
+  onUpdateAllPackages,
   t,
 }: ProviderUpdatesTabProps) {
   const [updatingPackages, setUpdatingPackages] = useState<Set<string>>(new Set());
@@ -68,10 +67,8 @@ export function ProviderUpdatesTab({
     async (name: string) => {
       setUpdatingPackages((prev) => new Set(prev).add(name));
       try {
-        const spec = `${providerId}:${name}`;
-        await tauri.batchUpdate([spec]);
+        await onUpdatePackage(name);
         toast.success(t("providerDetail.packageUpdated", { name }));
-        await onRefreshPackages();
         await onCheckUpdates();
       } catch {
         toast.error(t("providerDetail.packageUpdateError", { name }));
@@ -83,25 +80,24 @@ export function ProviderUpdatesTab({
         });
       }
     },
-    [providerId, onRefreshPackages, onCheckUpdates, t],
+    [onCheckUpdates, onUpdatePackage, t],
   );
 
   const handleUpdateAll = useCallback(async () => {
     setIsUpdatingAll(true);
     try {
-      const specs = availableUpdates.map((u) => `${providerId}:${u.name}`);
-      await tauri.batchUpdate(specs);
+      const packageNames = availableUpdates.map((u) => u.name);
+      await onUpdateAllPackages(packageNames);
       toast.success(
         t("providerDetail.allPackagesUpdated", { count: availableUpdates.length }),
       );
-      await onRefreshPackages();
       await onCheckUpdates();
     } catch {
       toast.error(t("providerDetail.updateAllError"));
     } finally {
       setIsUpdatingAll(false);
     }
-  }, [providerId, availableUpdates, onRefreshPackages, onCheckUpdates, t]);
+  }, [availableUpdates, onCheckUpdates, onUpdateAllPackages, t]);
 
   return (
     <Card>

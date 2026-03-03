@@ -67,7 +67,10 @@
     "done": "Done",
     "all": "All",
     "saved": "Saved",
-    "deleted": "Deleted"
+    "deleted": "Deleted",
+    "created": "Created",
+    "started": "Started",
+    "completed": "Completed"
   },
   "breadcrumbs": {
     "label": "Breadcrumbs"
@@ -645,6 +648,8 @@
   "environments": {
     "title": "Environments",
     "description": "Manage your development environments",
+    "desktopOnly": "Desktop App Required",
+    "desktopOnlyDescription": "This feature is available in desktop mode only.",
     "noEnvironments": "No environment managers detected. Install nvm, pyenv, or rustup to get started.",
     "emptyState": {
       "title": "No Environments Configured",
@@ -2458,6 +2463,9 @@
     "hardwareInfo": "Hardware",
     "runtimeInfo": "Runtime",
     "homeDirectory": "Home Directory",
+    "cacheTotalSize": "Total Cache Size",
+    "cacheInternalSize": "Internal Cache",
+    "cacheExternalSize": "External Cache",
     "locale": "Locale",
     "copySystemInfo": "Copy system information",
     "copiedToClipboard": "Copied to clipboard",
@@ -2883,12 +2891,21 @@
       "copyUrl": "Copy URL",
       "urlCopied": "Copied to clipboard",
       "calculateChecksum": "Calculate Checksum",
+      "verifyFile": "Verify File",
+      "verifySuccess": "Verification passed",
+      "verifyResult": "Verification Result",
+      "verifyValid": "Valid",
+      "actualChecksum": "Actual Checksum",
+      "extractedFiles": "Extracted files: {count}",
       "checksumCopied": "Checksum copied to clipboard",
       "checksumResult": "Checksum: {checksum}",
       "calculating": "Calculating...",
       "serverFilename": "Server Filename",
       "supportsResumeYes": "Yes",
       "supportsResumeNo": "No"
+    },
+    "preflight": {
+      "unknownSizeWarning": "File size is unknown; continuing after warning."
     },
     "validation": {
       "invalidUrl": "Please enter a valid URL"
@@ -3039,6 +3056,7 @@
       "releaseNotes": "Release Notes",
       "selectRecommended": "Select Recommended",
       "saveToken": "Save",
+      "saveInstanceUrl": "Save URL",
       "clearToken": "Clear",
       "tokenSaved": "Token saved",
       "tokenCleared": "Token cleared",
@@ -3080,15 +3098,20 @@
       "pipelines": "Pipelines",
       "jobs": "Jobs",
       "packages": "Packages",
+      "packageType": "Package Type",
+      "packageTypePlaceholder": "All types (e.g. generic, npm, maven)",
+      "applyPackageType": "Apply",
       "noPipelines": "No pipelines found",
       "noJobs": "No jobs found for this pipeline",
       "noPackages": "No packages found in registry",
       "selectPipeline": "Select a pipeline to view jobs",
+      "selectPackage": "Select a package to view files",
       "downloadArtifacts": "Download Artifacts",
       "artifactsAdded": "Job artifacts added to download queue",
       "packageFiles": "Package Files",
       "noPackageFiles": "No files found in this package",
       "packageFileAdded": "Package file added to download queue",
+      "packageFilesAdded": "{count} package file(s) added to download queue",
       "searchProjects": "Search projects...",
       "instanceUrlSaved": "Instance URL saved"
     },
@@ -3215,7 +3238,9 @@
       "http_sslVerify": "SSL Verify",
       "color_ui": "Color Output",
       "gpg_program": "GPG Program",
-      "gpg_format": "GPG Format"
+      "gpg_format": "GPG Format",
+      "applySafeDefaults": "Apply Safe Defaults",
+      "safeDefaultsApplied": "Applied {count} safe default setting(s)"
     },
     "alias": {
       "title": "Git Aliases",
@@ -3595,6 +3620,16 @@
       "untrusted": "Untrusted",
       "verifyCommit": "Verify Commit",
       "verifyTag": "Verify Tag"
+    },
+    "quickOps": {
+      "title": "Quick Rebase & Squash",
+      "description": "Run common history rewrite actions with explicit inputs.",
+      "rebase": "Rebase Current Branch",
+      "squash": "Squash Recent Commits",
+      "countPlaceholder": "Commit count (>=2)",
+      "rebaseSuccess": "Rebase completed",
+      "squashSuccess": "Squash completed",
+      "squashCountInvalid": "Commit count must be 2 or greater"
     },
     "interactiveRebase": {
       "title": "Interactive Rebase",
@@ -4171,6 +4206,9 @@
     "install": "Install Distribution",
     "installing": "Installing distribution...",
     "installSuccess": "Distribution '{name}' installed successfully",
+    "installWithLocation": "Install to Location",
+    "installWithLocationDesc": "Install this distribution to a custom host directory.",
+    "installWithLocationSuccess": "Distribution '{name}' installed to custom location",
     "unregister": "Unregister",
     "unregisterConfirm": "Are you sure you want to unregister '{name}'? All data will be permanently lost.",
     "unregisterSuccess": "Distribution '{name}' unregistered successfully",
@@ -4180,8 +4218,10 @@
     "shutdownConfirm": "Shutdown all running WSL instances?",
     "shutdownSuccess": "All WSL instances shut down",
     "launch": "Launch",
+    "launchSuccess": "Distribution '{name}' launched",
     "launchAs": "Launch as user",
     "setDefault": "Set as Default",
+    "defaultBadge": "Default",
     "setDefaultSuccess": "'{name}' set as default distribution",
     "setVersion": "Set WSL Version",
     "setVersionSuccess": "WSL version for '{name}' set to {version}",
@@ -4210,6 +4250,8 @@
     "updating": "Updating WSL kernel...",
     "updateSuccess": "WSL kernel updated successfully",
     "status": "WSL Status",
+    "versionInfo": "Version Information",
+    "totalDiskUsage": "Total Disk Usage",
     "kernelVersion": "Kernel Version",
     "wslgVersion": "WSLg Version",
     "networkingModeLabel": "Network Mode",
@@ -4380,6 +4422,7 @@
       "terminalEmpty": "Execute commands in this distribution. Type a command above and press Enter.",
       "filesystem": "Filesystem Browser",
       "filesystemHint": "Click Browse or press Enter to load a directory.",
+      "filesystemNotRunning": "Start the distribution to browse its filesystem.",
       "browse": "Browse",
       "refresh": "Refresh",
       "emptyDir": "This directory is empty.",
@@ -4464,6 +4507,7 @@
     "clone": "Clone",
     "cloneDesc": "Duplicate this distribution (export → import)",
     "cloneName": "New Distribution Name",
+    "cloneNameMustDiffer": "New distribution name must be different from the source name.",
     "cloneLocation": "Install Location",
     "cloneSuccess": "Distribution '{name}' cloned successfully",
     "openInExplorer": "Open in Explorer",
@@ -4582,8 +4626,11 @@
     "envDetectedCount": "{count} environment(s) detected",
     "envAvailable": "Available",
     "envNotFound": "Not Found",
+    "envSourceLabel": "Source: {source}",
+    "envScopeSystem": "System",
+    "envScopeManaged": "Managed",
     "envRescan": "Rescan",
-    "envWebModeNote": "Full detection is available in the desktop app. Web mode shows limited results.",
+    "envWebModeNote": "Environment detection is available only in the desktop app. Web mode does not show detection results.",
     "mirrorsTitle": "Mirror Configuration",
     "mirrorsDesc": "Choose a mirror preset for faster package downloads based on your region.",
     "mirrorPresetDesc_default": "Use official package registries directly",

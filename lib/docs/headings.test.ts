@@ -1,23 +1,4 @@
-// Mock github-slugger (ESM-only package) with a CJS-compatible implementation
-jest.mock('github-slugger', () => {
-  const regex = /[^\p{L}\p{M}\p{N}\p{Pc} -]/gu;
-  class GithubSlugger {
-    occurrences = new Map<string, number>();
-    slug(value: string) {
-      const result = value.toLowerCase().replace(regex, '').replace(/ /g, '-');
-      const count = this.occurrences.get(result) ?? 0;
-      this.occurrences.set(result, count + 1);
-      if (count > 0) return `${result}-${count}`;
-      return result;
-    }
-    reset() {
-      this.occurrences.clear();
-    }
-  }
-  return { __esModule: true, default: GithubSlugger };
-});
-
-import { extractHeadings } from './headings';
+import { extractHeadingTexts, extractHeadings, extractMarkdownHeadings } from './headings';
 
 describe('extractHeadings', () => {
   it('extracts h2 and h3 headings', () => {
@@ -114,5 +95,19 @@ describe('extractHeadings', () => {
     const r2 = extractHeadings(md);
     expect(r1[0].id).toBe('test');
     expect(r2[0].id).toBe('test');
+  });
+});
+
+describe('extractMarkdownHeadings', () => {
+  it('supports configurable heading levels', () => {
+    const md = '# H1\n## H2\n### H3\n#### H4';
+    const result = extractMarkdownHeadings(md, { minLevel: 1, maxLevel: 4 });
+    expect(result.map((heading) => heading.text)).toEqual(['H1', 'H2', 'H3', 'H4']);
+  });
+
+  it('returns only level 1-4 heading texts for search index usage', () => {
+    const md = '# H1\n## H2\n### H3\n#### H4\n##### H5';
+    const result = extractHeadingTexts(md, { minLevel: 1, maxLevel: 4 });
+    expect(result).toEqual(['H1', 'H2', 'H3', 'H4']);
   });
 });

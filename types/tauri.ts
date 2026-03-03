@@ -940,7 +940,7 @@ export interface DownloadTask {
   url: string;
   name: string;
   destination: string;
-  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed';
+  state: 'queued' | 'downloading' | 'paused' | 'cancelled' | 'completed' | 'failed' | 'extracting';
   progress: DownloadProgress;
   error: string | null;
   provider: string | null;
@@ -1342,6 +1342,12 @@ export interface WslDiskUsage {
   totalBytes: number;
   usedBytes: number;
   filesystemPath: string;
+}
+
+/** Aggregated disk usage across all WSL distributions */
+export interface WslTotalDiskUsage {
+  totalBytes: number;
+  perDistro: [string, number][];
 }
 
 /** WSL config sections (from .wslconfig) */

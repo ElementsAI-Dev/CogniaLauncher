@@ -27,7 +27,7 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tokio::sync::RwLock;
 use tokio::time::Duration;
-use tray::{SharedTrayState, TrayState};
+use tray::{SharedTrayState, TrayLanguage, TrayState};
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
 pub type SharedSettings = Arc<RwLock<Settings>>;
@@ -123,6 +123,7 @@ pub fn run() {
             // Initialize provider registry with defaults asynchronously
             let registry = app.state::<SharedRegistry>().inner().clone();
             let settings = app.state::<SharedSettings>().inner().clone();
+            let tray_state = app.state::<SharedTrayState>().inner().clone();
             let custom_detection = app.state::<SharedCustomDetectionManager>().inner().clone();
 
             // Get config directory for custom detection rules
@@ -146,6 +147,22 @@ pub fn run() {
                     Err(e) => {
                         info!("Using default settings: {}", e);
                     }
+                }
+
+                // Hydrate tray runtime state from persisted settings so tray behavior
+                // remains consistent across restarts.
+                {
+                    let settings_guard = settings.read().await;
+                    let mut tray_guard = tray_state.write().await;
+                    tray_guard.click_behavior = settings_guard.tray.click_behavior;
+                    tray_guard.minimize_to_tray = settings_guard.tray.minimize_to_tray;
+                    tray_guard.start_minimized = settings_guard.tray.start_minimized;
+                    tray_guard.menu_config.items = settings_guard.tray.menu_items.clone();
+                    tray_guard.language = if settings_guard.appearance.language == "zh" {
+                        TrayLanguage::Zh
+                    } else {
+                        TrayLanguage::En
+                    };
                 }
                 emit_init_progress(&app_handle_for_init, "settings", 15, "splash.loadingSettings");
 
@@ -476,6 +493,7 @@ pub fn run() {
             commands::config::config_get,
             commands::config::config_set,
             commands::config::config_list,
+            commands::config::config_list_defaults,
             commands::config::config_reset,
             commands::config::config_export,
             commands::config::config_import,

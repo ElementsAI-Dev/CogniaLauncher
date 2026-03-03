@@ -26,6 +26,7 @@ const mockT = (key: string) => {
     'envvar.table.copy': 'Copy value',
     'envvar.confirm.deleteTitle': 'Delete Environment Variable',
     'envvar.confirm.deleteDesc': 'Are you sure?',
+    'envvar.conflicts.title': 'Conflict',
     'common.cancel': 'Cancel',
   };
   return translations[key] || key;
@@ -41,12 +42,15 @@ Object.defineProperty(navigator, 'clipboard', {
 });
 
 describe('EnvVarTable', () => {
+  const baseRows = [
+    { key: 'PATH', value: '/usr/local/bin:/usr/bin', scope: 'process' as const },
+    { key: 'HOME', value: '/home/user', scope: 'process' as const },
+    { key: 'LANG', value: 'en_US.UTF-8', scope: 'process' as const },
+  ];
+
   const defaultProps = {
-    envVars: {
-      PATH: '/usr/local/bin:/usr/bin',
-      HOME: '/home/user',
-      LANG: 'en_US.UTF-8',
-    },
+    rows: baseRows,
+    scopeFilter: 'all' as const,
     searchQuery: '',
     onEdit: jest.fn(),
     onDelete: jest.fn(),
@@ -90,13 +94,13 @@ describe('EnvVarTable', () => {
   });
 
   it('shows empty state for persistent scope with no vars', () => {
-    render(<EnvVarTable {...defaultProps} scope="user" persistentVars={[]} searchQuery="" />);
+    render(<EnvVarTable {...defaultProps} scopeFilter="user" rows={[]} searchQuery="" />);
     expect(screen.getByText('No persistent variables')).toBeInTheDocument();
   });
 
   it('uses persistentVars when scope is user', () => {
-    const persistentVars: [string, string][] = [['MY_VAR', 'my_val']];
-    render(<EnvVarTable {...defaultProps} scope="user" persistentVars={persistentVars} />);
+    const userRows = [{ key: 'MY_VAR', value: 'my_val', scope: 'user' as const }];
+    render(<EnvVarTable {...defaultProps} scopeFilter="user" rows={userRows} />);
     expect(screen.getByText('MY_VAR')).toBeInTheDocument();
     expect(screen.getByText('my_val')).toBeInTheDocument();
     // Process env vars should not be shown
@@ -115,21 +119,21 @@ describe('EnvVarTable', () => {
     // AlertDialog confirmation appears
     const confirmBtn = screen.getByRole('button', { name: /delete/i });
     await userEvent.click(confirmBtn);
-    expect(onDelete).toHaveBeenCalled();
+    expect(onDelete).toHaveBeenCalledWith('PATH', 'process');
   });
 
   it('shows scope badge with correct label', () => {
-    render(<EnvVarTable {...defaultProps} scope="user" persistentVars={[['A', 'B']]} />);
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'A', value: 'B', scope: 'user' }]} />);
     expect(screen.getByText('User')).toBeInTheDocument();
   });
 
   it('shows (empty) for empty values', () => {
-    render(<EnvVarTable {...defaultProps} envVars={{ EMPTY_VAR: '' }} />);
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'EMPTY_VAR', value: '', scope: 'process' }]} />);
     expect(screen.getByText('(empty)')).toBeInTheDocument();
   });
 
   it('copies value to clipboard via copy button', async () => {
-    render(<EnvVarTable {...defaultProps} envVars={{ MY_KEY: 'my_value' }} />);
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'MY_KEY', value: 'my_value', scope: 'process' }]} />);
     const copyButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-copy'),
     );
@@ -139,7 +143,7 @@ describe('EnvVarTable', () => {
   });
 
   it('enters inline edit mode via pencil button', async () => {
-    render(<EnvVarTable {...defaultProps} envVars={{ MY_KEY: 'old_value' }} />);
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'MY_KEY', value: 'old_value', scope: 'process' }]} />);
     const editButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-pencil'),
     );
@@ -150,7 +154,7 @@ describe('EnvVarTable', () => {
 
   it('saves inline edit with Enter key', async () => {
     const onEdit = jest.fn();
-    render(<EnvVarTable {...defaultProps} onEdit={onEdit} envVars={{ MY_KEY: 'old_value' }} />);
+    render(<EnvVarTable {...defaultProps} onEdit={onEdit} rows={[{ key: 'MY_KEY', value: 'old_value', scope: 'process' }]} />);
     // Enter edit mode
     const editButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-pencil'),
@@ -159,12 +163,12 @@ describe('EnvVarTable', () => {
     const input = screen.getByDisplayValue('old_value');
     await userEvent.clear(input);
     await userEvent.type(input, 'new_value{Enter}');
-    expect(onEdit).toHaveBeenCalledWith('MY_KEY', 'new_value');
+    expect(onEdit).toHaveBeenCalledWith('MY_KEY', 'new_value', 'process');
   });
 
   it('cancels inline edit with Escape key', async () => {
     const onEdit = jest.fn();
-    render(<EnvVarTable {...defaultProps} onEdit={onEdit} envVars={{ MY_KEY: 'old_value' }} />);
+    render(<EnvVarTable {...defaultProps} onEdit={onEdit} rows={[{ key: 'MY_KEY', value: 'old_value', scope: 'process' }]} />);
     const editButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-pencil'),
     );
@@ -178,7 +182,7 @@ describe('EnvVarTable', () => {
 
   it('saves inline edit via check button', async () => {
     const onEdit = jest.fn();
-    render(<EnvVarTable {...defaultProps} onEdit={onEdit} envVars={{ MY_KEY: 'old_value' }} />);
+    render(<EnvVarTable {...defaultProps} onEdit={onEdit} rows={[{ key: 'MY_KEY', value: 'old_value', scope: 'process' }]} />);
     const editButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-pencil'),
     );
@@ -189,12 +193,12 @@ describe('EnvVarTable', () => {
     );
     expect(checkBtn).toBeTruthy();
     await userEvent.click(checkBtn!);
-    expect(onEdit).toHaveBeenCalledWith('MY_KEY', 'old_value');
+    expect(onEdit).toHaveBeenCalledWith('MY_KEY', 'old_value', 'process');
   });
 
   it('cancels inline edit via X button', async () => {
     const onEdit = jest.fn();
-    render(<EnvVarTable {...defaultProps} onEdit={onEdit} envVars={{ MY_KEY: 'old_value' }} />);
+    render(<EnvVarTable {...defaultProps} onEdit={onEdit} rows={[{ key: 'MY_KEY', value: 'old_value', scope: 'process' }]} />);
     const editButtons = screen.getAllByRole('button').filter(
       (btn) => btn.querySelector('.lucide-pencil'),
     );
@@ -205,5 +209,23 @@ describe('EnvVarTable', () => {
     expect(xBtn).toBeTruthy();
     await userEvent.click(xBtn!);
     expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it('passes row scope for inline edit in non-process scope', async () => {
+    const onEdit = jest.fn();
+    render(<EnvVarTable {...defaultProps} onEdit={onEdit} rows={[{ key: 'JAVA_HOME', value: '/opt/jdk', scope: 'user' }]} />);
+    const editButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('.lucide-pencil'),
+    );
+    await userEvent.click(editButtons[0]);
+    const input = screen.getByDisplayValue('/opt/jdk');
+    await userEvent.type(input, '{Enter}');
+    expect(onEdit).toHaveBeenCalledWith('JAVA_HOME', '/opt/jdk', 'user');
+  });
+
+  it('renders conflict and registry type badges', () => {
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'PATH', value: '/x', scope: 'system', conflict: true, regType: 'REG_EXPAND_SZ' }]} />);
+    expect(screen.getByText('Conflict')).toBeInTheDocument();
+    expect(screen.getByText('REG_EXPAND_SZ')).toBeInTheDocument();
   });
 });

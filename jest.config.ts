@@ -4,7 +4,21 @@
  */
 
 import type { Config } from "jest";
-import nextJest from "next/jest.js";
+
+process.env.BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA = "true";
+process.env.BROWSERSLIST_IGNORE_OLD_DATA = "true";
+
+const baselineMappingWarningPrefix =
+  "[baseline-browser-mapping] The data in this module is over two months old.";
+const originalConsoleWarn = console.warn.bind(console);
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === "string" && args[0].startsWith(baselineMappingWarningPrefix)) {
+    return;
+  }
+  originalConsoleWarn(...args);
+};
+
+const { default: nextJest } = await import("next/jest.js");
 
 const createJestConfig = nextJest({
   // Provide the path to your Next.js app to load next.config.js and .env files in your test environment
@@ -203,9 +217,9 @@ const config: Config = {
   // The test environment that will be used for testing
   testEnvironment: "jsdom",
 
-  // Force exit after tests complete to prevent hanging from open handles
-  // (e.g., Zustand persist middleware, uncleared timers)
-  forceExit: true,
+  // Keep normal Jest shutdown by default to avoid forced-exit warnings.
+  // Set `JEST_FORCE_EXIT=true` when diagnosing/hardening suites with leaked handles.
+  forceExit: process.env.JEST_FORCE_EXIT === "true",
 
   // Timeout for individual tests (in milliseconds)
   testTimeout: 10000,

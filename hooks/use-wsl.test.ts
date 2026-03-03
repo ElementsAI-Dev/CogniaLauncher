@@ -43,6 +43,8 @@ const mockWslOpenInExplorer = jest.fn();
 const mockWslOpenInTerminal = jest.fn();
 const mockWslCloneDistro = jest.fn();
 const mockWslTotalDiskUsage = jest.fn();
+const mockPackageInstall = jest.fn();
+const mockPackageUninstall = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: () => mockIsTauri(),
@@ -87,6 +89,8 @@ jest.mock('@/lib/tauri', () => ({
   wslOpenInTerminal: (...a: unknown[]) => mockWslOpenInTerminal(...a),
   wslCloneDistro: (...a: unknown[]) => mockWslCloneDistro(...a),
   wslTotalDiskUsage: (...a: unknown[]) => mockWslTotalDiskUsage(...a),
+  packageInstall: (...a: unknown[]) => mockPackageInstall(...a),
+  packageUninstall: (...a: unknown[]) => mockPackageUninstall(...a),
 }));
 
 describe('useWsl', () => {
@@ -425,6 +429,7 @@ describe('useWsl', () => {
 
   it('should launch distro', async () => {
     mockWslLaunch.mockResolvedValue(undefined);
+    mockWslListDistros.mockResolvedValue([]);
     mockWslListRunning.mockResolvedValue(['Ubuntu']);
 
     const { result } = renderHook(() => useWsl());
@@ -434,6 +439,8 @@ describe('useWsl', () => {
     });
 
     expect(mockWslLaunch).toHaveBeenCalledWith('Ubuntu', 'root');
+    expect(mockWslListDistros).toHaveBeenCalled();
+    expect(mockWslListRunning).toHaveBeenCalled();
   });
 
   it('should exec command', async () => {
@@ -726,8 +733,36 @@ describe('useWsl', () => {
     expect(res).toBe('Installed');
   });
 
+  it('should install online distro via packageInstall', async () => {
+    mockPackageInstall.mockResolvedValue(undefined);
+    mockWslListDistros.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.installOnlineDistro('Ubuntu');
+    });
+
+    expect(mockPackageInstall).toHaveBeenCalledWith(['wsl:Ubuntu']);
+  });
+
+  it('should unregister distro via packageUninstall', async () => {
+    mockPackageUninstall.mockResolvedValue(undefined);
+    mockWslListDistros.mockResolvedValue([]);
+    mockWslListRunning.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useWsl());
+
+    await act(async () => {
+      await result.current.unregisterDistro('Ubuntu');
+    });
+
+    expect(mockPackageUninstall).toHaveBeenCalledWith(['wsl:Ubuntu']);
+  });
+
   it('should install with location', async () => {
     mockWslInstallWithLocation.mockResolvedValue('Installed Ubuntu');
+    mockWslListDistros.mockResolvedValue([]);
 
     const { result } = renderHook(() => useWsl());
 
@@ -737,6 +772,32 @@ describe('useWsl', () => {
     });
 
     expect(res).toBe('Installed Ubuntu');
+  });
+
+  it('should get total disk usage', async () => {
+    mockWslTotalDiskUsage.mockResolvedValue([2048, [['Ubuntu', 1536], ['Debian', 512]]]);
+
+    const { result } = renderHook(() => useWsl());
+
+    let res;
+    await act(async () => {
+      res = await result.current.getTotalDiskUsage();
+    });
+
+    expect(res).toEqual({ totalBytes: 2048, perDistro: [['Ubuntu', 1536], ['Debian', 512]] });
+  });
+
+  it('should return null for total disk usage on error', async () => {
+    mockWslTotalDiskUsage.mockRejectedValue(new Error('fail'));
+
+    const { result } = renderHook(() => useWsl());
+
+    let res;
+    await act(async () => {
+      res = await result.current.getTotalDiskUsage();
+    });
+
+    expect(res).toBeNull();
   });
 
   it('should detect distro env', async () => {
@@ -874,6 +935,7 @@ describe('useWsl', () => {
 
   it('should clone distro', async () => {
     mockWslCloneDistro.mockResolvedValue("Cloned 'Ubuntu' → 'Ubuntu-Copy'");
+    mockWslListDistros.mockResolvedValue([]);
 
     const { result } = renderHook(() => useWsl());
 
@@ -884,6 +946,7 @@ describe('useWsl', () => {
 
     expect(res).toBe("Cloned 'Ubuntu' → 'Ubuntu-Copy'");
     expect(mockWslCloneDistro).toHaveBeenCalledWith('Ubuntu', 'Ubuntu-Copy', 'C:\\WSL');
+    expect(mockWslListDistros).toHaveBeenCalled();
   });
 
   it('should throw when cloneDistro not in Tauri', async () => {
@@ -955,7 +1018,10 @@ describe('useWsl', () => {
       const moveRes = await result.current.moveDistro('Ubuntu', '/p');
       const resizeRes = await result.current.resizeDistro('Ubuntu', '50GB');
       const installRes = await result.current.installWslOnly();
+      await result.current.installOnlineDistro('Ubuntu');
+      await result.current.unregisterDistro('Ubuntu');
       const installLocRes = await result.current.installWithLocation('Ubuntu', '/p');
+      const totalDiskRes = await result.current.getTotalDiskUsage();
       const envRes = await result.current.detectDistroEnv('Ubuntu');
       const resourcesRes = await result.current.getDistroResources('Ubuntu');
       const diskRes = await result.current.getDiskUsage('Ubuntu');
@@ -971,6 +1037,7 @@ describe('useWsl', () => {
       expect(resizeRes).toBe('');
       expect(installRes).toBe('');
       expect(installLocRes).toBe('');
+      expect(totalDiskRes).toBeNull();
       expect(envRes).toBeNull();
       expect(resourcesRes).toBeNull();
       expect(diskRes).toBeNull();
@@ -979,5 +1046,7 @@ describe('useWsl', () => {
     // None of the actual Tauri functions should have been called
     expect(mockWslListDistros).not.toHaveBeenCalled();
     expect(mockWslTerminate).not.toHaveBeenCalled();
+    expect(mockPackageInstall).not.toHaveBeenCalled();
+    expect(mockPackageUninstall).not.toHaveBeenCalled();
   });
 });

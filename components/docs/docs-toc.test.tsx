@@ -54,6 +54,7 @@ const defaultHeadings = [
 beforeEach(() => {
   mockActiveId = '';
   mockScrollToId.mockClear();
+  mockExtractHeadings.mockClear();
   mockExtractHeadings.mockReturnValue(defaultHeadings);
   Element.prototype.scrollIntoView = jest.fn();
 });
@@ -79,6 +80,13 @@ describe('DocsToc', () => {
     expect(screen.getAllByText('Introduction')).toHaveLength(2); // desktop + mobile
     expect(screen.getAllByText('Getting Started')).toHaveLength(2);
     expect(screen.getAllByText('API Reference')).toHaveLength(2);
+  });
+
+  it('uses provided headings prop instead of extracting from content', () => {
+    const provided = [{ id: 'custom', text: 'Custom Heading', level: 2 }];
+    render(<DocsToc content="## Ignored" headings={provided} mode="desktop" />);
+    expect(screen.getByText('Custom Heading')).toBeInTheDocument();
+    expect(mockExtractHeadings).not.toHaveBeenCalledWith('## Ignored');
   });
 
   it('renders heading links with correct href', () => {

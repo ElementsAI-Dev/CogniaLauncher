@@ -5,6 +5,7 @@ const mockDiscoverExternalCaches = jest.fn();
 const mockGetExternalCachePaths = jest.fn();
 const mockCleanExternalCache = jest.fn();
 const mockCleanAllExternalCaches = jest.fn();
+const mockCacheForceCleanExternal = jest.fn();
 let mockIsTauri = false;
 
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -26,6 +27,9 @@ jest.mock("@/lib/tauri", () => ({
   },
   get cleanAllExternalCaches() {
     return mockCleanAllExternalCaches;
+  },
+  get cacheForceCleanExternal() {
+    return mockCacheForceCleanExternal;
   },
 }));
 
@@ -89,6 +93,14 @@ describe("CacheDetailExternal", () => {
     mockIsTauri = false;
     mockDiscoverExternalCaches.mockResolvedValue([]);
     mockGetExternalCachePaths.mockResolvedValue([]);
+    mockCacheForceCleanExternal.mockResolvedValue({
+      success: false,
+      displayName: "unknown",
+      error: "force clean failed",
+      freedHuman: "0 B",
+      freedBytes: 0,
+      provider: "unknown",
+    });
   });
 
   it("renders without crashing", () => {
@@ -230,6 +242,45 @@ describe("CacheDetailExternal", () => {
     });
     await act(async () => {});
     expect(mockCleanExternalCache).toHaveBeenCalledWith("npm", true);
+    expect(toast.success).toHaveBeenCalled();
+  });
+
+  it("falls back to cacheForceCleanExternal when cleanExternalCache fails", async () => {
+    mockIsTauri = true;
+    mockDiscoverExternalCaches.mockResolvedValue(mockCaches);
+    mockGetExternalCachePaths.mockResolvedValue(mockPaths);
+    mockCleanExternalCache.mockResolvedValue({
+      success: false,
+      displayName: "npm Cache",
+      freedHuman: "0 B",
+      freedBytes: 0,
+      provider: "npm",
+      error: "Permission denied",
+    });
+    mockCacheForceCleanExternal.mockResolvedValue({
+      success: true,
+      displayName: "npm Cache",
+      freedHuman: "500 MB",
+      freedBytes: 524288000,
+      provider: "npm",
+      error: null,
+    });
+
+    const { toast } = jest.requireMock("sonner");
+    await act(async () => {
+      render(<CacheDetailExternalView />);
+    });
+    const cleanButtons = screen.getAllByText("cache.clean");
+    await act(async () => {
+      cleanButtons[0].closest("button")!.click();
+    });
+    const confirmBtn = screen.getByText("cache.confirmClean");
+    await act(async () => {
+      confirmBtn.click();
+    });
+    await act(async () => {});
+
+    expect(mockCacheForceCleanExternal).toHaveBeenCalledWith("npm", false, true);
     expect(toast.success).toHaveBeenCalled();
   });
 
