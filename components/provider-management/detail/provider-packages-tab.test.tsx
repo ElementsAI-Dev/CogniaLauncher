@@ -86,11 +86,17 @@ describe("ProviderPackagesTab", () => {
   });
 
   it("renders installed packages in a table", () => {
-    render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
+    const { container } = render(<ProviderPackagesTab {...defaultProps} installedPackages={installedPkgs} />);
     expect(screen.getByText("lodash")).toBeInTheDocument();
     expect(screen.getByText("4.17.21")).toBeInTheDocument();
     expect(screen.getByText("express")).toBeInTheDocument();
     expect(screen.getByText("4.18.2")).toBeInTheDocument();
+
+    const scrollAreas = container.querySelectorAll('[data-slot="scroll-area"]');
+    const installedScrollArea = scrollAreas[0];
+    expect(installedScrollArea).toBeInTheDocument();
+    expect(installedScrollArea).toHaveClass("max-h-[65dvh]");
+    expect(installedScrollArea).not.toHaveClass("max-h-[500px]");
   });
 
   it("shows Global badge for global packages", () => {
@@ -104,9 +110,15 @@ describe("ProviderPackagesTab", () => {
   });
 
   it("renders search results table", () => {
-    render(<ProviderPackagesTab {...defaultProps} searchResults={searchPkgs} searchQuery="axios" />);
+    const { container } = render(<ProviderPackagesTab {...defaultProps} searchResults={searchPkgs} searchQuery="axios" />);
     expect(screen.getByText("axios")).toBeInTheDocument();
     expect(screen.getByText("Promise based HTTP client")).toBeInTheDocument();
+
+    const scrollAreas = container.querySelectorAll('[data-slot="scroll-area"]');
+    const searchScrollArea = scrollAreas[0];
+    expect(searchScrollArea).toBeInTheDocument();
+    expect(searchScrollArea).toHaveClass("max-h-[50dvh]");
+    expect(searchScrollArea).not.toHaveClass("max-h-[400px]");
   });
 
   it("marks already-installed packages in search results", () => {

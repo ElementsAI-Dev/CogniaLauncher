@@ -134,7 +134,7 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
     files_created.push("locales/zh.json".to_string());
 
     // Generate .gitignore
-    let gitignore = "target/\n*.wasm\n";
+    let gitignore = "target/\nnode_modules/\ndist/\n.tools/\n*.wasm\n";
     tokio::fs::write(plugin_dir.join(".gitignore"), gitignore)
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write .gitignore: {}", e)))?;
@@ -434,7 +434,8 @@ async fn generate_js_project(
         "description": config.description,
         "author": config.author,
         "scripts": {
-            "build": "extism-js src/index.js -o plugin.wasm"
+            "build": "node scripts/build.mjs",
+            "setup:toolchain": "node scripts/build.mjs --setup-only"
         },
         "devDependencies": {
             "@extism/js-pdk": "^1.1.1"
@@ -447,6 +448,17 @@ async fn generate_js_project(
     .await
     .map_err(|e| CogniaError::Plugin(format!("Failed to write package.json: {}", e)))?;
     files.push("package.json".to_string());
+
+    // scripts/build.mjs
+    let scripts_dir = plugin_dir.join("scripts");
+    tokio::fs::create_dir_all(&scripts_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create scripts dir: {}", e)))?;
+    let build_script = generate_wasm_build_script(false, false);
+    tokio::fs::write(scripts_dir.join("build.mjs"), &build_script)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write scripts/build.mjs: {}", e)))?;
+    files.push("scripts/build.mjs".to_string());
 
     // src/index.js
     let src_dir = plugin_dir.join("src");
@@ -505,8 +517,9 @@ async fn generate_ts_project(
         "description": config.description,
         "author": config.author,
         "scripts": {
-            "build": "node esbuild.config.mjs && extism-js dist/plugin.js -i plugin.d.ts -o plugin.wasm",
-            "bundle": "node esbuild.config.mjs"
+            "build": "node scripts/build.mjs",
+            "bundle": "node esbuild.config.mjs",
+            "setup:toolchain": "node scripts/build.mjs --setup-only"
         },
         "dependencies": {
             "@cognia/plugin-sdk": "workspace:*"
@@ -556,6 +569,7 @@ await build({
   format: 'cjs',
   target: 'es2020',
   platform: 'neutral',
+  mainFields: ['main', 'module'],
   external: [],
 });
 "#;
@@ -563,6 +577,17 @@ await build({
         .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write esbuild.config.mjs: {}", e)))?;
     files.push("esbuild.config.mjs".to_string());
+
+    // scripts/build.mjs
+    let scripts_dir = plugin_dir.join("scripts");
+    tokio::fs::create_dir_all(&scripts_dir)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to create scripts dir: {}", e)))?;
+    let build_script = generate_wasm_build_script(true, true);
+    tokio::fs::write(scripts_dir.join("build.mjs"), &build_script)
+        .await
+        .map_err(|e| CogniaError::Plugin(format!("Failed to write scripts/build.mjs: {}", e)))?;
+    files.push("scripts/build.mjs".to_string());
 
     // plugin.d.ts — Extism export declarations + host function declarations
     let entry_fn = config.id.replace(['.', '-'], "_");
@@ -662,6 +687,16 @@ module.exports = {{ {entry} }};
     Ok(files)
 }
 
+fn generate_wasm_build_script(with_bundle: bool, with_interface: bool) -> String {
+    let template = include_str!("templates/wasm_build_script.mjs");
+    template
+        .replace("__WITH_BUNDLE__", if with_bundle { "true" } else { "false" })
+        .replace(
+            "__WITH_INTERFACE__",
+            if with_interface { "true" } else { "false" },
+        )
+}
+
 fn generate_readme(config: &ScaffoldConfig) -> String {
     let build_instructions = match config.language {
         PluginLanguage::Rust => r#"## Build
@@ -684,8 +719,17 @@ cp target/wasm32-unknown-unknown/release/*.wasm plugin.wasm
 # Install dependencies
 pnpm install
 
+# Optional: pre-download extism-js + binaryen into .tools/
+pnpm setup:toolchain
+
 # Build the plugin
 pnpm build
+```
+
+If your environment cannot access GitHub directly:
+
+```bash
+EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
 ```"#
             .to_string(),
         PluginLanguage::TypeScript => r#"## Build
@@ -694,8 +738,17 @@ pnpm build
 # Install dependencies
 pnpm install
 
+# Optional: pre-download extism-js + binaryen into .tools/
+pnpm setup:toolchain
+
 # Bundle TypeScript and compile to WASM
 pnpm build
+```
+
+If your environment cannot access GitHub directly:
+
+```bash
+EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
 ```"#
             .to_string(),
     };
@@ -814,5 +867,18 @@ mod tests {
         };
         let readme = generate_readme(&config);
         assert!(readme.contains("pnpm build"));
+    }
+
+    #[test]
+    fn test_generate_wasm_build_script_replaces_flags() {
+        let ts_script = generate_wasm_build_script(true, true);
+        assert!(ts_script.contains("const WITH_BUNDLE = true;"));
+        assert!(ts_script.contains("const WITH_INTERFACE = true;"));
+        assert!(!ts_script.contains("__WITH_BUNDLE__"));
+        assert!(!ts_script.contains("__WITH_INTERFACE__"));
+
+        let js_script = generate_wasm_build_script(false, false);
+        assert!(js_script.contains("const WITH_BUNDLE = false;"));
+        assert!(js_script.contains("const WITH_INTERFACE = false;"));
     }
 }

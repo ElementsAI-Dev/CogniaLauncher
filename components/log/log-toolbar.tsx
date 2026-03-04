@@ -49,23 +49,27 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useDebounce } from "@/hooks/use-mobile";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 interface LogToolbarProps {
   onExport?: (format: "txt" | "json" | "csv") => void;
   showRealtimeControls?: boolean;
   showMaxLogs?: boolean;
+  showQueryScanLimit?: boolean;
 }
 
 type TimeRangePreset = "all" | "1h" | "24h" | "7d" | "custom";
 
 const PRESET_ORDER: TimeRangePreset[] = ["all", "1h", "24h", "7d", "custom"];
+const MIN_SCAN_LINES = 1_000;
+const MAX_SCAN_LINES = 200_000;
+const SCAN_LINE_PRESETS = [5_000, 20_000, 50_000] as const;
 
 export function LogToolbar({
   onExport,
   showRealtimeControls = true,
   showMaxLogs = true,
+  showQueryScanLimit = false,
 }: LogToolbarProps) {
   const { t } = useLocale();
   const {
@@ -100,17 +104,37 @@ export function LogToolbar({
   const [customEnd, setCustomEnd] = useState(() =>
     formatDateTimeInput(filter.endTime),
   );
-  const [localSearch, setLocalSearch] = useState(filter.search);
-  const debouncedSearch = useDebounce(localSearch, 300);
+  const [localSearch, setLocalSearch] = useState<string | null>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  useEffect(() => {
-    setSearch(debouncedSearch);
-  }, [debouncedSearch, setSearch]);
+  const searchValue = localSearch ?? filter.search;
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setLocalSearch(value);
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+      searchDebounceRef.current = setTimeout(() => {
+        setSearch(value);
+        setLocalSearch((current) => (current === value ? null : current));
+      }, 300);
+    },
+    [setSearch],
+  );
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+  }, []);
 
   const activeFiltersCount =
-    (filter.levels.length < ALL_LEVELS.length ? 1 : 0) +
     (filter.startTime || filter.endTime ? 1 : 0) +
-    (filter.useRegex ? 1 : 0);
+    (filter.useRegex ? 1 : 0) +
+    (filter.target ? 1 : 0) +
+    (filter.maxScanLines ? 1 : 0) +
+    (showBookmarksOnly ? 1 : 0);
 
   const timeRangeOptions = useMemo(
     () => ({
@@ -200,6 +224,21 @@ export function LogToolbar({
     [setMaxLogs],
   );
 
+  const handleMaxScanLinesChange = useCallback(
+    (value: string) => {
+      if (!value.trim()) {
+        setFilter({ maxScanLines: null });
+        return;
+      }
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isNaN(parsed)) {
+        const clamped = Math.min(MAX_SCAN_LINES, Math.max(MIN_SCAN_LINES, parsed));
+        setFilter({ maxScanLines: clamped });
+      }
+    },
+    [setFilter],
+  );
+
   return (
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
     <div className="flex flex-col gap-2 p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -210,16 +249,22 @@ export function LogToolbar({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
             placeholder={t("logs.searchPlaceholder")}
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
+            value={searchValue}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 pr-8 h-9"
           />
-          {localSearch && (
+          {searchValue && (
             <Button
               variant="ghost"
               size="icon"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 h-6 w-6"
-              onClick={() => { setLocalSearch(""); setSearch(""); }}
+              onClick={() => {
+                if (searchDebounceRef.current) {
+                  clearTimeout(searchDebounceRef.current);
+                }
+                setLocalSearch(null);
+                setSearch("");
+              }}
               aria-label={t("logs.clearSearch")}
             >
               <X className="h-3.5 w-3.5 text-muted-foreground" />
@@ -535,6 +580,61 @@ export function LogToolbar({
                 {t("logs.bookmarksOnly")}
               </Label>
             </div>
+
+            {showQueryScanLimit && (
+              <>
+                <Separator
+                  orientation="vertical"
+                  className="h-5 hidden sm:block"
+                />
+                <div className="flex items-center gap-2">
+                  <Label
+                    htmlFor="max-scan-lines"
+                    className="text-xs text-muted-foreground shrink-0"
+                  >
+                    {t("logs.maxScanLines")}:
+                  </Label>
+                  <Input
+                    id="max-scan-lines"
+                    type="number"
+                    min={MIN_SCAN_LINES}
+                    max={MAX_SCAN_LINES}
+                    step={1_000}
+                    value={filter.maxScanLines ?? ""}
+                    placeholder="20000"
+                    onChange={(event) =>
+                      handleMaxScanLinesChange(event.target.value)
+                    }
+                    className="h-8 w-28"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  {SCAN_LINE_PRESETS.map((preset) => (
+                    <Button
+                      key={preset}
+                      type="button"
+                      size="sm"
+                      variant={
+                        filter.maxScanLines === preset ? "secondary" : "outline"
+                      }
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() => setFilter({ maxScanLines: preset })}
+                    >
+                      {preset / 1000}k
+                    </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={filter.maxScanLines == null ? "secondary" : "outline"}
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => setFilter({ maxScanLines: null })}
+                  >
+                    {t("logs.scanAll")}
+                  </Button>
+                </div>
+              </>
+            )}
 
             {showMaxLogs && (
               <>

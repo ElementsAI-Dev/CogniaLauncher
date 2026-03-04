@@ -247,6 +247,19 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
 
+  plugin-sdk-ts/examples/codex-scaffold-e2e-ts-20260304094620:
+    dependencies:
+      '@cognia/plugin-sdk':
+        specifier: workspace:*
+        version: link:../..
+    devDependencies:
+      '@extism/js-pdk':
+        specifier: ^1.1.1
+        version: 1.1.1
+      esbuild:
+        specifier: ^0.20.0
+        version: 0.20.2
+
   plugin-sdk-ts/examples/hello-world:
     dependencies:
       '@cognia/plugin-sdk':

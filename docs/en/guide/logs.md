@@ -43,6 +43,15 @@ Notes:
 
 ---
 
+## Query and Export Behavior
+
+- Both `log_query` and `log_export` support plain `.log` and compressed `.log.gz` files.
+- `log_query` uses tail-window pagination (latest entries first with `offset` / `limit`), reducing memory pressure on large files.
+- When filters are enabled, `max_scan_lines` can be passed to limit scan depth (especially useful in follow/polling mode).
+- `log_export` supports filtered export in TXT/JSON for the same log formats.
+
+---
+
 ## Crash Recovery Experience
 
 - After successful auto-diagnosis, a lightweight toast notification is shown for the current session.
@@ -54,8 +63,8 @@ Notes:
 
 | Command | Description |
 |---------|-------------|
-| `log_query` | Query logs (level/time/keyword filter + pagination) |
-| `log_export` | Export logs (TXT/JSON) |
+| `log_query` | Query logs (level/time/keyword filter + pagination, supports `max_scan_lines`) |
+| `log_export` | Export logs (TXT/JSON, supports `.log` and `.log.gz`) |
 | `log_list_files` | List log files |
 | `log_get_dir` | Get log directory |
 | `log_get_total_size` | Get total log size |

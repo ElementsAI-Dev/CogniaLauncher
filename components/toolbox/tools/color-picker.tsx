@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useLocale } from '@/components/providers/locale-provider';
+import { ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -47,25 +49,33 @@ function getContrastRatio(hex: string): string {
   return `W:${white.toFixed(2)} B:${black.toFixed(2)}`;
 }
 
+const DEFAULT_PREFERENCES = {
+  hex: '#3b82f6',
+} as const;
+
 export default function ColorPicker({ className }: ToolComponentProps) {
   const { t } = useLocale();
-  const [hex, setHex] = useState('#3b82f6');
+  const { preferences, setPreferences } = useToolPreferences('color-picker', DEFAULT_PREFERENCES);
+  const [hex, setHex] = useState(preferences.hex);
   const { copy } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const rgb = hexToRgb(hex);
   const hsl = rgb ? rgbToHsl(rgb.r, rgb.g, rgb.b) : null;
   const contrast = getContrastRatio(hex);
+  const hasError = hex.length > 0 && !rgb && !/^#[a-fA-F\d]{6}$/.test(hex);
 
   const handleColorInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setHex(e.target.value);
-  }, []);
+    setPreferences({ hex: e.target.value });
+  }, [setPreferences]);
 
   const handleHexInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
     if (!val.startsWith('#')) val = '#' + val;
     setHex(val);
-  }, []);
+    setPreferences({ hex: val });
+  }, [setPreferences]);
 
   const handleRgbChange = useCallback((channel: 'r' | 'g' | 'b', value: string) => {
     if (!rgb) return;
@@ -127,6 +137,8 @@ export default function ColorPicker({ className }: ToolComponentProps) {
           className="h-16 rounded-lg border"
           style={{ backgroundColor: hex.length === 7 ? hex : '#000' }}
         />
+
+        {hasError && <ToolValidationMessage message={t('toolbox.tools.colorPicker.invalidHex')} />}
 
         <Card>
           <CardContent className="p-4 space-y-2">

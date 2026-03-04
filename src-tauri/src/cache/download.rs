@@ -9,6 +9,8 @@ use crate::platform::{
     network::{DownloadProgress, HttpClient},
 };
 use chrono::{Duration as ChronoDuration, Utc};
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +21,17 @@ pub struct DownloadCache {
 }
 
 impl DownloadCache {
+    fn source_cache_key(checksum: &str, source_identity: &str) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(source_identity.as_bytes());
+        let source_hash = format!("{:x}", hasher.finalize());
+        format!("checksum:{}:source:{}", checksum, source_hash)
+    }
+
+    pub fn source_identity(url: &str, provider: Option<&str>) -> String {
+        format!("{}|{}", provider.unwrap_or_default(), url)
+    }
+
     pub async fn open(cache_dir: &Path) -> CogniaResult<Self> {
         let downloads_dir = cache_dir.join("downloads");
         fs::create_dir_all(&downloads_dir).await?;
@@ -50,6 +63,98 @@ impl DownloadCache {
             .map(|entry| entry.file_path.clone()))
     }
 
+    pub async fn get_by_checksum_and_source(
+        &self,
+        checksum: &str,
+        source_identity: Option<&str>,
+    ) -> CogniaResult<Option<PathBuf>> {
+        if let Some(source_identity) = source_identity.filter(|value| !value.is_empty()) {
+            let key = Self::source_cache_key(checksum, source_identity);
+            return Ok(self
+                .db
+                .get(&key)
+                .await?
+                .filter(|entry| !entry.is_expired())
+                .map(|entry| entry.file_path.clone()));
+        }
+        self.get_by_checksum(checksum).await
+    }
+
+    pub async fn purge_checksum_entries(&mut self, checksum: &str) -> CogniaResult<()> {
+        let entries = self.db.list_by_type(CacheEntryType::Download).await?;
+        let mut removed_paths = HashSet::new();
+
+        for entry in entries
+            .into_iter()
+            .filter(|entry| entry.checksum == checksum)
+        {
+            if removed_paths.insert(entry.file_path.clone()) && fs::exists(&entry.file_path).await {
+                let _ = fs::remove_file(&entry.file_path).await;
+            }
+            self.db.remove(&entry.key).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_validated_cache_hit(
+        &mut self,
+        checksum: &str,
+        source_identity: Option<&str>,
+    ) -> CogniaResult<Option<PathBuf>> {
+        let source_identity = source_identity.filter(|value| !value.is_empty());
+        let source_path = self
+            .get_by_checksum_and_source(checksum, source_identity)
+            .await?;
+        let maybe_path = if source_path.is_some() {
+            source_path
+        } else if source_identity.is_some() {
+            // Migration compatibility: accept legacy checksum-only entries and bind source identity after validation.
+            self.get_by_checksum(checksum).await?
+        } else {
+            None
+        };
+
+        let Some(path) = maybe_path else {
+            return Ok(None);
+        };
+
+        if !fs::exists(&path).await {
+            self.purge_checksum_entries(checksum).await?;
+            return Ok(None);
+        }
+
+        let actual_checksum = fs::calculate_sha256(&path).await?;
+        if actual_checksum != checksum {
+            self.purge_checksum_entries(checksum).await?;
+            return Err(CogniaError::ChecksumMismatch {
+                expected: checksum.to_string(),
+                actual: actual_checksum,
+            });
+        }
+
+        self.db.touch(&format!("checksum:{}", checksum)).await?;
+
+        if let Some(source_identity) = source_identity {
+            let source_key = Self::source_cache_key(checksum, source_identity);
+            // Persist source identity binding for future strict cache lookups.
+            if self.db.get(&source_key).await?.is_none() {
+                let size = fs::file_size(&path).await?;
+                let entry = CacheEntry::new(
+                    source_key.clone(),
+                    &path,
+                    size,
+                    checksum,
+                    CacheEntryType::Download,
+                );
+                self.db.insert(entry).await?;
+            }
+            self.db.touch(&source_key).await?;
+        }
+
+        Ok(Some(path))
+    }
+
     pub async fn get(&self, key: &str) -> CogniaResult<Option<PathBuf>> {
         Ok(self
             .db
@@ -69,11 +174,17 @@ impl DownloadCache {
         F: FnMut(DownloadProgress),
     {
         if let Some(checksum) = expected_checksum {
-            if let Some(cached_path) = self.get_by_checksum(checksum).await? {
-                if fs::exists(&cached_path).await {
-                    self.db.touch(&format!("checksum:{}", checksum)).await?;
-                    return Ok(cached_path);
+            match self.get_validated_cache_hit(checksum, None).await {
+                Ok(Some(cached_path)) => return Ok(cached_path),
+                Ok(None) => {}
+                Err(CogniaError::ChecksumMismatch { .. }) => {
+                    log::warn!(
+                        "Dropping corrupted checksum cache entry for {}, redownloading {}",
+                        checksum,
+                        url
+                    );
                 }
+                Err(err) => return Err(err),
             }
         }
 
@@ -135,6 +246,30 @@ impl DownloadCache {
         Ok(target_path)
     }
 
+    pub async fn add_file_with_source(
+        &mut self,
+        source: &Path,
+        checksum: &str,
+        source_identity: Option<&str>,
+    ) -> CogniaResult<PathBuf> {
+        let target_path = self.add_file(source, checksum).await?;
+
+        if let Some(source_identity) = source_identity.filter(|value| !value.is_empty()) {
+            let source_key = Self::source_cache_key(checksum, source_identity);
+            let size = fs::file_size(&target_path).await?;
+            let entry = CacheEntry::new(
+                source_key,
+                &target_path,
+                size,
+                checksum,
+                CacheEntryType::Download,
+            );
+            self.db.insert(entry).await?;
+        }
+
+        Ok(target_path)
+    }
+
     pub async fn verify(&mut self, checksum: &str) -> CogniaResult<bool> {
         if let Some(path) = self.get_by_checksum(checksum).await? {
             if fs::exists(&path).await {
@@ -146,16 +281,14 @@ impl DownloadCache {
     }
 
     pub async fn remove(&mut self, checksum: &str) -> CogniaResult<bool> {
-        let key = format!("checksum:{}", checksum);
-
-        if let Some(entry) = self.db.get(&key).await? {
-            let path = entry.file_path.clone();
-            if fs::exists(&path).await {
-                fs::remove_file(&path).await?;
-            }
+        let entries = self.db.list_by_type(CacheEntryType::Download).await?;
+        let exists = entries.iter().any(|entry| entry.checksum == checksum);
+        if !exists {
+            return Ok(false);
         }
 
-        self.db.remove(&key).await
+        self.purge_checksum_entries(checksum).await?;
+        Ok(true)
     }
 
     pub async fn clean(&mut self) -> CogniaResult<u64> {
@@ -957,5 +1090,76 @@ mod tests {
 
         // Should return same path without duplicating
         assert_eq!(path1, path2);
+    }
+
+    #[tokio::test]
+    async fn test_source_aware_cache_lookup_and_binding() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("source-aware.txt");
+        fs::write_file_string(&test_file, "source-aware content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+
+        let source_a = DownloadCache::source_identity("https://example.com/a.zip", Some("github"));
+        let source_b = DownloadCache::source_identity("https://example.com/b.zip", Some("github"));
+
+        cache
+            .add_file_with_source(&test_file, &checksum, Some(&source_a))
+            .await
+            .unwrap();
+
+        let hit_a = cache
+            .get_validated_cache_hit(&checksum, Some(&source_a))
+            .await
+            .unwrap();
+        assert!(hit_a.is_some());
+
+        // Before migration fallback, source B has no dedicated binding.
+        let before_bind = cache
+            .get_by_checksum_and_source(&checksum, Some(&source_b))
+            .await
+            .unwrap();
+        assert!(before_bind.is_none());
+
+        // Legacy checksum entry is accepted once and source binding is persisted.
+        let hit_b = cache
+            .get_validated_cache_hit(&checksum, Some(&source_b))
+            .await
+            .unwrap();
+        assert!(hit_b.is_some());
+
+        let after_bind = cache
+            .get_by_checksum_and_source(&checksum, Some(&source_b))
+            .await
+            .unwrap();
+        assert!(after_bind.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_corrupted_cache_entry_is_purged() {
+        let dir = tempdir().unwrap();
+        let mut cache = DownloadCache::open(dir.path()).await.unwrap();
+
+        let test_file = dir.path().join("corrupted-cache.txt");
+        fs::write_file_string(&test_file, "initial content")
+            .await
+            .unwrap();
+        let checksum = fs::calculate_sha256(&test_file).await.unwrap();
+        let cached_path = cache.add_file(&test_file, &checksum).await.unwrap();
+        assert!(fs::exists(&cached_path).await);
+
+        // Corrupt cached artifact in-place.
+        fs::write_file_string(&cached_path, "tampered content")
+            .await
+            .unwrap();
+
+        let result = cache.get_validated_cache_hit(&checksum, None).await;
+        assert!(matches!(result, Err(CogniaError::ChecksumMismatch { .. })));
+
+        assert!(cache.get_by_checksum(&checksum).await.unwrap().is_none());
+        assert!(!fs::exists(&cached_path).await);
     }
 }

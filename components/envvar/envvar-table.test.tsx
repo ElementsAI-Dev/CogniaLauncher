@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { EnvVarTable } from './envvar-table';
 
@@ -39,6 +39,7 @@ jest.mock('@/lib/clipboard', () => ({
 const clipboardMock = jest.requireMock('@/lib/clipboard');
 
 describe('EnvVarTable', () => {
+  const originalInnerWidth = window.innerWidth;
   const baseRows = [
     { key: 'PATH', value: '/usr/local/bin:/usr/bin', scope: 'process' as const },
     { key: 'HOME', value: '/home/user', scope: 'process' as const },
@@ -56,6 +57,11 @@ describe('EnvVarTable', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1024 });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalInnerWidth });
   });
 
   it('renders table headers', () => {
@@ -224,5 +230,27 @@ describe('EnvVarTable', () => {
     render(<EnvVarTable {...defaultProps} rows={[{ key: 'PATH', value: '/x', scope: 'system', conflict: true, regType: 'REG_EXPAND_SZ' }]} />);
     expect(screen.getByText('Conflict')).toBeInTheDocument();
     expect(screen.getByText('REG_EXPAND_SZ')).toBeInTheDocument();
+  });
+
+  it('renders compact list in narrow viewport', async () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 640 });
+    render(<EnvVarTable {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('envvar-compact-list')).toBeInTheDocument();
+    });
+  });
+
+  it('shows row actions without hover dependency in compact list', () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 640 });
+    render(<EnvVarTable {...defaultProps} rows={[{ key: 'MY_KEY', value: 'my_value', scope: 'process' }]} />);
+
+    const buttons = screen.getAllByRole('button');
+    const hasCopy = buttons.some((btn) => Boolean(btn.querySelector('.lucide-copy')));
+    const hasEdit = buttons.some((btn) => Boolean(btn.querySelector('.lucide-pencil')));
+    const hasDelete = buttons.some((btn) => Boolean(btn.querySelector('.lucide-trash-2')));
+
+    expect(hasCopy).toBe(true);
+    expect(hasEdit).toBe(true);
+    expect(hasDelete).toBe(true);
   });
 });

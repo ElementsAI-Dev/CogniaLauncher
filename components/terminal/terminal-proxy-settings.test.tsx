@@ -79,4 +79,36 @@ describe('TerminalProxySettings', () => {
 
     expect(screen.getByLabelText('terminal.noProxyList')).toBeInTheDocument();
   });
+
+  it('shows sync error state and retry action', () => {
+    const onRetrySync = jest.fn();
+    render(
+      <TerminalProxySettings
+        {...defaultProps}
+        syncStatus="error"
+        syncMessage="Save failed"
+        onRetrySync={onRetrySync}
+      />,
+    );
+
+    expect(screen.getByText('Save failed')).toBeInTheDocument();
+    screen.getByRole('button', { name: /common\.refresh/i }).click();
+    expect(onRetrySync).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows sync success state and clear action', () => {
+    const onClearSyncState = jest.fn();
+    render(
+      <TerminalProxySettings
+        {...defaultProps}
+        syncStatus="success"
+        syncMessage="Saved"
+        onClearSyncState={onClearSyncState}
+      />,
+    );
+
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+    screen.getByRole('button', { name: /terminal\.cancel/i }).click();
+    expect(onClearSyncState).toHaveBeenCalledTimes(1);
+  });
 });

@@ -257,4 +257,39 @@ describe('TerminalShellConfig', () => {
     expect(screen.getByText('terminal.shellConfig')).toBeInTheDocument();
     expect(screen.getByText('terminal.shellConfigDesc')).toBeInTheDocument();
   });
+
+  it('renders mutation success state and allows clearing it', async () => {
+    const onClearMutationState = jest.fn();
+    render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={jest.fn()}
+        onFetchConfigEntries={jest.fn()}
+        onBackupConfig={jest.fn()}
+        mutationStatus="success"
+        mutationMessage="Config verified"
+        onClearMutationState={onClearMutationState}
+      />,
+    );
+
+    expect(screen.getByText('Config verified')).toBeInTheDocument();
+    screen.getByRole('button', { name: /terminal\.cancel/i }).click();
+    expect(onClearMutationState).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders mutation error state inline', () => {
+    render(
+      <TerminalShellConfig
+        shells={shells}
+        onReadConfig={jest.fn()}
+        onFetchConfigEntries={jest.fn()}
+        onBackupConfig={jest.fn()}
+        mutationStatus="error"
+        mutationMessage="Write failed"
+      />,
+    );
+
+    expect(screen.getByText('Write failed')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /terminal\.loadConfig/i }).length).toBeGreaterThan(0);
+  });
 });

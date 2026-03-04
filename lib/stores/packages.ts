@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { PackageSummary, PackageInfo, InstalledPackage, ProviderInfo, UpdateInfo, UpdateCheckProgress, UpdateCheckError, SearchFacets } from '../tauri';
+import type {
+  PackageSummary,
+  PackageInfo,
+  InstalledPackage,
+  ProviderInfo,
+  UpdateInfo,
+  UpdateCheckProgress,
+  UpdateCheckError,
+  UpdateCheckProviderOutcome,
+  UpdateCheckCoverage,
+  SearchFacets,
+} from '../tauri';
 
 interface SearchMeta {
   total: number;
@@ -26,6 +37,8 @@ interface PackageState {
   bookmarkedPackages: string[];
   updateCheckProgress: UpdateCheckProgress | null;
   updateCheckErrors: UpdateCheckError[];
+  updateCheckProviderOutcomes: UpdateCheckProviderOutcome[];
+  updateCheckCoverage: UpdateCheckCoverage | null;
   isCheckingUpdates: boolean;
   lastUpdateCheck: number | null;
   lastScanTimestamp: number | null;
@@ -50,6 +63,8 @@ interface PackageState {
   toggleBookmark: (name: string) => void;
   setUpdateCheckProgress: (progress: UpdateCheckProgress | null) => void;
   setUpdateCheckErrors: (errors: UpdateCheckError[]) => void;
+  setUpdateCheckProviderOutcomes: (outcomes: UpdateCheckProviderOutcome[]) => void;
+  setUpdateCheckCoverage: (coverage: UpdateCheckCoverage | null) => void;
   setIsCheckingUpdates: (checking: boolean) => void;
   setLastUpdateCheck: (timestamp: number | null) => void;
   setLastScanTimestamp: (timestamp: number | null) => void;
@@ -75,6 +90,8 @@ export const usePackageStore = create<PackageState>()(
       bookmarkedPackages: [],
       updateCheckProgress: null,
       updateCheckErrors: [],
+      updateCheckProviderOutcomes: [],
+      updateCheckCoverage: null,
       isCheckingUpdates: false,
       lastUpdateCheck: null,
       lastScanTimestamp: null,
@@ -113,6 +130,8 @@ export const usePackageStore = create<PackageState>()(
       })),
       setUpdateCheckProgress: (updateCheckProgress) => set({ updateCheckProgress }),
       setUpdateCheckErrors: (updateCheckErrors) => set({ updateCheckErrors }),
+      setUpdateCheckProviderOutcomes: (updateCheckProviderOutcomes) => set({ updateCheckProviderOutcomes }),
+      setUpdateCheckCoverage: (updateCheckCoverage) => set({ updateCheckCoverage }),
       setIsCheckingUpdates: (isCheckingUpdates) => set({ isCheckingUpdates }),
       setLastUpdateCheck: (lastUpdateCheck) => set({ lastUpdateCheck }),
       setLastScanTimestamp: (lastScanTimestamp) => set({ lastScanTimestamp }),

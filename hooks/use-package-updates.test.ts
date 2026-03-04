@@ -10,6 +10,8 @@ const mockSetAvailableUpdates = jest.fn();
 const mockSetIsCheckingUpdates = jest.fn();
 const mockSetUpdateCheckProgress = jest.fn();
 const mockSetUpdateCheckErrors = jest.fn();
+const mockSetUpdateCheckProviderOutcomes = jest.fn();
+const mockSetUpdateCheckCoverage = jest.fn();
 const mockSetLastUpdateCheck = jest.fn();
 
 jest.mock('@/lib/tauri', () => ({
@@ -24,6 +26,8 @@ jest.mock('@/lib/stores/packages', () => ({
     setIsCheckingUpdates: mockSetIsCheckingUpdates,
     setUpdateCheckProgress: mockSetUpdateCheckProgress,
     setUpdateCheckErrors: mockSetUpdateCheckErrors,
+    setUpdateCheckProviderOutcomes: mockSetUpdateCheckProviderOutcomes,
+    setUpdateCheckCoverage: mockSetUpdateCheckCoverage,
     setLastUpdateCheck: mockSetLastUpdateCheck,
   }),
 }));
@@ -38,6 +42,8 @@ describe('usePackageUpdates', () => {
       total_checked: 0,
       total_providers: 0,
       errors: [],
+      provider_outcomes: [],
+      coverage: { supported: 0, partial: 0, unsupported: 0, error: 0 },
     });
   });
 
@@ -55,6 +61,8 @@ describe('usePackageUpdates', () => {
       total_checked: 0,
       total_providers: 0,
       errors: [],
+      provider_outcomes: [],
+      coverage: { supported: 0, partial: 0, unsupported: 0, error: 0 },
     });
     expect(mockCheckUpdates).not.toHaveBeenCalled();
   });
@@ -67,6 +75,8 @@ describe('usePackageUpdates', () => {
       total_checked: 1,
       total_providers: 1,
       errors: [{ provider: 'pip', package: null, message: 'unavailable' }],
+      provider_outcomes: [{ provider: 'npm', status: 'supported', reason: null, checked: 1, updates: 1, errors: 0 }],
+      coverage: { supported: 1, partial: 0, unsupported: 0, error: 0 },
     });
 
     const { result } = renderHook(() => usePackageUpdates());
@@ -83,6 +93,15 @@ describe('usePackageUpdates', () => {
     expect(mockSetUpdateCheckErrors).toHaveBeenCalledWith([
       { provider: 'pip', package: null, message: 'unavailable' },
     ]);
+    expect(mockSetUpdateCheckProviderOutcomes).toHaveBeenCalledWith([
+      { provider: 'npm', status: 'supported', reason: null, checked: 1, updates: 1, errors: 0 },
+    ]);
+    expect(mockSetUpdateCheckCoverage).toHaveBeenCalledWith({
+      supported: 1,
+      partial: 0,
+      unsupported: 0,
+      error: 0,
+    });
     expect(mockSetLastUpdateCheck).toHaveBeenCalledTimes(1);
     expect(mockSetIsCheckingUpdates).toHaveBeenLastCalledWith(false);
     expect(unlisten).toHaveBeenCalledTimes(1);
@@ -97,6 +116,8 @@ describe('usePackageUpdates', () => {
       total_checked: 2,
       total_providers: 2,
       errors: [],
+      provider_outcomes: [],
+      coverage: { supported: 2, partial: 0, unsupported: 0, error: 0 },
     });
 
     const { result } = renderHook(() => usePackageUpdates());
@@ -125,6 +146,8 @@ describe('usePackageUpdates', () => {
     expect(mockSetAvailableUpdates).not.toHaveBeenCalled();
     expect(mockSetUpdateCheckProgress).not.toHaveBeenCalled();
     expect(mockSetUpdateCheckErrors).not.toHaveBeenCalled();
+    expect(mockSetUpdateCheckProviderOutcomes).not.toHaveBeenCalled();
+    expect(mockSetUpdateCheckCoverage).not.toHaveBeenCalled();
     expect(mockSetLastUpdateCheck).not.toHaveBeenCalled();
   });
 });

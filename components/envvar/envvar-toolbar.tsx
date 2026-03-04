@@ -15,7 +15,8 @@ interface EnvVarToolbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   scopeFilter: EnvVarScope | 'all';
-  onScopeFilterChange: (scope: EnvVarScope | 'all') => void;
+  onScopeFilterChange: (scope: EnvVarScope | 'all') => void | Promise<void>;
+  disabled?: boolean;
   t: (key: string) => string;
 }
 
@@ -24,33 +25,40 @@ export function EnvVarToolbar({
   onSearchChange,
   scopeFilter,
   onScopeFilterChange,
+  disabled = false,
   t,
 }: EnvVarToolbarProps) {
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-      <div className="relative max-w-xs w-full">
+    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center" data-testid="envvar-toolbar">
+      <div className="relative w-full sm:max-w-sm">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
         <Input
           placeholder={t('envvar.table.search')}
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           className="h-9 pl-8"
+          disabled={disabled}
         />
       </div>
-      <Select
-        value={scopeFilter}
-        onValueChange={(v) => onScopeFilterChange(v as EnvVarScope | 'all')}
-      >
-        <SelectTrigger className="w-[130px] h-9">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('common.all')}</SelectItem>
-          <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
-          <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
-          <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="w-full sm:w-auto">
+        <Select
+          value={scopeFilter}
+          onValueChange={(v) => {
+            void onScopeFilterChange(v as EnvVarScope | 'all');
+          }}
+          disabled={disabled}
+        >
+          <SelectTrigger className="h-9 w-full sm:w-[150px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('common.all')}</SelectItem>
+            <SelectItem value="process">{t('envvar.scopes.process')}</SelectItem>
+            <SelectItem value="user">{t('envvar.scopes.user')}</SelectItem>
+            <SelectItem value="system">{t('envvar.scopes.system')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

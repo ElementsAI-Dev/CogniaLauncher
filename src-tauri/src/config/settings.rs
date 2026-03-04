@@ -1,6 +1,7 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
 use crate::tray::{TrayClickBehavior, TrayMenuItemId};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -557,6 +558,49 @@ impl Settings {
         Ok(items)
     }
 
+    fn normalize_proxy_mode(value: &str) -> CogniaResult<String> {
+        let normalized = value.trim().to_lowercase();
+        if !["global", "none", "custom"].contains(&normalized.as_str()) {
+            return Err(CogniaError::Config(
+                "Invalid proxy mode. Valid: global, none, custom".into(),
+            ));
+        }
+        Ok(normalized)
+    }
+
+    fn normalize_optional_proxy_url(value: &str) -> CogniaResult<Option<String>> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+
+        let parsed = Url::parse(trimmed)
+            .map_err(|e| CogniaError::Config(format!("Invalid proxy URL '{}': {}", trimmed, e)))?;
+        if !matches!(parsed.scheme(), "http" | "https" | "socks5" | "socks5h") {
+            return Err(CogniaError::Config(
+                "Invalid proxy URL scheme. Valid: http://, https://, socks5://".into(),
+            ));
+        }
+
+        Ok(Some(trimmed.to_string()))
+    }
+
+    fn normalize_optional_no_proxy(value: &str) -> Option<String> {
+        let normalized = value.replace(';', ",");
+        let entries: Vec<String> = normalized
+            .split(',')
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty())
+            .map(|item| item.to_string())
+            .collect();
+
+        if entries.is_empty() {
+            None
+        } else {
+            Some(entries.join(","))
+        }
+    }
+
     pub fn get_value(&self, key: &str) -> Option<String> {
         let parts: Vec<&str> = key.split('.').collect();
 
@@ -982,7 +1026,15 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["appearance", "window_effect"] => {
-                let valid = ["auto", "none", "mica", "mica-tabbed", "acrylic", "blur", "vibrancy"];
+                let valid = [
+                    "auto",
+                    "none",
+                    "mica",
+                    "mica-tabbed",
+                    "acrylic",
+                    "blur",
+                    "vibrancy",
+                ];
                 if !valid.contains(&value) {
                     return Err(CogniaError::Config("Invalid window effect value".into()));
                 }
@@ -1049,26 +1101,13 @@ impl Settings {
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
             ["terminal", "proxy_mode"] => {
-                if !["global", "none", "custom"].contains(&value) {
-                    return Err(CogniaError::Config(
-                        "Invalid proxy mode. Valid: global, none, custom".into(),
-                    ));
-                }
-                self.terminal.proxy_mode = value.to_string();
+                self.terminal.proxy_mode = Self::normalize_proxy_mode(value)?;
             }
             ["terminal", "custom_proxy"] => {
-                self.terminal.custom_proxy = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                };
+                self.terminal.custom_proxy = Self::normalize_optional_proxy_url(value)?;
             }
             ["terminal", "no_proxy"] => {
-                self.terminal.no_proxy = if value.is_empty() {
-                    None
-                } else {
-                    Some(value.to_string())
-                };
+                self.terminal.no_proxy = Self::normalize_optional_no_proxy(value);
             }
             ["log", "max_retention_days"] => {
                 self.log.max_retention_days = value.parse().map_err(|_| {
@@ -1713,11 +1752,16 @@ mod tests {
     #[test]
     fn test_get_set_appearance_window_effect() {
         let mut s = Settings::default();
-        assert_eq!(
-            s.get_value("appearance.window_effect"),
-            Some("auto".into())
-        );
-        for valid in ["auto", "none", "mica", "mica-tabbed", "acrylic", "blur", "vibrancy"] {
+        assert_eq!(s.get_value("appearance.window_effect"), Some("auto".into()));
+        for valid in [
+            "auto",
+            "none",
+            "mica",
+            "mica-tabbed",
+            "acrylic",
+            "blur",
+            "vibrancy",
+        ] {
             s.set_value("appearance.window_effect", valid).unwrap();
             assert_eq!(s.appearance.window_effect, valid);
         }
@@ -1773,6 +1817,14 @@ mod tests {
     }
 
     #[test]
+    fn test_terminal_proxy_mode_is_canonicalized() {
+        let mut s = Settings::default();
+        s.set_value("terminal.proxy_mode", "  CUSTOM ").unwrap();
+        assert_eq!(s.terminal.proxy_mode, "custom");
+        assert_eq!(s.get_value("terminal.proxy_mode"), Some("custom".into()));
+    }
+
+    #[test]
     fn test_get_set_terminal_custom_proxy() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("terminal.custom_proxy"), Some(String::new()));
@@ -1787,6 +1839,22 @@ mod tests {
     }
 
     #[test]
+    fn test_terminal_custom_proxy_rejects_invalid_url_non_destructive() {
+        let mut s = Settings::default();
+        s.set_value("terminal.custom_proxy", "http://proxy.local:8080")
+            .unwrap();
+        let before = s.terminal.custom_proxy.clone();
+
+        let err = s
+            .set_value("terminal.custom_proxy", "ftp://proxy.local:2121")
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Invalid proxy URL scheme"));
+        assert_eq!(s.terminal.custom_proxy, before);
+    }
+
+    #[test]
     fn test_get_set_terminal_no_proxy() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("terminal.no_proxy"), Some(String::new()));
@@ -1794,6 +1862,17 @@ mod tests {
         assert_eq!(s.terminal.no_proxy, Some("localhost".into()));
         s.set_value("terminal.no_proxy", "").unwrap();
         assert!(s.terminal.no_proxy.is_none());
+    }
+
+    #[test]
+    fn test_terminal_no_proxy_is_canonicalized() {
+        let mut s = Settings::default();
+        s.set_value("terminal.no_proxy", " localhost ; 127.0.0.1, .corp.local ")
+            .unwrap();
+        assert_eq!(
+            s.terminal.no_proxy,
+            Some("localhost,127.0.0.1,.corp.local".into())
+        );
     }
 
     // ===== get_value / set_value: providers section =====
@@ -2737,9 +2816,6 @@ mod tests {
         let mut s = Settings::default();
         s.set_value("shortcuts.toggle_window", "").unwrap();
         assert_eq!(s.shortcuts.toggle_window, "");
-        assert_eq!(
-            s.get_value("shortcuts.toggle_window"),
-            Some("".into())
-        );
+        assert_eq!(s.get_value("shortcuts.toggle_window"), Some("".into()));
     }
 }

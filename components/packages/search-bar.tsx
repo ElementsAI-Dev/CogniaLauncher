@@ -165,11 +165,11 @@ export function SearchBar({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2 min-w-0">
+      <div className="flex flex-wrap gap-2 min-w-0">
         {/* Main Search Input */}
         <Popover open={showDropdown} onOpenChange={setShowDropdown}>
           <PopoverAnchor asChild>
-            <div className="flex-1 relative">
+            <div className="relative min-w-0 flex-[1_1_260px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 ref={inputRef}
@@ -292,7 +292,7 @@ export function SearchBar({
         {/* Provider Filter */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-10 gap-2">
+            <Button variant="outline" className="h-10 gap-2 shrink-0">
               <Server className="h-4 w-4 text-muted-foreground" />
               {selectedProviders.length > 0 ? (
                 <Badge variant="secondary" className="ml-1 text-xs">
@@ -326,7 +326,7 @@ export function SearchBar({
         {/* Filters */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-10 gap-2">
+            <Button variant="outline" className="h-10 gap-2 shrink-0">
               <Filter className="h-4 w-4 text-muted-foreground" />
               {activeFilterCount > 0 && (
                 <Badge variant="secondary" className="text-xs">
@@ -365,7 +365,7 @@ export function SearchBar({
 
         {/* Sort */}
         <Select value={sortBy} onValueChange={setSortBy}>
-          <SelectTrigger className="h-10 w-[140px]">
+          <SelectTrigger className="h-10 w-[140px] shrink-0">
             <ArrowUpDown className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
@@ -384,7 +384,7 @@ export function SearchBar({
         <Button
           onClick={handleSearch}
           disabled={loading || !query.trim()}
-          className="h-10 w-10 p-0"
+          className="h-10 w-10 p-0 shrink-0"
         >
           {loading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

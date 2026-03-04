@@ -94,12 +94,12 @@ export function InstalledFilterBar({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={filter.provider || "all"}
           onValueChange={handleProviderChange}
         >
-          <SelectTrigger className="h-9 w-[180px]">
+          <SelectTrigger className="h-9 w-full sm:w-[180px]">
             <Server className="h-4 w-4 mr-2 text-muted-foreground" />
             <SelectValue placeholder={t("packages.allProviders")} />
           </SelectTrigger>

@@ -72,9 +72,17 @@ declare module "main" {
 # Bundle TypeScript → CJS with esbuild
 pnpm exec esbuild src/index.ts --bundle --outfile=dist/plugin.js --format=cjs --target=es2020
 
+# Install extism-js CLI + binaryen (one-time)
+# Windows:
+powershell Invoke-WebRequest -Uri https://raw.githubusercontent.com/extism/js-pdk/main/install-windows.ps1 -OutFile install-windows.ps1
+powershell -executionpolicy bypass -File .\install-windows.ps1
+
 # Compile to WASM
-pnpm exec extism-js dist/plugin.js -i plugin.d.ts -o plugin.wasm
+extism-js dist/plugin.js -i plugin.d.ts -o plugin.wasm
 ```
+
+If you scaffold from CogniaLauncher templates, you can simply run `pnpm build`
+and the generated script will auto-download missing toolchain binaries.
 
 ## API Reference
 

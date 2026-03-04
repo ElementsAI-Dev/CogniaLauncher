@@ -26,8 +26,9 @@ describe('EnvVarToolbar', () => {
     jest.clearAllMocks();
   });
 
-  it('renders search input with placeholder', () => {
+  it('renders toolbar container and search input', () => {
     render(<EnvVarToolbar {...defaultProps} />);
+    expect(screen.getByTestId('envvar-toolbar')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search environment variables...')).toBeInTheDocument();
   });
 
@@ -46,5 +47,11 @@ describe('EnvVarToolbar', () => {
   it('renders scope filter with current value', () => {
     render(<EnvVarToolbar {...defaultProps} scopeFilter="process" />);
     expect(screen.getByText('Process')).toBeInTheDocument();
+  });
+
+  it('disables controls when busy', () => {
+    render(<EnvVarToolbar {...defaultProps} disabled />);
+    expect(screen.getByPlaceholderText('Search environment variables...')).toBeDisabled();
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 });

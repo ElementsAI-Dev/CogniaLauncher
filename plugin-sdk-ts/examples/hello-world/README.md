@@ -11,7 +11,23 @@ A minimal example plugin demonstrating the Cognia TypeScript Plugin SDK.
 
 ```bash
 pnpm install
+# Optional: pre-download extism-js + binaryen into .tools/
+pnpm setup:toolchain
+
+# Build plugin.wasm (auto-downloads required toolchain if missing)
 pnpm build
+```
+
+If your environment cannot access GitHub directly, you can provide local tool paths:
+
+```bash
+EXTISM_JS_PATH=/path/to/extism-js BINARYEN_BIN=/path/to/binaryen/bin pnpm build
+```
+
+Or use mirror URLs:
+
+```bash
+EXTISM_JS_URL=https://mirror.example.com/extism-js.gz BINARYEN_URL=https://mirror.example.com/binaryen.tar.gz pnpm build
 ```
 
 ## Install

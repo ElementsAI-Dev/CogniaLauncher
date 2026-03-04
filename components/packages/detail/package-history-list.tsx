@@ -57,7 +57,7 @@ export function PackageHistoryList({
   }
 
   return (
-    <Card>
+    <Card className="flex min-h-0 flex-col">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <History className="h-5 w-5" />
@@ -67,7 +67,7 @@ export function PackageHistoryList({
           {t('packages.detail.installHistoryDesc')}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-h-0 flex-1">
         {history.length === 0 ? (
           <Empty className="border-none py-12">
             <EmptyHeader>
@@ -77,10 +77,10 @@ export function PackageHistoryList({
               <EmptyTitle className="text-sm font-normal text-muted-foreground">
                 {t('packages.detail.noHistoryForPackage')}
               </EmptyTitle>
-            </EmptyHeader>
-          </Empty>
+              </EmptyHeader>
+            </Empty>
         ) : (
-          <ScrollArea className="h-[500px]">
+          <ScrollArea className="max-h-[65dvh] min-h-0">
             <div className="space-y-2 pr-4">
               {history.map((entry) => {
                 const ActionIcon = ACTION_ICONS[entry.action] || Download;
@@ -88,7 +88,8 @@ export function PackageHistoryList({
                   <div
                     key={entry.id}
                     className={`
-                      flex items-center justify-between p-3 border rounded-lg
+                      flex flex-col gap-2 p-3 border rounded-lg
+                      sm:flex-row sm:items-center sm:justify-between
                       ${entry.success ? '' : 'border-destructive/30 bg-destructive/5'}
                     `}
                   >
@@ -102,7 +103,7 @@ export function PackageHistoryList({
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{getActionLabel(entry.action)}</span>
+                          <span className="font-medium text-sm break-all">{getActionLabel(entry.action)}</span>
                           <Badge variant="outline" className="font-mono text-xs">{entry.version}</Badge>
                           <Badge variant="secondary" className="text-xs">{entry.provider}</Badge>
                           {entry.success ? (
@@ -112,13 +113,13 @@ export function PackageHistoryList({
                           )}
                         </div>
                         {entry.error_message && (
-                          <p className="text-xs text-destructive mt-1 truncate">
+                          <p className="text-xs text-destructive mt-1 break-all">
                             {t('packages.detail.errorMessage', { message: entry.error_message })}
                           </p>
                         )}
                       </div>
                     </div>
-                    <div className="text-xs text-muted-foreground shrink-0 ml-4">
+                    <div className="text-xs text-muted-foreground shrink-0 sm:ml-4 sm:text-right">
                       {new Date(entry.timestamp).toLocaleString()}
                     </div>
                   </div>

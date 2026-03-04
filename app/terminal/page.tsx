@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
 import { useTerminal } from '@/hooks/use-terminal';
@@ -120,6 +120,18 @@ export default function TerminalPage() {
       await terminal.createProfile(profile);
     }
   }, [terminal]);
+
+  useEffect(() => {
+    if (terminal.configMutationState.status === 'success') {
+      setTabLoaded((prev) => ({ ...prev, config: false }));
+    }
+  }, [terminal.configMutationState.status, terminal.configMutationState.updatedAt]);
+
+  useEffect(() => {
+    if (terminal.proxySyncState.status === 'success') {
+      setTabLoaded((prev) => ({ ...prev, proxy: false, envvars: false }));
+    }
+  }, [terminal.proxySyncState.status, terminal.proxySyncState.updatedAt]);
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -241,6 +253,9 @@ export default function TerminalPage() {
             onParseConfigContent={terminal.parseConfigContent}
             onBackupConfig={terminal.backupShellConfig}
             onWriteConfig={terminal.writeShellConfig}
+            mutationStatus={terminal.configMutationState.status}
+            mutationMessage={terminal.configMutationState.message}
+            onClearMutationState={terminal.clearConfigMutationState}
           />
         </TabsContent>
 
@@ -290,11 +305,18 @@ export default function TerminalPage() {
             customProxy={terminal.customProxy}
             noProxy={terminal.noProxy}
             saving={terminal.proxyConfigSaving}
+            syncStatus={terminal.proxySyncState.status}
+            syncMessage={terminal.proxySyncState.message}
             onProxyModeChange={terminal.updateProxyMode}
             onCustomProxyChange={terminal.updateCustomProxy}
             onCustomProxyBlur={terminal.saveCustomProxy}
             onNoProxyChange={terminal.updateNoProxy}
             onNoProxyBlur={terminal.saveNoProxy}
+            onRetrySync={() => {
+              terminal.loadProxyConfig();
+              terminal.fetchProxyEnvVars();
+            }}
+            onClearSyncState={terminal.clearProxySyncState}
             loading={terminal.loading}
           />
         </TabsContent>

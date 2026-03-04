@@ -17,7 +17,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "dashboard.quickActions.addEnvironment": "Add Environment",
         "dashboard.quickActions.installPackage": "Install Package",
         "dashboard.quickActions.refreshAll": "Refresh All",
-        "dashboard.quickActions.clearCache": "Clear Cache",
+        "dashboard.quickActions.manageCache": "Manage Cache",
         "dashboard.quickActions.openSettings": "Settings",
         "dashboard.quickActions.viewLogs": "View Logs",
         "dashboard.quickActions.moreActions": "More Actions",
@@ -92,8 +92,19 @@ describe("QuickActions", () => {
     const moreButton = screen.getByRole("button", { name: /more actions/i });
     await user.click(moreButton);
 
-    expect(screen.getByText("Clear Cache")).toBeInTheDocument();
+    expect(screen.getByText("Manage Cache")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.getByText("View Logs")).toBeInTheDocument();
+  });
+
+  it("navigates to cache page from secondary actions", async () => {
+    const user = userEvent.setup();
+    render(<QuickActions />);
+
+    const moreButton = screen.getByRole("button", { name: /more actions/i });
+    await user.click(moreButton);
+    await user.click(screen.getByText("Manage Cache"));
+
+    expect(mockPush).toHaveBeenCalledWith("/cache");
   });
 });

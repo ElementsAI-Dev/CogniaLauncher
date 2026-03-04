@@ -47,10 +47,15 @@ describe("PackageHistoryList", () => {
 
   it("renders history entries with action labels", () => {
     const history = [makeEntry({ action: "install" })];
-    render(<PackageHistoryList history={history} loading={false} />);
+    const { container } = render(<PackageHistoryList history={history} loading={false} />);
     expect(screen.getByText("Installed")).toBeInTheDocument();
     expect(screen.getByText("1.24.0")).toBeInTheDocument();
     expect(screen.getByText("pip")).toBeInTheDocument();
+
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[65dvh]");
+    expect(scrollArea).not.toHaveClass("h-[500px]");
   });
 
   it("renders multiple action types correctly", () => {

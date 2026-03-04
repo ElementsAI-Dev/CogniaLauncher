@@ -59,6 +59,8 @@ CogniaLauncher 包含 29 个自定义 React Hooks，封装业务逻辑和 Tauri 
 |------|------|------|
 | `useLogs` | `use-logs.ts` | 日志查看和管理 |
 
+`useLogs.queryLogs()` 支持 `maxScanLines` 参数，适用于大日志文件的过滤轮询场景（如跟随模式）。
+
 ## 系统功能
 
 | Hook | 文件 | 用途 |

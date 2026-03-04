@@ -1,7 +1,8 @@
 use crate::config::Settings;
 use crate::core::terminal::{
     self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries, ShellFrameworkInfo,
-    ShellInfo, ShellPlugin, TerminalProfile, TerminalProfileManager, TerminalProfileTemplate,
+    ShellInfo, ShellPlugin, TerminalConfigMutationResult, TerminalProfile, TerminalProfileManager,
+    TerminalProfileTemplate,
 };
 use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
@@ -490,15 +491,37 @@ pub async fn terminal_read_config(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn terminal_backup_config(path: String) -> Result<String, String> {
-    terminal::backup_shell_config(&PathBuf::from(&path))
+    let result = terminal::backup_shell_config_verified(&PathBuf::from(&path))
         .await
-        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())?;
+    result
+        .backup_path
+        .ok_or_else(|| "Backup completed without backup path".to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_backup_config_verified(
+    path: String,
+) -> Result<TerminalConfigMutationResult, String> {
+    terminal::backup_shell_config_verified(&PathBuf::from(&path))
+        .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn terminal_append_to_config(path: String, content: String) -> Result<(), String> {
-    terminal::append_to_shell_config(&PathBuf::from(&path), &content)
+    terminal::append_to_shell_config_verified(&PathBuf::from(&path), &content)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_append_to_config_verified(
+    path: String,
+    content: String,
+) -> Result<TerminalConfigMutationResult, String> {
+    terminal::append_to_shell_config_verified(&PathBuf::from(&path), &content)
         .await
         .map_err(|e| e.to_string())
 }
@@ -657,7 +680,18 @@ pub async fn terminal_import_profiles(
 
 #[tauri::command]
 pub async fn terminal_write_config(path: String, content: String) -> Result<(), String> {
-    terminal::write_shell_config(&PathBuf::from(&path), &content)
+    terminal::write_shell_config_verified(&PathBuf::from(&path), &content)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn terminal_write_config_verified(
+    path: String,
+    content: String,
+) -> Result<TerminalConfigMutationResult, String> {
+    terminal::write_shell_config_verified(&PathBuf::from(&path), &content)
         .await
         .map_err(|e| e.to_string())
 }

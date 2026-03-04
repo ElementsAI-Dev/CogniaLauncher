@@ -6,6 +6,7 @@ use crate::provider::{
     InstalledFilter, InstalledPackage, PackageInfo, PackageSummary, ProviderRegistry, SearchOptions,
 };
 use futures::future::join_all;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -19,6 +20,27 @@ const INSTALLED_CACHE_TTL: i64 = 60; // 1 minute (changes frequently)
 const INFO_CACHE_TTL: i64 = 3600; // 1 hour
 const VERSIONS_CACHE_TTL: i64 = 1800; // 30 minutes
 const STATUS_CACHE_TTL: i64 = 120; // 2 minutes
+
+/// Deduplicate installed package entries while preserving order.
+/// Key: provider + name + version (case-insensitive provider/name).
+fn dedupe_installed_packages(packages: Vec<InstalledPackage>) -> Vec<InstalledPackage> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::with_capacity(packages.len());
+
+    for pkg in packages {
+        let key = format!(
+            "{}::{}::{}",
+            pkg.provider.to_ascii_lowercase(),
+            pkg.name.to_ascii_lowercase(),
+            pkg.version.to_ascii_lowercase()
+        );
+        if seen.insert(key) {
+            deduped.push(pkg);
+        }
+    }
+
+    deduped
+}
 
 /// Open a MetadataCache with a custom TTL, reading cache_dir from settings.
 async fn open_metadata_cache(settings: &SharedSettings, ttl: i64) -> Result<MetadataCache, String> {
@@ -273,6 +295,8 @@ pub async fn package_list(
         }
         pkgs
     };
+
+    let all_packages = dedupe_installed_packages(all_packages);
 
     if let Ok(mut cache) = open_metadata_cache(settings.inner(), INSTALLED_CACHE_TTL).await {
         let _ = cache
@@ -537,4 +561,63 @@ pub async fn provider_disable(
     invalidate_package_caches(settings.inner()).await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dedupe_installed_packages;
+    use crate::provider::InstalledPackage;
+    use std::path::PathBuf;
+
+    fn installed_pkg(provider: &str, name: &str, version: &str) -> InstalledPackage {
+        InstalledPackage {
+            name: name.to_string(),
+            version: version.to_string(),
+            provider: provider.to_string(),
+            install_path: PathBuf::from(format!("node_modules/{}", name)),
+            installed_at: String::new(),
+            is_global: true,
+        }
+    }
+
+    #[test]
+    fn test_dedupe_installed_packages_preserves_order() {
+        let packages = vec![
+            installed_pkg("npm", "react", "18.2.0"),
+            installed_pkg("npm", "lodash", "4.17.21"),
+            installed_pkg("npm", "react", "18.2.0"),
+        ];
+
+        let deduped = dedupe_installed_packages(packages);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].name, "react");
+        assert_eq!(deduped[1].name, "lodash");
+    }
+
+    #[test]
+    fn test_dedupe_installed_packages_is_case_insensitive() {
+        let packages = vec![
+            installed_pkg("NPM", "React", "18.2.0"),
+            installed_pkg("npm", "react", "18.2.0"),
+            installed_pkg("npm", "react", "18.2.1"),
+        ];
+
+        let deduped = dedupe_installed_packages(packages);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].version, "18.2.0");
+        assert_eq!(deduped[1].version, "18.2.1");
+    }
+
+    #[test]
+    fn test_dedupe_installed_packages_keeps_different_providers() {
+        let packages = vec![
+            installed_pkg("npm", "eslint", "9.17.0"),
+            installed_pkg("yarn", "eslint", "9.17.0"),
+        ];
+
+        let deduped = dedupe_installed_packages(packages);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].provider, "npm");
+        assert_eq!(deduped[1].provider, "yarn");
+    }
 }

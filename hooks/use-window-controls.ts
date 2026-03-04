@@ -10,12 +10,88 @@ type TauriWindow = Awaited<
 >;
 
 /**
- * On Windows, frameless maximized windows have an invisible border
- * (typically 7-8px at 100% scale) that clips content. We must add
- * padding to compensate. This value is the Windows default thick-frame
- * border in CSS pixels.
+ * Guard rails for Windows frameless maximize compensation.
  */
-const WIN_MAXIMIZE_PADDING = 8;
+const MAX_WINDOW_INSET_PX = 32;
+const MAXIMIZE_INSET_TOLERANCE_DIP = 1;
+export interface MaximizeInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+const ZERO_MAXIMIZE_INSETS: MaximizeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+function clampInset(value: number): number {
+  return Math.min(MAX_WINDOW_INSET_PX, Math.max(0, value));
+}
+
+function normalizeInset(value: number): number {
+  const clamped = clampInset(value);
+  return clamped <= MAXIMIZE_INSET_TOLERANCE_DIP ? 0 : clamped;
+}
+
+type Rect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+type MonitorLike = {
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+};
+
+function getRectFromPositionSize(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+): Rect {
+  return {
+    left: position.x,
+    top: position.y,
+    right: position.x + size.width,
+    bottom: position.y + size.height,
+  };
+}
+
+function getMonitorRect(monitor: MonitorLike): Rect {
+  const { position, size } = monitor;
+  return getRectFromPositionSize(position, size);
+}
+
+function getIntersectionArea(a: Rect, b: Rect): number {
+  const overlapWidth = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const overlapHeight = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return overlapWidth * overlapHeight;
+}
+
+function resolveBestMonitorForWindow(
+  windowRect: Rect,
+  current: MonitorLike | null,
+  allMonitors: MonitorLike[],
+): MonitorLike | null {
+  let bestMonitor: MonitorLike | null = null;
+  let bestArea = 0;
+
+  if (current) {
+    const currentArea = getIntersectionArea(windowRect, getMonitorRect(current));
+    if (currentArea > 0) {
+      bestMonitor = current;
+      bestArea = currentArea;
+    }
+  }
+
+  for (const monitor of allMonitors) {
+    const area = getIntersectionArea(windowRect, getMonitorRect(monitor));
+    if (area > bestArea) {
+      bestArea = area;
+      bestMonitor = monitor;
+    }
+  }
+
+  return bestMonitor;
+}
 
 export interface WindowControlsState {
   /** Whether the component has mounted (for hydration safety) */
@@ -34,6 +110,8 @@ export interface WindowControlsState {
   isFocused: boolean;
   /** Whether the window is pinned always-on-top */
   isAlwaysOnTop: boolean;
+  /** Per-edge padding compensation for Windows frameless maximize clipping */
+  maximizeInsets: MaximizeInsets;
   /** Padding in px needed to compensate for Windows frameless maximize border */
   maximizePadding: number;
 
@@ -68,8 +146,12 @@ export function useWindowControls(): WindowControlsState {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [maximizeInsets, setMaximizeInsets] = useState<MaximizeInsets>(ZERO_MAXIMIZE_INSETS);
+  const [maximizePadding, setMaximizePadding] = useState(0);
 
   const unlistenResizeRef = useRef<(() => void) | null>(null);
+  const unlistenMovedRef = useRef<(() => void) | null>(null);
+  const unlistenScaleRef = useRef<(() => void) | null>(null);
   const unlistenFocusRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
 
@@ -87,10 +169,130 @@ export function useWindowControls(): WindowControlsState {
       if (!isTauri()) return;
 
       try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const { getCurrentWindow, currentMonitor, availableMonitors, monitorFromPoint } = await import("@tauri-apps/api/window");
         const win = getCurrentWindow();
 
         if (!active) return;
+
+        const syncMaximizePadding = async (maximized: boolean) => {
+          if (!active) return;
+          if (!isWindowsOS() || !maximized) {
+            setMaximizeInsets(ZERO_MAXIMIZE_INSETS);
+            setMaximizePadding(0);
+            return;
+          }
+
+          try {
+            const [outerPosition, outerSize, innerSize, monitor, monitors, scaleFactor] = await Promise.all([
+              win.outerPosition(),
+              win.outerSize(),
+              win.innerSize(),
+              currentMonitor(),
+              availableMonitors(),
+              win.scaleFactor(),
+            ]);
+
+            if (!active) return;
+
+            const windowLeft = outerPosition.x;
+            const windowTop = outerPosition.y;
+            const windowRight = windowLeft + outerSize.width;
+            const windowBottom = windowTop + outerSize.height;
+            const windowRect = {
+              left: windowLeft,
+              top: windowTop,
+              right: windowRight,
+              bottom: windowBottom,
+            };
+            let resolvedMonitor = resolveBestMonitorForWindow(
+              windowRect,
+              (monitor as MonitorLike | null) ?? null,
+              (monitors as MonitorLike[]) ?? [],
+            );
+            if (!resolvedMonitor) {
+              const centerX = Math.round(windowLeft + outerSize.width / 2);
+              const centerY = Math.round(windowTop + outerSize.height / 2);
+              try {
+                resolvedMonitor = (await monitorFromPoint(centerX, centerY) as MonitorLike | null) ?? null;
+              } catch {
+                resolvedMonitor = null;
+              }
+            }
+
+            const monitorRect = resolvedMonitor
+              ? getMonitorRect(resolvedMonitor)
+              : windowRect;
+            const monitorLeft = monitorRect.left;
+            const monitorTop = monitorRect.top;
+            const monitorRight = monitorRect.right;
+            const monitorBottom = monitorRect.bottom;
+
+            const safeScaleFactor = scaleFactor > 0 ? scaleFactor : 1;
+            const frameInsetX = Math.max(
+              0,
+              Math.round(((outerSize.width - innerSize.width) / 2) / safeScaleFactor),
+            );
+            const frameInsetY = Math.max(
+              0,
+              Math.round(((outerSize.height - innerSize.height) / 2) / safeScaleFactor),
+            );
+            const overshootInsets: MaximizeInsets = {
+              top: normalizeInset(Math.round(Math.max(0, monitorTop - windowTop) / safeScaleFactor)),
+              right: normalizeInset(Math.round(Math.max(0, windowRight - monitorRight) / safeScaleFactor)),
+              bottom: normalizeInset(Math.round(Math.max(0, windowBottom - monitorBottom) / safeScaleFactor)),
+              left: normalizeInset(Math.round(Math.max(0, monitorLeft - windowLeft) / safeScaleFactor)),
+            };
+
+            const frameInsetsFallback: MaximizeInsets =
+              frameInsetX > 0 || frameInsetY > 0
+                ? {
+                    top: normalizeInset(frameInsetY),
+                    right: normalizeInset(frameInsetX),
+                    bottom: normalizeInset(frameInsetY),
+                    left: normalizeInset(frameInsetX),
+                  }
+                : {
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    left: 0,
+                  };
+
+            const nextInsets: MaximizeInsets = resolvedMonitor
+              ? overshootInsets
+              : frameInsetsFallback;
+            const nextPadding = clampInset(Math.max(
+              nextInsets.top,
+              nextInsets.right,
+              nextInsets.bottom,
+              nextInsets.left,
+            ));
+
+            setMaximizeInsets(nextInsets);
+            setMaximizePadding(nextPadding);
+          } catch {
+            if (active) {
+              // Be conservative on runtime API failures to avoid forcing a visible
+              // artificial border on users with multi-monitor DPI edge cases.
+              setMaximizeInsets(ZERO_MAXIMIZE_INSETS);
+              setMaximizePadding(0);
+            }
+          }
+        };
+
+        const refreshWindowState = async () => {
+          if (!active) return;
+          const [max, full] = await Promise.all([
+            win.isMaximized(),
+            win.isFullscreen(),
+          ]);
+          if (!active) return;
+          setIsMaximized(max);
+          setIsFullscreen(full);
+          setStoreMaximized(max);
+          setStoreFullscreen(full);
+          await syncMaximizePadding(max);
+        };
 
         setAppWindow(win);
 
@@ -107,20 +309,11 @@ export function useWindowControls(): WindowControlsState {
         setIsAlwaysOnTop(alwaysOnTop);
         setStoreMaximized(maximized);
         setStoreFullscreen(fullscreen);
+        await syncMaximizePadding(maximized);
 
-        unlistenResizeRef.current = await win.onResized(async () => {
-          if (!active) return;
-          const [max, full] = await Promise.all([
-            win.isMaximized(),
-            win.isFullscreen(),
-          ]);
-          if (active) {
-            setIsMaximized(max);
-            setIsFullscreen(full);
-            setStoreMaximized(max);
-            setStoreFullscreen(full);
-          }
-        });
+        unlistenResizeRef.current = await win.onResized(refreshWindowState);
+        unlistenMovedRef.current = await win.onMoved(refreshWindowState);
+        unlistenScaleRef.current = await win.onScaleChanged(refreshWindowState);
 
         unlistenFocusRef.current = await win.onFocusChanged(
           ({ payload: focused }) => {
@@ -153,6 +346,8 @@ export function useWindowControls(): WindowControlsState {
     return () => {
       active = false;
       unlistenResizeRef.current?.();
+      unlistenMovedRef.current?.();
+      unlistenScaleRef.current?.();
       unlistenFocusRef.current?.();
       unlistenCloseRef.current?.();
     };
@@ -231,9 +426,6 @@ export function useWindowControls(): WindowControlsState {
   const isTauriEnv = mounted && isTauri();
   const isWindows = mounted && isWindowsOS();
 
-  const maximizePadding =
-    isTauriEnv && isWindows && isMaximized ? WIN_MAXIMIZE_PADDING : 0;
-
   return {
     mounted,
     isTauriEnv,
@@ -243,6 +435,7 @@ export function useWindowControls(): WindowControlsState {
     isFullscreen,
     isFocused,
     isAlwaysOnTop,
+    maximizeInsets,
     maximizePadding,
     handleMinimize,
     handleMaximize,

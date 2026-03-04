@@ -29,6 +29,9 @@ const mockFetchInstalledPackages = jest.fn().mockResolvedValue(undefined);
 const mockFetchProviders = jest.fn().mockResolvedValue(undefined);
 const mockFetchCacheInfo = jest.fn().mockResolvedValue(undefined);
 const mockFetchPlatformInfo = jest.fn().mockResolvedValue(undefined);
+let mockEnvsError: string | null = null;
+let mockPkgsError: string | null = null;
+let mockSettingsError: string | null = null;
 
 // Mock hooks used by the dashboard page
 jest.mock("@/hooks/use-environments", () => ({
@@ -46,7 +49,7 @@ jest.mock("@/hooks/use-environments", () => ({
     fetchEnvironments: (...args: Parameters<typeof mockFetchEnvironments>) =>
       mockFetchEnvironments(...args),
     loading: false,
-    error: null,
+    error: mockEnvsError,
   }),
 }));
 
@@ -61,7 +64,7 @@ jest.mock("@/hooks/use-packages", () => ({
       mockFetchProviders(...args),
     providers: [{ id: "npm", display_name: "NPM" }],
     loading: false,
-    error: null,
+    error: mockPkgsError,
   }),
 }));
 
@@ -80,7 +83,7 @@ jest.mock("@/hooks/use-settings", () => ({
       mockFetchPlatformInfo(...args),
     cogniaDir: "/mock/cognia/dir",
     loading: false,
-    error: null,
+    error: mockSettingsError,
   }),
 }));
 
@@ -146,9 +149,11 @@ const mockMessages = {
       },
       quickActions: {
         title: "Quick Actions",
+        description: "Common actions and shortcuts",
         addEnvironment: "Add Environment",
         installPackage: "Install Package",
         clearCache: "Clear Cache",
+        manageCache: "Manage Cache",
         refreshAll: "Refresh All",
         openSettings: "Settings",
         viewLogs: "View Logs",
@@ -184,6 +189,7 @@ const mockMessages = {
       none: "None",
       clear: "Clear",
       refresh: "Refresh",
+      close: "Close",
     },
     environments: {
       details: {
@@ -220,6 +226,9 @@ describe("Dashboard Page", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTauri.mockReturnValue(false);
+    mockEnvsError = null;
+    mockPkgsError = null;
+    mockSettingsError = null;
   });
 
   it("renders the dashboard title", async () => {
@@ -273,7 +282,7 @@ describe("Dashboard Page", () => {
     
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /add environment/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /refresh all/i })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /refresh all/i }).length).toBeGreaterThan(0);
     });
   });
 
@@ -362,5 +371,64 @@ describe("Dashboard Page", () => {
 
     unmount();
     expect(dispose).toHaveBeenCalled();
+  });
+
+  it("exposes an always-available header refresh button", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-header-refresh")).toBeInTheDocument();
+    });
+  });
+
+  it("runs full refresh flow when header refresh is clicked", async () => {
+    renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(mockFetchEnvironments).toHaveBeenCalled();
+      expect(mockFetchInstalledPackages).toHaveBeenCalled();
+      expect(mockFetchProviders).toHaveBeenCalled();
+      expect(mockFetchCacheInfo).toHaveBeenCalled();
+      expect(mockFetchPlatformInfo).toHaveBeenCalled();
+    });
+
+    mockFetchEnvironments.mockClear();
+    mockFetchInstalledPackages.mockClear();
+    mockFetchProviders.mockClear();
+    mockFetchCacheInfo.mockClear();
+    mockFetchPlatformInfo.mockClear();
+
+    fireEvent.click(screen.getByTestId("dashboard-header-refresh"));
+
+    await waitFor(() => {
+      expect(mockFetchEnvironments).toHaveBeenCalledWith(true);
+      expect(mockFetchInstalledPackages).toHaveBeenCalledWith(undefined, true);
+      expect(mockFetchProviders).toHaveBeenCalled();
+      expect(mockFetchCacheInfo).toHaveBeenCalled();
+      expect(mockFetchPlatformInfo).toHaveBeenCalled();
+    });
+  });
+
+  it("shows new errors after a previously dismissed error", async () => {
+    mockEnvsError = "Environment fetch failed";
+    const view = renderWithProviders(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Environment fetch failed")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(/close/i));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Environment fetch failed")).not.toBeInTheDocument();
+    });
+
+    mockEnvsError = null;
+    mockPkgsError = "Package fetch failed";
+    view.rerender(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Package fetch failed")).toBeInTheDocument();
+    });
   });
 });

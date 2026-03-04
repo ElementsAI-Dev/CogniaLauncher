@@ -71,7 +71,7 @@ function DependencyNodeItem({
       style={{ marginLeft: node.depth > 0 ? "1rem" : 0 }}
     >
       <Collapsible open={isExpanded} onOpenChange={onToggle}>
-        <div className="flex items-center gap-2 py-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 py-1.5">
           {hasChildren ? (
             <CollapsibleTrigger asChild>
               <Button variant="ghost" size="icon" className="h-5 w-5">
@@ -93,38 +93,39 @@ function DependencyNodeItem({
           />
 
           <span
-            className={`font-medium ${node.is_conflict ? "text-destructive" : ""}`}
+            className={`font-medium break-all ${node.is_conflict ? "text-destructive" : ""}`}
+            title={node.name}
           >
             {node.name}
           </span>
 
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="text-xs shrink-0">
             {node.version}
           </Badge>
 
           {node.provider && (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className="text-xs shrink-0">
               {node.provider}
             </Badge>
           )}
 
           {node.is_installed ? (
-            <Check className="h-4 w-4 text-green-500" />
+            <Check className="h-4 w-4 text-green-500 shrink-0" />
           ) : (
-            <Badge variant="default" className="text-xs">
+            <Badge variant="default" className="text-xs shrink-0">
               {t("packages.toInstall")}
             </Badge>
           )}
 
           {node.is_conflict && (
-            <Badge variant="destructive" className="gap-1">
+            <Badge variant="destructive" className="gap-1 shrink-0">
               <AlertTriangle className="h-3 w-3" />
               {t("packages.conflict")}
             </Badge>
           )}
 
           {hasChildren && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground shrink-0">
               ({node.dependencies.length})
             </span>
           )}
@@ -209,7 +210,7 @@ export function DependencyTree({
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Package Input */}
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             placeholder={t("packages.enterPackageName")}
             value={inputPackage}
@@ -247,7 +248,7 @@ export function DependencyTree({
         {resolution && !loading && (
           <div className="space-y-4">
             {/* Stats */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-3 text-center">
                   <div className="text-2xl font-bold">
@@ -343,7 +344,7 @@ export function DependencyTree({
             )}
 
             {/* Search & Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -362,7 +363,7 @@ export function DependencyTree({
             </div>
 
             {/* Dependency Tree */}
-            <ScrollArea className="h-[400px] border rounded-lg p-4">
+            <ScrollArea className="max-h-[60dvh] min-h-0 border rounded-lg p-4">
               {resolution.tree.length === 0 ? (
                 <Empty className="border-none py-12">
                   <EmptyHeader>

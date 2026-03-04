@@ -21,6 +21,23 @@ import {
 const ENV_PROVIDERS_CACHE_TTL_MS = 10 * 60 * 1000;
 const DETECTED_VERSIONS_CACHE_TTL_MS = 10 * 1000;
 
+type InstallTerminalState = "completed" | "failed" | "cancelled";
+
+function resolveTerminalState(
+  progress: tauri.EnvInstallProgressEvent,
+): InstallTerminalState | undefined {
+  if (progress.terminalState) return progress.terminalState;
+  if (progress.step === "done") return "completed";
+  if (progress.step === "error") return "failed";
+  if (progress.step === "cancelled") return "cancelled";
+  return undefined;
+}
+
+function isCancelledMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes("cancelled") || normalized.includes("canceled");
+}
+
 export function useEnvironments() {
   // Select state values
   const environments = useEnvironmentStore((s) => s.environments);
@@ -308,6 +325,8 @@ export function useEnvironments() {
       version: resolvedVersion,
       provider: providerLabel,
       step: 'fetching',
+      phase: 'resolve',
+      stageMessage: 'Resolving provider and install plan',
       progress: 0,
     });
     
@@ -324,24 +343,43 @@ export function useEnvironments() {
         unlistenRef.current = await tauri.listenEnvInstallProgress((progress) => {
           // Only update if it's for the current installation
           if (progress.envType === envType && progress.version === resolvedVersion) {
+            const terminalState = resolveTerminalState(progress);
             updateInstallationProgress({
               step: progress.step,
+              phase: progress.phase,
+              terminalState,
+              failureClass: progress.failureClass,
+              artifact: progress.artifact,
+              stageMessage: progress.stageMessage,
+              selectionRationale: progress.selectionRationale,
+              retryable: progress.retryable,
+              retryAfterSeconds: progress.retryAfterSeconds,
+              attempt: progress.attempt,
+              maxAttempts: progress.maxAttempts,
+              provider: progress.artifact?.provider || providerLabel,
               progress: progress.progress,
               speed: progress.speed ? formatSpeed(progress.speed) : undefined,
               downloadedSize: progress.downloadedSize ? formatSize(progress.downloadedSize) : undefined,
               totalSize: progress.totalSize ? formatSize(progress.totalSize) : undefined,
               error: progress.error,
             });
-            
-            // Auto-close on success after delay
-            if (progress.step === 'done') {
-              closeTimeoutRef.current = setTimeout(() => {
-                setCurrentInstallation(null);
-                closeProgressDialog();
-                unlistenRef.current?.();
-                unlistenRef.current = null;
+
+            if (terminalState) {
+              setCurrentInstallation(null);
+              unlistenRef.current?.();
+              unlistenRef.current = null;
+
+              if (closeTimeoutRef.current) {
+                clearTimeout(closeTimeoutRef.current);
                 closeTimeoutRef.current = null;
-              }, 1500);
+              }
+
+              if (terminalState !== 'failed') {
+                closeTimeoutRef.current = setTimeout(() => {
+                  closeProgressDialog();
+                  closeTimeoutRef.current = null;
+                }, terminalState === 'cancelled' ? 1000 : 1500);
+              }
             }
           }
         });
@@ -376,7 +414,12 @@ export function useEnvironments() {
       
       // If not using events (web mode), manually update progress
       if (!unlistenRef.current) {
-        updateInstallationProgress({ step: 'done', progress: 100 });
+        updateInstallationProgress({
+          step: 'done',
+          phase: 'finalize',
+          terminalState: 'completed',
+          progress: 100,
+        });
         closeTimeoutRef.current = setTimeout(() => {
           setCurrentInstallation(null);
           closeProgressDialog();
@@ -385,10 +428,24 @@ export function useEnvironments() {
       }
     } catch (err) {
       const errorMsg = formatError(err);
-      updateInstallationProgress({ 
-        step: 'error', 
-        error: errorMsg 
-      });
+      const currentProgress = useEnvironmentStore.getState().installationProgress;
+      const alreadyTerminal =
+        currentProgress?.terminalState !== undefined ||
+        currentProgress?.step === 'done' ||
+        currentProgress?.step === 'error' ||
+        currentProgress?.step === 'cancelled';
+
+      if (!alreadyTerminal) {
+        const isCancelled = isCancelledMessage(errorMsg);
+        updateInstallationProgress({
+          step: isCancelled ? 'cancelled' : 'error',
+          terminalState: isCancelled ? 'cancelled' : 'failed',
+          failureClass: isCancelled ? 'cancelled' : 'network_error',
+          retryable: isCancelled ? false : undefined,
+          phase: currentProgress?.phase,
+          error: errorMsg,
+        });
+      }
       setError(errorMsg);
       
       // Cleanup listener and installation state on error
@@ -576,14 +633,28 @@ export function useEnvironments() {
     try {
       const cancelled = await tauri.envInstallCancel(currentInstallation.envType, currentInstallation.version);
       if (cancelled) {
-        setCurrentInstallation(null);
-        closeProgressDialog();
+        updateInstallationProgress({
+          step: 'cancelled',
+          terminalState: 'cancelled',
+          failureClass: 'cancelled',
+          retryable: false,
+          error: 'Installation cancelled by user',
+        });
+        if (closeTimeoutRef.current) {
+          clearTimeout(closeTimeoutRef.current);
+          closeTimeoutRef.current = null;
+        }
+        closeTimeoutRef.current = setTimeout(() => {
+          setCurrentInstallation(null);
+          closeProgressDialog();
+          closeTimeoutRef.current = null;
+        }, 1000);
       }
       return cancelled;
     } catch {
       return false;
     }
-  }, [currentInstallation, setCurrentInstallation, closeProgressDialog]);
+  }, [currentInstallation, setCurrentInstallation, closeProgressDialog, updateInstallationProgress]);
 
   const verifyInstall = useCallback(async (envType: string, version: string) => {
     if (!tauri.isTauri()) return null;

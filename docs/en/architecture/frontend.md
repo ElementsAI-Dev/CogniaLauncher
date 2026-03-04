@@ -130,7 +130,7 @@ Desktop mode uses a custom titlebar:
 
 - Drag region implemented via `app-region: drag`
 - Interactive elements marked as `app-region: no-drag`
-- Windows maximized state compensates for the 8px WS_THICKFRAME border
+- Windows maximized state uses dynamic per-edge insets based on monitor/work-area metrics (8px fallback when metrics are unavailable)
 - Window state shared across components via Zustand Store
 
 ---

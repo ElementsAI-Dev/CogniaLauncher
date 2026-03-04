@@ -2,10 +2,11 @@
 
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AlertCircle, ArrowDownUp } from 'lucide-react';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { ArrowDownUp } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 function encodeHtmlEntities(text: string): string {
@@ -23,15 +24,33 @@ function decodeHtmlEntities(text: string): string {
   return textarea.value;
 }
 
+const DEFAULT_PREFERENCES = {
+  mode: 'encode',
+} as const;
+
 export default function HtmlEntityConverter({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('html-entity-converter', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
-  const [isEncoding, setIsEncoding] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isEncoding = preferences.mode === 'encode';
 
   const handleConvert = useCallback(() => {
-    if (!input.trim()) { setOutput(''); setError(null); return; }
+    if (!input.trim()) {
+      setOutput('');
+      setError(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      setOutput('');
+      return;
+    }
     try {
       setOutput(isEncoding ? encodeHtmlEntities(input) : decodeHtmlEntities(input));
       setError(null);
@@ -39,14 +58,14 @@ export default function HtmlEntityConverter({ className }: ToolComponentProps) {
       setError((e as Error).message);
       setOutput('');
     }
-  }, [input, isEncoding]);
+  }, [input, isEncoding, t]);
 
   const handleSwap = useCallback(() => {
-    setIsEncoding((prev) => !prev);
+    setPreferences({ mode: isEncoding ? 'decode' : 'encode' });
     setInput(output);
     setOutput('');
     setError(null);
-  }, [output]);
+  }, [isEncoding, output, setPreferences]);
 
   return (
     <div className={className}>
@@ -61,14 +80,9 @@ export default function HtmlEntityConverter({ className }: ToolComponentProps) {
           rows={6}
         />
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && <ToolValidationMessage message={error} />}
 
-        <div className="flex items-center gap-2">
+        <ToolActionRow>
           <Button onClick={handleConvert} size="sm">
             {isEncoding ? t('toolbox.tools.htmlEntityConverter.encode') : t('toolbox.tools.htmlEntityConverter.decode')}
           </Button>
@@ -76,7 +90,7 @@ export default function HtmlEntityConverter({ className }: ToolComponentProps) {
             <ArrowDownUp className="h-3.5 w-3.5" />
             {t('toolbox.tools.htmlEntityConverter.swap')}
           </Button>
-        </div>
+        </ToolActionRow>
 
         <ToolTextArea
           label={isEncoding ? t('toolbox.tools.htmlEntityConverter.entityOutput') : t('toolbox.tools.htmlEntityConverter.textOutput')}

@@ -4,12 +4,22 @@ import { useState, useCallback } from 'react';
 import { useCopyToClipboard } from '@/hooks/use-clipboard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
 import { Hash, Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 const ALGORITHMS = ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'] as const;
+const DEFAULT_PREFERENCES = {
+  sha1: true,
+  sha256: true,
+  sha384: true,
+  sha512: true,
+} as const;
 
 async function computeHash(algo: string, text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -21,30 +31,67 @@ async function computeHash(algo: string, text: string): Promise<string> {
 
 export default function HashGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('hash-generator', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
   const [computing, setComputing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { copy } = useCopyToClipboard();
   const [copiedAlgo, setCopiedAlgo] = useState<string | null>(null);
 
+  const enabledAlgorithms = ALGORITHMS.filter((algo) => {
+    if (algo === 'SHA-1') return preferences.sha1;
+    if (algo === 'SHA-256') return preferences.sha256;
+    if (algo === 'SHA-384') return preferences.sha384;
+    return preferences.sha512;
+  });
+
   const handleGenerate = useCallback(async () => {
-    if (!input.trim()) { setResults({}); return; }
+    if (!input.trim()) {
+      setResults({});
+      setError(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      setResults({});
+      return;
+    }
+    if (enabledAlgorithms.length === 0) {
+      setError(t('toolbox.tools.hashGenerator.selectAtLeastOne'));
+      setResults({});
+      return;
+    }
     setComputing(true);
+    setError(null);
     try {
       const entries = await Promise.all(
-        ALGORITHMS.map(async (algo) => [algo, await computeHash(algo, input)] as const),
+        enabledAlgorithms.map(async (algo) => [algo, await computeHash(algo, input)] as const),
       );
       setResults(Object.fromEntries(entries));
     } finally {
       setComputing(false);
     }
-  }, [input]);
+  }, [enabledAlgorithms, input, t]);
 
   const handleCopy = useCallback(async (algo: string, value: string) => {
     await copy(value);
     setCopiedAlgo(algo);
     setTimeout(() => setCopiedAlgo(null), 1500);
   }, [copy]);
+
+  const handleCopyAll = useCallback(async () => {
+    const text = Object.entries(results)
+      .map(([algo, value]) => `${algo}: ${value}`)
+      .join('\n');
+    await copy(text);
+    setCopiedAlgo('all');
+    setTimeout(() => setCopiedAlgo(null), 1500);
+  }, [copy, results]);
 
   return (
     <div className={className}>
@@ -59,10 +106,36 @@ export default function HashGenerator({ className }: ToolComponentProps) {
           rows={6}
         />
 
-        <Button onClick={handleGenerate} size="sm" disabled={computing || !input.trim()} className="gap-1.5">
-          <Hash className="h-3.5 w-3.5" />
-          {computing ? t('toolbox.tools.hashGenerator.computing') : t('toolbox.tools.hashGenerator.generate')}
-        </Button>
+        <ToolActionRow
+          rightSlot={
+            <div className="flex flex-wrap items-center gap-3">
+              {([
+                ['SHA-1', preferences.sha1, 'sha1'],
+                ['SHA-256', preferences.sha256, 'sha256'],
+                ['SHA-384', preferences.sha384, 'sha384'],
+                ['SHA-512', preferences.sha512, 'sha512'],
+              ] as const).map(([label, value, key]) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <Switch checked={value} onCheckedChange={(checked) => setPreferences({ [key]: checked })} />
+                  <Label className="text-xs">{label}</Label>
+                </div>
+              ))}
+            </div>
+          }
+        >
+          <Button onClick={handleGenerate} size="sm" disabled={computing || !input.trim()} className="gap-1.5">
+            <Hash className="h-3.5 w-3.5" />
+            {computing ? t('toolbox.tools.hashGenerator.computing') : t('toolbox.tools.hashGenerator.generate')}
+          </Button>
+          {Object.keys(results).length > 0 && (
+            <Button onClick={handleCopyAll} variant="outline" size="sm" className="gap-1.5">
+              {copiedAlgo === 'all' ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+              {copiedAlgo === 'all' ? t('toolbox.actions.copied') : t('toolbox.tools.hashGenerator.copyAll')}
+            </Button>
+          )}
+        </ToolActionRow>
+
+        {error && <ToolValidationMessage message={error} />}
 
         {Object.keys(results).length > 0 && (
           <div className="space-y-3">

@@ -46,6 +46,50 @@ pub fn split_name_version(input: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Parse one line of Node package manager list output into `(name, version)`.
+///
+/// Supports tree-style entries like:
+/// - `├── eslint@9.17.0`
+/// - `└── @types/node@22.10.1`
+///
+/// Rejects noisy/non-package lines such as:
+/// - banners (`bun pm ls v1.x`, `yarn global v1.x`)
+/// - path/count rows (`C:\...\node_modules (174)`)
+/// - rows without explicit `@version`
+pub fn parse_node_list_entry(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+
+    // Strip leading tree drawing / punctuation while preserving scoped-package '@'.
+    let clean = line.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '@');
+    if clean.is_empty() {
+        return None;
+    }
+
+    // Keep first token only; trailing annotations are not part of package spec.
+    let token = clean.split_whitespace().next().unwrap_or("");
+    let (pkg_name, pkg_version) = split_name_version(token);
+    let version = pkg_version?;
+
+    // Accept only valid package-name shapes:
+    // - unscoped: `name`
+    // - scoped: `@scope/name`
+    let is_scoped_pkg = pkg_name.starts_with('@') && pkg_name.matches('/').count() == 1;
+    let is_unscoped_pkg = !pkg_name.contains('/');
+    if !(is_scoped_pkg || is_unscoped_pkg) {
+        return None;
+    }
+
+    // Filter obvious path-like names.
+    if pkg_name.contains('\\') || pkg_name.contains(':') {
+        return None;
+    }
+
+    Some((pkg_name.to_string(), version.to_string()))
+}
+
 impl NodeProviderUtils {
     /// Execute a command and return stdout on success
     pub async fn run_command(cmd: &str, args: &[&str]) -> CogniaResult<String> {
@@ -255,6 +299,39 @@ mod tests {
         assert_eq!(
             split_name_version("@types/node@>=18.0.0"),
             ("@types/node", Some(">=18.0.0"))
+        );
+    }
+
+    #[test]
+    fn test_parse_node_list_entry_unscoped() {
+        assert_eq!(
+            parse_node_list_entry("├── eslint@9.17.0"),
+            Some(("eslint".to_string(), "9.17.0".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_node_list_entry_scoped() {
+        assert_eq!(
+            parse_node_list_entry("└── @types/node@22.10.1"),
+            Some(("@types/node".to_string(), "22.10.1".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_node_list_entry_rejects_banner_and_path() {
+        assert_eq!(parse_node_list_entry("bun pm ls v1.1.34"), None);
+        assert_eq!(
+            parse_node_list_entry("C:\\Users\\Max Qian\\node_modules (174)"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_parse_node_list_entry_first_token_only() {
+        assert_eq!(
+            parse_node_list_entry("├── biome@1.9.4 (workspace root dependency)"),
+            Some(("biome".to_string(), "1.9.4".to_string()))
         );
     }
 }

@@ -1,10 +1,13 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { WslStatusWidget } from './wsl-status-widget';
+
+const mockUseWslStatus = jest.fn();
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
     t: (key: string) => {
       const translations: Record<string, string> = {
+        'common.loading': 'Loading...',
         'wsl.notAvailable': 'WSL is not available on this system',
         'wsl.distros': 'Distributions',
         'wsl.running': 'Running',
@@ -18,8 +21,8 @@ jest.mock('@/components/providers/locale-provider', () => ({
   }),
 }));
 
-jest.mock('@/lib/tauri', () => ({
-  isTauri: () => false,
+jest.mock('@/hooks/use-wsl-status', () => ({
+  useWslStatus: () => mockUseWslStatus(),
 }));
 
 jest.mock('next/link', () => {
@@ -31,22 +34,48 @@ jest.mock('next/link', () => {
 });
 
 describe('WslStatusWidget', () => {
-  it('renders not available message in non-Tauri environment', async () => {
-    render(<WslStatusWidget />);
-
-    await waitFor(() => {
-      expect(screen.getByText('WSL is not available on this system')).toBeInTheDocument();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUseWslStatus.mockReturnValue({
+      available: false,
+      distros: [],
+      status: null,
+      runningCount: 0,
     });
   });
 
-  it('shows terminal icon in not-available state', async () => {
-    const { container } = render(<WslStatusWidget />);
-
-    await waitFor(() => {
-      expect(screen.getByText('WSL is not available on this system')).toBeInTheDocument();
+  it('renders loading state when availability is unresolved', () => {
+    mockUseWslStatus.mockReturnValue({
+      available: null,
+      distros: [],
+      status: null,
+      runningCount: 0,
     });
-    // Should have an SVG terminal icon
-    expect(container.querySelector('svg')).toBeInTheDocument();
+
+    render(<WslStatusWidget />);
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+  });
+
+  it('renders not available message when WSL is unavailable', () => {
+    render(<WslStatusWidget />);
+    expect(screen.getByText('WSL is not available on this system')).toBeInTheDocument();
+  });
+
+  it('renders loaded metrics when WSL is available', () => {
+    mockUseWslStatus.mockReturnValue({
+      available: true,
+      distros: [
+        { name: 'Ubuntu', state: 'Running', wslVersion: 2, isDefault: true },
+        { name: 'Debian', state: 'Stopped', wslVersion: 2, isDefault: false },
+      ],
+      status: { defaultVersion: 2, kernelVersion: '5.15.0', version: '2.2.4' },
+      runningCount: 1,
+    });
+
+    render(<WslStatusWidget />);
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('Ubuntu')).toBeInTheDocument();
   });
 
   it('renders card container', () => {

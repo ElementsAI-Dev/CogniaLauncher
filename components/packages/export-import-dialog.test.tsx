@@ -159,5 +159,12 @@ describe("ExportImportDialog", () => {
     await user.click(screen.getByRole("tab", { name: /Import/i }));
     await user.click(screen.getByText("Paste from Clipboard"));
     expect(mockImportFromClipboard).toHaveBeenCalled();
+
+    await screen.findByText("react");
+    const dialog = screen.getByRole("dialog");
+    const scrollArea = dialog.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[45dvh]");
+    expect(scrollArea).not.toHaveClass("h-[200px]");
   });
 });

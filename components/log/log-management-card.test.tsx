@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LogManagementCard } from "./log-management-card";
+import { isTauri, configSet } from "@/lib/tauri";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
@@ -52,6 +53,9 @@ jest.mock("@/lib/utils", () => ({
   cn: (...args: unknown[]) => args.filter(Boolean).join(" "),
 }));
 
+const mockIsTauri = isTauri as jest.MockedFunction<typeof isTauri>;
+const mockConfigSet = configSet as jest.MockedFunction<typeof configSet>;
+
 describe("LogManagementCard", () => {
   const defaultProps = {
     totalSize: 5120,
@@ -62,6 +66,7 @@ describe("LogManagementCard", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTauri.mockReturnValue(false);
   });
 
   it("renders title and description", () => {
@@ -121,6 +126,21 @@ describe("LogManagementCard", () => {
 
     await waitFor(() => {
       expect(onCleanup).toHaveBeenCalled();
+    });
+  });
+
+  it("saves retention days on blur in tauri mode", async () => {
+    const user = userEvent.setup();
+    mockIsTauri.mockReturnValue(true);
+    render(<LogManagementCard {...defaultProps} />);
+
+    const input = screen.getByLabelText("Retention Days");
+    await user.clear(input);
+    await user.type(input, "45");
+    input.blur();
+
+    await waitFor(() => {
+      expect(mockConfigSet).toHaveBeenCalledWith("log.max_retention_days", "45");
     });
   });
 });

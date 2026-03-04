@@ -66,3 +66,4 @@ Data is stored in browser `localStorage`, persisted across sessions.
 
 - **Zustand vs React Context**: Zustand was chosen because it allows any component to access state regardless of component tree position (e.g., the `window-state` Store is used by both Titlebar and AppShell, which have a parent-child relationship and cannot use Context)
 - **Persistence Versioning**: Each Store has a version number, enabling migrations when the schema changes
+- **Log Store Consistency**: when log retention/max size trims entries, bookmarked log IDs and per-level counts are recalculated to keep UI state consistent

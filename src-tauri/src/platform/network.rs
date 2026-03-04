@@ -40,6 +40,40 @@ pub struct RequestOptions {
     pub retry_delay: Duration,
 }
 
+const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(60);
+
+fn bounded_backoff_delay(base: Duration, attempt: u32) -> Duration {
+    let attempt = attempt.max(1);
+    let multiplier = 2u128.saturating_pow(attempt - 1);
+    let base_ms = base.as_millis();
+    let delay_ms = base_ms.saturating_mul(multiplier);
+    let capped_ms = delay_ms.min(MAX_RETRY_BACKOFF.as_millis());
+    Duration::from_millis(capped_ms as u64)
+}
+
+fn resolve_total_size(content_length: Option<u64>, start_pos: u64) -> Option<u64> {
+    content_length.map(|len| len + start_pos)
+}
+
+fn is_cancellation_error_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("cancelled")
+        || normalized.contains("canceled")
+        || normalized.contains("operation aborted")
+}
+
+fn classify_request_error(error: reqwest::Error, timeout: Option<Duration>) -> NetworkError {
+    if error.is_timeout() {
+        return NetworkError::Timeout(timeout.unwrap_or_default());
+    }
+
+    if is_cancellation_error_message(&error.to_string()) {
+        return NetworkError::Interrupted;
+    }
+
+    NetworkError::Request(error)
+}
+
 impl RequestOptions {
     pub fn new() -> Self {
         Self {
@@ -175,7 +209,7 @@ impl HttpClient {
 
                     if response.status().is_server_error() && attempts < options.max_retries {
                         attempts += 1;
-                        let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                        let delay = bounded_backoff_delay(options.retry_delay, attempts);
                         tokio::time::sleep(delay).await;
                         continue;
                     }
@@ -188,19 +222,19 @@ impl HttpClient {
                 Err(e) if e.is_timeout() => {
                     if attempts < options.max_retries {
                         attempts += 1;
-                        let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                        let delay = bounded_backoff_delay(options.retry_delay, attempts);
                         tokio::time::sleep(delay).await;
                         continue;
                     }
-                    return Err(NetworkError::Timeout(options.timeout.unwrap_or_default()));
+                    return Err(classify_request_error(e, options.timeout));
                 }
                 Err(e) if e.is_connect() && attempts < options.max_retries => {
                     attempts += 1;
-                    let delay = options.retry_delay * 2u32.pow(attempts - 1);
+                    let delay = bounded_backoff_delay(options.retry_delay, attempts);
                     tokio::time::sleep(delay).await;
                     continue;
                 }
-                Err(e) => return Err(NetworkError::Request(e)),
+                Err(e) => return Err(classify_request_error(e, options.timeout)),
             }
         }
     }
@@ -289,14 +323,17 @@ impl HttpClient {
             ));
         }
 
-        let total_size = response.content_length().map(|len| len + start_pos);
+        let total_size = resolve_total_size(response.content_length(), start_pos);
         let mut downloaded = start_pos;
         let start_time = std::time::Instant::now();
 
         let mut stream = response.bytes_stream();
 
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(error) => return Err(classify_request_error(error, self.default_options.timeout)),
+            };
             file.write_all(&chunk).await?;
             downloaded += chunk.len() as u64;
 
@@ -464,5 +501,30 @@ mod tests {
             speed: 0.0,
         };
         assert!(progress_no_total.total.is_none());
+    }
+
+    #[test]
+    fn test_bounded_backoff_delay_caps() {
+        let base = Duration::from_secs(2);
+        assert_eq!(bounded_backoff_delay(base, 1), Duration::from_secs(2));
+        assert_eq!(bounded_backoff_delay(base, 2), Duration::from_secs(4));
+        assert_eq!(bounded_backoff_delay(base, 3), Duration::from_secs(8));
+        assert_eq!(bounded_backoff_delay(base, 6), Duration::from_secs(60));
+        assert_eq!(bounded_backoff_delay(base, 10), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn test_resolve_total_size_with_resume() {
+        assert_eq!(resolve_total_size(Some(100), 0), Some(100));
+        assert_eq!(resolve_total_size(Some(100), 20), Some(120));
+        assert_eq!(resolve_total_size(None, 20), None);
+    }
+
+    #[test]
+    fn test_cancellation_error_message_detection() {
+        assert!(is_cancellation_error_message("operation canceled by user"));
+        assert!(is_cancellation_error_message("request cancelled"));
+        assert!(is_cancellation_error_message("operation aborted"));
+        assert!(!is_cancellation_error_message("network timeout"));
     }
 }

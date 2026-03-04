@@ -1,5 +1,5 @@
 use super::api::{get_api_client, DEFAULT_NPM_REGISTRY};
-use super::node_base::split_name_version;
+use super::node_base::{parse_node_list_entry, split_name_version};
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -92,6 +92,63 @@ impl YarnProvider {
         }
     }
 
+    /// Parse a single JSON line from `yarn global list --json` into package entries.
+    /// Supports both classic `data: "<tree text>"` and structured `data.trees` forms.
+    fn parse_yarn_global_list_line(line: &str) -> Vec<(String, String)> {
+        let mut entries = Vec::new();
+        let mut seen = HashSet::new();
+
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
+            return entries;
+        };
+        let Some(data) = json.get("data") else {
+            return entries;
+        };
+
+        if let Some(tree_text) = data.as_str() {
+            for row in tree_text.lines() {
+                // Some Yarn outputs may contain multiple entries in one row separated by commas.
+                for segment in row.split(',') {
+                    if let Some((name, version)) = parse_node_list_entry(segment) {
+                        let key = format!("{}@{}", name, version);
+                        if seen.insert(key) {
+                            entries.push((name, version));
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
+            for tree in trees {
+                if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
+                    if let Some((name, version)) = parse_node_list_entry(tree_name) {
+                        let key = format!("{}@{}", name, version);
+                        if seen.insert(key) {
+                            entries.push((name, version));
+                        }
+                        continue;
+                    }
+
+                    // Fallback for already-clean names like `lodash@4.17.21`.
+                    let (pkg_name, pkg_version) = split_name_version(tree_name.trim());
+                    if let Some(version) = pkg_version {
+                        if !pkg_name.is_empty() {
+                            let name = pkg_name.to_string();
+                            let version = version.trim().to_string();
+                            let key = format!("{}@{}", name, version);
+                            if seen.insert(key) {
+                                entries.push((name, version));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        entries
+    }
+
     /// Detect and cache the Yarn major version (1 for Classic, 2+ for Berry)
     async fn get_major_version(&self) -> u32 {
         *self
@@ -136,31 +193,9 @@ impl YarnProvider {
 
         // Parse yarn list output to find the package
         for line in output.lines() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(data) = json.get("data") {
-                    if let Some(trees) = data.as_str() {
-                        for part in trees.split(',') {
-                            let part = part.trim();
-                            let (pkg_name, pkg_version) = split_name_version(part);
-                            if pkg_name == name {
-                                if let Some(v) = pkg_version {
-                                    return Ok(v.trim().to_string());
-                                }
-                            }
-                        }
-                    }
-                    if let Some(trees) = data.get("trees").and_then(|t| t.as_array()) {
-                        for tree in trees {
-                            if let Some(tree_name) = tree.get("name").and_then(|n| n.as_str()) {
-                                let (pkg_name, pkg_version) = split_name_version(tree_name);
-                                if pkg_name == name {
-                                    if let Some(v) = pkg_version {
-                                        return Ok(v.trim().to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
+            for (pkg_name, version) in Self::parse_yarn_global_list_line(line) {
+                if pkg_name == name {
+                    return Ok(version);
                 }
             }
         }
@@ -451,42 +486,30 @@ impl Provider for YarnProvider {
         let output = self.run_yarn_raw(&["global", "list", "--json"]).await?;
 
         let mut packages = Vec::new();
+        let mut seen = HashSet::new();
 
         // Parse yarn global list output
         for line in output.lines() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if let Some(data) = json.get("data") {
-                    if let Some(trees) = data.as_str() {
-                        // Parse package names from tree output
-                        for part in trees.split(',') {
-                            let part = part.trim();
-                            if part.is_empty() {
-                                continue;
-                            }
-                            let (pkg_name, pkg_version) = split_name_version(part);
-                            if pkg_name.is_empty() {
-                                continue;
-                            }
-
-                            if let Some(ref name_filter) = filter.name_filter {
-                                if !pkg_name.contains(name_filter) {
-                                    continue;
-                                }
-                            }
-
-                            packages.push(InstalledPackage {
-                                name: pkg_name.to_string(),
-                                version: pkg_version.unwrap_or("unknown").to_string(),
-                                provider: self.id().into(),
-                                install_path: Self::get_global_dir()
-                                    .unwrap_or_default()
-                                    .join(pkg_name),
-                                installed_at: String::new(),
-                                is_global: true,
-                            });
-                        }
+            for (pkg_name, version) in Self::parse_yarn_global_list_line(line) {
+                if let Some(ref name_filter) = filter.name_filter {
+                    if !pkg_name.contains(name_filter) {
+                        continue;
                     }
                 }
+
+                let dedupe_key = format!("{}@{}", pkg_name.to_ascii_lowercase(), version);
+                if !seen.insert(dedupe_key) {
+                    continue;
+                }
+
+                packages.push(InstalledPackage {
+                    name: pkg_name.clone(),
+                    version,
+                    provider: self.id().into(),
+                    install_path: Self::get_global_dir().unwrap_or_default().join(pkg_name),
+                    installed_at: String::new(),
+                    is_global: true,
+                });
             }
         }
 
@@ -662,5 +685,32 @@ mod tests {
     #[test]
     fn test_default_impl() {
         let _provider = YarnProvider::default();
+    }
+
+    #[test]
+    fn test_parse_yarn_global_list_line_tree_text() {
+        let line = r#"{"type":"tree","data":"├── lodash@4.17.21\n└── @types/node@22.10.1\nC:\\Users\\Max\\node_modules (174)"}"#;
+        let entries = YarnProvider::parse_yarn_global_list_line(line);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
+        assert!(entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));
+    }
+
+    #[test]
+    fn test_parse_yarn_global_list_line_trees_array() {
+        let line = r#"{"type":"tree","data":{"trees":[{"name":"lodash@4.17.21"},{"name":"@types/node@22.10.1"}]}}"#;
+        let entries = YarnProvider::parse_yarn_global_list_line(line);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
+        assert!(entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));
+    }
+
+    #[test]
+    fn test_parse_yarn_global_list_line_comma_separated_tree_text() {
+        let line = r#"{"type":"tree","data":"lodash@4.17.21, @types/node@22.10.1, C:\\Users\\Max\\node_modules (174)"}"#;
+        let entries = YarnProvider::parse_yarn_global_list_line(line);
+        assert_eq!(entries.len(), 2);
+        assert!(entries.contains(&("lodash".to_string(), "4.17.21".to_string())));
+        assert!(entries.contains(&("@types/node".to_string(), "22.10.1".to_string())));
     }
 }

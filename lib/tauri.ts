@@ -77,6 +77,8 @@ export type {
   UpdateInfo,
   UpdateCheckProgress,
   UpdateCheckError,
+  UpdateCheckProviderOutcome,
+  UpdateCheckCoverage,
   UpdateCheckSummary,
   SelfUpdateInfo,
   SelfUpdateProgressEvent,
@@ -198,6 +200,7 @@ export type {
   ShellHealthResult,
   TerminalProfile,
   TerminalProfileTemplate,
+  TerminalConfigMutationResult,
   PSProfileInfo,
   PSModuleInfo,
   PSScriptInfo,
@@ -385,6 +388,7 @@ import type {
   ShellHealthResult,
   TerminalProfile,
   TerminalProfileTemplate,
+  TerminalConfigMutationResult,
   PSProfileInfo,
   PSModuleInfo,
   PSScriptInfo,
@@ -2863,9 +2867,17 @@ export const terminalReadConfig = (path: string) =>
 export const terminalBackupConfig = (path: string) =>
   invoke<string>('terminal_backup_config', { path });
 
+/** Backup a shell config file with structured verification metadata */
+export const terminalBackupConfigVerified = (path: string) =>
+  invoke<TerminalConfigMutationResult>('terminal_backup_config_verified', { path });
+
 /** Append content to a shell config file */
 export const terminalAppendToConfig = (path: string, content: string) =>
   invoke<void>('terminal_append_to_config', { path, content });
+
+/** Append shell config content with structured verification metadata */
+export const terminalAppendToConfigVerified = (path: string, content: string) =>
+  invoke<TerminalConfigMutationResult>('terminal_append_to_config_verified', { path, content });
 
 /** Get parsed config entries (aliases, exports, sources) */
 export const terminalGetConfigEntries = (path: string, shellType: ShellType) =>
@@ -2938,6 +2950,10 @@ export const terminalImportProfiles = (json: string, merge: boolean) =>
 /** Write content to a shell config file (with automatic backup) */
 export const terminalWriteConfig = (path: string, content: string) =>
   invoke<void>('terminal_write_config', { path, content });
+
+/** Write shell config content with structured verification metadata */
+export const terminalWriteConfigVerified = (path: string, content: string) =>
+  invoke<TerminalConfigMutationResult>('terminal_write_config_verified', { path, content });
 
 /** Install a PowerShell module from PSGallery */
 export const terminalPsInstallModule = (name: string, scope: string) =>

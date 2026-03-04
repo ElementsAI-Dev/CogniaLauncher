@@ -24,6 +24,7 @@ const mockIsTauri = jest.fn(() => true);
 const mockEmitInvalidations = jest.fn();
 const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
 const mockSubscribeInvalidation = jest.fn(() => () => {});
+let envInstallProgressListener: ((progress: Record<string, unknown>) => void) | null = null;
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: (...args: Parameters<typeof mockIsTauri>) => mockIsTauri(...args),
@@ -45,7 +46,12 @@ jest.mock('@/lib/tauri', () => ({
   envCurrentVersion: (...args: Parameters<typeof mockEnvCurrentVersion>) => mockEnvCurrentVersion(...args),
   envResolveAlias: (...args: Parameters<typeof mockEnvResolveAlias>) => mockEnvResolveAlias(...args),
   pluginDispatchEvent: (...args: Parameters<typeof mockPluginDispatchEvent>) => mockPluginDispatchEvent(...args),
-  listenEnvInstallProgress: jest.fn(() => Promise.resolve(() => {})),
+  listenEnvInstallProgress: jest.fn((callback: (progress: Record<string, unknown>) => void) => {
+    envInstallProgressListener = callback as (progress: Record<string, unknown>) => void;
+    return Promise.resolve(() => {
+      envInstallProgressListener = null;
+    });
+  }),
 }));
 
 // Mock environment store - use actual Zustand store so selectors work correctly
@@ -139,7 +145,7 @@ jest.mock('@/lib/cache/invalidation', () => ({
   emitInvalidation: jest.fn(),
   ensureCacheInvalidationBridge: (...args: unknown[]) => mockEnsureCacheInvalidationBridge(...args),
   subscribeInvalidation: (...args: unknown[]) => mockSubscribeInvalidation(...args),
-  withThrottle: (fn: Function) => fn,
+  withThrottle: <T extends (...args: never[]) => unknown>(fn: T) => fn,
 }));
 
 jest.mock('@/lib/utils', () => ({
@@ -157,6 +163,7 @@ describe('useEnvironments', () => {
     mockStoreState.environments = [];
     mockStoreState.availableProviders = [];
     mockStoreState.currentInstallation = null;
+    envInstallProgressListener = null;
   });
 
   it('should return all expected methods and state', () => {
@@ -565,6 +572,56 @@ describe('useEnvironments', () => {
 
     expect(mockEnvInstallCancel).toHaveBeenCalledWith('node', '20.10.0');
     expect(cancelled).toBe(true);
+  });
+
+  it('maps phase-level install progress payload into store updates', async () => {
+    mockStoreState.environments = [
+      { env_type: 'node', provider_id: 'fnm', provider: 'fnm', current_version: '20.0.0', installed_versions: [], available: true },
+    ];
+    mockEnvVerifyInstall.mockResolvedValue({ installed: true });
+    mockEnvGet.mockResolvedValue({
+      env_type: 'node',
+      provider_id: 'fnm',
+      provider: 'fnm',
+      current_version: '20.0.0',
+      installed_versions: [],
+      available: true,
+    });
+    mockEnvInstall.mockImplementation(async () => {
+      envInstallProgressListener?.({
+        envType: 'node',
+        version: '20.0.0',
+        step: 'downloading',
+        phase: 'download',
+        progress: 42,
+        stageMessage: 'Starting transfer',
+        artifact: {
+          id: 'fnm:node@20.0.0',
+          name: 'node',
+          version: '20.0.0',
+          provider: 'fnm',
+        },
+      });
+      return undefined;
+    });
+
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await result.current.installVersion('node', '20.0.0');
+    });
+
+    expect(mockStoreActions.updateInstallationProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: 'downloading',
+        phase: 'download',
+        stageMessage: 'Starting transfer',
+        provider: 'fnm',
+        artifact: expect.objectContaining({
+          id: 'fnm:node@20.0.0',
+        }),
+      }),
+    );
   });
 
   it('should handle set global version error', async () => {

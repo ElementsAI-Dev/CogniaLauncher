@@ -1,14 +1,18 @@
 use crate::SharedSettings;
 use chrono::{DateTime, NaiveDateTime, Utc};
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::collections::VecDeque;
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncBufReadExt;
+
+const MAX_SCAN_LINES_LIMIT: usize = 200_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,12 +34,6 @@ pub async fn log_export(
         return Err("Log file does not exist".to_string());
     }
 
-    let file = fs::File::open(&log_path)
-        .await
-        .map_err(|e| format!("Failed to open log file: {}", e))?;
-
-    let reader = tokio::io::BufReader::new(file);
-    let mut lines = reader.lines();
     let mut line_number = 0;
 
     let query_options = LogQueryOptions {
@@ -59,45 +57,51 @@ pub async fn log_export(
         .unwrap_or_else(|| "txt".to_string())
         .to_lowercase();
     let is_json = format == "json";
+    let mut content = if is_json {
+        String::from("[\n")
+    } else {
+        String::new()
+    };
+    let mut first = true;
 
-    let mut output_lines: Vec<String> = Vec::new();
+    if is_gzip_log(&log_path) {
+        for (idx, line) in read_gzip_lines(&log_path).await?.into_iter().enumerate() {
+            line_number = idx + 1;
+            if let Some(entry) = parse_log_line(&line, line_number) {
+                if matches_filters(&entry, &query_options, regex.as_ref()) {
+                    append_export_entry(&mut content, &entry, is_json, &mut first);
+                }
+            }
+        }
+    } else {
+        let file = fs::File::open(&log_path)
+            .await
+            .map_err(|e| format!("Failed to open log file: {}", e))?;
+        let reader = tokio::io::BufReader::new(file);
+        let mut lines = reader.lines();
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| format!("Failed to read line: {}", e))?
-    {
-        line_number += 1;
-        if let Some(entry) = parse_log_line(&line, line_number) {
-            if matches_filters(&entry, &query_options, regex.as_ref()) {
-                if is_json {
-                    output_lines
-                        .push(serde_json::to_string(&entry).unwrap_or_else(|_| "{}".to_string()));
-                } else if entry.target.is_empty() {
-                    output_lines.push(format!(
-                        "[{}][{}] {}",
-                        entry.timestamp,
-                        entry.level.to_uppercase(),
-                        entry.message
-                    ));
-                } else {
-                    output_lines.push(format!(
-                        "[{}][{}][{}] {}",
-                        entry.timestamp,
-                        entry.level.to_uppercase(),
-                        entry.target,
-                        entry.message
-                    ));
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|e| format!("Failed to read line: {}", e))?
+        {
+            line_number += 1;
+            if let Some(entry) = parse_log_line(&line, line_number) {
+                if matches_filters(&entry, &query_options, regex.as_ref()) {
+                    append_export_entry(&mut content, &entry, is_json, &mut first);
                 }
             }
         }
     }
 
-    let content = if is_json {
-        format!("[\n  {}\n]", output_lines.join(",\n  "))
-    } else {
-        output_lines.join("\n")
-    };
+    if is_json {
+        if first {
+            content = "[]".to_string();
+        } else {
+            content.push('\n');
+            content.push(']');
+        }
+    }
 
     let base_name = options
         .file_name
@@ -164,6 +168,62 @@ pub struct LogExportResult {
     pub file_name: String,
 }
 
+fn is_gzip_log(path: &std::path::Path) -> bool {
+    path.to_string_lossy().ends_with(".log.gz")
+}
+
+fn read_gzip_lines_sync(path: &std::path::Path) -> Result<Vec<String>, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to open compressed log file: {}", e))?;
+    let decoder = GzDecoder::new(file);
+    let reader = std::io::BufReader::new(decoder);
+
+    reader
+        .lines()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read compressed log file: {}", e))
+}
+
+async fn read_gzip_lines(path: &std::path::Path) -> Result<Vec<String>, String> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || read_gzip_lines_sync(&path))
+        .await
+        .map_err(|e| format!("Failed to join compressed log read task: {}", e))?
+}
+
+fn append_export_entry(content: &mut String, entry: &LogEntry, is_json: bool, first: &mut bool) {
+    if is_json {
+        if !*first {
+            content.push_str(",\n");
+        }
+        content.push_str("  ");
+        content.push_str(&serde_json::to_string(entry).unwrap_or_else(|_| "{}".to_string()));
+        *first = false;
+        return;
+    }
+
+    if !*first {
+        content.push('\n');
+    }
+    if entry.target.is_empty() {
+        content.push_str(&format!(
+            "[{}][{}] {}",
+            entry.timestamp,
+            entry.level.to_uppercase(),
+            entry.message
+        ));
+    } else {
+        content.push_str(&format!(
+            "[{}][{}][{}] {}",
+            entry.timestamp,
+            entry.level.to_uppercase(),
+            entry.target,
+            entry.message
+        ));
+    }
+    *first = false;
+}
+
 fn get_log_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_log_dir().ok()
 }
@@ -227,6 +287,10 @@ fn build_search_regex(search: &Option<String>, use_regex: bool) -> Option<Regex>
     }
 
     Regex::new(pattern).ok()
+}
+
+fn cap_max_scan_lines(max_scan_lines: Option<usize>) -> Option<usize> {
+    max_scan_lines.map(|value| value.min(MAX_SCAN_LINES_LIMIT))
 }
 
 fn matches_filters(entry: &LogEntry, options: &LogQueryOptions, regex: Option<&Regex>) -> bool {
@@ -427,6 +491,132 @@ fn has_active_filters(options: &LogQueryOptions) -> bool {
     false
 }
 
+fn push_window_entry(window: &mut VecDeque<LogEntry>, need: usize, entry: LogEntry) {
+    if need == 0 {
+        return;
+    }
+    if window.len() == need {
+        let _ = window.pop_front();
+    }
+    window.push_back(entry);
+}
+
+fn push_tail_line(
+    tail: &mut VecDeque<(usize, String)>,
+    max_scan_lines: usize,
+    line_number: usize,
+    line: String,
+) {
+    if max_scan_lines == 0 {
+        return;
+    }
+    if tail.len() == max_scan_lines {
+        let _ = tail.pop_front();
+    }
+    tail.push_back((line_number, line));
+}
+
+async fn collect_tail_lines_with_numbers(
+    path: &std::path::Path,
+    max_scan_lines: usize,
+) -> Result<Vec<(usize, String)>, String> {
+    if max_scan_lines == 0 {
+        return Ok(Vec::new());
+    }
+
+    let file = fs::File::open(path)
+        .await
+        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let reader = tokio::io::BufReader::new(file);
+    let mut lines = reader.lines();
+    let mut line_number = 0usize;
+    let mut tail: VecDeque<(usize, String)> =
+        VecDeque::with_capacity(max_scan_lines.saturating_add(1));
+
+    while let Some(line) = lines
+        .next_line()
+        .await
+        .map_err(|e| format!("Failed to read line: {}", e))?
+    {
+        line_number += 1;
+        push_tail_line(&mut tail, max_scan_lines, line_number, line);
+    }
+
+    Ok(tail.into_iter().collect())
+}
+
+fn build_query_result_from_window(
+    window: &VecDeque<LogEntry>,
+    total_count: usize,
+    offset: usize,
+    limit: usize,
+) -> LogQueryResult {
+    if total_count <= offset {
+        return LogQueryResult {
+            entries: Vec::new(),
+            total_count,
+            has_more: false,
+        };
+    }
+
+    let window_len = window.len();
+    let end = window_len.saturating_sub(offset);
+    let start = end.saturating_sub(limit);
+    let entries = window
+        .iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .cloned()
+        .collect::<Vec<_>>();
+    let has_more = total_count > offset.saturating_add(limit);
+
+    LogQueryResult {
+        entries,
+        total_count,
+        has_more,
+    }
+}
+
+fn query_from_cached_lines(
+    lines: &[String],
+    options: &LogQueryOptions,
+    regex: Option<&Regex>,
+    filtered: bool,
+    offset: usize,
+    limit: usize,
+) -> LogQueryResult {
+    let need = offset.saturating_add(limit);
+    let mut window: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
+    let mut total_count = 0usize;
+
+    if filtered {
+        let skip_lines = options
+            .max_scan_lines
+            .map(|max_scan| lines.len().saturating_sub(max_scan))
+            .unwrap_or(0);
+
+        for (idx, line) in lines.iter().enumerate().skip(skip_lines) {
+            let line_number = idx + 1;
+            if let Some(entry) = parse_log_line(line, line_number) {
+                if matches_filters(&entry, options, regex) {
+                    total_count += 1;
+                    push_window_entry(&mut window, need, entry);
+                }
+            }
+        }
+    } else {
+        for (idx, line) in lines.iter().enumerate() {
+            let line_number = idx + 1;
+            if let Some(entry) = parse_log_line(line, line_number) {
+                total_count += 1;
+                push_window_entry(&mut window, need, entry);
+            }
+        }
+    }
+
+    build_query_result_from_window(&window, total_count, offset, limit)
+}
+
 #[tauri::command]
 pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQueryResult, String> {
     let log_path = match resolve_log_path(&app, &options.file_name).await {
@@ -448,45 +638,64 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
         });
     }
 
-    let offset = options.offset.unwrap_or(0);
-    let limit = options.limit.unwrap_or(100);
-    let regex = build_search_regex(&options.search, options.use_regex.unwrap_or(false));
-    let filtered = has_active_filters(&options);
+    let mut effective_options = options.clone();
+    effective_options.max_scan_lines = cap_max_scan_lines(options.max_scan_lines);
 
-    // Read and parse log file
-    let file = fs::File::open(&log_path)
-        .await
-        .map_err(|e| format!("Failed to open log file: {}", e))?;
+    let offset = effective_options.offset.unwrap_or(0);
+    let limit = effective_options.limit.unwrap_or(100);
+    let regex = build_search_regex(
+        &effective_options.search,
+        effective_options.use_regex.unwrap_or(false),
+    );
+    let filtered = has_active_filters(&effective_options);
 
-    let reader = tokio::io::BufReader::new(file);
-    let mut lines = reader.lines();
-    let mut line_number = 0usize;
+    if is_gzip_log(&log_path) {
+        let lines = read_gzip_lines(&log_path).await?;
+        return Ok(query_from_cached_lines(
+            &lines,
+            &effective_options,
+            regex.as_ref(),
+            filtered,
+            offset,
+            limit,
+        ));
+    }
 
     if filtered {
-        // With filters: scan file (optionally limited to last N lines) to get matching entries.
-        // When max_scan_lines is set, first count total lines then skip to the tail region.
-        let skip_lines = if let Some(max_scan) = options.max_scan_lines {
-            // Quick line count pass: count newlines without parsing
-            let count_file = fs::File::open(&log_path)
-                .await
-                .map_err(|e| format!("Failed to open log file for counting: {}", e))?;
-            let count_reader = tokio::io::BufReader::new(count_file);
-            let mut count_lines = count_reader.lines();
-            let mut total_lines = 0usize;
-            while count_lines
-                .next_line()
-                .await
-                .map_err(|e| format!("Failed to count lines: {}", e))?
-                .is_some()
-            {
-                total_lines += 1;
-            }
-            total_lines.saturating_sub(max_scan)
-        } else {
-            0
-        };
+        // With filters + tail scan: keep only the newest max_scan_lines using a single pass,
+        // then parse/filter just that tail window.
+        if let Some(max_scan_lines) = effective_options.max_scan_lines {
+            let need = offset.saturating_add(limit);
+            let mut window: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
+            let mut total_count = 0usize;
+            let tail_lines = collect_tail_lines_with_numbers(&log_path, max_scan_lines).await?;
 
-        let mut all_entries = Vec::new();
+            for (line_number, line) in tail_lines {
+                if let Some(entry) = parse_log_line(&line, line_number) {
+                    if matches_filters(&entry, &effective_options, regex.as_ref()) {
+                        total_count += 1;
+                        push_window_entry(&mut window, need, entry);
+                    }
+                }
+            }
+
+            return Ok(build_query_result_from_window(
+                &window,
+                total_count,
+                offset,
+                limit,
+            ));
+        }
+
+        let need = offset.saturating_add(limit);
+        let mut window: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
+        let mut total_count = 0usize;
+        let file = fs::File::open(&log_path)
+            .await
+            .map_err(|e| format!("Failed to open log file: {}", e))?;
+        let reader = tokio::io::BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut line_number = 0usize;
 
         while let Some(line) = lines
             .next_line()
@@ -494,43 +703,32 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
             .map_err(|e| format!("Failed to read line: {}", e))?
         {
             line_number += 1;
-            if line_number <= skip_lines {
-                continue;
-            }
             if let Some(entry) = parse_log_line(&line, line_number) {
-                if matches_filters(&entry, &options, regex.as_ref()) {
-                    all_entries.push(entry);
+                if matches_filters(&entry, &effective_options, regex.as_ref()) {
+                    total_count += 1;
+                    push_window_entry(&mut window, need, entry);
                 }
             }
         }
 
-        let total_count = all_entries.len();
-        let start = if total_count > offset + limit {
-            total_count - offset - limit
-        } else if total_count > offset {
-            0
-        } else {
-            return Ok(LogQueryResult {
-                entries: Vec::new(),
-                total_count,
-                has_more: false,
-            });
-        };
-        let end = total_count.saturating_sub(offset);
-        let entries = all_entries[start..end].to_vec();
-        let has_more = start > 0;
-
-        Ok(LogQueryResult {
-            entries,
+        Ok(build_query_result_from_window(
+            &window,
             total_count,
-            has_more,
-        })
+            offset,
+            limit,
+        ))
     } else {
         // No filters: collect all parsed entries into a ring buffer of the last (offset + limit)
         // entries, avoiding storing the entire file in memory for large files.
-        let need = offset + limit;
-        let mut ring: Vec<LogEntry> = Vec::with_capacity(need + 1);
+        let need = offset.saturating_add(limit);
+        let mut ring: VecDeque<LogEntry> = VecDeque::with_capacity(need.saturating_add(1));
         let mut total_count = 0usize;
+        let file = fs::File::open(&log_path)
+            .await
+            .map_err(|e| format!("Failed to open log file: {}", e))?;
+        let reader = tokio::io::BufReader::new(file);
+        let mut lines = reader.lines();
+        let mut line_number = 0usize;
 
         while let Some(line) = lines
             .next_line()
@@ -540,40 +738,16 @@ pub async fn log_query(app: AppHandle, options: LogQueryOptions) -> Result<LogQu
             line_number += 1;
             if let Some(entry) = parse_log_line(&line, line_number) {
                 total_count += 1;
-                if ring.len() < need {
-                    ring.push(entry);
-                } else {
-                    // Shift ring: remove oldest, push newest
-                    ring.rotate_left(1);
-                    if let Some(last) = ring.last_mut() {
-                        *last = entry;
-                    }
-                }
+                push_window_entry(&mut ring, need, entry);
             }
         }
 
-        if total_count <= offset {
-            return Ok(LogQueryResult {
-                entries: Vec::new(),
-                total_count,
-                has_more: false,
-            });
-        }
-
-        // ring contains the last min(need, total_count) entries in order
-        // We want entries [total_count - offset - limit .. total_count - offset]
-        // which maps to ring indices [ring.len() - offset - limit .. ring.len() - offset]
-        let ring_len = ring.len();
-        let end = ring_len.saturating_sub(offset);
-        let start = end.saturating_sub(limit);
-        let entries = ring[start..end].to_vec();
-        let has_more = total_count > offset + limit;
-
-        Ok(LogQueryResult {
-            entries,
+        Ok(build_query_result_from_window(
+            &ring,
             total_count,
-            has_more,
-        })
+            offset,
+            limit,
+        ))
     }
 }
 
@@ -874,5 +1048,88 @@ mod tests {
         assert_eq!(parsed.level, "INFO");
         assert_eq!(parsed.target, "");
         assert_eq!(parsed.message, line);
+    }
+
+    #[test]
+    fn read_gzip_lines_sync_reads_lines() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("cognia-log-test-{unique}.log.gz"));
+
+        let file = std::fs::File::create(&path).expect("create gzip test file");
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder
+            .write_all(b"line-one\nline-two\n")
+            .expect("write gzip payload");
+        encoder.finish().expect("finalize gzip payload");
+
+        let lines = read_gzip_lines_sync(&path).expect("read gzip lines");
+        assert_eq!(lines, vec!["line-one".to_string(), "line-two".to_string()]);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn query_from_cached_lines_respects_window_and_tail_scan() {
+        let lines = (1..=10)
+            .map(|i| format!("[2026-03-04 08:00:{i:02}.000][INFO][app] msg-{i}"))
+            .collect::<Vec<_>>();
+
+        let options = LogQueryOptions {
+            file_name: None,
+            level_filter: Some(vec!["INFO".to_string()]),
+            search: Some("msg-".to_string()),
+            use_regex: Some(false),
+            start_time: None,
+            end_time: None,
+            limit: Some(2),
+            offset: Some(1),
+            max_scan_lines: Some(5),
+        };
+
+        let result = query_from_cached_lines(&lines, &options, None, true, 1, 2);
+        let messages = result
+            .entries
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(result.total_count, 5);
+        assert!(result.has_more);
+        assert_eq!(messages, vec!["msg-8".to_string(), "msg-9".to_string()]);
+    }
+
+    #[test]
+    fn push_tail_line_keeps_latest_window() {
+        let mut tail: VecDeque<(usize, String)> = VecDeque::new();
+        for i in 1..=5 {
+            push_tail_line(&mut tail, 3, i, format!("line-{i}"));
+        }
+
+        let result = tail.into_iter().collect::<Vec<_>>();
+        assert_eq!(
+            result,
+            vec![
+                (3, "line-3".to_string()),
+                (4, "line-4".to_string()),
+                (5, "line-5".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn push_tail_line_ignores_zero_max_scan() {
+        let mut tail: VecDeque<(usize, String)> = VecDeque::new();
+        push_tail_line(&mut tail, 0, 1, "line-1".to_string());
+        assert!(tail.is_empty());
+    }
+
+    #[test]
+    fn cap_max_scan_lines_enforces_upper_bound() {
+        assert_eq!(cap_max_scan_lines(Some(MAX_SCAN_LINES_LIMIT + 123)), Some(MAX_SCAN_LINES_LIMIT));
+        assert_eq!(cap_max_scan_lines(Some(10_000)), Some(10_000));
+        assert_eq!(cap_max_scan_lines(None), None);
     }
 }

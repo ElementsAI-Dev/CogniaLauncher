@@ -83,7 +83,12 @@ export function AppShell({ children }: AppShellProps) {
 
   // Window controls (Tauri window management, maximize padding, etc.)
   const windowControls = useWindowControls();
-  const { maximizePadding, isTauriEnv, isFullscreen } = windowControls;
+  const { maximizeInsets, isTauriEnv, isFullscreen } = windowControls;
+  const hasMaximizeInsets =
+    maximizeInsets.top > 0 ||
+    maximizeInsets.right > 0 ||
+    maximizeInsets.bottom > 0 ||
+    maximizeInsets.left > 0;
 
   useAppearanceConfigSync(config);
 
@@ -140,12 +145,12 @@ export function AppShell({ children }: AppShellProps) {
         <div
           className="flex flex-1 overflow-hidden"
           style={
-            maximizePadding > 0
+            hasMaximizeInsets
               ? {
-                  paddingTop: maximizePadding,
-                  paddingLeft: maximizePadding,
-                  paddingRight: maximizePadding,
-                  paddingBottom: maximizePadding,
+                  paddingTop: maximizeInsets.top,
+                  paddingLeft: maximizeInsets.left,
+                  paddingRight: maximizeInsets.right,
+                  paddingBottom: maximizeInsets.bottom,
                 }
               : undefined
           }

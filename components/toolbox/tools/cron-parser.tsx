@@ -6,7 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { ToolActionRow, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 const FIELD_NAMES = ['minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek'] as const;
@@ -84,16 +86,32 @@ function matchesField(value: number, pattern: string): boolean {
   });
 }
 
+const DEFAULT_PREFERENCES = {
+  expression: '0 * * * *',
+  previewCount: 5,
+} as const;
+
 export default function CronParser({ className }: ToolComponentProps) {
   const { t } = useLocale();
-  const [expression, setExpression] = useState('0 * * * *');
+  const { preferences, setPreferences } = useToolPreferences('cron-parser', DEFAULT_PREFERENCES);
+  const [expression, setExpression] = useState(preferences.expression);
   const [nextRuns, setNextRuns] = useState<Date[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const previewCount = Math.max(1, Math.min(20, Number(preferences.previewCount) || 5));
 
   const description = useMemo(() => describeCron(expression), [expression]);
 
   const handleParse = useCallback(() => {
-    setNextRuns(getNextRuns(expression, 5));
-  }, [expression]);
+    const parts = expression.trim().split(/\s+/);
+    if (parts.length !== 5) {
+      setError(t('toolbox.tools.cronParser.invalidExpression'));
+      setNextRuns([]);
+      return;
+    }
+    setError(null);
+    setNextRuns(getNextRuns(expression, previewCount));
+    setPreferences({ expression });
+  }, [expression, previewCount, setPreferences, t]);
 
   return (
     <div className={className}>
@@ -103,7 +121,10 @@ export default function CronParser({ className }: ToolComponentProps) {
           <div className="flex gap-2">
             <Input
               value={expression}
-              onChange={(e) => setExpression(e.target.value)}
+              onChange={(e) => {
+                setExpression(e.target.value);
+                setError(null);
+              }}
               placeholder="* * * * *"
               className="font-mono flex-1"
             />
@@ -112,6 +133,25 @@ export default function CronParser({ className }: ToolComponentProps) {
             </Button>
           </div>
         </div>
+
+        <ToolActionRow
+          rightSlot={(
+            <div className="flex items-center gap-2">
+              <Label htmlFor="cron-preview-count" className="text-xs">{t('toolbox.tools.cronParser.previewCount')}</Label>
+              <Input
+                id="cron-preview-count"
+                type="number"
+                min={1}
+                max={20}
+                value={previewCount}
+                onChange={(e) => setPreferences({ previewCount: Math.max(1, Number(e.target.value) || 1) })}
+                className="h-7 w-16"
+              />
+            </div>
+          )}
+        />
+
+        {error && <ToolValidationMessage message={error} />}
 
         <div className="flex flex-wrap gap-1">
           {PRESETS.map((preset) => (

@@ -1,6 +1,14 @@
+import React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CustomizeDialog } from "./customize-dialog";
+
+jest.mock("lucide-react", () => {
+  const actual = jest.requireActual("lucide-react");
+  const Wrench = (props: React.SVGProps<SVGSVGElement>) =>
+    React.createElement("svg", { ...props, "data-testid": "icon-wrench" });
+  return { ...actual, Wrench };
+});
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -57,6 +65,15 @@ jest.mock("@/lib/stores/dashboard", () => {
         minSize: "sm",
         category: "lists",
       },
+      "toolbox-favorites": {
+        type: "toolbox-favorites",
+        titleKey: "dashboard.widgets.toolboxFavorites",
+        descriptionKey: "dashboard.widgets.toolboxFavoritesDesc",
+        icon: "Wrench",
+        defaultSize: "md",
+        minSize: "sm",
+        category: "tools",
+      },
     },
   };
 });
@@ -107,6 +124,7 @@ describe("CustomizeDialog", () => {
     expect(screen.getByText("dashboard.widgets.environmentChart")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.quickSearch")).toBeInTheDocument();
     expect(screen.getByText("dashboard.widgets.environmentList")).toBeInTheDocument();
+    expect(screen.getByText("dashboard.widgets.toolboxFavorites")).toBeInTheDocument();
   });
 
   it("shows 'addAnother' label for already-added widget types", () => {
@@ -117,7 +135,7 @@ describe("CustomizeDialog", () => {
     expect(screen.getByText("dashboard.widgets.addAnother")).toBeInTheDocument();
     // other types should say "common.add"
     const addButtons = screen.getAllByText("common.add");
-    expect(addButtons.length).toBe(3);
+    expect(addButtons.length).toBe(4);
   });
 
   it("calls addWidget when add button is clicked", async () => {
@@ -171,5 +189,13 @@ describe("CustomizeDialog", () => {
     expect(screen.getByText("dashboard.widgets.environmentChart")).toBeInTheDocument();
     expect(screen.queryByText("dashboard.widgets.statsOverview")).not.toBeInTheDocument();
     expect(screen.queryByText("dashboard.widgets.quickSearch")).not.toBeInTheDocument();
+  });
+
+  it("renders explicit wrench icon mapping for toolbox favorites", () => {
+    render(
+      <CustomizeDialog open={true} onOpenChange={jest.fn()} />,
+    );
+
+    expect(screen.getByTestId("icon-wrench")).toBeInTheDocument();
   });
 });

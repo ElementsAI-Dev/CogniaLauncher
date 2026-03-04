@@ -763,17 +763,28 @@ mod tests {
 
     #[test]
     fn test_infer_checksum_algorithm_md5() {
-        assert_eq!(infer_checksum_algorithm("d41d8cd98f00b204e9800998ecf8427e"), "md5");
+        assert_eq!(
+            infer_checksum_algorithm("d41d8cd98f00b204e9800998ecf8427e"),
+            "md5"
+        );
     }
 
     #[test]
     fn test_infer_checksum_algorithm_sha1() {
-        assert_eq!(infer_checksum_algorithm("da39a3ee5e6b4b0d3255bfef95601890afd80709"), "sha1");
+        assert_eq!(
+            infer_checksum_algorithm("da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+            "sha1"
+        );
     }
 
     #[test]
     fn test_infer_checksum_algorithm_sha256() {
-        assert_eq!(infer_checksum_algorithm("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"), "sha256");
+        assert_eq!(
+            infer_checksum_algorithm(
+                "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            ),
+            "sha256"
+        );
     }
 
     #[test]
@@ -794,7 +805,10 @@ mod tests {
         let path = dir.path().join("check.txt");
         write_file_string(&path, "hello").await.unwrap();
         let hash = calculate_checksum(&path, "sha256").await.unwrap();
-        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
     }
 
     #[tokio::test]
@@ -831,7 +845,10 @@ mod tests {
         write_file_string(&path, "hello").await.unwrap();
         let hash = calculate_checksum(&path, "unknown_algo").await.unwrap();
         // Should fall back to SHA256
-        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
     }
 
     #[tokio::test]

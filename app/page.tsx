@@ -17,7 +17,7 @@ import {
   subscribeInvalidation,
   withThrottle,
 } from '@/lib/cache/invalidation';
-import { Settings2, Pencil, Check, AlertCircle, X } from 'lucide-react';
+import { Settings2, Pencil, Check, AlertCircle, X, RefreshCw } from 'lucide-react';
 
 export default function DashboardPage() {
   const { environments, fetchEnvironments, loading: envsLoading, error: envsError } = useEnvironments();
@@ -42,7 +42,7 @@ export default function DashboardPage() {
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const [dismissedError, setDismissedError] = useState(false);
+  const [dismissedErrorSignature, setDismissedErrorSignature] = useState<string | null>(null);
   const initialFetchDone = useRef(false);
   const cacheRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCustomizing = useDashboardStore((s) => s.isCustomizing);
@@ -111,7 +111,7 @@ export default function DashboardPage() {
 
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshing(true);
-    setDismissedError(false);
+    setDismissedErrorSignature(null);
     try {
       await Promise.all([
         fetchEnvironments(true),
@@ -126,7 +126,17 @@ export default function DashboardPage() {
     }
   }, [fetchEnvironments, fetchInstalledPackages, fetchProviders, fetchCacheInfo, fetchPlatformInfo]);
 
-  const activeError = !dismissedError ? (envsError || pkgsError || settingsError) : null;
+  const combinedError = envsError || pkgsError || settingsError;
+  const errorSignature = [envsError ?? '', pkgsError ?? '', settingsError ?? ''].join('|');
+  const activeError = combinedError && dismissedErrorSignature !== errorSignature
+    ? combinedError
+    : null;
+
+  useEffect(() => {
+    if (!combinedError) {
+      setDismissedErrorSignature(null);
+    }
+  }, [combinedError]);
   const lastRefreshedText = lastRefreshed
     ? t('dashboard.lastUpdated', { time: lastRefreshed.toLocaleTimeString() })
     : null;
@@ -143,6 +153,17 @@ export default function DashboardPage() {
             description={t('dashboard.description')} 
           />
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshAll}
+              disabled={isRefreshing}
+              className="gap-2"
+              data-testid="dashboard-header-refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{t('dashboard.quickActions.refreshAll')}</span>
+            </Button>
             <Button
               variant={isEditMode ? "default" : "outline"}
               size="sm"
@@ -179,7 +200,12 @@ export default function DashboardPage() {
           <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3 flex items-center gap-3">
             <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
             <span className="text-sm text-destructive flex-1">{activeError}</span>
-            <button onClick={() => setDismissedError(true)} className="text-destructive/70 hover:text-destructive">
+            <button
+              type="button"
+              aria-label={t('common.close')}
+              onClick={() => setDismissedErrorSignature(errorSignature)}
+              className="text-destructive/70 hover:text-destructive"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>

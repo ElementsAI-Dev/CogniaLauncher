@@ -410,6 +410,27 @@ describe('useEnvVar', () => {
     expect(result.current.error).toBe('Error: add path failed');
   });
 
+  it('should return true for successful add/remove/reorder path mutations', async () => {
+    mockEnvvarAddPathEntry.mockResolvedValue(undefined);
+    mockEnvvarRemovePathEntry.mockResolvedValue(undefined);
+    mockEnvvarReorderPath.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    let addSuccess = false;
+    let removeSuccess = false;
+    let reorderSuccess = false;
+    await act(async () => {
+      addSuccess = await result.current.addPathEntry('/ok', 'process');
+      removeSuccess = await result.current.removePathEntry('/ok', 'process');
+      reorderSuccess = await result.current.reorderPath(['/a', '/b'], 'process');
+    });
+
+    expect(addSuccess).toBe(true);
+    expect(removeSuccess).toBe(true);
+    expect(reorderSuccess).toBe(true);
+  });
+
   it('should handle removePathEntry error', async () => {
     mockEnvvarRemovePathEntry.mockRejectedValue(new Error('remove path failed'));
 
@@ -519,5 +540,43 @@ describe('useEnvVar', () => {
 
     expect(result.current.shellProfiles).toEqual([]);
     expect(result.current.error).toBe('Error: profiles failed');
+  });
+
+  it('should clear stale error before a successful setVar retry', async () => {
+    mockEnvvarSetProcess.mockRejectedValueOnce(new Error('set failed once'));
+    mockEnvvarSetProcess.mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.setVar('KEY', 'bad', 'process');
+    });
+    expect(result.current.error).toBe('Error: set failed once');
+
+    await act(async () => {
+      await result.current.setVar('KEY', 'good', 'process');
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.envVars).toHaveProperty('KEY', 'good');
+  });
+
+  it('should refresh typed persistent list by requested scope', async () => {
+    mockEnvvarListPersistentTyped
+      .mockResolvedValueOnce([{ key: 'USER_VAR', value: '1', regType: 'REG_SZ' }])
+      .mockResolvedValueOnce([{ key: 'SYSTEM_VAR', value: '2', regType: 'REG_EXPAND_SZ' }]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.fetchPersistentVarsTyped('user');
+    });
+    expect(result.current.persistentVarsTyped).toEqual([{ key: 'USER_VAR', value: '1', regType: 'REG_SZ' }]);
+
+    await act(async () => {
+      await result.current.fetchPersistentVarsTyped('system');
+    });
+    expect(result.current.persistentVarsTyped).toEqual([{ key: 'SYSTEM_VAR', value: '2', regType: 'REG_EXPAND_SZ' }]);
+    expect(mockEnvvarListPersistentTyped).toHaveBeenNthCalledWith(1, 'user');
+    expect(mockEnvvarListPersistentTyped).toHaveBeenNthCalledWith(2, 'system');
   });
 });

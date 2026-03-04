@@ -25,6 +25,7 @@ interface LogEntryProps {
   highlightText?: string;
   highlightRegex?: boolean;
   allowCollapse?: boolean;
+  singleLine?: boolean;
 }
 
 export function LogEntry({
@@ -34,6 +35,7 @@ export function LogEntry({
   highlightText,
   highlightRegex = false,
   allowCollapse = false,
+  singleLine = false,
 }: LogEntryProps) {
   const { t } = useLocale();
   const { bookmarkedIds, toggleBookmark } = useLogStore();
@@ -42,6 +44,7 @@ export function LogEntry({
   const style = LEVEL_STYLES[entry.level];
   const isExpandable =
     allowCollapse &&
+    !singleLine &&
     (entry.message.length > 160 || entry.message.includes("\n"));
 
   const handleCopy = useCallback(async () => {
@@ -147,9 +150,13 @@ export function LogEntry({
       )}
 
       {/* Message content */}
-      <span
+      <div
+        title={singleLine ? entry.message : undefined}
         className={cn(
-          "flex-1 break-words whitespace-pre-wrap leading-relaxed text-foreground/90",
+          "flex-1 min-w-0 leading-relaxed text-foreground/90",
+          singleLine
+            ? "overflow-hidden text-ellipsis whitespace-nowrap"
+            : "break-words whitespace-pre-wrap",
           isExpandable &&
             !expanded &&
             "max-h-[3.5rem] overflow-hidden relative",
@@ -168,7 +175,7 @@ export function LogEntry({
             ))}
           </div>
         )}
-      </span>
+      </div>
 
       {/* Action buttons */}
       <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

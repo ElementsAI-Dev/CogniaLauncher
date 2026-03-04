@@ -17,6 +17,8 @@ const EMPTY_SUMMARY: UpdateCheckSummary = {
   total_checked: 0,
   total_providers: 0,
   errors: [],
+  provider_outcomes: [],
+  coverage: { supported: 0, partial: 0, unsupported: 0, error: 0 },
 };
 
 export function usePackageUpdates() {
@@ -24,6 +26,8 @@ export function usePackageUpdates() {
   const setIsCheckingUpdates = usePackageStore((s) => s.setIsCheckingUpdates);
   const setUpdateCheckProgress = usePackageStore((s) => s.setUpdateCheckProgress);
   const setUpdateCheckErrors = usePackageStore((s) => s.setUpdateCheckErrors);
+  const setUpdateCheckProviderOutcomes = usePackageStore((s) => s.setUpdateCheckProviderOutcomes);
+  const setUpdateCheckCoverage = usePackageStore((s) => s.setUpdateCheckCoverage);
   const setLastUpdateCheck = usePackageStore((s) => s.setLastUpdateCheck);
 
   const checkUpdates = useCallback(async (
@@ -44,6 +48,8 @@ export function usePackageUpdates() {
       setIsCheckingUpdates(true);
       setUpdateCheckProgress(null);
       setUpdateCheckErrors([]);
+      setUpdateCheckProviderOutcomes([]);
+      setUpdateCheckCoverage(null);
     }
 
     let unlisten: (() => void) | null = null;
@@ -69,6 +75,8 @@ export function usePackageUpdates() {
       if (syncStore) {
         setAvailableUpdates(filteredSummary.updates);
         setUpdateCheckErrors(filteredSummary.errors);
+        setUpdateCheckProviderOutcomes(filteredSummary.provider_outcomes ?? []);
+        setUpdateCheckCoverage(filteredSummary.coverage ?? { supported: 0, partial: 0, unsupported: 0, error: 0 });
         setLastUpdateCheck(Date.now());
       }
 
@@ -83,6 +91,8 @@ export function usePackageUpdates() {
     setAvailableUpdates,
     setIsCheckingUpdates,
     setUpdateCheckErrors,
+    setUpdateCheckProviderOutcomes,
+    setUpdateCheckCoverage,
     setUpdateCheckProgress,
     setLastUpdateCheck,
   ]);
@@ -91,4 +101,3 @@ export function usePackageUpdates() {
     checkUpdates,
   };
 }
-

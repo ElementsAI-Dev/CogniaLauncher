@@ -142,6 +142,12 @@ CogniaLauncher integrates 55 Providers, covering major operating systems and pro
 | `git` | Git | Git version management and repository inspection | List |
 | `system` | System Detection | System runtime detection (27 types) | List |
 
+## Node Provider Parsing Notes
+
+- Node ecosystem providers normalize tree-style list output (for example `├── pkg@1.0.0` / `└── @scope/pkg@1.0.0`).
+- Non-package noise lines (banner/path/count rows) are ignored during installed-list parsing.
+- Yarn/Bun global list parsing applies entry dedupe (`name@version`) before returning results.
+
 ---
 
 ## Infrastructure Files

@@ -1075,53 +1075,53 @@ impl HealthCheckManager {
 
         #[cfg(not(windows))]
         {
-        use crate::platform::env::ShellType;
+            use crate::platform::env::ShellType;
 
-        let mut issues = Vec::new();
+            let mut issues = Vec::new();
 
-        let shell_type = ShellType::detect();
-        let config_files = shell_type.config_files();
-        if config_files.is_empty() {
-            return None;
-        }
+            let shell_type = ShellType::detect();
+            let config_files = shell_type.config_files();
+            if config_files.is_empty() {
+                return None;
+            }
 
-        // Read ALL existing shell config files and concatenate their contents
-        let mut all_content = String::new();
-        for path in &config_files {
-            if path.exists() {
-                if let Ok(c) = crate::core::terminal::read_shell_config(path).await {
-                    all_content.push_str(&c);
-                    all_content.push('\n');
+            // Read ALL existing shell config files and concatenate their contents
+            let mut all_content = String::new();
+            for path in &config_files {
+                if path.exists() {
+                    if let Ok(c) = crate::core::terminal::read_shell_config(path).await {
+                        all_content.push_str(&c);
+                        all_content.push('\n');
+                    }
                 }
             }
-        }
 
-        if all_content.is_empty() {
-            return None;
-        }
-        let content = all_content;
-
-        // Collect providers then drop lock before async is_available() calls
-        let env_providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
-            let registry = self.registry.read().await;
-            registry
-                .list_environment_providers()
-                .iter()
-                .filter_map(|id| {
-                    registry
-                        .get_environment_provider(id)
-                        .map(|p| (id.to_string(), p))
-                })
-                .collect()
-        };
-
-        for (provider_id, provider) in &env_providers {
-            if !provider.is_available().await {
-                continue;
+            if all_content.is_empty() {
+                return None;
             }
-            let init_pattern = Self::get_shell_init_pattern(provider_id);
-            if !init_pattern.is_empty() && !content.contains(&init_pattern) {
-                issues.push(
+            let content = all_content;
+
+            // Collect providers then drop lock before async is_available() calls
+            let env_providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
+                let registry = self.registry.read().await;
+                registry
+                    .list_environment_providers()
+                    .iter()
+                    .filter_map(|id| {
+                        registry
+                            .get_environment_provider(id)
+                            .map(|p| (id.to_string(), p))
+                    })
+                    .collect()
+            };
+
+            for (provider_id, provider) in &env_providers {
+                if !provider.is_available().await {
+                    continue;
+                }
+                let init_pattern = Self::get_shell_init_pattern(provider_id);
+                if !init_pattern.is_empty() && !content.contains(&init_pattern) {
+                    issues.push(
                     HealthIssue::new(
                         Severity::Warning,
                         IssueCategory::ShellIntegration,
@@ -1142,14 +1142,14 @@ impl HealthCheckManager {
                         ),
                     ),
                 );
+                }
             }
-        }
 
-        if issues.is_empty() {
-            None
-        } else {
-            Some(issues)
-        }
+            if issues.is_empty() {
+                None
+            } else {
+                Some(issues)
+            }
         } // #[cfg(not(windows))]
     }
 

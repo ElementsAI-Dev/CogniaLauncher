@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LogToolbar } from "./log-toolbar";
 import { useLogStore } from "@/lib/stores/log";
@@ -29,6 +29,8 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "logs.timeRangeTo": "to",
         "logs.regex": "Regex",
         "logs.maxLogs": "Max logs",
+        "logs.maxScanLines": "Max scan lines",
+        "logs.scanAll": "All",
         "logs.clear": "Clear logs",
         "logs.clearSearch": "Clear search",
         "logs.advanced": "Advanced",
@@ -55,6 +57,7 @@ describe("LogToolbar", () => {
         levels: ["info", "warn", "error"],
         search: "",
         useRegex: false,
+        maxScanLines: null,
         startTime: null,
         endTime: null,
       },
@@ -63,6 +66,7 @@ describe("LogToolbar", () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      showBookmarksOnly: false,
     });
   });
 
@@ -128,6 +132,19 @@ describe("LogToolbar", () => {
 
       await waitFor(() => {
         expect(useLogStore.getState().filter.search).toBe("");
+      });
+    });
+
+    it("syncs search input when store search changes externally", async () => {
+      render(<LogToolbar />);
+      const searchInput = screen.getByPlaceholderText("Search logs...") as HTMLInputElement;
+
+      act(() => {
+        useLogStore.getState().setSearch("external-change");
+      });
+
+      await waitFor(() => {
+        expect(searchInput.value).toBe("external-change");
       });
     });
   });
@@ -233,6 +250,20 @@ describe("LogToolbar", () => {
       await user.click(screen.getByText("Advanced"));
       expect(screen.queryByLabelText(/max logs/i)).not.toBeInTheDocument();
     });
+
+    it("shows max scan lines input when showQueryScanLimit=true", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar showQueryScanLimit />);
+      await user.click(screen.getByText("Advanced"));
+      expect(screen.getByLabelText(/max scan lines/i)).toBeInTheDocument();
+    });
+
+    it("hides max scan lines input by default", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar />);
+      await user.click(screen.getByText("Advanced"));
+      expect(screen.queryByLabelText(/max scan lines/i)).not.toBeInTheDocument();
+    });
   });
 
   describe("export with custom onExport", () => {
@@ -314,6 +345,52 @@ describe("LogToolbar", () => {
       expect(useLogStore.getState().maxLogs).toBe(100);
     });
 
+    it("updates max scan lines value when enabled", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar showQueryScanLimit />);
+      await user.click(screen.getByText("Advanced"));
+      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      fireEvent.change(maxScanLinesInput, { target: { value: "5000" } });
+      expect(useLogStore.getState().filter.maxScanLines).toBe(5000);
+    });
+
+    it("enforces maximum max scan lines", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar showQueryScanLimit />);
+      await user.click(screen.getByText("Advanced"));
+      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      fireEvent.change(maxScanLinesInput, { target: { value: "999999" } });
+      expect(useLogStore.getState().filter.maxScanLines).toBe(200000);
+    });
+
+    it("clears max scan lines when input is emptied", async () => {
+      const user = userEvent.setup();
+      useLogStore.setState({
+        ...useLogStore.getState(),
+        filter: {
+          ...useLogStore.getState().filter,
+          maxScanLines: 10000,
+        },
+      });
+      render(<LogToolbar showQueryScanLimit />);
+      await user.click(screen.getByText("Advanced"));
+      const maxScanLinesInput = screen.getByLabelText(/max scan lines/i);
+      fireEvent.change(maxScanLinesInput, { target: { value: "" } });
+      expect(useLogStore.getState().filter.maxScanLines).toBeNull();
+    });
+
+    it("applies max scan line preset buttons", async () => {
+      const user = userEvent.setup();
+      render(<LogToolbar showQueryScanLimit />);
+      await user.click(screen.getByText("Advanced"));
+
+      await user.click(screen.getByRole("button", { name: "20k" }));
+      expect(useLogStore.getState().filter.maxScanLines).toBe(20000);
+
+      await user.click(screen.getByRole("button", { name: "All" }));
+      expect(useLogStore.getState().filter.maxScanLines).toBeNull();
+    });
+
     it("renders time range select inside advanced panel", async () => {
       const user = userEvent.setup();
       render(<LogToolbar />);
@@ -355,6 +432,42 @@ describe("LogToolbar", () => {
       fireEvent.change(endInput, { target: { value: "2026-12-31T23:59" } });
       const state = useLogStore.getState();
       expect(state.filter.endTime).toBeDefined();
+    });
+
+    it("counts target and bookmarks in advanced filter badge", async () => {
+      const user = userEvent.setup();
+      useLogStore.setState({
+        ...useLogStore.getState(),
+        filter: {
+          ...useLogStore.getState().filter,
+          startTime: null,
+          endTime: null,
+          useRegex: true,
+          target: "download",
+        },
+        showBookmarksOnly: true,
+      });
+
+      render(<LogToolbar />);
+      const advancedButton = screen.getByRole("button", { name: /advanced/i });
+      expect(advancedButton).toHaveTextContent("3");
+
+      await user.click(advancedButton);
+      expect(screen.getByText("Regex")).toBeInTheDocument();
+    });
+
+    it("counts max scan lines in advanced filter badge", () => {
+      useLogStore.setState({
+        ...useLogStore.getState(),
+        filter: {
+          ...useLogStore.getState().filter,
+          maxScanLines: 5000,
+        },
+      });
+
+      render(<LogToolbar showQueryScanLimit />);
+      const advancedButton = screen.getByRole("button", { name: /advanced/i });
+      expect(advancedButton).toHaveTextContent("1");
     });
   });
 

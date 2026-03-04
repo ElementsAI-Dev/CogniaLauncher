@@ -6,12 +6,25 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useWslStatus } from '@/hooks/use-wsl-status';
-import { Terminal, ExternalLink } from 'lucide-react';
+import { Terminal, ExternalLink, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export function WslStatusWidget() {
   const { t } = useLocale();
   const { available, distros, status, runningCount } = useWslStatus();
+
+  if (available === null) {
+    return (
+      <Card>
+        <CardContent className="py-6">
+          <div className="text-center text-sm text-muted-foreground">
+            <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin opacity-70" />
+            <p>{t('common.loading')}</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (available === false) {
     return (

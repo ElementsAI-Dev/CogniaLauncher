@@ -8,10 +8,54 @@
 // ============================================================================
 
 /** Environment installation progress event payload */
+export type EnvInstallStep =
+  | 'fetching'
+  | 'downloading'
+  | 'extracting'
+  | 'configuring'
+  | 'done'
+  | 'error'
+  | 'cancelled';
+
+export type EnvInstallPhase =
+  | 'resolve'
+  | 'select_artifact'
+  | 'download'
+  | 'verify'
+  | 'persist'
+  | 'finalize';
+
+export type EnvInstallTerminalState = 'completed' | 'failed' | 'cancelled';
+
+export type EnvInstallFailureClass =
+  | 'selection_error'
+  | 'network_error'
+  | 'integrity_error'
+  | 'cache_error'
+  | 'cancelled'
+  | 'timeout';
+
+export interface EnvInstallArtifact {
+  id: string;
+  name: string;
+  version: string;
+  provider: string;
+}
+
 export interface EnvInstallProgressEvent {
   envType: string;
   version: string;
-  step: 'fetching' | 'downloading' | 'extracting' | 'configuring' | 'done' | 'error';
+  step: EnvInstallStep;
+  phase?: EnvInstallPhase;
+  terminalState?: EnvInstallTerminalState;
+  failureClass?: EnvInstallFailureClass;
+  artifact?: EnvInstallArtifact;
+  stageMessage?: string;
+  selectionRationale?: string;
+  retryable?: boolean;
+  retryAfterSeconds?: number;
+  attempt?: number;
+  maxAttempts?: number;
   progress: number;
   downloadedSize?: number;
   totalSize?: number;
@@ -625,11 +669,29 @@ export interface UpdateCheckError {
   message: string;
 }
 
+export interface UpdateCheckProviderOutcome {
+  provider: string;
+  status: 'supported' | 'partial' | 'unsupported' | 'error';
+  reason: string | null;
+  checked: number;
+  updates: number;
+  errors: number;
+}
+
+export interface UpdateCheckCoverage {
+  supported: number;
+  partial: number;
+  unsupported: number;
+  error: number;
+}
+
 export interface UpdateCheckSummary {
   updates: UpdateInfo[];
   total_checked: number;
   total_providers: number;
   errors: UpdateCheckError[];
+  provider_outcomes: UpdateCheckProviderOutcome[];
+  coverage: UpdateCheckCoverage;
 }
 
 export interface SelfUpdateInfo {
@@ -880,6 +942,7 @@ export interface LogQueryOptions {
   endTime?: number | null;
   limit?: number;
   offset?: number;
+  maxScanLines?: number;
 }
 
 export interface LogQueryResult {
@@ -1954,6 +2017,18 @@ export interface ShellConfigEntries {
   aliases: [string, string][];
   exports: [string, string][];
   sources: string[];
+}
+
+export type TerminalConfigMutationOperation = 'backup' | 'append' | 'write';
+export type TerminalConfigMutationStage = 'validation' | 'backup' | 'write' | 'verification';
+
+export interface TerminalConfigMutationResult {
+  operation: TerminalConfigMutationOperation;
+  path: string;
+  backupPath: string | null;
+  bytesWritten: number;
+  verified: boolean;
+  diagnostics: string[];
 }
 
 // ============================================================================

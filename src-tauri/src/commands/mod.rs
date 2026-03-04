@@ -29,8 +29,8 @@ pub mod shim;
 pub mod terminal;
 pub mod updater;
 pub mod uv;
-pub mod winget;
 pub mod window_effect;
+pub mod winget;
 pub mod wsl;
 pub mod xmake;
 
@@ -216,8 +216,9 @@ pub use shim::{
     shim_regenerate_all, shim_remove, shim_update,
 };
 pub use terminal::{
-    terminal_append_to_config, terminal_backup_config, terminal_check_shell_health,
-    terminal_clean_framework_cache, terminal_create_custom_template, terminal_create_profile,
+    terminal_append_to_config, terminal_append_to_config_verified, terminal_backup_config,
+    terminal_backup_config_verified, terminal_check_shell_health, terminal_clean_framework_cache,
+    terminal_create_custom_template, terminal_create_profile,
     terminal_create_profile_from_template, terminal_delete_custom_template,
     terminal_delete_profile, terminal_detect_framework, terminal_detect_shells,
     terminal_duplicate_profile, terminal_export_profiles, terminal_get_config_entries,
@@ -231,7 +232,8 @@ pub use terminal::{
     terminal_ps_list_profiles, terminal_ps_read_profile, terminal_ps_set_execution_policy,
     terminal_ps_uninstall_module, terminal_ps_update_module, terminal_ps_write_profile,
     terminal_read_config, terminal_save_profile_as_template, terminal_set_default_profile,
-    terminal_update_profile, terminal_write_config, SharedTerminalProfileManager,
+    terminal_update_profile, terminal_write_config, terminal_write_config_verified,
+    SharedTerminalProfileManager,
 };
 pub use updater::{self_check_update, self_update};
 pub use uv::{
@@ -240,6 +242,7 @@ pub use uv::{
     uv_tool_install, uv_tool_list, uv_tool_run, uv_tool_uninstall, uv_tree, uv_venv_create,
     uv_version,
 };
+pub use window_effect::{window_effect_apply, window_effect_clear, window_effect_get_supported};
 pub use winget::{
     winget_download, winget_export, winget_get_info, winget_import, winget_install_advanced,
     winget_pin_add, winget_pin_list, winget_pin_remove, winget_pin_reset, winget_repair,
@@ -258,7 +261,6 @@ pub use wsl::{
     wsl_set_sparse, wsl_set_version, wsl_shutdown, wsl_status, wsl_terminate, wsl_total_disk_usage,
     wsl_unmount, wsl_update,
 };
-pub use window_effect::{window_effect_apply, window_effect_clear, window_effect_get_supported};
 pub use xmake::{
     xmake_add_repo, xmake_clean_cache, xmake_download_source, xmake_env_bind, xmake_env_list,
     xmake_env_show, xmake_export_package, xmake_import_package, xmake_list_repos,

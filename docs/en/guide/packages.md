@@ -34,6 +34,11 @@ Supported installation options:
 - **Version Pinning** — Lock package version to prevent accidental updates
 - **Version Rollback** — Roll back to a previous version
 
+### Installed List Normalization
+
+- Installed package results are deduplicated by `provider + package name + version`.
+- This avoids duplicate rows when provider CLI outputs repeated entries (for example global list tree output noise).
+
 ### Dependency Resolution
 
 CogniaLauncher uses the PubGrub algorithm for dependency resolution:

@@ -254,7 +254,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="h-full min-h-0 p-4 md:p-6 flex flex-col gap-6 min-w-0 overflow-hidden">
       {/* Back button + header */}
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => router.push('/packages')}>
@@ -263,9 +263,11 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
         <div className="flex-1 min-w-0">
           <PageHeader
             title={
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Package className="h-6 w-6 text-muted-foreground" />
-                <span className="truncate">{packageInfo?.display_name || packageName}</span>
+                <span className="min-w-0 break-all sm:truncate" title={packageInfo?.display_name || packageName}>
+                  {packageInfo?.display_name || packageName}
+                </span>
                 {isInstalled ? (
                   <Badge variant="default" className="gap-1 shrink-0">
                     <CheckCircle2 className="h-3 w-3" />
@@ -278,12 +280,12 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
                   </Badge>
                 )}
                 {hasUpdate && (
-                  <Badge variant="outline" className="text-green-600 border-green-600/30 shrink-0">
+                  <Badge variant="outline" className="text-green-600 border-green-600/30 shrink-0 break-all">
                     {t('packages.detail.updateAvailable', { current: installedPkg!.version, latest: latestVersion! })}
                   </Badge>
                 )}
                 {isPinned && (
-                  <Badge variant="outline" className="shrink-0">📌 {t('packages.pinnedAt', { version: installedPkg?.version || '' })}</Badge>
+                  <Badge variant="outline" className="shrink-0 break-all">📌 {t('packages.pinnedAt', { version: installedPkg?.version || '' })}</Badge>
                 )}
               </div>
             }
@@ -306,8 +308,8 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 space-y-4">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto">
           <TabsTrigger value="overview" className="gap-1.5">
             <LayoutDashboard className="h-3.5 w-3.5" />
             {t('packages.detail.tabOverview')}
@@ -336,7 +338,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview">
+        <TabsContent value="overview" className="min-h-0">
           <PackageOverviewCard
             packageInfo={packageInfo}
             installedPkg={installedPkg ?? null}
@@ -355,7 +357,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
           />
         </TabsContent>
 
-        <TabsContent value="versions">
+        <TabsContent value="versions" className="min-h-0">
           <PackageVersionList
             versions={packageInfo?.versions ?? []}
             currentVersion={installedPkg?.version ?? null}
@@ -366,7 +368,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
           />
         </TabsContent>
 
-        <TabsContent value="dependencies">
+        <TabsContent value="dependencies" className="min-h-0">
           <PackageDependencyView
             resolution={resolution}
             loading={resolvingDeps}
@@ -374,7 +376,7 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
           />
         </TabsContent>
 
-        <TabsContent value="history">
+        <TabsContent value="history" className="min-h-0">
           <PackageHistoryList
             history={history}
             loading={!historyLoaded}

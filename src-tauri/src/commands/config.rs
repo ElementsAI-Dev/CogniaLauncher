@@ -322,7 +322,8 @@ mod tests {
         let map: std::collections::HashMap<_, _> = defaults.into_iter().collect();
 
         assert_eq!(
-            map.get("shortcuts.enabled").map(std::string::String::as_str),
+            map.get("shortcuts.enabled")
+                .map(std::string::String::as_str),
             Some("true")
         );
         assert_eq!(
@@ -347,10 +348,19 @@ mod tests {
         use super::collect_config_list;
         let settings = crate::config::Settings::default();
         let entries = collect_config_list(&settings);
-        assert!(!entries.is_empty(), "collect_config_list should return entries");
+        assert!(
+            !entries.is_empty(),
+            "collect_config_list should return entries"
+        );
         let keys: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).collect();
-        assert!(keys.contains(&"appearance.theme"), "Should contain appearance.theme");
-        assert!(keys.contains(&"general.parallel_downloads"), "Should contain general.parallel_downloads");
+        assert!(
+            keys.contains(&"appearance.theme"),
+            "Should contain appearance.theme"
+        );
+        assert!(
+            keys.contains(&"general.parallel_downloads"),
+            "Should contain general.parallel_downloads"
+        );
     }
 
     #[test]
@@ -360,7 +370,10 @@ mod tests {
         let entries = collect_config_list(&settings);
         let keys: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).collect();
         assert!(keys.contains(&"mirrors.npm"), "Should contain mirrors.npm");
-        assert!(keys.contains(&"mirrors.pypi"), "Should contain mirrors.pypi");
+        assert!(
+            keys.contains(&"mirrors.pypi"),
+            "Should contain mirrors.pypi"
+        );
     }
 
     #[test]

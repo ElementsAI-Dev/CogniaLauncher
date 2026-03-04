@@ -158,6 +158,11 @@
       "retry": "重试"
     },
     "tools": {
+      "shared": {
+        "inputTooLarge": "输入超出安全限制（{limit} 个字符）",
+        "ioMeta": "输入 {inputSize} 字符 -> 输出 {outputSize} 字符",
+        "countTooLarge": "请求数量超出安全限制（{limit}）"
+      },
       "jsonFormatter": {
         "name": "JSON 格式化",
         "desc": "格式化、验证和压缩 JSON 数据",
@@ -166,7 +171,10 @@
         "format": "格式化",
         "minify": "压缩",
         "spaces": "空格",
-        "tab": "制表符"
+        "tab": "制表符",
+        "sortKeys": "排序键名",
+        "escapeUnicode": "转义 Unicode",
+        "meta": "类型: {type} | 输入: {inputSize} | 输出: {outputSize} | 变化: {delta}%"
       },
       "base64Converter": {
         "name": "Base64 转换",
@@ -178,7 +186,9 @@
         "encode": "编码",
         "decode": "解码",
         "swap": "交换",
-        "urlSafe": "URL 安全"
+        "urlSafe": "URL 安全",
+        "stripWhitespace": "忽略空白字符",
+        "invalidInput": "无效的 Base64 输入"
       },
       "urlEncoder": {
         "name": "URL 编解码",
@@ -189,7 +199,9 @@
         "encodedOutput": "编码输出",
         "encode": "编码",
         "decode": "解码",
-        "swap": "交换"
+        "swap": "交换",
+        "encodeFull": "编码完整 URL",
+        "plusForSpace": "空格使用 + 号"
       },
       "uuidGenerator": {
         "name": "UUID 生成器",
@@ -197,7 +209,10 @@
         "count": "数量",
         "uppercase": "大写",
         "noDashes": "无连字符",
-        "generate": "生成"
+        "generate": "生成",
+        "separator": "分隔符",
+        "separatorNewline": "换行",
+        "separatorComma": "逗号"
       },
       "hashGenerator": {
         "name": "哈希生成器",
@@ -205,7 +220,9 @@
         "input": "输入文本",
         "placeholder": "输入要哈希的文本...",
         "generate": "生成哈希",
-        "computing": "计算中..."
+        "computing": "计算中...",
+        "selectAtLeastOne": "请至少选择一个哈希算法",
+        "copyAll": "复制全部"
       },
       "timestampConverter": {
         "name": "时间戳转换",
@@ -214,7 +231,10 @@
         "dateInput": "日期字符串",
         "convert": "转换",
         "now": "当前时间",
-        "swap": "切换模式"
+        "swap": "切换模式",
+        "invalidTimestamp": "无效时间戳",
+        "invalidDate": "无效日期字符串",
+        "assumeMilliseconds": "将数字输入视为毫秒"
       },
       "regexTester": {
         "name": "正则测试",
@@ -223,13 +243,15 @@
         "testText": "测试文本",
         "testTextPlaceholder": "输入要测试的文本...",
         "matches": "匹配结果",
-        "noMatches": "未找到匹配"
+        "noMatches": "未找到匹配",
+        "truncated": "已截断"
       },
       "colorPicker": {
         "name": "颜色选择器",
         "desc": "选择颜色并在 HEX、RGB 和 HSL 格式之间转换",
         "pickColor": "选择颜色",
-        "contrast": "对比度"
+        "contrast": "对比度",
+        "invalidHex": "无效 HEX 颜色，请使用 #RRGGBB"
       },
       "jwtDecoder": {
         "name": "JWT 解码器",
@@ -241,7 +263,9 @@
         "invalidToken": "无效的 JWT 格式",
         "expired": "已过期",
         "valid": "有效",
-        "expiresAt": "过期时间"
+        "expiresAt": "过期时间",
+        "showSignature": "显示签名",
+        "signature": "签名"
       },
       "textDiff": {
         "name": "文本比较",
@@ -251,13 +275,21 @@
         "originalPlaceholder": "输入原始文本...",
         "modifiedPlaceholder": "输入修改后的文本...",
         "added": "新增",
-        "removed": "删除"
+        "removed": "删除",
+        "ignoreWhitespace": "忽略空白",
+        "ignoreCase": "忽略大小写",
+        "unchanged": "未变化",
+        "total": "总计: {count}",
+        "tooManyLines": "输入行数超出安全上限（{limit}）"
       },
       "markdownPreview": {
         "name": "Markdown 预览",
         "desc": "编写和预览 Markdown，支持 GFM",
         "editor": "编辑器",
-        "preview": "预览"
+        "preview": "预览",
+        "modeSplit": "分栏",
+        "modePreview": "编辑+预览",
+        "previewTruncated": "预览仅显示前 {limit} 个字符"
       },
       "cronParser": {
         "name": "Cron 解析器",
@@ -265,7 +297,9 @@
         "expression": "Cron 表达式",
         "parse": "解析",
         "description": "描述",
-        "nextRuns": "下次执行"
+        "nextRuns": "下次执行",
+        "invalidExpression": "Cron 表达式必须包含 5 个字段",
+        "previewCount": "条数"
       },
       "loremGenerator": {
         "name": "Lorem Ipsum 生成器",
@@ -280,12 +314,15 @@
       "numberBaseConverter": {
         "name": "进制转换器",
         "desc": "在二进制、八进制、十进制和十六进制之间转换",
-        "invalidNumber": "该进制下的无效数字"
+        "invalidNumber": "该进制下的无效数字",
+        "uppercaseHex": "十六进制大写",
+        "showPrefix": "显示进制前缀"
       },
       "passwordGenerator": {
         "name": "密码生成器",
         "desc": "生成自定义规则的安全随机密码",
         "length": "长度",
+        "count": "数量",
         "upper": "大写字母",
         "lower": "小写字母",
         "digits": "数字",
@@ -500,6 +537,7 @@
       "addEnvironment": "添加环境",
       "installPackage": "安装软件包",
       "clearCache": "清理缓存",
+      "manageCache": "管理缓存",
       "refreshAll": "刷新全部",
       "openSettings": "打开设置",
       "viewLogs": "查看日志",
@@ -1338,9 +1376,11 @@
     "updateCheckCollecting": "正在收集已安装的包...",
     "updateCheckChecking": "正在检查 {current}/{total}：{package}",
     "updateCheckDone": "检查完成：发现 {found} 个可更新的包",
-    "updateCheckProgress": "已检查 {current}/{total} 个包",
+    "updateCheckProgress": "已检查 {current}/{total} 个提供商",
     "updateCheckErrors": "检查过程中发生了 {count} 个错误",
     "updateCheckProviders": "已扫描 {count} 个提供商",
+    "updateCheckCoverage": "提供商覆盖：支持 {supported}，部分成功 {partial}，不支持 {unsupported}，失败 {error}",
+    "updateCheckUnsupported": "{count} 个提供商被跳过或不受支持",
     "updateCheckSummary": "在 {providers} 个提供商中检查了 {checked} 个包，发现 {updates} 个可更新",
     "detail": {
       "backToPackages": "返回包列表",
@@ -2719,6 +2759,8 @@
     "timeRangeTo": "至",
     "regex": "正则",
     "maxLogs": "最大日志数",
+    "maxScanLines": "最大扫描行数",
+    "scanAll": "全部",
     "export": "导出日志",
     "exportTxt": "导出 TXT",
     "exportJson": "导出 JSON",

@@ -170,7 +170,6 @@ function ShortcutItem({
 
 export function ShortcutSettings({
   localConfig,
-  errors: _errors,
   onValueChange,
   t,
 }: ShortcutSettingsProps) {

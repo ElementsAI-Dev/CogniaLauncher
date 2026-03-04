@@ -68,6 +68,26 @@ function toRuntimeMessage(value: unknown): string {
   return value === undefined ? "Unknown runtime error" : String(value);
 }
 
+function toConsoleMessagePart(value: unknown): string {
+  if (value instanceof Error) {
+    return value.stack || value.message || value.name;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return Object.prototype.toString.call(value);
+    }
+  }
+
+  return String(value);
+}
+
 export function LogProvider({ children }: LogProviderProps) {
   const { addLog } = useLogStore();
   const { t } = useLocale();
@@ -107,11 +127,7 @@ export function LogProvider({ children }: LogProviderProps) {
         original.apply(console, args);
 
         // Format message for log store
-        const message = args
-          .map((arg) =>
-            typeof arg === "object" ? JSON.stringify(arg) : String(arg),
-          )
-          .join(" ");
+        const message = args.map((arg) => toConsoleMessagePart(arg)).join(" ");
 
         // Skip noisy messages from React internals, HMR, etc.
         if (CONSOLE_IGNORE_PATTERNS.some((p) => p.test(message))) return;
@@ -255,44 +271,69 @@ export function LogProvider({ children }: LogProviderProps) {
         // Environment installation progress listener
         const unlistenEnvProgress = await listenEnvInstallProgress(
           (progress) => {
+            const terminalState =
+              progress.terminalState ??
+              (progress.step === "done"
+                ? "completed"
+                : progress.step === "error"
+                  ? "failed"
+                  : progress.step === "cancelled"
+                    ? "cancelled"
+                    : undefined);
             const level: LogLevel =
-              progress.step === "error"
+              terminalState === "failed" || progress.step === "error"
                 ? "error"
-                : progress.step === "done"
-                  ? "info"
-                  : "debug";
+                : terminalState === "cancelled" || progress.step === "cancelled"
+                  ? "warn"
+                  : terminalState === "completed" || progress.step === "done"
+                    ? "info"
+                    : "debug";
 
             let message = `[${progress.envType}@${progress.version}] `;
-            switch (progress.step) {
-              case "fetching":
-                message += t("logs.messages.envFetching");
-                break;
-              case "downloading":
-                if (progress.speed) {
-                  message += t("logs.messages.envDownloadingWithSpeed", {
-                    progress: progress.progress.toFixed(0),
-                    speed: formatSpeed(progress.speed),
+            if (progress.stageMessage?.trim()) {
+              message += progress.stageMessage;
+            } else {
+              switch (progress.step) {
+                case "fetching":
+                  message += t("logs.messages.envFetching");
+                  break;
+                case "downloading":
+                  if (progress.speed) {
+                    message += t("logs.messages.envDownloadingWithSpeed", {
+                      progress: progress.progress.toFixed(0),
+                      speed: formatSpeed(progress.speed),
+                    });
+                  } else {
+                    message += t("logs.messages.envDownloading", {
+                      progress: progress.progress.toFixed(0),
+                    });
+                  }
+                  break;
+                case "extracting":
+                  message += t("logs.messages.envExtracting");
+                  break;
+                case "configuring":
+                  message += t("logs.messages.envConfiguring");
+                  break;
+                case "done":
+                  message += t("logs.messages.envDone");
+                  break;
+                case "cancelled":
+                  message += t("environments.progress.cancel");
+                  break;
+                case "error":
+                  message += t("logs.messages.envError", {
+                    error: progress.error || t("logs.messages.envUnknownError"),
                   });
-                } else {
-                  message += t("logs.messages.envDownloading", {
-                    progress: progress.progress.toFixed(0),
-                  });
-                }
-                break;
-              case "extracting":
-                message += t("logs.messages.envExtracting");
-                break;
-              case "configuring":
-                message += t("logs.messages.envConfiguring");
-                break;
-              case "done":
-                message += t("logs.messages.envDone");
-                break;
-              case "error":
-                message += t("logs.messages.envError", {
-                  error: progress.error || t("logs.messages.envUnknownError"),
-                });
-                break;
+                  break;
+              }
+            }
+
+            if (progress.failureClass) {
+              message += ` [${progress.failureClass}]`;
+            }
+            if (terminalState === "failed" && progress.error) {
+              message += ` (${progress.error})`;
             }
 
             addLog({
@@ -304,6 +345,10 @@ export function LogProvider({ children }: LogProviderProps) {
                 envType: progress.envType,
                 version: progress.version,
                 step: progress.step,
+                phase: progress.phase,
+                terminalState: progress.terminalState,
+                failureClass: progress.failureClass,
+                artifact: progress.artifact?.id,
               },
             });
           },

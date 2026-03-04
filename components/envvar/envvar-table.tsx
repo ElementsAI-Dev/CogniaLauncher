@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { writeClipboard } from '@/lib/clipboard';
 import {
   Table,
@@ -49,6 +49,7 @@ interface EnvVarTableProps {
   searchQuery: string;
   onEdit: (key: string, value: string, scope: EnvVarScope) => void;
   onDelete: (key: string, scope: EnvVarScope) => void;
+  busy?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -58,16 +59,25 @@ export function EnvVarTable({
   searchQuery,
   onEdit,
   onDelete,
+  busy = false,
   t,
 }: EnvVarTableProps) {
   const [editingRow, setEditingRow] = useState<{ key: string; scope: EnvVarScope } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [compactMode, setCompactMode] = useState(false);
+
+  useEffect(() => {
+    const syncViewport = () => setCompactMode(window.innerWidth < 768);
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
 
   const looksLikePath = useCallback((value: string): boolean => {
     if (!value || value.length < 2) return false;
     if (/^[A-Za-z]:[/\\]/.test(value)) return true;
     if (value.startsWith('/') && !value.startsWith('//')) return true;
-    if (value.startsWith('~/')  || value.startsWith('~\\')) return true;
+    if (value.startsWith('~/') || value.startsWith('~\\')) return true;
     return false;
   }, []);
 
@@ -119,17 +129,17 @@ export function EnvVarTable({
   }, [t]);
 
   const handleStartEdit = useCallback((row: EnvVarRow) => {
+    if (busy) return;
     setEditingRow({ key: row.key, scope: row.scope });
     setEditValue(row.value);
-  }, []);
+  }, [busy]);
 
   const handleSaveEdit = useCallback(() => {
-    if (editingRow) {
-      onEdit(editingRow.key, editValue, editingRow.scope);
-      setEditingRow(null);
-      setEditValue('');
-    }
-  }, [editingRow, editValue, onEdit]);
+    if (!editingRow || busy) return;
+    onEdit(editingRow.key, editValue, editingRow.scope);
+    setEditingRow(null);
+    setEditValue('');
+  }, [busy, editingRow, editValue, onEdit]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingRow(null);
@@ -155,8 +165,149 @@ export function EnvVarTable({
     );
   }
 
+  const actionContainerClass = compactMode
+    ? 'flex items-center justify-end gap-0.5 opacity-100 transition-opacity'
+    : 'flex items-center justify-end gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity';
+
+  const renderActionButtons = (row: EnvVarRow, value: string) => (
+    <div className={actionContainerClass}>
+      {looksLikePath(value) && (
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRevealPath(value)} disabled={busy}>
+                <FolderOpen className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t('envvar.table.openPath')}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenPath(value)} disabled={busy}>
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{t('envvar.table.openFile')}</TooltipContent>
+          </Tooltip>
+        </>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(value)} disabled={busy}>
+            <Copy className="h-3 w-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t('envvar.table.copy')}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEdit(row)} disabled={busy}>
+            <Pencil className="h-3 w-3" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t('envvar.actions.edit')}</TooltipContent>
+      </Tooltip>
+      <AlertDialog>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" disabled={busy}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </AlertDialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top">{t('envvar.actions.delete')}</TooltipContent>
+        </Tooltip>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('envvar.confirm.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('envvar.confirm.deleteDesc')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDelete(row.key, row.scope)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t('envvar.actions.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+
+  if (compactMode) {
+    return (
+      <div className="space-y-2" data-testid="envvar-compact-list">
+        {filteredRows.map((row, index) => {
+          const rowId = `${row.scope}:${row.key}:${index}`;
+          const isEditing = editingRow?.key === row.key && editingRow.scope === row.scope;
+          const value = row.value;
+          return (
+            <div key={rowId} className="group rounded-md border bg-background p-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-medium break-all">{row.key}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <Badge variant="secondary" className="text-[10px]">
+                      {getScopeBadgeLabel(row.scope)}
+                    </Badge>
+                    {row.conflict && (
+                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                        {t('envvar.conflicts.title')}
+                      </Badge>
+                    )}
+                    {row.regType && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {row.regType}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                {isEditing ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveEdit();
+                        if (e.key === 'Escape') handleCancelEdit();
+                      }}
+                      className="h-8 text-xs"
+                      autoFocus
+                      disabled={busy}
+                    />
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveEdit} disabled={busy}>
+                      <Check className="h-3 w-3 text-green-600" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEdit} disabled={busy}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <p
+                    className={cn('font-mono text-xs text-muted-foreground break-all', !busy && 'cursor-pointer')}
+                    onDoubleClick={() => handleStartEdit(row)}
+                  >
+                    {value || <span className="italic opacity-50">(empty)</span>}
+                  </p>
+                )}
+              </div>
+
+              {renderActionButtons(row, value)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
-    <ScrollArea className="max-h-[600px]">
+    <ScrollArea className="max-h-[600px]" data-testid="envvar-table-desktop">
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -173,138 +324,77 @@ export function EnvVarTable({
               const isEditing = editingRow?.key === row.key && editingRow.scope === row.scope;
               const value = row.value;
               return (
-              <TableRow key={rowId} className="group">
-                <TableCell className="font-mono text-xs py-2">
-                  <div className="space-y-1">
-                    <span className="break-all">{row.key}</span>
-                    <div className="flex items-center gap-1">
-                      {row.conflict && (
-                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                          {t('envvar.conflicts.title')}
-                        </Badge>
-                      )}
-                      {row.regType && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {row.regType}
-                        </Badge>
-                      )}
+                <TableRow key={rowId} className="group">
+                  <TableCell className="font-mono text-xs py-2">
+                    <div className="space-y-1">
+                      <span className="break-all">{row.key}</span>
+                      <div className="flex items-center gap-1">
+                        {row.conflict && (
+                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                            {t('envvar.conflicts.title')}
+                          </Badge>
+                        )}
+                        {row.regType && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            {row.regType}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell className="py-2">
-                  {isEditing ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveEdit();
-                          if (e.key === 'Escape') handleCancelEdit();
-                        }}
-                        className="h-7 text-xs"
-                        autoFocus
-                      />
-                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleSaveEdit}>
-                        <Check className="h-3 w-3 text-green-600" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCancelEdit}>
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span
-                          className={cn(
-                            'text-xs text-muted-foreground break-all line-clamp-2 cursor-pointer hover:text-foreground',
-                          )}
-                          onDoubleClick={() => handleStartEdit(row)}
-                        >
-                          {value || <span className="italic opacity-50">(empty)</span>}
-                        </span>
-                      </TooltipTrigger>
-                      {value && value.length > 60 && (
-                        <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
-                          {value}
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  )}
-                </TableCell>
-                <TableCell className="py-2">
-                  <Badge variant="secondary" className="text-[10px]">
-                    {getScopeBadgeLabel(row.scope)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="py-2 text-right">
-                  <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {looksLikePath(value) && (
-                      <>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRevealPath(value)}>
-                              <FolderOpen className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">{t('envvar.table.openPath')}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenPath(value)}>
-                              <ExternalLink className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top">{t('envvar.table.openFile')}</TooltipContent>
-                        </Tooltip>
-                      </>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleCopy(value)}>
-                          <Copy className="h-3 w-3" />
+                  </TableCell>
+                  <TableCell className="py-2">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit();
+                            if (e.key === 'Escape') handleCancelEdit();
+                          }}
+                          className="h-7 text-xs"
+                          autoFocus
+                          disabled={busy}
+                        />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleSaveEdit} disabled={busy}>
+                          <Check className="h-3 w-3 text-green-600" />
                         </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">{t('envvar.table.copy')}</TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEdit(row)}>
-                          <Pencil className="h-3 w-3" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCancelEdit} disabled={busy}>
+                          <X className="h-3 w-3" />
                         </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">{t('envvar.actions.edit')}</TooltipContent>
-                    </Tooltip>
-                    <AlertDialog>
+                      </div>
+                    ) : (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive">
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </AlertDialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">{t('envvar.actions.delete')}</TooltipContent>
-                      </Tooltip>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>{t('envvar.confirm.deleteTitle')}</AlertDialogTitle>
-                          <AlertDialogDescription>{t('envvar.confirm.deleteDesc')}</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => onDelete(row.key, row.scope)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          <span
+                            className={cn(
+                              'text-xs text-muted-foreground break-all line-clamp-2',
+                              !busy && 'cursor-pointer hover:text-foreground',
+                            )}
+                            onDoubleClick={() => handleStartEdit(row)}
                           >
-                            {t('envvar.actions.delete')}
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              </TableRow>
-            )})}
+                            {value || <span className="italic opacity-50">(empty)</span>}
+                          </span>
+                        </TooltipTrigger>
+                        {value && value.length > 60 && (
+                          <TooltipContent side="bottom" className="max-w-sm font-mono text-xs break-all">
+                            {value}
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                  <TableCell className="py-2">
+                    <Badge variant="secondary" className="text-[10px]">
+                      {getScopeBadgeLabel(row.scope)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="py-2 text-right">
+                    {renderActionButtons(row, value)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

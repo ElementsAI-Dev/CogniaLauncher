@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": [],
+    "types": ["@extism/js-pdk"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "plugin.d.ts", "node_modules/@cognia/plugin-sdk/cognia.d.ts"]
+}

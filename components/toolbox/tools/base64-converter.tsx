@@ -4,50 +4,99 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AlertCircle, ArrowDownUp } from 'lucide-react';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { ArrowDownUp } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
+
+const DEFAULT_PREFERENCES = {
+  mode: 'encode',
+  urlSafe: false,
+  stripWhitespace: true,
+} as const;
+
+function encodeUnicodeToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary);
+}
+
+function decodeBase64ToUnicode(base64: string): string {
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
 
 export default function Base64Converter({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('base64-converter', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
-  const [isEncoding, setIsEncoding] = useState(true);
-  const [urlSafe, setUrlSafe] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{ inputSize: number; outputSize: number } | null>(null);
+
+  const isEncoding = preferences.mode === 'encode';
+  const urlSafe = preferences.urlSafe;
 
   const handleConvert = useCallback(() => {
-    if (!input.trim()) { setOutput(''); setError(null); return; }
+    if (!input.trim()) {
+      setOutput('');
+      setMeta(null);
+      setError(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      setOutput('');
+      setMeta(null);
+      return;
+    }
+
     try {
+      let result = '';
       if (isEncoding) {
-        let encoded = btoa(unescape(encodeURIComponent(input)));
+        let encoded = encodeUnicodeToBase64(input);
         if (urlSafe) {
           encoded = encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         }
-        setOutput(encoded);
+        result = encoded;
       } else {
         let decoded = input;
+        if (preferences.stripWhitespace) {
+          decoded = decoded.replace(/\s+/g, '');
+        }
         if (urlSafe) {
           decoded = decoded.replace(/-/g, '+').replace(/_/g, '/');
           while (decoded.length % 4) decoded += '=';
         }
-        setOutput(decodeURIComponent(escape(atob(decoded))));
+        result = decodeBase64ToUnicode(decoded);
       }
+      setOutput(result);
+      setMeta({ inputSize: input.length, outputSize: result.length });
       setError(null);
     } catch (e) {
-      setError((e as Error).message);
+      setError((e as Error).message || t('toolbox.tools.base64Converter.invalidInput'));
       setOutput('');
+      setMeta(null);
     }
-  }, [input, isEncoding, urlSafe]);
+  }, [input, isEncoding, preferences.stripWhitespace, t, urlSafe]);
 
   const handleSwap = useCallback(() => {
-    setIsEncoding((prev) => !prev);
+    setPreferences({ mode: isEncoding ? 'decode' : 'encode' });
     setInput(output);
     setOutput('');
+    setMeta(null);
     setError(null);
-  }, [output]);
+  }, [isEncoding, output, setPreferences]);
 
   return (
     <div className={className}>
@@ -62,14 +111,32 @@ export default function Base64Converter({ className }: ToolComponentProps) {
           rows={8}
         />
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && <ToolValidationMessage message={error} />}
 
-        <div className="flex items-center gap-4">
+        <ToolActionRow
+          rightSlot={(
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="base64-url-safe"
+                  checked={urlSafe}
+                  onCheckedChange={(checked) => setPreferences({ urlSafe: checked })}
+                />
+                <Label htmlFor="base64-url-safe" className="text-sm">{t('toolbox.tools.base64Converter.urlSafe')}</Label>
+              </div>
+              {!isEncoding && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="base64-strip-spaces"
+                    checked={preferences.stripWhitespace}
+                    onCheckedChange={(checked) => setPreferences({ stripWhitespace: checked })}
+                  />
+                  <Label htmlFor="base64-strip-spaces" className="text-sm">{t('toolbox.tools.base64Converter.stripWhitespace')}</Label>
+                </div>
+              )}
+            </div>
+          )}
+        >
           <Button onClick={handleConvert} size="sm">
             {isEncoding ? t('toolbox.tools.base64Converter.encode') : t('toolbox.tools.base64Converter.decode')}
           </Button>
@@ -77,11 +144,7 @@ export default function Base64Converter({ className }: ToolComponentProps) {
             <ArrowDownUp className="h-3.5 w-3.5" />
             {t('toolbox.tools.base64Converter.swap')}
           </Button>
-          <div className="flex items-center gap-2 ml-auto">
-            <Switch id="url-safe" checked={urlSafe} onCheckedChange={setUrlSafe} />
-            <Label htmlFor="url-safe" className="text-sm">{t('toolbox.tools.base64Converter.urlSafe')}</Label>
-          </div>
-        </div>
+        </ToolActionRow>
 
         <ToolTextArea
           label={isEncoding ? t('toolbox.tools.base64Converter.base64Output') : t('toolbox.tools.base64Converter.textOutput')}
@@ -89,6 +152,12 @@ export default function Base64Converter({ className }: ToolComponentProps) {
           readOnly
           rows={8}
         />
+
+        {meta && (
+          <p className="text-xs text-muted-foreground">
+            {t('toolbox.tools.shared.ioMeta', { inputSize: meta.inputSize, outputSize: meta.outputSize })}
+          </p>
+        )}
       </div>
     </div>
   );

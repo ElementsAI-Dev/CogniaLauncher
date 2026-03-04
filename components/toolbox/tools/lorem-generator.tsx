@@ -8,6 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { RefreshCw, Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -28,14 +31,26 @@ function generateParagraph(): string {
   return Array.from({ length: sentenceCount }, generateSentence).join(' ');
 }
 
+const DEFAULT_PREFERENCES = {
+  mode: 'paragraphs',
+  count: 3,
+} as const;
+
 export default function LoremGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
-  const [mode, setMode] = useState<'paragraphs' | 'sentences' | 'words'>('paragraphs');
-  const [count, setCount] = useState(3);
+  const { preferences, setPreferences } = useToolPreferences('lorem-generator', DEFAULT_PREFERENCES);
   const [output, setOutput] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const { copied, copy } = useCopyToClipboard();
 
+  const mode = preferences.mode as 'paragraphs' | 'sentences' | 'words';
+  const count = Number(preferences.count) || 3;
+
   const handleGenerate = useCallback(() => {
+    if (count > TOOLBOX_LIMITS.generatorCount) {
+      setError(t('toolbox.tools.shared.countTooLarge', { limit: TOOLBOX_LIMITS.generatorCount }));
+      return;
+    }
     let result: string;
     if (mode === 'paragraphs') {
       result = Array.from({ length: count }, generateParagraph).join('\n\n');
@@ -44,8 +59,9 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
     } else {
       result = randomWords(count);
     }
+    setError(null);
     setOutput(result);
-  }, [mode, count]);
+  }, [count, mode, t]);
 
   const handleCopy = useCallback(async () => {
     await copy(output);
@@ -57,7 +73,7 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
         <div className="flex flex-wrap items-end gap-4">
           <div className="space-y-2">
             <Label>{t('toolbox.tools.loremGenerator.mode')}</Label>
-            <Select value={mode} onValueChange={(v) => setMode(v as typeof mode)}>
+            <Select value={mode} onValueChange={(v) => setPreferences({ mode: v })}>
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
@@ -73,13 +89,15 @@ export default function LoremGenerator({ className }: ToolComponentProps) {
             <Input
               type="number"
               min={1}
-              max={100}
+              max={TOOLBOX_LIMITS.generatorCount}
               value={count}
-              onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
+              onChange={(e) => setPreferences({ count: Math.max(1, Number(e.target.value) || 1) })}
               className="w-24"
             />
           </div>
         </div>
+
+        {error && <ToolValidationMessage message={error} />}
 
         <div className="flex items-center gap-2">
           <Button onClick={handleGenerate} size="sm" className="gap-1.5">

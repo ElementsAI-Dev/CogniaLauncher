@@ -28,6 +28,19 @@ import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, Refresh
 import { toast } from 'sonner';
 import type { EnvVarScope, PersistentEnvVar } from '@/types/tauri';
 
+type EnvVarAction =
+  | 'refresh'
+  | 'add'
+  | 'edit'
+  | 'delete'
+  | 'import'
+  | 'export'
+  | 'path-add'
+  | 'path-remove'
+  | 'path-reorder'
+  | 'path-deduplicate'
+  | null;
+
 export default function EnvVarPage() {
   const {
     envVars,
@@ -65,6 +78,10 @@ export default function EnvVarPage() {
   const [pathScope, setPathScope] = useState<EnvVarScope>('process');
   const [userPersistentVars, setUserPersistentVars] = useState<PersistentEnvVar[]>([]);
   const [systemPersistentVars, setSystemPersistentVars] = useState<PersistentEnvVar[]>([]);
+  const [activeTab, setActiveTab] = useState<'variables' | 'path' | 'shells'>('variables');
+  const [activeAction, setActiveAction] = useState<EnvVarAction>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [compactConflictView, setCompactConflictView] = useState(false);
 
   const refreshVariables = useCallback(async (scope: EnvVarScope | 'all') => {
     if (!isTauri()) return;
@@ -98,6 +115,46 @@ export default function EnvVarPage() {
     }
   }, [detectConflicts, fetchAllVars, fetchPersistentVarsTyped]);
 
+  useEffect(() => {
+    const syncViewport = () => setCompactConflictView(window.innerWidth < 768);
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
+
+  const resolveRefreshScope = useCallback((scope: EnvVarScope): EnvVarScope | 'all' => {
+    if (scopeFilter === 'all') return 'all';
+    return scope;
+  }, [scopeFilter]);
+
+  const actionLabel = useMemo(() => {
+    if (!activeAction) return '';
+    switch (activeAction) {
+      case 'refresh':
+        return t('envvar.actions.refresh');
+      case 'add':
+        return t('envvar.actions.add');
+      case 'edit':
+        return t('envvar.actions.edit');
+      case 'delete':
+        return t('envvar.actions.delete');
+      case 'import':
+        return t('envvar.importExport.import');
+      case 'export':
+        return t('envvar.importExport.export');
+      case 'path-add':
+        return t('envvar.pathEditor.add');
+      case 'path-remove':
+        return t('envvar.pathEditor.remove');
+      case 'path-reorder':
+        return t('envvar.pathEditor.title');
+      case 'path-deduplicate':
+        return t('envvar.pathEditor.deduplicate');
+      default:
+        return '';
+    }
+  }, [activeAction, t]);
+
   const envRows = useMemo(() => buildEnvVarRows({
     processVars: envVars,
     userPersistentVars,
@@ -115,6 +172,8 @@ export default function EnvVarPage() {
   }, [refreshVariables]);
 
   const handleTabChange = useCallback((tab: string) => {
+    const nextTab = (tab as 'variables' | 'path' | 'shells');
+    setActiveTab(nextTab);
     if (tab === 'path' && isTauri()) {
       fetchPath(pathScope);
     } else if (tab === 'shells' && isTauri()) {
@@ -129,37 +188,103 @@ export default function EnvVarPage() {
     }
   }, [fetchPath]);
 
-  const handleScopeFilterChange = useCallback((scope: EnvVarScope | 'all') => {
+  const handleScopeFilterChange = useCallback(async (scope: EnvVarScope | 'all') => {
+    setActionError(null);
+    setActiveAction('refresh');
     setScopeFilter(scope);
-    refreshVariables(scope);
+    try {
+      await refreshVariables(scope);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActiveAction(null);
+    }
   }, [refreshVariables]);
 
-  const handleEdit = useCallback((key: string, value: string, scope: EnvVarScope) => {
-    setVar(key, value, scope).then((ok) => {
-      if (ok) {
-        toast.success(t('common.saved'));
-        refreshVariables(scopeFilter);
+  const runVarMutation = useCallback(async (
+    action: Exclude<EnvVarAction, null>,
+    scope: EnvVarScope,
+    mutate: () => Promise<boolean>,
+    successMessage: string,
+  ) => {
+    setActionError(null);
+    setActiveAction(action);
+    try {
+      const ok = await mutate();
+      if (!ok) {
+        setActionError(t('common.error'));
+        return false;
       }
-    });
-  }, [refreshVariables, scopeFilter, setVar, t]);
+      await refreshVariables(resolveRefreshScope(scope));
+      toast.success(successMessage);
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(msg);
+      toast.error(msg);
+      return false;
+    } finally {
+      setActiveAction(null);
+    }
+  }, [refreshVariables, resolveRefreshScope, t]);
+
+  const handleEdit = useCallback((key: string, value: string, scope: EnvVarScope) => {
+    void runVarMutation('edit', scope, () => setVar(key, value, scope), t('common.saved'));
+  }, [runVarMutation, setVar, t]);
 
   const handleDelete = useCallback((key: string, scope: EnvVarScope) => {
-    removeVar(key, scope).then((ok) => {
-      if (ok) {
-        toast.success(t('common.deleted'));
-        refreshVariables(scopeFilter);
-      }
-    });
-  }, [refreshVariables, removeVar, scopeFilter, t]);
+    void runVarMutation('delete', scope, () => removeVar(key, scope), t('common.deleted'));
+  }, [removeVar, runVarMutation, t]);
 
   const handleAddSave = useCallback((key: string, value: string, scope: EnvVarScope) => {
-    setVar(key, value, scope).then((ok) => {
-      if (ok) {
-        toast.success(t('common.saved'));
-        refreshVariables(scopeFilter);
+    void runVarMutation('add', scope, () => setVar(key, value, scope), t('common.saved'));
+  }, [runVarMutation, setVar, t]);
+
+  const handleRefresh = useCallback(async () => {
+    setActionError(null);
+    setActiveAction('refresh');
+    try {
+      await refreshVariables(scopeFilter);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActiveAction(null);
+    }
+  }, [refreshVariables, scopeFilter]);
+
+  const runPathMutation = useCallback(async (
+    action: Exclude<EnvVarAction, null>,
+    mutation: () => Promise<boolean>,
+  ) => {
+    setActionError(null);
+    setActiveAction(action);
+    try {
+      const ok = await mutation();
+      if (!ok) {
+        setActionError(t('common.error'));
       }
-    });
-  }, [refreshVariables, scopeFilter, setVar, t]);
+      return ok;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setActionError(msg);
+      return false;
+    } finally {
+      setActiveAction(null);
+    }
+  }, [t]);
+
+  const handlePathDeduplicate = useCallback(async () => {
+    setActionError(null);
+    setActiveAction('path-deduplicate');
+    try {
+      return await deduplicatePath(pathScope);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+      return 0;
+    } finally {
+      setActiveAction(null);
+    }
+  }, [deduplicatePath, pathScope]);
 
   const handleOpenAdd = useCallback(() => {
     setEditKey(undefined);
@@ -167,9 +292,11 @@ export default function EnvVarPage() {
     setEditDialogOpen(true);
   }, []);
 
+  const busy = loading || activeAction !== null;
+
   if (!isTauri()) {
     return (
-      <div className="p-4 md:p-6">
+      <div className="p-3 sm:p-4 md:p-6">
         <PageHeader
           title={t('envvar.title')}
           description={t('envvar.description')}
@@ -188,37 +315,66 @@ export default function EnvVarPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
       <PageHeader
         title={t('envvar.title')}
         description={t('envvar.description')}
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => { setImportExportTab('import'); setImportExportOpen(true); }} className="gap-1.5">
-              <Upload className="h-3.5 w-3.5" />
-              {t('envvar.importExport.import')}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => { setImportExportTab('export'); setImportExportOpen(true); }} className="gap-1.5">
-              <Download className="h-3.5 w-3.5" />
-              {t('envvar.importExport.export')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refreshVariables(scopeFilter)}
-              disabled={loading}
-              className="gap-1.5"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              {t('envvar.actions.refresh')}
-            </Button>
-            <Button size="sm" onClick={handleOpenAdd} className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              {t('envvar.actions.add')}
-            </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end" data-testid="envvar-header-actions">
+            <div className="flex flex-wrap items-center justify-end gap-2" data-testid="envvar-header-actions-secondary">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setImportExportTab('import');
+                  setImportExportOpen(true);
+                }}
+                className="gap-1.5"
+                disabled={busy}
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {t('envvar.importExport.import')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setImportExportTab('export');
+                  setImportExportOpen(true);
+                }}
+                className="gap-1.5"
+                disabled={busy}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {t('envvar.importExport.export')}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2" data-testid="envvar-header-actions-primary">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={busy}
+                className="gap-1.5"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${(loading || activeAction === 'refresh') ? 'animate-spin' : ''}`} />
+                {t('envvar.actions.refresh')}
+              </Button>
+              <Button size="sm" onClick={handleOpenAdd} className="gap-1.5" disabled={busy}>
+                <Plus className="h-3.5 w-3.5" />
+                {t('envvar.actions.add')}
+              </Button>
+            </div>
           </div>
         }
       />
+
+      {activeAction && (
+        <Alert data-testid="envvar-operation-status">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          <AlertDescription>{t('common.loading')} {actionLabel ? `· ${actionLabel}` : ''}</AlertDescription>
+        </Alert>
+      )}
 
       {error && (
         <Alert variant="destructive">
@@ -227,32 +383,40 @@ export default function EnvVarPage() {
         </Alert>
       )}
 
-      <Tabs defaultValue="variables" onValueChange={handleTabChange}>
-        <TabsList>
-          <TabsTrigger value="variables" className="gap-1.5">
+      {actionError && (
+        <Alert variant="destructive" data-testid="envvar-operation-error">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid w-full grid-cols-3 sm:w-fit">
+          <TabsTrigger value="variables" className="justify-center gap-1.5 sm:justify-start">
             <Variable className="h-3.5 w-3.5" />
             {t('envvar.tabs.variables')}
           </TabsTrigger>
-          <TabsTrigger value="path" className="gap-1.5">
+          <TabsTrigger value="path" className="justify-center gap-1.5 sm:justify-start">
             <Route className="h-3.5 w-3.5" />
             {t('envvar.tabs.pathEditor')}
           </TabsTrigger>
-          <TabsTrigger value="shells" className="gap-1.5">
+          <TabsTrigger value="shells" className="justify-center gap-1.5 sm:justify-start">
             <Terminal className="h-3.5 w-3.5" />
             {t('envvar.tabs.shellProfiles')}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="variables" className="space-y-4 mt-4">
+        <TabsContent value="variables" className="mt-3 space-y-3 sm:mt-4 sm:space-y-4">
           <EnvVarToolbar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             scopeFilter={scopeFilter}
             onScopeFilterChange={handleScopeFilterChange}
+            disabled={busy}
             t={t}
           />
           {scopeFilter === 'all' && (
-            <div className="rounded-md border bg-muted/30 px-3 py-2.5 space-y-2">
+            <div className="rounded-md border bg-muted/30 px-3 py-3 space-y-2.5" data-testid="envvar-conflicts-summary">
               <div className="text-sm font-medium">{t('envvar.conflicts.title')}</div>
               {conflicts.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
@@ -263,28 +427,43 @@ export default function EnvVarPage() {
                   <p className="text-xs text-muted-foreground">
                     {t('envvar.conflicts.description', { count: conflicts.length })}
                   </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-muted-foreground border-b">
-                          <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.key')}</th>
-                          <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.userValue')}</th>
-                          <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.systemValue')}</th>
-                          <th className="text-left font-medium py-1.5">{t('envvar.conflicts.effectiveValue')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {conflicts.map((conflict) => (
-                          <tr key={conflict.key} className="border-b last:border-b-0">
-                            <td className="font-mono py-1.5 pr-3">{conflict.key}</td>
-                            <td className="font-mono py-1.5 pr-3">{conflict.userValue}</td>
-                            <td className="font-mono py-1.5 pr-3">{conflict.systemValue}</td>
-                            <td className="font-mono py-1.5">{conflict.effectiveValue}</td>
+                  {compactConflictView ? (
+                    <div className="space-y-2" data-testid="envvar-conflicts-compact-list">
+                      {conflicts.map((conflict) => (
+                        <div key={conflict.key} className="rounded-md border bg-background/80 p-2 text-xs">
+                          <div className="font-mono font-medium">{conflict.key}</div>
+                          <div className="mt-1 grid gap-1 text-muted-foreground">
+                            <p>{t('envvar.conflicts.userValue')}: <span className="font-mono">{conflict.userValue}</span></p>
+                            <p>{t('envvar.conflicts.systemValue')}: <span className="font-mono">{conflict.systemValue}</span></p>
+                            <p>{t('envvar.conflicts.effectiveValue')}: <span className="font-mono text-foreground">{conflict.effectiveValue}</span></p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto" data-testid="envvar-conflicts-table">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-muted-foreground border-b">
+                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.key')}</th>
+                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.userValue')}</th>
+                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.systemValue')}</th>
+                            <th className="text-left font-medium py-1.5">{t('envvar.conflicts.effectiveValue')}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {conflicts.map((conflict) => (
+                            <tr key={conflict.key} className="border-b last:border-b-0">
+                              <td className="font-mono py-1.5 pr-3">{conflict.key}</td>
+                              <td className="font-mono py-1.5 pr-3">{conflict.userValue}</td>
+                              <td className="font-mono py-1.5 pr-3">{conflict.systemValue}</td>
+                              <td className="font-mono py-1.5">{conflict.effectiveValue}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -295,26 +474,27 @@ export default function EnvVarPage() {
             searchQuery={searchQuery}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            busy={busy}
             t={t}
           />
         </TabsContent>
 
-        <TabsContent value="path" className="mt-4">
+        <TabsContent value="path" className="mt-3 sm:mt-4">
           <EnvVarPathEditor
             pathEntries={pathEntries}
             pathScope={pathScope}
             onPathScopeChange={handlePathScopeChange}
-            onAdd={(path, position) => addPathEntry(path, pathScope, position)}
-            onRemove={(path) => removePathEntry(path, pathScope)}
-            onReorder={(entries) => reorderPath(entries, pathScope)}
-            onDeduplicate={() => deduplicatePath(pathScope)}
+            onAdd={(path, position) => runPathMutation('path-add', () => addPathEntry(path, pathScope, position))}
+            onRemove={(path) => runPathMutation('path-remove', () => removePathEntry(path, pathScope))}
+            onReorder={(entries) => runPathMutation('path-reorder', () => reorderPath(entries, pathScope))}
+            onDeduplicate={handlePathDeduplicate}
             onRefresh={() => fetchPath(pathScope)}
-            loading={loading}
+            loading={busy}
             t={t}
           />
         </TabsContent>
 
-        <TabsContent value="shells" className="mt-4">
+        <TabsContent value="shells" className="mt-3 sm:mt-4">
           <EnvVarShellProfiles
             profiles={shellProfiles}
             onReadProfile={readShellProfile}
@@ -330,6 +510,7 @@ export default function EnvVarPage() {
         onSave={handleAddSave}
         editKey={editKey}
         editValue={editValue}
+        pending={activeAction === 'add' || activeAction === 'edit'}
         t={t}
       />
 
@@ -337,14 +518,41 @@ export default function EnvVarPage() {
         open={importExportOpen}
         onOpenChange={setImportExportOpen}
         onImport={async (content, scope) => {
-          const result = await importEnvFile(content, scope);
-          if (result) {
-            await refreshVariables(scopeFilter);
+          setActionError(null);
+          setActiveAction('import');
+          try {
+            const result = await importEnvFile(content, scope);
+            if (result) {
+              await refreshVariables(resolveRefreshScope(scope));
+            } else {
+              setActionError(t('common.error'));
+            }
+            return result;
+          } catch (err) {
+            setActionError(err instanceof Error ? err.message : String(err));
+            return null;
+          } finally {
+            setActiveAction(null);
           }
-          return result;
         }}
-        onExport={exportEnvFile}
+        onExport={async (scope, format) => {
+          setActionError(null);
+          setActiveAction('export');
+          try {
+            const result = await exportEnvFile(scope, format);
+            if (!result) {
+              setActionError(t('common.error'));
+            }
+            return result;
+          } catch (err) {
+            setActionError(err instanceof Error ? err.message : String(err));
+            return null;
+          } finally {
+            setActiveAction(null);
+          }
+        }}
         defaultTab={importExportTab}
+        busy={busy}
         t={t}
       />
     </div>

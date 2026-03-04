@@ -4,10 +4,14 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AlertCircle, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { ShieldCheck, ShieldAlert } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
 function base64UrlDecode(str: string): string {
@@ -39,19 +43,45 @@ function decodeJwt(token: string, now: number): DecodedJwt | null {
   }
 }
 
+const DEFAULT_PREFERENCES = {
+  showSignature: false,
+} as const;
+
 export default function JwtDecoder({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('jwt-decoder', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [decoded, setDecoded] = useState<DecodedJwt | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const { copy } = useCopyToClipboard();
 
   const handleDecode = useCallback(() => {
-    if (!input.trim()) { setDecoded(null); return; }
-    setDecoded(decodeJwt(input, Date.now()));
-  }, [input]);
+    if (!input.trim()) {
+      setDecoded(null);
+      setErrorDetail(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setDecoded(null);
+      setErrorDetail(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      return;
+    }
+    const result = decodeJwt(input, Date.now());
+    setDecoded(result);
+    setErrorDetail(result ? null : t('toolbox.tools.jwtDecoder.invalidToken'));
+  }, [input, t]);
 
   const expInfo = decoded?.expDate ? { expDate: decoded.expDate, isExpired: decoded.isExpired } : null;
 
   const error = input.trim() && !decoded;
+
+  const handleCopySection = useCallback(async (value: unknown) => {
+    await copy(JSON.stringify(value, null, 2));
+  }, [copy]);
 
   return (
     <div className={className}>
@@ -70,11 +100,21 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
           {t('toolbox.tools.jwtDecoder.decode')}
         </Button>
 
+        <ToolActionRow
+          rightSlot={(
+            <div className="flex items-center gap-2">
+              <Switch
+                id="jwt-show-signature"
+                checked={preferences.showSignature}
+                onCheckedChange={(checked) => setPreferences({ showSignature: checked })}
+              />
+              <Label htmlFor="jwt-show-signature" className="text-xs">{t('toolbox.tools.jwtDecoder.showSignature')}</Label>
+            </div>
+          )}
+        />
+
         {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{t('toolbox.tools.jwtDecoder.invalidToken')}</AlertDescription>
-          </Alert>
+          <ToolValidationMessage message={errorDetail ?? t('toolbox.tools.jwtDecoder.invalidToken')} />
         )}
 
         {decoded && (
@@ -92,6 +132,9 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
                 <pre className="text-xs font-mono bg-muted rounded-md p-3 overflow-auto max-h-48">
                   {JSON.stringify(decoded.header, null, 2)}
                 </pre>
+                <Button variant="ghost" size="sm" className="mt-2 h-7 text-xs" onClick={() => handleCopySection(decoded.header)}>
+                  {t('toolbox.actions.copy')}
+                </Button>
               </CardContent>
             </Card>
 
@@ -116,6 +159,9 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
                 <pre className="text-xs font-mono bg-muted rounded-md p-3 overflow-auto max-h-48">
                   {JSON.stringify(decoded.payload, null, 2)}
                 </pre>
+                <Button variant="ghost" size="sm" className="mt-2 h-7 text-xs" onClick={() => handleCopySection(decoded.payload)}>
+                  {t('toolbox.actions.copy')}
+                </Button>
                 {expInfo && (
                   <p className="text-xs text-muted-foreground mt-2">
                     {t('toolbox.tools.jwtDecoder.expiresAt')}: {expInfo.expDate.toLocaleString()}
@@ -123,6 +169,16 @@ export default function JwtDecoder({ className }: ToolComponentProps) {
                 )}
               </CardContent>
             </Card>
+            {preferences.showSignature && (
+              <Card className="md:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">{t('toolbox.tools.jwtDecoder.signature')}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <code className="block rounded-md bg-muted p-2 text-xs break-all">{decoded.signature}</code>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </div>

@@ -74,6 +74,33 @@ describe("PackageList", () => {
     expect(screen.getByText("pandas")).toBeInTheDocument();
   });
 
+  it("uses flexible container height instead of fixed height", () => {
+    const { container } = render(<PackageList {...defaultProps} />);
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("flex-1");
+    expect(scrollArea).toHaveClass("min-h-0");
+    expect(scrollArea).not.toHaveClass("h-[500px]");
+    expect(scrollArea).not.toHaveClass("max-h-[500px]");
+  });
+
+  it("uses responsive row layout to avoid squeezing content on narrow widths", () => {
+    render(<PackageList {...defaultProps} />);
+    const packageName = screen.getByText("numpy");
+    const card = packageName.closest("div.bg-card");
+    expect(card).toBeInTheDocument();
+    expect(card).toHaveClass("grid");
+    expect(card).toHaveClass("sm:grid-cols-[minmax(0,1fr)_auto]");
+  });
+
+  it("applies long-name overflow protection on package title", () => {
+    render(<PackageList {...defaultProps} />);
+    const packageName = screen.getByText("numpy");
+    expect(packageName).toHaveAttribute("title", "numpy");
+    expect(packageName).toHaveClass("break-all");
+    expect(packageName).toHaveClass("sm:truncate");
+  });
+
   it("shows search empty state when no packages", () => {
     render(<PackageList {...defaultProps} packages={[]} />);
     expect(screen.getByText("No packages found")).toBeInTheDocument();
@@ -93,6 +120,18 @@ describe("PackageList", () => {
     render(<PackageList {...defaultProps} />);
     expect(screen.getByText("1.24.0")).toBeInTheDocument();
     expect(screen.getByText("2.0.0")).toBeInTheDocument();
+  });
+
+  it("shows '-' when version is missing", () => {
+    render(
+      <PackageList
+        {...defaultProps}
+        packages={[
+          { name: "no-version", provider: "npm", description: "missing", latest_version: null },
+        ]}
+      />,
+    );
+    expect(screen.getByText("-")).toBeInTheDocument();
   });
 
   it("renders select all checkbox for selectable list", () => {

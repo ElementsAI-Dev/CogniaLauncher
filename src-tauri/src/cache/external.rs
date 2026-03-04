@@ -6,11 +6,14 @@
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::process::ProcessOptions;
 use crate::platform::{disk::format_size, fs, process};
+use futures::future::{BoxFuture, FutureExt, Shared};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 /// Supported external cache providers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -542,6 +545,35 @@ static DISCOVERY_CACHE: Lazy<RwLock<Option<(Instant, Vec<ExternalCacheInfo>)>>> 
     Lazy::new(|| RwLock::new(None));
 
 const DISCOVERY_CACHE_TTL_SECS: u64 = 60;
+
+/// A shared in-flight future for provider size calculations.
+type SharedSizeFuture = Shared<BoxFuture<'static, u64>>;
+
+#[derive(Debug, Clone)]
+struct ProviderSizeCacheEntry {
+    timestamp: Instant,
+    size: u64,
+}
+
+/// In-memory cache for provider size results (keyed by provider + resolved path).
+static PROVIDER_SIZE_CACHE: Lazy<RwLock<HashMap<String, ProviderSizeCacheEntry>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// In-flight provider size calculations used to deduplicate concurrent scans.
+static PROVIDER_SIZE_INFLIGHT: Lazy<Mutex<HashMap<String, SharedSizeFuture>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Epoch token to prevent stale in-flight results from being written after invalidation.
+static PROVIDER_SIZE_CACHE_EPOCH: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
+
+const PROVIDER_SIZE_CACHE_TTL_SECS: u64 = 45;
+
+#[cfg(test)]
+static PROVIDER_SIZE_SCAN_COUNT_BY_KEY: Lazy<Mutex<HashMap<String, u64>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+#[cfg(test)]
+static PROVIDER_SIZE_TEST_MUTEX: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// Result of cleaning external cache
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1564,29 +1596,190 @@ pub fn discover_all_caches_fast_with_custom(
     caches
 }
 
-/// Calculate size for a single provider by id (also handles custom paths).
-pub async fn calculate_provider_cache_size(
+fn provider_size_cache_key(provider_id: &str, cache_path: &Path) -> String {
+    #[cfg(windows)]
+    let normalized_path = cache_path.to_string_lossy().to_ascii_lowercase();
+    #[cfg(not(windows))]
+    let normalized_path = cache_path.to_string_lossy().to_string();
+
+    format!("{}::{}", provider_id.to_ascii_lowercase(), normalized_path)
+}
+
+fn resolve_provider_cache_path(
     provider_id: &str,
     custom_entries: &[crate::config::settings::CustomCacheEntry],
-) -> CogniaResult<u64> {
-    // Check built-in providers first
+) -> CogniaResult<Option<PathBuf>> {
     if let Some(provider) = ExternalCacheProvider::parse_str(provider_id) {
-        if let Some(path) = provider.cache_path() {
-            return Ok(calculate_dir_size(&path).await);
-        }
-        return Ok(0);
+        return Ok(provider.cache_path());
     }
 
-    // Check custom entries
-    if let Some(entry) = custom_entries.iter().find(|e| e.id == provider_id) {
-        let path = PathBuf::from(&entry.path);
-        return Ok(calculate_dir_size(&path).await);
+    if let Some(entry) = custom_entries
+        .iter()
+        .find(|entry| entry.id.eq_ignore_ascii_case(provider_id))
+    {
+        return Ok(Some(PathBuf::from(&entry.path)));
     }
 
     Err(CogniaError::Provider(format!(
         "Unknown provider: {}",
         provider_id
     )))
+}
+
+async fn try_get_cached_provider_size(key: &str) -> Option<u64> {
+    {
+        let guard = PROVIDER_SIZE_CACHE.read().await;
+        if let Some(entry) = guard.get(key) {
+            if entry.timestamp.elapsed().as_secs() < PROVIDER_SIZE_CACHE_TTL_SECS {
+                log::debug!("external_cache_size cache hit key={}", key);
+                return Some(entry.size);
+            }
+        }
+    }
+
+    let mut guard = PROVIDER_SIZE_CACHE.write().await;
+    if let Some(entry) = guard.get(key) {
+        if entry.timestamp.elapsed().as_secs() >= PROVIDER_SIZE_CACHE_TTL_SECS {
+            guard.remove(key);
+            log::debug!("external_cache_size cache stale key={}", key);
+        }
+    }
+
+    None
+}
+
+async fn store_provider_size_if_fresh_epoch(key: String, size: u64, epoch: u64) {
+    let current_epoch = PROVIDER_SIZE_CACHE_EPOCH.load(Ordering::Relaxed);
+    if current_epoch != epoch {
+        log::debug!(
+            "external_cache_size skip store due to epoch mismatch key={} started_epoch={} current_epoch={}",
+            key,
+            epoch,
+            current_epoch
+        );
+        return;
+    }
+
+    let mut guard = PROVIDER_SIZE_CACHE.write().await;
+    guard.insert(
+        key,
+        ProviderSizeCacheEntry {
+            timestamp: Instant::now(),
+            size,
+        },
+    );
+}
+
+pub async fn invalidate_provider_size_cache(provider_id: &str) {
+    let provider_prefix = format!("{}::", provider_id.to_ascii_lowercase());
+    let mut result_guard = PROVIDER_SIZE_CACHE.write().await;
+    result_guard.retain(|key, _| !key.starts_with(&provider_prefix));
+    drop(result_guard);
+
+    let mut inflight_guard = PROVIDER_SIZE_INFLIGHT.lock().await;
+    inflight_guard.retain(|key, _| !key.starts_with(&provider_prefix));
+
+    PROVIDER_SIZE_CACHE_EPOCH.fetch_add(1, Ordering::Relaxed);
+    log::debug!(
+        "external_cache_size invalidated provider prefix={} epoch={}",
+        provider_prefix,
+        PROVIDER_SIZE_CACHE_EPOCH.load(Ordering::Relaxed)
+    );
+}
+
+pub async fn invalidate_all_provider_size_cache() {
+    let mut result_guard = PROVIDER_SIZE_CACHE.write().await;
+    result_guard.clear();
+    drop(result_guard);
+
+    let mut inflight_guard = PROVIDER_SIZE_INFLIGHT.lock().await;
+    inflight_guard.clear();
+
+    PROVIDER_SIZE_CACHE_EPOCH.fetch_add(1, Ordering::Relaxed);
+    log::debug!(
+        "external_cache_size invalidated all epoch={}",
+        PROVIDER_SIZE_CACHE_EPOCH.load(Ordering::Relaxed)
+    );
+}
+
+/// Calculate size for a single provider by id (also handles custom paths).
+pub async fn calculate_provider_cache_size(
+    provider_id: &str,
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> CogniaResult<u64> {
+    let Some(path) = resolve_provider_cache_path(provider_id, custom_entries)? else {
+        return Ok(0);
+    };
+
+    let key = provider_size_cache_key(provider_id, &path);
+    if let Some(size) = try_get_cached_provider_size(&key).await {
+        return Ok(size);
+    }
+
+    let request_started = Instant::now();
+    let epoch = PROVIDER_SIZE_CACHE_EPOCH.load(Ordering::Relaxed);
+    let future = {
+        let mut guard = PROVIDER_SIZE_INFLIGHT.lock().await;
+        if let Some(existing) = guard.get(&key) {
+            log::debug!(
+                "external_cache_size in-flight join provider={} key={}",
+                provider_id,
+                key
+            );
+            existing.clone()
+        } else {
+            log::debug!(
+                "external_cache_size cache miss provider={} key={}",
+                provider_id,
+                key
+            );
+            let path_for_scan = path.clone();
+            let provider_for_log = provider_id.to_string();
+            let key_for_log = key.clone();
+
+            let shared = async move {
+                #[cfg(test)]
+                {
+                    let mut guard = PROVIDER_SIZE_SCAN_COUNT_BY_KEY.lock().await;
+                    *guard.entry(key_for_log.clone()).or_insert(0) += 1;
+                }
+
+                let started = Instant::now();
+                let size = calculate_dir_size(&path_for_scan).await;
+                log::debug!(
+                    "external_cache_size scan finished provider={} key={} elapsed_ms={} size={}",
+                    provider_for_log,
+                    key_for_log,
+                    started.elapsed().as_millis(),
+                    size
+                );
+                size
+            }
+            .boxed()
+            .shared();
+
+            guard.insert(key.clone(), shared.clone());
+            shared
+        }
+    };
+
+    let size = future.await;
+
+    {
+        let mut guard = PROVIDER_SIZE_INFLIGHT.lock().await;
+        guard.remove(&key);
+    }
+
+    store_provider_size_if_fresh_epoch(key.clone(), size, epoch).await;
+    log::debug!(
+        "external_cache_size resolved provider={} key={} elapsed_ms={} size={}",
+        provider_id,
+        key,
+        request_started.elapsed().as_millis(),
+        size
+    );
+
+    Ok(size)
 }
 
 /// Cached fast discovery: returns cached results if still fresh, otherwise re-discovers.
@@ -1596,13 +1789,25 @@ pub async fn discover_all_caches_cached(excluded: &[String]) -> Vec<ExternalCach
         let guard = DISCOVERY_CACHE.read().await;
         if let Some((ts, ref cached)) = *guard {
             if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+                log::debug!(
+                    "external_cache_discovery cache hit excluded={} providers={}",
+                    excluded.len(),
+                    cached.len()
+                );
                 return cached.clone();
             }
         }
     }
 
     // Cache miss or stale — re-discover
+    let started = Instant::now();
     let result = discover_all_caches_fast(excluded);
+    log::debug!(
+        "external_cache_discovery cache miss excluded={} providers={} elapsed_ms={}",
+        excluded.len(),
+        result.len(),
+        started.elapsed().as_millis()
+    );
 
     // Store in cache
     {
@@ -1624,13 +1829,27 @@ pub async fn discover_all_caches_cached_with_custom(
         let guard = DISCOVERY_CACHE.read().await;
         if let Some((ts, ref cached)) = *guard {
             if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+                log::debug!(
+                    "external_cache_discovery_with_custom cache hit excluded={} custom={} providers={}",
+                    excluded.len(),
+                    custom_entries.len(),
+                    cached.len()
+                );
                 return cached.clone();
             }
         }
     }
 
     // Cache miss or stale - re-discover with custom entries
+    let started = Instant::now();
     let result = discover_all_caches_fast_with_custom(excluded, custom_entries);
+    log::debug!(
+        "external_cache_discovery_with_custom cache miss excluded={} custom={} providers={} elapsed_ms={}",
+        excluded.len(),
+        custom_entries.len(),
+        result.len(),
+        started.elapsed().as_millis()
+    );
 
     // Store in cache
     {
@@ -1644,6 +1863,7 @@ pub async fn discover_all_caches_cached_with_custom(
 pub async fn invalidate_discovery_cache() {
     let mut guard = DISCOVERY_CACHE.write().await;
     *guard = None;
+    log::debug!("external_cache_discovery invalidated");
 }
 
 /// Clean cache for a specific provider
@@ -1702,14 +1922,18 @@ pub async fn clean_cache(
     let freed = size_before.saturating_sub(size_after);
 
     match result {
-        Ok(()) => Ok(ExternalCacheCleanResult {
-            provider: provider.id().to_string(),
-            display_name: provider.display_name().to_string(),
-            freed_bytes: freed,
-            freed_human: format_size(freed),
-            success: true,
-            error: None,
-        }),
+        Ok(()) => {
+            invalidate_discovery_cache().await;
+            invalidate_provider_size_cache(provider.id()).await;
+            Ok(ExternalCacheCleanResult {
+                provider: provider.id().to_string(),
+                display_name: provider.display_name().to_string(),
+                freed_bytes: freed,
+                freed_human: format_size(freed),
+                success: true,
+                error: None,
+            })
+        }
         Err(e) => Ok(ExternalCacheCleanResult {
             provider: provider.id().to_string(),
             display_name: provider.display_name().to_string(),
@@ -1732,6 +1956,9 @@ pub async fn clean_all_caches(use_trash: bool) -> CogniaResult<Vec<ExternalCache
             results.push(result);
         }
     }
+
+    invalidate_discovery_cache().await;
+    invalidate_all_provider_size_cache().await;
 
     Ok(results)
 }
@@ -1756,6 +1983,7 @@ pub async fn get_combined_stats(internal_size: u64) -> CogniaResult<CombinedCach
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::settings::CustomCacheEntry;
 
     #[test]
     fn test_provider_id() {
@@ -2057,6 +2285,149 @@ mod tests {
         assert!(ExternalCacheProvider::Cargo.clean_command().is_none());
         assert!(ExternalCacheProvider::Bun.clean_command().is_none());
         assert!(ExternalCacheProvider::Gradle.clean_command().is_none());
+    }
+
+    async fn reset_provider_size_test_state() {
+        invalidate_all_provider_size_cache().await;
+        let mut guard = PROVIDER_SIZE_SCAN_COUNT_BY_KEY.lock().await;
+        guard.clear();
+    }
+
+    fn make_custom_cache_entry(id: &str, path: &Path) -> Vec<CustomCacheEntry> {
+        vec![CustomCacheEntry {
+            id: id.to_string(),
+            display_name: format!("{} cache", id),
+            path: path.display().to_string(),
+            category: "devtools".to_string(),
+        }]
+    }
+
+    async fn scan_count_for_key(key: &str) -> u64 {
+        let guard = PROVIDER_SIZE_SCAN_COUNT_BY_KEY.lock().await;
+        guard.get(key).copied().unwrap_or(0)
+    }
+
+    #[tokio::test]
+    async fn test_provider_size_cache_reuse_for_custom_entry() {
+        let _guard = PROVIDER_SIZE_TEST_MUTEX.lock().await;
+        reset_provider_size_test_state().await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache_root = dir.path().join("custom-cache");
+        tokio::fs::create_dir_all(&cache_root).await.unwrap();
+        tokio::fs::write(cache_root.join("a.bin"), vec![0u8; 128])
+            .await
+            .unwrap();
+
+        let entries = make_custom_cache_entry("custom_reuse", &cache_root);
+        let key = provider_size_cache_key("custom_reuse", &cache_root);
+
+        let size1 = calculate_provider_cache_size("custom_reuse", &entries)
+            .await
+            .unwrap();
+        let ts1 = {
+            let guard = PROVIDER_SIZE_CACHE.read().await;
+            guard.get(&key).map(|entry| entry.timestamp).unwrap()
+        };
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let size2 = calculate_provider_cache_size("custom_reuse", &entries)
+            .await
+            .unwrap();
+        let ts2 = {
+            let guard = PROVIDER_SIZE_CACHE.read().await;
+            guard.get(&key).map(|entry| entry.timestamp).unwrap()
+        };
+
+        assert_eq!(size1, 128);
+        assert_eq!(size2, 128);
+        assert_eq!(ts1, ts2, "Expected second read to reuse cached value");
+        assert_eq!(
+            scan_count_for_key(&key).await,
+            1,
+            "Expected exactly one size scan due to cache reuse"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_provider_size_inflight_deduplication() {
+        let _guard = PROVIDER_SIZE_TEST_MUTEX.lock().await;
+        reset_provider_size_test_state().await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache_root = dir.path().join("custom-dedupe");
+        tokio::fs::create_dir_all(&cache_root).await.unwrap();
+        for i in 0..300 {
+            tokio::fs::write(cache_root.join(format!("{}.bin", i)), vec![0u8; 1024])
+                .await
+                .unwrap();
+        }
+
+        let entries = make_custom_cache_entry("custom_dedupe", &cache_root);
+        let results = futures::future::join_all(
+            (0..6).map(|_| calculate_provider_cache_size("custom_dedupe", &entries)),
+        )
+        .await;
+
+        for result in results {
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), 300 * 1024);
+        }
+        let key = provider_size_cache_key("custom_dedupe", &cache_root);
+        assert_eq!(
+            scan_count_for_key(&key).await,
+            1,
+            "Expected concurrent requests to share one in-flight scan"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_provider_size_cache_invalidation() {
+        let _guard = PROVIDER_SIZE_TEST_MUTEX.lock().await;
+        reset_provider_size_test_state().await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache_a = dir.path().join("cache-a");
+        let cache_b = dir.path().join("cache-b");
+        tokio::fs::create_dir_all(&cache_a).await.unwrap();
+        tokio::fs::create_dir_all(&cache_b).await.unwrap();
+        tokio::fs::write(cache_a.join("a.bin"), vec![0u8; 64])
+            .await
+            .unwrap();
+        tokio::fs::write(cache_b.join("b.bin"), vec![0u8; 96])
+            .await
+            .unwrap();
+
+        let entries_a = make_custom_cache_entry("custom_a", &cache_a);
+        let entries_b = make_custom_cache_entry("custom_b", &cache_b);
+        let key_a = provider_size_cache_key("custom_a", &cache_a);
+        let key_b = provider_size_cache_key("custom_b", &cache_b);
+
+        let _ = calculate_provider_cache_size("custom_a", &entries_a).await.unwrap();
+        let _ = calculate_provider_cache_size("custom_b", &entries_b).await.unwrap();
+        assert_eq!(scan_count_for_key(&key_a).await, 1);
+        assert_eq!(scan_count_for_key(&key_b).await, 1);
+
+        invalidate_provider_size_cache("custom_a").await;
+        {
+            let guard = PROVIDER_SIZE_CACHE.read().await;
+            assert!(!guard.contains_key(&key_a));
+            assert!(guard.contains_key(&key_b));
+        }
+
+        let _ = calculate_provider_cache_size("custom_a", &entries_a).await.unwrap();
+        assert_eq!(
+            scan_count_for_key(&key_a).await,
+            2,
+            "Expected recalculation after provider-specific invalidation"
+        );
+
+        invalidate_all_provider_size_cache().await;
+        {
+            let guard = PROVIDER_SIZE_CACHE.read().await;
+            assert!(guard.is_empty());
+        }
     }
 
     #[tokio::test]

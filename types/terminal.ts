@@ -3,6 +3,7 @@ import type {
   ShellInfo,
   ShellStartupMeasurement,
   ShellHealthResult,
+  TerminalConfigMutationResult,
   TerminalProfile,
   TerminalProfileTemplate,
   PSProfileInfo,
@@ -14,6 +15,14 @@ import type {
 } from '@/types/tauri';
 
 export type ProxyMode = 'global' | 'custom' | 'none';
+export type TerminalActionStatus = 'idle' | 'loading' | 'success' | 'error';
+
+export interface TerminalActionState<T> {
+  status: TerminalActionStatus;
+  message: string | null;
+  result: T | null;
+  updatedAt: number | null;
+}
 
 export interface UseTerminalState {
   shells: ShellInfo[];
@@ -44,6 +53,14 @@ export interface UseTerminalState {
   noProxy: string;
   globalProxy: string;
   proxyConfigSaving: boolean;
+  configMutationState: TerminalActionState<TerminalConfigMutationResult>;
+  proxySyncState: TerminalActionState<{
+    proxyMode: ProxyMode;
+    customProxy: string;
+    noProxy: string;
+    globalProxy: string;
+    proxyEnvVars: [string, string][];
+  }>;
   shellsLoading: boolean;
   profilesLoading: boolean;
   psLoading: boolean;

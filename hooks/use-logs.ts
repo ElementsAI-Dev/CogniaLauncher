@@ -68,6 +68,7 @@ export function useLogs() {
     endTime?: number | null;
     limit?: number;
     offset?: number;
+    maxScanLines?: number;
   }) => {
     if (!isTauri()) return null;
 

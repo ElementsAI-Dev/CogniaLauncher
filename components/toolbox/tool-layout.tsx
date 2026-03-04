@@ -3,11 +3,13 @@
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useLocale } from '@/components/providers/locale-provider';
 import { cn } from '@/lib/utils';
-import { Copy, ClipboardPaste, Trash2, Check } from 'lucide-react';
+import { Copy, ClipboardPaste, Trash2, Check, AlertCircle, Info } from 'lucide-react';
 import { useCallback } from 'react';
 import { useCopyToClipboard } from '@/hooks/use-clipboard';
+import type { ReactNode } from 'react';
 
 interface ToolTextAreaProps {
   label: string;
@@ -85,5 +87,36 @@ export function ToolTextArea({
         className={cn('font-mono text-sm resize-none', readOnly && 'bg-muted/50')}
       />
     </div>
+  );
+}
+
+interface ToolActionRowProps {
+  children?: ReactNode;
+  className?: string;
+  rightSlot?: ReactNode;
+}
+
+export function ToolActionRow({ children, className, rightSlot }: ToolActionRowProps) {
+  return (
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      {rightSlot ? <div className="ml-auto">{rightSlot}</div> : null}
+    </div>
+  );
+}
+
+interface ToolValidationMessageProps {
+  message: string;
+  tone?: 'error' | 'info';
+  className?: string;
+}
+
+export function ToolValidationMessage({ message, tone = 'error', className }: ToolValidationMessageProps) {
+  const isError = tone === 'error';
+  return (
+    <Alert variant={isError ? 'destructive' : 'default'} className={className}>
+      {isError ? <AlertCircle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+      <AlertDescription className="font-mono text-xs">{message}</AlertDescription>
+    </Alert>
   );
 }

@@ -210,6 +210,29 @@ describe("LogProvider", () => {
         }),
       );
     });
+
+    it("handles circular objects in console interception", async () => {
+      render(
+        <LogProvider>
+          <div>Test</div>
+        </LogProvider>,
+      );
+
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+      console.info("data:", circular);
+
+      act(() => {
+        jest.runAllTimers();
+      });
+
+      expect(mockAddLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: "info",
+          target: "webview",
+        }),
+      );
+    });
   });
 
   describe("window.error handling", () => {

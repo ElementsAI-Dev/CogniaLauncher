@@ -225,11 +225,12 @@ export type VersionFilter = typeof VERSION_FILTERS[number];
 // Installation step names
 export const INSTALLATION_STEPS = [
   'fetching',
-  'downloading', 
-  'extracting', 
-  'configuring', 
-  'done', 
-  'error'
+  'downloading',
+  'extracting',
+  'configuring',
+  'done',
+  'error',
+  'cancelled',
 ] as const;
 export type InstallationStep = typeof INSTALLATION_STEPS[number];
 
@@ -249,4 +250,51 @@ export const INSTALLATION_STEP_LABELS: Record<InstallationStep, string> = {
   configuring: 'progress.configuring',
   done: 'progress.configuring',
   error: 'progress.configuring',
+  cancelled: 'progress.configuring',
+};
+
+export const INSTALLATION_PHASES = [
+  'resolve',
+  'select_artifact',
+  'download',
+  'verify',
+  'persist',
+  'finalize',
+] as const;
+export type InstallationPhase = typeof INSTALLATION_PHASES[number];
+
+export const INSTALLATION_PHASE_LABELS: Record<InstallationPhase, string> = {
+  resolve: 'progress.fetchingInfo',
+  select_artifact: 'progress.fetchingInfo',
+  download: 'progress.downloadingBinaries',
+  verify: 'progress.extracting',
+  persist: 'progress.configuring',
+  finalize: 'progress.configuring',
+};
+
+export const INSTALLATION_STEP_TO_PHASE: Record<InstallationStep, InstallationPhase> = {
+  fetching: 'resolve',
+  downloading: 'download',
+  extracting: 'verify',
+  configuring: 'persist',
+  done: 'finalize',
+  error: 'finalize',
+  cancelled: 'finalize',
+};
+
+export type InstallationFailureClass =
+  | 'selection_error'
+  | 'network_error'
+  | 'integrity_error'
+  | 'cache_error'
+  | 'cancelled'
+  | 'timeout';
+
+export const INSTALLATION_FAILURE_CLASS_LABELS: Record<InstallationFailureClass, string> = {
+  selection_error: 'Selection failed',
+  network_error: 'Network error',
+  integrity_error: 'Integrity check failed',
+  cache_error: 'Cache error',
+  cancelled: 'Cancelled',
+  timeout: 'Request timed out',
 };

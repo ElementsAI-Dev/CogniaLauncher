@@ -110,6 +110,14 @@ describe("PackageDetailsDialog", () => {
     await waitFor(() => {
       expect(screen.getByText("Version History")).toBeInTheDocument();
     }, { timeout: 3000 });
+
+    const dialog = screen.getByRole("dialog");
+    const scrollAreas = dialog.querySelectorAll('[data-slot="scroll-area"]');
+    expect(scrollAreas.length).toBeGreaterThanOrEqual(2);
+    expect(scrollAreas[0]).toHaveClass("max-h-[60dvh]");
+    expect(scrollAreas[0]).not.toHaveClass("max-h-[50vh]");
+    expect(scrollAreas[1]).toHaveClass("max-h-[35dvh]");
+    expect(scrollAreas[1]).not.toHaveClass("max-h-40");
   });
 
   it("shows load failed when info is null", async () => {

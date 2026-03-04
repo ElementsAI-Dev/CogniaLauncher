@@ -8,6 +8,7 @@ describe('useToolboxStore', () => {
       favorites: [],
       recentTools: [],
       toolUseCounts: {},
+      toolPreferences: {},
       viewMode: 'grid',
       selectedCategory: 'all',
       searchQuery: '',
@@ -182,5 +183,74 @@ describe('useToolboxStore', () => {
       result.current.setActiveToolId(null);
     });
     expect(result.current.activeToolId).toBeNull();
+  });
+
+  describe('tool preferences', () => {
+    it('should merge tool preferences by toolId', () => {
+      const { result } = renderHook(() => useToolboxStore());
+      act(() => {
+        result.current.setToolPreferences('json-formatter', { indent: '4', sortKeys: true });
+      });
+      act(() => {
+        result.current.setToolPreferences('json-formatter', { escapeUnicode: true });
+      });
+
+      const preferences = result.current.getToolPreferences('json-formatter', {
+        indent: '2',
+        sortKeys: false,
+        escapeUnicode: false,
+      });
+
+      expect(preferences.indent).toBe('4');
+      expect(preferences.sortKeys).toBe(true);
+      expect(preferences.escapeUnicode).toBe(true);
+    });
+
+    it('should fallback to defaults for mismatched types', () => {
+      const { result } = renderHook(() => useToolboxStore());
+      act(() => {
+        result.current.setToolPreferences('json-formatter', { indent: 4 as unknown as string });
+      });
+
+      const preferences = result.current.getToolPreferences('json-formatter', {
+        indent: '2',
+        sortKeys: false,
+      });
+
+      expect(preferences.indent).toBe('2');
+      expect(preferences.sortKeys).toBe(false);
+    });
+  });
+
+  describe('persist migration', () => {
+    const getPersistConfig = () =>
+      (useToolboxStore as unknown as {
+        persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } };
+      }).persist.getOptions();
+
+    it('sanitizes malformed persisted state', () => {
+      const migrated = getPersistConfig().migrate(
+        {
+          favorites: ['a', 123, 'b'],
+          recentTools: ['x', 'y'],
+          toolUseCounts: { ok: 2, bad: -1, weird: 'x' },
+          toolPreferences: {
+            'json-formatter': { indent: '2', sortKeys: true, invalid: { nested: true } },
+            invalid: 'value',
+          },
+          viewMode: 'invalid',
+        },
+        2,
+      ) as Record<string, unknown>;
+
+      expect(migrated.favorites).toEqual(['a', 'b']);
+      expect(migrated.recentTools).toEqual(['x', 'y']);
+      expect(migrated.toolUseCounts).toEqual({ ok: 2 });
+      expect(migrated.viewMode).toBe('grid');
+      expect(migrated.toolPreferences).toEqual({
+        'json-formatter': { indent: '2', sortKeys: true },
+        invalid: {},
+      });
+    });
   });
 });

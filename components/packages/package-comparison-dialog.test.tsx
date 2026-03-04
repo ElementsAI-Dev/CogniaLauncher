@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PackageComparisonDialog } from "./package-comparison-dialog";
 import type { PackageComparison } from "@/lib/tauri";
@@ -92,9 +92,11 @@ describe("PackageComparisonDialog", () => {
     expect(screen.getByText("Compare Packages")).toBeInTheDocument();
   });
 
-  it("calls onCompare when dialog opens", () => {
+  it("calls onCompare when dialog opens", async () => {
     renderDialog();
-    expect(mockOnCompare).toHaveBeenCalledWith(["pip:numpy", "pip:scipy"]);
+    await waitFor(() => {
+      expect(mockOnCompare).toHaveBeenCalledWith(["pip:numpy", "pip:scipy"]);
+    });
   });
 
   it("does not render when closed", () => {
@@ -125,6 +127,40 @@ describe("PackageComparisonDialog", () => {
   it("shows description text in header", () => {
     renderDialog();
     expect(screen.getByText("Side-by-side comparison of 2 packages")).toBeInTheDocument();
+  });
+
+  it("uses adaptive scroll area height for comparison content", async () => {
+    renderDialog();
+    await waitFor(() => {
+      expect(mockOnCompare).toHaveBeenCalled();
+      expect(screen.getByText("Key Differences")).toBeInTheDocument();
+    });
+    const dialog = screen.getByRole("dialog");
+    const scrollArea = dialog.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[65dvh]");
+    expect(scrollArea).not.toHaveClass("max-h-[60vh]");
+  });
+
+  it("keeps long package names accessible in comparison cards", async () => {
+    const longName =
+      "this-is-a-very-long-package-name-for-comparison-dialog-layout-verification";
+    mockOnCompare.mockResolvedValueOnce({
+      ...mockComparison,
+      packages: [
+        {
+          ...mockComparison.packages[0],
+          name: longName,
+        },
+        mockComparison.packages[1],
+      ],
+    });
+
+    renderDialog();
+    await waitFor(() => {
+      expect(mockOnCompare).toHaveBeenCalled();
+    });
+    expect(await screen.findByTitle(longName)).toBeInTheDocument();
   });
 
   it("handles close via dialog X button", async () => {

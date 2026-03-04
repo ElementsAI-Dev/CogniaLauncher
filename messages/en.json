@@ -158,6 +158,11 @@
       "retry": "Retry"
     },
     "tools": {
+      "shared": {
+        "inputTooLarge": "Input exceeds the safe limit ({limit} characters)",
+        "ioMeta": "Input {inputSize} chars -> Output {outputSize} chars",
+        "countTooLarge": "Requested count exceeds safe limit ({limit})"
+      },
       "jsonFormatter": {
         "name": "JSON Formatter",
         "desc": "Format, validate and minify JSON data",
@@ -166,7 +171,10 @@
         "format": "Format",
         "minify": "Minify",
         "spaces": "spaces",
-        "tab": "Tab"
+        "tab": "Tab",
+        "sortKeys": "Sort keys",
+        "escapeUnicode": "Escape Unicode",
+        "meta": "Type: {type} | Input: {inputSize} | Output: {outputSize} | Delta: {delta}%"
       },
       "base64Converter": {
         "name": "Base64 Converter",
@@ -178,7 +186,9 @@
         "encode": "Encode",
         "decode": "Decode",
         "swap": "Swap",
-        "urlSafe": "URL-safe"
+        "urlSafe": "URL-safe",
+        "stripWhitespace": "Strip whitespace",
+        "invalidInput": "Invalid Base64 input"
       },
       "urlEncoder": {
         "name": "URL Encoder / Decoder",
@@ -189,7 +199,9 @@
         "encodedOutput": "Encoded Output",
         "encode": "Encode",
         "decode": "Decode",
-        "swap": "Swap"
+        "swap": "Swap",
+        "encodeFull": "Encode full URL",
+        "plusForSpace": "Use + for spaces"
       },
       "uuidGenerator": {
         "name": "UUID Generator",
@@ -197,7 +209,10 @@
         "count": "Count",
         "uppercase": "Uppercase",
         "noDashes": "No dashes",
-        "generate": "Generate"
+        "generate": "Generate",
+        "separator": "Separator",
+        "separatorNewline": "New line",
+        "separatorComma": "Comma"
       },
       "hashGenerator": {
         "name": "Hash Generator",
@@ -205,7 +220,9 @@
         "input": "Input Text",
         "placeholder": "Enter text to hash...",
         "generate": "Generate Hashes",
-        "computing": "Computing..."
+        "computing": "Computing...",
+        "selectAtLeastOne": "Select at least one hash algorithm",
+        "copyAll": "Copy All"
       },
       "timestampConverter": {
         "name": "Timestamp Converter",
@@ -214,7 +231,10 @@
         "dateInput": "Date String",
         "convert": "Convert",
         "now": "Now",
-        "swap": "Swap Mode"
+        "swap": "Swap Mode",
+        "invalidTimestamp": "Invalid timestamp",
+        "invalidDate": "Invalid date string",
+        "assumeMilliseconds": "Treat numeric input as milliseconds"
       },
       "regexTester": {
         "name": "Regex Tester",
@@ -223,13 +243,15 @@
         "testText": "Test Text",
         "testTextPlaceholder": "Enter text to test against...",
         "matches": "Matches",
-        "noMatches": "No matches found"
+        "noMatches": "No matches found",
+        "truncated": "Truncated"
       },
       "colorPicker": {
         "name": "Color Picker",
         "desc": "Pick colors and convert between HEX, RGB, and HSL formats",
         "pickColor": "Pick Color",
-        "contrast": "Contrast"
+        "contrast": "Contrast",
+        "invalidHex": "Invalid HEX color. Use #RRGGBB."
       },
       "jwtDecoder": {
         "name": "JWT Decoder",
@@ -241,7 +263,9 @@
         "invalidToken": "Invalid JWT token format",
         "expired": "Expired",
         "valid": "Valid",
-        "expiresAt": "Expires at"
+        "expiresAt": "Expires at",
+        "showSignature": "Show signature",
+        "signature": "Signature"
       },
       "textDiff": {
         "name": "Text Diff",
@@ -251,13 +275,21 @@
         "originalPlaceholder": "Enter original text...",
         "modifiedPlaceholder": "Enter modified text...",
         "added": "added",
-        "removed": "removed"
+        "removed": "removed",
+        "ignoreWhitespace": "Ignore whitespace",
+        "ignoreCase": "Ignore case",
+        "unchanged": "unchanged",
+        "total": "Total: {count}",
+        "tooManyLines": "Input exceeds maximum safe line count ({limit})"
       },
       "markdownPreview": {
         "name": "Markdown Preview",
         "desc": "Write and preview Markdown with GFM support",
         "editor": "Editor",
-        "preview": "Preview"
+        "preview": "Preview",
+        "modeSplit": "Split",
+        "modePreview": "Editor + Preview",
+        "previewTruncated": "Preview is limited to the first {limit} characters"
       },
       "cronParser": {
         "name": "Cron Parser",
@@ -265,7 +297,9 @@
         "expression": "Cron Expression",
         "parse": "Parse",
         "description": "Description",
-        "nextRuns": "Next Executions"
+        "nextRuns": "Next Executions",
+        "invalidExpression": "Cron expression must contain exactly 5 fields",
+        "previewCount": "Runs"
       },
       "loremGenerator": {
         "name": "Lorem Ipsum Generator",
@@ -280,12 +314,15 @@
       "numberBaseConverter": {
         "name": "Number Base Converter",
         "desc": "Convert numbers between binary, octal, decimal, and hexadecimal",
-        "invalidNumber": "Invalid number for this base"
+        "invalidNumber": "Invalid number for this base",
+        "uppercaseHex": "Uppercase HEX",
+        "showPrefix": "Show base prefix"
       },
       "passwordGenerator": {
         "name": "Password Generator",
         "desc": "Generate secure random passwords with custom rules",
         "length": "Length",
+        "count": "Count",
         "upper": "Uppercase",
         "lower": "Lowercase",
         "digits": "Digits",
@@ -500,6 +537,7 @@
       "addEnvironment": "Add Environment",
       "installPackage": "Install Package",
       "clearCache": "Clear Cache",
+      "manageCache": "Manage Cache",
       "refreshAll": "Refresh All",
       "openSettings": "Settings",
       "viewLogs": "View Logs",
@@ -1338,9 +1376,11 @@
     "updateCheckCollecting": "Collecting installed packages...",
     "updateCheckChecking": "Checking {current}/{total}: {package}",
     "updateCheckDone": "Check complete: {found} update(s) found",
-    "updateCheckProgress": "Checked {current} of {total} packages",
+    "updateCheckProgress": "Checked {current} of {total} providers",
     "updateCheckErrors": "{count} error(s) occurred during check",
     "updateCheckProviders": "Scanned {count} provider(s)",
+    "updateCheckCoverage": "Providers: {supported} supported, {partial} partial, {unsupported} unsupported, {error} failed",
+    "updateCheckUnsupported": "{count} provider(s) skipped or unsupported",
     "updateCheckSummary": "Checked {checked} packages across {providers} providers, found {updates} update(s)",
     "detail": {
       "backToPackages": "Back to Packages",
@@ -2719,6 +2759,8 @@
     "timeRangeTo": "to",
     "regex": "Regex",
     "maxLogs": "Max logs",
+    "maxScanLines": "Max scan lines",
+    "scanAll": "All",
     "export": "Export logs",
     "exportTxt": "Export TXT",
     "exportJson": "Export JSON",

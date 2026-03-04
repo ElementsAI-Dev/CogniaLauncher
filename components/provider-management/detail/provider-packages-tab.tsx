@@ -302,7 +302,7 @@ export function ProviderPackagesTab({
           )}
 
           {!loadingSearch && searchResults.length > 0 && (
-            <ScrollArea className="mt-4 max-h-[400px]">
+            <ScrollArea className="mt-4 max-h-[50dvh]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -317,11 +317,13 @@ export function ProviderPackagesTab({
                 <TableBody>
                   {searchResults.map((pkg) => (
                     <TableRow key={`${pkg.provider}:${pkg.name}`}>
-                      <TableCell className="font-mono text-sm">
-                        <div className="flex items-center gap-2">
-                          {pkg.name}
+                      <TableCell className="font-mono text-sm max-w-[320px]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 break-all" title={pkg.name}>
+                            {pkg.name}
+                          </span>
                           {installedNames.has(pkg.name) && (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs shrink-0">
                               {t("providerDetail.installed")}
                             </Badge>
                           )}
@@ -448,7 +450,7 @@ export function ProviderPackagesTab({
               </EmptyHeader>
             </Empty>
           ) : (
-            <ScrollArea className="max-h-[500px]">
+            <ScrollArea className="max-h-[65dvh]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -490,16 +492,18 @@ export function ProviderPackagesTab({
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-mono text-sm font-medium">
-                        <div className="flex items-center gap-2">
-                          {pkg.name}
+                      <TableCell className="font-mono text-sm font-medium max-w-[320px]">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="min-w-0 break-all" title={pkg.name}>
+                            {pkg.name}
+                          </span>
                           {pkg.is_global && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge variant="outline" className="text-xs shrink-0">
                               {t("providerDetail.global")}
                             </Badge>
                           )}
                           {pinnedSet.has(pkg.name) && (
-                            <Badge variant="secondary" className="text-xs gap-1">
+                            <Badge variant="secondary" className="text-xs gap-1 shrink-0">
                               <Pin className="h-3 w-3" />
                               {t("providerDetail.pinned")}
                             </Badge>

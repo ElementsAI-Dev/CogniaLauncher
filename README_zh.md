@@ -161,6 +161,46 @@ pnpm tauri dev
 | `pnpm tauri icon` | 从源图像生成应用图标 |
 | `pnpm tauri --help` | 显示所有可用的 Tauri 命令 |
 
+### 桌面 CLI 速查
+
+可以通过桌面二进制以无界面模式运行 CLI 子命令：
+
+```bash
+pnpm tauri dev -- search react --limit 10 --json
+```
+
+顶层命令：
+
+- `search`
+- `install`（支持 `--provider`、`--force`）
+- `uninstall`（支持 `--provider`、`--force`）
+- `list`（支持 `--provider`、`--outdated`）
+- `update`
+- `info`
+- `env`
+- `config`
+- `cache`
+- `doctor`
+- `providers`
+
+环境子命令：
+
+- `env list`
+- `env install <version> --type <env>`
+- `env use <version> --type <env> [--local <path>]`
+- `env detect [--type <env>] [--path <path>]`
+- `env remove <version> --type <env> [--provider <id>]`
+- `env resolve --type <env> [--path <path>]`
+
+配置子命令：
+
+- `config get <key>`
+- `config set <key> <value>`
+- `config list`
+- `config reset`
+- `config export <file>`
+- `config import <file>`
+
 ### 添加 UI 组件（shadcn/ui）
 
 ```bash

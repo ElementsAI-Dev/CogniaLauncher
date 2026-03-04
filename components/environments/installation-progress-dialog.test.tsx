@@ -43,8 +43,8 @@ describe("InstallationProgressDialog", () => {
     version: "20.0.0",
     provider: "fnm",
     step: "downloading" as const,
+    phase: "download" as const,
     progress: 50,
-    error: null,
     downloadedSize: "25 MB",
     totalSize: "50 MB",
     speed: "5 MB/s",
@@ -80,5 +80,49 @@ describe("InstallationProgressDialog", () => {
   it("uses environments hook for cancel functionality", () => {
     render(<InstallationProgressDialog />);
     expect(mockUseEnvironments).toHaveBeenCalled();
+  });
+
+  it("renders backend stage message and failure class details", () => {
+    mockUseEnvironmentStore.mockReturnValue({
+      progressDialogOpen: true,
+      installationProgress: {
+        ...defaultProgress,
+        step: "error",
+        terminalState: "failed",
+        failureClass: "network_error",
+        retryable: true,
+        retryAfterSeconds: 2,
+        stageMessage: "Download request timed out",
+        error: "request timeout",
+      },
+      closeProgressDialog: mockCloseProgressDialog,
+    });
+
+    const { getByText } = render(<InstallationProgressDialog />);
+    expect(getByText("Download request timed out")).toBeInTheDocument();
+    expect(getByText("Network error")).toBeInTheDocument();
+    expect(getByText("Retry available in 2s.")).toBeInTheDocument();
+  });
+
+  it("renders selection rationale from phase-level progress payload", () => {
+    mockUseEnvironmentStore.mockReturnValue({
+      progressDialogOpen: true,
+      installationProgress: {
+        ...defaultProgress,
+        step: "fetching",
+        phase: "select_artifact",
+        stageMessage: "Deterministically selecting installation artifact",
+        selectionRationale: "Selected provider `fnm` for `node` on `windows`",
+      },
+      closeProgressDialog: mockCloseProgressDialog,
+    });
+
+    const { getByText } = render(<InstallationProgressDialog />);
+    expect(
+      getByText("Deterministically selecting installation artifact"),
+    ).toBeInTheDocument();
+    expect(
+      getByText("Selected provider `fnm` for `node` on `windows`"),
+    ).toBeInTheDocument();
   });
 });

@@ -134,7 +134,7 @@ describe("EnvironmentList", () => {
       fireEvent.click(envItem);
     }
 
-    expect(mockPush).toHaveBeenCalledWith("/environments?selected=node");
+    expect(mockPush).toHaveBeenCalledWith("/environments/node");
   });
 
   it("shows version badge for current version", () => {

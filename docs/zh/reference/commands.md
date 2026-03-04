@@ -4,6 +4,23 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 
 ---
 
+## 桌面 CLI（无界面模式）
+
+桌面端二进制还通过 Tauri CLI 插件暴露了命令行子命令（见 `src-tauri/src/cli.rs`、`src-tauri/tauri.conf.json`）。
+
+顶层命令：
+
+- `search`、`install`、`uninstall`、`list`、`update`、`info`、`env`、`config`、`cache`、`doctor`、`providers`
+
+关键选项：
+
+- `install` / `uninstall`：`--provider`、`--force`
+- `list`：`--provider`、`--outdated`
+- `env`：`list`、`install`、`use`、`detect`、`remove`、`resolve`
+- `config`：`get`、`set`、`list`、`reset`、`export`、`import`
+
+---
+
 ## 环境管理 (Environment) — 48 条
 
 | 命令 | 描述 |
@@ -267,8 +284,8 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 | 命令 | 描述 |
 |------|------|
 | `log_list_files` | 列出日志文件 |
-| `log_query` | 查询日志（级别/时间/关键词） |
-| `log_export` | 导出日志（TXT/JSON） |
+| `log_query` | 查询日志（级别/时间/关键词 + 分页，支持 `max_scan_lines`） |
+| `log_export` | 导出日志（TXT/JSON，支持 `.log` 与 `.log.gz`） |
 | `log_get_dir` | 获取日志目录 |
 | `log_get_total_size` | 获取日志总大小 |
 | `log_clear` | 清理日志文件 |
@@ -277,6 +294,8 @@ CogniaLauncher 后端提供 289 条 Tauri 命令，跨 21 个模块，通过 IPC
 | `diagnostic_check_last_crash` | 检查上次崩溃 marker |
 | `diagnostic_dismiss_crash` | 清除崩溃 marker |
 | `diagnostic_capture_frontend_crash` | 捕获前端未处理异常并生成崩溃诊断包 |
+
+> 说明：`log_query` 的 `offset` 从日志尾部向前分页。在跟随模式中可配合 `max_scan_lines` 限制扫描行数，降低大文件轮询开销。
 
 ---
 

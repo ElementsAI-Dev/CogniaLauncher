@@ -78,6 +78,7 @@ const mockWindowControls = {
   isFullscreen: false,
   isFocused: true,
   isAlwaysOnTop: false,
+  maximizeInsets: { top: 0, right: 0, bottom: 0, left: 0 },
   maximizePadding: 0,
   handleMinimize: jest.fn(),
   handleMaximize: jest.fn(),
@@ -144,6 +145,8 @@ jest.mock("@/components/language-toggle", () => ({
 describe("AppShell", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWindowControls.maximizeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+    mockWindowControls.maximizePadding = 0;
   });
 
   it("renders children content", () => {
@@ -208,5 +211,26 @@ describe("AppShell", () => {
 
     const searchButton = container.querySelector('[data-tour="command-palette-btn"]');
     expect(searchButton).toBeInTheDocument();
+  });
+
+  it("applies per-edge maximize insets to the content container", () => {
+    mockWindowControls.maximizeInsets = { top: 8, right: 6, bottom: 4, left: 2 };
+
+    const { container } = render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    const contentContainer = container.querySelector(
+      "div.flex.flex-1.overflow-hidden",
+    ) as HTMLDivElement;
+
+    expect(contentContainer).toHaveStyle({
+      paddingTop: "8px",
+      paddingRight: "6px",
+      paddingBottom: "4px",
+      paddingLeft: "2px",
+    });
   });
 });

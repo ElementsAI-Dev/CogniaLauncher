@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { SearchBar } from '@/components/packages/search-bar';
 import { PackageList } from '@/components/packages/package-list';
 import { PackageDetailsDialog } from '@/components/packages/package-details-dialog';
@@ -65,6 +66,8 @@ export default function PackagesPage() {
     updateCheckProgress,
     isCheckingUpdates,
     updateCheckErrors,
+    updateCheckProviderOutcomes,
+    updateCheckCoverage,
     lastUpdateCheck,
   } = usePackageStore();
   
@@ -131,6 +134,11 @@ export default function PackagesPage() {
   const pinnedUpdates = useMemo(() =>
     updates.filter(u => pinnedPackages.includes(u.name)),
     [updates, pinnedPackages]
+  );
+
+  const unsupportedProviderOutcomes = useMemo(
+    () => (updateCheckProviderOutcomes ?? []).filter((o) => o.status === 'unsupported'),
+    [updateCheckProviderOutcomes]
   );
 
   const handleCheckUpdates = async () => {
@@ -321,7 +329,7 @@ export default function PackagesPage() {
   }, [toggleBookmark, bookmarkedPackages, t]);
 
   return (
-    <div className="p-6 space-y-6 min-w-0 overflow-hidden">
+    <div className="h-full min-h-0 p-6 flex flex-col gap-6 min-w-0 overflow-hidden">
       <PageHeader
         title={t('packages.title')}
         description={t('packages.description')}
@@ -370,8 +378,8 @@ export default function PackagesPage() {
         />
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="h-auto bg-transparent border-b border-border rounded-none p-0 gap-0">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1">
+        <TabsList className="h-auto w-full justify-start overflow-x-auto bg-transparent border-b border-border rounded-none p-0 gap-0">
           <TabsTrigger 
             value="installed" 
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-3"
@@ -412,7 +420,7 @@ export default function PackagesPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="installed" className="mt-4">
+        <TabsContent value="installed" className="mt-4 flex min-h-0 flex-col">
           <InstalledFilterBar
             packages={installedPackages}
             providers={providers}
@@ -440,8 +448,8 @@ export default function PackagesPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="updates" className="mt-4">
-          <div className="space-y-6">
+        <TabsContent value="updates" className="mt-4 flex min-h-0 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col gap-6">
             {/* Header with actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -451,6 +459,16 @@ export default function PackagesPage() {
                     : t('packages.clickToCheck')
                   }
                 </p>
+                {updateCheckCoverage && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('packages.updateCheckCoverage', {
+                      supported: updateCheckCoverage.supported,
+                      partial: updateCheckCoverage.partial,
+                      unsupported: updateCheckCoverage.unsupported,
+                      error: updateCheckCoverage.error,
+                    })}
+                  </p>
+                )}
                 {pinnedUpdates.length > 0 && (
                   <p className="text-xs text-muted-foreground mt-1">
                     {t('packages.pinnedPackagesSkipped', { count: pinnedUpdates.length })}
@@ -534,6 +552,26 @@ export default function PackagesPage() {
               </Card>
             ) : updates.length === 0 ? (
               <div className="space-y-4">
+                {unsupportedProviderOutcomes.length > 0 && (
+                  <Alert className="border-muted-foreground/30 bg-muted/40">
+                    <AlertDescription>
+                      {t('packages.updateCheckUnsupported', { count: unsupportedProviderOutcomes.length })}
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs">{t('common.details')}</summary>
+                        <ul className="mt-1 text-xs space-y-0.5 list-disc pl-4">
+                          {unsupportedProviderOutcomes.slice(0, 5).map((outcome, i) => (
+                            <li key={i}>
+                              {outcome.provider}: {outcome.reason ?? t('common.unknown')}
+                            </li>
+                          ))}
+                          {unsupportedProviderOutcomes.length > 5 && (
+                            <li>...{unsupportedProviderOutcomes.length - 5} more</li>
+                          )}
+                        </ul>
+                      </details>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {updateCheckErrors.length > 0 && (
                   <Alert variant="destructive" className="border-yellow-500/50 bg-yellow-500/5 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600">
                     <AlertCircle className="h-4 w-4" />
@@ -564,26 +602,28 @@ export default function PackagesPage() {
                 </Card>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="min-h-0 flex-1 space-y-4 overflow-auto pr-1">
                 {/* Available Updates */}
                 {availableUpdates.length > 0 && (
                   <div className="space-y-2">
                     {availableUpdates.map((update) => (
                       <Card key={`${update.provider}:${update.name}`}>
                         <CardHeader className="py-3">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-3">
-                              <div>
-                                <CardTitle className="text-base">{update.name}</CardTitle>
-                                <CardDescription className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-mono text-xs">{update.current_version}</span>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <div className="min-w-0">
+                                <CardTitle className="text-base break-all sm:truncate" title={update.name}>
+                                  {update.name}
+                                </CardTitle>
+                                <CardDescription className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                                  <span className="font-mono text-xs break-all">{update.current_version}</span>
                                   <ChevronRight className="h-3 w-3" />
-                                  <span className="font-mono text-xs text-green-600 font-medium">{update.latest_version}</span>
-                                  <Badge className="bg-muted text-muted-foreground text-xs">{update.provider}</Badge>
+                                  <span className="font-mono text-xs text-green-600 font-medium break-all">{update.latest_version}</span>
+                                  <Badge className="bg-muted text-muted-foreground text-xs shrink-0">{update.provider}</Badge>
                                 </CardDescription>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -620,21 +660,24 @@ export default function PackagesPage() {
                       {pinnedUpdates.map((update) => (
                         <Card key={update.name} className="bg-muted/30">
                           <CardHeader className="py-3">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <div>
-                                <CardTitle className="text-base flex items-center gap-2">
-                                  {update.name}
-                                  <Badge variant="secondary" className="text-xs">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <CardTitle className="text-base flex min-w-0 flex-wrap items-center gap-2">
+                                  <span className="min-w-0 break-all sm:truncate" title={update.name}>
+                                    {update.name}
+                                  </span>
+                                  <Badge variant="secondary" className="text-xs shrink-0">
                                     {t('packages.pinnedAt', { version: update.current_version })}
                                   </Badge>
                                 </CardTitle>
-                                <CardDescription>
+                                <CardDescription className="break-all">
                                   {t('packages.availableVersion')}: {update.latest_version}
                                 </CardDescription>
                               </div>
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="shrink-0 self-start sm:self-center"
                                 onClick={() => handleUnpinPackage(update.name)}
                               >
                                 {t('packages.unpin')}
@@ -651,7 +694,7 @@ export default function PackagesPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="search" className="mt-4">
+        <TabsContent value="search" className="mt-4 flex min-h-0 flex-col">
           {loading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -678,8 +721,8 @@ export default function PackagesPage() {
           />
         </TabsContent>
 
-        <TabsContent value="history" className="mt-4">
-          <Card>
+        <TabsContent value="history" className="mt-4 flex min-h-0 flex-col">
+          <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
@@ -693,47 +736,51 @@ export default function PackagesPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-h-0 flex-1">
               {installHistory.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">
                   {t('packages.noHistory')}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {installHistory.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center justify-between p-3 border rounded-lg ${
-                        entry.success ? '' : 'border-destructive/30 bg-destructive/5'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded ${
-                          entry.success ? 'bg-green-500/10' : 'bg-destructive/10'
-                        }`}>
-                          {entry.action === 'install' ? (
-                            <ArrowUp className={`h-4 w-4 ${
-                              entry.success ? 'text-green-500' : 'text-destructive'
-                            }`} />
-                          ) : (
-                            <RefreshCw className={`h-4 w-4 ${
-                              entry.success ? 'text-green-500' : 'text-destructive'
-                            }`} />
-                          )}
-                        </div>
-                        <div>
-                          <div className="font-medium">{entry.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {entry.action} • {entry.version} • {entry.provider}
+                <ScrollArea className="h-full min-h-0 pr-2">
+                  <div className="space-y-2">
+                    {installHistory.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className={`flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between ${
+                          entry.success ? '' : 'border-destructive/30 bg-destructive/5'
+                        }`}
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className={`p-2 rounded ${
+                            entry.success ? 'bg-green-500/10' : 'bg-destructive/10'
+                          }`}>
+                            {entry.action === 'install' ? (
+                              <ArrowUp className={`h-4 w-4 ${
+                                entry.success ? 'text-green-500' : 'text-destructive'
+                              }`} />
+                            ) : (
+                              <RefreshCw className={`h-4 w-4 ${
+                                entry.success ? 'text-green-500' : 'text-destructive'
+                              }`} />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-medium break-all sm:truncate" title={entry.name}>
+                              {entry.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground break-all">
+                              {entry.action} • {entry.version} • {entry.provider}
+                            </div>
                           </div>
                         </div>
+                        <div className="text-xs text-muted-foreground shrink-0 sm:text-right">
+                          {new Date(entry.timestamp).toLocaleString()}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(entry.timestamp).toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </ScrollArea>
               )}
             </CardContent>
           </Card>

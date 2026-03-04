@@ -19,6 +19,7 @@ describe('useLogStore', () => {
       logFiles: [],
       selectedLogFile: null,
       bookmarkedIds: [],
+      showBookmarksOnly: false,
       _logCounts: { trace: 0, debug: 0, info: 0, warn: 0, error: 0 },
     });
   });
@@ -66,6 +67,26 @@ describe('useLogStore', () => {
       expect(logs.length).toBe(3);
       expect(logs[0].message).toBe('Message 2');
       expect(logs[2].message).toBe('Message 4');
+    });
+
+    it('should prune bookmark when oldest entry is evicted', () => {
+      useLogStore.setState({ maxLogs: 1 });
+
+      useLogStore.getState().addLog({
+        timestamp: Date.now(),
+        level: 'info',
+        message: 'first',
+      });
+      const firstId = useLogStore.getState().logs[0].id;
+      useLogStore.getState().toggleBookmark(firstId);
+
+      useLogStore.getState().addLog({
+        timestamp: Date.now(),
+        level: 'info',
+        message: 'second',
+      });
+
+      expect(useLogStore.getState().bookmarkedIds).not.toContain(firstId);
     });
   });
 
@@ -348,6 +369,28 @@ describe('useLogStore', () => {
       expect(useLogStore.getState().maxLogs).toBe(3);
       expect(useLogStore.getState().logs.length).toBe(3);
       expect(useLogStore.getState().logs[0].message).toBe('Message 3');
+    });
+
+    it('should recalculate counts and prune bookmarks when maxLogs changes', () => {
+      useLogStore.getState().addLogs([
+        { timestamp: 1, level: 'info', message: 'Message 1' },
+        { timestamp: 2, level: 'warn', message: 'Message 2' },
+        { timestamp: 3, level: 'error', message: 'Message 3' },
+        { timestamp: 4, level: 'info', message: 'Message 4' },
+      ]);
+
+      const [firstId, secondId] = useLogStore.getState().logs.map((log) => log.id);
+      useLogStore.getState().toggleBookmark(firstId);
+      useLogStore.getState().toggleBookmark(secondId);
+
+      useLogStore.getState().setMaxLogs(2);
+      const stats = useLogStore.getState().getLogStats();
+
+      expect(useLogStore.getState().logs.length).toBe(2);
+      expect(useLogStore.getState().bookmarkedIds).toEqual([]);
+      expect(stats.byLevel.info).toBe(1);
+      expect(stats.byLevel.error).toBe(1);
+      expect(stats.byLevel.warn).toBe(0);
     });
   });
 

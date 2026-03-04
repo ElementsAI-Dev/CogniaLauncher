@@ -93,6 +93,12 @@ describe("BatchOperations", () => {
     expect(screen.getByText("Install Packages")).toBeInTheDocument();
     expect(screen.getByText("package1")).toBeInTheDocument();
     expect(screen.getByText("package2")).toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog");
+    const scrollArea = dialog.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[40dvh]");
+    expect(scrollArea).not.toHaveClass("h-[200px]");
   });
 
   it("shows dry run and force options in dialog", async () => {

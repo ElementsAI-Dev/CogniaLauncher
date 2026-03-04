@@ -10,8 +10,13 @@ const mockTerminalDetectFramework = jest.fn();
 const mockTerminalReadConfig = jest.fn();
 const mockTerminalParseConfigContent = jest.fn();
 const mockTerminalGetConfigEntries = jest.fn();
+const mockTerminalWriteConfigVerified = jest.fn();
+const mockTerminalBackupConfigVerified = jest.fn();
 const mockTerminalGetFrameworkCacheStats = jest.fn();
 const mockTerminalCleanFrameworkCache = jest.fn();
+const mockConfigSet = jest.fn();
+const mockConfigList = jest.fn();
+const mockTerminalGetProxyEnvVars = jest.fn();
 
 jest.mock('@/lib/platform', () => ({
   isTauri: () => true,
@@ -28,7 +33,9 @@ jest.mock('@/lib/tauri', () => ({
   terminalSetDefaultProfile: jest.fn(),
   terminalReadConfig: (...args: unknown[]) => mockTerminalReadConfig(...args),
   terminalBackupConfig: jest.fn(),
+  terminalBackupConfigVerified: (...args: unknown[]) => mockTerminalBackupConfigVerified(...args),
   terminalAppendToConfig: jest.fn(),
+  terminalAppendToConfigVerified: jest.fn(),
   terminalGetConfigEntries: (...args: unknown[]) => mockTerminalGetConfigEntries(...args),
   terminalParseConfigContent: (...args: unknown[]) => mockTerminalParseConfigContent(...args),
   terminalPsListProfiles: jest.fn(),
@@ -40,7 +47,10 @@ jest.mock('@/lib/tauri', () => ({
   terminalPsListInstalledScripts: jest.fn(),
   terminalListPlugins: jest.fn(),
   terminalGetShellEnvVars: jest.fn(),
-  terminalGetProxyEnvVars: jest.fn(),
+  terminalGetProxyEnvVars: (...args: unknown[]) => mockTerminalGetProxyEnvVars(...args),
+  terminalWriteConfigVerified: (...args: unknown[]) => mockTerminalWriteConfigVerified(...args),
+  configSet: (...args: unknown[]) => mockConfigSet(...args),
+  configList: (...args: unknown[]) => mockConfigList(...args),
   terminalGetFrameworkCacheStats: (...args: unknown[]) => mockTerminalGetFrameworkCacheStats(...args),
   terminalCleanFrameworkCache: (...args: unknown[]) => mockTerminalCleanFrameworkCache(...args),
   terminalGetSingleFrameworkCacheInfo: jest.fn(),
@@ -73,8 +83,32 @@ describe('useTerminal', () => {
     mockTerminalReadConfig.mockResolvedValue('');
     mockTerminalParseConfigContent.mockResolvedValue({ aliases: [], exports: [], sources: [] });
     mockTerminalGetConfigEntries.mockResolvedValue({ aliases: [], exports: [], sources: [] });
+    mockTerminalWriteConfigVerified.mockResolvedValue({
+      operation: 'write',
+      path: '/tmp/.bashrc',
+      backupPath: null,
+      bytesWritten: 12,
+      verified: true,
+      diagnostics: ['ok'],
+    });
+    mockTerminalBackupConfigVerified.mockResolvedValue({
+      operation: 'backup',
+      path: '/tmp/.bashrc',
+      backupPath: '/tmp/.bashrc.bak',
+      bytesWritten: 0,
+      verified: true,
+      diagnostics: ['ok'],
+    });
     mockTerminalGetFrameworkCacheStats.mockResolvedValue([]);
     mockTerminalCleanFrameworkCache.mockResolvedValue(0);
+    mockConfigSet.mockResolvedValue(undefined);
+    mockConfigList.mockResolvedValue([
+      ['terminal.proxy_mode', 'global'],
+      ['terminal.custom_proxy', ''],
+      ['terminal.no_proxy', ''],
+      ['network.proxy', 'http://global:8080'],
+    ]);
+    mockTerminalGetProxyEnvVars.mockResolvedValue([['HTTP_PROXY', 'http://global:8080']]);
   });
 
   it('launchProfile updates launching state and stores detailed result', async () => {
@@ -417,5 +451,97 @@ describe('useTerminal', () => {
 
     expect(result.current.frameworkCacheStats).toEqual([]);
     expect(result.current.frameworkCacheLoading).toBe(false);
+  });
+
+  it('writeShellConfig updates config mutation action state', async () => {
+    let resolveWrite: ((value: unknown) => void) | null = null;
+    mockTerminalWriteConfigVerified.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveWrite = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      void result.current.writeShellConfig('/tmp/.bashrc', 'export A=1');
+    });
+
+    await waitFor(() => expect(result.current.configMutationState.status).toBe('loading'));
+
+    act(() => {
+      resolveWrite?.({
+        operation: 'write',
+        path: '/tmp/.bashrc',
+        backupPath: null,
+        bytesWritten: 10,
+        verified: true,
+        diagnostics: ['ok'],
+      });
+    });
+
+    await waitFor(() => expect(result.current.configMutationState.status).toBe('success'));
+    expect(result.current.configMutationState.result?.operation).toBe('write');
+  });
+
+  it('writeShellConfig stores error state on failure', async () => {
+    mockTerminalWriteConfigVerified.mockRejectedValue(new Error('disk full'));
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.writeShellConfig('/tmp/.bashrc', 'export A=1');
+    });
+
+    expect(result.current.configMutationState.status).toBe('error');
+    expect(result.current.configMutationState.message).toBe('terminal.toastSaveConfigFailed');
+    expect(toast.error).toHaveBeenCalledWith('terminal.toastSaveConfigFailed');
+  });
+
+  it('updateProxyMode reloads canonical proxy state and marks sync success', async () => {
+    mockConfigList.mockResolvedValue([
+      ['terminal.proxy_mode', 'custom'],
+      ['terminal.custom_proxy', 'https://proxy.example.com:8443'],
+      ['terminal.no_proxy', 'localhost,127.0.0.1'],
+      ['network.proxy', 'http://global:8080'],
+    ]);
+    mockTerminalGetProxyEnvVars.mockResolvedValue([
+      ['HTTP_PROXY', 'https://proxy.example.com:8443'],
+      ['NO_PROXY', 'localhost,127.0.0.1'],
+    ]);
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.updateProxyMode('custom');
+    });
+
+    expect(mockConfigSet).toHaveBeenCalledWith('terminal.proxy_mode', 'custom');
+    expect(result.current.proxySyncState.status).toBe('success');
+    expect(result.current.proxyMode).toBe('custom');
+    expect(result.current.customProxy).toBe('https://proxy.example.com:8443');
+    expect(result.current.proxyEnvVars).toEqual([
+      ['HTTP_PROXY', 'https://proxy.example.com:8443'],
+      ['NO_PROXY', 'localhost,127.0.0.1'],
+    ]);
+  });
+
+  it('saveCustomProxy preserves error sync state on failure', async () => {
+    mockConfigSet.mockRejectedValue(new Error('invalid proxy'));
+
+    const { result } = renderHook(() => useTerminal({ t: mockT }));
+    await waitFor(() => expect(mockTerminalDetectShells).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.updateCustomProxy('bad://proxy');
+      await result.current.saveCustomProxy();
+    });
+
+    expect(result.current.proxySyncState.status).toBe('error');
+    expect(result.current.proxySyncState.message).toBe('terminal.toastSaveProxyFailed');
   });
 });

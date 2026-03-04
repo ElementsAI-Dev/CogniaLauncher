@@ -11,6 +11,7 @@ const mockUninstallPackages = jest.fn().mockResolvedValue(undefined);
 const mockBatchInstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockBatchUpdate = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockBatchUninstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
+const mockGetInstallHistory = jest.fn().mockResolvedValue([]);
 const mockPackageStoreState = {
   selectedPackages: [] as string[],
   clearPackageSelection: jest.fn(),
@@ -25,6 +26,20 @@ const mockPackageStoreState = {
   updateCheckProgress: null as null | { phase: string; current: number; total: number },
   isCheckingUpdates: false,
   updateCheckErrors: [] as Array<{ provider: string; package: string | null; message: string }>,
+  updateCheckProviderOutcomes: [] as Array<{
+    provider: string;
+    status: 'supported' | 'partial' | 'unsupported' | 'error';
+    reason: string | null;
+    checked: number;
+    updates: number;
+    errors: number;
+  }>,
+  updateCheckCoverage: null as null | {
+    supported: number;
+    partial: number;
+    unsupported: number;
+    error: number;
+  },
   lastUpdateCheck: null as number | null,
 };
 
@@ -59,7 +74,7 @@ jest.mock('@/hooks/use-packages', () => ({
     pinPackage: jest.fn(),
     unpinPackage: jest.fn(),
     rollbackPackage: jest.fn(),
-    getInstallHistory: jest.fn().mockResolvedValue([]),
+    getInstallHistory: mockGetInstallHistory,
   }),
 }));
 
@@ -90,6 +105,9 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.installHistoryDesc': 'Recent package operations',
         'packages.noHistory': 'No history entries',
         'packages.updatesFound': `${params?.count ?? 0} updates found`,
+        'packages.updateCheckCoverage': `${params?.supported ?? 0}/${params?.partial ?? 0}/${params?.unsupported ?? 0}/${params?.error ?? 0}`,
+        'packages.updateCheckUnsupported': `${params?.count ?? 0} providers unsupported`,
+        'common.unknown': 'unknown',
       };
       return translations[key] || key;
     },
@@ -167,12 +185,15 @@ jest.mock('@/components/packages/stats-overview', () => ({
 describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetInstallHistory.mockResolvedValue([]);
     mockPackageStoreState.selectedPackages = [];
     mockPackageStoreState.bookmarkedPackages = [];
     mockPackageStoreState.availableUpdates = [];
     mockPackageStoreState.updateCheckProgress = null;
     mockPackageStoreState.isCheckingUpdates = false;
     mockPackageStoreState.updateCheckErrors = [];
+    mockPackageStoreState.updateCheckProviderOutcomes = [];
+    mockPackageStoreState.updateCheckCoverage = null;
     mockPackageStoreState.lastUpdateCheck = null;
   });
 
@@ -278,6 +299,34 @@ describe('PackagesPage', () => {
     });
   });
 
+  it('shows unsupported provider summary separately from errors', async () => {
+    mockPackageStoreState.updateCheckProviderOutcomes = [
+      {
+        provider: 'winget',
+        status: 'unsupported',
+        reason: 'provider executable is not available',
+        checked: 0,
+        updates: 0,
+        errors: 0,
+      },
+    ];
+    mockPackageStoreState.updateCheckCoverage = {
+      supported: 1,
+      partial: 0,
+      unsupported: 1,
+      error: 0,
+    };
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(screen.getByText(/Updates/));
+
+    await waitFor(() => {
+      expect(screen.getByText('1 providers unsupported')).toBeInTheDocument();
+      expect(screen.getByText('1/0/1/0')).toBeInTheDocument();
+    });
+  });
+
   it('uses update provider when updating a single package', async () => {
     mockPackageStoreState.availableUpdates = [
       {
@@ -309,6 +358,49 @@ describe('PackagesPage', () => {
     await user.click(screen.getByText(/Dependencies/));
     await waitFor(() => {
       expect(screen.getByTestId('dependency-tree')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps long update package names visible without squeezing actions', async () => {
+    const longName = 'this-is-a-very-very-very-long-package-name-that-should-wrap-properly-in-updates-tab';
+    mockPackageStoreState.availableUpdates = [
+      {
+        name: longName,
+        provider: 'npm',
+        current_version: '1.0.0',
+        latest_version: '2.0.0',
+      },
+    ];
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(screen.getByText(/Updates/));
+
+    await waitFor(() => {
+      expect(screen.getByTitle(longName)).toBeInTheDocument();
+    });
+  });
+
+  it('keeps long history package names visible with wrapped metadata', async () => {
+    const longName = 'history-package-name-with-many-segments-to-verify-responsive-wrapping-behavior';
+    mockGetInstallHistory.mockResolvedValueOnce([
+      {
+        id: '1',
+        name: longName,
+        version: '9.9.9',
+        action: 'install',
+        timestamp: '2026-03-04T08:00:00.000Z',
+        provider: 'npm',
+        success: true,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+    await user.click(screen.getByText(/History/));
+
+    await waitFor(() => {
+      expect(screen.getByTitle(longName)).toBeInTheDocument();
     });
   });
 });

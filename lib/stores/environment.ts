@@ -1,13 +1,30 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { EnvironmentInfo, DetectedEnvironment, VersionInfo, EnvironmentProviderInfo, EnvUpdateCheckResult } from '../tauri';
+import type {
+  EnvironmentInfo,
+  DetectedEnvironment,
+  VersionInfo,
+  EnvironmentProviderInfo,
+  EnvUpdateCheckResult,
+  EnvInstallProgressEvent,
+} from '../tauri';
 import { DEFAULT_DETECTION_FILES } from '../constants/environments';
 
 export interface InstallationProgress {
   envType: string;
   version: string;
   provider: string;
-  step: 'fetching' | 'downloading' | 'extracting' | 'configuring' | 'done' | 'error';
+  step: EnvInstallProgressEvent['step'];
+  phase?: EnvInstallProgressEvent['phase'];
+  terminalState?: EnvInstallProgressEvent['terminalState'];
+  failureClass?: EnvInstallProgressEvent['failureClass'];
+  artifact?: EnvInstallProgressEvent['artifact'];
+  stageMessage?: EnvInstallProgressEvent['stageMessage'];
+  selectionRationale?: EnvInstallProgressEvent['selectionRationale'];
+  retryable?: EnvInstallProgressEvent['retryable'];
+  retryAfterSeconds?: EnvInstallProgressEvent['retryAfterSeconds'];
+  attempt?: EnvInstallProgressEvent['attempt'];
+  maxAttempts?: EnvInstallProgressEvent['maxAttempts'];
   progress: number;
   speed?: string;
   downloadedSize?: string;

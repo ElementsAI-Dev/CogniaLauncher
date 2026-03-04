@@ -335,7 +335,14 @@ pub async fn setup_download_manager(
                             if let Ok(mut dl_cache) =
                                 crate::cache::DownloadCache::open(&cache_dir_clone).await
                             {
-                                match dl_cache.add_file(&dest, checksum_val).await {
+                                let source_identity = crate::cache::DownloadCache::source_identity(
+                                    &task.url,
+                                    task.provider.as_deref(),
+                                );
+                                match dl_cache
+                                    .add_file_with_source(&dest, checksum_val, Some(&source_identity))
+                                    .await
+                                {
                                     Ok(cached_path) => {
                                         log::info!(
                                             "Cached completed download: {} -> {:?}",
@@ -415,21 +422,72 @@ pub async fn download_add(
             let cache_dir = s.get_cache_dir();
             drop(s);
 
-            if let Ok(dl_cache) = crate::cache::DownloadCache::open(&cache_dir).await {
-                if let Ok(Some(cached_path)) = dl_cache.get_by_checksum(checksum).await {
-                    // File is in cache — copy to destination
-                    if let Some(parent) = destination.parent() {
-                        let _ = tokio::fs::create_dir_all(parent).await;
+            if let Ok(mut dl_cache) = crate::cache::DownloadCache::open(&cache_dir).await {
+                let source_identity = crate::cache::DownloadCache::source_identity(
+                    &request.url,
+                    request.provider.as_deref(),
+                );
+                match dl_cache
+                    .get_validated_cache_hit(checksum, Some(&source_identity))
+                    .await
+                {
+                    Ok(Some(cached_path)) => {
+                        // File is in cache — copy to destination
+                        if let Some(parent) = destination.parent() {
+                            let _ = tokio::fs::create_dir_all(parent).await;
+                        }
+                        match tokio::fs::copy(&cached_path, &destination).await {
+                            Ok(_) => {
+                                let size = tokio::fs::metadata(&destination)
+                                    .await
+                                    .map(|meta| meta.len())
+                                    .unwrap_or(0);
+                                if let Ok(mut history) = DownloadHistory::open(&cache_dir).await {
+                                    let record = DownloadRecord::completed(
+                                        request.url.clone(),
+                                        request.name.clone(),
+                                        destination.clone(),
+                                        size,
+                                        request.checksum.clone(),
+                                        chrono::Utc::now(),
+                                        request.provider.clone(),
+                                    );
+                                    if let Err(error) = history.add(record).await {
+                                        log::warn!(
+                                            "Failed to persist cache-hit download history: {}",
+                                            error
+                                        );
+                                    }
+                                }
+
+                                log::info!(
+                                    "Download cache hit (validated): {} [{}] -> {:?}",
+                                    checksum,
+                                    source_identity,
+                                    destination
+                                );
+                                return Ok(format!("cache-hit:{}", checksum));
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Cache hit copy failed (falling back to download): {}",
+                                    e
+                                );
+                                // Fall through to normal download
+                            }
+                        }
                     }
-                    match tokio::fs::copy(&cached_path, &destination).await {
-                        Ok(_) => {
-                            log::info!("Download cache hit: {} -> {:?}", checksum, destination);
-                            return Ok(format!("cache-hit:{}", checksum));
-                        }
-                        Err(e) => {
-                            log::warn!("Cache hit copy failed (falling back to download): {}", e);
-                            // Fall through to normal download
-                        }
+                    Ok(None) => {}
+                    Err(crate::error::CogniaError::ChecksumMismatch { expected, actual }) => {
+                        log::warn!(
+                            "Discarded corrupted cached artifact for {} (expected {}, actual {})",
+                            source_identity,
+                            expected,
+                            actual
+                        );
+                    }
+                    Err(error) => {
+                        log::warn!("Cache hit validation failed (falling back to download): {}", error);
                     }
                 }
             }

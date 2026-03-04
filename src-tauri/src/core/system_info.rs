@@ -186,8 +186,7 @@ struct CachedHardware {
     sections: HardwareSections,
 }
 
-static HARDWARE_CACHE: Lazy<RwLock<Option<CachedHardware>>> =
-    Lazy::new(|| RwLock::new(None));
+static HARDWARE_CACHE: Lazy<RwLock<Option<CachedHardware>>> = Lazy::new(|| RwLock::new(None));
 
 pub async fn collect_platform_info(force_refresh: bool) -> PlatformInfo {
     let (gpus, _, _) = collect_hardware_sections(force_refresh).await;

@@ -8,6 +8,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useLocale } from '@/components/providers/locale-provider';
+import { Switch } from '@/components/ui/switch';
+import { ToolActionRow, ToolValidationMessage } from '@/components/toolbox/tool-layout';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import { Clock, ArrowDownUp, Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -23,29 +27,49 @@ function formatDate(date: Date): Record<string, string> {
   };
 }
 
+const DEFAULT_PREFERENCES = {
+  mode: 'toDate',
+  assumeMilliseconds: false,
+} as const;
+
 export default function TimestampConverter({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('timestamp-converter', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<'toDate' | 'toTimestamp'>('toDate');
   const [results, setResults] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { copy } = useCopyToClipboard();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const mode = preferences.mode as 'toDate' | 'toTimestamp';
+
   const handleConvert = useCallback(() => {
-    if (!input.trim()) { setResults(null); setError(null); return; }
+    if (!input.trim()) {
+      setResults(null);
+      setError(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      setResults(null);
+      return;
+    }
     try {
       if (mode === 'toDate') {
         const num = Number(input.trim());
-        if (isNaN(num)) throw new Error('Invalid timestamp');
-        const ms = num > 1e12 ? num : num * 1000;
+        if (isNaN(num)) throw new Error(t('toolbox.tools.timestampConverter.invalidTimestamp'));
+        const ms = preferences.assumeMilliseconds ? num : (num > 1e12 ? num : num * 1000);
         const date = new Date(ms);
-        if (isNaN(date.getTime())) throw new Error('Invalid timestamp');
+        if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidTimestamp'));
         setResults(formatDate(date));
         setError(null);
       } else {
         const date = new Date(input.trim());
-        if (isNaN(date.getTime())) throw new Error('Invalid date string');
+        if (isNaN(date.getTime())) throw new Error(t('toolbox.tools.timestampConverter.invalidDate'));
         setResults(formatDate(date));
         setError(null);
       }
@@ -53,25 +77,28 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
       setError((e as Error).message);
       setResults(null);
     }
-  }, [input, mode]);
+  }, [input, mode, preferences.assumeMilliseconds, t]);
 
   const handleNow = useCallback(() => {
     const now = new Date();
     if (mode === 'toDate') {
-      setInput(Math.floor(now.getTime() / 1000).toString());
+      const value = preferences.assumeMilliseconds
+        ? now.getTime().toString()
+        : Math.floor(now.getTime() / 1000).toString();
+      setInput(value);
     } else {
       setInput(now.toISOString());
     }
     setResults(formatDate(now));
     setError(null);
-  }, [mode]);
+  }, [mode, preferences.assumeMilliseconds]);
 
   const handleSwap = useCallback(() => {
-    setMode((prev) => (prev === 'toDate' ? 'toTimestamp' : 'toDate'));
+    setPreferences({ mode: mode === 'toDate' ? 'toTimestamp' : 'toDate' });
     setInput('');
     setResults(null);
     setError(null);
-  }, []);
+  }, [mode, setPreferences]);
 
   const handleCopy = useCallback(async (key: string, value: string) => {
     await copy(value);
@@ -93,10 +120,25 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
         </div>
 
         {error && (
-          <p className="text-sm text-destructive">{error}</p>
+          <ToolValidationMessage message={error} />
         )}
 
-        <div className="flex items-center gap-2">
+        <ToolActionRow
+          rightSlot={
+            mode === 'toDate' ? (
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="timestamp-ms-mode"
+                  checked={preferences.assumeMilliseconds}
+                  onCheckedChange={(checked) => setPreferences({ assumeMilliseconds: checked })}
+                />
+                <Label htmlFor="timestamp-ms-mode" className="text-xs">
+                  {t('toolbox.tools.timestampConverter.assumeMilliseconds')}
+                </Label>
+              </div>
+            ) : null
+          }
+        >
           <Button onClick={handleConvert} size="sm">
             {t('toolbox.tools.timestampConverter.convert')}
           </Button>
@@ -108,7 +150,7 @@ export default function TimestampConverter({ className }: ToolComponentProps) {
             <ArrowDownUp className="h-3.5 w-3.5" />
             {t('toolbox.tools.timestampConverter.swap')}
           </Button>
-        </div>
+        </ToolActionRow>
 
         {results && (
           <Card>

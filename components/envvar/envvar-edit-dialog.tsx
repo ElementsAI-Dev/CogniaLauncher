@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertTriangle, SplitSquareHorizontal } from 'lucide-react';
+import { AlertTriangle, Loader2, SplitSquareHorizontal } from 'lucide-react';
 import { validateEnvVarKey } from '@/lib/envvar';
 import type { EnvVarScope } from '@/types/tauri';
 
@@ -31,6 +31,7 @@ interface EnvVarEditDialogProps {
   onSave: (key: string, value: string, scope: EnvVarScope) => void;
   editKey?: string;
   editValue?: string;
+  pending?: boolean;
   t: (key: string) => string;
 }
 
@@ -40,6 +41,7 @@ export function EnvVarEditDialog({
   onSave,
   editKey,
   editValue,
+  pending = false,
   t,
 }: EnvVarEditDialogProps) {
   return (
@@ -51,6 +53,7 @@ export function EnvVarEditDialog({
             onSave={onSave}
             editKey={editKey}
             editValue={editValue}
+            pending={pending}
             t={t}
           />
         )}
@@ -64,6 +67,7 @@ function EnvVarEditDialogContent({
   onSave,
   editKey,
   editValue,
+  pending = false,
   t,
 }: Omit<EnvVarEditDialogProps, 'open'>) {
   const [key, setKey] = useState(editKey || '');
@@ -78,6 +82,7 @@ function EnvVarEditDialogContent({
   const useTextarea = value.length > 80 || isPathLike;
 
   const handleSave = () => {
+    if (pending) return;
     const trimmedKey = key.trim();
     const validation = validateEnvVarKey(trimmedKey);
     if (!validation.valid) {
@@ -181,6 +186,14 @@ function EnvVarEditDialogContent({
           </div>
         )}
 
+        <Alert className="border-dashed" data-testid="envvar-edit-context">
+          <AlertDescription className="text-xs">
+            {scope === 'process'
+              ? 'Process scope applies to current app session only.'
+              : 'Persistent scope changes apply outside current session and may require reopening terminals.'}
+          </AlertDescription>
+        </Alert>
+
         {(scope === 'user' || scope === 'system') && (
           <Alert variant="destructive" className="border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
             <AlertTriangle className="h-4 w-4" />
@@ -191,11 +204,12 @@ function EnvVarEditDialogContent({
       </div>
 
       <DialogFooter>
-        <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
           {t('common.cancel')}
         </Button>
-        <Button onClick={handleSave} disabled={!key.trim()}>
-          {isEdit ? t('common.save') : t('envvar.actions.add')}
+        <Button onClick={handleSave} disabled={!key.trim() || pending}>
+          {pending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {pending ? t('common.loading') : isEdit ? t('common.save') : t('envvar.actions.add')}
         </Button>
       </DialogFooter>
     </>

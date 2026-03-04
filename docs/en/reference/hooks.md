@@ -59,6 +59,8 @@ CogniaLauncher includes 29 custom React Hooks that encapsulate business logic an
 |------|------|------|
 | `useLogs` | `use-logs.ts` | Log viewing and management |
 
+`useLogs.queryLogs()` supports `maxScanLines` for filter-heavy polling scenarios (for example follow mode on large log files).
+
 ## System Features
 
 | Hook | File | Purpose |

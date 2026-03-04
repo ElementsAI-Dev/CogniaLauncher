@@ -45,7 +45,9 @@ export function LogPanel({
   maxHeight = "100%",
 }: LogPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { autoScroll, getFilteredLogs, filter } = useLogStore();
+  const autoScroll = useLogStore((state) => state.autoScroll);
+  const filter = useLogStore((state) => state.filter);
+  const getFilteredLogs = useLogStore((state) => state.getFilteredLogs);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
 
@@ -119,7 +121,7 @@ export function LogPanel({
                   entry={entry}
                   highlightText={filter.search}
                   highlightRegex={Boolean(filter.useRegex)}
-                  allowCollapse
+                  singleLine
                 />
               </div>
             ))}

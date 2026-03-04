@@ -98,6 +98,262 @@ fn get_cancel_key(env_type: &str, version: &str) -> String {
     format!("{}:{}", env_type, version)
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvInstallPhase {
+    Resolve,
+    SelectArtifact,
+    Download,
+    Verify,
+    Persist,
+    Finalize,
+}
+
+impl EnvInstallPhase {
+    const fn index(self) -> usize {
+        match self {
+            Self::Resolve => 0,
+            Self::SelectArtifact => 1,
+            Self::Download => 2,
+            Self::Verify => 3,
+            Self::Persist => 4,
+            Self::Finalize => 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvInstallTerminalState {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvInstallFailureClass {
+    SelectionError,
+    NetworkError,
+    IntegrityError,
+    CacheError,
+    Cancelled,
+    Timeout,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvInstallArtifact {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub provider: String,
+}
+
+#[derive(Debug, Default)]
+struct InstallLifecycle {
+    current_phase: Option<EnvInstallPhase>,
+    terminal_emitted: bool,
+}
+
+impl InstallLifecycle {
+    fn transition(&mut self, next: EnvInstallPhase) -> Result<(), String> {
+        if self.terminal_emitted {
+            return Err(
+                "lifecycle violation: received a non-terminal stage after terminal state"
+                    .to_string(),
+            );
+        }
+
+        match self.current_phase {
+            None => {
+                if next != EnvInstallPhase::Resolve {
+                    return Err(format!(
+                        "lifecycle violation: first stage must be `{}` but got `{}`",
+                        phase_name(EnvInstallPhase::Resolve),
+                        phase_name(next),
+                    ));
+                }
+                self.current_phase = Some(next);
+                Ok(())
+            }
+            Some(current) if current == next => Ok(()),
+            Some(current) if next.index() == current.index() + 1 => {
+                self.current_phase = Some(next);
+                Ok(())
+            }
+            Some(current) if next.index() < current.index() => Err(format!(
+                "lifecycle violation: stage moved backwards from `{}` to `{}`",
+                phase_name(current),
+                phase_name(next),
+            )),
+            Some(current) => Err(format!(
+                "lifecycle violation: skipped required stage between `{}` and `{}`",
+                phase_name(current),
+                phase_name(next),
+            )),
+        }
+    }
+
+    fn mark_terminal(&mut self, terminal: EnvInstallTerminalState) -> Result<(), String> {
+        if self.terminal_emitted {
+            return Err("lifecycle violation: terminal state already emitted".to_string());
+        }
+
+        if terminal == EnvInstallTerminalState::Completed
+            && self.current_phase != Some(EnvInstallPhase::Finalize)
+        {
+            return Err(
+                "lifecycle violation: `completed` emitted before `finalize` stage".to_string(),
+            );
+        }
+
+        self.terminal_emitted = true;
+        Ok(())
+    }
+}
+
+const fn phase_name(phase: EnvInstallPhase) -> &'static str {
+    match phase {
+        EnvInstallPhase::Resolve => "resolve",
+        EnvInstallPhase::SelectArtifact => "select-artifact",
+        EnvInstallPhase::Download => "download",
+        EnvInstallPhase::Verify => "verify",
+        EnvInstallPhase::Persist => "persist",
+        EnvInstallPhase::Finalize => "finalize",
+    }
+}
+
+fn legacy_step_from_phase(
+    phase: Option<EnvInstallPhase>,
+    terminal_state: Option<EnvInstallTerminalState>,
+) -> String {
+    if let Some(terminal) = terminal_state {
+        return match terminal {
+            EnvInstallTerminalState::Completed => "done",
+            EnvInstallTerminalState::Failed => "error",
+            EnvInstallTerminalState::Cancelled => "cancelled",
+        }
+        .to_string();
+    }
+
+    match phase.unwrap_or(EnvInstallPhase::Resolve) {
+        EnvInstallPhase::Resolve | EnvInstallPhase::SelectArtifact => "fetching",
+        EnvInstallPhase::Download => "downloading",
+        EnvInstallPhase::Verify => "extracting",
+        EnvInstallPhase::Persist | EnvInstallPhase::Finalize => "configuring",
+    }
+    .to_string()
+}
+
+fn classify_install_failure(error: &str, cancelled: bool) -> EnvInstallFailureClass {
+    if cancelled {
+        return EnvInstallFailureClass::Cancelled;
+    }
+
+    let msg = error.to_ascii_lowercase();
+    if msg.contains("cancelled") || msg.contains("canceled") {
+        return EnvInstallFailureClass::Cancelled;
+    }
+    if msg.contains("lifecycle violation") {
+        return EnvInstallFailureClass::CacheError;
+    }
+    if msg.contains("timeout") {
+        return EnvInstallFailureClass::Timeout;
+    }
+    if msg.contains("checksum")
+        || msg.contains("hash mismatch")
+        || msg.contains("integrity")
+        || msg.contains("signature")
+    {
+        return EnvInstallFailureClass::IntegrityError;
+    }
+    if msg.contains("cache") || msg.contains("partial") || msg.contains("stale") {
+        return EnvInstallFailureClass::CacheError;
+    }
+    if msg.contains("provider not found")
+        || msg.contains("compatible artifact")
+        || msg.contains("artifact selection")
+        || msg.contains("resolve provider")
+    {
+        return EnvInstallFailureClass::SelectionError;
+    }
+    EnvInstallFailureClass::NetworkError
+}
+
+fn retry_guidance(
+    class: EnvInstallFailureClass,
+) -> (Option<bool>, Option<u32>, Option<u32>, Option<u32>) {
+    match class {
+        EnvInstallFailureClass::NetworkError | EnvInstallFailureClass::Timeout => {
+            (Some(true), Some(2), Some(1), Some(3))
+        }
+        EnvInstallFailureClass::Cancelled => (Some(false), None, None, None),
+        EnvInstallFailureClass::SelectionError
+        | EnvInstallFailureClass::IntegrityError
+        | EnvInstallFailureClass::CacheError => (Some(false), None, Some(1), Some(1)),
+    }
+}
+
+fn build_lifecycle_failure_progress(
+    env_type: &str,
+    version: &str,
+    phase: Option<EnvInstallPhase>,
+    reason: String,
+    artifact: Option<EnvInstallArtifact>,
+) -> EnvInstallProgress {
+    let failure_class = classify_install_failure(&reason, false);
+    let (retryable, retry_after_seconds, attempt, max_attempts) = retry_guidance(failure_class);
+    build_install_progress(
+        env_type,
+        version,
+        phase,
+        Some(EnvInstallTerminalState::Failed),
+        Some(failure_class),
+        artifact,
+        Some(reason.clone()),
+        None,
+        retryable,
+        retry_after_seconds,
+        attempt,
+        max_attempts,
+        0.0,
+        None,
+        None,
+        None,
+        Some(reason),
+    )
+}
+
+fn build_cancelled_progress(
+    env_type: &str,
+    version: &str,
+    phase: Option<EnvInstallPhase>,
+    artifact: Option<EnvInstallArtifact>,
+) -> EnvInstallProgress {
+    let (retryable, retry_after_seconds, attempt, max_attempts) =
+        retry_guidance(EnvInstallFailureClass::Cancelled);
+    build_install_progress(
+        env_type,
+        version,
+        phase,
+        Some(EnvInstallTerminalState::Cancelled),
+        Some(EnvInstallFailureClass::Cancelled),
+        artifact,
+        Some("Installation cancelled by user".to_string()),
+        None,
+        retryable,
+        retry_after_seconds,
+        attempt,
+        max_attempts,
+        0.0,
+        None,
+        None,
+        None,
+        Some("Installation cancelled by user".to_string()),
+    )
+}
+
 /// Progress event payload for environment installation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,11 +361,155 @@ pub struct EnvInstallProgress {
     pub env_type: String,
     pub version: String,
     pub step: String,
+    pub phase: Option<EnvInstallPhase>,
+    pub terminal_state: Option<EnvInstallTerminalState>,
+    pub failure_class: Option<EnvInstallFailureClass>,
+    pub artifact: Option<EnvInstallArtifact>,
+    pub stage_message: Option<String>,
+    pub selection_rationale: Option<String>,
+    pub retryable: Option<bool>,
+    pub retry_after_seconds: Option<u32>,
+    pub attempt: Option<u32>,
+    pub max_attempts: Option<u32>,
     pub progress: f32,
     pub downloaded_size: Option<u64>,
     pub total_size: Option<u64>,
     pub speed: Option<f64>,
     pub error: Option<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_install_progress(
+    env_type: &str,
+    version: &str,
+    phase: Option<EnvInstallPhase>,
+    terminal_state: Option<EnvInstallTerminalState>,
+    failure_class: Option<EnvInstallFailureClass>,
+    artifact: Option<EnvInstallArtifact>,
+    stage_message: Option<String>,
+    selection_rationale: Option<String>,
+    retryable: Option<bool>,
+    retry_after_seconds: Option<u32>,
+    attempt: Option<u32>,
+    max_attempts: Option<u32>,
+    progress: f32,
+    downloaded_size: Option<u64>,
+    total_size: Option<u64>,
+    speed: Option<f64>,
+    error: Option<String>,
+) -> EnvInstallProgress {
+    let clamped_progress = progress.clamp(0.0, 100.0);
+    EnvInstallProgress {
+        env_type: env_type.to_string(),
+        version: version.to_string(),
+        step: legacy_step_from_phase(phase, terminal_state),
+        phase,
+        terminal_state,
+        failure_class,
+        artifact,
+        stage_message,
+        selection_rationale,
+        retryable,
+        retry_after_seconds,
+        attempt,
+        max_attempts,
+        progress: clamped_progress,
+        downloaded_size,
+        total_size,
+        speed,
+        error,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lifecycle_enforces_canonical_order_and_single_terminal() {
+        let mut lifecycle = InstallLifecycle::default();
+
+        lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
+        lifecycle.transition(EnvInstallPhase::SelectArtifact).unwrap();
+        lifecycle.transition(EnvInstallPhase::Download).unwrap();
+        lifecycle.transition(EnvInstallPhase::Verify).unwrap();
+        lifecycle.transition(EnvInstallPhase::Persist).unwrap();
+        lifecycle.transition(EnvInstallPhase::Finalize).unwrap();
+        lifecycle
+            .mark_terminal(EnvInstallTerminalState::Completed)
+            .unwrap();
+
+        let err = lifecycle
+            .mark_terminal(EnvInstallTerminalState::Completed)
+            .unwrap_err();
+        assert!(err.contains("terminal state already emitted"));
+    }
+
+    #[test]
+    fn lifecycle_rejects_skipped_stage() {
+        let mut lifecycle = InstallLifecycle::default();
+        lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
+
+        let err = lifecycle
+            .transition(EnvInstallPhase::Download)
+            .unwrap_err();
+        assert!(err.contains("skipped required stage"));
+    }
+
+    #[test]
+    fn lifecycle_rejects_non_terminal_after_terminal() {
+        let mut lifecycle = InstallLifecycle::default();
+        lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
+        lifecycle.transition(EnvInstallPhase::SelectArtifact).unwrap();
+        lifecycle.transition(EnvInstallPhase::Download).unwrap();
+        lifecycle.transition(EnvInstallPhase::Verify).unwrap();
+        lifecycle.transition(EnvInstallPhase::Persist).unwrap();
+        lifecycle.transition(EnvInstallPhase::Finalize).unwrap();
+        lifecycle
+            .mark_terminal(EnvInstallTerminalState::Completed)
+            .unwrap();
+
+        let err = lifecycle
+            .transition(EnvInstallPhase::Finalize)
+            .unwrap_err();
+        assert!(err.contains("after terminal state"));
+    }
+
+    #[test]
+    fn completed_requires_finalize_phase() {
+        let mut lifecycle = InstallLifecycle::default();
+        lifecycle.transition(EnvInstallPhase::Resolve).unwrap();
+
+        let err = lifecycle
+            .mark_terminal(EnvInstallTerminalState::Completed)
+            .unwrap_err();
+        assert!(err.contains("completed"));
+    }
+
+    #[test]
+    fn cancelled_payload_uses_terminal_cancelled_state() {
+        let payload = build_cancelled_progress(
+            "node",
+            "20.0.0",
+            Some(EnvInstallPhase::Download),
+            Some(EnvInstallArtifact {
+                id: "provider:node@20.0.0".to_string(),
+                name: "node".to_string(),
+                version: "20.0.0".to_string(),
+                provider: "provider".to_string(),
+            }),
+        );
+
+        assert_eq!(payload.step, "cancelled");
+        assert_eq!(
+            payload.terminal_state,
+            Some(EnvInstallTerminalState::Cancelled)
+        );
+        assert_eq!(
+            payload.failure_class,
+            Some(EnvInstallFailureClass::Cancelled)
+        );
+    }
 }
 
 #[tauri::command]
@@ -169,6 +569,7 @@ pub async fn env_install(
     app: AppHandle,
 ) -> Result<(), String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
+    let mut lifecycle = InstallLifecycle::default();
 
     // Create a cancellation token for this installation
     let cancel_key = get_cancel_key(&env_type, &version);
@@ -178,14 +579,186 @@ pub async fn env_install(
         tokens_guard.insert(cancel_key.clone(), cancel_token.clone());
     }
 
+    if let Err(reason) = lifecycle.transition(EnvInstallPhase::Resolve) {
+        let current_phase = lifecycle.current_phase;
+        let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
+        let _ = app.emit(
+            "env-install-progress",
+            build_lifecycle_failure_progress(&env_type, &version, current_phase, reason.clone(), None),
+        );
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.remove(&cancel_key);
+        return Err(reason);
+    }
+
+    let _ = app.emit(
+        "env-install-progress",
+        build_install_progress(
+            &env_type,
+            &version,
+            Some(EnvInstallPhase::Resolve),
+            None,
+            None,
+            None,
+            Some("Resolving provider and install plan".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            2.0,
+            None,
+            None,
+            None,
+            None,
+        ),
+    );
+
+    // Resolve provider and install with progress
+    let (logical_env_type, provider_key, provider) = match manager
+        .resolve_provider(&env_type, provider_id.as_deref(), Some(&version))
+        .await
+    {
+        Ok(value) => value,
+        Err(err) => {
+            let error_message = err.to_string();
+            let failure_class = classify_install_failure(&error_message, false);
+            let (retryable, retry_after_seconds, attempt, max_attempts) =
+                retry_guidance(failure_class);
+            let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
+            let _ = app.emit(
+                "env-install-progress",
+                build_install_progress(
+                    &env_type,
+                    &version,
+                    Some(EnvInstallPhase::Resolve),
+                    Some(EnvInstallTerminalState::Failed),
+                    Some(failure_class),
+                    None,
+                    Some("Failed while resolving provider".to_string()),
+                    None,
+                    retryable,
+                    retry_after_seconds,
+                    attempt,
+                    max_attempts,
+                    0.0,
+                    None,
+                    None,
+                    None,
+                    Some(error_message.clone()),
+                ),
+            );
+
+            let mut tokens_guard = tokens.write().await;
+            tokens_guard.remove(&cancel_key);
+            return Err(error_message);
+        }
+    };
+
+    let artifact = EnvInstallArtifact {
+        id: format!("{}:{}@{}", provider_key, logical_env_type, version),
+        name: logical_env_type.clone(),
+        version: version.clone(),
+        provider: provider_key.clone(),
+    };
+
+    if let Err(reason) = lifecycle.transition(EnvInstallPhase::SelectArtifact) {
+        let current_phase = lifecycle.current_phase;
+        let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
+        let _ = app.emit(
+            "env-install-progress",
+            build_lifecycle_failure_progress(
+                &env_type,
+                &version,
+                current_phase,
+                reason.clone(),
+                Some(artifact.clone()),
+            ),
+        );
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.remove(&cancel_key);
+        return Err(reason);
+    }
+
+    let selection_rationale = Some(format!(
+        "Selected provider `{}` for `{}` on `{:?}` via priority-ordered candidates",
+        provider_key,
+        logical_env_type,
+        crate::platform::env::current_platform(),
+    ));
+    let _ = app.emit(
+        "env-install-progress",
+        build_install_progress(
+            &env_type,
+            &version,
+            Some(EnvInstallPhase::SelectArtifact),
+            None,
+            None,
+            Some(artifact.clone()),
+            Some("Deterministically selecting installation artifact".to_string()),
+            selection_rationale,
+            None,
+            None,
+            None,
+            None,
+            8.0,
+            None,
+            None,
+            None,
+            None,
+        ),
+    );
+
     // Create a progress channel
     let (tx, mut rx): (ProgressSender, mpsc::Receiver<InstallProgressEvent>) = mpsc::channel(32);
+
+    if let Err(reason) = lifecycle.transition(EnvInstallPhase::Download) {
+        let current_phase = lifecycle.current_phase;
+        let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
+        let _ = app.emit(
+            "env-install-progress",
+            build_lifecycle_failure_progress(
+                &env_type,
+                &version,
+                current_phase,
+                reason.clone(),
+                Some(artifact.clone()),
+            ),
+        );
+        let mut tokens_guard = tokens.write().await;
+        tokens_guard.remove(&cancel_key);
+        return Err(reason);
+    }
+
+    let _ = app.emit(
+        "env-install-progress",
+        build_install_progress(
+            &env_type,
+            &version,
+            Some(EnvInstallPhase::Download),
+            None,
+            None,
+            Some(artifact.clone()),
+            Some("Starting transfer".to_string()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            10.0,
+            None,
+            None,
+            None,
+            None,
+        ),
+    );
 
     // Clone values for the progress forwarding task
     let env_type_clone = env_type.clone();
     let version_clone = version.clone();
     let app_clone = app.clone();
     let cancel_token_clone = cancel_token.clone();
+    let artifact_clone = artifact.clone();
 
     // Spawn a task to forward progress events to the frontend
     let progress_task = tokio::spawn(async move {
@@ -195,48 +768,54 @@ pub async fn env_install(
                 break;
             }
 
-            let step = match event.stage {
-                InstallStage::Fetching => "fetching",
-                InstallStage::Downloading => "downloading",
-                InstallStage::Extracting => "extracting",
-                InstallStage::Configuring => "configuring",
-                InstallStage::PostInstall => "configuring",
-                InstallStage::Done => "done",
-                InstallStage::Failed => "error",
+            if matches!(event.stage, InstallStage::Done | InstallStage::Failed) {
+                continue;
+            }
+
+            let progress = if event.progress_percent.is_finite() {
+                event.progress_percent.clamp(0.0, 85.0).max(10.0)
+            } else {
+                10.0
             };
 
-            let progress = EnvInstallProgress {
-                env_type: env_type_clone.clone(),
-                version: version_clone.clone(),
-                step: step.to_string(),
-                progress: event.progress_percent,
-                downloaded_size: if event.downloaded_bytes > 0 {
-                    Some(event.downloaded_bytes)
-                } else {
-                    None
-                },
-                total_size: event.total_bytes,
-                speed: if event.speed_bps > 0.0 {
-                    Some(event.speed_bps)
-                } else {
-                    None
-                },
-                error: if event.stage == InstallStage::Failed {
-                    Some(event.message.clone())
-                } else {
-                    None
-                },
+            let stage_message = if event.message.trim().is_empty() {
+                Some(format!("Provider stage: {:?}", event.stage))
+            } else {
+                Some(event.message.clone())
             };
 
-            let _ = app_clone.emit("env-install-progress", progress);
+            let _ = app_clone.emit(
+                "env-install-progress",
+                build_install_progress(
+                    &env_type_clone,
+                    &version_clone,
+                    Some(EnvInstallPhase::Download),
+                    None,
+                    None,
+                    Some(artifact_clone.clone()),
+                    stage_message,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    progress,
+                    if event.downloaded_bytes > 0 {
+                        Some(event.downloaded_bytes)
+                    } else {
+                        None
+                    },
+                    event.total_bytes,
+                    if event.speed_bps > 0.0 {
+                        Some(event.speed_bps)
+                    } else {
+                        None
+                    },
+                    None,
+                ),
+            );
         }
     });
-
-    // Resolve provider and install with progress
-    let (logical_env_type, _provider_key, provider) = manager
-        .resolve_provider(&env_type, provider_id.as_deref(), Some(&version))
-        .await
-        .map_err(|e| e.to_string())?;
 
     // Create the install request
     let request = InstallRequest {
@@ -248,6 +827,33 @@ pub async fn env_install(
 
     // Check cancellation before starting install
     if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Err(reason) = lifecycle.mark_terminal(EnvInstallTerminalState::Cancelled) {
+            let current_phase = lifecycle.current_phase;
+            let _ = app.emit(
+                "env-install-progress",
+                build_lifecycle_failure_progress(
+                    &env_type,
+                    &version,
+                    current_phase,
+                    reason.clone(),
+                    Some(artifact.clone()),
+                ),
+            );
+            let mut tokens_guard = tokens.write().await;
+            tokens_guard.remove(&cancel_key);
+            return Err(reason);
+        }
+
+        let _ = app.emit(
+            "env-install-progress",
+            build_cancelled_progress(
+                &env_type,
+                &version,
+                lifecycle.current_phase.or(Some(EnvInstallPhase::Download)),
+                Some(artifact.clone()),
+            ),
+        );
+
         // Cleanup cancellation token
         let mut tokens_guard = tokens.write().await;
         tokens_guard.remove(&cancel_key);
@@ -268,47 +874,183 @@ pub async fn env_install(
 
     // Check if cancelled during installation
     if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+        if let Err(reason) = lifecycle.mark_terminal(EnvInstallTerminalState::Cancelled) {
+            let current_phase = lifecycle.current_phase;
+            let _ = app.emit(
+                "env-install-progress",
+                build_lifecycle_failure_progress(
+                    &env_type,
+                    &version,
+                    current_phase,
+                    reason.clone(),
+                    Some(artifact.clone()),
+                ),
+            );
+            return Err(reason);
+        }
+
+        let _ = app.emit(
+            "env-install-progress",
+            build_cancelled_progress(
+                &env_type,
+                &version,
+                lifecycle.current_phase.or(Some(EnvInstallPhase::Download)),
+                Some(artifact.clone()),
+            ),
+        );
         return Err("Installation cancelled by user".to_string());
     }
 
     // Handle result
     match result {
         Ok(_receipt) => {
+            for (phase, progress, stage_message) in [
+                (
+                    EnvInstallPhase::Verify,
+                    90.0,
+                    "Verifying artifact integrity".to_string(),
+                ),
+                (
+                    EnvInstallPhase::Persist,
+                    96.0,
+                    "Persisting verified artifact metadata".to_string(),
+                ),
+                (
+                    EnvInstallPhase::Finalize,
+                    99.0,
+                    "Finalizing installation state".to_string(),
+                ),
+            ] {
+                if let Err(reason) = lifecycle.transition(phase) {
+                    let current_phase = lifecycle.current_phase;
+                    let _ = lifecycle.mark_terminal(EnvInstallTerminalState::Failed);
+                    let _ = app.emit(
+                        "env-install-progress",
+                        build_lifecycle_failure_progress(
+                            &env_type,
+                            &version,
+                            current_phase,
+                            reason.clone(),
+                            Some(artifact.clone()),
+                        ),
+                    );
+                    return Err(reason);
+                }
+
+                let _ = app.emit(
+                    "env-install-progress",
+                    build_install_progress(
+                        &env_type,
+                        &version,
+                        Some(phase),
+                        None,
+                        None,
+                        Some(artifact.clone()),
+                        Some(stage_message),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        progress,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                );
+            }
+
+            if let Err(reason) = lifecycle.mark_terminal(EnvInstallTerminalState::Completed) {
+                let current_phase = lifecycle.current_phase;
+                let _ = app.emit(
+                    "env-install-progress",
+                    build_lifecycle_failure_progress(
+                        &env_type,
+                        &version,
+                        current_phase,
+                        reason.clone(),
+                        Some(artifact.clone()),
+                    ),
+                );
+                return Err(reason);
+            }
+
             // Invalidate environment caches after successful install
             invalidate_env_caches(config.inner()).await;
 
             // Emit final success event
             let _ = app.emit(
                 "env-install-progress",
-                EnvInstallProgress {
-                    env_type: env_type.clone(),
-                    version: version.clone(),
-                    step: "done".to_string(),
-                    progress: 100.0,
-                    downloaded_size: None,
-                    total_size: None,
-                    speed: None,
-                    error: None,
-                },
+                build_install_progress(
+                    &env_type,
+                    &version,
+                    Some(EnvInstallPhase::Finalize),
+                    Some(EnvInstallTerminalState::Completed),
+                    None,
+                    Some(artifact),
+                    Some("Installation completed".to_string()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    100.0,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
             );
             Ok(())
         }
         Err(e) => {
+            let error_message = e.to_string();
+            let failure_class = classify_install_failure(
+                &error_message,
+                cancel_token.load(std::sync::atomic::Ordering::SeqCst),
+            );
+            let (retryable, retry_after_seconds, attempt, max_attempts) =
+                retry_guidance(failure_class);
+            if let Err(reason) = lifecycle.mark_terminal(EnvInstallTerminalState::Failed) {
+                let current_phase = lifecycle.current_phase;
+                let _ = app.emit(
+                    "env-install-progress",
+                    build_lifecycle_failure_progress(
+                        &env_type,
+                        &version,
+                        current_phase,
+                        reason.clone(),
+                        Some(artifact.clone()),
+                    ),
+                );
+                return Err(reason);
+            }
+
             // Emit final error event
             let _ = app.emit(
                 "env-install-progress",
-                EnvInstallProgress {
-                    env_type: env_type.clone(),
-                    version: version.clone(),
-                    step: "error".to_string(),
-                    progress: 0.0,
-                    downloaded_size: None,
-                    total_size: None,
-                    speed: None,
-                    error: Some(e.to_string()),
-                },
+                build_install_progress(
+                    &env_type,
+                    &version,
+                    lifecycle.current_phase.or(Some(EnvInstallPhase::Download)),
+                    Some(EnvInstallTerminalState::Failed),
+                    Some(failure_class),
+                    Some(artifact),
+                    Some("Installation failed".to_string()),
+                    None,
+                    retryable,
+                    retry_after_seconds,
+                    attempt,
+                    max_attempts,
+                    0.0,
+                    None,
+                    None,
+                    None,
+                    Some(error_message.clone()),
+                ),
             );
-            Err(e.to_string())
+            Err(error_message)
         }
     }
 }
@@ -740,28 +1482,13 @@ pub async fn env_install_cancel(
     env_type: String,
     version: String,
     tokens: State<'_, CancellationTokens>,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<bool, String> {
     let key = get_cancel_key(&env_type, &version);
     let tokens_guard = tokens.read().await;
 
     if let Some(token) = tokens_guard.get(&key) {
         token.store(true, std::sync::atomic::Ordering::SeqCst);
-
-        // Emit cancellation event
-        let _ = app.emit(
-            "env-install-progress",
-            EnvInstallProgress {
-                env_type,
-                version,
-                step: "error".to_string(),
-                progress: 0.0,
-                downloaded_size: None,
-                total_size: None,
-                speed: None,
-                error: Some("Installation cancelled by user".to_string()),
-            },
-        );
 
         Ok(true)
     } else {

@@ -52,11 +52,16 @@ describe("PackageVersionList", () => {
   });
 
   it("renders version list", () => {
-    render(<PackageVersionList {...defaultProps} />);
+    const { container } = render(<PackageVersionList {...defaultProps} />);
     expect(screen.getByText("Available Versions")).toBeInTheDocument();
     expect(screen.getByText("1.3.0")).toBeInTheDocument();
     expect(screen.getByText("1.2.0")).toBeInTheDocument();
     expect(screen.getByText("1.1.0")).toBeInTheDocument();
+
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[65dvh]");
+    expect(scrollArea).not.toHaveClass("h-[500px]");
   });
 
   it("highlights current version with badge", () => {

@@ -122,7 +122,7 @@ export function PackageVersionList({
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[500px]">
+        <ScrollArea className="max-h-[65dvh] min-h-0">
           <div className="space-y-1 pr-4">
             {displayedVersions.map((v) => {
               const isCurrent = v.version === currentVersion;
@@ -133,14 +133,15 @@ export function PackageVersionList({
                 <div
                   key={v.version}
                   className={`
-                    flex items-center justify-between py-2.5 px-3 rounded-lg
+                    flex flex-col gap-2 py-2.5 px-3 rounded-lg
                     hover:bg-muted/50 transition-colors
+                    sm:flex-row sm:items-center sm:justify-between
                     ${isCurrent ? 'bg-primary/5 border border-primary/20' : ''}
                   `}
                 >
                   {/* Version info */}
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-sm font-medium">{v.version}</span>
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                    <span className="font-mono text-sm font-medium break-all">{v.version}</span>
                     {isCurrent && (
                       <Badge variant="default" className="text-xs shrink-0">
                         {t('packages.detail.versionCurrent')}
@@ -164,9 +165,9 @@ export function PackageVersionList({
                   </div>
 
                   {/* Date + Actions */}
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:flex-nowrap">
                     {v.release_date && (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1 mr-2">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1 break-all sm:mr-2">
                         <Calendar className="h-3 w-3" />
                         {new Date(v.release_date).toLocaleDateString()}
                       </span>

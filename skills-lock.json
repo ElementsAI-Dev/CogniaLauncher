@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "update-docs": {
+      "source": "vercel/next.js",
+      "sourceType": "github",
+      "computedHash": "b5f495ca63a08c70523ed59fbcf5b5665603d77299d8524ccddeacce024cbb33"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 use super::api::get_api_client;
-use super::node_base::split_name_version;
+use super::node_base::parse_node_list_entry;
 use super::traits::*;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
@@ -99,21 +99,28 @@ impl BunProvider {
 
         // Parse bun pm ls output: package@version format
         for line in output.lines() {
-            let line = line.trim();
-            // Strip any leading tree characters (├──, └──, etc.)
-            let clean = line.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '@');
-            let (pkg_name, pkg_version) = split_name_version(clean);
-            // Use exact match to avoid prefix false positives (e.g., "react" vs "react-dom")
-            if pkg_name == name {
-                if let Some(v) = pkg_version {
-                    // Version might have trailing info like "(extra info)"
-                    let version = v.split_whitespace().next().unwrap_or(v);
-                    return Ok(version.to_string());
+            if let Some((pkg_name, version)) = Self::parse_pm_ls_entry(line) {
+                // Use exact match to avoid prefix false positives (e.g., "react" vs "react-dom")
+                if pkg_name == name {
+                    return Ok(version);
                 }
             }
         }
 
         Err(CogniaError::Provider(format!("Package {} not found", name)))
+    }
+
+    /// Parse one line of `bun pm ls` / `bun pm ls -g` output into (name, version).
+    ///
+    /// Bun output may contain non-package lines such as:
+    /// - `bun pm ls v1.1.34`
+    /// - `C:\Users\foo\.bun\install\global\node_modules (174)`
+    /// - tree drawing characters / metadata annotations
+    ///
+    /// This parser only accepts tokens that clearly match `name@version`
+    /// (including scoped packages like `@scope/name@1.2.3`).
+    fn parse_pm_ls_entry(line: &str) -> Option<(String, String)> {
+        parse_node_list_entry(line)
     }
 }
 
@@ -336,25 +343,9 @@ impl Provider for BunProvider {
         let mut packages = Vec::new();
 
         for line in output.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with("bun") {
+            let Some((pkg_name, version)) = Self::parse_pm_ls_entry(line) else {
                 continue;
-            }
-
-            // Strip any leading tree characters (├──, └──, │, etc.)
-            let clean = line.trim_start_matches(|c: char| !c.is_alphanumeric() && c != '@');
-            if clean.is_empty() {
-                continue;
-            }
-
-            // Parse package@version format using shared utility
-            let (pkg_name, pkg_version) = split_name_version(clean);
-            if pkg_name.is_empty() {
-                continue;
-            }
-            let version = pkg_version
-                .map(|v| v.split_whitespace().next().unwrap_or(v))
-                .unwrap_or("unknown");
+            };
 
             if let Some(ref name_filter) = filter.name_filter {
                 if !pkg_name.contains(name_filter) {
@@ -365,14 +356,14 @@ impl Provider for BunProvider {
             // Determine install path based on global or local
             let install_path = if filter.global_only {
                 Self::get_global_dir()
-                    .map(|p| p.join("node_modules").join(pkg_name))
+                    .map(|p| p.join("node_modules").join(&pkg_name))
                     .unwrap_or_default()
             } else {
-                PathBuf::from("node_modules").join(pkg_name)
+                PathBuf::from("node_modules").join(&pkg_name)
             };
 
             packages.push(InstalledPackage {
-                name: pkg_name.to_string(),
+                name: pkg_name,
                 version: version.to_string(),
                 provider: self.id().into(),
                 install_path,
@@ -542,5 +533,38 @@ mod tests {
     fn test_priority() {
         let provider = BunProvider::new();
         assert_eq!(provider.priority(), 92);
+    }
+
+    #[test]
+    fn test_parse_pm_ls_entry_unscoped_package() {
+        let parsed = BunProvider::parse_pm_ls_entry("├── eslint@9.17.0");
+        assert_eq!(parsed, Some(("eslint".to_string(), "9.17.0".to_string())));
+    }
+
+    #[test]
+    fn test_parse_pm_ls_entry_scoped_package() {
+        let parsed = BunProvider::parse_pm_ls_entry("└── @types/node@22.10.1");
+        assert_eq!(
+            parsed,
+            Some(("@types/node".to_string(), "22.10.1".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_pm_ls_entry_ignores_root_path_line() {
+        let parsed = BunProvider::parse_pm_ls_entry("C:\\Users\\Max Qian\\node_modules (174)");
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn test_parse_pm_ls_entry_ignores_banner_line() {
+        let parsed = BunProvider::parse_pm_ls_entry("bun pm ls v1.1.34");
+        assert_eq!(parsed, None);
+    }
+
+    #[test]
+    fn test_parse_pm_ls_entry_uses_first_token_only() {
+        let parsed = BunProvider::parse_pm_ls_entry("├── biome@1.9.4 (workspace root dependency)");
+        assert_eq!(parsed, Some(("biome".to_string(), "1.9.4".to_string())));
     }
 }

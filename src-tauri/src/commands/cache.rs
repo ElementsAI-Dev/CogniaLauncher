@@ -1833,14 +1833,18 @@ pub async fn cache_force_clean_external(
     let freed = size_before.saturating_sub(size_after);
 
     match clean_result {
-        Ok(()) => Ok(ExternalCacheCleanResult {
-            provider: provider_enum.id().to_string(),
-            display_name: provider_enum.display_name().to_string(),
-            freed_bytes: freed,
-            freed_human: format_size(freed),
-            success: true,
-            error: None,
-        }),
+        Ok(()) => {
+            external::invalidate_discovery_cache().await;
+            external::invalidate_provider_size_cache(provider_enum.id()).await;
+            Ok(ExternalCacheCleanResult {
+                provider: provider_enum.id().to_string(),
+                display_name: provider_enum.display_name().to_string(),
+                freed_bytes: freed,
+                freed_human: format_size(freed),
+                success: true,
+                error: None,
+            })
+        }
         Err(e) => Ok(ExternalCacheCleanResult {
             provider: provider_enum.id().to_string(),
             display_name: provider_enum.display_name().to_string(),

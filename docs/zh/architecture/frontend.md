@@ -130,7 +130,7 @@ components/
 
 - 拖拽区域通过 `app-region: drag` 实现
 - 交互元素标记为 `app-region: no-drag`
-- Windows 最大化时补偿 8px WS_THICKFRAME 边框
+- Windows 最大化时会基于显示器/工作区信息计算四边动态补偿（指标不可用时回退到 8px）
 - 窗口状态通过 Zustand Store 跨组件共享
 
 ---

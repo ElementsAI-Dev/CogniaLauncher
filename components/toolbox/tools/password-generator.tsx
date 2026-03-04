@@ -6,9 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { useLocale } from '@/components/providers/locale-provider';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { RefreshCw, Copy, Check } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
 
@@ -45,24 +49,44 @@ function getStrength(password: string): number {
   return Math.min(100, score);
 }
 
+const DEFAULT_PREFERENCES = {
+  length: 16,
+  count: 1,
+  upper: true,
+  lower: true,
+  digits: true,
+  special: true,
+  excludeSimilar: false,
+} as const;
+
 export default function PasswordGenerator({ className }: ToolComponentProps) {
   const { t } = useLocale();
-  const [length, setLength] = useState(16);
-  const [upper, setUpper] = useState(true);
-  const [lower, setLower] = useState(true);
-  const [digits, setDigits] = useState(true);
-  const [special, setSpecial] = useState(true);
-  const [excludeSimilar, setExcludeSimilar] = useState(false);
-  const [count] = useState(1);
+  const { preferences, setPreferences } = useToolPreferences('password-generator', DEFAULT_PREFERENCES);
+  const [error, setError] = useState<string | null>(null);
   const [passwords, setPasswords] = useState<string[]>([]);
   const { copied, copy } = useCopyToClipboard();
 
+  const length = Number(preferences.length) || 16;
+  const count = Number(preferences.count) || 1;
+
   const handleGenerate = useCallback(() => {
+    if (count > TOOLBOX_LIMITS.generatorCount) {
+      setError(t('toolbox.tools.shared.countTooLarge', { limit: TOOLBOX_LIMITS.generatorCount }));
+      return;
+    }
     const results = Array.from({ length: count }, () =>
-      generatePassword(length, upper, lower, digits, special, excludeSimilar),
+      generatePassword(
+        length,
+        preferences.upper,
+        preferences.lower,
+        preferences.digits,
+        preferences.special,
+        preferences.excludeSimilar,
+      ),
     );
+    setError(null);
     setPasswords(results);
-  }, [length, upper, lower, digits, special, excludeSimilar, count]);
+  }, [count, length, preferences.digits, preferences.excludeSimilar, preferences.lower, preferences.special, preferences.upper, t]);
 
   const handleCopy = useCallback(async () => {
     await copy(passwords.join('\n'));
@@ -77,27 +101,41 @@ export default function PasswordGenerator({ className }: ToolComponentProps) {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label>{t('toolbox.tools.passwordGenerator.length')}: {length}</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="password-count" className="text-xs">{t('toolbox.tools.passwordGenerator.count')}</Label>
+              <Input
+                id="password-count"
+                type="number"
+                min={1}
+                max={TOOLBOX_LIMITS.generatorCount}
+                value={count}
+                onChange={(e) => setPreferences({ count: Math.max(1, Number(e.target.value) || 1) })}
+                className="h-7 w-20"
+              />
+            </div>
           </div>
-          <Slider value={[length]} onValueChange={([v]) => setLength(v)} min={4} max={128} step={1} />
+          <Slider value={[length]} onValueChange={([v]) => setPreferences({ length: v })} min={4} max={128} step={1} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           {([
-            ['upper', upper, setUpper, 'A-Z'],
-            ['lower', lower, setLower, 'a-z'],
-            ['digits', digits, setDigits, '0-9'],
-            ['special', special, setSpecial, '!@#'],
-          ] as const).map(([key, value, setter, hint]) => (
+            ['upper', preferences.upper, 'A-Z'],
+            ['lower', preferences.lower, 'a-z'],
+            ['digits', preferences.digits, '0-9'],
+            ['special', preferences.special, '!@#'],
+          ] as const).map(([key, value, hint]) => (
             <div key={key} className="flex items-center gap-2">
-              <Switch checked={value} onCheckedChange={setter as (v: boolean) => void} />
+              <Switch checked={value} onCheckedChange={(checked) => setPreferences({ [key]: checked })} />
               <Label className="text-sm">{t(`toolbox.tools.passwordGenerator.${key}`)} <span className="text-muted-foreground">({hint})</span></Label>
             </div>
           ))}
           <div className="flex items-center gap-2">
-            <Switch checked={excludeSimilar} onCheckedChange={setExcludeSimilar} />
+            <Switch checked={preferences.excludeSimilar} onCheckedChange={(checked) => setPreferences({ excludeSimilar: checked })} />
             <Label className="text-sm">{t('toolbox.tools.passwordGenerator.excludeSimilar')}</Label>
           </div>
         </div>
+
+        {error && <ToolValidationMessage message={error} />}
 
         <div className="flex items-center gap-2">
           <Button onClick={handleGenerate} size="sm" className="gap-1.5">

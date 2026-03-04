@@ -44,6 +44,7 @@ export function PackageComparisonDialog({
   onCompare,
 }: PackageComparisonDialogProps) {
   const { t } = useLocale();
+  const failedToCompareMessage = t("packages.failedToCompare");
   const [comparison, setComparison] = useState<PackageComparison | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,13 +59,11 @@ export function PackageComparisonDialog({
       const result = await onCompare(packageIds);
       setComparison(result);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("packages.failedToCompare"),
-      );
+      setError(err instanceof Error ? err.message : failedToCompareMessage);
     } finally {
       setLoading(false);
     }
-  }, [packageIds, onCompare, t]);
+  }, [packageIds, onCompare, failedToCompareMessage]);
 
   useEffect(() => {
     if (open && packageIds.length >= 2) {
@@ -143,13 +142,17 @@ export function PackageComparisonDialog({
         if (featureKey === "updated_at") {
           return formatDate(value as string);
         }
-        return <span className="truncate max-w-[150px]">{String(value)}</span>;
+        return (
+          <span className="block max-w-[220px] break-all whitespace-normal" title={String(value)}>
+            {String(value)}
+          </span>
+        );
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[80vh]">
+      <DialogContent className="max-w-4xl max-h-[85dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitCompare className="h-5 w-5" />
@@ -179,7 +182,7 @@ export function PackageComparisonDialog({
         )}
 
         {comparison && !loading && (
-          <ScrollArea className="max-h-[60vh]">
+          <ScrollArea className="max-h-[65dvh] min-h-0">
             <div className="space-y-6 pr-4">
               {/* Package Headers */}
               <div
@@ -195,11 +198,13 @@ export function PackageComparisonDialog({
                         <Package className="h-5 w-5 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate">{pkg.name}</h3>
-                        <p className="text-sm text-muted-foreground truncate">
+                        <h3 className="font-semibold break-all sm:truncate" title={pkg.name}>
+                          {pkg.name}
+                        </h3>
+                        <p className="text-sm text-muted-foreground break-all sm:line-clamp-1" title={pkg.description || t("packages.noDescription")}>
                           {pkg.description || t("packages.noDescription")}
                         </p>
-                        <div className="flex items-center gap-2 mt-2">
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
                           <Badge variant="outline">{pkg.provider}</Badge>
                           <Badge>{pkg.version || pkg.latest_version}</Badge>
                         </div>
@@ -234,7 +239,7 @@ export function PackageComparisonDialog({
                       {t("packages.feature")}
                     </TableHead>
                     {comparison.packages.map((pkg, i) => (
-                      <TableHead key={i}>{pkg.name}</TableHead>
+                      <TableHead key={i} className="break-all">{pkg.name}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>

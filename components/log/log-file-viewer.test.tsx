@@ -216,6 +216,85 @@ describe("LogFileViewer", () => {
     });
   });
 
+  it("passes maxScanLines from filter to queryLogFile", async () => {
+    useLogStore.setState({
+      ...useLogStore.getState(),
+      filter: {
+        ...useLogStore.getState().filter,
+        maxScanLines: 5000,
+      },
+    });
+    mockQueryLogFile.mockResolvedValue({ entries: [], totalCount: 0, hasMore: false });
+    render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
+    await waitFor(() => {
+      expect(mockQueryLogFile).toHaveBeenCalledWith(
+        expect.objectContaining({ maxScanLines: 5000 }),
+      );
+    });
+  });
+
+  it("ignores stale query responses when fileName changes", async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined;
+    let resolveSecond: ((value: unknown) => void) | undefined;
+    const firstPromise = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const secondPromise = new Promise((resolve) => {
+      resolveSecond = resolve;
+    });
+
+    mockQueryLogFile
+      .mockImplementationOnce(() => firstPromise)
+      .mockImplementationOnce(() => secondPromise);
+
+    const { rerender } = render(
+      <LogFileViewer open fileName="first.log" onOpenChange={() => undefined} />,
+    );
+
+    rerender(
+      <LogFileViewer open fileName="second.log" onOpenChange={() => undefined} />,
+    );
+
+    await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(2));
+
+    resolveSecond?.({
+      entries: [
+        {
+          timestamp: "2026-02-02T13:00:00Z",
+          level: "INFO",
+          target: "",
+          message: "Newest response",
+          lineNumber: 2,
+        },
+      ],
+      totalCount: 1,
+      hasMore: false,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Newest response")).toBeInTheDocument();
+    });
+
+    resolveFirst?.({
+      entries: [
+        {
+          timestamp: "2026-02-02T12:00:00Z",
+          level: "INFO",
+          target: "",
+          message: "Stale response",
+          lineNumber: 1,
+        },
+      ],
+      totalCount: 1,
+      hasMore: false,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Stale response")).not.toBeInTheDocument();
+      expect(screen.getByText("Newest response")).toBeInTheDocument();
+    });
+  });
+
   it("calls onOpenChange when dialog is closed", async () => {
     const onOpenChange = jest.fn();
     mockQueryLogFile.mockResolvedValue({ entries: [], totalCount: 0, hasMore: false });

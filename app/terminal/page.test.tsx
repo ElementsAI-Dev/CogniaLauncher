@@ -21,86 +21,96 @@ jest.mock('@/components/providers/locale-provider', () => ({
   }),
 }));
 
+const mockLoadProxyConfig = jest.fn();
+const mockFetchProxyEnvVars = jest.fn();
+const mockFetchShellEnvVars = jest.fn();
+
+const mockTerminalHookState = {
+  shells: [{ id: 'bash', name: 'Bash', path: '/bin/bash' }],
+  profiles: [],
+  templates: [],
+  loading: false,
+  shellsLoading: false,
+  profilesLoading: false,
+  psLoading: false,
+  error: null,
+  frameworks: [],
+  plugins: [],
+  frameworkCacheStats: [],
+  frameworkCacheLoading: false,
+  psProfiles: [],
+  psModules: [],
+  psScripts: [],
+  executionPolicy: [],
+  proxyEnvVars: [],
+  shellEnvVars: [],
+  startupMeasurements: {},
+  healthResults: {},
+  measuringShellId: null,
+  checkingHealthShellId: null,
+  selectedShellId: null,
+  launchingProfileId: null,
+  lastLaunchResult: null,
+  proxyMode: 'global',
+  customProxy: '',
+  noProxy: '',
+  globalProxy: '',
+  proxyConfigSaving: false,
+  configMutationState: { status: 'idle', message: null, result: null, updatedAt: null },
+  proxySyncState: { status: 'idle', message: null, result: null, updatedAt: null },
+  detectShells: jest.fn(),
+  measureStartup: jest.fn(),
+  checkShellHealth: jest.fn(),
+  fetchProfiles: jest.fn(),
+  launchProfile: jest.fn(),
+  createProfile: jest.fn(),
+  updateProfile: jest.fn(),
+  deleteProfile: jest.fn(),
+  setDefaultProfile: jest.fn(),
+  duplicateProfile: jest.fn(),
+  exportProfiles: jest.fn(),
+  importProfiles: jest.fn(),
+  readShellConfig: jest.fn(),
+  fetchConfigEntries: jest.fn(),
+  backupShellConfig: jest.fn(),
+  parseConfigContent: jest.fn(),
+  writeShellConfig: jest.fn(),
+  detectFrameworks: jest.fn(),
+  fetchPlugins: jest.fn(),
+  fetchFrameworkCacheStats: jest.fn(),
+  cleanFrameworkCache: jest.fn(),
+  fetchPSProfiles: jest.fn(),
+  readPSProfile: jest.fn(),
+  writePSProfile: jest.fn(),
+  fetchExecutionPolicy: jest.fn(),
+  setExecutionPolicy: jest.fn(),
+  fetchPSModules: jest.fn(),
+  fetchPSScripts: jest.fn(),
+  installPSModule: jest.fn(),
+  uninstallPSModule: jest.fn(),
+  updatePSModule: jest.fn(),
+  searchPSModules: jest.fn(),
+  fetchProxyEnvVars: mockFetchProxyEnvVars,
+  fetchShellEnvVars: mockFetchShellEnvVars,
+  clearLaunchResult: jest.fn(),
+  clearConfigMutationState: jest.fn(),
+  clearProxySyncState: jest.fn(),
+  loadProxyConfig: mockLoadProxyConfig,
+  updateProxyMode: jest.fn(),
+  updateCustomProxy: jest.fn(),
+  saveCustomProxy: jest.fn(),
+  updateNoProxy: jest.fn(),
+  saveNoProxy: jest.fn(),
+  fetchTemplates: jest.fn(),
+  createCustomTemplate: jest.fn(),
+  deleteCustomTemplate: jest.fn(),
+  saveProfileAsTemplate: jest.fn(),
+  createProfileFromTemplate: jest.fn(),
+  appendToShellConfig: jest.fn(),
+};
+
 jest.mock('@/hooks/use-terminal', () => ({
-  useTerminal: () => ({
-    shells: [{ id: 'bash', name: 'Bash', path: '/bin/bash' }],
-    profiles: [],
-    templates: [],
-    loading: false,
-    shellsLoading: false,
-    profilesLoading: false,
-    psLoading: false,
-    error: null,
-    frameworks: [],
-    plugins: [],
-    frameworkCacheStats: [],
-    frameworkCacheLoading: false,
-    psProfiles: [],
-    psModules: [],
-    psScripts: [],
-    executionPolicy: [],
-    proxyEnvVars: [],
-    shellEnvVars: [],
-    startupMeasurements: {},
-    healthResults: {},
-    measuringShellId: null,
-    checkingHealthShellId: null,
-    selectedShellId: null,
-    launchingProfileId: null,
-    lastLaunchResult: null,
-    proxyMode: 'global',
-    customProxy: '',
-    noProxy: '',
-    globalProxy: '',
-    proxyConfigSaving: false,
-    detectShells: jest.fn(),
-    measureStartup: jest.fn(),
-    checkShellHealth: jest.fn(),
-    fetchProfiles: jest.fn(),
-    launchProfile: jest.fn(),
-    createProfile: jest.fn(),
-    updateProfile: jest.fn(),
-    deleteProfile: jest.fn(),
-    setDefaultProfile: jest.fn(),
-    duplicateProfile: jest.fn(),
-    exportProfiles: jest.fn(),
-    importProfiles: jest.fn(),
-    readShellConfig: jest.fn(),
-    fetchConfigEntries: jest.fn(),
-    backupShellConfig: jest.fn(),
-    parseConfigContent: jest.fn(),
-    writeShellConfig: jest.fn(),
-    detectFrameworks: jest.fn(),
-    fetchPlugins: jest.fn(),
-    fetchFrameworkCacheStats: jest.fn(),
-    cleanFrameworkCache: jest.fn(),
-    fetchPSProfiles: jest.fn(),
-    readPSProfile: jest.fn(),
-    writePSProfile: jest.fn(),
-    fetchExecutionPolicy: jest.fn(),
-    setExecutionPolicy: jest.fn(),
-    fetchPSModules: jest.fn(),
-    fetchPSScripts: jest.fn(),
-    installPSModule: jest.fn(),
-    uninstallPSModule: jest.fn(),
-    updatePSModule: jest.fn(),
-    searchPSModules: jest.fn(),
-    fetchProxyEnvVars: jest.fn(),
-    fetchShellEnvVars: jest.fn(),
-    clearLaunchResult: jest.fn(),
-    loadProxyConfig: jest.fn(),
-    updateProxyMode: jest.fn(),
-    updateCustomProxy: jest.fn(),
-    saveCustomProxy: jest.fn(),
-    updateNoProxy: jest.fn(),
-    saveNoProxy: jest.fn(),
-    fetchTemplates: jest.fn(),
-    createCustomTemplate: jest.fn(),
-    deleteCustomTemplate: jest.fn(),
-    saveProfileAsTemplate: jest.fn(),
-    createProfileFromTemplate: jest.fn(),
-    appendToShellConfig: jest.fn(),
-  }),
+  useTerminal: () => mockTerminalHookState,
 }));
 
 jest.mock('@/components/terminal', () => ({
@@ -121,6 +131,8 @@ jest.mock('@/components/terminal', () => ({
 describe('TerminalPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockTerminalHookState.configMutationState = { status: 'idle', message: null, result: null, updatedAt: null };
+    mockTerminalHookState.proxySyncState = { status: 'idle', message: null, result: null, updatedAt: null };
   });
 
   it('renders page title and description', () => {
@@ -174,6 +186,8 @@ describe('TerminalPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('proxy-settings')).toBeInTheDocument();
     });
+    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
   });
 
   it('switches to env vars tab', async () => {
@@ -184,5 +198,29 @@ describe('TerminalPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('env-vars')).toBeInTheDocument();
     });
+    expect(mockFetchShellEnvVars).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes invalidated proxy tab after proxy sync success', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /proxy/i }));
+    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(1);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(1);
+
+    mockTerminalHookState.proxySyncState = {
+      status: 'success',
+      message: 'ok',
+      result: null,
+      updatedAt: Date.now(),
+    };
+    rerender(<TerminalPage />);
+
+    await user.click(screen.getByRole('tab', { name: /shells/i }));
+    await user.click(screen.getByRole('tab', { name: /proxy/i }));
+
+    expect(mockLoadProxyConfig).toHaveBeenCalledTimes(2);
+    expect(mockFetchProxyEnvVars).toHaveBeenCalledTimes(2);
   });
 });

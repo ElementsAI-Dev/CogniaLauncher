@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ interface EnvVarImportExportProps {
   onImport: (content: string, scope: EnvVarScope) => Promise<EnvVarImportResult | null>;
   onExport: (scope: EnvVarScope, format: EnvFileFormat) => Promise<string | null>;
   defaultTab?: 'import' | 'export';
+  busy?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -42,6 +44,7 @@ export function EnvVarImportExport({
   onImport,
   onExport,
   defaultTab = 'import',
+  busy = false,
   t,
 }: EnvVarImportExportProps) {
   const [importContent, setImportContent] = useState('');
@@ -128,7 +131,7 @@ export function EnvVarImportExport({
           <TabsContent value="import" className="space-y-3 mt-3">
             <div className="space-y-2">
               <Label>{t('envvar.table.scope')}</Label>
-              <Select value={importScope} onValueChange={(v) => setImportScope(v as EnvVarScope)}>
+              <Select value={importScope} onValueChange={(v) => setImportScope(v as EnvVarScope)} disabled={busy || importing}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -150,32 +153,44 @@ export function EnvVarImportExport({
                   onChange={handleFileUpload}
                   className="hidden"
                 />
-                <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => fileInputRef.current?.click()}>
+                <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => fileInputRef.current?.click()} disabled={busy || importing}>
                   <Upload className="h-3 w-3" />
                   {t('common.file')}
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={async () => {
-                  try {
-                    const text = await readClipboard();
-                    if (text?.trim()) setImportContent(text);
-                  } catch {
-                    // Clipboard read failed
-                  }
-                }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1"
+                  onClick={async () => {
+                    try {
+                      const text = await readClipboard();
+                      if (text?.trim()) setImportContent(text);
+                    } catch {
+                      // Clipboard read failed
+                    }
+                  }}
+                  disabled={busy || importing}
+                >
                   <ClipboardPaste className="h-3 w-3" />
                   {t('envvar.importExport.paste')}
                 </Button>
               </div>
+              <Alert className="border-dashed">
+                <AlertDescription className="text-xs">
+                  Import validates each line and skips invalid entries. Choose scope before applying.
+                </AlertDescription>
+              </Alert>
               <Textarea
                 value={importContent}
                 onChange={(e) => setImportContent(e.target.value)}
                 placeholder={'KEY=VALUE\nANOTHER_KEY="some value"'}
                 className="font-mono text-xs min-h-[160px]"
+                disabled={busy || importing}
               />
             </div>
 
             <DialogFooter>
-              <Button onClick={handleImport} disabled={!importContent.trim() || importing}>
+              <Button onClick={handleImport} disabled={!importContent.trim() || importing || busy}>
                 {importing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {importing ? t('common.loading') : t('envvar.importExport.import')}
               </Button>
@@ -186,7 +201,7 @@ export function EnvVarImportExport({
             <div className="flex gap-2">
               <div className="flex-1 space-y-2">
                 <Label>{t('envvar.table.scope')}</Label>
-                <Select value={exportScope} onValueChange={(v) => setExportScope(v as EnvVarScope)}>
+                <Select value={exportScope} onValueChange={(v) => setExportScope(v as EnvVarScope)} disabled={busy || exporting}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
@@ -199,7 +214,7 @@ export function EnvVarImportExport({
               </div>
               <div className="flex-1 space-y-2">
                 <Label>Format</Label>
-                <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as EnvFileFormat)}>
+                <Select value={exportFormat} onValueChange={(v) => setExportFormat(v as EnvFileFormat)} disabled={busy || exporting}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
@@ -214,7 +229,13 @@ export function EnvVarImportExport({
               </div>
             </div>
 
-            <Button variant="outline" onClick={handleExport} disabled={exporting} className="w-full gap-1.5">
+            <Alert className="border-dashed">
+              <AlertDescription className="text-xs">
+                Export reads the latest persisted values for the selected scope and output format.
+              </AlertDescription>
+            </Alert>
+
+            <Button variant="outline" onClick={handleExport} disabled={exporting || busy} className="w-full gap-1.5">
               {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               {exporting ? t('common.loading') : t('envvar.importExport.export')}
             </Button>
@@ -228,11 +249,11 @@ export function EnvVarImportExport({
                   className="font-mono text-xs min-h-[160px]"
                 />
                 <DialogFooter className="gap-2">
-                  <Button variant="outline" onClick={handleCopyExport} className="gap-1.5">
+                  <Button variant="outline" onClick={handleCopyExport} className="gap-1.5" disabled={busy || exporting}>
                     {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                     {copied ? t('envvar.table.copied') : t('common.copy')}
                   </Button>
-                  <Button onClick={handleDownloadExport} className="gap-1.5">
+                  <Button onClick={handleDownloadExport} className="gap-1.5" disabled={busy || exporting}>
                     <Download className="h-3.5 w-3.5" />
                     {t('common.download')}
                   </Button>

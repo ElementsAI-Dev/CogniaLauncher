@@ -128,7 +128,7 @@ export function ExportImportDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[85dvh] flex flex-col">
         <DialogHeader>
           <DialogTitle>{t("packages.exportImportTitle")}</DialogTitle>
           <DialogDescription>
@@ -139,6 +139,7 @@ export function ExportImportDialog({
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as "export" | "import")}
+          className="min-h-0 flex-1"
         >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="export" className="gap-2">
@@ -187,7 +188,7 @@ export function ExportImportDialog({
             </div>
           </TabsContent>
 
-          <TabsContent value="import" className="space-y-4 mt-4">
+          <TabsContent value="import" className="space-y-4 mt-4 min-h-0">
             {!importedData ? (
               <div className="space-y-3">
                 <input
@@ -265,7 +266,7 @@ export function ExportImportDialog({
                   </span>
                 </div>
 
-                <ScrollArea className="h-[200px] border rounded-md">
+                <ScrollArea className="max-h-[45dvh] min-h-0 border rounded-md">
                   <div className="p-2 space-y-1">
                     {importedData.packages.map((pkg, i) => (
                       <div
@@ -280,17 +281,19 @@ export function ExportImportDialog({
                           }
                         />
                         <Package className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm flex-1">{pkg.name}</span>
+                        <span className="text-sm flex-1 min-w-0 break-all" title={pkg.name}>
+                          {pkg.name}
+                        </span>
                         {pkg.version && (
                           <Badge
                             variant="outline"
-                            className="text-xs font-mono"
+                            className="text-xs font-mono shrink-0"
                           >
                             {pkg.version}
                           </Badge>
                         )}
                         {pkg.provider && (
-                          <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary" className="text-xs shrink-0">
                             {pkg.provider}
                           </Badge>
                         )}

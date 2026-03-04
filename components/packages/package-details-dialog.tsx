@@ -123,12 +123,14 @@ export function PackageDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-2xl max-h-[85dvh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {pkg?.name}
+          <DialogTitle className="flex items-center gap-2 min-w-0">
+            <span className="min-w-0 break-all sm:truncate" title={pkg?.name}>
+              {pkg?.name}
+            </span>
             {pkg?.provider && (
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="secondary" className="ml-2 shrink-0">
                 {pkg.provider}
               </Badge>
             )}
@@ -146,7 +148,7 @@ export function PackageDetailsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[50vh]">
+        <ScrollArea className="max-h-[60dvh] min-h-0 pr-1">
           {loading ? (
             <div className="space-y-4 p-4">
               <Skeleton className="h-4 w-full" />
@@ -155,7 +157,7 @@ export function PackageDetailsDialog({
             </div>
           ) : packageInfo ? (
             <div className="space-y-4 pr-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {packageInfo.homepage && (
                   <div className="flex items-center gap-2 text-sm">
                     <Globe className="h-4 w-4 text-muted-foreground" />
@@ -241,23 +243,23 @@ export function PackageDetailsDialog({
                 <h4 className="text-sm font-medium">
                   {t("packages.versionHistory")}
                 </h4>
-                <ScrollArea className="max-h-40">
+                <ScrollArea className="max-h-[35dvh] min-h-0">
                   <div className="space-y-1">
                     {packageInfo.versions.slice(0, 10).map((v) => (
                       <div
                         key={v.version}
-                        className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted text-sm"
+                        className="flex flex-wrap items-center justify-between gap-2 py-1 px-2 rounded hover:bg-muted text-sm"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono">{v.version}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono break-all">{v.version}</span>
                           {v.deprecated && (
-                            <Badge variant="outline" className="text-xs">
+                            <Badge variant="outline" className="text-xs shrink-0">
                               {t("packages.deprecated")}
                             </Badge>
                           )}
                         </div>
                         {v.release_date && (
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
                             <Calendar className="h-3 w-3" />
                             {new Date(v.release_date).toLocaleDateString()}
                           </span>

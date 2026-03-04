@@ -1165,6 +1165,57 @@ pub struct ShellConfigEntries {
     pub sources: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalConfigMutationOperation {
+    Backup,
+    Append,
+    Write,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalConfigMutationStage {
+    Validation,
+    Backup,
+    Write,
+    Verification,
+}
+
+impl TerminalConfigMutationStage {
+    fn as_str(self) -> &'static str {
+        match self {
+            TerminalConfigMutationStage::Validation => "validation",
+            TerminalConfigMutationStage::Backup => "backup",
+            TerminalConfigMutationStage::Write => "write",
+            TerminalConfigMutationStage::Verification => "verification",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalConfigMutationResult {
+    pub operation: TerminalConfigMutationOperation,
+    pub path: String,
+    pub backup_path: Option<String>,
+    pub bytes_written: usize,
+    pub verified: bool,
+    pub diagnostics: Vec<String>,
+}
+
+fn stage_error(stage: TerminalConfigMutationStage, message: impl Into<String>) -> CogniaError {
+    CogniaError::Config(format!("[{}] {}", stage.as_str(), message.into()))
+}
+
+fn stage_wrap(stage: TerminalConfigMutationStage, error: CogniaError) -> CogniaError {
+    stage_error(stage, error.to_string())
+}
+
+fn normalize_config_text(input: &str) -> String {
+    input.replace("\r\n", "\n")
+}
+
 /// Read a shell config file content, handling various encodings (UTF-8, UTF-8 BOM, UTF-16LE/BE)
 pub async fn read_shell_config(path: &Path) -> CogniaResult<String> {
     if !fs::exists(path).await {
@@ -1236,11 +1287,77 @@ pub async fn backup_shell_config(path: &Path) -> CogniaResult<PathBuf> {
     Ok(backup_path)
 }
 
+/// Create a backup with stage-aware diagnostics and verification.
+pub async fn backup_shell_config_verified(
+    path: &Path,
+) -> CogniaResult<TerminalConfigMutationResult> {
+    if path.as_os_str().is_empty() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            "Config path cannot be empty",
+        ));
+    }
+    if !fs::exists(path).await {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            format!("Config file not found: {}", path.display()),
+        ));
+    }
+
+    let backup_path = backup_shell_config(path)
+        .await
+        .map_err(|e| stage_wrap(TerminalConfigMutationStage::Backup, e))?;
+
+    if !fs::exists(&backup_path).await {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Verification,
+            format!("Backup file was not created: {}", backup_path.display()),
+        ));
+    }
+
+    Ok(TerminalConfigMutationResult {
+        operation: TerminalConfigMutationOperation::Backup,
+        path: path.display().to_string(),
+        backup_path: Some(backup_path.display().to_string()),
+        bytes_written: 0,
+        verified: true,
+        diagnostics: vec!["Backup created and verified".to_string()],
+    })
+}
+
 /// Safely append content to a shell config file (with automatic backup)
 pub async fn append_to_shell_config(path: &Path, content: &str) -> CogniaResult<()> {
-    if fs::exists(path).await {
-        backup_shell_config(path).await?;
+    append_to_shell_config_verified(path, content)
+        .await
+        .map(|_| ())
+}
+
+/// Write content to a shell config file (with automatic backup)
+pub async fn write_shell_config(path: &Path, content: &str) -> CogniaResult<()> {
+    write_shell_config_verified(path, content).await.map(|_| ())
+}
+
+/// Append content to shell config and verify the persisted result.
+pub async fn append_to_shell_config_verified(
+    path: &Path,
+    content: &str,
+) -> CogniaResult<TerminalConfigMutationResult> {
+    if path.as_os_str().is_empty() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            "Config path cannot be empty",
+        ));
     }
+
+    let backup_path = if fs::exists(path).await {
+        Some(
+            backup_shell_config(path)
+                .await
+                .map_err(|e| stage_wrap(TerminalConfigMutationStage::Backup, e))?,
+        )
+    } else {
+        None
+    };
 
     use tokio::io::AsyncWriteExt;
     let mut file = tokio::fs::OpenOptions::new()
@@ -1248,34 +1365,108 @@ pub async fn append_to_shell_config(path: &Path, content: &str) -> CogniaResult<
         .append(true)
         .open(path)
         .await
-        .map_err(|e| CogniaError::Internal(format!("Failed to open config file: {}", e)))?;
+        .map_err(|e| {
+            stage_error(
+                TerminalConfigMutationStage::Write,
+                format!("Failed to open config file for append: {}", e),
+            )
+        })?;
 
-    file.write_all(format!("\n{}\n", content).as_bytes())
+    let appended = format!("\n{}\n", content);
+    file.write_all(appended.as_bytes()).await.map_err(|e| {
+        stage_error(
+            TerminalConfigMutationStage::Write,
+            format!("Failed to append to config file: {}", e),
+        )
+    })?;
+
+    let persisted = read_shell_config(path)
         .await
-        .map_err(|e| CogniaError::Internal(format!("Failed to write to config file: {}", e)))?;
+        .map_err(|e| stage_wrap(TerminalConfigMutationStage::Verification, e))?;
 
-    Ok(())
+    let normalized_persisted = normalize_config_text(&persisted);
+    let normalized_appended = normalize_config_text(&appended);
+    if !normalized_persisted.ends_with(&normalized_appended) {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Verification,
+            "Persisted config content does not contain the appended block",
+        ));
+    }
+
+    Ok(TerminalConfigMutationResult {
+        operation: TerminalConfigMutationOperation::Append,
+        path: path.display().to_string(),
+        backup_path: backup_path.map(|p| p.display().to_string()),
+        bytes_written: appended.as_bytes().len(),
+        verified: true,
+        diagnostics: vec!["Append operation verified by read-back".to_string()],
+    })
 }
 
-/// Write content to a shell config file (with automatic backup)
-pub async fn write_shell_config(path: &Path, content: &str) -> CogniaResult<()> {
-    if fs::exists(path).await {
-        backup_shell_config(path).await?;
+/// Write shell config content and verify the persisted result.
+pub async fn write_shell_config_verified(
+    path: &Path,
+    content: &str,
+) -> CogniaResult<TerminalConfigMutationResult> {
+    if path.as_os_str().is_empty() {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            "Config path cannot be empty",
+        ));
     }
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| CogniaError::Internal(format!("Failed to create config dir: {}", e)))?;
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            stage_error(
+                TerminalConfigMutationStage::Validation,
+                format!("Failed to create config dir: {}", e),
+            )
+        })?;
+    } else {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Validation,
+            format!("Invalid config path (missing parent): {}", path.display()),
+        ));
     }
 
-    tokio::fs::write(path, content)
-        .await
-        .map_err(|e| CogniaError::Internal(format!("Failed to write config: {}", e)))?;
+    let backup_path = if fs::exists(path).await {
+        Some(
+            backup_shell_config(path)
+                .await
+                .map_err(|e| stage_wrap(TerminalConfigMutationStage::Backup, e))?,
+        )
+    } else {
+        None
+    };
 
-    debug!("Wrote config to {}", path.display());
-    Ok(())
+    tokio::fs::write(path, content).await.map_err(|e| {
+        stage_error(
+            TerminalConfigMutationStage::Write,
+            format!("Failed to write config: {}", e),
+        )
+    })?;
+
+    let persisted = read_shell_config(path)
+        .await
+        .map_err(|e| stage_wrap(TerminalConfigMutationStage::Verification, e))?;
+
+    if normalize_config_text(&persisted) != normalize_config_text(content) {
+        return Err(stage_error(
+            TerminalConfigMutationStage::Verification,
+            "Persisted config content mismatch after write",
+        ));
+    }
+
+    debug!("Wrote and verified config {}", path.display());
+    Ok(TerminalConfigMutationResult {
+        operation: TerminalConfigMutationOperation::Write,
+        path: path.display().to_string(),
+        backup_path: backup_path.map(|p| p.display().to_string()),
+        bytes_written: content.as_bytes().len(),
+        verified: true,
+        diagnostics: vec!["Write operation verified by read-back".to_string()],
+    })
 }
 
 /// Parse shell config content to extract aliases, exports, and source lines
@@ -4239,5 +4430,82 @@ source ~/no_space.nu
         for i in 0..stats.len() - 1 {
             assert!(stats[i].total_size >= stats[i + 1].total_size);
         }
+    }
+
+    #[tokio::test]
+    async fn test_write_shell_config_verified_returns_structured_success() {
+        let dir = std::env::temp_dir().join("cognia_test_write_config_verified");
+        let path = dir.join(".bashrc");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let content = "export EDITOR=code\n";
+        let result = write_shell_config_verified(&path, content).await.unwrap();
+
+        assert_eq!(result.operation, TerminalConfigMutationOperation::Write);
+        assert_eq!(result.path, path.display().to_string());
+        assert!(result.backup_path.is_none());
+        assert!(result.verified);
+        assert_eq!(result.bytes_written, content.as_bytes().len());
+
+        let persisted = read_shell_config(&path).await.unwrap();
+        assert_eq!(
+            normalize_config_text(&persisted),
+            normalize_config_text(content)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_append_shell_config_verified_creates_backup_and_verifies() {
+        let dir = std::env::temp_dir().join("cognia_test_append_config_verified");
+        let path = dir.join(".zshrc");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, "# base\n").unwrap();
+
+        let result = append_to_shell_config_verified(&path, "alias ll='ls -la'")
+            .await
+            .unwrap();
+
+        assert_eq!(result.operation, TerminalConfigMutationOperation::Append);
+        assert!(result.backup_path.is_some());
+        assert!(result.verified);
+
+        let persisted = read_shell_config(&path).await.unwrap();
+        assert!(normalize_config_text(&persisted).ends_with("\nalias ll='ls -la'\n"));
+
+        let backup_path = PathBuf::from(result.backup_path.unwrap());
+        assert!(backup_path.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_backup_shell_config_verified_missing_file_has_validation_stage() {
+        let path = std::env::temp_dir()
+            .join("cognia_test_missing_config")
+            .join(".bashrc");
+        let err = backup_shell_config_verified(&path)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[validation]"));
+    }
+
+    #[tokio::test]
+    async fn test_write_shell_config_verified_directory_target_has_backup_stage() {
+        let dir = std::env::temp_dir().join("cognia_test_config_write_stage");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let err = write_shell_config_verified(&dir, "export A=1")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("[backup]"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

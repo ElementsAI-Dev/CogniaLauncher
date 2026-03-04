@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   ArrowUpCircle,
   Sparkles,
+  Wrench,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   ShieldCheck: <ShieldCheck className="h-5 w-5" />,
   ArrowUpCircle: <ArrowUpCircle className="h-5 w-5" />,
   Sparkles: <Sparkles className="h-5 w-5" />,
+  Wrench: <Wrench className="h-5 w-5" />,
 };
 
 interface CustomizeDialogProps {

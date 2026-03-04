@@ -24,6 +24,9 @@ interface TerminalShellConfigProps {
   onParseConfigContent?: (content: string, shellType: ShellType) => Promise<ShellConfigEntries | null>;
   onBackupConfig: (path: string) => Promise<string | undefined>;
   onWriteConfig?: (path: string, content: string) => Promise<void>;
+  mutationStatus?: 'idle' | 'loading' | 'success' | 'error';
+  mutationMessage?: string | null;
+  onClearMutationState?: () => void;
 }
 
 export function TerminalShellConfig({
@@ -33,6 +36,9 @@ export function TerminalShellConfig({
   onParseConfigContent,
   onBackupConfig,
   onWriteConfig,
+  mutationStatus = 'idle',
+  mutationMessage = null,
+  onClearMutationState,
 }: TerminalShellConfigProps) {
   const { t } = useLocale();
   const [selectedShellId, setSelectedShellId] = useState<string>(shells[0]?.id ?? '');
@@ -156,6 +162,27 @@ export function TerminalShellConfig({
           <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span className="break-all">{error}</span>
+            <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={handleLoadConfig}>
+              {t('terminal.loadConfig')}
+            </Button>
+          </div>
+        )}
+
+        {mutationStatus === 'success' && mutationMessage && (
+          <div className="flex items-center gap-2 rounded-md border border-emerald-600/20 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+            <span className="break-all">{mutationMessage}</span>
+            {onClearMutationState && (
+              <Button size="sm" variant="ghost" className="ml-auto shrink-0" onClick={onClearMutationState}>
+                {t('terminal.cancel')}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {mutationStatus === 'error' && mutationMessage && (
+          <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span className="break-all">{mutationMessage}</span>
             <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={handleLoadConfig}>
               {t('terminal.loadConfig')}
             </Button>
@@ -296,6 +323,7 @@ export function TerminalShellConfig({
                 <Button
                   size="sm"
                   variant="outline"
+                  disabled={mutationStatus === 'loading'}
                   onClick={() => {
                     if (editing) {
                       setEditing(false);
@@ -313,9 +341,17 @@ export function TerminalShellConfig({
               {editing && onWriteConfig && (
                 <Button
                   size="sm"
+                  disabled={mutationStatus === 'loading'}
                   onClick={async () => {
                     await onWriteConfig(selectedConfigPath, editContent);
-                    setConfigContent(editContent);
+                    const refreshed = await onReadConfig(selectedConfigPath);
+                    setConfigContent(refreshed);
+                    if (selectedShell) {
+                      const parsed = onParseConfigContent
+                        ? await onParseConfigContent(refreshed, selectedShell.shellType)
+                        : await onFetchConfigEntries(selectedConfigPath, selectedShell.shellType);
+                      setEntries(parsed);
+                    }
                     setEditing(false);
                   }}
                 >

@@ -63,36 +63,41 @@ export function useExternalCache({
   }, [setUseTrash, useTrash]);
 
   const abortRef = useRef(false);
-  const sizeQueue = useRef<string[]>([]);
+  const fetchWaveRef = useRef(0);
+  const fetchInFlightRef = useRef<Promise<void> | null>(null);
 
-  const fillSizesProgressively = useCallback(async (items: ExternalCacheInfo[]) => {
+  const fillSizesProgressively = useCallback(async (items: ExternalCacheInfo[], waveId: number) => {
     const pending = items.filter((c) => c.sizePending);
     if (pending.length === 0) return;
 
     const { calculateExternalCacheSize } = await import('@/lib/tauri');
-    sizeQueue.current = pending.map((c) => c.provider);
+    const queue = pending.map((c) => c.provider);
 
     const CONCURRENCY = 4;
     let idx = 0;
 
     async function next(): Promise<void> {
-      while (idx < sizeQueue.current.length) {
-        if (abortRef.current) return;
-        const provId = sizeQueue.current[idx++];
+      while (idx < queue.length) {
+        if (abortRef.current || fetchWaveRef.current !== waveId) return;
+        const provId = queue[idx++];
         try {
           const size = await calculateExternalCacheSize(provId);
           setCaches((prev) =>
-            prev.map((c) =>
-              c.provider === provId
-                ? { ...c, size, sizeHuman: formatBytes(size), sizePending: false, canClean: size > 0 || c.canClean }
-                : c,
-            ),
+            fetchWaveRef.current !== waveId
+              ? prev
+              : prev.map((c) =>
+                c.provider === provId
+                  ? { ...c, size, sizeHuman: formatBytes(size), sizePending: false, canClean: size > 0 || c.canClean }
+                  : c,
+              ),
           );
         } catch {
           setCaches((prev) =>
-            prev.map((c) =>
-              c.provider === provId ? { ...c, sizePending: false } : c,
-            ),
+            fetchWaveRef.current !== waveId
+              ? prev
+              : prev.map((c) =>
+                c.provider === provId ? { ...c, sizePending: false } : c,
+              ),
           );
         }
       }
@@ -101,31 +106,58 @@ export function useExternalCache({
     await Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
   }, []);
 
-  const fetchExternalCaches = useCallback(async () => {
-    if (!isTauri()) return;
+  const runFetchWave = useCallback(async () => {
     abortRef.current = false;
     setLoading(true);
+    const waveId = fetchWaveRef.current + 1;
+    fetchWaveRef.current = waveId;
+
     try {
       const tauri = await import('@/lib/tauri');
 
       // Phase 1: fast discovery (instant — no size calculation)
       const fast = await tauri.discoverExternalCachesFast();
+      if (abortRef.current || fetchWaveRef.current !== waveId) return;
       setCaches(fast);
 
       // Fetch path infos in parallel if needed (already parallelized on backend)
       if (includePathInfos) {
-        tauri.getExternalCachePaths().then((paths) => setPathInfos(paths)).catch(() => {});
+        tauri.getExternalCachePaths().then((paths) => {
+          if (!abortRef.current && fetchWaveRef.current === waveId) {
+            setPathInfos(paths);
+          }
+        }).catch(() => {});
       }
 
-      setLoading(false);
+      if (!abortRef.current && fetchWaveRef.current === waveId) {
+        setLoading(false);
+      }
 
       // Phase 2: fill in sizes progressively (4 at a time)
-      await fillSizesProgressively(fast);
+      await fillSizesProgressively(fast, waveId);
     } catch (err) {
       console.error('Failed to fetch external caches:', err);
-      setLoading(false);
+      if (!abortRef.current && fetchWaveRef.current === waveId) {
+        setLoading(false);
+      }
     }
   }, [includePathInfos, fillSizesProgressively]);
+
+  const fetchExternalCaches = useCallback(async () => {
+    if (!isTauri()) return;
+
+    if (fetchInFlightRef.current) {
+      return fetchInFlightRef.current;
+    }
+
+    const task = runFetchWave();
+
+    fetchInFlightRef.current = task.finally(() => {
+      fetchInFlightRef.current = null;
+    });
+
+    return fetchInFlightRef.current;
+  }, [runFetchWave]);
 
   useEffect(() => {
     if (!autoFetch || initializedRef.current) return;
@@ -146,6 +178,8 @@ export function useExternalCache({
     return () => {
       dispose();
       abortRef.current = true;
+      fetchWaveRef.current += 1;
+      fetchInFlightRef.current = null;
     };
   }, [fetchExternalCaches]);
 

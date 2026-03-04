@@ -147,7 +147,7 @@ export function useDashboardSearch({
   }, [query, quickActions]);
 
   const hasResults = envResults.length > 0 || pkgResults.length > 0 || toolResults.length > 0 || actionResults.length > 0;
-  const showDropdown = open && (!!query.trim() || searchHistory.length > 0);
+  const showDropdown = open && (!!query.trim() || searchHistory.length > 0 || quickActions.length > 0);
 
   const saveToHistory = useCallback((searchQuery: string) => {
     if (!searchQuery.trim()) return;

@@ -97,6 +97,15 @@ global.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+// JSDOM does not implement this API; cmdk keyboard navigation calls it.
+if (typeof window.HTMLElement.prototype.scrollIntoView !== 'function') {
+  Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
+    value: jest.fn(),
+    writable: true,
+    configurable: true,
+  });
+}
+
 // Silence known third-party warning noise in test output.
 const originalConsoleWarn = console.warn.bind(console);
 console.warn = (...args: unknown[]) => {

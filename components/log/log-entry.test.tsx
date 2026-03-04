@@ -268,5 +268,23 @@ describe("LogEntry", () => {
       );
       expect(screen.queryByRole("button", { name: /expand/i })).not.toBeInTheDocument();
     });
+
+    it("disables expand controls in single-line mode", () => {
+      const longMessage = "A".repeat(200);
+      render(
+        <LogEntry
+          entry={{ ...mockEntry, message: longMessage }}
+          allowCollapse
+          singleLine
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /expand/i })).not.toBeInTheDocument();
+    });
+
+    it("adds title in single-line mode for full message access", () => {
+      const longMessage = "very long one line message";
+      render(<LogEntry entry={{ ...mockEntry, message: longMessage }} singleLine />);
+      expect(screen.getByTitle(longMessage)).toBeInTheDocument();
+    });
   });
 });

@@ -213,7 +213,7 @@ export function BatchOperations({
                 <div className="text-sm font-medium">
                   {t("packages.packagesLabel")}:
                 </div>
-                <ScrollArea className="h-[200px] border rounded-md p-2">
+                <ScrollArea className="max-h-[40dvh] min-h-0 border rounded-md p-2">
                   <div className="space-y-1">
                     {selectedPackages.map((pkg) =>
                       (() => {
@@ -224,7 +224,9 @@ export function BatchOperations({
                             className="flex items-center gap-2 p-2 rounded hover:bg-accent"
                           >
                             <Package className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm">{parsed.name}</span>
+                            <span className="text-sm break-all" title={parsed.name}>
+                              {parsed.name}
+                            </span>
                             {parsed.provider && (
                               <Badge variant="secondary" className="text-xs">
                                 {parsed.provider}
@@ -334,7 +336,7 @@ export function BatchOperations({
 
                 {/* Detailed Results */}
                 {showDetails && (
-                  <ScrollArea className="h-[200px] border rounded-md">
+                  <ScrollArea className="max-h-[45dvh] min-h-0 border rounded-md">
                     <div className="p-2 space-y-2">
                       {/* Successful */}
                       {result.successful.map((item, i) => (
@@ -343,7 +345,9 @@ export function BatchOperations({
                           className="flex items-center gap-2 p-2 rounded bg-green-500/5"
                         >
                           <CheckCircle className="h-4 w-4 text-green-500" />
-                          <span className="flex-1 text-sm">{item.name}</span>
+                          <span className="flex-1 min-w-0 text-sm break-all" title={item.name}>
+                            {item.name}
+                          </span>
                           <Badge variant="secondary">{item.version}</Badge>
                           <Badge variant="outline">{item.action}</Badge>
                         </div>
@@ -357,7 +361,7 @@ export function BatchOperations({
                         >
                           <div className="flex items-center gap-2">
                             <XCircle className="h-4 w-4 text-red-500" />
-                            <span className="flex-1 text-sm font-medium">
+                            <span className="flex-1 min-w-0 text-sm font-medium break-all" title={item.name}>
                               {item.name}
                             </span>
                             {item.recoverable && (
@@ -385,8 +389,10 @@ export function BatchOperations({
                           className="flex items-center gap-2 p-2 rounded bg-yellow-500/5"
                         >
                           <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                          <span className="flex-1 text-sm">{item.name}</span>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="flex-1 min-w-0 text-sm break-all" title={item.name}>
+                            {item.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground break-all">
                             {item.reason}
                           </span>
                         </div>

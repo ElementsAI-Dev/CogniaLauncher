@@ -66,3 +66,4 @@ export const useAppearanceStore = create<AppearanceState>()(
 
 - **Zustand vs React Context**：选择 Zustand 是因为它允许任何组件访问状态，不受组件树位置限制（例如 `window-state` Store 被 Titlebar 和 AppShell 同时使用，但它们存在父子关系，无法使用 Context）
 - **持久化版本**：每个 Store 有版本号，schema 变更时可做迁移
+- **Log Store 一致性**：当日志按保留数量裁剪时，会同步重算书签 ID 与级别计数，避免 UI 状态残留

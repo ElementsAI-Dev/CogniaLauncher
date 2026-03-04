@@ -38,16 +38,6 @@
       "description": "CogniaLauncher - Unified Environment and Package Manager",
       "args": [
         {
-          "name": "verbose",
-          "short": "v",
-          "description": "Increase log verbosity"
-        },
-        {
-          "name": "quiet",
-          "short": "q",
-          "description": "Suppress non-essential output"
-        },
-        {
           "name": "json",
           "description": "Output in JSON format for scripting"
         },
@@ -261,6 +251,45 @@
                   "description": "Start path for detection (default: current directory)"
                 }
               ]
+            },
+            "remove": {
+              "description": "Remove an installed environment version",
+              "args": [
+                {
+                  "name": "version",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Version to remove"
+                },
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Environment type (required)"
+                },
+                {
+                  "name": "provider",
+                  "short": "p",
+                  "takesValue": true,
+                  "description": "Specific provider ID"
+                }
+              ]
+            },
+            "resolve": {
+              "description": "Resolve effective environment version and source",
+              "args": [
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Environment type (required)"
+                },
+                {
+                  "name": "path",
+                  "takesValue": true,
+                  "description": "Path to resolve from (default: current directory)"
+                }
+              ]
             }
           }
         },
@@ -300,6 +329,28 @@
             },
             "reset": {
               "description": "Reset configuration to defaults"
+            },
+            "export": {
+              "description": "Export full configuration to a TOML file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Output TOML file path"
+                }
+              ]
+            },
+            "import": {
+              "description": "Import full configuration from a TOML file",
+              "args": [
+                {
+                  "name": "file",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Input TOML file path"
+                }
+              ]
             }
           }
         },

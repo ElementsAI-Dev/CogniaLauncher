@@ -272,50 +272,53 @@ export function UpdateManager({
             </div>
 
             {/* Update List */}
-            <ScrollArea className="h-[300px]">
+            <ScrollArea className="max-h-[60dvh] min-h-0">
               <div className="space-y-2 pr-4">
                 {availableUpdates.map((update) => (
                   <div
                     key={update.package_id}
                     className={`
-                      flex items-center gap-4 p-3 border rounded-lg
+                      flex flex-col gap-3 p-3 border rounded-lg
                       hover:bg-accent/50 transition-colors cursor-pointer
+                      sm:flex-row sm:items-center
                       ${selectedUpdates.has(update.package_id) ? "bg-accent border-primary" : ""}
                     `}
                     onClick={() => toggleSelection(update.package_id)}
                   >
-                    <Checkbox
-                      checked={selectedUpdates.has(update.package_id)}
-                      onCheckedChange={() => toggleSelection(update.package_id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <div className="flex w-full min-w-0 items-start gap-3 sm:items-center">
+                      <Checkbox
+                        checked={selectedUpdates.has(update.package_id)}
+                        onCheckedChange={() => toggleSelection(update.package_id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
 
-                    <div className="p-2 bg-muted rounded">
-                      <Package className="h-4 w-4" />
+                      <div className="p-2 bg-muted rounded shrink-0">
+                        <Package className="h-4 w-4" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium break-all sm:truncate" title={update.name}>
+                            {update.name}
+                          </span>
+                          <Badge variant="outline" className="text-xs shrink-0">
+                            {update.provider}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="break-all">{update.current_version}</span>
+                          <ChevronRight className="h-3 w-3 shrink-0" />
+                          <span className="text-foreground break-all">
+                            {update.latest_version}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium truncate">
-                          {update.name}
-                        </span>
-                        <Badge variant="outline" className="text-xs">
-                          {update.provider}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span>{update.current_version}</span>
-                        <ChevronRight className="h-3 w-3" />
-                        <span className="text-foreground">
-                          {update.latest_version}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:ml-2 sm:flex-nowrap sm:justify-end">
                       {getChangeTypeBadge(update.change_type)}
                       {update.is_breaking && (
-                        <Badge variant="destructive" className="gap-1">
+                        <Badge variant="destructive" className="gap-1 shrink-0">
                           <AlertCircle className="h-3 w-3" />
                           {t("packages.breaking")}
                         </Badge>
@@ -327,6 +330,7 @@ export function UpdateManager({
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
                             onPinPackage(update.package_id);
@@ -360,24 +364,24 @@ export function UpdateManager({
               {pinnedUpdates.map((update) => (
                 <div
                   key={update.package_id}
-                  className="flex items-center gap-4 p-3 border rounded-lg bg-muted/30"
+                  className="flex flex-col gap-3 p-3 border rounded-lg bg-muted/30 sm:flex-row sm:items-center"
                 >
-                  <div className="p-2 bg-muted rounded">
+                  <div className="p-2 bg-muted rounded shrink-0">
                     <Package className="h-4 w-4" />
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium break-all sm:truncate" title={update.name}>
                         {update.name}
                       </span>
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="shrink-0">
                         {t("packages.pinnedAtVersion", {
                           version: update.current_version,
                         })}
                       </Badge>
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-sm text-muted-foreground break-all">
                       {t("packages.availableVersionLabel", {
                         version: update.latest_version,
                       })}
@@ -387,6 +391,7 @@ export function UpdateManager({
                   <Button
                     variant="outline"
                     size="sm"
+                    className="self-start sm:self-center"
                     onClick={() => onUnpinPackage(update.package_id)}
                   >
                     {t("packages.unpin")}

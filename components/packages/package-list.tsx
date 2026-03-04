@@ -116,18 +116,18 @@ export function PackageList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-col gap-4">
       {/* Select All Header */}
       {selectable && showSelectAll && packages.length > 0 && (
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-3 min-w-0">
             <Checkbox
               checked={
                 allSelected ? true : someSelected ? "indeterminate" : false
               }
               onCheckedChange={handleSelectAll}
             />
-            <span className="text-sm text-muted-foreground">
+            <span className="text-sm text-muted-foreground truncate">
               {selectedPackages.length > 0
                 ? t("packages.selected", { count: selectedPackages.length })
                 : t("packages.selectAll")}
@@ -141,7 +141,7 @@ export function PackageList({
         </div>
       )}
 
-      <ScrollArea className="h-[500px] w-full overflow-hidden">
+      <ScrollArea className="min-h-0 flex-1 w-full overflow-hidden">
         <div className="space-y-2 pr-4">
           {packages.map((pkg, index) => {
             const isInstalled = type === "installed";
@@ -151,6 +151,10 @@ export function PackageList({
             const version = isInstalled
               ? (pkg as InstalledPackage).version
               : (pkg as PackageSummary).latest_version;
+            const versionLabel =
+              typeof version === "string" && version.trim().length > 0
+                ? version.trim()
+                : "-";
             const isSelected = selectedPackages.includes(packageKey);
 
             const isPinned = pinnedPackages.includes(pkg.name);
@@ -160,9 +164,10 @@ export function PackageList({
                 <ContextMenuTrigger asChild>
               <div
                 className={`
-                flex items-center justify-between p-4 
-                bg-card border rounded-lg cursor-pointer 
+                grid gap-3 p-4
+                bg-card border rounded-lg cursor-pointer
                 hover:bg-accent/50 transition-colors
+                sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start
                 ${isSelected ? "border-primary bg-accent/30" : "border-border"}
               `}
                 onClick={() => {
@@ -172,7 +177,7 @@ export function PackageList({
                 }}
               >
                 {/* Left side - checkbox and info */}
-                <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
                   {selectable && (
                     <Checkbox
                       checked={isSelected}
@@ -182,8 +187,11 @@ export function PackageList({
                     />
                   )}
                   <div className="flex flex-col gap-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base font-medium text-foreground truncate">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="text-base font-medium text-foreground break-all sm:truncate"
+                        title={pkg.name}
+                      >
                         {pkg.name}
                       </span>
                       {isPinned && (
@@ -191,7 +199,7 @@ export function PackageList({
                       )}
                     </div>
                     {"description" in pkg && pkg.description && (
-                      <span className="text-sm text-muted-foreground line-clamp-1">
+                      <span className="text-sm text-muted-foreground line-clamp-2 sm:line-clamp-1">
                         {pkg.description}
                       </span>
                     )}
@@ -199,18 +207,18 @@ export function PackageList({
                 </div>
 
                 {/* Right side - badges and actions */}
-                <div className="flex items-center gap-2 ml-4 shrink-0">
-                  {version && (
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-xs px-2 py-1"
-                    >
-                      {version}
+                <div className="flex w-full flex-wrap items-center gap-2 sm:ml-4 sm:w-auto sm:justify-end sm:flex-nowrap sm:shrink-0 sm:self-start">
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-xs px-2 py-1"
+                  >
+                    {versionLabel}
+                  </Badge>
+                  {pkg.provider && (
+                    <Badge className="text-xs px-2 py-1 bg-muted text-muted-foreground hover:bg-muted">
+                      {pkg.provider}
                     </Badge>
                   )}
-                  <Badge className="text-xs px-2 py-1 bg-muted text-muted-foreground hover:bg-muted">
-                    {pkg.provider}
-                  </Badge>
 
                   <Tooltip>
                     <TooltipTrigger asChild>

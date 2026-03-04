@@ -5,28 +5,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
 import type { ToolComponentProps } from '@/types/toolbox';
+
+const DEFAULT_PREFERENCES = {
+  flagG: true,
+  flagI: false,
+  flagM: false,
+  flagS: false,
+} as const;
 
 export default function RegexTester({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('regex-tester', DEFAULT_PREFERENCES);
   const [pattern, setPattern] = useState('');
   const [testText, setTestText] = useState('');
-  const [flagG, setFlagG] = useState(true);
-  const [flagI, setFlagI] = useState(false);
-  const [flagM, setFlagM] = useState(false);
-  const [flagS, setFlagS] = useState(false);
 
-  const flags = `${flagG ? 'g' : ''}${flagI ? 'i' : ''}${flagM ? 'm' : ''}${flagS ? 's' : ''}`;
+  const flags = `${preferences.flagG ? 'g' : ''}${preferences.flagI ? 'i' : ''}${preferences.flagM ? 'm' : ''}${preferences.flagS ? 's' : ''}`;
 
-  const { matches, error } = useMemo(() => {
-    if (!pattern || !testText) return { matches: [], error: null };
+  const { matches, error, truncated } = useMemo(() => {
+    if (!pattern || !testText) return { matches: [], error: null, truncated: false };
+    if (pattern.length + testText.length > TOOLBOX_LIMITS.regexChars) {
+      return {
+        matches: [],
+        error: t('toolbox.tools.shared.inputTooLarge', { limit: TOOLBOX_LIMITS.regexChars.toLocaleString() }),
+        truncated: false,
+      };
+    }
     try {
       const re = new RegExp(pattern, flags);
       const found: { text: string; index: number; groups: string[] }[] = [];
       let m: RegExpExecArray | null;
-      const limit = 100;
+      const limit = TOOLBOX_LIMITS.regexMatches;
       let count = 0;
       while ((m = re.exec(testText)) !== null && count < limit) {
         found.push({
@@ -35,13 +48,17 @@ export default function RegexTester({ className }: ToolComponentProps) {
           groups: m.slice(1),
         });
         count++;
-        if (!flagG) break;
+        if (!preferences.flagG) break;
       }
-      return { matches: found, error: null };
+      return {
+        matches: found,
+        error: null,
+        truncated: count >= limit,
+      };
     } catch (e) {
-      return { matches: [], error: (e as Error).message };
+      return { matches: [], error: (e as Error).message, truncated: false };
     }
-  }, [pattern, testText, flags, flagG]);
+  }, [flags, pattern, preferences.flagG, t, testText]);
 
   return (
     <div className={className}>
@@ -61,17 +78,24 @@ export default function RegexTester({ className }: ToolComponentProps) {
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          {([['g', flagG, setFlagG], ['i', flagI, setFlagI], ['m', flagM, setFlagM], ['s', flagS, setFlagS]] as const).map(
-            ([flag, value, setter]) => (
+          {([['g', preferences.flagG], ['i', preferences.flagI], ['m', preferences.flagM], ['s', preferences.flagS]] as const).map(
+            ([flag, value]) => (
               <div key={flag} className="flex items-center gap-1.5">
-                <Switch id={`flag-${flag}`} checked={value} onCheckedChange={setter as (v: boolean) => void} />
+                <Switch
+                  id={`flag-${flag}`}
+                  checked={value}
+                  onCheckedChange={(checked) => {
+                    const key = (`flag${flag.toUpperCase()}` as keyof typeof DEFAULT_PREFERENCES);
+                    setPreferences({ [key]: checked });
+                  }}
+                />
                 <Label htmlFor={`flag-${flag}`} className="text-sm font-mono">{flag}</Label>
               </div>
             ),
           )}
         </div>
 
-        {error && <p className="text-sm text-destructive font-mono">{error}</p>}
+        {error && <ToolValidationMessage message={error} />}
 
         <ToolTextArea
           label={t('toolbox.tools.regexTester.testText')}
@@ -87,6 +111,7 @@ export default function RegexTester({ className }: ToolComponentProps) {
           <div className="flex items-center gap-2">
             <Label>{t('toolbox.tools.regexTester.matches')}</Label>
             <Badge variant="secondary" className="text-xs">{matches.length}</Badge>
+            {truncated && <Badge variant="outline" className="text-xs">{t('toolbox.tools.regexTester.truncated')}</Badge>}
           </div>
           {matches.length > 0 ? (
             <div className="rounded-md border p-3 space-y-2 max-h-48 overflow-auto">

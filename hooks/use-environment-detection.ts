@@ -37,6 +37,9 @@ interface BuildOnboardingDetectionsOptions {
   providers?: EnvironmentProviderInfo[];
 }
 
+const EMPTY_DETECTED_VERSIONS: DetectedEnvironment[] = [];
+const EMPTY_AVAILABLE_PROVIDERS: EnvironmentProviderInfo[] = [];
+
 function getEnvironmentDisplayName(envType: string): string {
   return LANGUAGES.find((lang) => lang.id === envType)?.name ?? envType;
 }
@@ -44,8 +47,8 @@ function getEnvironmentDisplayName(envType: string): string {
 export function useEnvironmentDetection(
   options: UseEnvironmentDetectionOptions = {},
 ) {
-  const detectedVersions = options.detectedVersions ?? [];
-  const availableProviders = options.availableProviders ?? [];
+  const detectedVersions = options.detectedVersions ?? EMPTY_DETECTED_VERSIONS;
+  const availableProviders = options.availableProviders ?? EMPTY_AVAILABLE_PROVIDERS;
 
   const [systemDetections, setSystemDetections] = useState<SystemEnvironmentInfo[]>([]);
   const [systemDetecting, setSystemDetecting] = useState(false);

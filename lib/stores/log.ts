@@ -53,6 +53,20 @@ function generateLogId(): string {
   return `log_${Date.now()}_${logIdCounter++}`;
 }
 
+function buildLogCounts(logs: LogEntry[]): Record<LogLevel, number> {
+  const counts = { ...EMPTY_LOG_COUNTS };
+  for (const log of logs) {
+    counts[log.level] = (counts[log.level] || 0) + 1;
+  }
+  return counts;
+}
+
+function trimBookmarkedIds(logs: LogEntry[], bookmarkedIds: string[]): string[] {
+  if (bookmarkedIds.length === 0) return bookmarkedIds;
+  const existingIds = new Set(logs.map((log) => log.id));
+  return bookmarkedIds.filter((id) => existingIds.has(id));
+}
+
 export const useLogStore = create<LogState>()(
   persist(
     (set, get) => ({
@@ -62,6 +76,7 @@ export const useLogStore = create<LogState>()(
         levels: ['info', 'warn', 'error'],
         search: '',
         useRegex: false,
+        maxScanLines: null,
         startTime: null,
         endTime: null,
       },
@@ -82,7 +97,11 @@ export const useLogStore = create<LogState>()(
         if (state.logs.length >= state.maxLogs) {
           const removed = state.logs[0];
           counts[removed.level] = Math.max(0, (counts[removed.level] || 0) - 1);
-          return { logs: [...state.logs.slice(1), newLog], _logCounts: counts };
+          const nextLogs = [...state.logs.slice(1), newLog];
+          const nextBookmarks = state.bookmarkedIds.includes(removed.id)
+            ? state.bookmarkedIds.filter((id) => id !== removed.id)
+            : state.bookmarkedIds;
+          return { logs: nextLogs, _logCounts: counts, bookmarkedIds: nextBookmarks };
         }
         return { logs: [...state.logs, newLog], _logCounts: counts };
       }),
@@ -92,11 +111,9 @@ export const useLogStore = create<LogState>()(
         const newLogs = logs.map((log) => ({ ...log, id: generateLogId() }));
         const allLogs = [...state.logs, ...newLogs];
         const trimmed = allLogs.slice(-state.maxLogs);
-        const counts = { ...EMPTY_LOG_COUNTS };
-        for (const log of trimmed) {
-          counts[log.level] = (counts[log.level] || 0) + 1;
-        }
-        return { logs: trimmed, _logCounts: counts };
+        const counts = buildLogCounts(trimmed);
+        const bookmarkedIds = trimBookmarkedIds(trimmed, state.bookmarkedIds);
+        return { logs: trimmed, _logCounts: counts, bookmarkedIds };
       }),
 
       clearLogs: () => set({ logs: [], bookmarkedIds: [], _logCounts: { ...EMPTY_LOG_COUNTS } }),
@@ -143,10 +160,16 @@ export const useLogStore = create<LogState>()(
         paused: !state.paused,
       })),
 
-      setMaxLogs: (maxLogs) => set((state) => ({
-        maxLogs,
-        logs: state.logs.slice(-maxLogs),
-      })),
+      setMaxLogs: (maxLogs) => set((state) => {
+        const normalizedMaxLogs = Math.max(1, maxLogs);
+        const logs = state.logs.slice(-normalizedMaxLogs);
+        return {
+          maxLogs: normalizedMaxLogs,
+          logs,
+          _logCounts: buildLogCounts(logs),
+          bookmarkedIds: trimBookmarkedIds(logs, state.bookmarkedIds),
+        };
+      }),
 
       openDrawer: () => set({ drawerOpen: true }),
       closeDrawer: () => set({ drawerOpen: false }),
@@ -164,6 +187,9 @@ export const useLogStore = create<LogState>()(
       getFilteredLogs: () => {
         const state = get();
         const { search, useRegex, startTime, endTime } = state.filter;
+        const bookmarkedSet = state.showBookmarksOnly
+          ? new Set(state.bookmarkedIds)
+          : null;
         let regex: RegExp | null = null;
 
         if (useRegex && search) {
@@ -210,10 +236,8 @@ export const useLogStore = create<LogState>()(
             }
           }
           // Bookmarks filter
-          if (state.showBookmarksOnly) {
-            if (!state.bookmarkedIds.includes(log.id)) {
-              return false;
-            }
+          if (bookmarkedSet && !bookmarkedSet.has(log.id)) {
+            return false;
           }
           return true;
         });
@@ -233,6 +257,7 @@ export const useLogStore = create<LogState>()(
           levels: state.filter.levels,
           search: '',
           useRegex: false,
+          maxScanLines: state.filter.maxScanLines ?? null,
           startTime: null,
           endTime: null,
         },

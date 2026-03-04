@@ -19,11 +19,15 @@ interface TerminalProxySettingsProps {
   customProxy: string;
   noProxy: string;
   saving: boolean;
+  syncStatus?: 'idle' | 'loading' | 'success' | 'error';
+  syncMessage?: string | null;
   onProxyModeChange: (mode: ProxyMode) => void;
   onCustomProxyChange: (value: string) => void;
   onCustomProxyBlur: () => void;
   onNoProxyChange: (value: string) => void;
   onNoProxyBlur: () => void;
+  onRetrySync?: () => void;
+  onClearSyncState?: () => void;
   loading?: boolean;
 }
 
@@ -34,11 +38,15 @@ export function TerminalProxySettings({
   customProxy,
   noProxy,
   saving,
+  syncStatus = 'idle',
+  syncMessage = null,
   onProxyModeChange,
   onCustomProxyChange,
   onCustomProxyBlur,
   onNoProxyChange,
   onNoProxyBlur,
+  onRetrySync,
+  onClearSyncState,
   loading,
 }: TerminalProxySettingsProps) {
   const { t } = useLocale();
@@ -97,6 +105,36 @@ export function TerminalProxySettings({
             <Info className="h-4 w-4" />
             <AlertTitle>{t('terminal.globalProxyActive')}</AlertTitle>
             <AlertDescription className="font-mono text-sm">{globalProxy}</AlertDescription>
+          </Alert>
+        )}
+
+        {syncStatus === 'success' && syncMessage && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>{t('terminal.proxySettings')}</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{syncMessage}</span>
+              {onClearSyncState && (
+                <button type="button" className="underline underline-offset-2" onClick={onClearSyncState}>
+                  {t('terminal.cancel')}
+                </button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {syncStatus === 'error' && syncMessage && (
+          <Alert variant="destructive">
+            <Info className="h-4 w-4" />
+            <AlertTitle>{t('terminal.proxySettings')}</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span>{syncMessage}</span>
+              {onRetrySync && (
+                <button type="button" className="underline underline-offset-2" onClick={onRetrySync}>
+                  {t('common.refresh')}
+                </button>
+              )}
+            </AlertDescription>
           </Alert>
         )}
 

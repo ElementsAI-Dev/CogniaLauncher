@@ -2,36 +2,76 @@
 
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ToolTextArea } from '@/components/toolbox/tool-layout';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { ToolActionRow, ToolTextArea, ToolValidationMessage } from '@/components/toolbox/tool-layout';
 import { useLocale } from '@/components/providers/locale-provider';
-import { AlertCircle, ArrowDownUp } from 'lucide-react';
+import { useToolPreferences } from '@/hooks/use-tool-preferences';
+import { TOOLBOX_LIMITS } from '@/lib/constants/toolbox-limits';
+import { ArrowDownUp } from 'lucide-react';
 import type { ToolComponentProps } from '@/types/toolbox';
+
+const DEFAULT_PREFERENCES = {
+  mode: 'encode',
+  encodeFullUrl: false,
+  plusForSpace: false,
+} as const;
 
 export default function UrlEncoder({ className }: ToolComponentProps) {
   const { t } = useLocale();
+  const { preferences, setPreferences } = useToolPreferences('url-encoder', DEFAULT_PREFERENCES);
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
-  const [isEncoding, setIsEncoding] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<{ inputSize: number; outputSize: number } | null>(null);
+
+  const isEncoding = preferences.mode === 'encode';
 
   const handleConvert = useCallback(() => {
-    if (!input.trim()) { setOutput(''); setError(null); return; }
+    if (!input.trim()) {
+      setOutput('');
+      setMeta(null);
+      setError(null);
+      return;
+    }
+    if (input.length > TOOLBOX_LIMITS.converterChars) {
+      setError(
+        t('toolbox.tools.shared.inputTooLarge', {
+          limit: TOOLBOX_LIMITS.converterChars.toLocaleString(),
+        }),
+      );
+      setOutput('');
+      setMeta(null);
+      return;
+    }
     try {
-      setOutput(isEncoding ? encodeURIComponent(input) : decodeURIComponent(input));
+      let result = '';
+      if (isEncoding) {
+        result = preferences.encodeFullUrl ? encodeURI(input) : encodeURIComponent(input);
+        if (preferences.plusForSpace) {
+          result = result.replace(/%20/g, '+');
+        }
+      } else {
+        const prepared = preferences.plusForSpace ? input.replace(/\+/g, ' ') : input;
+        result = decodeURIComponent(prepared);
+      }
+      setOutput(result);
+      setMeta({ inputSize: input.length, outputSize: result.length });
       setError(null);
     } catch (e) {
       setError((e as Error).message);
       setOutput('');
+      setMeta(null);
     }
-  }, [input, isEncoding]);
+  }, [input, isEncoding, preferences.encodeFullUrl, preferences.plusForSpace, t]);
 
   const handleSwap = useCallback(() => {
-    setIsEncoding((prev) => !prev);
+    setPreferences({ mode: isEncoding ? 'decode' : 'encode' });
     setInput(output);
     setOutput('');
+    setMeta(null);
     setError(null);
-  }, [output]);
+  }, [isEncoding, output, setPreferences]);
 
   return (
     <div className={className}>
@@ -46,14 +86,32 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
           rows={6}
         />
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
-          </Alert>
-        )}
+        {error && <ToolValidationMessage message={error} />}
 
-        <div className="flex items-center gap-2">
+        <ToolActionRow
+          rightSlot={(
+            <div className="flex items-center gap-4">
+              {isEncoding && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="url-encode-full"
+                    checked={preferences.encodeFullUrl}
+                    onCheckedChange={(checked) => setPreferences({ encodeFullUrl: checked })}
+                  />
+                  <Label htmlFor="url-encode-full" className="text-xs">{t('toolbox.tools.urlEncoder.encodeFull')}</Label>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="url-plus-space"
+                  checked={preferences.plusForSpace}
+                  onCheckedChange={(checked) => setPreferences({ plusForSpace: checked })}
+                />
+                <Label htmlFor="url-plus-space" className="text-xs">{t('toolbox.tools.urlEncoder.plusForSpace')}</Label>
+              </div>
+            </div>
+          )}
+        >
           <Button onClick={handleConvert} size="sm">
             {isEncoding ? t('toolbox.tools.urlEncoder.encode') : t('toolbox.tools.urlEncoder.decode')}
           </Button>
@@ -61,7 +119,7 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
             <ArrowDownUp className="h-3.5 w-3.5" />
             {t('toolbox.tools.urlEncoder.swap')}
           </Button>
-        </div>
+        </ToolActionRow>
 
         <ToolTextArea
           label={isEncoding ? t('toolbox.tools.urlEncoder.encodedOutput') : t('toolbox.tools.urlEncoder.textOutput')}
@@ -69,6 +127,12 @@ export default function UrlEncoder({ className }: ToolComponentProps) {
           readOnly
           rows={6}
         />
+
+        {meta && (
+          <p className="text-xs text-muted-foreground">
+            {t('toolbox.tools.shared.ioMeta', { inputSize: meta.inputSize, outputSize: meta.outputSize })}
+          </p>
+        )}
       </div>
     </div>
   );

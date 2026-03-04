@@ -16,6 +16,7 @@ export interface LogFilter {
   search: string;
   target?: string;
   useRegex?: boolean;
+  maxScanLines?: number | null;
   startTime?: number | null;
   endTime?: number | null;
 }

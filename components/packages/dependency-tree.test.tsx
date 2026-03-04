@@ -127,9 +127,14 @@ describe("DependencyTree", () => {
   });
 
   it("renders resolution stats when resolved", () => {
-    render(<DependencyTree {...defaultProps} resolution={mockResolution} />);
+    const { container } = render(<DependencyTree {...defaultProps} resolution={mockResolution} />);
     expect(screen.getByText("2")).toBeInTheDocument(); // total packages
     expect(screen.getByText("Resolution successful")).toBeInTheDocument();
+
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[60dvh]");
+    expect(scrollArea).not.toHaveClass("h-[400px]");
   });
 
   it("renders install order", () => {

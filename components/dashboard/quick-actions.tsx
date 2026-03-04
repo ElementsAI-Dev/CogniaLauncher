@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Package,
-  Trash2,
+  HardDrive,
   RefreshCw,
   Settings,
   FileText,
@@ -94,8 +94,8 @@ export function QuickActions({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuItem onClick={() => router.push("/cache")} className="gap-2">
-                <Trash2 className="h-4 w-4" />
-                {t("dashboard.quickActions.clearCache")}
+                <HardDrive className="h-4 w-4" />
+                {t("dashboard.quickActions.manageCache")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push("/settings")} className="gap-2">
                 <Settings className="h-4 w-4" />

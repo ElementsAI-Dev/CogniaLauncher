@@ -26,6 +26,13 @@ interface LogManagementCardProps {
   onRefresh: () => void;
 }
 
+function normalizeNumberInput(value: string, fallback: string, max?: number): string {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) return fallback;
+  const normalized = Math.max(0, max ? Math.min(parsed, max) : parsed);
+  return String(normalized);
+}
+
 export function LogManagementCard({
   totalSize,
   fileCount,
@@ -61,20 +68,22 @@ export function LogManagementCard({
   }, [onRefresh]);
 
   const handleSaveRetentionDays = async (value: string) => {
-    setRetentionDays(value);
+    const normalized = normalizeNumberInput(value, retentionDays, 365);
+    setRetentionDays(normalized);
     if (!isTauri()) return;
     try {
-      await configSet("log.max_retention_days", value);
+      await configSet("log.max_retention_days", normalized);
     } catch {
       /* ignore */
     }
   };
 
   const handleSaveMaxSize = async (value: string) => {
-    setMaxTotalSizeMb(value);
+    const normalized = normalizeNumberInput(value, maxTotalSizeMb, 10000);
+    setMaxTotalSizeMb(normalized);
     if (!isTauri()) return;
     try {
-      await configSet("log.max_total_size_mb", value);
+      await configSet("log.max_total_size_mb", normalized);
     } catch {
       /* ignore */
     }
@@ -146,7 +155,13 @@ export function LogManagementCard({
               min="0"
               max="365"
               value={retentionDays}
-              onChange={(e) => handleSaveRetentionDays(e.target.value)}
+              onChange={(e) => setRetentionDays(e.target.value)}
+              onBlur={() => { void handleSaveRetentionDays(retentionDays); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.currentTarget.blur();
+                }
+              }}
               className="h-8"
             />
             <p className="text-xs text-muted-foreground">
@@ -164,7 +179,13 @@ export function LogManagementCard({
               min="0"
               max="10000"
               value={maxTotalSizeMb}
-              onChange={(e) => handleSaveMaxSize(e.target.value)}
+              onChange={(e) => setMaxTotalSizeMb(e.target.value)}
+              onBlur={() => { void handleSaveMaxSize(maxTotalSizeMb); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.currentTarget.blur();
+                }
+              }}
               className="h-8"
             />
             <p className="text-xs text-muted-foreground">

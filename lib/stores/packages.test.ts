@@ -20,8 +20,11 @@ describe('usePackageStore', () => {
       bookmarkedPackages: [],
       updateCheckProgress: null,
       updateCheckErrors: [],
+      updateCheckProviderOutcomes: [],
+      updateCheckCoverage: null,
       isCheckingUpdates: false,
       lastUpdateCheck: null,
+      lastScanTimestamp: null,
     });
   });
 
@@ -238,6 +241,30 @@ describe('usePackageStore', () => {
       const errors = [{ provider: 'npm', package: null, message: 'Network error' }];
       usePackageStore.getState().setUpdateCheckErrors(errors);
       expect(usePackageStore.getState().updateCheckErrors).toEqual(errors);
+    });
+
+    it('should set update check provider outcomes', () => {
+      const outcomes = [
+        {
+          provider: 'npm',
+          status: 'supported' as const,
+          reason: null,
+          checked: 2,
+          updates: 1,
+          errors: 0,
+        },
+      ];
+      usePackageStore.getState().setUpdateCheckProviderOutcomes(outcomes);
+      expect(usePackageStore.getState().updateCheckProviderOutcomes).toEqual(outcomes);
+    });
+
+    it('should set update check coverage', () => {
+      const coverage = { supported: 1, partial: 1, unsupported: 0, error: 0 };
+      usePackageStore.getState().setUpdateCheckCoverage(coverage);
+      expect(usePackageStore.getState().updateCheckCoverage).toEqual(coverage);
+
+      usePackageStore.getState().setUpdateCheckCoverage(null);
+      expect(usePackageStore.getState().updateCheckCoverage).toBeNull();
     });
 
     it('should set isCheckingUpdates', () => {

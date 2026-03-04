@@ -143,6 +143,22 @@ describe("QuickSearch", () => {
     });
   });
 
+  it("shows quick actions when focused without history", async () => {
+    render(
+      <QuickSearch environments={mockEnvironments} packages={mockPackages} />,
+    );
+
+    const input = screen.getByPlaceholderText(
+      "Search environments, packages...",
+    );
+    fireEvent.focus(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("Quick Actions")).toBeInTheDocument();
+      expect(screen.getByText("Add Environment")).toBeInTheDocument();
+    });
+  });
+
   it("filters environments when typing", async () => {
     render(
       <QuickSearch environments={mockEnvironments} packages={mockPackages} />,

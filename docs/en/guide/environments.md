@@ -32,13 +32,29 @@ Additionally, the `system` Provider can detect system-installed runtime versions
 3. Browse the available versions list
 4. Click the **Install** button
 
-The installation process includes the following steps, all with progress tracking:
+The installation process follows a strict lifecycle with phase-level progress tracking:
 
-- **Fetch** — Query version information
-- **Download** — Download runtime binaries
-- **Extract** — Extract the installation package
-- **Configure** — Set up environment variables and paths
-- **Complete** — Installation finished
+- **Resolve** — Resolve provider and installation plan
+- **Select Artifact** — Select the compatible artifact deterministically
+- **Download** — Download/Resume transfer with retry and timeout handling
+- **Verify** — Validate artifact integrity (checksum/signature)
+- **Persist** — Persist verified artifact metadata/cache bookkeeping
+- **Finalize** — Finalize installation state and emit completion
+
+Only one terminal state is emitted for a run: `completed`, `failed`, or `cancelled`.
+
+### Download Failure Classes
+
+Download and install failures are normalized into stable classes:
+
+- `selection_error` — No compatible artifact/provider resolution failed
+- `network_error` — Transfer or connectivity failure
+- `integrity_error` — Checksum/signature validation failed
+- `cache_error` — Corrupted/stale cache or cache bookkeeping failure
+- `timeout` — Transfer/request timeout
+- `cancelled` — User-triggered cancellation
+
+UI and logs surface these classes with stage context and retry hints (`retryable`, `retryAfterSeconds`).
 
 !!! tip "Cancel Installation"
     You can click the **Cancel** button at any time during installation to abort.

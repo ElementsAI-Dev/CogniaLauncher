@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,7 @@ interface LogFileViewerProps {
 }
 
 const PAGE_SIZE = 200;
+const FOLLOW_MODE_MAX_SCAN_LINES = 20_000;
 
 export function LogFileViewer({
   open,
@@ -45,6 +46,7 @@ export function LogFileViewer({
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState(false);
+  const requestSequenceRef = useRef(0);
 
   const queryOptions = useMemo(
     () => ({
@@ -52,6 +54,10 @@ export function LogFileViewer({
       levelFilter: filter.levels.map((level) => level.toUpperCase()),
       search: filter.search || undefined,
       useRegex: filter.useRegex,
+      maxScanLines:
+        filter.maxScanLines && filter.maxScanLines > 0
+          ? filter.maxScanLines
+          : undefined,
       startTime: filter.startTime ?? undefined,
       endTime: filter.endTime ?? undefined,
     }),
@@ -59,6 +65,7 @@ export function LogFileViewer({
       fileName,
       filter.endTime,
       filter.levels,
+      filter.maxScanLines,
       filter.search,
       filter.startTime,
       filter.useRegex,
@@ -85,15 +92,21 @@ export function LogFileViewer({
   );
 
   const loadEntries = useCallback(
-    async (offset = 0, append = false) => {
+    async (offset = 0, append = false, maxScanLines?: number) => {
       if (!fileName) return;
+      const requestId = ++requestSequenceRef.current;
       setLoading(true);
       try {
         const result = await queryLogFile({
           ...queryOptions,
           limit: PAGE_SIZE,
           offset,
+          maxScanLines: maxScanLines ?? queryOptions.maxScanLines,
         });
+
+        if (requestId !== requestSequenceRef.current) {
+          return;
+        }
 
         if (!result) {
           setEntries([]);
@@ -109,10 +122,15 @@ export function LogFileViewer({
         setHasMore(result.hasMore);
         setTotalCount(result.totalCount);
       } catch (error) {
+        if (requestId !== requestSequenceRef.current) {
+          return;
+        }
         console.error("Failed to load log entries:", error);
         toast.error(t("logs.loadEntriesError"));
       } finally {
-        setLoading(false);
+        if (requestId === requestSequenceRef.current) {
+          setLoading(false);
+        }
       }
     },
     [fileName, mapEntry, queryLogFile, queryOptions, t],
@@ -131,9 +149,17 @@ export function LogFileViewer({
       if (!fileName) return;
       // Backend only supports txt/json; csv is handled by frontend-only exportLogs
       const backendFormat = format === "csv" ? "txt" : format;
+      const exportQueryOptions = {
+        fileName: queryOptions.fileName,
+        levelFilter: queryOptions.levelFilter,
+        search: queryOptions.search,
+        useRegex: queryOptions.useRegex,
+        startTime: queryOptions.startTime,
+        endTime: queryOptions.endTime,
+      };
       try {
         const result = await exportLogFile({
-          ...queryOptions,
+          ...exportQueryOptions,
           format: backendFormat,
         });
         if (!result) return;
@@ -158,16 +184,33 @@ export function LogFileViewer({
   );
 
   useEffect(() => {
-    if (!open || !fileName) return;
+    if (!open || !fileName) {
+      requestSequenceRef.current += 1;
+      setLoading(false);
+      setFollowing(false);
+      return;
+    }
     loadEntries(0, false);
   }, [fileName, loadEntries, open]);
+
+  useEffect(
+    () => () => {
+      requestSequenceRef.current += 1;
+    },
+    [],
+  );
 
   // Follow mode: auto-refresh every 3 seconds for current session file
   useEffect(() => {
     if (!following || !open || !fileName) return;
-    const timer = setInterval(() => loadEntries(0, false), 3000);
+    const followModeScanLines =
+      queryOptions.maxScanLines ?? FOLLOW_MODE_MAX_SCAN_LINES;
+    const timer = setInterval(
+      () => loadEntries(0, false, followModeScanLines),
+      3000,
+    );
     return () => clearInterval(timer);
-  }, [following, open, fileName, loadEntries]);
+  }, [following, open, fileName, loadEntries, queryOptions.maxScanLines]);
 
   // Determine if this is the current session (first/newest file)
   const { logFiles } = useLogStore();
@@ -188,6 +231,7 @@ export function LogFileViewer({
             onExport={handleExport}
             showRealtimeControls={false}
             showMaxLogs={false}
+            showQueryScanLimit
           />
 
           <div className="flex items-center justify-between text-xs text-muted-foreground">

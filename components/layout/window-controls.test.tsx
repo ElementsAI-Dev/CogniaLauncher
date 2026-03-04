@@ -114,6 +114,7 @@ function makeControls(
     isFullscreen: false,
     isFocused: true,
     isAlwaysOnTop: false,
+    maximizeInsets: { top: 0, right: 0, bottom: 0, left: 0 },
     maximizePadding: 0,
     handleMinimize: jest.fn(),
     handleMaximize: jest.fn(),

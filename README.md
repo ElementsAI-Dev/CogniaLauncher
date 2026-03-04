@@ -163,6 +163,46 @@ This command:
 | `pnpm tauri icon` | Generate app icons from source image |
 | `pnpm tauri --help` | Show all available Tauri commands |
 
+### Desktop CLI Quick Reference
+
+You can run CLI subcommands through the desktop binary in headless mode:
+
+```bash
+pnpm tauri dev -- search react --limit 10 --json
+```
+
+Top-level commands:
+
+- `search`
+- `install` (`--provider`, `--force`)
+- `uninstall` (`--provider`, `--force`)
+- `list` (`--provider`, `--outdated`)
+- `update`
+- `info`
+- `env`
+- `config`
+- `cache`
+- `doctor`
+- `providers`
+
+Environment subcommands:
+
+- `env list`
+- `env install <version> --type <env>`
+- `env use <version> --type <env> [--local <path>]`
+- `env detect [--type <env>] [--path <path>]`
+- `env remove <version> --type <env> [--provider <id>]`
+- `env resolve --type <env> [--path <path>]`
+
+Config subcommands:
+
+- `config get <key>`
+- `config set <key> <value>`
+- `config list`
+- `config reset`
+- `config export <file>`
+- `config import <file>`
+
 ### Adding UI Components (shadcn/ui)
 
 ```bash

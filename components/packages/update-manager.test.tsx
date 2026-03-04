@@ -94,9 +94,14 @@ describe("UpdateManager", () => {
   });
 
   it("renders update list", () => {
-    render(<UpdateManager {...defaultProps} />);
+    const { container } = render(<UpdateManager {...defaultProps} />);
     expect(screen.getByText("numpy")).toBeInTheDocument();
     expect(screen.getByText("pandas")).toBeInTheDocument();
+
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]');
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("max-h-[60dvh]");
+    expect(scrollArea).not.toHaveClass("h-[300px]");
   });
 
   it("shows no updates message when empty", () => {
@@ -205,5 +210,23 @@ describe("UpdateManager", () => {
     render(<UpdateManager {...defaultProps} updates={[...mockUpdates, mockPinnedUpdate]} />);
     await user.click(screen.getByRole("button", { name: /unpin/i }));
     expect(defaultProps.onUnpinPackage).toHaveBeenCalledWith("pip:scipy");
+  });
+
+  it("keeps long package name accessible in update list", () => {
+    const longName = "this-is-a-super-long-package-name-for-update-manager-layout-check";
+    render(
+      <UpdateManager
+        {...defaultProps}
+        updates={[
+          {
+            ...mockUpdates[0],
+            package_id: "pip:long-name",
+            name: longName,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTitle(longName)).toBeInTheDocument();
   });
 });
