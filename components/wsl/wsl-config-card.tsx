@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/select';
 import { Settings2, Save, RefreshCw, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
-import { COMMON_WSL2_SETTINGS, NETWORK_PRESETS } from '@/lib/constants/wsl';
+import { COMMON_WSL2_SETTINGS, NETWORK_PRESETS, CONFIG_PROFILES } from '@/lib/constants/wsl';
+import { useWslStore } from '@/lib/stores/wsl';
 import type { WslConfigCardProps } from '@/types/wsl';
 
 export function WslConfigCard({
@@ -34,6 +35,8 @@ export function WslConfigCard({
   const [editValue, setEditValue] = useState('');
   const [editSection, setEditSection] = useState('wsl2');
   const [saving, setSaving] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const { customProfiles, addCustomProfile, removeCustomProfile } = useWslStore();
 
   const wsl2Config = config?.['wsl2'] ?? {};
   const experimentalConfig = config?.['experimental'] ?? {};
@@ -78,7 +81,10 @@ export function WslConfigCard({
   };
 
   const handleApplyPreset = async (presetId: string) => {
-    const preset = NETWORK_PRESETS.find((p) => p.id === presetId);
+    const preset =
+      NETWORK_PRESETS.find((p) => p.id === presetId)
+      ?? CONFIG_PROFILES.find((p) => p.id === presetId)
+      ?? customProfiles.find((p) => p.id === presetId);
     if (!preset) return;
     setSaving(true);
     try {
@@ -176,6 +182,100 @@ export function WslConfigCard({
             ))}
           </div>
         )}
+
+        <Separator />
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center justify-between w-full group">
+            <p className="text-xs font-medium text-muted-foreground">{t('wsl.config.resourceProfiles')}</p>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="grid gap-2 mt-3">
+              {CONFIG_PROFILES.map((profile) => (
+                <Tooltip key={profile.id}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start text-xs"
+                      onClick={() => handleApplyPreset(profile.id)}
+                      disabled={saving}
+                    >
+                      {t(profile.labelKey)}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[280px]">
+                    <p className="text-xs">{t(profile.descKey)}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+              {customProfiles.map((profile) => (
+                <div key={profile.id} className="flex items-center gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 justify-start text-xs"
+                        onClick={() => handleApplyPreset(profile.id)}
+                        disabled={saving}
+                      >
+                        {profile.labelKey}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[280px]">
+                      <p className="text-xs">{profile.descKey}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeCustomProfile(profile.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-3">
+              <Input
+                className="h-7 text-xs flex-1"
+                placeholder={t('wsl.config.profileNamePlaceholder')}
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                disabled={!profileName.trim() || !config}
+                onClick={() => {
+                  if (!profileName.trim() || !config) return;
+                  const settings: { section: 'wsl2' | 'experimental'; key: string; value: string }[] = [];
+                  for (const [section, entries] of Object.entries(config)) {
+                    if (section === 'wsl2' || section === 'experimental') {
+                      for (const [key, value] of Object.entries(entries)) {
+                        settings.push({ section: section as 'wsl2' | 'experimental', key, value });
+                      }
+                    }
+                  }
+                  addCustomProfile({
+                    id: `custom-${Date.now()}`,
+                    labelKey: profileName.trim(),
+                    descKey: `${settings.length} settings`,
+                    settings,
+                  });
+                  setProfileName('');
+                  toast.success(t('wsl.config.profileSaved'));
+                }}
+              >
+                <Save className="h-3 w-3" />
+                {t('wsl.config.saveProfile')}
+              </Button>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         <Separator />
         <Collapsible>

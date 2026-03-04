@@ -1,8 +1,7 @@
 use crate::config::Settings;
 use crate::core::terminal::{
-    self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries,
-    ShellFrameworkInfo, ShellInfo, ShellPlugin, TerminalProfile, TerminalProfileManager,
-    TerminalProfileTemplate,
+    self, PSModuleInfo, PSProfileInfo, PSScriptInfo, ShellConfigEntries, ShellFrameworkInfo,
+    ShellInfo, ShellPlugin, TerminalProfile, TerminalProfileManager, TerminalProfileTemplate,
 };
 use crate::core::EnvironmentManager;
 use crate::platform::env::{EnvModifications, ShellType};
@@ -29,7 +28,11 @@ fn resolve_proxy(settings: &Settings) -> (Option<String>, Option<String>) {
         ),
         _ => (
             settings.network.proxy.clone(),
-            settings.terminal.no_proxy.clone().or_else(|| settings.network.no_proxy.clone()),
+            settings
+                .terminal
+                .no_proxy
+                .clone()
+                .or_else(|| settings.network.no_proxy.clone()),
         ),
     }
 }
@@ -743,7 +746,8 @@ pub async fn terminal_get_shell_env_vars() -> Result<Vec<(String, String)>, Stri
 // ============================================================================
 
 #[tauri::command]
-pub async fn terminal_get_framework_cache_stats() -> Result<Vec<terminal::FrameworkCacheInfo>, String> {
+pub async fn terminal_get_framework_cache_stats(
+) -> Result<Vec<terminal::FrameworkCacheInfo>, String> {
     // Detect all shells first, then detect frameworks for each
     let shells = terminal::detect_installed_shells()
         .await
@@ -779,9 +783,7 @@ pub async fn terminal_get_single_framework_cache_info(
 }
 
 #[tauri::command]
-pub async fn terminal_clean_framework_cache(
-    framework_name: String,
-) -> Result<u64, String> {
+pub async fn terminal_clean_framework_cache(framework_name: String) -> Result<u64, String> {
     terminal::clean_framework_cache(&framework_name)
         .await
         .map_err(|e| e.to_string())
@@ -900,12 +902,30 @@ mod tests {
             &Some("http://proxy:8080".to_string()),
             &Some("localhost,127.0.0.1".to_string()),
         );
-        assert_eq!(env.get("HTTP_PROXY"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(env.get("http_proxy"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(env.get("HTTPS_PROXY"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(env.get("https_proxy"), Some(&"http://proxy:8080".to_string()));
-        assert_eq!(env.get("NO_PROXY"), Some(&"localhost,127.0.0.1".to_string()));
-        assert_eq!(env.get("no_proxy"), Some(&"localhost,127.0.0.1".to_string()));
+        assert_eq!(
+            env.get("HTTP_PROXY"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            env.get("http_proxy"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            env.get("HTTPS_PROXY"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            env.get("https_proxy"),
+            Some(&"http://proxy:8080".to_string())
+        );
+        assert_eq!(
+            env.get("NO_PROXY"),
+            Some(&"localhost,127.0.0.1".to_string())
+        );
+        assert_eq!(
+            env.get("no_proxy"),
+            Some(&"localhost,127.0.0.1".to_string())
+        );
     }
 
     #[test]
@@ -916,10 +936,7 @@ mod tests {
 
     #[test]
     fn build_proxy_env_vars_empty_string_proxy_sets_nothing() {
-        let env = build_proxy_env_vars(
-            &Some(String::new()),
-            &Some(String::new()),
-        );
+        let env = build_proxy_env_vars(&Some(String::new()), &Some(String::new()));
         assert!(env.is_empty());
     }
 

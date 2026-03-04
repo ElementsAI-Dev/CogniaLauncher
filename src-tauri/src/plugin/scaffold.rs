@@ -96,13 +96,15 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
     // Generate plugin.toml
     let manifest = generate_manifest(config);
     let manifest_path = plugin_dir.join("plugin.toml");
-    tokio::fs::write(&manifest_path, &manifest).await
+    tokio::fs::write(&manifest_path, &manifest)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write plugin.toml: {}", e)))?;
     files_created.push("plugin.toml".to_string());
 
     // Generate locale files
     let locales_dir = plugin_dir.join("locales");
-    tokio::fs::create_dir_all(&locales_dir).await
+    tokio::fs::create_dir_all(&locales_dir)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create locales dir: {}", e)))?;
 
     let en_json = serde_json::json!({
@@ -110,8 +112,12 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
         "toolDesc": format!("A tool provided by {}", config.name),
         "greeting": "Hello from {name}!",
     });
-    tokio::fs::write(locales_dir.join("en.json"), serde_json::to_string_pretty(&en_json).unwrap()).await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to write en.json: {}", e)))?;
+    tokio::fs::write(
+        locales_dir.join("en.json"),
+        serde_json::to_string_pretty(&en_json).unwrap(),
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write en.json: {}", e)))?;
     files_created.push("locales/en.json".to_string());
 
     let zh_json = serde_json::json!({
@@ -119,13 +125,18 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
         "toolDesc": format!("由 {} 提供的工具", config.name),
         "greeting": "你好，来自 {name}！",
     });
-    tokio::fs::write(locales_dir.join("zh.json"), serde_json::to_string_pretty(&zh_json).unwrap()).await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to write zh.json: {}", e)))?;
+    tokio::fs::write(
+        locales_dir.join("zh.json"),
+        serde_json::to_string_pretty(&zh_json).unwrap(),
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write zh.json: {}", e)))?;
     files_created.push("locales/zh.json".to_string());
 
     // Generate .gitignore
     let gitignore = "target/\n*.wasm\n";
-    tokio::fs::write(plugin_dir.join(".gitignore"), gitignore).await
+    tokio::fs::write(plugin_dir.join(".gitignore"), gitignore)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write .gitignore: {}", e)))?;
     files_created.push(".gitignore".to_string());
 
@@ -147,7 +158,8 @@ pub async fn scaffold_plugin(config: &ScaffoldConfig) -> CogniaResult<ScaffoldRe
 
     // Generate README.md
     let readme = generate_readme(config);
-    tokio::fs::write(plugin_dir.join("README.md"), &readme).await
+    tokio::fs::write(plugin_dir.join("README.md"), &readme)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write README.md: {}", e)))?;
     files_created.push("README.md".to_string());
 
@@ -166,7 +178,11 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
     let manifest_path = path.join("plugin.toml");
     if !manifest_path.exists() {
         errors.push("Missing plugin.toml manifest file".to_string());
-        return Ok(ValidationResult { valid: false, errors, warnings });
+        return Ok(ValidationResult {
+            valid: false,
+            errors,
+            warnings,
+        });
     }
 
     // Parse manifest
@@ -205,9 +221,10 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
             }
 
             // Check UI configuration for iframe-mode tools
-            let has_iframe = manifest.tools.iter().any(|t| {
-                t.ui_mode == crate::plugin::manifest::UiMode::Iframe
-            });
+            let has_iframe = manifest
+                .tools
+                .iter()
+                .any(|t| t.ui_mode == crate::plugin::manifest::UiMode::Iframe);
             if has_iframe {
                 if let Some(ref ui_config) = manifest.ui {
                     let ui_entry = path.join(&ui_config.entry);
@@ -222,13 +239,22 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
 
             // Warn about dangerous permissions
             if manifest.permissions.config_write {
-                warnings.push("Plugin requests config_write (dangerous, requires explicit user grant)".to_string());
+                warnings.push(
+                    "Plugin requests config_write (dangerous, requires explicit user grant)"
+                        .to_string(),
+                );
             }
             if manifest.permissions.pkg_install {
-                warnings.push("Plugin requests pkg_install (dangerous, requires explicit user grant)".to_string());
+                warnings.push(
+                    "Plugin requests pkg_install (dangerous, requires explicit user grant)"
+                        .to_string(),
+                );
             }
             if manifest.permissions.process_exec {
-                warnings.push("Plugin requests process_exec (dangerous, requires explicit user grant)".to_string());
+                warnings.push(
+                    "Plugin requests process_exec (dangerous, requires explicit user grant)"
+                        .to_string(),
+                );
             }
         }
         Err(e) => {
@@ -249,16 +275,37 @@ pub async fn validate_plugin(path: &Path) -> CogniaResult<ValidationResult> {
 
 fn generate_manifest(config: &ScaffoldConfig) -> String {
     let mut perms = Vec::new();
-    if config.permissions.config_read { perms.push("config_read = true".to_string()); }
-    if config.permissions.env_read { perms.push("env_read = true".to_string()); }
-    if config.permissions.pkg_search { perms.push("pkg_search = true".to_string()); }
-    if config.permissions.clipboard { perms.push("clipboard = true".to_string()); }
-    if config.permissions.notification { perms.push("notification = true".to_string()); }
-    if config.permissions.fs_read { perms.push("fs_read = [\"data/*\"]".to_string()); }
-    if config.permissions.fs_write { perms.push("fs_write = [\"data/*\"]".to_string()); }
-    if config.permissions.process_exec { perms.push("process_exec = true".to_string()); }
+    if config.permissions.config_read {
+        perms.push("config_read = true".to_string());
+    }
+    if config.permissions.env_read {
+        perms.push("env_read = true".to_string());
+    }
+    if config.permissions.pkg_search {
+        perms.push("pkg_search = true".to_string());
+    }
+    if config.permissions.clipboard {
+        perms.push("clipboard = true".to_string());
+    }
+    if config.permissions.notification {
+        perms.push("notification = true".to_string());
+    }
+    if config.permissions.fs_read {
+        perms.push("fs_read = [\"data/*\"]".to_string());
+    }
+    if config.permissions.fs_write {
+        perms.push("fs_write = [\"data/*\"]".to_string());
+    }
+    if config.permissions.process_exec {
+        perms.push("process_exec = true".to_string());
+    }
     if !config.permissions.http.is_empty() {
-        let domains: Vec<String> = config.permissions.http.iter().map(|d| format!("\"{}\"", d)).collect();
+        let domains: Vec<String> = config
+            .permissions
+            .http
+            .iter()
+            .map(|d| format!("\"{}\"", d))
+            .collect();
         perms.push(format!("http = [{}]", domains.join(", ")));
     }
 
@@ -295,7 +342,10 @@ entry = "{entry}"
     )
 }
 
-async fn generate_rust_project(config: &ScaffoldConfig, plugin_dir: &Path) -> CogniaResult<Vec<String>> {
+async fn generate_rust_project(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
     let mut files = Vec::new();
 
     // Cargo.toml
@@ -316,24 +366,28 @@ serde_json = "1"
 "#,
         config.id.replace('.', "-"),
     );
-    tokio::fs::write(plugin_dir.join("Cargo.toml"), &cargo_toml).await
+    tokio::fs::write(plugin_dir.join("Cargo.toml"), &cargo_toml)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write Cargo.toml: {}", e)))?;
     files.push("Cargo.toml".to_string());
 
     // .cargo/config.toml
     let cargo_dir = plugin_dir.join(".cargo");
-    tokio::fs::create_dir_all(&cargo_dir).await
+    tokio::fs::create_dir_all(&cargo_dir)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create .cargo dir: {}", e)))?;
     let cargo_config = r#"[build]
 target = "wasm32-unknown-unknown"
 "#;
-    tokio::fs::write(cargo_dir.join("config.toml"), cargo_config).await
+    tokio::fs::write(cargo_dir.join("config.toml"), cargo_config)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write .cargo/config.toml: {}", e)))?;
     files.push(".cargo/config.toml".to_string());
 
     // src/lib.rs
     let src_dir = plugin_dir.join("src");
-    tokio::fs::create_dir_all(&src_dir).await
+    tokio::fs::create_dir_all(&src_dir)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
     let entry_fn = config.id.replace(['.', '-'], "_");
@@ -359,14 +413,18 @@ pub fn {entry}(input: String) -> FnResult<String> {{
 "#,
         entry = entry_fn,
     );
-    tokio::fs::write(src_dir.join("lib.rs"), &lib_rs).await
+    tokio::fs::write(src_dir.join("lib.rs"), &lib_rs)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/lib.rs: {}", e)))?;
     files.push("src/lib.rs".to_string());
 
     Ok(files)
 }
 
-async fn generate_js_project(config: &ScaffoldConfig, plugin_dir: &Path) -> CogniaResult<Vec<String>> {
+async fn generate_js_project(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
     let mut files = Vec::new();
 
     // package.json
@@ -385,13 +443,15 @@ async fn generate_js_project(config: &ScaffoldConfig, plugin_dir: &Path) -> Cogn
     tokio::fs::write(
         plugin_dir.join("package.json"),
         serde_json::to_string_pretty(&package_json).unwrap(),
-    ).await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to write package.json: {}", e)))?;
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write package.json: {}", e)))?;
     files.push("package.json".to_string());
 
     // src/index.js
     let src_dir = plugin_dir.join("src");
-    tokio::fs::create_dir_all(&src_dir).await
+    tokio::fs::create_dir_all(&src_dir)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
     let entry_fn = config.id.replace(['.', '-'], "_");
@@ -424,14 +484,18 @@ module.exports = {{ {entry} }};
         name = config.name,
         entry = entry_fn,
     );
-    tokio::fs::write(src_dir.join("index.js"), &index_js).await
+    tokio::fs::write(src_dir.join("index.js"), &index_js)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/index.js: {}", e)))?;
     files.push("src/index.js".to_string());
 
     Ok(files)
 }
 
-async fn generate_ts_project(config: &ScaffoldConfig, plugin_dir: &Path) -> CogniaResult<Vec<String>> {
+async fn generate_ts_project(
+    config: &ScaffoldConfig,
+    plugin_dir: &Path,
+) -> CogniaResult<Vec<String>> {
     let mut files = Vec::new();
 
     // package.json
@@ -455,8 +519,9 @@ async fn generate_ts_project(config: &ScaffoldConfig, plugin_dir: &Path) -> Cogn
     tokio::fs::write(
         plugin_dir.join("package.json"),
         serde_json::to_string_pretty(&package_json).unwrap(),
-    ).await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to write package.json: {}", e)))?;
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write package.json: {}", e)))?;
     files.push("package.json".to_string());
 
     // tsconfig.json
@@ -476,8 +541,9 @@ async fn generate_ts_project(config: &ScaffoldConfig, plugin_dir: &Path) -> Cogn
     tokio::fs::write(
         plugin_dir.join("tsconfig.json"),
         serde_json::to_string_pretty(&tsconfig).unwrap(),
-    ).await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to write tsconfig.json: {}", e)))?;
+    )
+    .await
+    .map_err(|e| CogniaError::Plugin(format!("Failed to write tsconfig.json: {}", e)))?;
     files.push("tsconfig.json".to_string());
 
     // esbuild.config.mjs
@@ -493,7 +559,8 @@ await build({
   external: [],
 });
 "#;
-    tokio::fs::write(plugin_dir.join("esbuild.config.mjs"), esbuild_config).await
+    tokio::fs::write(plugin_dir.join("esbuild.config.mjs"), esbuild_config)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write esbuild.config.mjs: {}", e)))?;
     files.push("esbuild.config.mjs".to_string());
 
@@ -548,13 +615,15 @@ declare module "extism:host" {{
 "#,
         entry = entry_fn,
     );
-    tokio::fs::write(plugin_dir.join("plugin.d.ts"), &plugin_dts).await
+    tokio::fs::write(plugin_dir.join("plugin.d.ts"), &plugin_dts)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write plugin.d.ts: {}", e)))?;
     files.push("plugin.d.ts".to_string());
 
     // src/index.ts — main plugin source
     let src_dir = plugin_dir.join("src");
-    tokio::fs::create_dir_all(&src_dir).await
+    tokio::fs::create_dir_all(&src_dir)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to create src dir: {}", e)))?;
 
     let index_ts = format!(
@@ -585,7 +654,8 @@ module.exports = {{ {entry} }};
         name = config.name,
         entry = entry_fn,
     );
-    tokio::fs::write(src_dir.join("index.ts"), &index_ts).await
+    tokio::fs::write(src_dir.join("index.ts"), &index_ts)
+        .await
         .map_err(|e| CogniaError::Plugin(format!("Failed to write src/index.ts: {}", e)))?;
     files.push("src/index.ts".to_string());
 
@@ -606,7 +676,8 @@ cargo build --release
 # The plugin.wasm will be at target/wasm32-unknown-unknown/release/<name>.wasm
 # Copy it to plugin.wasm in the project root
 cp target/wasm32-unknown-unknown/release/*.wasm plugin.wasm
-```"#.to_string(),
+```"#
+            .to_string(),
         PluginLanguage::JavaScript => r#"## Build
 
 ```bash
@@ -615,7 +686,8 @@ pnpm install
 
 # Build the plugin
 pnpm build
-```"#.to_string(),
+```"#
+            .to_string(),
         PluginLanguage::TypeScript => r#"## Build
 
 ```bash
@@ -624,7 +696,8 @@ pnpm install
 
 # Bundle TypeScript and compile to WASM
 pnpm build
-```"#.to_string(),
+```"#
+            .to_string(),
     };
 
     format!(

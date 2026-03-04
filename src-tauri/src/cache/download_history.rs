@@ -760,7 +760,7 @@ mod tests {
             completed_count: 7,
             failed_count: 2,
             cancelled_count: 1,
-            total_bytes: 1048576, // 1 MB
+            total_bytes: 1048576,    // 1 MB
             average_speed: 524288.0, // 512 KB/s
         };
 

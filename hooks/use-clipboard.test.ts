@@ -4,6 +4,9 @@ import { useCopyToClipboard } from '@/hooks/use-clipboard';
 jest.mock('@/lib/clipboard', () => ({
   writeClipboard: jest.fn().mockResolvedValue(undefined),
   readClipboard: jest.fn().mockResolvedValue('pasted text'),
+  writeClipboardImage: jest.fn().mockResolvedValue(undefined),
+  readClipboardImage: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
+  clearClipboard: jest.fn().mockResolvedValue(undefined),
 }));
 
 const clipboard = jest.requireMock('@/lib/clipboard');
@@ -23,10 +26,13 @@ describe('useCopyToClipboard', () => {
     expect(result.current.copied).toBe(false);
   });
 
-  it('should expose copy and paste functions', () => {
+  it('should expose copy, paste, copyImage, pasteImage, and clear functions', () => {
     const { result } = renderHook(() => useCopyToClipboard());
     expect(typeof result.current.copy).toBe('function');
     expect(typeof result.current.paste).toBe('function');
+    expect(typeof result.current.copyImage).toBe('function');
+    expect(typeof result.current.pasteImage).toBe('function');
+    expect(typeof result.current.clear).toBe('function');
   });
 
   it('should set copied to true after copy', async () => {
@@ -116,5 +122,46 @@ describe('useCopyToClipboard', () => {
     });
     expect(clipboard.writeClipboard).toHaveBeenCalledTimes(1);
     expect(clipboard.writeClipboard).toHaveBeenCalledWith('test string 123');
+  });
+
+  it('should call writeClipboardImage and set copied on copyImage', async () => {
+    const { result } = renderHook(() => useCopyToClipboard());
+    const imageData = new Uint8Array([1, 2, 3]);
+    await act(async () => {
+      await result.current.copyImage(imageData);
+    });
+    expect(clipboard.writeClipboardImage).toHaveBeenCalledWith(imageData);
+    expect(result.current.copied).toBe(true);
+  });
+
+  it('should reset copied after timeout on copyImage', async () => {
+    const { result } = renderHook(() => useCopyToClipboard(1000));
+    await act(async () => {
+      await result.current.copyImage(new Uint8Array([1]));
+    });
+    expect(result.current.copied).toBe(true);
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(result.current.copied).toBe(false);
+  });
+
+  it('should call readClipboardImage on pasteImage', async () => {
+    const { result } = renderHook(() => useCopyToClipboard());
+    let image: Uint8Array | null = null;
+    await act(async () => {
+      image = await result.current.pasteImage();
+    });
+    expect(clipboard.readClipboardImage).toHaveBeenCalled();
+    expect(image).toBeInstanceOf(Uint8Array);
+  });
+
+  it('should call clearClipboard on clear', async () => {
+    const { result } = renderHook(() => useCopyToClipboard());
+    await act(async () => {
+      await result.current.clear();
+    });
+    expect(clipboard.clearClipboard).toHaveBeenCalled();
   });
 });

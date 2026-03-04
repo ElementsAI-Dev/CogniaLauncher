@@ -21,6 +21,9 @@ const mockEnvCurrentVersion = jest.fn();
 const mockEnvResolveAlias = jest.fn();
 const mockPluginDispatchEvent = jest.fn(() => Promise.resolve());
 const mockIsTauri = jest.fn(() => true);
+const mockEmitInvalidations = jest.fn();
+const mockEnsureCacheInvalidationBridge = jest.fn(() => Promise.resolve());
+const mockSubscribeInvalidation = jest.fn(() => () => {});
 
 jest.mock('@/lib/tauri', () => ({
   isTauri: (...args: Parameters<typeof mockIsTauri>) => mockIsTauri(...args),
@@ -129,6 +132,14 @@ jest.mock('@/lib/stores/environment', () => ({
 
 jest.mock('@/lib/errors', () => ({
   formatError: (err: unknown) => err instanceof Error ? err.message : String(err),
+}));
+
+jest.mock('@/lib/cache/invalidation', () => ({
+  emitInvalidations: (...args: unknown[]) => mockEmitInvalidations(...args),
+  emitInvalidation: jest.fn(),
+  ensureCacheInvalidationBridge: (...args: unknown[]) => mockEnsureCacheInvalidationBridge(...args),
+  subscribeInvalidation: (...args: unknown[]) => mockSubscribeInvalidation(...args),
+  withThrottle: (fn: Function) => fn,
 }));
 
 jest.mock('@/lib/utils', () => ({
@@ -249,7 +260,7 @@ describe('useEnvironments', () => {
     expect(mockStoreActions.updateEnvironment).toHaveBeenCalledWith(updatedEnv);
   });
 
-  it('should set local version', async () => {
+  it('should set local version and emit cache invalidation', async () => {
     mockEnvUseLocal.mockResolvedValue(undefined);
     const { result } = renderHook(() => useEnvironments());
 
@@ -258,6 +269,26 @@ describe('useEnvironments', () => {
     });
 
     expect(mockEnvUseLocal).toHaveBeenCalledWith('python', '3.11.0', '/project/path');
+    expect(mockEmitInvalidations).toHaveBeenCalledWith(
+      ['environment_data', 'provider_data'],
+      'environments:set-local',
+    );
+  });
+
+  it('should not emit invalidation when set local version fails', async () => {
+    mockEnvUseLocal.mockRejectedValue(new Error('Permission denied'));
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      try {
+        await result.current.setLocalVersion('python', '3.11.0', '/project/path');
+      } catch {
+        // Expected error
+      }
+    });
+
+    expect(mockEmitInvalidations).not.toHaveBeenCalled();
+    expect(mockStoreActions.setError).toHaveBeenCalledWith('Permission denied');
   });
 
   it('should detect versions', async () => {

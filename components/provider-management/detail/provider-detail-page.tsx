@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -70,6 +71,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     fetchEnvironmentInfo,
   } = useProviderDetail(providerId);
 
+  const router = useRouter();
   const [isToggling, setIsToggling] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
 
@@ -117,6 +119,10 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     await refreshAll();
     toast.success(t('providerDetail.refreshed'));
   }, [refreshAll, t]);
+
+  const handleViewPackageDetails = useCallback((name: string) => {
+    router.push(`/packages/detail?name=${encodeURIComponent(name)}&provider=${encodeURIComponent(providerId)}`);
+  }, [router, providerId]);
 
   // Loading state
   if (loading && !provider) {
@@ -228,6 +234,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
             onInstallPackage={installPackage}
             onUninstallPackage={uninstallPackage}
             onRefreshPackages={fetchInstalledPackages}
+            onViewPackageDetails={handleViewPackageDetails}
             t={t}
           />
         </TabsContent>

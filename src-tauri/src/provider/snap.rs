@@ -219,7 +219,12 @@ impl Provider for SnapProvider {
             args.push(&channel);
         }
 
-        let out = process::execute("sudo", &[&["snap"][..], &args[..]].concat(), Some(Self::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &[&["snap"][..], &args[..]].concat(),
+            Some(Self::make_long_opts()),
+        )
+        .await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -254,7 +259,12 @@ impl Provider for SnapProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["snap", "remove", &req.name], Some(Self::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["snap", "remove", &req.name],
+            Some(Self::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -378,7 +388,12 @@ impl SystemPackageProvider for SnapProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["snap", "refresh", name], Some(SnapProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["snap", "refresh", name],
+            Some(SnapProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -387,7 +402,12 @@ impl SystemPackageProvider for SnapProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["snap", "refresh"], Some(SnapProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["snap", "refresh"],
+            Some(SnapProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All snaps refreshed".into()])
         } else {

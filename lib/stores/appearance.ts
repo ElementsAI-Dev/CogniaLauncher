@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { AccentColor, ChartColorTheme, InterfaceRadius, InterfaceDensity } from '@/lib/theme/types';
+import type { AccentColor, ChartColorTheme, InterfaceRadius, InterfaceDensity, WindowEffect } from '@/lib/theme/types';
 import { removeBackgroundImage } from '@/lib/theme/background';
 
 export type { AccentColor } from '@/lib/theme/types';
 export type { ChartColorTheme } from '@/lib/theme/types';
 export type { InterfaceRadius } from '@/lib/theme/types';
 export type { InterfaceDensity } from '@/lib/theme/types';
+export type { WindowEffect } from '@/lib/theme/types';
 
 export type BackgroundFit = 'cover' | 'contain' | 'fill' | 'tile';
 
@@ -21,6 +22,7 @@ interface AppearanceState {
   backgroundOpacity: number;
   backgroundBlur: number;
   backgroundFit: BackgroundFit;
+  windowEffect: WindowEffect;
   
   // Actions
   setAccentColor: (color: AccentColor) => void;
@@ -32,6 +34,7 @@ interface AppearanceState {
   setBackgroundOpacity: (opacity: number) => void;
   setBackgroundBlur: (blur: number) => void;
   setBackgroundFit: (fit: BackgroundFit) => void;
+  setWindowEffect: (effect: WindowEffect) => void;
   clearBackground: () => void;
   reset: () => void;
 }
@@ -46,6 +49,7 @@ const defaultState = {
   backgroundOpacity: 20,
   backgroundBlur: 0,
   backgroundFit: 'cover' as BackgroundFit,
+  windowEffect: 'auto' as WindowEffect,
 };
 
 export const useAppearanceStore = create<AppearanceState>()(
@@ -62,6 +66,7 @@ export const useAppearanceStore = create<AppearanceState>()(
       setBackgroundOpacity: (backgroundOpacity) => set({ backgroundOpacity }),
       setBackgroundBlur: (backgroundBlur) => set({ backgroundBlur }),
       setBackgroundFit: (backgroundFit) => set({ backgroundFit }),
+      setWindowEffect: (windowEffect) => set({ windowEffect }),
       clearBackground: () => {
         removeBackgroundImage();
         set({
@@ -79,7 +84,7 @@ export const useAppearanceStore = create<AppearanceState>()(
     {
       name: 'cognia-appearance',
       storage: createJSONStorage(() => localStorage),
-      version: 6,
+      version: 7,
       migrate: (persistedState, version) => {
         const state = persistedState as Record<string, unknown>;
         if (version < 2) {
@@ -121,6 +126,12 @@ export const useAppearanceStore = create<AppearanceState>()(
             state.backgroundFit = defaultState.backgroundFit;
           }
         }
+        if (version < 7) {
+          // v6 → v7: added window effect (native transparency)
+          if (!('windowEffect' in state)) {
+            state.windowEffect = defaultState.windowEffect;
+          }
+        }
         return state as unknown as AppearanceState;
       },
       partialize: (state) => ({
@@ -133,6 +144,7 @@ export const useAppearanceStore = create<AppearanceState>()(
         backgroundOpacity: state.backgroundOpacity,
         backgroundBlur: state.backgroundBlur,
         backgroundFit: state.backgroundFit,
+        windowEffect: state.windowEffect,
       }),
     }
   )

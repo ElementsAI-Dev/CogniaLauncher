@@ -12,7 +12,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Download, Loader2 } from 'lucide-react';
 import type { WslExportDialogProps } from '@/types/wsl';
 
@@ -24,17 +30,22 @@ export function WslExportDialog({
   t,
 }: WslExportDialogProps) {
   const [filePath, setFilePath] = useState('');
-  const [asVhd, setAsVhd] = useState(false);
+  const [format, setFormat] = useState<'tar' | 'tar.gz' | 'vhd'>('tar');
   const [exporting, setExporting] = useState(false);
+
+  const ext = format === 'vhd' ? 'vhdx' : format === 'tar.gz' ? 'tar.gz' : 'tar';
 
   const handleBrowse = async () => {
     try {
       const { save } = await import('@tauri-apps/plugin-dialog');
+      const filters = format === 'vhd'
+        ? [{ name: 'VHD', extensions: ['vhdx'] }]
+        : format === 'tar.gz'
+          ? [{ name: 'Compressed Tar', extensions: ['tar.gz', 'tgz'] }]
+          : [{ name: 'Tar Archive', extensions: ['tar'] }];
       const selected = await save({
-        defaultPath: `${distroName}.${asVhd ? 'vhdx' : 'tar'}`,
-        filters: asVhd
-          ? [{ name: 'VHD', extensions: ['vhdx'] }]
-          : [{ name: 'Tar Archive', extensions: ['tar'] }],
+        defaultPath: `${distroName}.${ext}`,
+        filters,
       });
       if (selected) {
         setFilePath(selected);
@@ -48,10 +59,10 @@ export function WslExportDialog({
     if (!filePath.trim()) return;
     setExporting(true);
     try {
-      await onExport(distroName, filePath.trim(), asVhd);
+      await onExport(distroName, filePath.trim(), format === 'vhd');
       onOpenChange(false);
       setFilePath('');
-      setAsVhd(false);
+      setFormat('tar');
     } catch {
       // Error handled by parent
     } finally {
@@ -72,13 +83,17 @@ export function WslExportDialog({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>{t('wsl.exportAsVhd')}</Label>
-            <div className="flex items-center gap-3">
-              <Switch checked={asVhd} onCheckedChange={setAsVhd} />
-              <span className="text-sm text-muted-foreground">
-                {asVhd ? '.vhdx' : '.tar'}
-              </span>
-            </div>
+            <Label>{t('wsl.exportFormat')}</Label>
+            <Select value={format} onValueChange={(v) => setFormat(v as 'tar' | 'tar.gz' | 'vhd')}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tar">TAR (.tar)</SelectItem>
+                <SelectItem value="tar.gz">TAR + GZip (.tar.gz)</SelectItem>
+                <SelectItem value="vhd">VHD (.vhdx)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -88,7 +103,7 @@ export function WslExportDialog({
             <div className="flex gap-2">
               <Input
                 id="wsl-export-path"
-                placeholder={`C:\\Backup\\${distroName}.${asVhd ? 'vhdx' : 'tar'}`}
+                placeholder={`C:\\Backup\\${distroName}.${ext}`}
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
                 className="flex-1"

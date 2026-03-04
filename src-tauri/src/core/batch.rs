@@ -896,9 +896,9 @@ impl PackageSpec {
                 .nth(1)
                 .map(|c| c.is_ascii_digit())
                 .unwrap_or(false)
-            {
-                return true;
-            }
+        {
+            return true;
+        }
 
         false
     }
@@ -1209,7 +1209,9 @@ mod tests {
 
     #[test]
     fn test_is_recoverable_error_timeout() {
-        assert!(BatchManager::is_recoverable_error("Connection timeout occurred"));
+        assert!(BatchManager::is_recoverable_error(
+            "Connection timeout occurred"
+        ));
     }
 
     #[test]
@@ -1224,7 +1226,9 @@ mod tests {
 
     #[test]
     fn test_is_recoverable_error_temporary() {
-        assert!(BatchManager::is_recoverable_error("Temporary failure in name resolution"));
+        assert!(BatchManager::is_recoverable_error(
+            "Temporary failure in name resolution"
+        ));
     }
 
     #[test]
@@ -1239,12 +1243,16 @@ mod tests {
 
     #[test]
     fn test_is_recoverable_error_http_503() {
-        assert!(BatchManager::is_recoverable_error("HTTP 503 Service Unavailable"));
+        assert!(BatchManager::is_recoverable_error(
+            "HTTP 503 Service Unavailable"
+        ));
     }
 
     #[test]
     fn test_is_recoverable_error_http_504() {
-        assert!(BatchManager::is_recoverable_error("HTTP 504 Gateway Timeout"));
+        assert!(BatchManager::is_recoverable_error(
+            "HTTP 504 Gateway Timeout"
+        ));
     }
 
     #[test]

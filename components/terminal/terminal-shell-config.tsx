@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -84,7 +85,7 @@ export function TerminalShellConfig({
   const handleCopyContent = async () => {
     if (configContent == null) return;
     try {
-      await navigator.clipboard.writeText(configContent);
+      await writeClipboard(configContent);
       toast.success(t('terminal.configCopied'));
     } catch {
       toast.error(t('terminal.configCopyFailed'));

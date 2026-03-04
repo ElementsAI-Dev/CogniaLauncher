@@ -308,9 +308,7 @@ fn copy_dir_recursive<'a>(
     Box::pin(async move {
         fs::create_dir_all(dst).await?;
 
-        let mut entries = tokio::fs::read_dir(src)
-            .await
-            .map_err(CogniaError::Io)?;
+        let mut entries = tokio::fs::read_dir(src).await.map_err(CogniaError::Io)?;
 
         while let Some(entry) = entries.next_entry().await.map_err(CogniaError::Io)? {
             let src_path = entry.path();
@@ -549,9 +547,15 @@ mod tests {
         tokio::fs::create_dir_all(base.join("sub1")).await.unwrap();
         tokio::fs::create_dir_all(base.join("sub2")).await.unwrap();
         tokio::fs::write(base.join("a.txt"), b"a").await.unwrap();
-        tokio::fs::write(base.join("sub1").join("b.txt"), b"b").await.unwrap();
-        tokio::fs::write(base.join("sub2").join("c.txt"), b"c").await.unwrap();
-        tokio::fs::write(base.join("sub2").join("d.txt"), b"d").await.unwrap();
+        tokio::fs::write(base.join("sub1").join("b.txt"), b"b")
+            .await
+            .unwrap();
+        tokio::fs::write(base.join("sub2").join("c.txt"), b"c")
+            .await
+            .unwrap();
+        tokio::fs::write(base.join("sub2").join("d.txt"), b"d")
+            .await
+            .unwrap();
 
         let count = count_files_recursive(&base).await;
         assert_eq!(count, 4);
@@ -572,8 +576,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let base = dir.path().join("size_test");
         tokio::fs::create_dir_all(&base).await.unwrap();
-        tokio::fs::write(base.join("f1.txt"), b"hello").await.unwrap();
-        tokio::fs::write(base.join("f2.txt"), b"world!").await.unwrap();
+        tokio::fs::write(base.join("f1.txt"), b"hello")
+            .await
+            .unwrap();
+        tokio::fs::write(base.join("f2.txt"), b"world!")
+            .await
+            .unwrap();
 
         let size = dir_size(&base).await;
         assert_eq!(size, 11); // 5 + 6
@@ -607,7 +615,9 @@ mod tests {
         let dst = dir.path().join("valid_dst");
 
         tokio::fs::create_dir_all(&src).await.unwrap();
-        tokio::fs::write(src.join("data.bin"), b"some data").await.unwrap();
+        tokio::fs::write(src.join("data.bin"), b"some data")
+            .await
+            .unwrap();
 
         let result = validate_migration(&src, &dst).await.unwrap();
         assert!(result.is_valid);
@@ -637,14 +647,22 @@ mod tests {
         let src = dir.path().join("nested_src");
         let dst = dir.path().join("nested_dst");
 
-        tokio::fs::create_dir_all(src.join("level1").join("level2")).await.unwrap();
-        tokio::fs::write(src.join("root.txt"), b"root").await.unwrap();
-        tokio::fs::write(src.join("level1").join("mid.txt"), b"mid").await.unwrap();
+        tokio::fs::create_dir_all(src.join("level1").join("level2"))
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("root.txt"), b"root")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("level1").join("mid.txt"), b"mid")
+            .await
+            .unwrap();
         tokio::fs::write(src.join("level1").join("level2").join("deep.txt"), b"deep")
             .await
             .unwrap();
 
-        let result = migrate_cache(&src, &dst, MigrationMode::Move).await.unwrap();
+        let result = migrate_cache(&src, &dst, MigrationMode::Move)
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.files_count, 3);
         assert!(dst.join("root.txt").exists());
@@ -660,7 +678,9 @@ mod tests {
 
         tokio::fs::create_dir_all(&src).await.unwrap();
 
-        let result = migrate_cache(&src, &dst, MigrationMode::Move).await.unwrap();
+        let result = migrate_cache(&src, &dst, MigrationMode::Move)
+            .await
+            .unwrap();
         assert!(result.success);
         assert_eq!(result.files_count, 0);
         assert_eq!(result.bytes_migrated, 0);

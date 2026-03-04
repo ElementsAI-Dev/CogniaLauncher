@@ -2,11 +2,7 @@
 
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-
-export interface ArchiveFormat {
-  value: string;
-  label: string;
-}
+import type { ArchiveFormat } from "@/types/downloads";
 
 interface ArchiveFormatSelectorProps {
   format: string;

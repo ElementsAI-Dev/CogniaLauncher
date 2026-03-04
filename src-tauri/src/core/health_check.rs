@@ -85,6 +85,8 @@ pub struct EnvironmentHealthResult {
     pub status: HealthStatus,
     pub issues: Vec<HealthIssue>,
     pub suggestions: Vec<String>,
+    pub current_version: Option<String>,
+    pub installed_count: Option<usize>,
     pub checked_at: String,
 }
 
@@ -96,6 +98,8 @@ impl EnvironmentHealthResult {
             status: HealthStatus::Unknown,
             issues: Vec::new(),
             suggestions: Vec::new(),
+            current_version: None,
+            installed_count: None,
             checked_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -126,7 +130,9 @@ impl EnvironmentHealthResult {
     }
 
     pub fn finalize(&mut self) {
-        if self.issues.is_empty() {
+        // If no Warning/Error/Critical issues were added, status is still Unknown —
+        // treat that as Healthy (Info-only issues don't degrade health)
+        if self.status == HealthStatus::Unknown {
             self.status = HealthStatus::Healthy;
         }
     }
@@ -175,7 +181,7 @@ impl PackageManagerHealthResult {
     }
 
     pub fn finalize(&mut self) {
-        if self.issues.is_empty() {
+        if self.status == HealthStatus::Unknown {
             self.status = HealthStatus::Healthy;
         }
     }
@@ -188,6 +194,7 @@ pub struct SystemHealthResult {
     pub environments: Vec<EnvironmentHealthResult>,
     pub package_managers: Vec<PackageManagerHealthResult>,
     pub system_issues: Vec<HealthIssue>,
+    pub skipped_providers: Vec<String>,
     pub checked_at: String,
 }
 
@@ -198,6 +205,7 @@ impl SystemHealthResult {
             environments: Vec::new(),
             package_managers: Vec::new(),
             system_issues: Vec::new(),
+            skipped_providers: Vec::new(),
             checked_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -300,8 +308,8 @@ impl HealthCheckManager {
         });
         self.check_system_health(&mut result).await;
 
-        // Phase 2: Environment providers — parallel with timeout
-        let env_entries: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
+        // Phase 2: Environment providers — pre-filter by availability, then parallel health check
+        let all_env_entries: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
             let registry = self.registry.read().await;
             registry
                 .list_environment_providers()
@@ -313,6 +321,16 @@ impl HealthCheckManager {
                 })
                 .collect()
         };
+
+        // Pre-filter: only check providers that are actually installed
+        let mut env_entries = Vec::new();
+        for (id, provider) in all_env_entries {
+            if provider.is_available().await {
+                env_entries.push((id, provider));
+            } else {
+                result.skipped_providers.push(id);
+            }
+        }
 
         let total_env = env_entries.len();
         let mut env_futures = Vec::with_capacity(total_env);
@@ -353,8 +371,8 @@ impl HealthCheckManager {
             });
         }
 
-        // Phase 3: Package managers — parallel with timeout
-        let pm_entries: Vec<(String, Arc<dyn Provider>)> = {
+        // Phase 3: Package managers — pre-filter by availability, then parallel health check
+        let all_pm_entries: Vec<(String, Arc<dyn Provider>)> = {
             let registry = self.registry.read().await;
             let mut provider_ids = registry.list_system_package_provider_ids();
             provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
@@ -366,6 +384,17 @@ impl HealthCheckManager {
                 .filter_map(|id| registry.get(&id).map(|p| (id, p)))
                 .collect()
         };
+
+        // Pre-filter: only check providers that are actually available
+        // (github/gitlab are API providers and always "available" for checking)
+        let mut pm_entries = Vec::new();
+        for (id, provider) in all_pm_entries {
+            if id == "github" || id == "gitlab" || provider.is_available().await {
+                pm_entries.push((id, provider));
+            } else {
+                result.skipped_providers.push(id);
+            }
+        }
 
         let total_pm = pm_entries.len();
         let mut pm_futures = Vec::with_capacity(total_pm);
@@ -444,29 +473,49 @@ impl HealthCheckManager {
         }
     }
 
-    /// Run health check for all package managers
+    /// Run health check for all package managers (parallel with timeout)
     pub async fn check_package_managers(&self) -> CogniaResult<Vec<PackageManagerHealthResult>> {
-        let registry = self.registry.read().await;
-        let mut provider_ids = registry.list_system_package_provider_ids();
-        // Bulk "package managers" health is for non-environment providers (environment providers
-        // have their own health section).
-        provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
-        provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
-        provider_ids.sort();
-        provider_ids.dedup();
-        let mut results = Vec::new();
+        let providers: Vec<Arc<dyn Provider>> = {
+            let registry = self.registry.read().await;
+            let mut provider_ids = registry.list_system_package_provider_ids();
+            // Bulk "package managers" health is for non-environment providers (environment providers
+            // have their own health section).
+            provider_ids.retain(|id| registry.get_environment_provider(id).is_none());
+            provider_ids.extend(["github".to_string(), "gitlab".to_string()]);
+            provider_ids.sort();
+            provider_ids.dedup();
+            provider_ids
+                .into_iter()
+                .filter_map(|id| registry.get(&id))
+                .collect()
+        };
 
-        let providers: Vec<Arc<dyn Provider>> = provider_ids
-            .into_iter()
-            .filter_map(|id| registry.get(&id))
-            .collect();
-        drop(registry);
-
+        let mut futures = Vec::with_capacity(providers.len());
         for provider in providers {
-            let pm_result = self.check_package_manager_health(&*provider).await;
-            results.push(pm_result);
+            let registry = self.registry.clone();
+            futures.push(tokio::spawn(async move {
+                let mgr = HealthCheckManager::new(registry);
+                tokio::time::timeout(
+                    Duration::from_secs(15),
+                    mgr.check_package_manager_health(&*provider),
+                )
+                .await
+                .unwrap_or_else(|_| {
+                    let mut r =
+                        PackageManagerHealthResult::new(provider.id(), provider.display_name());
+                    r.add_issue(HealthIssue::new(
+                        Severity::Warning,
+                        IssueCategory::Other,
+                        format!("{} health check timed out", provider.display_name()),
+                    ));
+                    r.finalize();
+                    r
+                })
+            }));
         }
 
+        let join_results = futures::future::join_all(futures).await;
+        let results = join_results.into_iter().filter_map(|r| r.ok()).collect();
         Ok(results)
     }
 
@@ -559,9 +608,7 @@ impl HealthCheckManager {
                                 provider.display_name()
                             ),
                         )
-                        .with_details(
-                            "Some system prerequisites may be missing or misconfigured",
-                        ),
+                        .with_details("Some system prerequisites may be missing or misconfigured"),
                     );
                 }
                 Err(e) => {
@@ -569,10 +616,7 @@ impl HealthCheckManager {
                         HealthIssue::new(
                             Severity::Warning,
                             IssueCategory::ConfigError,
-                            format!(
-                                "{} requirements check failed",
-                                provider.display_name()
-                            ),
+                            format!("{} requirements check failed", provider.display_name()),
                         )
                         .with_details(format!("{}", e)),
                     );
@@ -582,8 +626,55 @@ impl HealthCheckManager {
             result.install_instructions = Some(self.get_install_instructions(provider.id()));
         }
 
+        // Check 4: Registry connectivity (only for available providers)
+        if is_available {
+            if let Some(issue) = self.check_registry_connectivity(provider.id()).await {
+                result.add_issue(issue);
+            }
+        }
+
         result.finalize();
         result
+    }
+
+    /// Check if the package registry for a provider is reachable
+    async fn check_registry_connectivity(&self, provider_id: &str) -> Option<HealthIssue> {
+        let url = match provider_id {
+            "npm" | "pnpm" | "yarn" | "bun" => "https://registry.npmjs.org/-/ping",
+            "pip" | "uv" | "poetry" => "https://pypi.org/simple/",
+            "cargo" => "https://crates.io/api/v1/crates?per_page=1",
+            "gem" | "bundler" => "https://rubygems.org/api/v1/versions/rake/latest.json",
+            "composer" => "https://repo.packagist.org/packages.json",
+            "dotnet" => "https://api.nuget.org/v3/index.json",
+            _ => return None,
+        };
+
+        let client = crate::platform::proxy::get_shared_client();
+        match client.get(url).timeout(Duration::from_secs(5)).send().await {
+            Ok(resp) if resp.status().is_success() => None,
+            Ok(resp) => Some(
+                HealthIssue::new(
+                    Severity::Warning,
+                    IssueCategory::NetworkError,
+                    format!("Package registry returned HTTP {}", resp.status()),
+                )
+                .with_details(format!(
+                    "The {} package registry at {} may be experiencing issues",
+                    provider_id, url
+                )),
+            ),
+            Err(e) => {
+                let msg = if e.is_timeout() {
+                    "Package registry connection timed out"
+                } else {
+                    "Cannot reach package registry"
+                };
+                Some(
+                    HealthIssue::new(Severity::Warning, IssueCategory::NetworkError, msg)
+                        .with_details(format!("Failed to reach {}: {}", url, e)),
+                )
+            }
+        }
     }
 
     async fn check_api_provider_health(
@@ -629,7 +720,12 @@ impl HealthCheckManager {
 
         let client = crate::platform::proxy::get_shared_client();
 
-        match client.get(url).timeout(Duration::from_secs(10)).send().await {
+        match client
+            .get(url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
             Ok(resp) if resp.status().is_success() => {
                 // OK
             }
@@ -723,7 +819,10 @@ impl HealthCheckManager {
                 HealthIssue::new(
                     Severity::Error,
                     IssueCategory::Other,
-                    format!("Critically low disk space: {} available", space.available_human()),
+                    format!(
+                        "Critically low disk space: {} available",
+                        space.available_human()
+                    ),
                 )
                 .with_details(
                     "Package installations and version management may fail. Free up disk space.",
@@ -819,7 +918,7 @@ impl HealthCheckManager {
         if !provider.is_available().await {
             result.add_issue(
                 HealthIssue::new(
-                    Severity::Error,
+                    Severity::Info,
                     IssueCategory::ProviderNotFound,
                     format!(
                         "{} is not available or not installed",
@@ -846,7 +945,7 @@ impl HealthCheckManager {
         // Check 2: Current version
         match provider.get_current_version().await {
             Ok(Some(version)) => {
-                result.add_suggestion(format!("Current {} version: {}", env_type, version));
+                result.current_version = Some(version);
             }
             Ok(None) => {
                 result.add_issue(
@@ -883,16 +982,7 @@ impl HealthCheckManager {
                         .with_details("Install at least one version to use this environment"),
                     );
                 } else {
-                    result.add_suggestion(format!(
-                        "{} versions installed: {}",
-                        versions.len(),
-                        versions
-                            .iter()
-                            .take(3)
-                            .map(|v| v.version.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
+                    result.installed_count = Some(versions.len());
                 }
             }
             Err(e) => {
@@ -975,7 +1065,16 @@ impl HealthCheckManager {
     }
 
     /// Check shell configuration for missing provider init lines
+    /// Skipped on Windows — all init patterns are Unix shell-specific (source, eval).
+    /// Windows tools set PATH via installers/registry, not shell config sourcing.
     async fn check_shell_config(&self) -> Option<Vec<HealthIssue>> {
+        #[cfg(windows)]
+        {
+            return None;
+        }
+
+        #[cfg(not(windows))]
+        {
         use crate::platform::env::ShellType;
 
         let mut issues = Vec::new();
@@ -986,20 +1085,21 @@ impl HealthCheckManager {
             return None;
         }
 
-        // Find the first existing shell config file and read its content
-        let mut content = None;
+        // Read ALL existing shell config files and concatenate their contents
+        let mut all_content = String::new();
         for path in &config_files {
             if path.exists() {
                 if let Ok(c) = crate::core::terminal::read_shell_config(path).await {
-                    content = Some((path.clone(), c));
-                    break;
+                    all_content.push_str(&c);
+                    all_content.push('\n');
                 }
             }
         }
 
-        let Some((_config_path, content)) = content else {
+        if all_content.is_empty() {
             return None;
-        };
+        }
+        let content = all_content;
 
         // Collect providers then drop lock before async is_available() calls
         let env_providers: Vec<(String, Arc<dyn EnvironmentProvider>)> = {
@@ -1050,9 +1150,11 @@ impl HealthCheckManager {
         } else {
             Some(issues)
         }
+        } // #[cfg(not(windows))]
     }
 
     /// Key string to look for in shell config to verify provider init
+    #[cfg(not(windows))]
     fn get_shell_init_pattern(provider_id: &str) -> String {
         match provider_id {
             "fnm" => "fnm env".into(),
@@ -1063,8 +1165,8 @@ impl HealthCheckManager {
             "goenv" => "goenv init".into(),
             "rustup" => "cargo/env".into(),
             "rbenv" => "rbenv init".into(),
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy"
-            | "sdkman-gradle" | "sdkman-maven" => "sdkman-init.sh".into(),
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle"
+            | "sdkman-maven" => "sdkman-init.sh".into(),
             "phpbrew" => "phpbrew/bashrc".into(),
             _ => String::new(),
         }
@@ -1090,16 +1192,18 @@ impl HealthCheckManager {
             return;
         }
 
-        // Use path-segment matching instead of naive substring to avoid false positives
-        // e.g. ".fnm" should match "/home/user/.fnm/..." but not "/home/user/my-fnm-project/"
+        // Match by path segment to avoid false positives
+        // e.g. pattern "fnm" matches segments "fnm" or ".fnm" but not "my-fnm-tool"
         for pattern in &expected_patterns {
             let pat = pattern.to_lowercase();
             let found = path_dirs.iter().any(|dir| {
-                dir.contains(&format!("/.{}/", pat))
-                    || dir.contains(&format!("/{}/", pat))
-                    || dir.ends_with(&format!("/.{}", pat))
-                    || dir.ends_with(&format!("/{}", pat))
-                    || dir.contains(&format!(".{}/", pat))
+                // For multi-segment patterns like ".local/share/uv", check substring
+                if pat.contains('/') {
+                    return dir.contains(&pat);
+                }
+                // For single-segment patterns, match exact segment
+                dir.split('/')
+                    .any(|segment| segment == pat || segment == format!(".{}", pat))
             });
             if !found {
                 result.add_issue(
@@ -1263,7 +1367,8 @@ impl HealthCheckManager {
             "goenv" => vec!["goenv".to_string(), ".goenv".to_string()],
             "rustup" => vec![".cargo".to_string(), ".rustup".to_string()],
             "rbenv" => vec!["rbenv".to_string(), ".rbenv".to_string()],
-            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle" | "sdkman-maven" => {
+            "sdkman" | "sdkman-kotlin" | "sdkman-scala" | "sdkman-groovy" | "sdkman-gradle"
+            | "sdkman-maven" => {
                 vec!["sdkman".to_string(), ".sdkman".to_string()]
             }
             "adoptium" => vec![".CogniaLauncher".to_string(), "jdks".to_string()],
@@ -1443,6 +1548,7 @@ mod tests {
         assert!(result.environments.is_empty());
         assert!(result.package_managers.is_empty());
         assert!(result.system_issues.is_empty());
+        assert!(result.skipped_providers.is_empty());
     }
 
     #[test]
@@ -1487,6 +1593,8 @@ mod tests {
         assert!(matches!(result.status, HealthStatus::Unknown));
         assert!(result.provider_id.is_none());
         assert!(result.issues.is_empty());
+        assert!(result.current_version.is_none());
+        assert!(result.installed_count.is_none());
     }
 
     #[test]
@@ -1636,5 +1744,75 @@ mod tests {
         let cmd = mgr.get_shell_setup_command("adoptium");
         assert!(cmd.contains("JAVA_HOME"));
         assert!(cmd.contains(".CogniaLauncher/jdks"));
+    }
+
+    // ── New fields and behaviors ──
+
+    #[test]
+    fn test_system_health_result_skipped_providers() {
+        let mut result = SystemHealthResult::new();
+        result.skipped_providers.push("pyenv".to_string());
+        result.skipped_providers.push("rbenv".to_string());
+
+        assert_eq!(result.skipped_providers.len(), 2);
+        assert!(result.skipped_providers.contains(&"pyenv".to_string()));
+        // Skipping providers should not affect overall status
+        assert!(matches!(result.overall_status, HealthStatus::Healthy));
+    }
+
+    #[test]
+    fn test_environment_health_result_current_version() {
+        let mut result = EnvironmentHealthResult::new("node");
+        result.current_version = Some("20.11.0".to_string());
+        result.installed_count = Some(3);
+
+        assert_eq!(result.current_version, Some("20.11.0".to_string()));
+        assert_eq!(result.installed_count, Some(3));
+    }
+
+    #[test]
+    fn test_environment_finalize_healthy_with_info_issues() {
+        let mut result = EnvironmentHealthResult::new("node");
+        result.add_issue(HealthIssue::new(
+            Severity::Info,
+            IssueCategory::ProviderNotFound,
+            "Provider not installed",
+        ));
+        result.finalize();
+
+        // Info-only issues should still result in Healthy status
+        assert!(matches!(result.status, HealthStatus::Healthy));
+        assert_eq!(result.issues.len(), 1);
+    }
+
+    #[test]
+    fn test_environment_finalize_warning_not_overridden_by_info() {
+        let mut result = EnvironmentHealthResult::new("python");
+        result.add_issue(HealthIssue::new(
+            Severity::Warning,
+            IssueCategory::ConfigError,
+            "No active version",
+        ));
+        result.add_issue(HealthIssue::new(
+            Severity::Info,
+            IssueCategory::Other,
+            "Info note",
+        ));
+        result.finalize();
+
+        assert!(matches!(result.status, HealthStatus::Warning));
+        assert_eq!(result.issues.len(), 2);
+    }
+
+    #[test]
+    fn test_check_registry_connectivity_returns_none_for_unknown() {
+        let mgr = make_test_manager();
+        // Unknown provider should return None (no URL to check)
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = rt.block_on(mgr.check_registry_connectivity("unknown_provider"));
+        assert!(result.is_none());
     }
 }

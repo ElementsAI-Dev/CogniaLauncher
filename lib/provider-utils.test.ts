@@ -1,4 +1,4 @@
-import { getStatusColor, getAlertVariant, getActionColor } from './provider-utils';
+import { getStatusColor, getAlertVariant, getActionColor, getSeverityIcon, getStatusTextColor, getStatusIcon } from './provider-utils';
 
 describe('getStatusColor', () => {
   it('returns green classes for healthy', () => {
@@ -68,5 +68,72 @@ describe('getActionColor', () => {
   it('is case-insensitive', () => {
     expect(getActionColor('Install')).toContain('green');
     expect(getActionColor('UNINSTALL')).toContain('red');
+  });
+});
+
+describe('getSeverityIcon', () => {
+  it('returns AlertCircle for critical', () => {
+    const icon = getSeverityIcon('critical');
+    expect(icon.displayName).toBe('CircleAlert');
+  });
+
+  it('returns AlertCircle for error', () => {
+    const icon = getSeverityIcon('error');
+    expect(icon.displayName).toBe('CircleAlert');
+  });
+
+  it('returns AlertTriangle for warning', () => {
+    const icon = getSeverityIcon('warning');
+    expect(icon.displayName).toBe('TriangleAlert');
+  });
+
+  it('returns Info for info', () => {
+    const icon = getSeverityIcon('info');
+    expect(icon.displayName).toBe('Info');
+  });
+
+  it('returns Info for unknown severity', () => {
+    const icon = getSeverityIcon('unknown' as never);
+    expect(icon.displayName).toBe('Info');
+  });
+});
+
+describe('getStatusTextColor', () => {
+  it('returns green for healthy', () => {
+    expect(getStatusTextColor('healthy')).toContain('green');
+  });
+
+  it('returns yellow for warning', () => {
+    expect(getStatusTextColor('warning')).toContain('yellow');
+  });
+
+  it('returns red for error', () => {
+    expect(getStatusTextColor('error')).toContain('red');
+  });
+
+  it('returns gray for unknown', () => {
+    expect(getStatusTextColor('unknown')).toContain('gray');
+  });
+});
+
+describe('getStatusIcon', () => {
+  it('returns CheckCircle2 for healthy', () => {
+    const icon = getStatusIcon('healthy');
+    expect(icon.displayName).toBe('CircleCheck');
+  });
+
+  it('returns AlertTriangle for warning', () => {
+    const icon = getStatusIcon('warning');
+    expect(icon.displayName).toBe('TriangleAlert');
+  });
+
+  it('returns AlertCircle for error', () => {
+    const icon = getStatusIcon('error');
+    expect(icon.displayName).toBe('CircleAlert');
+  });
+
+  it('returns HelpCircle for unknown', () => {
+    const icon = getStatusIcon('unknown');
+    expect(icon.displayName).toBe('CircleQuestionMark');
   });
 });

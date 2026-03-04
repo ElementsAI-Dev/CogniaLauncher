@@ -649,8 +649,7 @@ pub(crate) fn is_crate_in_installed_output(output: &str, name: &str) -> bool {
         if l.starts_with(' ') || l.is_empty() {
             return false;
         }
-        l.split_whitespace()
-            .next() == Some(name)
+        l.split_whitespace().next() == Some(name)
     })
 }
 

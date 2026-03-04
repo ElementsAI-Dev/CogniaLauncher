@@ -76,6 +76,9 @@ export interface UseWslReturn {
   openInExplorer: (name: string) => Promise<void>;
   openInTerminal: (name: string) => Promise<void>;
   cloneDistro: (name: string, newName: string, location: string) => Promise<string>;
+  batchLaunch: (names: string[]) => Promise<[string, boolean, string][]>;
+  batchTerminate: (names: string[]) => Promise<[string, boolean, string][]>;
+  healthCheck: (distro: string) => Promise<{ status: string; issues: { severity: string; category: string; message: string }[]; checkedAt: string } | null>;
   autoRefreshEnabled: boolean;
   setAutoRefresh: (enabled: boolean) => void;
 }
@@ -662,6 +665,41 @@ export function useWsl(): UseWslReturn {
     }
   }, [refreshDistros]);
 
+  const batchLaunch = useCallback(async (names: string[]): Promise<[string, boolean, string][]> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    try {
+      setError(null);
+      const results = await tauri.wslBatchLaunch(names);
+      await refreshDistros();
+      return results;
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
+
+  const batchTerminate = useCallback(async (names: string[]): Promise<[string, boolean, string][]> => {
+    if (!tauri.isTauri()) throw new Error('Not in Tauri environment');
+    try {
+      setError(null);
+      const results = await tauri.wslBatchTerminate(names);
+      await refreshDistros();
+      return results;
+    } catch (err) {
+      setError(String(err));
+      throw err;
+    }
+  }, [refreshDistros]);
+
+  const healthCheck = useCallback(async (distro: string) => {
+    if (!tauri.isTauri()) return null;
+    try {
+      return await tauri.wslDistroHealthCheck(distro);
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     available,
     distros,
@@ -717,6 +755,9 @@ export function useWsl(): UseWslReturn {
     openInExplorer,
     openInTerminal,
     cloneDistro,
+    batchLaunch,
+    batchTerminate,
+    healthCheck,
     autoRefreshEnabled,
     setAutoRefresh,
   };

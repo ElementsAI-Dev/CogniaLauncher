@@ -12,10 +12,7 @@ const USER_AGENT: &str = "CogniaLauncher/0.1.0";
 ///
 /// Supports http://, https://, and socks5:// URL schemes.
 /// Returns `None` if the URL is empty or invalid.
-pub fn build_proxy(
-    proxy_url: Option<&str>,
-    no_proxy: Option<&str>,
-) -> Option<reqwest::Proxy> {
+pub fn build_proxy(proxy_url: Option<&str>, no_proxy: Option<&str>) -> Option<reqwest::Proxy> {
     let url = proxy_url?.trim();
     if url.is_empty() {
         return None;
@@ -64,7 +61,10 @@ pub fn build_client(settings: &Settings) -> Client {
     }
 
     builder.build().unwrap_or_else(|e| {
-        warn!("Failed to build HTTP client with settings, using default: {}", e);
+        warn!(
+            "Failed to build HTTP client with settings, using default: {}",
+            e
+        );
         Client::new()
     })
 }
@@ -75,10 +75,13 @@ pub fn build_client(settings: &Settings) -> Client {
 /// If the shared client has not been initialized yet, returns a default client.
 pub fn get_shared_client() -> Client {
     match SHARED_CLIENT.get() {
-        Some(lock) => lock.read().unwrap_or_else(|e| {
-            warn!("Shared client lock poisoned, returning inner: {}", e);
-            e.into_inner()
-        }).clone(),
+        Some(lock) => lock
+            .read()
+            .unwrap_or_else(|e| {
+                warn!("Shared client lock poisoned, returning inner: {}", e);
+                e.into_inner()
+            })
+            .clone(),
         None => {
             debug!("Shared client not yet initialized, returning default");
             Client::builder()
@@ -96,17 +99,15 @@ pub fn get_shared_client() -> Client {
 pub fn rebuild_shared_client(settings: &Settings) {
     let client = build_client(settings);
     match SHARED_CLIENT.get() {
-        Some(lock) => {
-            match lock.write() {
-                Ok(mut guard) => {
-                    *guard = client;
-                    info!("Shared HTTP client rebuilt with updated settings");
-                }
-                Err(e) => {
-                    warn!("Failed to acquire write lock for shared client: {}", e);
-                }
+        Some(lock) => match lock.write() {
+            Ok(mut guard) => {
+                *guard = client;
+                info!("Shared HTTP client rebuilt with updated settings");
             }
-        }
+            Err(e) => {
+                warn!("Failed to acquire write lock for shared client: {}", e);
+            }
+        },
         None => {
             let _ = SHARED_CLIENT.set(RwLock::new(client));
             info!("Shared HTTP client initialized");
@@ -209,19 +210,13 @@ mod tests {
 
     #[test]
     fn test_build_proxy_with_empty_no_proxy() {
-        let proxy = build_proxy(
-            Some("http://proxy.example.com:8080"),
-            Some(""),
-        );
+        let proxy = build_proxy(Some("http://proxy.example.com:8080"), Some(""));
         assert!(proxy.is_some());
     }
 
     #[test]
     fn test_build_proxy_with_whitespace_no_proxy() {
-        let proxy = build_proxy(
-            Some("http://proxy.example.com:8080"),
-            Some("   "),
-        );
+        let proxy = build_proxy(Some("http://proxy.example.com:8080"), Some("   "));
         assert!(proxy.is_some());
     }
 }

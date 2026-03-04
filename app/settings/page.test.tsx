@@ -65,6 +65,11 @@ jest.mock('sonner', () => ({
   },
 }));
 
+jest.mock('@/lib/clipboard', () => ({
+  readClipboard: jest.fn().mockResolvedValue(''),
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockMessages = {
   en: {
     common: {
@@ -102,6 +107,11 @@ const mockMessages = {
       importSuccess: 'Settings imported successfully',
       importFailed: 'Failed to import settings',
       importInvalidFormat: 'Invalid settings file format',
+      importFromClipboard: 'Import from Clipboard',
+      importFromFile: 'Import from File',
+      exportToClipboard: 'Copy to Clipboard',
+      exportAsFile: 'Export as File',
+      clipboardEmpty: 'Clipboard is empty',
       general: 'General',
       generalDesc: 'General application settings',
       parallelDownloads: 'Parallel Downloads',
@@ -198,6 +208,19 @@ const mockMessages = {
       systemInfoDesc: 'Current system details',
       operatingSystem: 'Operating System',
       architecture: 'Architecture',
+      shortcuts: 'Keyboard Shortcuts',
+      shortcutsDesc: 'Configure global keyboard shortcuts that work system-wide',
+      shortcutsEnabled: 'Enable Global Shortcuts',
+      shortcutsEnabledDesc: 'Register system-wide shortcuts',
+      shortcutsToggleWindow: 'Toggle Window',
+      shortcutsToggleWindowDesc: 'Show or hide the main window',
+      shortcutsCommandPalette: 'Command Palette',
+      shortcutsCommandPaletteDesc: 'Open the command palette from anywhere',
+      shortcutsQuickSearch: 'Quick Search',
+      shortcutsQuickSearchDesc: 'Open package search from anywhere',
+      shortcutsRecording: 'Press keys...',
+      shortcutsReset: 'Reset to Default',
+      shortcutsDesktopOnly: 'Global shortcuts are only available in the desktop app',
     },
   },
   zh: {
@@ -350,7 +373,12 @@ describe('SettingsPage', () => {
       expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
     });
 
+    // Open the export dropdown, then click "Export as File"
     await userEvent.click(screen.getByRole('button', { name: /export/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Export as File')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Export as File'));
 
     expect(global.URL.createObjectURL).toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith('Settings exported successfully');
@@ -496,6 +524,66 @@ describe('SettingsPage', () => {
 
     await waitFor(() => {
       expect(mockUpdateConfigValue).not.toHaveBeenCalled();
+    });
+  });
+
+  it('renders import dropdown with file and clipboard options', async () => {
+    setupMocks();
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    // The Import button should be a dropdown trigger
+    const importBtn = screen.getByRole('button', { name: /Import/i });
+    expect(importBtn).toBeInTheDocument();
+
+    await userEvent.click(importBtn);
+    await waitFor(() => {
+      expect(screen.getByText('Import from File')).toBeInTheDocument();
+      expect(screen.getByText('Import from Clipboard')).toBeInTheDocument();
+    });
+  });
+
+  it('renders export dropdown with file and clipboard options', async () => {
+    setupMocks();
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    const exportBtn = screen.getByRole('button', { name: /Export/i });
+    expect(exportBtn).toBeInTheDocument();
+
+    await userEvent.click(exportBtn);
+    await waitFor(() => {
+      expect(screen.getByText('Export as File')).toBeInTheDocument();
+      expect(screen.getByText('Copy to Clipboard')).toBeInTheDocument();
+    });
+  });
+
+  it('shows error toast when importing from empty clipboard', async () => {
+    setupMocks();
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    clipboardMock.readClipboard.mockResolvedValueOnce('');
+
+    renderWithProviders(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /settings/i })).toBeInTheDocument();
+    });
+
+    const importBtn = screen.getByRole('button', { name: /Import/i });
+    await userEvent.click(importBtn);
+    await waitFor(() => {
+      expect(screen.getByText('Import from Clipboard')).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByText('Import from Clipboard'));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Clipboard is empty');
     });
   });
 });

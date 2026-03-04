@@ -103,7 +103,11 @@ impl Provider for AptProvider {
         }
     }
 
-    async fn search(&self, query: &str, options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(20);
         let out = self.run_apt(&["search", query]).await?;
         Ok(out
@@ -366,7 +370,12 @@ impl SystemPackageProvider for AptProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apt-get", "update"], Some(AptProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["apt-get", "update"],
+            Some(AptProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -389,7 +398,12 @@ impl SystemPackageProvider for AptProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["apt-get", "upgrade", "-y"], Some(AptProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["apt-get", "upgrade", "-y"],
+            Some(AptProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

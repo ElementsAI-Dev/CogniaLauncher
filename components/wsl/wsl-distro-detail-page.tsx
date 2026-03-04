@@ -43,6 +43,7 @@ import {
   WslDistroFilesystem,
   WslDistroNetwork,
   WslDistroServices,
+  WslDistroDocker,
 } from '@/components/wsl';
 import {
   RefreshCw,
@@ -63,6 +64,7 @@ import {
   Expand,
   HardDrive,
   Copy,
+  Container,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WslDistroDetailPageProps } from '@/types/wsl';
@@ -582,6 +584,10 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
             <Cog className="h-3.5 w-3.5" />
             {t('wsl.detail.tabServices')}
           </TabsTrigger>
+          <TabsTrigger value="docker" className="gap-1.5">
+            <Container className="h-3.5 w-3.5" />
+            {t('wsl.detail.tabDocker')}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -629,6 +635,15 @@ export function WslDistroDetailPage({ distroName }: WslDistroDetailPageProps) {
 
         <TabsContent value="services">
           <WslDistroServices
+            distroName={distroName}
+            isRunning={isRunning}
+            onExec={execCommand}
+            t={t}
+          />
+        </TabsContent>
+
+        <TabsContent value="docker">
+          <WslDistroDocker
             distroName={distroName}
             isRunning={isRunning}
             onExec={execCommand}

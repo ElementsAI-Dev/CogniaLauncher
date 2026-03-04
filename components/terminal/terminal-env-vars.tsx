@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +54,7 @@ export function TerminalEnvVars({
 
   const handleCopy = async (key: string, value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboard(value);
       toast.success(t('terminal.copyValue') || `Copied ${key}`);
     } catch {
       toast.error('Failed to copy');

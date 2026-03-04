@@ -55,11 +55,7 @@ pub async fn xmake_list_repos() -> CogniaResult<Vec<XmakeRepo>> {
 }
 
 #[tauri::command]
-pub async fn xmake_add_repo(
-    name: String,
-    url: String,
-    branch: Option<String>,
-) -> CogniaResult<()> {
+pub async fn xmake_add_repo(name: String, url: String, branch: Option<String>) -> CogniaResult<()> {
     let opts = make_opts();
     let mut args = vec!["add-repo", &name, &url];
     let branch_str;
@@ -147,10 +143,7 @@ pub async fn xmake_env_show(packages: Vec<String>) -> CogniaResult<HashMap<Strin
         }
         if let Some(eq_pos) = trimmed.find('=') {
             let key = trimmed[..eq_pos].trim().to_string();
-            let val = trimmed[eq_pos + 1..]
-                .trim()
-                .trim_matches('"')
-                .to_string();
+            let val = trimmed[eq_pos + 1..].trim().trim_matches('"').to_string();
             if !key.is_empty() {
                 env_vars.insert(key, val);
             }
@@ -185,10 +178,7 @@ pub async fn xmake_env_list() -> CogniaResult<Vec<String>> {
 }
 
 #[tauri::command]
-pub async fn xmake_env_bind(
-    name_or_packages: String,
-    command: String,
-) -> CogniaResult<String> {
+pub async fn xmake_env_bind(name_or_packages: String, command: String) -> CogniaResult<String> {
     let opts = make_long_opts();
     let out = process::execute(
         "xrepo",
@@ -209,8 +199,7 @@ pub async fn xmake_env_bind(
 #[tauri::command]
 pub async fn xmake_export_package(name: String, output_dir: String) -> CogniaResult<()> {
     let opts = make_long_opts();
-    let out =
-        process::execute("xrepo", &["export", "-o", &output_dir, &name], Some(opts)).await?;
+    let out = process::execute("xrepo", &["export", "-o", &output_dir, &name], Some(opts)).await?;
     if out.success {
         Ok(())
     } else {
@@ -230,10 +219,7 @@ pub async fn xmake_import_package(input_dir: String) -> CogniaResult<()> {
 }
 
 #[tauri::command]
-pub async fn xmake_download_source(
-    name: String,
-    output_dir: Option<String>,
-) -> CogniaResult<()> {
+pub async fn xmake_download_source(name: String, output_dir: Option<String>) -> CogniaResult<()> {
     let opts = make_long_opts();
     let mut args = vec!["download"];
     let output_dir_str;

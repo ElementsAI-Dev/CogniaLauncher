@@ -66,6 +66,7 @@ export const usePluginStore = create<PluginState>()(
       name: 'cognia-plugins',
       storage: createJSONStorage(() => localStorage),
       version: 2,
+      migrate: (persisted) => persisted as PluginState,
       partialize: (state) => ({
         installedPlugins: state.installedPlugins,
         pluginTools: state.pluginTools,

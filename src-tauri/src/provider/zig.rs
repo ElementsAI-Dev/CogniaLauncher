@@ -636,8 +636,7 @@ impl Provider for ZigProvider {
                 })
             })
             .map(|(version, path)| {
-                let installed_at =
-                    Self::dir_installed_at(&path).unwrap_or_default();
+                let installed_at = Self::dir_installed_at(&path).unwrap_or_default();
                 InstalledPackage {
                     name: format!("zig@{}", version),
                     version,
@@ -808,9 +807,7 @@ impl EnvironmentProvider for ZigProvider {
             for mise_name in &["mise.toml", ".mise.toml"] {
                 let mise_file = current.join(mise_name);
                 if mise_file.exists() {
-                    if let Ok(content) =
-                        crate::platform::fs::read_file_string(&mise_file).await
-                    {
+                    if let Ok(content) = crate::platform::fs::read_file_string(&mise_file).await {
                         if let Some(version) = Self::parse_mise_toml_zig_version(&content) {
                             return Ok(Some(VersionDetection {
                                 version,
@@ -1032,9 +1029,15 @@ mod tests {
         );
         // Must match one of the known platform keys
         let valid_keys = [
-            "x86_64-windows", "aarch64-windows", "x86-windows",
-            "x86_64-macos", "aarch64-macos",
-            "x86_64-linux", "aarch64-linux", "arm-linux", "x86-linux",
+            "x86_64-windows",
+            "aarch64-windows",
+            "x86-windows",
+            "x86_64-macos",
+            "aarch64-macos",
+            "x86_64-linux",
+            "aarch64-linux",
+            "arm-linux",
+            "x86-linux",
         ];
         assert!(
             valid_keys.contains(&key),
@@ -1292,7 +1295,10 @@ mod tests {
     fn test_versions_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let provider = provider_with_dir(tmp.path());
-        assert_eq!(provider.versions_dir().unwrap(), tmp.path().join("versions"));
+        assert_eq!(
+            provider.versions_dir().unwrap(),
+            tmp.path().join("versions")
+        );
     }
 
     #[test]
@@ -1471,7 +1477,10 @@ mod tests {
     fn test_get_install_instructions() {
         let provider = ZigProvider::new();
         let instructions = provider.get_install_instructions();
-        assert!(instructions.is_some(), "Install instructions should be available");
+        assert!(
+            instructions.is_some(),
+            "Install instructions should be available"
+        );
         let text = instructions.unwrap();
         assert!(!text.is_empty());
         assert!(
@@ -1481,11 +1490,20 @@ mod tests {
         );
         // Platform-specific check
         if cfg!(windows) {
-            assert!(text.contains("winget"), "Windows instructions should mention winget");
+            assert!(
+                text.contains("winget"),
+                "Windows instructions should mention winget"
+            );
         } else if cfg!(target_os = "macos") {
-            assert!(text.contains("brew"), "macOS instructions should mention brew");
+            assert!(
+                text.contains("brew"),
+                "macOS instructions should mention brew"
+            );
         } else {
-            assert!(text.contains("ziglang.org"), "Linux instructions should mention ziglang.org");
+            assert!(
+                text.contains("ziglang.org"),
+                "Linux instructions should mention ziglang.org"
+            );
         }
     }
 
@@ -1684,7 +1702,11 @@ mod tests {
             .await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("not installed"), "Error should mention not installed: {}", err);
+        assert!(
+            err.contains("not installed"),
+            "Error should mention not installed: {}",
+            err
+        );
     }
 
     #[tokio::test]
@@ -1717,7 +1739,10 @@ mod tests {
             })
             .await
             .unwrap();
-        assert!(!version_path.exists(), "Version directory should be removed");
+        assert!(
+            !version_path.exists(),
+            "Version directory should be removed"
+        );
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -1740,7 +1765,11 @@ mod tests {
     #[tokio::test]
     async fn test_detect_version_from_tool_versions() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join(".tool-versions"), "zig 0.12.0\nnode 20.0.0\n").unwrap();
+        fs::write(
+            tmp.path().join(".tool-versions"),
+            "zig 0.12.0\nnode 20.0.0\n",
+        )
+        .unwrap();
 
         let provider = provider_with_dir(tmp.path());
         let detection = provider.detect_version(tmp.path()).await.unwrap();
@@ -1752,11 +1781,7 @@ mod tests {
     #[tokio::test]
     async fn test_detect_version_from_mise_toml() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(
-            tmp.path().join("mise.toml"),
-            "[tools]\nzig = \"0.14.0\"\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join("mise.toml"), "[tools]\nzig = \"0.14.0\"\n").unwrap();
 
         let provider = provider_with_dir(tmp.path());
         let detection = provider.detect_version(tmp.path()).await.unwrap();
@@ -1769,11 +1794,7 @@ mod tests {
     #[tokio::test]
     async fn test_detect_version_from_dot_mise_toml() {
         let tmp = tempfile::tempdir().unwrap();
-        fs::write(
-            tmp.path().join(".mise.toml"),
-            "[tools]\nzig = \"0.11.0\"\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join(".mise.toml"), "[tools]\nzig = \"0.11.0\"\n").unwrap();
 
         let provider = provider_with_dir(tmp.path());
         let detection = provider.detect_version(tmp.path()).await.unwrap();
@@ -1804,17 +1825,16 @@ mod tests {
         // Create all version sources — .zig-version should win
         fs::write(tmp.path().join(".zig-version"), "0.13.0").unwrap();
         fs::write(tmp.path().join(".tool-versions"), "zig 0.12.0\n").unwrap();
-        fs::write(
-            tmp.path().join("mise.toml"),
-            "[tools]\nzig = \"0.11.0\"\n",
-        )
-        .unwrap();
+        fs::write(tmp.path().join("mise.toml"), "[tools]\nzig = \"0.11.0\"\n").unwrap();
         let zon = r#".{ .minimum_zig_version = "0.10.0" }"#;
         fs::write(tmp.path().join("build.zig.zon"), zon).unwrap();
 
         let provider = provider_with_dir(tmp.path());
         let det = provider.detect_version(tmp.path()).await.unwrap().unwrap();
-        assert_eq!(det.version, "0.13.0", ".zig-version should have highest priority");
+        assert_eq!(
+            det.version, "0.13.0",
+            ".zig-version should have highest priority"
+        );
     }
 
     #[tokio::test]
@@ -1826,7 +1846,10 @@ mod tests {
 
         let provider = provider_with_dir(tmp.path());
         let det = provider.detect_version(tmp.path()).await.unwrap().unwrap();
-        assert_eq!(det.version, "0.12.0", "Should fall through to .tool-versions");
+        assert_eq!(
+            det.version, "0.12.0",
+            "Should fall through to .tool-versions"
+        );
     }
 
     // ════════════════════════════════════════════════════════════════

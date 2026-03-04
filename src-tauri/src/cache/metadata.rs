@@ -1,10 +1,10 @@
 use super::{CacheEntry, CacheEntryType, SharedCacheDb, SqliteCacheDb};
-use std::sync::Arc;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::fs;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const DEFAULT_TTL_SECONDS: i64 = 3600;
 
@@ -32,7 +32,11 @@ impl MetadataCache {
         })
     }
 
-    pub async fn from_shared(cache_dir: &Path, db: SharedCacheDb, default_ttl: i64) -> CogniaResult<Self> {
+    pub async fn from_shared(
+        cache_dir: &Path,
+        db: SharedCacheDb,
+        default_ttl: i64,
+    ) -> CogniaResult<Self> {
         let metadata_dir = cache_dir.join("metadata");
         fs::create_dir_all(&metadata_dir).await?;
 
@@ -466,9 +470,16 @@ mod tests {
         assert_eq!(cached.data, data);
 
         // Set with long TTL
-        cache.set_with_ttl("ttl-key-long", &data, 86400).await.unwrap();
+        cache
+            .set_with_ttl("ttl-key-long", &data, 86400)
+            .await
+            .unwrap();
 
-        let cached = cache.get::<TestData>("ttl-key-long").await.unwrap().unwrap();
+        let cached = cache
+            .get::<TestData>("ttl-key-long")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(!cached.is_stale);
     }
 
@@ -591,8 +602,12 @@ mod tests {
         let db = Arc::new(SqliteCacheDb::open(dir.path()).await.unwrap());
 
         // Create two MetadataCache instances sharing the same DB
-        let mut cache1 = MetadataCache::from_shared(dir.path(), db.clone(), 3600).await.unwrap();
-        let mut cache2 = MetadataCache::from_shared(dir.path(), db, 3600).await.unwrap();
+        let mut cache1 = MetadataCache::from_shared(dir.path(), db.clone(), 3600)
+            .await
+            .unwrap();
+        let mut cache2 = MetadataCache::from_shared(dir.path(), db, 3600)
+            .await
+            .unwrap();
 
         let data = TestData {
             name: "shared".to_string(),
@@ -623,13 +638,29 @@ mod tests {
         assert_eq!(removed, 3);
 
         // Non-matching entries should still exist
-        assert!(cache.get::<String>("pkg:search:react").await.unwrap().is_some());
+        assert!(cache
+            .get::<String>("pkg:search:react")
+            .await
+            .unwrap()
+            .is_some());
         assert!(cache.get::<String>("env:list").await.unwrap().is_some());
 
         // Removed entries should be gone
-        assert!(cache.get::<String>("pkg:installed:all").await.unwrap().is_none());
-        assert!(cache.get::<String>("pkg:installed:npm").await.unwrap().is_none());
-        assert!(cache.get::<String>("pkg:installed:pip").await.unwrap().is_none());
+        assert!(cache
+            .get::<String>("pkg:installed:all")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(cache
+            .get::<String>("pkg:installed:npm")
+            .await
+            .unwrap()
+            .is_none());
+        assert!(cache
+            .get::<String>("pkg:installed:pip")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -675,15 +706,23 @@ mod tests {
         let db = Arc::new(SqliteCacheDb::open(dir.path()).await.unwrap());
 
         // Short TTL cache
-        let mut short_cache = MetadataCache::from_shared(dir.path(), db.clone(), -1).await.unwrap();
+        let mut short_cache = MetadataCache::from_shared(dir.path(), db.clone(), -1)
+            .await
+            .unwrap();
         // Long TTL cache
-        let mut long_cache = MetadataCache::from_shared(dir.path(), db, 86400).await.unwrap();
+        let mut long_cache = MetadataCache::from_shared(dir.path(), db, 86400)
+            .await
+            .unwrap();
 
         // Write via short_cache (expires immediately)
         short_cache.set("ttl-test", &"data").await.unwrap();
 
         // Read via short_cache should see it as stale
-        let cached = short_cache.get::<String>("ttl-test").await.unwrap().unwrap();
+        let cached = short_cache
+            .get::<String>("ttl-test")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(cached.is_stale);
 
         // Read via long_cache also sees the same entry (shared DB, same TTL on the entry itself)

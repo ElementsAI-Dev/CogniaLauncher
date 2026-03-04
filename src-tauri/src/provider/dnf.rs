@@ -255,7 +255,12 @@ impl Provider for DnfProvider {
     }
 
     async fn uninstall(&self, req: UninstallRequest) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "remove", "-y", &req.name], Some(DnfProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["dnf", "remove", "-y", &req.name],
+            Some(DnfProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -388,7 +393,12 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "makecache"], Some(DnfProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["dnf", "makecache"],
+            Some(DnfProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -397,7 +407,12 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["dnf", "upgrade", "-y", name], Some(DnfProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["dnf", "upgrade", "-y", name],
+            Some(DnfProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -406,7 +421,12 @@ impl SystemPackageProvider for DnfProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["dnf", "upgrade", "-y"], Some(DnfProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["dnf", "upgrade", "-y"],
+            Some(DnfProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

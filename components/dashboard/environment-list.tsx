@@ -37,6 +37,7 @@ import { LanguageIcon, ProviderIcon } from "@/components/provider-management/pro
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
+import { getLogicalEnvType } from "@/lib/stores/environment";
 import type { EnvironmentFilterType } from "@/types/dashboard";
 
 interface EnvironmentListProps {
@@ -71,7 +72,7 @@ export function EnvironmentList({
 
   const handleEnvironmentClick = useCallback(
     (envType: string) => {
-      router.push(`/environments?selected=${encodeURIComponent(envType)}`);
+      router.push(`/environments/${getLogicalEnvType(envType)}`);
     },
     [router],
   );

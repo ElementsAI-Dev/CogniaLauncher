@@ -504,9 +504,7 @@ pub async fn list_persistent_vars(scope: EnvVarScope) -> CogniaResult<Vec<(Strin
 }
 
 #[cfg(windows)]
-async fn list_persistent_vars_platform(
-    scope: EnvVarScope,
-) -> CogniaResult<Vec<(String, String)>> {
+async fn list_persistent_vars_platform(scope: EnvVarScope) -> CogniaResult<Vec<(String, String)>> {
     let regkey = open_env_regkey(scope, false)?;
     let mut result = Vec::new();
     for item in regkey.enum_values() {
@@ -515,7 +513,8 @@ async fn list_persistent_vars_platform(
                 let val_str = match value.vtype {
                     winreg::enums::RegType::REG_SZ | winreg::enums::RegType::REG_EXPAND_SZ => {
                         String::from_utf16_lossy(
-                            &value.bytes
+                            &value
+                                .bytes
                                 .chunks_exact(2)
                                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                                 .collect::<Vec<u16>>(),
@@ -560,7 +559,8 @@ pub async fn list_persistent_vars_with_type(
                             _ => continue,
                         };
                         let val_str = String::from_utf16_lossy(
-                            &value.bytes
+                            &value
+                                .bytes
                                 .chunks_exact(2)
                                 .map(|c| u16::from_le_bytes([c[0], c[1]]))
                                 .collect::<Vec<u16>>(),
@@ -579,9 +579,7 @@ pub async fn list_persistent_vars_with_type(
 }
 
 #[cfg(not(windows))]
-async fn list_persistent_vars_platform(
-    scope: EnvVarScope,
-) -> CogniaResult<Vec<(String, String)>> {
+async fn list_persistent_vars_platform(scope: EnvVarScope) -> CogniaResult<Vec<(String, String)>> {
     match scope {
         EnvVarScope::System => {
             // Linux: parse /etc/environment
@@ -794,10 +792,7 @@ pub fn generate_env_file(vars: &[(String, String)], format: EnvFileFormat) -> St
 // ============================================================================
 
 #[cfg(windows)]
-fn open_env_regkey(
-    scope: EnvVarScope,
-    write: bool,
-) -> CogniaResult<winreg::RegKey> {
+fn open_env_regkey(scope: EnvVarScope, write: bool) -> CogniaResult<winreg::RegKey> {
     use winreg::enums::*;
     use winreg::RegKey;
 
@@ -964,8 +959,7 @@ async fn set_persistent_var_platform(
         .map(|v| v.vtype)
         .unwrap_or(RegType::REG_SZ);
 
-    let use_expand = original_type == RegType::REG_EXPAND_SZ
-        || value.contains('%');
+    let use_expand = original_type == RegType::REG_EXPAND_SZ || value.contains('%');
 
     if use_expand {
         let mut encoded: Vec<u8> = value.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
@@ -1153,7 +1147,10 @@ async fn set_persistent_path_platform(entries: &[String], scope: EnvVarScope) ->
     let joined = entries.join(";");
 
     // PATH is always REG_EXPAND_SZ in the Windows registry
-    let mut encoded: Vec<u8> = joined.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+    let mut encoded: Vec<u8> = joined
+        .encode_utf16()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
     encoded.push(0);
     encoded.push(0);
     let reg_value = winreg::RegValue {
@@ -1827,7 +1824,10 @@ mod tests {
         assert_eq!(ShellType::from_id("bash"), Some(ShellType::Bash));
         assert_eq!(ShellType::from_id("zsh"), Some(ShellType::Zsh));
         assert_eq!(ShellType::from_id("fish"), Some(ShellType::Fish));
-        assert_eq!(ShellType::from_id("powershell"), Some(ShellType::PowerShell));
+        assert_eq!(
+            ShellType::from_id("powershell"),
+            Some(ShellType::PowerShell)
+        );
         assert_eq!(ShellType::from_id("pwsh"), Some(ShellType::PowerShell));
         assert_eq!(ShellType::from_id("cmd"), Some(ShellType::Cmd));
         assert_eq!(ShellType::from_id("nushell"), Some(ShellType::Nushell));
@@ -2006,11 +2006,15 @@ mod tests {
         let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
         assert!(val.is_none());
         // Set
-        set_persistent_var(key, "hello", EnvVarScope::Process).await.unwrap();
+        set_persistent_var(key, "hello", EnvVarScope::Process)
+            .await
+            .unwrap();
         let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
         assert_eq!(val, Some("hello".to_string()));
         // Remove
-        remove_persistent_var(key, EnvVarScope::Process).await.unwrap();
+        remove_persistent_var(key, EnvVarScope::Process)
+            .await
+            .unwrap();
         let val = get_persistent_var(key, EnvVarScope::Process).await.unwrap();
         assert!(val.is_none());
     }
@@ -2035,14 +2039,18 @@ mod tests {
 
         // set_persistent_path for Process scope sets PATH env var
         let test_entries = vec!["/test/a".to_string(), "/test/b".to_string()];
-        set_persistent_path(&test_entries, EnvVarScope::Process).await.unwrap();
+        set_persistent_path(&test_entries, EnvVarScope::Process)
+            .await
+            .unwrap();
         let new_path = get_persistent_path(EnvVarScope::Process).await.unwrap();
         assert!(new_path.contains(&"/test/a".to_string()));
         assert!(new_path.contains(&"/test/b".to_string()));
 
         // Restore original
         let original_strs: Vec<String> = original.into_iter().collect();
-        set_persistent_path(&original_strs, EnvVarScope::Process).await.unwrap();
+        set_persistent_path(&original_strs, EnvVarScope::Process)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -2063,9 +2071,7 @@ mod tests {
 
     #[test]
     fn test_generate_env_file_escaping() {
-        let vars = vec![
-            ("KEY".to_string(), "value with \"quotes\"".to_string()),
-        ];
+        let vars = vec![("KEY".to_string(), "value with \"quotes\"".to_string())];
         let dotenv = generate_env_file(&vars, EnvFileFormat::Dotenv);
         assert!(dotenv.contains("KEY=\"value with \\\"quotes\\\"\""));
 

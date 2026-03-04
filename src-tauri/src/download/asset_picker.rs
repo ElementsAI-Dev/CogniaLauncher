@@ -277,9 +277,7 @@ impl AssetPicker {
             || lower.ends_with(".pkg")
         {
             5
-        } else if lower.ends_with(".deb")
-            || lower.ends_with(".rpm")
-            || lower.ends_with(".appimage")
+        } else if lower.ends_with(".deb") || lower.ends_with(".rpm") || lower.ends_with(".appimage")
         {
             4
         } else {
@@ -562,10 +560,7 @@ mod tests {
 
     #[test]
     fn test_pick_best_no_matching_platform() {
-        let assets = make_assets(&[
-            "app-windows-x64.zip",
-            "app-darwin-arm64.tar.gz",
-        ]);
+        let assets = make_assets(&["app-windows-x64.zip", "app-darwin-arm64.tar.gz"]);
         let picker = AssetPicker::new(Platform::Linux, Architecture::X86_64);
         // No Linux asset → should still return something (platform-less scores)
         // or None if all are mismatched
@@ -619,10 +614,7 @@ mod tests {
 
     #[test]
     fn test_macos_arm_no_fallback_for_linux_user() {
-        let assets = make_assets(&[
-            "app-darwin-arm64.tar.gz",
-            "app-darwin-x64.tar.gz",
-        ]);
+        let assets = make_assets(&["app-darwin-arm64.tar.gz", "app-darwin-x64.tar.gz"]);
         // Linux ARM64 user should NOT get macOS fallback
         let picker = AssetPicker::new(Platform::Linux, Architecture::Aarch64);
         let result = picker.pick_best(&assets);

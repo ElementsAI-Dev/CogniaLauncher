@@ -221,8 +221,7 @@ impl Provider for ApkProvider {
         }
         args.push(&pkg);
 
-        let out =
-            process::execute("sudo", &args, Some(Self::make_long_opts())).await?;
+        let out = process::execute("sudo", &args, Some(Self::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -257,8 +256,7 @@ impl Provider for ApkProvider {
         }
         args.push(&req.name);
 
-        let out =
-            process::execute("sudo", &args, Some(Self::make_sudo_opts())).await?;
+        let out = process::execute("sudo", &args, Some(Self::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -351,7 +349,8 @@ impl Provider for ApkProvider {
                     break;
                 }
                 // Dependency lines can be "name" or "name>=version"
-                let dep_name = dep.split(|c| c == '>' || c == '<' || c == '=' || c == '~')
+                let dep_name = dep
+                    .split(|c| c == '>' || c == '<' || c == '=' || c == '~')
                     .next()
                     .unwrap_or(dep)
                     .to_string();
@@ -399,7 +398,12 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apk", "update"], Some(ApkProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["apk", "update"],
+            Some(ApkProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -408,7 +412,12 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["apk", "upgrade", name], Some(ApkProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["apk", "upgrade", name],
+            Some(ApkProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -417,7 +426,12 @@ impl SystemPackageProvider for ApkProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["apk", "upgrade"], Some(ApkProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["apk", "upgrade"],
+            Some(ApkProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {
@@ -662,7 +676,8 @@ mod tests {
                 if dep.is_empty() {
                     break;
                 }
-                let dep_name = dep.split(|c| c == '>' || c == '<' || c == '=' || c == '~')
+                let dep_name = dep
+                    .split(|c| c == '>' || c == '<' || c == '=' || c == '~')
                     .next()
                     .unwrap_or(dep)
                     .to_string();

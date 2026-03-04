@@ -165,7 +165,7 @@ export function SearchBar({
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
+      <div className="flex gap-2 min-w-0">
         {/* Main Search Input */}
         <Popover open={showDropdown} onOpenChange={setShowDropdown}>
           <PopoverAnchor asChild>

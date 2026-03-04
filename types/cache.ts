@@ -26,13 +26,14 @@ export interface ExternalCacheSectionProps {
 }
 
 export interface CacheDetailPageClientProps {
-  cacheType: string;
+  cacheType: 'download' | 'metadata' | 'external';
 }
 
 // ============================================================================
 // Cache Page Types
 // ============================================================================
 
+export type MigrationMode = 'move' | 'move_and_link';
 export type CleanType = 'downloads' | 'metadata' | 'all';
 export type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
 
@@ -40,6 +41,19 @@ export type OperationType = 'clean' | 'verify' | 'repair' | 'settings';
 // Cache Category Grouping
 // ============================================================================
 
-export type CacheCategory = 'system' | 'devtools' | 'package_manager' | 'other';
+export type CacheCategory = 'system' | 'devtools' | 'package_manager' | 'terminal' | 'other';
 
 export type GroupedCaches = Record<string, ExternalCacheInfo[]>;
+
+export interface CustomCacheEntry {
+  id: string;
+  displayName: string;
+  path: string;
+  category: string;
+}
+
+export interface CustomCacheDialogProps {
+  entries: CustomCacheEntry[];
+  onEntriesChange: (entries: CustomCacheEntry[]) => void;
+  t: (key: string) => string;
+}

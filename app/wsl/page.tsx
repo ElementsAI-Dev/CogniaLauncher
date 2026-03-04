@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { useWsl } from '@/hooks/use-wsl';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
+import { useWslStore } from '@/lib/stores/wsl';
 import {
   WslStatusCard,
   WslDistroCard,
@@ -21,10 +22,13 @@ import {
   WslImportInPlaceDialog,
   WslInstallLocationDialog,
   WslCloneDialog,
+  WslBackupCard,
 } from '@/components/wsl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -97,6 +101,8 @@ export default function WslPage() {
     openInExplorer,
     openInTerminal,
     cloneDistro,
+    batchLaunch,
+    batchTerminate,
   } = useWsl();
 
   const initializedRef = useRef(false);
@@ -123,6 +129,13 @@ export default function WslPage() {
   const [versionInfo, setVersionInfo] = useState<WslVersionInfo | null>(null);
   const [totalDiskUsage, setTotalDiskUsage] = useState<WslTotalDiskUsage | null>(null);
   const [sidebarMetaLoading, setSidebarMetaLoading] = useState(false);
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [selectedDistros, setSelectedDistros] = useState<Set<string>>(new Set());
+  const { distroTags, availableTags } = useWslStore();
+
+  const filteredDistros = activeTagFilter
+    ? distros.filter((d) => (distroTags[d.name] ?? []).includes(activeTagFilter))
+    : distros;
 
   const refreshSidebarMeta = useCallback(async () => {
     if (!isDesktop) return;
@@ -395,6 +408,54 @@ export default function WslPage() {
     }
   }, [cloneDistro, refreshSidebarMeta, t]);
 
+  const handleBatchLaunch = useCallback(async () => {
+    if (selectedDistros.size === 0) return;
+    try {
+      const results = await batchLaunch(Array.from(selectedDistros));
+      const failed = results.filter(([, ok]) => !ok);
+      if (failed.length === 0) {
+        toast.success(t('wsl.batch.launchSuccess').replace('{count}', String(results.length)));
+      } else {
+        toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
+      }
+      setSelectedDistros(new Set());
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [batchLaunch, selectedDistros, t]);
+
+  const handleBatchTerminate = useCallback(async () => {
+    if (selectedDistros.size === 0) return;
+    try {
+      const results = await batchTerminate(Array.from(selectedDistros));
+      const failed = results.filter(([, ok]) => !ok);
+      if (failed.length === 0) {
+        toast.success(t('wsl.batch.terminateSuccess').replace('{count}', String(results.length)));
+      } else {
+        toast.warning(t('wsl.batch.partialFail').replace('{failed}', String(failed.length)).replace('{total}', String(results.length)));
+      }
+      setSelectedDistros(new Set());
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [batchTerminate, selectedDistros, t]);
+
+  const toggleSelectDistro = useCallback((name: string) => {
+    setSelectedDistros((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedDistros((prev) => {
+      if (prev.size === filteredDistros.length) return new Set();
+      return new Set(filteredDistros.map((d) => d.name));
+    });
+  }, [filteredDistros]);
+
   const confirmAndExecute = useCallback(async () => {
     if (!confirmAction) return;
     if (confirmAction.type === 'unregister') {
@@ -494,6 +555,28 @@ export default function WslPage() {
                 </TabsTrigger>
               </TabsList>
 
+              {distros.length > 0 && availableTags.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                  <Badge
+                    variant={activeTagFilter === null ? 'default' : 'outline'}
+                    className="text-xs cursor-pointer"
+                    onClick={() => setActiveTagFilter(null)}
+                  >
+                    {t('wsl.tags.all')}
+                  </Badge>
+                  {availableTags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant={activeTagFilter === tag ? 'default' : 'outline'}
+                      className="text-xs cursor-pointer"
+                      onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
               <TabsContent value="installed" className="space-y-3 mt-4">
                 {loading && distros.length === 0 ? (
                   <div className="space-y-3">
@@ -514,26 +597,61 @@ export default function WslPage() {
                 ) : distros.length === 0 ? (
                   <WslEmptyState t={t} />
                 ) : (
-                  distros.map((distro) => (
-                    <WslDistroCard
-                      key={distro.name}
-                      distro={distro}
-                      onLaunch={handleLaunch}
-                      onTerminate={handleTerminate}
-                      onSetDefault={handleSetDefault}
-                      onSetVersion={handleSetVersion}
-                      onExport={handleExportOpen}
-                      onUnregister={(name) =>
-                        setConfirmAction({ type: 'unregister', name })
-                      }
-                      onChangeDefaultUser={handleChangeDefaultUserOpen}
-                      onOpenInExplorer={handleOpenInExplorer}
-                      onOpenInTerminal={handleOpenInTerminal}
-                      onClone={handleCloneOpen}
-                      getDiskUsage={getDiskUsage}
-                      t={t}
-                    />
-                  ))
+                  <>
+                    {filteredDistros.length > 1 && (
+                      <div className="flex items-center gap-2 pb-1">
+                        <Checkbox
+                          checked={selectedDistros.size === filteredDistros.length && filteredDistros.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {selectedDistros.size > 0
+                            ? `${selectedDistros.size} ${t('wsl.batch.selected')}`
+                            : t('wsl.batch.selectAll')}
+                        </span>
+                        {selectedDistros.size > 0 && (
+                          <div className="flex items-center gap-1 ml-auto">
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleBatchLaunch}>
+                              {t('wsl.batch.launch')}
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleBatchTerminate}>
+                              {t('wsl.batch.terminate')}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {filteredDistros.map((distro) => (
+                      <div key={distro.name} className="flex items-start gap-2">
+                        {filteredDistros.length > 1 && (
+                          <Checkbox
+                            className="mt-5"
+                            checked={selectedDistros.has(distro.name)}
+                            onCheckedChange={() => toggleSelectDistro(distro.name)}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <WslDistroCard
+                            distro={distro}
+                            onLaunch={handleLaunch}
+                            onTerminate={handleTerminate}
+                            onSetDefault={handleSetDefault}
+                            onSetVersion={handleSetVersion}
+                            onExport={handleExportOpen}
+                            onUnregister={(name) =>
+                              setConfirmAction({ type: 'unregister', name })
+                            }
+                            onChangeDefaultUser={handleChangeDefaultUserOpen}
+                            onOpenInExplorer={handleOpenInExplorer}
+                            onOpenInTerminal={handleOpenInTerminal}
+                            onClone={handleCloneOpen}
+                            getDiskUsage={getDiskUsage}
+                            t={t}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </>
                 )}
               </TabsContent>
 
@@ -687,6 +805,10 @@ export default function WslPage() {
                 t={t}
               />
             )}
+            <WslBackupCard
+              distroNames={distros.map((d) => d.name)}
+              t={t}
+            />
           </div>
         </div>
       )}

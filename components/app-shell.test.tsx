@@ -37,6 +37,15 @@ jest.mock("@/hooks/use-appearance-config-sync", () => ({
   useAppearanceConfigSync: jest.fn(),
 }));
 
+jest.mock("@/hooks/use-global-shortcuts", () => ({
+  useGlobalShortcuts: jest.fn(),
+}));
+
+jest.mock("@/lib/stores/appearance", () => ({
+  useAppearanceStore: (selector?: (s: Record<string, unknown>) => unknown) =>
+    selector ? selector({ windowEffect: "auto" }) : { windowEffect: "auto" },
+}));
+
 jest.mock("@/lib/platform", () => ({
   isTauri: () => false,
   isWindows: () => false,

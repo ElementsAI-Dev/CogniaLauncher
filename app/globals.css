@@ -121,6 +121,11 @@
   }
 }
 
+/* Native window effect: make body transparent so OS effect shows through */
+html[data-window-effect]:not([data-window-effect="none"]) body {
+  background-color: transparent !important;
+}
+
 /* Interface density — uses Tailwind v4 --spacing variable to scale all spacing utilities.
    Default --spacing is 0.25rem (4px). Compact shrinks, spacious expands. */
 [data-density="compact"] {
@@ -344,6 +349,26 @@ html:not(.no-transitions) [data-state="closed"] {
   background-color: color-mix(in oklch, var(--color-background) 85%, transparent) !important;
   backdrop-filter: blur(8px) saturate(1.1);
   -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+/* ===== Native Window Effect Glassmorphism ===== */
+/* When a native OS transparency effect is active, make UI elements semi-transparent */
+html[data-window-effect]:not([data-window-effect="none"]) [data-slot="sidebar-inner"] {
+  background-color: color-mix(in oklch, var(--color-sidebar) 75%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+}
+
+html[data-window-effect]:not([data-window-effect="none"]) [data-slot="sidebar-inset"] {
+  background-color: color-mix(in oklch, var(--color-background) 70%, transparent) !important;
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+html[data-window-effect]:not([data-window-effect="none"]) [data-slot="sidebar-inset"] > header {
+  background-color: color-mix(in oklch, var(--color-background) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* ===== Splash Screen Animations ===== */

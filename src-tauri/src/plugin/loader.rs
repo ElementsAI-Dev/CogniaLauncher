@@ -33,8 +33,8 @@ impl PluginLoader {
         }
 
         let wasm = Wasm::file(wasm_path);
-        let manifest = Manifest::new([wasm])
-            .with_timeout(std::time::Duration::from_secs(MAX_EXECUTION_SECS));
+        let manifest =
+            Manifest::new([wasm]).with_timeout(std::time::Duration::from_secs(MAX_EXECUTION_SECS));
 
         // Build host functions with shared launcher context
         let user_data = host_functions::create_user_data(self.host_context.clone());
@@ -75,9 +75,10 @@ impl PluginLoader {
         // Set current plugin ID for host function permission checks
         self.host_context.set_current_plugin(plugin_id).await;
 
-        let plugin = self.instances.get_mut(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' is not loaded", plugin_id))
-        })?;
+        let plugin = self
+            .instances
+            .get_mut(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' is not loaded", plugin_id)))?;
 
         // Check if the function exists
         if !plugin.function_exists(function_name) {
@@ -136,7 +137,9 @@ impl PluginLoader {
             Err(e) => {
                 log::warn!(
                     "Plugin '{}' lifecycle hook '{}' failed: {}",
-                    plugin_id, function_name, e
+                    plugin_id,
+                    function_name,
+                    e
                 );
                 None
             }
@@ -161,12 +164,12 @@ mod tests {
     fn make_loader() -> PluginLoader {
         let registry = Arc::new(RwLock::new(ProviderRegistry::new()));
         let settings = Arc::new(RwLock::new(Settings::default()));
-        let permissions = Arc::new(RwLock::new(
-            PermissionManager::new(std::path::PathBuf::from("/tmp/test-data")),
-        ));
-        let plugin_registry = Arc::new(RwLock::new(
-            crate::plugin::registry::PluginRegistry::new(std::path::PathBuf::from("/tmp/test-plugins")),
-        ));
+        let permissions = Arc::new(RwLock::new(PermissionManager::new(
+            std::path::PathBuf::from("/tmp/test-data"),
+        )));
+        let plugin_registry = Arc::new(RwLock::new(crate::plugin::registry::PluginRegistry::new(
+            std::path::PathBuf::from("/tmp/test-plugins"),
+        )));
         let ctx = HostContext::new(registry, settings, permissions, plugin_registry);
         PluginLoader::new(ctx)
     }

@@ -75,7 +75,8 @@ fn parse_variants(output: &str) -> Vec<PortVariant> {
     let mut variants = Vec::new();
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() || line.contains("has the variants") || line.contains("has no variants") {
+        if line.is_empty() || line.contains("has the variants") || line.contains("has no variants")
+        {
             continue;
         }
         let is_default = line.starts_with('+');

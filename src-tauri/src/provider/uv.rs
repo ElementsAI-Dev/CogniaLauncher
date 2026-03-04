@@ -92,12 +92,9 @@ impl UvProvider {
                 .map(|p| PathBuf::from(p).join("Python").join("site-packages"))
         } else {
             std::env::var("HOME").ok().and_then(|h| {
-                let lib_path = PathBuf::from(&h)
-                    .join(".local")
-                    .join("lib");
-                Self::find_python_site_packages(&lib_path).or_else(|| {
-                    Some(lib_path.join("python3").join("site-packages"))
-                })
+                let lib_path = PathBuf::from(&h).join(".local").join("lib");
+                Self::find_python_site_packages(&lib_path)
+                    .or_else(|| Some(lib_path.join("python3").join("site-packages")))
             })
         }
     }
@@ -107,7 +104,9 @@ impl UvProvider {
         if let Ok(entries) = std::fs::read_dir(lib_path) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("python") && entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                if name.starts_with("python")
+                    && entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
+                {
                     let sp = entry.path().join("site-packages");
                     if sp.exists() {
                         return Some(sp);

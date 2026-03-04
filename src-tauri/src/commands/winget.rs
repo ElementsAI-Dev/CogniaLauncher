@@ -45,9 +45,7 @@ pub async fn winget_pin_remove(
 }
 
 #[tauri::command]
-pub async fn winget_pin_reset(
-    registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+pub async fn winget_pin_reset(registry: State<'_, SharedRegistry>) -> Result<(), String> {
     let provider = get_winget(&registry).await?;
     provider.pin_reset().await.map_err(|e| e.to_string())
 }
@@ -89,9 +87,7 @@ pub async fn winget_source_remove(
 }
 
 #[tauri::command]
-pub async fn winget_source_reset(
-    registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+pub async fn winget_source_reset(registry: State<'_, SharedRegistry>) -> Result<(), String> {
     let provider = get_winget(&registry).await?;
     provider.source_reset().await.map_err(|e| e.to_string())
 }
@@ -128,10 +124,7 @@ pub async fn winget_import(
 // ── Repair ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn winget_repair(
-    id: String,
-    registry: State<'_, SharedRegistry>,
-) -> Result<(), String> {
+pub async fn winget_repair(id: String, registry: State<'_, SharedRegistry>) -> Result<(), String> {
     let provider = get_winget(&registry).await?;
     provider
         .repair_package(&id)
@@ -158,9 +151,7 @@ pub async fn winget_download(
 // ── Info ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn winget_get_info(
-    registry: State<'_, SharedRegistry>,
-) -> Result<WingetInfo, String> {
+pub async fn winget_get_info(registry: State<'_, SharedRegistry>) -> Result<WingetInfo, String> {
     let provider = get_winget(&registry).await?;
     provider.get_info().await.map_err(|e| e.to_string())
 }

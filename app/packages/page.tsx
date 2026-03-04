@@ -321,7 +321,7 @@ export default function PackagesPage() {
   }, [toggleBookmark, bookmarkedPackages, t]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 min-w-0 overflow-hidden">
       <PageHeader
         title={t('packages.title')}
         description={t('packages.description')}

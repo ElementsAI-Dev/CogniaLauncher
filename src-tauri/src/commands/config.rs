@@ -1,4 +1,5 @@
 use crate::config::Settings;
+use crate::core::system_info::BatteryInfo;
 use crate::platform::disk::format_size;
 use serde::Serialize;
 use std::sync::Arc;
@@ -58,6 +59,8 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "general.cache_monitor_external",
     "general.download_speed_limit",
     "general.update_check_concurrency",
+    "general.external_cache_excluded_providers",
+    "general.custom_cache_entries",
     "network.timeout",
     "network.retries",
     "network.proxy",
@@ -72,6 +75,7 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "appearance.interface_density",
     "appearance.language",
     "appearance.reduced_motion",
+    "appearance.window_effect",
     "updates.check_on_start",
     "updates.auto_install",
     "updates.notify",
@@ -99,9 +103,13 @@ const CONFIG_LIST_STATIC_KEYS: &[&str] = &[
     "startup.max_concurrent_scans",
     "startup.startup_timeout_secs",
     "startup.integrity_check",
+    "shortcuts.enabled",
+    "shortcuts.toggle_window",
+    "shortcuts.command_palette",
+    "shortcuts.quick_search",
 ];
 
-fn collect_config_list(settings: &Settings) -> Vec<(String, String)> {
+pub fn collect_config_list(settings: &Settings) -> Vec<(String, String)> {
     let mut result: Vec<(String, String)> = CONFIG_LIST_STATIC_KEYS
         .iter()
         .filter_map(|k| settings.get_value(k).map(|v| (k.to_string(), v)))
@@ -265,8 +273,8 @@ pub async fn get_platform_info() -> Result<PlatformInfo, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::CONFIG_LIST_STATIC_KEYS;
     use super::config_list_defaults;
+    use super::CONFIG_LIST_STATIC_KEYS;
 
     #[test]
     fn config_list_static_keys_include_terminal_proxy_settings() {
@@ -296,16 +304,78 @@ mod tests {
     }
 
     #[test]
+    fn config_list_static_keys_include_appearance_window_effect() {
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"appearance.window_effect"));
+    }
+
+    #[test]
+    fn config_list_static_keys_include_shortcuts_settings() {
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"shortcuts.enabled"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"shortcuts.toggle_window"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"shortcuts.command_palette"));
+        assert!(CONFIG_LIST_STATIC_KEYS.contains(&"shortcuts.quick_search"));
+    }
+
+    #[test]
+    fn config_list_defaults_includes_shortcut_defaults() {
+        let defaults = config_list_defaults().unwrap();
+        let map: std::collections::HashMap<_, _> = defaults.into_iter().collect();
+
+        assert_eq!(
+            map.get("shortcuts.enabled").map(std::string::String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            map.get("shortcuts.toggle_window")
+                .map(std::string::String::as_str),
+            Some("CmdOrCtrl+Shift+Space")
+        );
+        assert_eq!(
+            map.get("shortcuts.command_palette")
+                .map(std::string::String::as_str),
+            Some("CmdOrCtrl+Shift+K")
+        );
+        assert_eq!(
+            map.get("shortcuts.quick_search")
+                .map(std::string::String::as_str),
+            Some("CmdOrCtrl+Shift+F")
+        );
+    }
+
+    #[test]
+    fn collect_config_list_returns_nonempty_for_defaults() {
+        use super::collect_config_list;
+        let settings = crate::config::Settings::default();
+        let entries = collect_config_list(&settings);
+        assert!(!entries.is_empty(), "collect_config_list should return entries");
+        let keys: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"appearance.theme"), "Should contain appearance.theme");
+        assert!(keys.contains(&"general.parallel_downloads"), "Should contain general.parallel_downloads");
+    }
+
+    #[test]
+    fn collect_config_list_includes_mirror_keys() {
+        use super::collect_config_list;
+        let settings = crate::config::Settings::default();
+        let entries = collect_config_list(&settings);
+        let keys: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"mirrors.npm"), "Should contain mirrors.npm");
+        assert!(keys.contains(&"mirrors.pypi"), "Should contain mirrors.pypi");
+    }
+
+    #[test]
     fn config_list_defaults_returns_known_default_keys() {
         let defaults = config_list_defaults().unwrap();
         let map: std::collections::HashMap<_, _> = defaults.into_iter().collect();
 
         assert_eq!(
-            map.get("updates.check_on_start").map(std::string::String::as_str),
+            map.get("updates.check_on_start")
+                .map(std::string::String::as_str),
             Some("true")
         );
         assert_eq!(
-            map.get("tray.click_behavior").map(std::string::String::as_str),
+            map.get("tray.click_behavior")
+                .map(std::string::String::as_str),
             Some("toggle_window")
         );
     }
@@ -414,23 +484,6 @@ pub fn get_components_info() -> Result<Vec<ComponentInfo>, String> {
         .collect();
 
     Ok(result)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatteryInfo {
-    pub percent: u8,
-    pub is_charging: bool,
-    pub is_plugged_in: bool,
-    pub health_percent: Option<u8>,
-    pub cycle_count: Option<u32>,
-    pub design_capacity_mwh: Option<u64>,
-    pub full_capacity_mwh: Option<u64>,
-    pub voltage_mv: Option<u64>,
-    pub power_source: String,
-    pub time_to_empty_mins: Option<u32>,
-    pub time_to_full_mins: Option<u32>,
-    pub technology: Option<String>,
 }
 
 #[tauri::command]
@@ -841,7 +894,7 @@ fn parse_vram_string(s: &str) -> Option<u64> {
 }
 
 /// Detect battery information using platform-native methods
-async fn detect_battery() -> Option<BatteryInfo> {
+pub(crate) async fn detect_battery() -> Option<BatteryInfo> {
     #[cfg(target_os = "windows")]
     {
         return detect_battery_windows().await;

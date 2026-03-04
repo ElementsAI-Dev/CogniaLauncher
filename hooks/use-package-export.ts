@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { writeClipboard } from '@/lib/clipboard';
+import { writeClipboard, readClipboard } from '@/lib/clipboard';
 import { usePackageStore } from '@/lib/stores/packages';
 import { toast } from 'sonner';
 
@@ -77,9 +77,42 @@ export function usePackageExport() {
     }
   }, [installedPackages]);
 
+  const importFromClipboard = useCallback(async (): Promise<ExportedPackageList | null> => {
+    try {
+      const text = await readClipboard();
+      if (!text?.trim()) return null;
+
+      // Try JSON format first
+      try {
+        const data = JSON.parse(text) as ExportedPackageList;
+        if (data.version && data.packages && Array.isArray(data.packages)) {
+          return data;
+        }
+      } catch {
+        // Not JSON — fall through to plain text parsing
+      }
+
+      // Plain text: one package name per line
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) return null;
+
+      return {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        packages: lines.map(name => ({ name })),
+        bookmarks: [],
+      };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      toast.error(`Import failed: ${errorMsg}`);
+      return null;
+    }
+  }, []);
+
   return {
     exportPackages,
     importPackages,
+    importFromClipboard,
     exportToClipboard,
   };
 }

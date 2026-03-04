@@ -12,6 +12,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
+import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
 interface ActivityChartProps {
   environments: EnvironmentInfo[];
@@ -60,18 +61,11 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
 
   if (chartData.length === 0) {
     return (
-      <Card className={className}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium">
-            {t("dashboard.widgets.distributionOverview")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            {t("dashboard.widgets.noActivity")}
-          </div>
-        </CardContent>
-      </Card>
+      <WidgetEmptyCard
+        title={t("dashboard.widgets.distributionOverview")}
+        message={t("dashboard.widgets.noActivity")}
+        className={className}
+      />
     );
   }
 

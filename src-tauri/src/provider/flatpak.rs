@@ -389,7 +389,12 @@ impl SystemPackageProvider for FlatpakProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["flatpak", "update", "-y", name], Some(FlatpakProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["flatpak", "update", "-y", name],
+            Some(FlatpakProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -398,7 +403,12 @@ impl SystemPackageProvider for FlatpakProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["flatpak", "update", "-y"], Some(FlatpakProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["flatpak", "update", "-y"],
+            Some(FlatpakProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All flatpaks updated".into()])
         } else {
@@ -495,14 +505,18 @@ mod tests {
 
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "org.mozilla.firefox");
-        assert_eq!(results[0].description, Some("Fast, Private & Safe Web Browser".into()));
+        assert_eq!(
+            results[0].description,
+            Some("Fast, Private & Safe Web Browser".into())
+        );
         assert_eq!(results[0].latest_version, Some("120.0".into()));
         assert_eq!(results[1].name, "org.videolan.VLC");
     }
 
     #[test]
     fn test_parse_flatpak_list_installed_output() {
-        let output = "org.mozilla.firefox\t120.0\norg.videolan.VLC\t3.0.18\norg.gnome.Calculator\t45.0\n";
+        let output =
+            "org.mozilla.firefox\t120.0\norg.videolan.VLC\t3.0.18\norg.gnome.Calculator\t45.0\n";
 
         let packages: Vec<InstalledPackage> = output
             .lines()
@@ -513,7 +527,10 @@ mod tests {
                     return None;
                 }
                 let name = parts[0].trim().to_string();
-                let version = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                let version = parts
+                    .get(1)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
                 Some(InstalledPackage {
                     name,
                     version,
@@ -548,7 +565,10 @@ mod tests {
                 Some(UpdateInfo {
                     name,
                     current_version: String::new(),
-                    latest_version: parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default(),
+                    latest_version: parts
+                        .get(1)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default(),
                     provider: "flatpak".into(),
                 })
             })

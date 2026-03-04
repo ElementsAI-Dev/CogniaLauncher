@@ -95,10 +95,7 @@ pub async fn poetry_env_list(path: String) -> Result<Vec<PoetryEnvInfo>, String>
             continue;
         }
         let is_active = line.contains("(Activated)");
-        let env_path = line
-            .replace("(Activated)", "")
-            .trim()
-            .to_string();
+        let env_path = line.replace("(Activated)", "").trim().to_string();
 
         envs.push(PoetryEnvInfo {
             path: env_path,

@@ -1,5 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
-import { writeClipboard, readClipboard } from '@/lib/clipboard';
+import {
+  writeClipboard,
+  readClipboard,
+  writeClipboardImage,
+  readClipboardImage,
+  clearClipboard,
+} from '@/lib/clipboard';
 
 /**
  * Unified clipboard hook that uses Tauri native clipboard when available,
@@ -10,14 +16,27 @@ export function useCopyToClipboard(timeout = 1500) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const copy = useCallback(async (text: string) => {
-    await writeClipboard(text);
+  const markCopied = useCallback(() => {
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), timeout);
   }, [timeout]);
 
+  const copy = useCallback(async (text: string) => {
+    await writeClipboard(text);
+    markCopied();
+  }, [markCopied]);
+
   const paste = useCallback(async () => readClipboard(), []);
 
-  return { copied, copy, paste };
+  const copyImage = useCallback(async (image: string | number[] | ArrayBuffer | Uint8Array) => {
+    await writeClipboardImage(image);
+    markCopied();
+  }, [markCopied]);
+
+  const pasteImage = useCallback(async () => readClipboardImage(), []);
+
+  const clear = useCallback(async () => clearClipboard(), []);
+
+  return { copied, copy, paste, copyImage, pasteImage, clear };
 }

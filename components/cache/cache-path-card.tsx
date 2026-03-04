@@ -20,7 +20,7 @@ import { CacheMigrationDialog } from './cache-migration-dialog';
 
 export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardProps) {
   const { t } = useLocale();
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [pathInfo, setPathInfo] = useState<CachePathInfo | null>(null);
   const [newPath, setNewPath] = useState('');
   const [editing, setEditing] = useState(false);
@@ -33,8 +33,8 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
       const { getCachePathInfo } = await import('@/lib/tauri');
       const info = await getCachePathInfo();
       setPathInfo(info);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch cache path info:', err);
     }
   }, []);
 
@@ -84,13 +84,33 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
     }
   };
 
+
+  const handleBrowse = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const dialogModule = await import('@tauri-apps/plugin-dialog').catch(() => null);
+      if (dialogModule?.open) {
+        const selected = await dialogModule.open({
+          directory: true,
+          multiple: false,
+          title: t('cache.enterNewPath'),
+        });
+        if (typeof selected === 'string') {
+          setNewPath(selected);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to open folder dialog:', err);
+    }
+  }, [t]);
+
   return (
     <>
       <Card>
-        <Collapsible open={open} onOpenChange={(o) => { setOpen(o); if (o) fetchPathInfo(); }}>
+        <Collapsible open={isOpen} onOpenChange={(o) => { setIsOpen(o); if (o) fetchPathInfo(); }}>
           <CardHeader className="pb-2">
             <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between cursor-pointer">
+              <div className="flex items-center justify-between cursor-pointer" data-testid="cache-path-trigger">
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-5 w-5" />
                   <CardTitle className="text-base">{t('cache.pathManagement')}</CardTitle>
@@ -103,7 +123,7 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                     <Badge variant="outline">{t('cache.customPath')}</Badge>
                   )}
                 </div>
-                <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </div>
             </CollapsibleTrigger>
             <CardDescription>{t('cache.pathManagementDesc')}</CardDescription>
@@ -152,12 +172,20 @@ export function CachePathCard({ refreshTrigger, onPathChanged }: CachePathCardPr
                   {/* Change Path */}
                   {editing ? (
                     <div className="space-y-2">
-                      <Input
-                        value={newPath}
-                        onChange={(e) => setNewPath(e.target.value)}
-                        placeholder={t('cache.enterNewPath')}
-                        disabled={saving}
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          value={newPath}
+                          onChange={(e) => setNewPath(e.target.value)}
+                          placeholder={t('cache.enterNewPath')}
+                          disabled={saving}
+                          className="flex-1"
+                        />
+                        {isTauri() && (
+                          <Button size="sm" variant="outline" onClick={handleBrowse} disabled={saving}>
+                            <FolderOpen className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         <Button size="sm" onClick={handleChangePath} disabled={!newPath.trim() || saving}>
                           <Save className="h-4 w-4 mr-1" />

@@ -188,8 +188,9 @@ describe('useDownloadStore', () => {
         const newProgress = createMockProgress({ percent: 50, downloadedBytes: 500 });
         useDownloadStore.getState().updateTaskProgress('task-1', newProgress);
 
-        expect(useDownloadStore.getState().tasks[0].progress.percent).toBe(50);
-        expect(useDownloadStore.getState().tasks[0].progress.downloadedBytes).toBe(500);
+        // Progress now stored in progressMap (optimization #8)
+        expect(useDownloadStore.getState().progressMap['task-1'].percent).toBe(50);
+        expect(useDownloadStore.getState().progressMap['task-1'].downloadedBytes).toBe(500);
       });
     });
 

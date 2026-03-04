@@ -121,11 +121,25 @@ impl PluginRegistry {
                             while let Ok(Some(locale_entry)) = locale_entries.next_entry().await {
                                 let locale_path = locale_entry.path();
                                 if locale_path.extension().map_or(false, |e| e == "json") {
-                                    if let Some(locale_name) = locale_path.file_stem().and_then(|s| s.to_str()) {
-                                        if let Ok(content) = tokio::fs::read_to_string(&locale_path).await {
-                                            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&content) {
-                                                manifest.locales.insert(locale_name.to_string(), map);
-                                                log::debug!("Loaded locale '{}' for plugin '{}'", locale_name, manifest.plugin.id);
+                                    if let Some(locale_name) =
+                                        locale_path.file_stem().and_then(|s| s.to_str())
+                                    {
+                                        if let Ok(content) =
+                                            tokio::fs::read_to_string(&locale_path).await
+                                        {
+                                            if let Ok(map) = serde_json::from_str::<
+                                                std::collections::HashMap<String, String>,
+                                            >(
+                                                &content
+                                            ) {
+                                                manifest
+                                                    .locales
+                                                    .insert(locale_name.to_string(), map);
+                                                log::debug!(
+                                                    "Loaded locale '{}' for plugin '{}'",
+                                                    locale_name,
+                                                    manifest.plugin.id
+                                                );
                                             }
                                         }
                                     }
@@ -268,7 +282,7 @@ impl PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::manifest::{PluginManifest, PluginMeta, ToolDeclaration, PluginPermissions};
+    use crate::plugin::manifest::{PluginManifest, PluginMeta, PluginPermissions, ToolDeclaration};
 
     fn make_manifest(id: &str, name: &str, tools: Vec<ToolDeclaration>) -> PluginManifest {
         PluginManifest {
@@ -367,7 +381,9 @@ mod tests {
             make_manifest("p2", "Plugin Two", vec![]),
             PathBuf::from("p2.wasm"),
             PathBuf::from("p2"),
-            PluginSource::Local { path: "/src".into() },
+            PluginSource::Local {
+                path: "/src".into(),
+            },
         );
 
         let list = reg.list();
@@ -383,10 +399,11 @@ mod tests {
     fn test_list_all_tools() {
         let mut reg = PluginRegistry::new(PathBuf::from("/tmp/plugins"));
         reg.register(
-            make_manifest("p1", "P1", vec![
-                make_tool("t1", "fn1"),
-                make_tool("t2", "fn2"),
-            ]),
+            make_manifest(
+                "p1",
+                "P1",
+                vec![make_tool("t1", "fn1"), make_tool("t2", "fn2")],
+            ),
             PathBuf::from("p1.wasm"),
             PathBuf::from("p1"),
             PluginSource::BuiltIn,
@@ -400,8 +417,12 @@ mod tests {
 
         let tools = reg.list_all_tools();
         assert_eq!(tools.len(), 3);
-        assert!(tools.iter().any(|t| t.tool_id == "t1" && t.plugin_id == "p1"));
-        assert!(tools.iter().any(|t| t.tool_id == "t3" && t.plugin_id == "p2"));
+        assert!(tools
+            .iter()
+            .any(|t| t.tool_id == "t1" && t.plugin_id == "p1"));
+        assert!(tools
+            .iter()
+            .any(|t| t.tool_id == "t3" && t.plugin_id == "p2"));
     }
 
     #[test]

@@ -14,6 +14,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
+import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
 interface EnvironmentChartProps {
   environments: EnvironmentInfo[];
@@ -28,8 +29,8 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
     const unavailableCount = environments.length - availableCount;
 
     const pie = [
-      { name: t("dashboard.widgets.available"), value: availableCount, fill: "var(--chart-1)" },
-      { name: t("dashboard.widgets.unavailable"), value: unavailableCount, fill: "var(--chart-2)" },
+      { name: t("dashboard.widgets.available"), value: availableCount, fill: getChartColor(0) },
+      { name: t("dashboard.widgets.unavailable"), value: unavailableCount, fill: getChartColor(1) },
     ].filter((d) => d.value > 0);
 
     const bar = environments
@@ -43,9 +44,9 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
       .slice(0, 8);
 
     const cfg: ChartConfig = {
-      available: { label: t("dashboard.widgets.available"), color: "var(--chart-1)" },
-      unavailable: { label: t("dashboard.widgets.unavailable"), color: "var(--chart-2)" },
-      versions: { label: t("dashboard.widgets.installedVersions"), color: "var(--chart-1)" },
+      available: { label: t("dashboard.widgets.available"), color: getChartColor(0) },
+      unavailable: { label: t("dashboard.widgets.unavailable"), color: getChartColor(1) },
+      versions: { label: t("dashboard.widgets.installedVersions"), color: getChartColor(0) },
     };
 
     return { pieData: pie, barData: bar, chartConfig: cfg };
@@ -53,18 +54,11 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
 
   if (environments.length === 0) {
     return (
-      <Card className={className}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium">
-            {t("dashboard.widgets.environmentChart")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            {t("dashboard.noEnvironments")}
-          </div>
-        </CardContent>
-      </Card>
+      <WidgetEmptyCard
+        title={t("dashboard.widgets.environmentChart")}
+        message={t("dashboard.noEnvironments")}
+        className={className}
+      />
     );
   }
 

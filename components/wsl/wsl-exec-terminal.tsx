@@ -15,9 +15,12 @@ import {
 } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { TerminalSquare, Play, Trash2, Copy, CheckCircle2, XCircle, Star, BookmarkPlus } from 'lucide-react';
 import { Kbd } from '@/components/ui/kbd';
 import { toast } from 'sonner';
+import { useWslStore } from '@/lib/stores/wsl';
+import { PRESET_COMMANDS } from '@/lib/constants/wsl';
 import type { ExecHistoryEntry, WslExecTerminalProps } from '@/types/wsl';
 
 export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
@@ -27,6 +30,9 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
   const [executing, setExecuting] = useState(false);
   const [history, setHistory] = useState<ExecHistoryEntry[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { savedCommands, addSavedCommand, removeSavedCommand } = useWslStore();
+  const allSavedCommands = [...PRESET_COMMANDS, ...savedCommands];
 
   useEffect(() => {
     if (distros.length > 0 && !selectedDistro) {
@@ -129,7 +135,65 @@ export function WslExecTerminal({ distros, onExec, t }: WslExecTerminalProps) {
         </div>
 
         <div className="flex gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                <Star className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-2">
+              <p className="text-xs font-medium text-muted-foreground mb-2">{t('wsl.savedCmd.title')}</p>
+              <ScrollArea className="max-h-48">
+                <div className="space-y-1">
+                  {allSavedCommands.map((cmd) => (
+                    <div key={cmd.id} className="flex items-center gap-1 group">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 justify-start h-7 text-xs font-mono truncate"
+                        onClick={() => {
+                          setCommand(cmd.command);
+                          if (cmd.user) setUser(cmd.user);
+                          inputRef.current?.focus();
+                        }}
+                      >
+                        <span className="truncate">{cmd.name}</span>
+                      </Button>
+                      {!cmd.isPreset && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
+                          onClick={() => removeSavedCommand(cmd.id)}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+              {command.trim() && (
+                <>
+                  <div className="border-t my-2" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-7 text-xs gap-1"
+                    onClick={() => {
+                      addSavedCommand({ name: command.trim().slice(0, 40), command: command.trim(), user: user.trim() || undefined });
+                      toast.success(t('wsl.savedCmd.added'));
+                    }}
+                  >
+                    <BookmarkPlus className="h-3 w-3" />
+                    {t('wsl.savedCmd.saveCurrent')}
+                  </Button>
+                </>
+              )}
+            </PopoverContent>
+          </Popover>
           <Input
+            ref={inputRef}
             className="h-8 text-xs font-mono flex-1"
             placeholder={t('wsl.exec.commandPlaceholder')}
             value={command}

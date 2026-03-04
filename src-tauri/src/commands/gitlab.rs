@@ -14,7 +14,8 @@ use super::download::SharedDownloadManager;
 fn map_gitlab_error(e: CogniaError) -> String {
     let msg = e.to_string();
     if msg.contains("401") || msg.contains("Unauthorized") {
-        "GitLab authentication failed. Check your access token and ensure it has 'read_api' scope.".into()
+        "GitLab authentication failed. Check your access token and ensure it has 'read_api' scope."
+            .into()
     } else if msg.contains("403") || msg.contains("Forbidden") {
         "Access denied. Your token may lack permissions for this project.".into()
     } else if msg.contains("404") || msg.contains("Not Found") {
@@ -179,7 +180,10 @@ pub async fn gitlab_parse_url(url: String) -> Result<Option<GitLabParsedProject>
 
 /// Helper to create a GitLabProvider with optional token and instance URL.
 /// Falls back to loading token and instance URL from settings if not provided.
-async fn make_gitlab_provider(token: Option<String>, instance_url: Option<String>) -> GitLabProvider {
+async fn make_gitlab_provider(
+    token: Option<String>,
+    instance_url: Option<String>,
+) -> GitLabProvider {
     let settings = crate::config::Settings::load().await.ok();
 
     let effective_token = if token.as_ref().map_or(true, |t| t.is_empty()) {

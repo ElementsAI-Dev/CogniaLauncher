@@ -366,7 +366,10 @@ hooks:
 
         let m: Manifest = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(m.project.name, Some("full-project".to_string()));
-        assert_eq!(m.project.description, Some("A full test project".to_string()));
+        assert_eq!(
+            m.project.description,
+            Some("A full test project".to_string())
+        );
         assert_eq!(m.environments.len(), 2);
 
         let node = m.environments.get("node").unwrap();
@@ -378,13 +381,19 @@ hooks:
         assert_eq!(m.packages.len(), 2);
         assert_eq!(m.custom_packages.len(), 1);
         assert_eq!(m.custom_packages[0].name, "mytool");
-        assert_eq!(m.custom_packages[0].source.github, Some("owner/mytool".to_string()));
+        assert_eq!(
+            m.custom_packages[0].source.github,
+            Some("owner/mytool".to_string())
+        );
         assert_eq!(m.custom_packages[0].binaries, vec!["mytool".to_string()]);
         assert_eq!(
             m.custom_packages[0].checksum.as_ref().unwrap().sha256,
             Some("abc123".to_string())
         );
-        assert_eq!(m.custom_packages[0].post_install, vec!["chmod +x mytool".to_string()]);
+        assert_eq!(
+            m.custom_packages[0].post_install,
+            vec!["chmod +x mytool".to_string()]
+        );
 
         assert_eq!(m.platforms.len(), 1);
         assert_eq!(m.platforms.get("windows").unwrap().packages.len(), 1);
@@ -634,7 +643,10 @@ custom_packages:
 
         let b = &m.custom_packages[1];
         assert!(b.source.github.is_none());
-        assert_eq!(b.source.url, Some("https://example.com/tool-b.zip".to_string()));
+        assert_eq!(
+            b.source.url,
+            Some("https://example.com/tool-b.zip".to_string())
+        );
     }
 
     #[test]

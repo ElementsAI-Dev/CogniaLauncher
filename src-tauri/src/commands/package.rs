@@ -21,10 +21,7 @@ const VERSIONS_CACHE_TTL: i64 = 1800; // 30 minutes
 const STATUS_CACHE_TTL: i64 = 120; // 2 minutes
 
 /// Open a MetadataCache with a custom TTL, reading cache_dir from settings.
-async fn open_metadata_cache(
-    settings: &SharedSettings,
-    ttl: i64,
-) -> Result<MetadataCache, String> {
+async fn open_metadata_cache(settings: &SharedSettings, ttl: i64) -> Result<MetadataCache, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     drop(s);
@@ -112,7 +109,9 @@ pub async fn package_search(
 
     // Store in cache
     if let Ok(mut cache) = open_metadata_cache(settings.inner(), SEARCH_CACHE_TTL).await {
-        let _ = cache.set_with_ttl(&cache_key, &results, SEARCH_CACHE_TTL).await;
+        let _ = cache
+            .set_with_ttl(&cache_key, &results, SEARCH_CACHE_TTL)
+            .await;
     }
 
     Ok(results)
@@ -217,10 +216,7 @@ pub async fn package_list(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<Vec<InstalledPackage>, String> {
-    let cache_key = format!(
-        "pkg:installed:{}",
-        provider.as_deref().unwrap_or("all")
-    );
+    let cache_key = format!("pkg:installed:{}", provider.as_deref().unwrap_or("all"));
 
     if !force.unwrap_or(false) {
         if let Ok(mut cache) = open_metadata_cache(settings.inner(), INSTALLED_CACHE_TTL).await {
@@ -242,10 +238,7 @@ pub async fn package_list(
         };
 
         // Collect Arc<dyn Provider> references under the read lock, then release it
-        let providers_to_check: Vec<_> = provider_ids
-            .iter()
-            .filter_map(|id| reg.get(id))
-            .collect();
+        let providers_to_check: Vec<_> = provider_ids.iter().filter_map(|id| reg.get(id)).collect();
         drop(reg);
 
         // Limit concurrent provider checks to avoid subprocess storms
@@ -282,7 +275,9 @@ pub async fn package_list(
     };
 
     if let Ok(mut cache) = open_metadata_cache(settings.inner(), INSTALLED_CACHE_TTL).await {
-        let _ = cache.set_with_ttl(&cache_key, &all_packages, INSTALLED_CACHE_TTL).await;
+        let _ = cache
+            .set_with_ttl(&cache_key, &all_packages, INSTALLED_CACHE_TTL)
+            .await;
     }
 
     Ok(all_packages)
@@ -371,7 +366,9 @@ pub async fn provider_status_all(
     };
 
     if let Ok(mut cache) = open_metadata_cache(settings.inner(), STATUS_CACHE_TTL).await {
-        let _ = cache.set_with_ttl(cache_key, &results, STATUS_CACHE_TTL).await;
+        let _ = cache
+            .set_with_ttl(cache_key, &results, STATUS_CACHE_TTL)
+            .await;
     }
 
     Ok(results)
@@ -387,17 +384,11 @@ pub async fn package_check_installed(
 
     if let Some(provider_id) = provider {
         if let Some(p) = reg.get(&provider_id) {
+            // O(1) targeted lookup instead of listing all packages
             let installed = p
-                .list_installed(InstalledFilter {
-                    global_only: true,
-                    ..Default::default()
-                })
+                .get_installed_version(&name)
                 .await
-                .map(|packages| {
-                    packages
-                        .iter()
-                        .any(|pkg| pkg.name.to_lowercase() == name.to_lowercase())
-                })
+                .map(|v| v.is_some())
                 .unwrap_or(false);
             return Ok(installed);
         }
@@ -407,19 +398,9 @@ pub async fn package_check_installed(
     for provider_id in reg.list() {
         if let Some(p) = reg.get(provider_id) {
             if p.is_available().await {
-                if let Ok(packages) = p
-                    .list_installed(InstalledFilter {
-                        global_only: true,
-                        ..Default::default()
-                    })
-                    .await
-                {
-                    if packages
-                        .iter()
-                        .any(|pkg| pkg.name.to_lowercase() == name.to_lowercase())
-                    {
-                        return Ok(true);
-                    }
+                // O(1) per provider instead of listing all installed packages
+                if let Ok(Some(_)) = p.get_installed_version(&name).await {
+                    return Ok(true);
                 }
             }
         }
@@ -478,7 +459,9 @@ pub async fn package_versions(
     };
 
     if let Ok(mut cache) = open_metadata_cache(settings.inner(), VERSIONS_CACHE_TTL).await {
-        let _ = cache.set_with_ttl(&cache_key, &versions, VERSIONS_CACHE_TTL).await;
+        let _ = cache
+            .set_with_ttl(&cache_key, &versions, VERSIONS_CACHE_TTL)
+            .await;
     }
 
     Ok(versions)
@@ -505,9 +488,14 @@ pub async fn provider_enable(
         .disabled_providers
         .retain(|p| p != &provider_id);
     settings_guard.save().await.map_err(|e| e.to_string())?;
+    drop(settings_guard); // release write lock before invalidation reads settings
 
     let mut reg = registry.write().await;
     reg.set_provider_enabled(&provider_id, true);
+    drop(reg);
+
+    // Invalidate package caches since enabled provider changes installed package set
+    invalidate_package_caches(settings.inner()).await;
 
     Ok(())
 }
@@ -539,9 +527,14 @@ pub async fn provider_disable(
             .push(provider_id.clone());
     }
     settings_guard.save().await.map_err(|e| e.to_string())?;
+    drop(settings_guard); // release write lock before invalidation reads settings
 
     let mut reg = registry.write().await;
     reg.set_provider_enabled(&provider_id, false);
+    drop(reg);
+
+    // Invalidate package caches since disabled provider changes installed package set
+    invalidate_package_caches(settings.inner()).await;
 
     Ok(())
 }

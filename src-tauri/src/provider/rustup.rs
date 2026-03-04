@@ -871,8 +871,7 @@ pub(crate) fn parse_cargo_toml_rust_version(content: &str) -> Option<String> {
                     .trim_matches('"')
                     .trim_matches('\'')
                     .trim();
-                if !version.is_empty()
-                    && version.chars().next().is_some_and(|c| c.is_ascii_digit())
+                if !version.is_empty() && version.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return Some(version.to_string());
                 }

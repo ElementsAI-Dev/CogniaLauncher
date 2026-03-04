@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 export function useAppearanceConfigSync(config: Record<string, string>) {
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion, windowEffect, setWindowEffect } = useAppearanceStore();
   const appearanceConfigRef = useRef<string>('');
 
   useEffect(() => {
@@ -23,6 +23,7 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
       interfaceRadius: config['appearance.interface_radius'],
       interfaceDensity: config['appearance.interface_density'],
       reducedMotion: config['appearance.reduced_motion'],
+      windowEffect: config['appearance.window_effect'],
       language: config['appearance.language'],
     });
 
@@ -54,6 +55,10 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
       setReducedMotion(parsed.reducedMotion);
     }
 
+    if (parsed.windowEffect && parsed.windowEffect !== windowEffect) {
+      setWindowEffect(parsed.windowEffect);
+    }
+
     if (parsed.locale && parsed.locale !== locale) {
       setLocale(parsed.locale);
     }
@@ -74,6 +79,8 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
               return t('settings.interfaceDensity');
             case 'reducedMotion':
               return t('settings.reducedMotion');
+            case 'windowEffect':
+              return t('settings.windowEffect');
             case 'language':
               return t('settings.language');
             default:
@@ -86,5 +93,5 @@ export function useAppearanceConfigSync(config: Record<string, string>) {
     }
 
     appearanceConfigRef.current = appearanceSnapshot;
-  }, [config, theme, accentColor, chartColorTheme, interfaceRadius, interfaceDensity, reducedMotion, locale, setTheme, setAccentColor, setChartColorTheme, setInterfaceRadius, setInterfaceDensity, setReducedMotion, setLocale, t]);
+  }, [config, theme, accentColor, chartColorTheme, interfaceRadius, interfaceDensity, reducedMotion, windowEffect, locale, setTheme, setAccentColor, setChartColorTheme, setInterfaceRadius, setInterfaceDensity, setReducedMotion, setWindowEffect, setLocale, t]);
 }

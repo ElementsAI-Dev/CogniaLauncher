@@ -272,6 +272,7 @@ export function EnvironmentDetailsPanel({
                 <DetectedVersionBadge
                   version={detectedVersion.version}
                   source={detectedVersion.source}
+                  currentVersion={env.current_version}
                   t={t}
                 />
               )}

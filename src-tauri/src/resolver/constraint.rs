@@ -472,10 +472,7 @@ mod tests {
     #[test]
     fn test_is_satisfied_by_false() {
         let c: VersionConstraint = "^3.0.0".parse().unwrap();
-        let versions: Vec<Version> = vec![
-            "1.0.0".parse().unwrap(),
-            "2.0.0".parse().unwrap(),
-        ];
+        let versions: Vec<Version> = vec!["1.0.0".parse().unwrap(), "2.0.0".parse().unwrap()];
         assert!(!c.is_satisfied_by(&versions));
     }
 
@@ -494,10 +491,7 @@ mod tests {
     #[test]
     fn test_select_best_none() {
         let c: VersionConstraint = "^3.0.0".parse().unwrap();
-        let versions: Vec<Version> = vec![
-            "1.0.0".parse().unwrap(),
-            "2.0.0".parse().unwrap(),
-        ];
+        let versions: Vec<Version> = vec!["1.0.0".parse().unwrap(), "2.0.0".parse().unwrap()];
         assert_eq!(c.select_best(&versions), None);
     }
 
@@ -544,7 +538,10 @@ mod tests {
     #[test]
     fn test_parse_gte() {
         let c: VersionConstraint = ">=1.2.3".parse().unwrap();
-        assert_eq!(c, VersionConstraint::GreaterThanOrEqual("1.2.3".parse().unwrap()));
+        assert_eq!(
+            c,
+            VersionConstraint::GreaterThanOrEqual("1.2.3".parse().unwrap())
+        );
     }
 
     #[test]
@@ -556,7 +553,10 @@ mod tests {
     #[test]
     fn test_parse_lte() {
         let c: VersionConstraint = "<=1.2.3".parse().unwrap();
-        assert_eq!(c, VersionConstraint::LessThanOrEqual("1.2.3".parse().unwrap()));
+        assert_eq!(
+            c,
+            VersionConstraint::LessThanOrEqual("1.2.3".parse().unwrap())
+        );
     }
 
     #[test]

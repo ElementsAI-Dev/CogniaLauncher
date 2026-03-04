@@ -426,10 +426,7 @@ mod tests {
 
     #[test]
     fn test_download_error_task_not_found_not_recoverable() {
-        assert!(!DownloadError::TaskNotFound {
-            id: "abc".into()
-        }
-        .is_recoverable());
+        assert!(!DownloadError::TaskNotFound { id: "abc".into() }.is_recoverable());
     }
 
     #[test]
@@ -469,17 +466,35 @@ mod tests {
     #[test]
     fn test_download_error_serde_roundtrip() {
         let errors: Vec<DownloadError> = vec![
-            DownloadError::Network { message: "timeout".into() },
-            DownloadError::FileSystem { message: "disk full".into() },
-            DownloadError::ChecksumMismatch { expected: "abc".into(), actual: "def".into() },
-            DownloadError::InsufficientSpace { required: 1000, available: 500 },
+            DownloadError::Network {
+                message: "timeout".into(),
+            },
+            DownloadError::FileSystem {
+                message: "disk full".into(),
+            },
+            DownloadError::ChecksumMismatch {
+                expected: "abc".into(),
+                actual: "def".into(),
+            },
+            DownloadError::InsufficientSpace {
+                required: 1000,
+                available: 500,
+            },
             DownloadError::Interrupted,
-            DownloadError::InvalidUrl { url: "bad://url".into() },
-            DownloadError::HttpError { status: 404, message: "Not Found".into() },
+            DownloadError::InvalidUrl {
+                url: "bad://url".into(),
+            },
+            DownloadError::HttpError {
+                status: 404,
+                message: "Not Found".into(),
+            },
             DownloadError::Timeout { seconds: 30 },
             DownloadError::RateLimited { retry_after: 60 },
             DownloadError::TaskNotFound { id: "abc".into() },
-            DownloadError::InvalidOperation { state: "paused".into(), operation: "pause".into() },
+            DownloadError::InvalidOperation {
+                state: "paused".into(),
+                operation: "pause".into(),
+            },
         ];
 
         for error in errors {

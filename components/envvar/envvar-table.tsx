@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import {
   Table,
   TableBody,
@@ -112,10 +113,9 @@ export function EnvVarTable({
     }
   }, [t]);
 
-  const handleCopy = useCallback((value: string) => {
-    navigator.clipboard.writeText(value).then(() => {
-      toast.success(t('envvar.table.copied'));
-    });
+  const handleCopy = useCallback(async (value: string) => {
+    await writeClipboard(value);
+    toast.success(t('envvar.table.copied'));
   }, [t]);
 
   const handleStartEdit = useCallback((row: EnvVarRow) => {

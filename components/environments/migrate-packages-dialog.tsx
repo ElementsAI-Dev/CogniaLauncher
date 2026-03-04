@@ -95,7 +95,7 @@ export function MigratePackagesDialog({
                 <div className="space-y-1.5">
                   {packages.map((pkg) => (
                     <div
-                      key={pkg.name}
+                      key={`${pkg.name}:${pkg.version}`}
                       className={cn(
                         "flex items-center gap-3 p-2.5 rounded-lg border transition-colors",
                         selected.has(pkg.name) ? "bg-primary/5 border-primary/20" : "hover:bg-muted/50",

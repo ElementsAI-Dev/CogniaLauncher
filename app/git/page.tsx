@@ -7,6 +7,7 @@ import { useGitAdvanced } from '@/hooks/use-git-advanced';
 import { useGitLfs } from '@/hooks/use-git-lfs';
 import { useLocale } from '@/components/providers/locale-provider';
 import { isTauri } from '@/lib/tauri';
+import { writeClipboard } from '@/lib/clipboard';
 import { useGitRepoStore } from '@/lib/stores/git';
 import {
   GitStatusCard,
@@ -699,8 +700,8 @@ export default function GitPage() {
                 selectedHash={selectedCommitHash}
                 branches={git.branches}
                 refreshKey={graphRefreshKey}
-                onCopyHash={(hash) => {
-                  navigator.clipboard.writeText(hash);
+                onCopyHash={async (hash) => {
+                  await writeClipboard(hash);
                   toast.success(t('git.graph.copyHash'));
                 }}
                 onCreateBranch={async (hash) => {

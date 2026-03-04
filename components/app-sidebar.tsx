@@ -21,6 +21,7 @@ import {
   GitBranch,
   Variable,
   Wrench,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -183,6 +184,17 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       ))}
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={pathname === "/health"}
+                        >
+                          <Link href="/health" className="flex items-center gap-1.5">
+                            <ShieldCheck className="h-4 w-4" />
+                            {t("nav.health")}
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
                     </SidebarMenuSub>
                   </CollapsibleContent>
                 </SidebarMenuItem>

@@ -62,23 +62,70 @@ export function useExternalCache({
     }
   }, [setUseTrash, useTrash]);
 
+  const abortRef = useRef(false);
+  const sizeQueue = useRef<string[]>([]);
+
+  const fillSizesProgressively = useCallback(async (items: ExternalCacheInfo[]) => {
+    const pending = items.filter((c) => c.sizePending);
+    if (pending.length === 0) return;
+
+    const { calculateExternalCacheSize } = await import('@/lib/tauri');
+    sizeQueue.current = pending.map((c) => c.provider);
+
+    const CONCURRENCY = 4;
+    let idx = 0;
+
+    async function next(): Promise<void> {
+      while (idx < sizeQueue.current.length) {
+        if (abortRef.current) return;
+        const provId = sizeQueue.current[idx++];
+        try {
+          const size = await calculateExternalCacheSize(provId);
+          setCaches((prev) =>
+            prev.map((c) =>
+              c.provider === provId
+                ? { ...c, size, sizeHuman: formatBytes(size), sizePending: false, canClean: size > 0 || c.canClean }
+                : c,
+            ),
+          );
+        } catch {
+          setCaches((prev) =>
+            prev.map((c) =>
+              c.provider === provId ? { ...c, sizePending: false } : c,
+            ),
+          );
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => next()));
+  }, []);
+
   const fetchExternalCaches = useCallback(async () => {
     if (!isTauri()) return;
+    abortRef.current = false;
     setLoading(true);
     try {
-      const { discoverExternalCaches, getExternalCachePaths } = await import('@/lib/tauri');
-      const [discovered, paths] = await Promise.all([
-        discoverExternalCaches(),
-        includePathInfos ? getExternalCachePaths() : Promise.resolve<ExternalCachePathInfo[]>([]),
-      ]);
-      setCaches(discovered);
-      setPathInfos(paths);
+      const tauri = await import('@/lib/tauri');
+
+      // Phase 1: fast discovery (instant — no size calculation)
+      const fast = await tauri.discoverExternalCachesFast();
+      setCaches(fast);
+
+      // Fetch path infos in parallel if needed (already parallelized on backend)
+      if (includePathInfos) {
+        tauri.getExternalCachePaths().then((paths) => setPathInfos(paths)).catch(() => {});
+      }
+
+      setLoading(false);
+
+      // Phase 2: fill in sizes progressively (4 at a time)
+      await fillSizesProgressively(fast);
     } catch (err) {
       console.error('Failed to fetch external caches:', err);
-    } finally {
       setLoading(false);
     }
-  }, [includePathInfos]);
+  }, [includePathInfos, fillSizesProgressively]);
 
   useEffect(() => {
     if (!autoFetch || initializedRef.current) return;
@@ -98,6 +145,7 @@ export function useExternalCache({
 
     return () => {
       dispose();
+      abortRef.current = true;
     };
   }, [fetchExternalCaches]);
 

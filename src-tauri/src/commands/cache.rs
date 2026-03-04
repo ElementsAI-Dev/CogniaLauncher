@@ -1318,6 +1318,34 @@ pub async fn discover_external_caches() -> Result<Vec<ExternalCacheInfo>, String
         .map_err(|e| e.to_string())
 }
 
+/// Fast discovery: checks availability + path existence only, no size calculation.
+/// Returns instantly with `sizePending: true`. Use `calculate_external_cache_size`
+/// afterward to fill in sizes per-provider.
+#[tauri::command]
+pub async fn discover_external_caches_fast(
+    settings: State<'_, SharedSettings>,
+) -> Result<Vec<ExternalCacheInfo>, String> {
+    let s = settings.read().await;
+    let excluded = s.general.external_cache_excluded_providers.clone();
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+    Ok(external::discover_all_caches_cached_with_custom(&excluded, &custom).await)
+}
+
+/// Calculate size for a single external cache provider (used for progressive loading).
+#[tauri::command]
+pub async fn calculate_external_cache_size(
+    provider: String,
+    settings: State<'_, SharedSettings>,
+) -> Result<u64, String> {
+    let s = settings.read().await;
+    let custom = s.general.custom_cache_entries.clone();
+    drop(s);
+    external::calculate_provider_cache_size(&provider, &custom)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Clean cache for a specific external package manager
 #[tauri::command]
 pub async fn clean_external_cache(
@@ -2013,11 +2041,20 @@ mod tests {
         let value = serde_json::to_value(payload).expect("serialize cache optimize result");
 
         assert!(matches!(value.get("sizeBefore"), Some(Value::Number(_))));
-        assert!(matches!(value.get("sizeBeforeHuman"), Some(Value::String(_))));
+        assert!(matches!(
+            value.get("sizeBeforeHuman"),
+            Some(Value::String(_))
+        ));
         assert!(matches!(value.get("sizeAfter"), Some(Value::Number(_))));
-        assert!(matches!(value.get("sizeAfterHuman"), Some(Value::String(_))));
+        assert!(matches!(
+            value.get("sizeAfterHuman"),
+            Some(Value::String(_))
+        ));
         assert!(matches!(value.get("sizeSaved"), Some(Value::Number(_))));
-        assert!(matches!(value.get("sizeSavedHuman"), Some(Value::String(_))));
+        assert!(matches!(
+            value.get("sizeSavedHuman"),
+            Some(Value::String(_))
+        ));
         assert!(value.get("size_before").is_none());
         assert!(value.get("size_before_human").is_none());
     }

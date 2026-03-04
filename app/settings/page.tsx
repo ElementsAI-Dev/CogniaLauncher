@@ -45,6 +45,7 @@ import {
   ProviderSettings,
   BackupSettings,
   StartupSettings,
+  ShortcutSettings,
   SystemInfo,
   SettingsSkeleton,
 } from '@/components/settings';
@@ -54,10 +55,17 @@ import { CollapsibleSection } from '@/components/settings/collapsible-section';
 import { PageHeader } from '@/components/layout/page-header';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle, Save, RotateCcw, Download, Upload } from 'lucide-react';
+import { AlertCircle, Save, RotateCcw, Download, Upload, ClipboardPaste, Copy, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useOnboardingStore } from '@/lib/stores/onboarding';
 import { BUBBLE_HINTS } from '@/lib/constants/onboarding';
 import { toast } from 'sonner';
+import { readClipboard, writeClipboard } from '@/lib/clipboard';
 import { type SettingsSection } from '@/lib/constants/settings-registry';
 
 interface SaveProgress {
@@ -74,6 +82,7 @@ const SECTION_IDS: SettingsSection[] = [
   'appearance',
   'updates',
   'tray',
+  'shortcuts',
   'paths',
   'provider',
   'backup',
@@ -86,7 +95,7 @@ export default function SettingsPage() {
   const { appSettings, setAppSettings, cogniaDir } = useSettingsStore();
   const { t, locale, setLocale } = useLocale();
   const { theme, setTheme } = useTheme();
-  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion } = useAppearanceStore();
+  const { accentColor, setAccentColor, chartColorTheme, setChartColorTheme, interfaceRadius, setInterfaceRadius, interfaceDensity, setInterfaceDensity, reducedMotion, setReducedMotion, windowEffect, setWindowEffect } = useAppearanceStore();
   const [localConfig, setLocalConfig] = useState<Record<string, string>>({});
   const [originalConfig, setOriginalConfig] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
@@ -120,6 +129,7 @@ export default function SettingsPage() {
         appearance: ['appearance.'],
         updates: ['updates.'],
         tray: ['tray.'],
+        shortcuts: ['shortcuts.'],
         paths: ['paths.'],
         provider: ['provider_settings.'],
         backup: [],
@@ -247,26 +257,70 @@ export default function SettingsPage() {
     }
   }, [resetConfig, t]);
 
+  const buildExportData = useCallback(async (): Promise<Record<string, unknown>> => {
+    if (isTauri()) {
+      const { configExport } = await import('@/lib/tauri');
+      const tomlContent = await configExport();
+      return {
+        version: '2.0',
+        exportedAt: new Date().toISOString(),
+        backendConfig: tomlContent,
+        appSettings,
+      };
+    }
+    return {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      settings: localConfig,
+      appSettings,
+    };
+  }, [localConfig, appSettings]);
+
+  const applyImportedSettings = useCallback(async (content: string) => {
+    const data = JSON.parse(content);
+
+    // v2.0 format: full backend TOML config
+    if (data.version === '2.0' && data.backendConfig && isTauri()) {
+      const { configImport } = await import('@/lib/tauri');
+      await configImport(data.backendConfig);
+      if (data.appSettings && typeof data.appSettings === 'object') {
+        setAppSettings(data.appSettings);
+      }
+      // Refresh config from backend
+      await fetchConfig();
+      setHasChanges(false);
+      setValidationErrors({});
+      toast.success(t('settings.importSuccess'));
+      return;
+    }
+
+    // v1.0 format: frontend JSON settings map (legacy / web fallback)
+    if (!data.settings || typeof data.settings !== 'object') {
+      toast.error(t('settings.importInvalidFormat'));
+      return;
+    }
+
+    setLocalConfig((prev) => ({ ...prev, ...data.settings }));
+    setHasChanges(true);
+
+    if (data.appSettings && typeof data.appSettings === 'object') {
+      setAppSettings(data.appSettings);
+    }
+
+    const errors: Record<string, string | null> = {};
+    for (const [key, value] of Object.entries(data.settings)) {
+      if (typeof value === 'string') {
+        errors[key] = validateField(key, value, t);
+      }
+    }
+    setValidationErrors((prev) => ({ ...prev, ...errors }));
+
+    toast.success(t('settings.importSuccess'));
+  }, [setAppSettings, fetchConfig, t]);
+
   const handleExport = useCallback(async () => {
     try {
-      let exportData: Record<string, unknown>;
-      if (isTauri()) {
-        const { configExport } = await import('@/lib/tauri');
-        const tomlContent = await configExport();
-        exportData = {
-          version: '2.0',
-          exportedAt: new Date().toISOString(),
-          backendConfig: tomlContent,
-          appSettings,
-        };
-      } else {
-        exportData = {
-          version: '1.0',
-          exportedAt: new Date().toISOString(),
-          settings: localConfig,
-          appSettings,
-        };
-      }
+      const exportData = await buildExportData();
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -280,7 +334,17 @@ export default function SettingsPage() {
     } catch {
       toast.error(t('settings.saveFailed'));
     }
-  }, [localConfig, appSettings, t]);
+  }, [buildExportData, t]);
+
+  const handleExportToClipboard = useCallback(async () => {
+    try {
+      const exportData = await buildExportData();
+      await writeClipboard(JSON.stringify(exportData, null, 2));
+      toast.success(t('settings.exportToClipboard'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
+    }
+  }, [buildExportData, t]);
 
   const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -290,45 +354,7 @@ export default function SettingsPage() {
     reader.onload = async (e) => {
       try {
         const content = e.target?.result as string;
-        const data = JSON.parse(content);
-
-        // v2.0 format: full backend TOML config
-        if (data.version === '2.0' && data.backendConfig && isTauri()) {
-          const { configImport } = await import('@/lib/tauri');
-          await configImport(data.backendConfig);
-          if (data.appSettings && typeof data.appSettings === 'object') {
-            setAppSettings(data.appSettings);
-          }
-          // Refresh config from backend
-          await fetchConfig();
-          setHasChanges(false);
-          setValidationErrors({});
-          toast.success(t('settings.importSuccess'));
-          return;
-        }
-
-        // v1.0 format: frontend JSON settings map (legacy / web fallback)
-        if (!data.settings || typeof data.settings !== 'object') {
-          toast.error(t('settings.importInvalidFormat'));
-          return;
-        }
-
-        setLocalConfig((prev) => ({ ...prev, ...data.settings }));
-        setHasChanges(true);
-
-        if (data.appSettings && typeof data.appSettings === 'object') {
-          setAppSettings(data.appSettings);
-        }
-
-        const errors: Record<string, string | null> = {};
-        for (const [key, value] of Object.entries(data.settings)) {
-          if (typeof value === 'string') {
-            errors[key] = validateField(key, value, t);
-          }
-        }
-        setValidationErrors((prev) => ({ ...prev, ...errors }));
-
-        toast.success(t('settings.importSuccess'));
+        await applyImportedSettings(content);
       } catch {
         toast.error(t('settings.importFailed'));
       }
@@ -338,7 +364,20 @@ export default function SettingsPage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [setAppSettings, fetchConfig, t]);
+  }, [applyImportedSettings, t]);
+
+  const handleImportFromClipboard = useCallback(async () => {
+    try {
+      const text = await readClipboard();
+      if (!text?.trim()) {
+        toast.error(t('settings.clipboardEmpty'));
+        return;
+      }
+      await applyImportedSettings(text);
+    } catch {
+      toast.error(t('settings.importFailed'));
+    }
+  }, [applyImportedSettings, t]);
 
   const handleDiscardChanges = useCallback(() => {
     setLocalConfig(config);
@@ -429,6 +468,20 @@ export default function SettingsPage() {
     }
   }, [setReducedMotion, updateConfigValue]);
 
+  const handleWindowEffectChange = useCallback(async (effect: string) => {
+    const typed = effect as import('@/lib/theme/types').WindowEffect;
+    setWindowEffect(typed);
+    if (isTauri()) {
+      try {
+        const { windowEffectApply } = await import('@/lib/tauri');
+        await windowEffectApply(effect);
+        await updateConfigValue('appearance.window_effect', effect);
+      } catch (err) {
+        console.error('Failed to apply window effect:', err);
+      }
+    }
+  }, [setWindowEffect, updateConfigValue]);
+
   // Focus search handler
   const handleFocusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -458,6 +511,7 @@ export default function SettingsPage() {
         appearance: ['appearance.'],
         updates: ['updates.'],
         tray: ['tray.'],
+        shortcuts: ['shortcuts.'],
         paths: ['paths.'],
         provider: ['provider_settings.'],
         backup: [],
@@ -558,14 +612,44 @@ export default function SettingsPage() {
               className="hidden"
               aria-label={t('settings.importSettings')}
             />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-              {t('settings.import')}
-            </Button>
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="h-4 w-4 mr-2" aria-hidden="true" />
-              {t('settings.export')}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t('settings.import')}
+                  <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  {t('settings.importFromFile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleImportFromClipboard}>
+                  <ClipboardPaste className="h-4 w-4 mr-2" />
+                  {t('settings.importFromClipboard')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t('settings.export')}
+                  <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  {t('settings.exportAsFile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportToClipboard}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  {t('settings.exportToClipboard')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" disabled={!canReset}>
@@ -754,6 +838,8 @@ export default function SettingsPage() {
                 setInterfaceDensity={handleInterfaceDensityChange}
                 reducedMotion={reducedMotion}
                 setReducedMotion={handleReducedMotionChange}
+                windowEffect={windowEffect}
+                setWindowEffect={handleWindowEffectChange}
                 t={t}
               />
             </CollapsibleSection>
@@ -788,6 +874,25 @@ export default function SettingsPage() {
               <TraySettings
                 appSettings={appSettings}
                 onValueChange={handleAppSettingsChange}
+                t={t}
+              />
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="shortcuts"
+              title={t('settings.shortcuts')}
+              description={t('settings.shortcutsDesc')}
+              icon="Keyboard"
+              defaultOpen={!collapsedSections.has('shortcuts')}
+              hasChanges={sectionHasChanges('shortcuts')}
+              onResetSection={handleResetSection}
+              onOpenChange={handleSectionOpenChange}
+              t={t}
+            >
+              <ShortcutSettings
+                localConfig={localConfig}
+                errors={validationErrors}
+                onValueChange={handleChange}
                 t={t}
               />
             </CollapsibleSection>

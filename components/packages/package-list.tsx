@@ -141,7 +141,7 @@ export function PackageList({
         </div>
       )}
 
-      <ScrollArea className="h-[500px]">
+      <ScrollArea className="h-[500px] w-full overflow-hidden">
         <div className="space-y-2 pr-4">
           {packages.map((pkg, index) => {
             const isInstalled = type === "installed";

@@ -55,7 +55,8 @@ impl PersistedPluginState {
         }
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| CogniaError::Plugin(format!("Failed to serialize plugin state: {}", e)))?;
-        tokio::fs::write(&path, content).await
+        tokio::fs::write(&path, content)
+            .await
             .map_err(|e| CogniaError::Plugin(format!("Failed to write plugin state: {}", e)))?;
         Ok(())
     }
@@ -101,11 +102,19 @@ pub struct PluginHealth {
 
 impl PluginHealth {
     pub fn avg_duration_ms(&self) -> u64 {
-        if self.total_calls == 0 { 0 } else { self.total_duration_ms / self.total_calls }
+        if self.total_calls == 0 {
+            0
+        } else {
+            self.total_duration_ms / self.total_calls
+        }
     }
 
     pub fn error_rate(&self) -> f64 {
-        if self.total_calls == 0 { 0.0 } else { self.failed_calls as f64 / self.total_calls as f64 }
+        if self.total_calls == 0 {
+            0.0
+        } else {
+            self.failed_calls as f64 / self.total_calls as f64
+        }
     }
 }
 
@@ -220,7 +229,11 @@ impl PluginManager {
                 // Ensure plugin data directory exists
                 let data_dir = self.get_plugin_data_dir(plugin_id).await;
                 if let Err(e) = tokio::fs::create_dir_all(&data_dir).await {
-                    log::warn!("Failed to create data dir for plugin '{}': {}", plugin_id, e);
+                    log::warn!(
+                        "Failed to create data dir for plugin '{}': {}",
+                        plugin_id,
+                        e
+                    );
                 }
 
                 // WASM is loaded lazily on first call_tool — skip eager loading
@@ -249,12 +262,15 @@ impl PluginManager {
                 }
                 // Track dangerous permissions that were explicitly granted
                 let dangerous = ["config_write", "pkg_install", "process_exec"];
-                let granted_dangerous: Vec<String> = dangerous.iter()
+                let granted_dangerous: Vec<String> = dangerous
+                    .iter()
                     .filter(|p| perm_state.is_granted(p))
                     .map(|p| p.to_string())
                     .collect();
                 if !granted_dangerous.is_empty() {
-                    state.granted_dangerous.insert(plugin_id.clone(), granted_dangerous);
+                    state
+                        .granted_dangerous
+                        .insert(plugin_id.clone(), granted_dangerous);
                 }
             }
         }
@@ -290,7 +306,8 @@ impl PluginManager {
                 if !reg.contains(dep) {
                     log::warn!(
                         "Plugin '{}' requires plugin '{}' which is not installed",
-                        plugin_id, dep
+                        plugin_id,
+                        dep
                     );
                 }
             }
@@ -415,9 +432,8 @@ impl PluginManager {
         // Remove from registry
         let plugin = {
             let mut reg = self.registry.write().await;
-            reg.unregister(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?
+            reg.unregister(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?
         };
 
         // Delete plugin directory
@@ -440,9 +456,9 @@ impl PluginManager {
     pub async fn enable(&mut self, plugin_id: &str) -> CogniaResult<()> {
         let wasm_path = {
             let mut reg = self.registry.write().await;
-            let plugin = reg.get_mut(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get_mut(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
             plugin.enabled = true;
             plugin.wasm_path.clone()
         };
@@ -470,9 +486,9 @@ impl PluginManager {
     pub async fn disable(&mut self, plugin_id: &str) -> CogniaResult<()> {
         {
             let mut reg = self.registry.write().await;
-            let plugin = reg.get_mut(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get_mut(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
             plugin.enabled = false;
         }
 
@@ -494,9 +510,9 @@ impl PluginManager {
     pub async fn reload(&mut self, plugin_id: &str) -> CogniaResult<()> {
         let wasm_path = {
             let reg = self.registry.read().await;
-            let plugin = reg.get(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
             if !plugin.enabled {
                 return Err(CogniaError::Plugin(format!(
@@ -533,9 +549,9 @@ impl PluginManager {
         // Verify plugin exists and is enabled, get wasm_path for lazy load
         let wasm_path = {
             let reg = self.registry.read().await;
-            let plugin = reg.get(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
             if !plugin.enabled {
                 return Err(CogniaError::Plugin(format!(
@@ -545,12 +561,7 @@ impl PluginManager {
             }
 
             // Verify tool exists in manifest
-            if !plugin
-                .manifest
-                .tools
-                .iter()
-                .any(|t| t.entry == tool_entry)
-            {
+            if !plugin.manifest.tools.iter().any(|t| t.entry == tool_entry) {
                 return Err(CogniaError::Plugin(format!(
                     "Tool entry '{}' not declared in plugin '{}'",
                     tool_entry, plugin_id
@@ -573,7 +584,10 @@ impl PluginManager {
 
         // Call the WASM function with health tracking
         let start = std::time::Instant::now();
-        let result = self.loader.call_function(plugin_id, tool_entry, input).await;
+        let result = self
+            .loader
+            .call_function(plugin_id, tool_entry, input)
+            .await;
         let duration_ms = start.elapsed().as_millis() as u64;
 
         let health = self.health.entry(plugin_id.to_string()).or_default();
@@ -620,7 +634,8 @@ impl PluginManager {
                     &emitted.payload,
                     Some(&emitted.source_plugin_id),
                     Some(&emitted.timestamp),
-                ).await;
+                )
+                .await;
             }
         }
 
@@ -683,7 +698,12 @@ impl PluginManager {
                 let reg = self.registry.read().await;
                 reg.iter()
                     .filter(|(_, p)| {
-                        p.enabled && p.manifest.plugin.listen_events.iter().any(|e| e == &queued_event || e == "*")
+                        p.enabled
+                            && p.manifest
+                                .plugin
+                                .listen_events
+                                .iter()
+                                .any(|e| e == &queued_event || e == "*")
                     })
                     .map(|(id, p)| (id.clone(), p.wasm_path.clone()))
                     .collect()
@@ -693,7 +713,11 @@ impl PluginManager {
                 // Lazy load if needed
                 if !self.loader.is_loaded(plugin_id) {
                     if let Err(e) = self.loader.load(plugin_id, wasm_path) {
-                        log::warn!("Failed to lazy-load plugin '{}' for event dispatch: {}", plugin_id, e);
+                        log::warn!(
+                            "Failed to lazy-load plugin '{}' for event dispatch: {}",
+                            plugin_id,
+                            e
+                        );
                         continue;
                     }
                 }
@@ -705,7 +729,8 @@ impl PluginManager {
                     "timestamp": queued_timestamp
                         .clone()
                         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-                }).to_string();
+                })
+                .to_string();
 
                 self.loader
                     .call_if_exists(plugin_id, "cognia_on_event", &input)
@@ -713,7 +738,11 @@ impl PluginManager {
             }
 
             if !listeners.is_empty() {
-                log::debug!("Dispatched event '{}' to {} plugin(s)", queued_event, listeners.len());
+                log::debug!(
+                    "Dispatched event '{}' to {} plugin(s)",
+                    queued_event,
+                    listeners.len()
+                );
             }
 
             let emitted = self.loader.drain_emitted_events().await;
@@ -734,9 +763,9 @@ impl PluginManager {
         plugin_id: &str,
     ) -> CogniaResult<Vec<crate::plugin::manifest::SettingDeclaration>> {
         let reg = self.registry.read().await;
-        let plugin = reg.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let plugin = reg
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
         Ok(plugin.manifest.settings.clone())
     }
 
@@ -769,7 +798,9 @@ impl PluginManager {
         let settings_path = data_dir.join("settings.json");
 
         let mut settings: HashMap<String, serde_json::Value> = if settings_path.exists() {
-            let content = tokio::fs::read_to_string(&settings_path).await.unwrap_or_default();
+            let content = tokio::fs::read_to_string(&settings_path)
+                .await
+                .unwrap_or_default();
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             HashMap::new()
@@ -790,9 +821,9 @@ impl PluginManager {
     pub async fn export_plugin_data(&self, plugin_id: &str) -> CogniaResult<PathBuf> {
         let plugin_dir = {
             let reg = self.registry.read().await;
-            let plugin = reg.get(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
             plugin.plugin_dir.clone()
         };
         let data_dir = self.get_plugin_data_dir(plugin_id).await;
@@ -815,7 +846,8 @@ impl PluginManager {
             Self::zip_dir_recursive(&mut zip_writer, &data_dir, "data", &options)?;
         }
 
-        zip_writer.finish()
+        zip_writer
+            .finish()
             .map_err(|e| CogniaError::Plugin(format!("Failed to finalize zip: {}", e)))?;
 
         log::info!("Exported plugin '{}' to {}", plugin_id, zip_path.display());
@@ -831,10 +863,17 @@ impl PluginManager {
         if !src_dir.exists() {
             return Ok(());
         }
-        for entry in walkdir::WalkDir::new(src_dir).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(src_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
             let relative = path.strip_prefix(src_dir).unwrap_or(path);
-            let archive_path = format!("{}/{}", prefix, relative.to_string_lossy().replace('\\', "/"));
+            let archive_path = format!(
+                "{}/{}",
+                prefix,
+                relative.to_string_lossy().replace('\\', "/")
+            );
 
             if path.is_file() {
                 zip.start_file(&archive_path, *options)
@@ -870,11 +909,12 @@ impl PluginManager {
     pub async fn get_plugin_locales(
         &self,
         plugin_id: &str,
-    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>> {
+    ) -> CogniaResult<std::collections::HashMap<String, std::collections::HashMap<String, String>>>
+    {
         let reg = self.registry.read().await;
-        let plugin = reg.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let plugin = reg
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
         Ok(plugin.manifest.locales.clone())
     }
 
@@ -891,11 +931,7 @@ impl PluginManager {
     }
 
     /// Grant a permission to a plugin
-    pub async fn grant_permission(
-        &self,
-        plugin_id: &str,
-        permission: &str,
-    ) -> CogniaResult<()> {
+    pub async fn grant_permission(&self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
         let mut perms = self.permissions.write().await;
         perms.grant_permission(plugin_id, permission)?;
         drop(perms);
@@ -904,11 +940,7 @@ impl PluginManager {
     }
 
     /// Revoke a permission from a plugin
-    pub async fn revoke_permission(
-        &self,
-        plugin_id: &str,
-        permission: &str,
-    ) -> CogniaResult<()> {
+    pub async fn revoke_permission(&self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
         let mut perms = self.permissions.write().await;
         perms.revoke_permission(plugin_id, permission)?;
         drop(perms);
@@ -945,16 +977,15 @@ impl PluginManager {
         plugin_id: &str,
     ) -> Option<crate::plugin::manifest::UiConfig> {
         let reg = self.registry.read().await;
-        reg.get(plugin_id)
-            .and_then(|p| p.manifest.ui.clone())
+        reg.get(plugin_id).and_then(|p| p.manifest.ui.clone())
     }
 
     /// Check if an update is available for a plugin
     pub async fn check_update(&self, plugin_id: &str) -> CogniaResult<Option<PluginUpdateInfo>> {
         let reg = self.registry.read().await;
-        let plugin = reg.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let plugin = reg
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
         let update_url = match &plugin.manifest.plugin.update_url {
             Some(url) => url.clone(),
@@ -1044,9 +1075,9 @@ impl PluginManager {
         // Get the plugin's install directory
         let dest_dir = {
             let reg = self.registry.read().await;
-            let plugin = reg.get(plugin_id).ok_or_else(|| {
-                CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-            })?;
+            let plugin = reg
+                .get(plugin_id)
+                .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
             plugin.plugin_dir.clone()
         };
 
@@ -1151,7 +1182,9 @@ mod tests {
     #[test]
     fn test_persisted_state_serialization() {
         let mut state = PersistedPluginState::default();
-        state.disabled_plugins.insert("com.example.disabled".to_string());
+        state
+            .disabled_plugins
+            .insert("com.example.disabled".to_string());
         state.denied_permissions.insert(
             "com.example.plugin".to_string(),
             vec!["clipboard".to_string()],
@@ -1165,8 +1198,14 @@ mod tests {
         let restored: PersistedPluginState = serde_json::from_str(&json).unwrap();
 
         assert!(restored.disabled_plugins.contains("com.example.disabled"));
-        assert_eq!(restored.denied_permissions["com.example.plugin"], vec!["clipboard"]);
-        assert_eq!(restored.granted_dangerous["com.example.plugin"], vec!["process_exec"]);
+        assert_eq!(
+            restored.denied_permissions["com.example.plugin"],
+            vec!["clipboard"]
+        );
+        assert_eq!(
+            restored.granted_dangerous["com.example.plugin"],
+            vec!["process_exec"]
+        );
     }
 
     #[tokio::test]
@@ -1176,16 +1215,18 @@ mod tests {
 
         let mut state = PersistedPluginState::default();
         state.disabled_plugins.insert("test-plugin".to_string());
-        state.granted_dangerous.insert(
-            "test-plugin".to_string(),
-            vec!["config_write".to_string()],
-        );
+        state
+            .granted_dangerous
+            .insert("test-plugin".to_string(), vec!["config_write".to_string()]);
 
         state.save(&plugins_dir).await.unwrap();
 
         let loaded = PersistedPluginState::load(&plugins_dir).await;
         assert!(loaded.disabled_plugins.contains("test-plugin"));
-        assert_eq!(loaded.granted_dangerous["test-plugin"], vec!["config_write"]);
+        assert_eq!(
+            loaded.granted_dangerous["test-plugin"],
+            vec!["config_write"]
+        );
     }
 
     #[tokio::test]
@@ -1198,15 +1239,18 @@ mod tests {
     #[test]
     fn test_persisted_state_path() {
         let path = PersistedPluginState::state_path(std::path::Path::new("/cognia/plugins"));
-        assert_eq!(path, std::path::PathBuf::from("/cognia/plugins/plugin-state.json"));
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("/cognia/plugins/plugin-state.json")
+        );
     }
 }
 
 /// Recursively copy a directory
 async fn copy_dir_recursive(src: &Path, dst: &Path) -> CogniaResult<()> {
-    tokio::fs::create_dir_all(dst)
-        .await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to create dir {}: {}", dst.display(), e)))?;
+    tokio::fs::create_dir_all(dst).await.map_err(|e| {
+        CogniaError::Plugin(format!("Failed to create dir {}: {}", dst.display(), e))
+    })?;
 
     let mut entries = tokio::fs::read_dir(src)
         .await

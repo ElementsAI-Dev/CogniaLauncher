@@ -1,8 +1,8 @@
 use crate::config::Settings;
-use crate::provider::registry::ProviderRegistry;
 use crate::plugin::permissions::PermissionManager;
 use crate::plugin::registry::PluginRegistry as CogniaPluginRegistry;
-use extism::{host_fn, UserData, ValType, Error as ExtismError};
+use crate::provider::registry::ProviderRegistry;
+use extism::{host_fn, Error as ExtismError, UserData, ValType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1887,12 +1887,12 @@ mod tests {
     fn make_host_context() -> HostContext {
         let registry = Arc::new(RwLock::new(ProviderRegistry::new()));
         let settings = Arc::new(RwLock::new(Settings::default()));
-        let permissions = Arc::new(RwLock::new(
-            PermissionManager::new(PathBuf::from("/tmp/test-data")),
-        ));
-        let plugin_registry = Arc::new(RwLock::new(
-            CogniaPluginRegistry::new(PathBuf::from("/tmp/test-plugins")),
-        ));
+        let permissions = Arc::new(RwLock::new(PermissionManager::new(PathBuf::from(
+            "/tmp/test-data",
+        ))));
+        let plugin_registry = Arc::new(RwLock::new(CogniaPluginRegistry::new(PathBuf::from(
+            "/tmp/test-plugins",
+        ))));
         HostContext::new(registry, settings, permissions, plugin_registry)
     }
 
@@ -1953,7 +1953,8 @@ mod tests {
                 event_name: "hello".to_string(),
                 payload: serde_json::json!({ "x": 1 }),
                 timestamp: "2026-01-01T00:00:00Z".to_string(),
-            }).await;
+            })
+            .await;
 
             let events = ctx.drain_emitted_events().await;
             assert_eq!(events.len(), 1);

@@ -137,8 +137,7 @@ pub fn feedback_list() -> Result<FeedbackListResult, String> {
     }
 
     let mut items: Vec<FeedbackItem> = Vec::new();
-    let entries =
-        fs::read_dir(&dir).map_err(|e| format!("Failed to read feedbacks dir: {e}"))?;
+    let entries = fs::read_dir(&dir).map_err(|e| format!("Failed to read feedbacks dir: {e}"))?;
 
     for entry in entries.flatten() {
         let path = entry.path();

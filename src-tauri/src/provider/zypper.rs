@@ -204,12 +204,7 @@ impl Provider for ZypperProvider {
         }
         args.push(&pkg);
 
-        let out = process::execute(
-            "sudo",
-            &args,
-            Some(ZypperProvider::make_long_opts()),
-        )
-        .await?;
+        let out = process::execute("sudo", &args, Some(ZypperProvider::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -254,12 +249,7 @@ impl Provider for ZypperProvider {
         }
         args.push(&req.name);
 
-        let out = process::execute(
-            "sudo",
-            &args,
-            Some(ZypperProvider::make_sudo_opts()),
-        )
-        .await?;
+        let out = process::execute("sudo", &args, Some(ZypperProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -395,7 +385,12 @@ impl SystemPackageProvider for ZypperProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["zypper", "refresh"], Some(ZypperProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["zypper", "refresh"],
+            Some(ZypperProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -418,8 +413,12 @@ impl SystemPackageProvider for ZypperProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out =
-            process::execute("sudo", &["zypper", "--non-interactive", "update"], Some(ZypperProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["zypper", "--non-interactive", "update"],
+            Some(ZypperProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["All packages upgraded".into()])
         } else {

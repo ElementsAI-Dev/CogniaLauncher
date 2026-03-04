@@ -104,8 +104,10 @@ impl PermissionManager {
     }
 
     pub fn register_plugin(&mut self, plugin_id: &str, permissions: PluginPermissions) {
-        self.states
-            .insert(plugin_id.to_string(), PluginPermissionState::new(permissions));
+        self.states.insert(
+            plugin_id.to_string(),
+            PluginPermissionState::new(permissions),
+        );
     }
 
     pub fn unregister_plugin(&mut self, plugin_id: &str) {
@@ -134,9 +136,10 @@ impl PermissionManager {
     }
 
     pub fn grant_permission(&mut self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
-        let state = self.states.get_mut(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let state = self
+            .states
+            .get_mut(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
         let declared = Self::is_declared_permission(state, permission);
         if !declared {
@@ -159,9 +162,10 @@ impl PermissionManager {
     }
 
     pub fn revoke_permission(&mut self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
-        let state = self.states.get_mut(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let state = self
+            .states
+            .get_mut(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
         state.granted.remove(permission);
         state.denied.insert(permission.to_string());
         Ok(())
@@ -169,9 +173,10 @@ impl PermissionManager {
 
     /// Check if a plugin has a specific permission at runtime
     pub fn check_permission(&self, plugin_id: &str, permission: &str) -> CogniaResult<()> {
-        let state = self.states.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let state = self
+            .states
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
         if self.mode == PermissionEnforcementMode::Strict
             && !Self::is_declared_permission(state, permission)
@@ -198,15 +203,11 @@ impl PermissionManager {
     }
 
     /// Validate that a file path is within the plugin's allowed paths
-    pub fn check_fs_access(
-        &self,
-        plugin_id: &str,
-        path: &Path,
-        write: bool,
-    ) -> CogniaResult<()> {
-        let state = self.states.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+    pub fn check_fs_access(&self, plugin_id: &str, path: &Path, write: bool) -> CogniaResult<()> {
+        let state = self
+            .states
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
         let perm_key = if write { "fs_write" } else { "fs_read" };
         if !state.is_granted(perm_key) {
@@ -218,9 +219,7 @@ impl PermissionManager {
 
         // Check if path is within plugin data dir
         let data_dir = self.get_plugin_data_dir(plugin_id);
-        let canonical = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.to_path_buf());
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         if !canonical.starts_with(&data_dir) {
             return Err(CogniaError::PermissionDenied(format!(
                 "Plugin '{}' cannot access path outside its data directory: {}",
@@ -241,15 +240,13 @@ impl PermissionManager {
             } else {
                 &state.declared.fs_read
             };
-            let allowed = allowed_patterns.iter().any(|pattern| {
-                fs_pattern_matches(pattern, &rel)
-            });
+            let allowed = allowed_patterns
+                .iter()
+                .any(|pattern| fs_pattern_matches(pattern, &rel));
             if !allowed {
                 return Err(CogniaError::PermissionDenied(format!(
                     "Plugin '{}' path '{}' does not match declared {} allowlist",
-                    plugin_id,
-                    rel,
-                    perm_key
+                    plugin_id, rel, perm_key
                 )));
             }
         }
@@ -259,9 +256,10 @@ impl PermissionManager {
 
     /// Validate that a URL is within the plugin's allowed HTTP domains
     pub fn check_http_access(&self, plugin_id: &str, url: &str) -> CogniaResult<()> {
-        let state = self.states.get(plugin_id).ok_or_else(|| {
-            CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id))
-        })?;
+        let state = self
+            .states
+            .get(plugin_id)
+            .ok_or_else(|| CogniaError::Plugin(format!("Plugin '{}' not found", plugin_id)))?;
 
         if !state.is_granted("http") {
             return Err(CogniaError::PermissionDenied(format!(
@@ -286,9 +284,8 @@ impl PermissionManager {
             )));
         }
 
-        let parsed = reqwest::Url::parse(url).map_err(|e| {
-            CogniaError::Plugin(format!("Invalid URL '{}': {}", url, e))
-        })?;
+        let parsed = reqwest::Url::parse(url)
+            .map_err(|e| CogniaError::Plugin(format!("Invalid URL '{}': {}", url, e)))?;
         let host = parsed.host_str().unwrap_or("");
 
         for pattern in allowed {
@@ -440,9 +437,12 @@ mod tests {
     #[test]
     fn test_register_and_check_permission() {
         let mut mgr = test_manager();
-        mgr.register_plugin("test-plugin", make_perms(|p| {
-            p.config_read = true;
-        }));
+        mgr.register_plugin(
+            "test-plugin",
+            make_perms(|p| {
+                p.config_read = true;
+            }),
+        );
         assert!(mgr.check_permission("test-plugin", "config_read").is_ok());
         assert!(mgr.check_permission("test-plugin", "config_write").is_err());
     }
@@ -465,9 +465,12 @@ mod tests {
     #[test]
     fn test_grant_and_revoke() {
         let mut mgr = test_manager();
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.config_write = true; // declared but not auto-granted
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.config_write = true; // declared but not auto-granted
+            }),
+        );
 
         // Not granted initially
         assert!(mgr.check_permission("p1", "config_write").is_err());
@@ -498,26 +501,40 @@ mod tests {
     #[test]
     fn test_check_http_access_exact_domain() {
         let mut mgr = test_manager();
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.http = vec!["api.example.com".into()];
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.http = vec!["api.example.com".into()];
+            }),
+        );
         assert!(mgr.check_permission("p1", "http").is_ok());
 
         // Allowed domain
-        assert!(mgr.check_http_access("p1", "https://api.example.com/v1/data").is_ok());
+        assert!(mgr
+            .check_http_access("p1", "https://api.example.com/v1/data")
+            .is_ok());
         // Disallowed domain
-        assert!(mgr.check_http_access("p1", "https://evil.com/steal").is_err());
+        assert!(mgr
+            .check_http_access("p1", "https://evil.com/steal")
+            .is_err());
     }
 
     #[test]
     fn test_check_http_access_wildcard_domain() {
         let mut mgr = test_manager();
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.http = vec!["*.github.com".into()];
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.http = vec!["*.github.com".into()];
+            }),
+        );
 
-        assert!(mgr.check_http_access("p1", "https://api.github.com/repos").is_ok());
-        assert!(mgr.check_http_access("p1", "https://raw.github.com/file").is_ok());
+        assert!(mgr
+            .check_http_access("p1", "https://api.github.com/repos")
+            .is_ok());
+        assert!(mgr
+            .check_http_access("p1", "https://raw.github.com/file")
+            .is_ok());
         assert!(mgr.check_http_access("p1", "https://evil.com/").is_err());
     }
 
@@ -531,9 +548,12 @@ mod tests {
     #[test]
     fn test_check_http_access_invalid_url() {
         let mut mgr = test_manager();
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.http = vec!["example.com".into()];
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.http = vec!["example.com".into()];
+            }),
+        );
         assert!(mgr.check_http_access("p1", "not a url").is_err());
     }
 
@@ -548,9 +568,12 @@ mod tests {
     #[test]
     fn test_grant_process_exec() {
         let mut mgr = test_manager();
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.process_exec = true;
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.process_exec = true;
+            }),
+        );
         assert!(mgr.check_permission("p1", "process_exec").is_err());
         mgr.grant_permission("p1", "process_exec").unwrap();
         assert!(mgr.check_permission("p1", "process_exec").is_ok());
@@ -596,9 +619,12 @@ mod tests {
             PathBuf::from("/tmp/test-plugins"),
             PermissionEnforcementMode::Strict,
         );
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.fs_read = vec!["logs/*.txt".into()];
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.fs_read = vec!["logs/*.txt".into()];
+            }),
+        );
 
         let allowed = mgr.get_plugin_data_dir("p1").join("logs/app.txt");
         let denied = mgr.get_plugin_data_dir("p1").join("cache/app.txt");
@@ -613,9 +639,12 @@ mod tests {
             PathBuf::from("/tmp/test-plugins"),
             PermissionEnforcementMode::Strict,
         );
-        mgr.register_plugin("p1", make_perms(|p| {
-            p.fs_read = vec!["data/logs/*.txt".into()];
-        }));
+        mgr.register_plugin(
+            "p1",
+            make_perms(|p| {
+                p.fs_read = vec!["data/logs/*.txt".into()];
+            }),
+        );
 
         let allowed = mgr.get_plugin_data_dir("p1").join("logs/app.txt");
         assert!(mgr.check_fs_access("p1", &allowed, false).is_ok());

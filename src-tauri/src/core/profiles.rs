@@ -389,8 +389,7 @@ mod tests {
 
     #[test]
     fn test_environment_profile_with_description() {
-        let profile =
-            EnvironmentProfile::new("Dev Profile").with_description("My dev environment");
+        let profile = EnvironmentProfile::new("Dev Profile").with_description("My dev environment");
         assert_eq!(profile.description, Some("My dev environment".to_string()));
     }
 
@@ -551,10 +550,7 @@ mod tests {
         assert_eq!(manager.env_type_to_default_provider("php"), "phpbrew");
         assert_eq!(manager.env_type_to_default_provider("dotnet"), "dotnet");
         assert_eq!(manager.env_type_to_default_provider("deno"), "deno");
-        assert_eq!(
-            manager.env_type_to_default_provider("unknown"),
-            "unknown"
-        );
+        assert_eq!(manager.env_type_to_default_provider("unknown"), "unknown");
     }
 
     #[test]
@@ -577,10 +573,8 @@ mod tests {
     async fn test_profile_manager_create_and_get() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let profile = EnvironmentProfile::new("Test Profile");
         let id = profile.id.clone();
@@ -597,10 +591,8 @@ mod tests {
     async fn test_profile_manager_create_duplicate_id() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let profile = EnvironmentProfile::new("Test");
         let id = profile.id.clone();
@@ -623,10 +615,8 @@ mod tests {
     async fn test_profile_manager_update() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let profile = EnvironmentProfile::new("Original");
         let id = profile.id.clone();
@@ -644,10 +634,8 @@ mod tests {
     async fn test_profile_manager_update_nonexistent() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let profile = EnvironmentProfile::new("Ghost");
         let result = manager.update(profile).await;
@@ -658,10 +646,8 @@ mod tests {
     async fn test_profile_manager_delete() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let profile = EnvironmentProfile::new("To Delete");
         let id = profile.id.clone();
@@ -675,10 +661,8 @@ mod tests {
     async fn test_profile_manager_delete_nonexistent() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let result = manager.delete("nonexistent").await;
         assert!(result.is_err());
@@ -688,10 +672,8 @@ mod tests {
     async fn test_profile_manager_export() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let mut profile = EnvironmentProfile::new("Export Test");
         profile.add_environment(ProfileEnvironment {
@@ -712,10 +694,8 @@ mod tests {
     async fn test_profile_manager_export_nonexistent() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let result = manager.export("nonexistent");
         assert!(result.is_err());
@@ -725,10 +705,8 @@ mod tests {
     async fn test_profile_manager_import() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         let json = r#"{
             "id": "original-id",
@@ -752,10 +730,8 @@ mod tests {
     async fn test_profile_manager_list() {
         let registry = ProviderRegistry::new();
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = ProfileManager::new(
-            dir.path().to_path_buf(),
-            Arc::new(RwLock::new(registry)),
-        );
+        let mut manager =
+            ProfileManager::new(dir.path().to_path_buf(), Arc::new(RwLock::new(registry)));
 
         manager
             .create(EnvironmentProfile::new("Profile 1"))
@@ -777,16 +753,14 @@ mod tests {
 
         let profile_id;
         {
-            let mut manager =
-                ProfileManager::new(dir.path().to_path_buf(), registry.clone());
+            let mut manager = ProfileManager::new(dir.path().to_path_buf(), registry.clone());
             let profile = EnvironmentProfile::new("Persist Test");
             profile_id = profile.id.clone();
             manager.create(profile).await.unwrap();
         }
 
         {
-            let mut manager =
-                ProfileManager::new(dir.path().to_path_buf(), registry.clone());
+            let mut manager = ProfileManager::new(dir.path().to_path_buf(), registry.clone());
             manager.load().await.unwrap();
             let loaded = manager.get(&profile_id);
             assert!(loaded.is_some());

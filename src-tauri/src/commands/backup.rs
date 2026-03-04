@@ -77,9 +77,7 @@ pub async fn backup_restore(
 }
 
 #[tauri::command]
-pub async fn backup_list(
-    settings: State<'_, SharedSettings>,
-) -> Result<Vec<BackupInfo>, String> {
+pub async fn backup_list(settings: State<'_, SharedSettings>) -> Result<Vec<BackupInfo>, String> {
     let s = settings.read().await;
     backup::list_backups(&s).await.map_err(|e| e.to_string())
 }
@@ -92,19 +90,14 @@ pub async fn backup_delete(backup_path: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn backup_validate(
-    backup_path: String,
-) -> Result<BackupValidationResult, String> {
+pub async fn backup_validate(backup_path: String) -> Result<BackupValidationResult, String> {
     backup::validate_backup(&PathBuf::from(&backup_path))
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn backup_export(
-    backup_path: String,
-    dest_path: String,
-) -> Result<u64, String> {
+pub async fn backup_export(backup_path: String, dest_path: String) -> Result<u64, String> {
     backup::export_backup(&PathBuf::from(&backup_path), &PathBuf::from(&dest_path))
         .await
         .map_err(|e| e.to_string())
@@ -152,9 +145,7 @@ pub async fn db_integrity_check(
 }
 
 #[tauri::command]
-pub async fn db_get_info(
-    settings: State<'_, SharedSettings>,
-) -> Result<DatabaseInfo, String> {
+pub async fn db_get_info(settings: State<'_, SharedSettings>) -> Result<DatabaseInfo, String> {
     let s = settings.read().await;
     let cache_dir = s.get_cache_dir();
     drop(s);

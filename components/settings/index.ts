@@ -12,6 +12,7 @@ export { ProviderSettings } from "./provider-settings";
 export { BackupPolicySettings } from "./backup-policy-settings";
 export { BackupSettings } from "./backup-settings";
 export { StartupSettings } from "./startup-settings";
+export { ShortcutSettings } from "./shortcut-settings";
 export { SystemInfo } from "./system-info";
 export { SettingsSkeleton } from "./settings-skeleton";
 export { AccentColorPicker } from "./accent-color-picker";

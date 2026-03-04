@@ -558,6 +558,7 @@ export const useEnvironmentStore = create<EnvironmentState>()(
     {
       name: 'cognia-environment-settings',
       version: 1,
+      migrate: (persisted) => persisted as EnvironmentState,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         envSettings: state.envSettings,

@@ -28,6 +28,7 @@ export const useChangelogStore = create<ChangelogState>()(
       name: 'cognia-changelog',
       storage: createJSONStorage(() => localStorage),
       version: 1,
+      migrate: (persisted) => persisted as ChangelogState,
       partialize: (state) => ({
         lastSeenVersion: state.lastSeenVersion,
       }),

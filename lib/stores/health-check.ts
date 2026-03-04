@@ -70,6 +70,7 @@ export const useHealthCheckStore = create<HealthCheckState>()(
     {
       name: 'cognia-health-check',
       version: 1,
+      migrate: (persisted) => persisted as HealthCheckState,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         systemHealth: state.systemHealth,

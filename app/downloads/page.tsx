@@ -23,6 +23,7 @@ import {
   DownloadSettingsCard,
   DownloadHistoryPanel,
   BatchImportDialog,
+  SpeedChart,
   type StatusFilter,
   type SpeedUnit,
 } from '@/components/downloads';
@@ -565,6 +566,8 @@ export default function DownloadsPage() {
               )}
             </CardContent>
           </Card>
+
+          <SpeedChart t={t} />
 
           <DownloadSettingsCard
             speedLimitInput={speedLimitInput}

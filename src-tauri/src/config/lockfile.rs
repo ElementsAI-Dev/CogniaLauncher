@@ -367,8 +367,8 @@ mod tests {
 
     #[test]
     fn test_locked_package_with_checksum() {
-        let pkg = LockedPackage::new("rg", "14.0.3", "gh")
-            .with_checksum(Some("abc123".to_string()));
+        let pkg =
+            LockedPackage::new("rg", "14.0.3", "gh").with_checksum(Some("abc123".to_string()));
         let cs = pkg.checksum.as_ref().unwrap();
         assert_eq!(cs.sha256, Some("abc123".to_string()));
         assert!(cs.sha512.is_none());
@@ -428,7 +428,10 @@ mod tests {
 
         assert!(pkg.checksum.is_some());
         assert!(pkg.source.is_some());
-        assert_eq!(pkg.source.as_ref().unwrap().url, Some("https://example.com".to_string()));
+        assert_eq!(
+            pkg.source.as_ref().unwrap().url,
+            Some("https://example.com".to_string())
+        );
     }
 
     #[test]

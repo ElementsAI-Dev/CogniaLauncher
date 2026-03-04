@@ -12,6 +12,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import type { CacheInfo } from "@/lib/tauri";
+import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
 interface CacheChartProps {
   cacheInfo: CacheInfo | null;
@@ -57,23 +58,16 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
       usage: { label: t("dashboard.widgets.cacheUsage"), color: getChartColor(0) },
     };
 
-    return { pieData: pie, radialData: radial, chartConfig: cfg, totalEntries };
+    return { pieData: pie, radialData: radial, chartConfig: cfg };
   }, [cacheInfo, t]);
 
   if (!cacheInfo) {
     return (
-      <Card className={className}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium">
-            {t("dashboard.widgets.cacheUsage")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            {t("cache.noCacheData")}
-          </div>
-        </CardContent>
-      </Card>
+      <WidgetEmptyCard
+        title={t("dashboard.widgets.cacheUsage")}
+        message={t("cache.noCacheData")}
+        className={className}
+      />
     );
   }
 

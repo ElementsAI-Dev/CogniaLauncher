@@ -148,10 +148,22 @@ async fn detect_shells_windows() -> CogniaResult<Vec<ShellInfo>> {
             PathBuf::from(r"C:\msys32\usr\bin\bash.exe"),
         ];
         if let Ok(root) = std::env::var("MSYS2_ROOT") {
-            paths.insert(0, PathBuf::from(&root).join("usr").join("bin").join("bash.exe"));
+            paths.insert(
+                0,
+                PathBuf::from(&root)
+                    .join("usr")
+                    .join("bin")
+                    .join("bash.exe"),
+            );
         }
         if let Ok(profile) = std::env::var("USERPROFILE") {
-            paths.push(PathBuf::from(profile).join("msys64").join("usr").join("bin").join("bash.exe"));
+            paths.push(
+                PathBuf::from(profile)
+                    .join("msys64")
+                    .join("usr")
+                    .join("bin")
+                    .join("bash.exe"),
+            );
         }
         paths
     };
@@ -175,10 +187,7 @@ async fn detect_shells_windows() -> CogniaResult<Vec<ShellInfo>> {
     }
 
     // Cygwin Bash
-    let cygwin_paths = [
-        r"C:\cygwin64\bin\bash.exe",
-        r"C:\cygwin\bin\bash.exe",
-    ];
+    let cygwin_paths = [r"C:\cygwin64\bin\bash.exe", r"C:\cygwin\bin\bash.exe"];
     for path in &cygwin_paths {
         let cygwin_path = Path::new(path);
         if cygwin_path.exists() {
@@ -201,11 +210,7 @@ async fn detect_shells_windows() -> CogniaResult<Vec<ShellInfo>> {
 
     // Nushell
     if let Ok(nu_path) = which::which("nu") {
-        let version = get_shell_version(
-            nu_path.to_str().unwrap_or("nu"),
-            &["--version"],
-        )
-        .await;
+        let version = get_shell_version(nu_path.to_str().unwrap_or("nu"), &["--version"]).await;
         let mut info = build_shell_info(
             "nushell",
             "Nushell",
@@ -313,11 +318,7 @@ async fn detect_shells_unix() -> CogniaResult<Vec<ShellInfo>> {
     // Check for Nushell if not found in /etc/shells
     if !seen.contains("nushell") {
         if let Ok(nu_path) = which::which("nu") {
-            let version = get_shell_version(
-                nu_path.to_str().unwrap_or("nu"),
-                &["--version"],
-            )
-            .await;
+            let version = get_shell_version(nu_path.to_str().unwrap_or("nu"), &["--version"]).await;
             let mut info = build_shell_info(
                 "nushell",
                 "Nushell",
@@ -458,10 +459,16 @@ pub struct ShellStartupMeasurement {
 /// Runs each variant 3 times and takes the median to reduce noise.
 pub async fn measure_shell_startup(shell: &ShellInfo) -> CogniaResult<ShellStartupMeasurement> {
     let (with_args, without_args): (Vec<&str>, Vec<&str>) = match shell.shell_type {
-        ShellType::Bash => (vec!["-i", "-c", "exit"], vec!["--norc", "--noprofile", "-c", "exit"]),
+        ShellType::Bash => (
+            vec!["-i", "-c", "exit"],
+            vec!["--norc", "--noprofile", "-c", "exit"],
+        ),
         ShellType::Zsh => (vec!["-i", "-c", "exit"], vec!["--no-rcs", "-c", "exit"]),
         ShellType::Fish => (vec!["-i", "-c", "exit"], vec!["--no-config", "-c", "exit"]),
-        ShellType::PowerShell => (vec!["-Command", "exit"], vec!["-NoProfile", "-Command", "exit"]),
+        ShellType::PowerShell => (
+            vec!["-Command", "exit"],
+            vec!["-NoProfile", "-Command", "exit"],
+        ),
         ShellType::Cmd => (vec!["/C", "exit"], vec!["/C", "exit"]),
         ShellType::Nushell => (vec!["-c", "exit"], vec!["--no-config-file", "-c", "exit"]),
     };
@@ -525,8 +532,7 @@ pub async fn check_shell_health(shell: &ShellInfo) -> ShellHealthResult {
                     "--no-exec"
                 };
                 let opts = Some(
-                    process::ProcessOptions::new()
-                        .with_timeout(std::time::Duration::from_secs(10)),
+                    process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)),
                 );
                 if let Ok(output) =
                     process::execute(&shell.executable_path, &[flag, &cf.path], opts).await
@@ -559,8 +565,7 @@ pub async fn check_shell_health(shell: &ShellInfo) -> ShellHealthResult {
                     cf.path.replace('\'', "''")
                 );
                 let opts = Some(
-                    process::ProcessOptions::new()
-                        .with_timeout(std::time::Duration::from_secs(10)),
+                    process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(10)),
                 );
                 if let Ok(output) = process::execute(
                     &shell.executable_path,
@@ -612,15 +617,24 @@ pub async fn check_shell_health(shell: &ShellInfo) -> ShellHealthResult {
             HealthIssue::new(
                 Severity::Info,
                 IssueCategory::ShellIntegration,
-                format!("{} PATH entries point to non-existent directories", missing_count),
+                format!(
+                    "{} PATH entries point to non-existent directories",
+                    missing_count
+                ),
             )
             .with_details("Non-existent PATH entries can slightly slow command lookups"),
         );
     }
 
-    let status = if issues.iter().any(|i| matches!(i.severity, Severity::Error | Severity::Critical)) {
+    let status = if issues
+        .iter()
+        .any(|i| matches!(i.severity, Severity::Error | Severity::Critical))
+    {
         crate::core::health_check::HealthStatus::Error
-    } else if issues.iter().any(|i| matches!(i.severity, Severity::Warning)) {
+    } else if issues
+        .iter()
+        .any(|i| matches!(i.severity, Severity::Warning))
+    {
         crate::core::health_check::HealthStatus::Warning
     } else {
         crate::core::health_check::HealthStatus::Healthy
@@ -698,9 +712,7 @@ impl TerminalProfileManager {
         let custom_templates = if fs::exists(&templates_path).await {
             let content = fs::read_file_string(&templates_path)
                 .await
-                .map_err(|e| {
-                    CogniaError::Internal(format!("Failed to read templates: {}", e))
-                })?;
+                .map_err(|e| CogniaError::Internal(format!("Failed to read templates: {}", e)))?;
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             Vec::new()
@@ -813,11 +825,7 @@ impl TerminalProfileManager {
             .map_err(|e| CogniaError::Config(format!("Failed to export profiles: {}", e)))
     }
 
-    pub async fn import_profiles(
-        &mut self,
-        json: &str,
-        merge: bool,
-    ) -> CogniaResult<usize> {
+    pub async fn import_profiles(&mut self, json: &str, merge: bool) -> CogniaResult<usize> {
         let imported: Vec<TerminalProfile> = serde_json::from_str(json)
             .map_err(|e| CogniaError::Parse(format!("Invalid profile JSON: {}", e)))?;
 
@@ -1103,9 +1111,7 @@ impl TerminalProfileManager {
         let template = all_templates
             .iter()
             .find(|t| t.id == template_id)
-            .ok_or_else(|| {
-                CogniaError::Config(format!("Template '{}' not found", template_id))
-            })?;
+            .ok_or_else(|| CogniaError::Config(format!("Template '{}' not found", template_id)))?;
 
         let shell_id = if let Some(ref st) = template.shell_type {
             detected_shells
@@ -1138,9 +1144,8 @@ impl TerminalProfileManager {
     }
 
     async fn save_templates(&self) -> CogniaResult<()> {
-        let content = serde_json::to_string_pretty(&self.custom_templates).map_err(|e| {
-            CogniaError::Config(format!("Failed to serialize templates: {}", e))
-        })?;
+        let content = serde_json::to_string_pretty(&self.custom_templates)
+            .map_err(|e| CogniaError::Config(format!("Failed to serialize templates: {}", e)))?;
         fs::write_file_string(&self.templates_path, &content)
             .await
             .map_err(|e| CogniaError::Internal(format!("Failed to save templates: {}", e)))?;
@@ -1294,21 +1299,15 @@ fn parse_posix_config(content: &str) -> ShellConfigEntries {
     let mut sources = Vec::new();
 
     // alias name='value' — single-quoted value (greedy inside quotes)
-    let alias_sq =
-        Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)='([^']*)'"#).unwrap();
+    let alias_sq = Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)='([^']*)'"#).unwrap();
     // alias name="value" — double-quoted value (greedy inside quotes)
-    let alias_dq =
-        Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)="([^"]*)""#).unwrap();
+    let alias_dq = Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)="([^"]*)""#).unwrap();
     // alias name=value — unquoted value
-    let alias_uq =
-        Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)=(\S+)\s*$"#).unwrap();
+    let alias_uq = Regex::new(r#"^\s*alias\s+([A-Za-z_][\w-]*)=(\S+)\s*$"#).unwrap();
     // export KEY=VALUE or export KEY="VALUE" or export KEY='VALUE'
-    let export_sq =
-        Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)='([^']*)'"#).unwrap();
-    let export_dq =
-        Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)="([^"]*)""#).unwrap();
-    let export_uq =
-        Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)=(\S+)\s*$"#).unwrap();
+    let export_sq = Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)='([^']*)'"#).unwrap();
+    let export_dq = Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)="([^"]*)""#).unwrap();
+    let export_uq = Regex::new(r#"^\s*export\s+([A-Za-z_]\w*)=(\S+)\s*$"#).unwrap();
     // source file or . file (quoted paths may contain spaces)
     let source_re = Regex::new(r#"^\s*(?:source|\.) +(?:"([^"]+)"|'([^']+)'|(\S+))"#).unwrap();
 
@@ -1330,7 +1329,12 @@ fn parse_posix_config(content: &str) -> ShellConfigEntries {
         } else if let Some(caps) = export_uq.captures(line) {
             exports.push((caps[1].to_string(), caps[2].to_string()));
         } else if let Some(caps) = source_re.captures(line) {
-            let path = caps.get(1).or(caps.get(2)).or(caps.get(3)).unwrap().as_str();
+            let path = caps
+                .get(1)
+                .or(caps.get(2))
+                .or(caps.get(3))
+                .unwrap()
+                .as_str();
             sources.push(path.to_string());
         }
     }
@@ -1367,7 +1371,12 @@ fn parse_fish_config(content: &str) -> ShellConfigEntries {
         } else if let Some(caps) = export_re.captures(line) {
             exports.push((caps[1].to_string(), caps[2].to_string()));
         } else if let Some(caps) = source_re.captures(line) {
-            let path = caps.get(1).or(caps.get(2)).or(caps.get(3)).unwrap().as_str();
+            let path = caps
+                .get(1)
+                .or(caps.get(2))
+                .or(caps.get(3))
+                .unwrap()
+                .as_str();
             sources.push(path.to_string());
         }
     }
@@ -1406,10 +1415,20 @@ fn parse_powershell_config(content: &str) -> ShellConfigEntries {
         } else if let Some(caps) = export_re.captures(line) {
             exports.push((caps[1].to_string(), caps[2].to_string()));
         } else if let Some(caps) = source_re.captures(line) {
-            let path = caps.get(1).or(caps.get(2)).or(caps.get(3)).unwrap().as_str();
+            let path = caps
+                .get(1)
+                .or(caps.get(2))
+                .or(caps.get(3))
+                .unwrap()
+                .as_str();
             sources.push(path.to_string());
         } else if let Some(caps) = import_re.captures(line) {
-            let path = caps.get(1).or(caps.get(2)).or(caps.get(3)).unwrap().as_str();
+            let path = caps
+                .get(1)
+                .or(caps.get(2))
+                .or(caps.get(3))
+                .unwrap()
+                .as_str();
             sources.push(path.to_string());
         }
     }
@@ -1444,7 +1463,12 @@ fn parse_nushell_config(content: &str) -> ShellConfigEntries {
         } else if let Some(caps) = export_re.captures(line) {
             exports.push((caps[1].to_string(), caps[2].to_string()));
         } else if let Some(caps) = source_re.captures(line) {
-            let path = caps.get(1).or(caps.get(2)).or(caps.get(3)).unwrap().as_str();
+            let path = caps
+                .get(1)
+                .or(caps.get(2))
+                .or(caps.get(3))
+                .unwrap()
+                .as_str();
             sources.push(path.to_string());
         }
     }
@@ -1520,8 +1544,9 @@ async fn run_ps_command(command: &str) -> CogniaResult<String> {
 /// Run a PowerShell command with a custom timeout (in seconds)
 async fn run_ps_command_with_timeout(command: &str, timeout_secs: u64) -> CogniaResult<String> {
     let ps = get_ps_executable();
-    let opts =
-        Some(process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(timeout_secs)));
+    let opts = Some(
+        process::ProcessOptions::new().with_timeout(std::time::Duration::from_secs(timeout_secs)),
+    );
     let output = process::execute(
         ps,
         &["-NoProfile", "-NonInteractive", "-Command", command],
@@ -1780,10 +1805,7 @@ pub async fn ps_uninstall_module(name: &str) -> CogniaResult<()> {
 
 /// Update a PowerShell module to the latest version
 pub async fn ps_update_module(name: &str) -> CogniaResult<()> {
-    let command = format!(
-        "Update-Module -Name '{}' -Force -ErrorAction Stop",
-        name
-    );
+    let command = format!("Update-Module -Name '{}' -Force -ErrorAction Stop", name);
     run_ps_command_with_timeout(&command, 120).await?;
     Ok(())
 }
@@ -1904,7 +1926,8 @@ fn detect_zsh_frameworks(
             path: omz_path.display().to_string(),
             shell_type,
             category: FrameworkCategory::Framework,
-            description: "Community-driven Zsh configuration framework with 300+ plugins".to_string(),
+            description: "Community-driven Zsh configuration framework with 300+ plugins"
+                .to_string(),
             homepage: Some("https://ohmyz.sh".to_string()),
             config_path: Some(home.join(".zshrc").display().to_string()),
             active_theme,
@@ -2120,10 +2143,7 @@ fn detect_fish_frameworks(
 }
 
 /// Detect cross-platform prompt engines (oh-my-posh, Starship) — works for any shell type
-async fn detect_prompt_engines(
-    shell_type: ShellType,
-    frameworks: &mut Vec<ShellFrameworkInfo>,
-) {
+async fn detect_prompt_engines(shell_type: ShellType, frameworks: &mut Vec<ShellFrameworkInfo>) {
     let timeout = std::time::Duration::from_secs(5);
 
     // oh-my-posh
@@ -2137,7 +2157,11 @@ async fn detect_prompt_engines(
         {
             Ok(out) if out.success => {
                 let v = out.stdout.trim().to_string();
-                if v.is_empty() { None } else { Some(v) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
             }
             _ => None,
         };
@@ -2340,7 +2364,8 @@ fn list_prezto_modules(config_path: Option<&str>) -> Vec<ShellPlugin> {
     let mut plugins = Vec::new();
     // Match lines like: 'module-name' \ (with optional backslash continuation)
     // inside a zstyle ':prezto:load' pmodule block
-    let re = Regex::new(r"(?s)zstyle\s+':prezto:load'\s+pmodule\s*(.*?)(?:\n\s*\n|\n[^\\'\s])").unwrap();
+    let re =
+        Regex::new(r"(?s)zstyle\s+':prezto:load'\s+pmodule\s*(.*?)(?:\n\s*\n|\n[^\\'\s])").unwrap();
     if let Some(caps) = re.captures(&content) {
         let block = &caps[1];
         let name_re = Regex::new(r"'([^']+)'").unwrap();
@@ -2399,7 +2424,9 @@ fn list_zinit_plugins(config_content: Option<&str>) -> Vec<ShellPlugin> {
 
     let mut plugins = Vec::new();
     // Match: zinit light user/repo, zinit load user/repo, zinit snippet URL
-    let re = Regex::new(r"^\s*zinit\s+(?:light|load|ice\s+.*?;\s*zinit\s+(?:light|load))\s+([^\s#]+)").unwrap();
+    let re =
+        Regex::new(r"^\s*zinit\s+(?:light|load|ice\s+.*?;\s*zinit\s+(?:light|load))\s+([^\s#]+)")
+            .unwrap();
     let snippet_re = Regex::new(r"^\s*zinit\s+snippet\s+([^\s#]+)").unwrap();
 
     for line in content.lines() {
@@ -2764,11 +2791,17 @@ fn calc_path_size_sync(path: &Path) -> u64 {
 /// Get cache info for a single framework (async-safe)
 pub async fn get_framework_cache_info(framework: &ShellFrameworkInfo) -> FrameworkCacheInfo {
     let cache_paths = resolve_framework_cache_paths(framework);
-    let path_strings: Vec<String> = cache_paths.iter().map(|p| p.display().to_string()).collect();
+    let path_strings: Vec<String> = cache_paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
 
     let paths_for_size = cache_paths.clone();
     let total_size = tokio::task::spawn_blocking(move || {
-        paths_for_size.iter().map(|p| calc_path_size_sync(p)).sum::<u64>()
+        paths_for_size
+            .iter()
+            .map(|p| calc_path_size_sync(p))
+            .sum::<u64>()
     })
     .await
     .unwrap_or(0);
@@ -2804,7 +2837,8 @@ pub async fn get_all_framework_cache_stats(
 
 /// Clean cache for a specific framework by name. Returns freed bytes.
 pub async fn clean_framework_cache(framework_name: &str) -> CogniaResult<u64> {
-    let _home = dirs_home().ok_or_else(|| CogniaError::Internal("No home directory".to_string()))?;
+    let _home =
+        dirs_home().ok_or_else(|| CogniaError::Internal("No home directory".to_string()))?;
 
     // Build a dummy framework info to resolve paths
     let dummy = ShellFrameworkInfo {
@@ -2826,7 +2860,10 @@ pub async fn clean_framework_cache(framework_name: &str) -> CogniaResult<u64> {
 
     let paths_for_size = cache_paths.clone();
     let size_before: u64 = tokio::task::spawn_blocking(move || {
-        paths_for_size.iter().map(|p| calc_path_size_sync(p)).sum::<u64>()
+        paths_for_size
+            .iter()
+            .map(|p| calc_path_size_sync(p))
+            .sum::<u64>()
     })
     .await
     .unwrap_or(0);
@@ -2844,7 +2881,10 @@ pub async fn clean_framework_cache(framework_name: &str) -> CogniaResult<u64> {
 
     let paths_for_size2 = cache_paths;
     let size_after: u64 = tokio::task::spawn_blocking(move || {
-        paths_for_size2.iter().map(|p| calc_path_size_sync(p)).sum::<u64>()
+        paths_for_size2
+            .iter()
+            .map(|p| calc_path_size_sync(p))
+            .sum::<u64>()
     })
     .await
     .unwrap_or(0);
@@ -2987,7 +3027,10 @@ source-env ~/.env.nu
         let entries = parse_nushell_config(content);
         assert_eq!(entries.aliases.len(), 2);
         assert_eq!(entries.aliases[0], ("ll".to_string(), "ls -la".to_string()));
-        assert_eq!(entries.aliases[1], ("gs".to_string(), "git status".to_string()));
+        assert_eq!(
+            entries.aliases[1],
+            ("gs".to_string(), "git status".to_string())
+        );
         assert_eq!(entries.exports.len(), 2);
         assert_eq!(entries.exports[0].0, "EDITOR");
         assert_eq!(entries.exports[1].0, "PATH");
@@ -3230,7 +3273,10 @@ plugins=(
         let content = "alias ls=ls-color\n";
         let entries = parse_posix_config(content);
         assert_eq!(entries.aliases.len(), 1);
-        assert_eq!(entries.aliases[0], ("ls".to_string(), "ls-color".to_string()));
+        assert_eq!(
+            entries.aliases[0],
+            ("ls".to_string(), "ls-color".to_string())
+        );
     }
 
     #[test]
@@ -3249,7 +3295,10 @@ plugins=(
         let content = "New-Alias -Name ll -Value Get-ChildItem\n";
         let entries = parse_powershell_config(content);
         assert_eq!(entries.aliases.len(), 1);
-        assert_eq!(entries.aliases[0], ("ll".to_string(), "Get-ChildItem".to_string()));
+        assert_eq!(
+            entries.aliases[0],
+            ("ll".to_string(), "Get-ChildItem".to_string())
+        );
     }
 
     #[test]
@@ -3257,7 +3306,10 @@ plugins=(
         let content = "sal np notepad\n";
         let entries = parse_powershell_config(content);
         assert_eq!(entries.aliases.len(), 1);
-        assert_eq!(entries.aliases[0], ("np".to_string(), "notepad".to_string()));
+        assert_eq!(
+            entries.aliases[0],
+            ("np".to_string(), "notepad".to_string())
+        );
     }
 
     #[test]
@@ -3323,7 +3375,10 @@ Import-Module "C:\Users\Max Qian\Modules\MyModule"
 "#;
         let entries = parse_powershell_config(content);
         assert_eq!(entries.sources.len(), 4);
-        assert_eq!(entries.sources[0], r"C:\Users\Max Qian\Documents\PowerShell\helpers.ps1");
+        assert_eq!(
+            entries.sources[0],
+            r"C:\Users\Max Qian\Documents\PowerShell\helpers.ps1"
+        );
         assert_eq!(entries.sources[1], r"C:\Program Files\My App\init.ps1");
         assert_eq!(entries.sources[2], r"C:\Users\Max Qian\Modules\MyModule");
         assert_eq!(entries.sources[3], r"C:\NoSpace\script.ps1");
@@ -3377,13 +3432,21 @@ source ~/no_space.nu
     #[test]
     fn test_get_builtin_templates_nonempty() {
         let templates = get_builtin_templates();
-        assert!(templates.len() >= 10, "Expected at least 10 built-in templates, got {}", templates.len());
+        assert!(
+            templates.len() >= 10,
+            "Expected at least 10 built-in templates, got {}",
+            templates.len()
+        );
     }
 
     #[test]
     fn test_builtin_templates_all_marked_builtin() {
         for tpl in get_builtin_templates() {
-            assert!(tpl.is_builtin, "Template '{}' should be is_builtin=true", tpl.name);
+            assert!(
+                tpl.is_builtin,
+                "Template '{}' should be is_builtin=true",
+                tpl.name
+            );
         }
     }
 
@@ -3400,16 +3463,26 @@ source ~/no_space.nu
     #[test]
     fn test_builtin_templates_ids_prefixed() {
         for tpl in get_builtin_templates() {
-            assert!(tpl.id.starts_with("builtin-"), "Template id '{}' must start with 'builtin-'", tpl.id);
+            assert!(
+                tpl.id.starts_with("builtin-"),
+                "Template id '{}' must start with 'builtin-'",
+                tpl.id
+            );
         }
     }
 
     #[test]
     fn test_builtin_template_categories_present() {
         let templates = get_builtin_templates();
-        let has_general = templates.iter().any(|t| t.category == TemplateCategory::General);
-        let has_dev = templates.iter().any(|t| t.category == TemplateCategory::Development);
-        let has_devops = templates.iter().any(|t| t.category == TemplateCategory::DevOps);
+        let has_general = templates
+            .iter()
+            .any(|t| t.category == TemplateCategory::General);
+        let has_dev = templates
+            .iter()
+            .any(|t| t.category == TemplateCategory::Development);
+        let has_devops = templates
+            .iter()
+            .any(|t| t.category == TemplateCategory::DevOps);
         assert!(has_general, "Missing General category templates");
         assert!(has_dev, "Missing Development category templates");
         assert!(has_devops, "Missing DevOps category templates");
@@ -3418,7 +3491,10 @@ source ~/no_space.nu
     #[test]
     fn test_builtin_template_powershell_has_nologo() {
         let templates = get_builtin_templates();
-        let ps = templates.iter().find(|t| t.id == "builtin-powershell").unwrap();
+        let ps = templates
+            .iter()
+            .find(|t| t.id == "builtin-powershell")
+            .unwrap();
         assert_eq!(ps.shell_type, Some(ShellType::PowerShell));
         assert!(ps.args.contains(&"-NoLogo".to_string()));
     }
@@ -3426,17 +3502,29 @@ source ~/no_space.nu
     #[test]
     fn test_builtin_template_nodejs_dev_env_vars() {
         let templates = get_builtin_templates();
-        let node = templates.iter().find(|t| t.id == "builtin-nodejs-dev").unwrap();
-        assert_eq!(node.env_vars.get("NODE_ENV"), Some(&"development".to_string()));
+        let node = templates
+            .iter()
+            .find(|t| t.id == "builtin-nodejs-dev")
+            .unwrap();
+        assert_eq!(
+            node.env_vars.get("NODE_ENV"),
+            Some(&"development".to_string())
+        );
         assert_eq!(node.env_type, Some("node".to_string()));
         assert_eq!(node.category, TemplateCategory::Development);
-        assert!(node.shell_type.is_none(), "Node.js template should have no specific shell_type");
+        assert!(
+            node.shell_type.is_none(),
+            "Node.js template should have no specific shell_type"
+        );
     }
 
     #[test]
     fn test_builtin_template_rust_dev_env_vars() {
         let templates = get_builtin_templates();
-        let rust = templates.iter().find(|t| t.id == "builtin-rust-dev").unwrap();
+        let rust = templates
+            .iter()
+            .find(|t| t.id == "builtin-rust-dev")
+            .unwrap();
         assert_eq!(rust.env_vars.get("RUST_BACKTRACE"), Some(&"1".to_string()));
         assert_eq!(rust.env_type, Some("rust".to_string()));
     }
@@ -3444,9 +3532,16 @@ source ~/no_space.nu
     #[test]
     fn test_builtin_template_docker_shell_has_startup_command() {
         let templates = get_builtin_templates();
-        let docker = templates.iter().find(|t| t.id == "builtin-docker-shell").unwrap();
+        let docker = templates
+            .iter()
+            .find(|t| t.id == "builtin-docker-shell")
+            .unwrap();
         assert!(docker.startup_command.is_some());
-        assert!(docker.startup_command.as_ref().unwrap().contains("docker exec"));
+        assert!(docker
+            .startup_command
+            .as_ref()
+            .unwrap()
+            .contains("docker exec"));
     }
 
     #[test]
@@ -3476,7 +3571,10 @@ source ~/no_space.nu
             is_builtin: false,
         };
         let json = serde_json::to_string(&tpl).unwrap();
-        assert!(json.contains("\"shellType\""), "camelCase serialization expected");
+        assert!(
+            json.contains("\"shellType\""),
+            "camelCase serialization expected"
+        );
         assert!(json.contains("\"isBuiltin\""));
 
         let deserialized: TerminalProfileTemplate = serde_json::from_str(&json).unwrap();
@@ -3523,7 +3621,10 @@ source ~/no_space.nu
         assert_eq!(profile.shell_id, "pwsh-7");
         assert_eq!(profile.name, "PowerShell");
         assert!(profile.args.contains(&"-NoLogo".to_string()));
-        assert!(profile.id.is_empty(), "Profile id should be empty (not yet created)");
+        assert!(
+            profile.id.is_empty(),
+            "Profile id should be empty (not yet created)"
+        );
     }
 
     #[test]
@@ -3549,7 +3650,10 @@ source ~/no_space.nu
         let profile = mgr
             .create_profile_from_template("builtin-powershell", &detected_shells)
             .unwrap();
-        assert_eq!(profile.shell_id, "powershell", "Should fall back to ShellType::to_id()");
+        assert_eq!(
+            profile.shell_id, "powershell",
+            "Should fall back to ShellType::to_id()"
+        );
     }
 
     #[test]
@@ -3715,7 +3819,11 @@ source ~/no_space.nu
 
         // Save as template
         let tpl_id = mgr
-            .save_profile_as_template(&profile_id, "Node Prod".into(), "Production Node setup".into())
+            .save_profile_as_template(
+                &profile_id,
+                "Node Prod".into(),
+                "Production Node setup".into(),
+            )
             .await
             .unwrap();
 
@@ -3726,7 +3834,10 @@ source ~/no_space.nu
         assert_eq!(tpl.description, "Production Node setup");
         assert_eq!(tpl.shell_type, Some(ShellType::Bash));
         assert_eq!(tpl.args, vec!["-l".to_string()]);
-        assert_eq!(tpl.env_vars.get("NODE_ENV"), Some(&"production".to_string()));
+        assert_eq!(
+            tpl.env_vars.get("NODE_ENV"),
+            Some(&"production".to_string())
+        );
         assert_eq!(tpl.cwd, Some("/home/user/project".into()));
         assert_eq!(tpl.startup_command, Some("nvm use 20".into()));
         assert_eq!(tpl.env_type, Some("node".into()));
@@ -3783,7 +3894,10 @@ source ~/no_space.nu
         assert_eq!(mgr2.custom_templates[0].id, id);
         assert_eq!(mgr2.custom_templates[0].name, "Persisted");
         assert_eq!(mgr2.custom_templates[0].shell_type, Some(ShellType::Zsh));
-        assert_eq!(mgr2.custom_templates[0].env_vars.get("KEY"), Some(&"VALUE".to_string()));
+        assert_eq!(
+            mgr2.custom_templates[0].env_vars.get("KEY"),
+            Some(&"VALUE".to_string())
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3865,7 +3979,9 @@ source ~/no_space.nu
         let home = PathBuf::from("/tmp/test_home_starship");
         let paths = get_starship_cache_paths(&home);
         assert!(!paths.is_empty());
-        assert!(paths.iter().any(|p| p.to_str().unwrap().contains("starship")));
+        assert!(paths
+            .iter()
+            .any(|p| p.to_str().unwrap().contains("starship")));
     }
 
     #[test]
@@ -3873,7 +3989,9 @@ source ~/no_space.nu
         let home = PathBuf::from("/tmp/test_home_omz");
         let paths = get_oh_my_zsh_cache_paths(&home);
         assert!(paths.iter().any(|p| p.ends_with("cache")));
-        assert!(paths.iter().any(|p| p.to_str().unwrap().contains(".oh-my-zsh")));
+        assert!(paths
+            .iter()
+            .any(|p| p.to_str().unwrap().contains(".oh-my-zsh")));
     }
 
     #[test]
@@ -3915,7 +4033,9 @@ source ~/no_space.nu
         let paths = get_antidote_cache_paths(&home);
         assert!(paths.len() >= 2);
         assert!(paths.iter().any(|p| p.ends_with(".antidote")));
-        assert!(paths.iter().any(|p| p.to_str().unwrap().contains("antidote")));
+        assert!(paths
+            .iter()
+            .any(|p| p.to_str().unwrap().contains("antidote")));
     }
 
     #[test]
@@ -4006,7 +4126,11 @@ source ~/no_space.nu
         );
 
         let result_zero = format_size(0);
-        assert!(result_zero.contains("0"), "Expected '0' in '{}'", result_zero);
+        assert!(
+            result_zero.contains("0"),
+            "Expected '0' in '{}'",
+            result_zero
+        );
     }
 
     #[test]

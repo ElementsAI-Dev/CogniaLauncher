@@ -983,15 +983,11 @@ mod tests {
     #[test]
     fn test_get_rules_for_env_sorted_by_priority() {
         let mut manager = CustomDetectionManager::new(Path::new("/tmp/test"));
-        manager
-            .add_rule(make_test_rule("low", "node", 1))
-            .unwrap();
+        manager.add_rule(make_test_rule("low", "node", 1)).unwrap();
         manager
             .add_rule(make_test_rule("high", "node", 100))
             .unwrap();
-        manager
-            .add_rule(make_test_rule("mid", "node", 50))
-            .unwrap();
+        manager.add_rule(make_test_rule("mid", "node", 50)).unwrap();
         manager
             .add_rule(make_test_rule("python-rule", "python", 10))
             .unwrap();
@@ -1085,10 +1081,7 @@ mod tests {
             strip_version_prefix: false,
             normalize_semver: false,
         };
-        assert_eq!(
-            manager.transform_version("1_8", &Some(transform)),
-            "1.8"
-        );
+        assert_eq!(manager.transform_version("1_8", &Some(transform)), "1.8");
     }
 
     #[test]
@@ -1171,15 +1164,10 @@ mod tests {
     async fn test_extract_json_path_number() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("config.json");
-        tokio::fs::write(&file, r#"{"version": 42}"#)
-            .await
-            .unwrap();
+        tokio::fs::write(&file, r#"{"version": 42}"#).await.unwrap();
 
         let manager = CustomDetectionManager::new(Path::new("/tmp"));
-        let result = manager
-            .extract_json_path(&file, "version")
-            .await
-            .unwrap();
+        let result = manager.extract_json_path(&file, "version").await.unwrap();
         assert_eq!(result, Some("42".to_string()));
     }
 
@@ -1208,12 +1196,9 @@ rust-version = "1.75.0"
     async fn test_extract_yaml_path() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("config.yml");
-        tokio::fs::write(
-            &file,
-            "runtime:\n  version: \"3.12.0\"\n",
-        )
-        .await
-        .unwrap();
+        tokio::fs::write(&file, "runtime:\n  version: \"3.12.0\"\n")
+            .await
+            .unwrap();
 
         let manager = CustomDetectionManager::new(Path::new("/tmp"));
         let result = manager
@@ -1244,10 +1229,7 @@ rust-version = "1.75.0"
             .unwrap();
         assert_eq!(result, Some("3.12.0".to_string()));
 
-        let result = manager
-            .extract_tool_versions(&file, "ruby")
-            .await
-            .unwrap();
+        let result = manager.extract_tool_versions(&file, "ruby").await.unwrap();
         assert!(result.is_none());
     }
 
@@ -1332,11 +1314,7 @@ rust-version = "1.75.0"
 
         let manager = CustomDetectionManager::new(Path::new("/tmp"));
         let result = manager
-            .extract_regex(
-                &file,
-                r#"ARG NODE_VERSION=(?P<version>[\d.]+)"#,
-                true,
-            )
+            .extract_regex(&file, r#"ARG NODE_VERSION=(?P<version>[\d.]+)"#, true)
             .await
             .unwrap();
         assert_eq!(result, Some("20.10.0".to_string()));

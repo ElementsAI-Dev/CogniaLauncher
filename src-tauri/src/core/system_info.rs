@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-const EXTENDED_SECTION_TTL: Duration = Duration::from_secs(45);
+const HARDWARE_SECTION_TTL: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -162,103 +162,95 @@ pub struct BatteryInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SystemSnapshot {
-    pub platform: PlatformInfo,
+pub struct HardwareSections {
     pub components: Vec<ComponentInfo>,
     pub battery: Option<BatteryInfo>,
     pub disks: Vec<DiskInfo>,
     pub networks: Vec<NetworkInterfaceInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemSnapshot {
+    pub platform: PlatformInfo,
+    #[serde(flatten)]
+    pub hardware: HardwareSections,
     pub collected_at: String,
     pub section_status: SnapshotSectionStatus,
 }
 
 #[derive(Clone)]
-struct ExtendedSections {
-    gpus: Vec<GpuInfo>,
-    components: Vec<ComponentInfo>,
-    battery: Option<BatteryInfo>,
-    disks: Vec<DiskInfo>,
-    networks: Vec<NetworkInterfaceInfo>,
-}
-
-impl ExtendedSections {
-    fn empty() -> Self {
-        Self {
-            gpus: Vec::new(),
-            components: Vec::new(),
-            battery: None,
-            disks: Vec::new(),
-            networks: Vec::new(),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct CachedExtendedSections {
+struct CachedHardware {
     collected_at: Instant,
-    data: ExtendedSections,
+    gpus: Vec<GpuInfo>,
+    sections: HardwareSections,
 }
 
-static EXTENDED_CACHE: Lazy<RwLock<Option<CachedExtendedSections>>> =
+static HARDWARE_CACHE: Lazy<RwLock<Option<CachedHardware>>> =
     Lazy::new(|| RwLock::new(None));
 
-pub async fn collect_platform_info(force_extended_refresh: bool) -> PlatformInfo {
-    let (extended, _) = collect_extended_sections(force_extended_refresh).await;
-    collect_platform_baseline(extended.gpus).await
+pub async fn collect_platform_info(force_refresh: bool) -> PlatformInfo {
+    let (gpus, _, _) = collect_hardware_sections(force_refresh).await;
+    collect_platform_baseline(gpus).await
 }
 
 pub async fn collect_components(force_refresh: bool) -> Vec<ComponentInfo> {
-    let (extended, _) = collect_extended_sections(force_refresh).await;
-    extended.components
+    let (_, hw, _) = collect_hardware_sections(force_refresh).await;
+    hw.components
 }
 
 pub async fn collect_battery(force_refresh: bool) -> Option<BatteryInfo> {
-    let (extended, _) = collect_extended_sections(force_refresh).await;
-    extended.battery
+    let (_, hw, _) = collect_hardware_sections(force_refresh).await;
+    hw.battery
 }
 
 pub async fn collect_disks(force_refresh: bool) -> Vec<DiskInfo> {
-    let (extended, _) = collect_extended_sections(force_refresh).await;
-    extended.disks
+    let (_, hw, _) = collect_hardware_sections(force_refresh).await;
+    hw.disks
 }
 
 pub async fn collect_networks(force_refresh: bool) -> Vec<NetworkInterfaceInfo> {
-    let (extended, _) = collect_extended_sections(force_refresh).await;
-    extended.networks
+    let (_, hw, _) = collect_hardware_sections(force_refresh).await;
+    hw.networks
 }
 
 pub async fn collect_system_snapshot(force_refresh: bool) -> SystemSnapshot {
-    let (extended, section_status) = collect_extended_sections(force_refresh).await;
-    let platform = collect_platform_baseline(extended.gpus).await;
+    let (gpus, hw, section_status) = collect_hardware_sections(force_refresh).await;
+    let platform = collect_platform_baseline(gpus).await;
 
     SystemSnapshot {
         platform,
-        components: extended.components,
-        battery: extended.battery,
-        disks: extended.disks,
-        networks: extended.networks,
+        hardware: hw,
         collected_at: Utc::now().to_rfc3339(),
         section_status,
     }
 }
 
-async fn collect_extended_sections(
+async fn collect_hardware_sections(
     force_refresh: bool,
-) -> (ExtendedSections, SnapshotSectionStatus) {
+) -> (Vec<GpuInfo>, HardwareSections, SnapshotSectionStatus) {
     if !force_refresh {
-        let cache_guard = EXTENDED_CACHE.read().await;
+        let cache_guard = HARDWARE_CACHE.read().await;
         if let Some(cached) = cache_guard.as_ref() {
-            if cached.collected_at.elapsed() <= EXTENDED_SECTION_TTL {
-                return (cached.data.clone(), SnapshotSectionStatus::cached());
+            if cached.collected_at.elapsed() <= HARDWARE_SECTION_TTL {
+                return (
+                    cached.gpus.clone(),
+                    cached.sections.clone(),
+                    SnapshotSectionStatus::cached(),
+                );
             }
         }
     }
 
-    let mut cache_guard = EXTENDED_CACHE.write().await;
+    let mut cache_guard = HARDWARE_CACHE.write().await;
     if !force_refresh {
         if let Some(cached) = cache_guard.as_ref() {
-            if cached.collected_at.elapsed() <= EXTENDED_SECTION_TTL {
-                return (cached.data.clone(), SnapshotSectionStatus::cached());
+            if cached.collected_at.elapsed() <= HARDWARE_SECTION_TTL {
+                return (
+                    cached.gpus.clone(),
+                    cached.sections.clone(),
+                    SnapshotSectionStatus::cached(),
+                );
             }
         }
     }
@@ -272,20 +264,21 @@ async fn collect_extended_sections(
         collect_networks_safe(),
     );
 
-    let data = ExtendedSections {
-        gpus: unwrap_or_mark_failed(gpus, &mut status.gpus),
+    let gpus = unwrap_or_mark_failed(gpus, &mut status.gpus);
+    let sections = HardwareSections {
         components: unwrap_or_mark_failed(components, &mut status.components),
         battery: unwrap_or_mark_failed(battery, &mut status.battery),
         disks: unwrap_or_mark_failed(disks, &mut status.disks),
         networks: unwrap_or_mark_failed(networks, &mut status.networks),
     };
 
-    *cache_guard = Some(CachedExtendedSections {
+    *cache_guard = Some(CachedHardware {
         collected_at: Instant::now(),
-        data: data.clone(),
+        gpus: gpus.clone(),
+        sections: sections.clone(),
     });
 
-    (data, status)
+    (gpus, sections, status)
 }
 
 fn unwrap_or_mark_failed<T: Default>(result: Result<T, String>, status: &mut SectionState) -> T {
@@ -301,7 +294,9 @@ fn unwrap_or_mark_failed<T: Default>(result: Result<T, String>, status: &mut Sec
 async fn collect_platform_baseline(gpus: Vec<GpuInfo>) -> PlatformInfo {
     use sysinfo::System;
 
-    let os = crate::platform::env::current_platform().as_str().to_string();
+    let os = crate::platform::env::current_platform()
+        .as_str()
+        .to_string();
     let arch = crate::platform::env::current_arch().as_str().to_string();
 
     let os_version = System::os_version().unwrap_or_default();
@@ -467,6 +462,10 @@ async fn collect_networks_safe() -> Result<Vec<NetworkInterfaceInfo>, String> {
     }
 
     Ok(result)
+}
+
+async fn collect_battery_safe() -> Result<Option<BatteryInfo>, String> {
+    Ok(crate::commands::config::detect_battery().await)
 }
 
 async fn collect_gpus_safe() -> Result<Vec<GpuInfo>, String> {

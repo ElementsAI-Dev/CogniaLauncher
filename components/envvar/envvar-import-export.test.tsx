@@ -14,14 +14,10 @@ jest.mock('sonner', () => ({
 
 const mockedToast = jest.mocked(toast);
 
-const mockClipboard = {
-  writeText: jest.fn().mockResolvedValue(undefined),
-};
-
-Object.defineProperty(navigator, 'clipboard', {
-  value: mockClipboard,
-  writable: true,
-});
+jest.mock('@/lib/clipboard', () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+  readClipboard: jest.fn().mockResolvedValue(''),
+}));
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
@@ -211,7 +207,8 @@ describe('EnvVarImportExport', () => {
     );
     expect(copyBtn).toBeTruthy();
     await userEvent.click(copyBtn!);
-    expect(mockClipboard.writeText).toHaveBeenCalledWith('EXPORTED=true');
+    const clipboardMock = jest.requireMock('@/lib/clipboard');
+    expect(clipboardMock.writeClipboard).toHaveBeenCalledWith('EXPORTED=true');
   });
 
   it('downloads export content as file', async () => {

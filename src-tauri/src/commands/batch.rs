@@ -31,6 +31,7 @@ pub async fn batch_install(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
+    let settings_ref = settings.inner().clone();
     let settings = settings.read().await.clone();
     let manager = BatchManager::new(registry.inner().clone(), settings);
 
@@ -42,12 +43,17 @@ pub async fn batch_install(
         global: global.unwrap_or(true),
     };
 
-    manager
+    let result = manager
         .batch_install(request, |progress| {
             emit_batch_progress(&app_handle, &progress);
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate package caches after successful batch install
+    crate::commands::package::invalidate_package_caches(&settings_ref).await;
+
+    Ok(result)
 }
 
 /// Batch uninstall packages
@@ -59,15 +65,21 @@ pub async fn batch_uninstall(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
+    let settings_ref = settings.inner().clone();
     let settings = settings.read().await.clone();
     let manager = BatchManager::new(registry.inner().clone(), settings);
 
-    manager
+    let result = manager
         .batch_uninstall(packages, force.unwrap_or(false), |progress| {
             emit_batch_progress(&app_handle, &progress);
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate package caches after successful batch uninstall
+    crate::commands::package::invalidate_package_caches(&settings_ref).await;
+
+    Ok(result)
 }
 
 /// Batch update packages
@@ -78,15 +90,21 @@ pub async fn batch_update(
     registry: State<'_, SharedRegistry>,
     settings: State<'_, SharedSettings>,
 ) -> Result<BatchResult, String> {
+    let settings_ref = settings.inner().clone();
     let settings = settings.read().await.clone();
     let manager = BatchManager::new(registry.inner().clone(), settings);
 
-    manager
+    let result = manager
         .batch_update(packages, |progress| {
             emit_batch_progress(&app_handle, &progress);
         })
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate package caches after successful batch update
+    crate::commands::package::invalidate_package_caches(&settings_ref).await;
+
+    Ok(result)
 }
 
 /// Resolve dependencies for a list of packages
@@ -139,6 +157,7 @@ pub struct RequiredVersion {
 pub async fn resolve_dependencies(
     packages: Vec<String>,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<ResolutionResult, String> {
     let reg = registry.read().await;
 
@@ -165,18 +184,41 @@ pub async fn resolve_dependencies(
     let mut package_providers: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
 
-    // Collect installed packages for comparison
+    // Collect installed packages for comparison (prefer cached data)
     let mut installed_packages: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    for provider_id in reg.list() {
-        if let Some(provider) = reg.get(provider_id) {
-            if provider.is_available().await {
-                if let Ok(installed) = provider
-                    .list_installed(crate::provider::InstalledFilter::default())
-                    .await
-                {
-                    for pkg in installed {
+
+    // Try MetadataCache first (written by package_list)
+    let mut used_cache = false;
+    {
+        let cache_dir = settings.read().await.get_cache_dir();
+        if let Ok(mut cache) = crate::cache::MetadataCache::open_with_ttl(&cache_dir, 60).await {
+            if let Ok(Some(cached)) = cache
+                .get::<Vec<crate::provider::InstalledPackage>>("pkg:installed:all")
+                .await
+            {
+                if !cached.is_stale {
+                    for pkg in cached.data {
                         installed_packages.insert(pkg.name.to_lowercase(), pkg.version);
+                    }
+                    used_cache = true;
+                }
+            }
+        }
+    }
+
+    // Fallback: live scan
+    if !used_cache {
+        for provider_id in reg.list() {
+            if let Some(provider) = reg.get(provider_id) {
+                if provider.is_available().await {
+                    if let Ok(installed) = provider
+                        .list_installed(crate::provider::InstalledFilter::default())
+                        .await
+                    {
+                        for pkg in installed {
+                            installed_packages.insert(pkg.name.to_lowercase(), pkg.version);
+                        }
                     }
                 }
             }
@@ -442,42 +484,90 @@ pub async fn check_updates(
         .flatten()
         .collect();
 
-    // Phase 2: Collect installed packages from all available providers in parallel
-    let collect_futures: Vec<_> = available_providers
-        .iter()
-        .map(|provider_id| {
-            let provider = reg.get(provider_id);
-            let provider_id = provider_id.clone();
-            let packages_filter = packages.clone();
-            async move {
-                if let Some(p) = provider {
-                    match p
-                        .list_installed(crate::provider::InstalledFilter::default())
-                        .await
-                    {
-                        Ok(installed) => {
-                            let filtered: Vec<_> = installed
-                                .into_iter()
-                                .filter(|pkg| {
-                                    if let Some(ref filter) = packages_filter {
-                                        filter.iter().any(|f| f.eq_ignore_ascii_case(&pkg.name))
-                                    } else {
-                                        true
-                                    }
-                                })
-                                .collect();
-                            (provider_id, filtered, None)
+    // Phase 2: Collect installed packages from all available providers
+    // Try MetadataCache first (written by package_list), fallback to live scan
+    let mut collect_results: Vec<(
+        String,
+        Vec<crate::provider::InstalledPackage>,
+        Option<String>,
+    )> = Vec::new();
+
+    let mut used_cache = false;
+    {
+        let cache_dir = settings.read().await.get_cache_dir();
+        if let Ok(mut cache) = crate::cache::MetadataCache::open_with_ttl(&cache_dir, 60).await {
+            if let Ok(Some(cached)) = cache
+                .get::<Vec<crate::provider::InstalledPackage>>("pkg:installed:all")
+                .await
+            {
+                if !cached.is_stale {
+                    // Group cached packages by provider, filtering by available providers
+                    let available_set: std::collections::HashSet<&str> =
+                        available_providers.iter().map(|s| s.as_str()).collect();
+                    let mut by_provider: std::collections::HashMap<
+                        String,
+                        Vec<crate::provider::InstalledPackage>,
+                    > = std::collections::HashMap::new();
+                    for pkg in cached.data {
+                        if available_set.contains(pkg.provider.as_str()) {
+                            if let Some(ref filter) = packages {
+                                if !filter.iter().any(|f| f.eq_ignore_ascii_case(&pkg.name)) {
+                                    continue;
+                                }
+                            }
+                            by_provider
+                                .entry(pkg.provider.clone())
+                                .or_default()
+                                .push(pkg);
                         }
-                        Err(e) => (provider_id, vec![], Some(e.to_string())),
                     }
-                } else {
-                    (provider_id, vec![], Some("Provider not found".into()))
+                    collect_results = by_provider
+                        .into_iter()
+                        .map(|(pid, pkgs)| (pid, pkgs, None))
+                        .collect();
+                    used_cache = true;
                 }
             }
-        })
-        .collect();
+        }
+    }
 
-    let collect_results = join_all(collect_futures).await;
+    if !used_cache {
+        let collect_futures: Vec<_> = available_providers
+            .iter()
+            .map(|provider_id| {
+                let provider = reg.get(provider_id);
+                let provider_id = provider_id.clone();
+                let packages_filter = packages.clone();
+                async move {
+                    if let Some(p) = provider {
+                        match p
+                            .list_installed(crate::provider::InstalledFilter::default())
+                            .await
+                        {
+                            Ok(installed) => {
+                                let filtered: Vec<_> = installed
+                                    .into_iter()
+                                    .filter(|pkg| {
+                                        if let Some(ref filter) = packages_filter {
+                                            filter.iter().any(|f| f.eq_ignore_ascii_case(&pkg.name))
+                                        } else {
+                                            true
+                                        }
+                                    })
+                                    .collect();
+                                (provider_id, filtered, None)
+                            }
+                            Err(e) => (provider_id, vec![], Some(e.to_string())),
+                        }
+                    } else {
+                        (provider_id, vec![], Some("Provider not found".into()))
+                    }
+                }
+            })
+            .collect();
+
+        collect_results = join_all(collect_futures).await;
+    }
 
     // Build a flat list of (provider_id, package_name, package_version) to check
     let mut check_items: Vec<(String, String, String)> = Vec::new();
@@ -677,6 +767,7 @@ pub async fn package_rollback(
     name: String,
     to_version: String,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<(), String> {
     let reg = registry.read().await;
 
@@ -721,6 +812,8 @@ pub async fn package_rollback(
         Ok(_) => {
             let _ =
                 HistoryManager::record_rollback(&name, &to_version, &provider_id, true, None).await;
+            // Invalidate package caches after successful rollback
+            crate::commands::package::invalidate_package_caches(settings.inner()).await;
             Ok(())
         }
         Err(err) => {

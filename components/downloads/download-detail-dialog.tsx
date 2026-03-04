@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { useLocale } from "@/components/providers/locale-provider";
 import { toast } from "sonner";
+import { writeClipboard } from "@/lib/clipboard";
 import {
   Copy,
   ExternalLink,
@@ -98,18 +99,16 @@ export function DownloadDetailDialog({
     task?.state === "cancelled" ||
     task?.state === "completed";
 
-  const handleCopyUrl = useCallback(() => {
+  const handleCopyUrl = useCallback(async () => {
     if (!task) return;
-    navigator.clipboard.writeText(task.url).then(() => {
-      toast.success(t("downloads.detail.urlCopied"));
-    });
+    await writeClipboard(task.url);
+    toast.success(t("downloads.detail.urlCopied"));
   }, [task, t]);
 
-  const handleCopyDestination = useCallback(() => {
+  const handleCopyDestination = useCallback(async () => {
     if (!task) return;
-    navigator.clipboard.writeText(task.destination).then(() => {
-      toast.success(t("downloads.detail.urlCopied"));
-    });
+    await writeClipboard(task.destination);
+    toast.success(t("downloads.detail.urlCopied"));
   }, [task, t]);
 
   const handleRetry = useCallback(async () => {
@@ -309,7 +308,7 @@ export function DownloadDetailDialog({
                     size="icon"
                     className="h-6 w-6 flex-shrink-0"
                     onClick={() => {
-                      navigator.clipboard.writeText(task.expectedChecksum!).then(() => {
+                      writeClipboard(task.expectedChecksum!).then(() => {
                         toast.success(t("downloads.detail.checksumCopied"));
                       });
                     }}

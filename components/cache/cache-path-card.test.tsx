@@ -78,8 +78,7 @@ describe("CachePathCard", () => {
       render(<CachePathCard />);
     });
     // Expand the collapsible to trigger fetch
-    const trigger = screen.getByText("cache.pathManagement").closest("[data-radix-collection-item]") ||
-      screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     expect(screen.getByText("cache.symlink")).toBeInTheDocument();
   });
@@ -91,7 +90,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     expect(screen.getByText("cache.customPath")).toBeInTheDocument();
   });
@@ -105,7 +104,7 @@ describe("CachePathCard", () => {
   it("renders chevron icon for collapsible", () => {
     render(<CachePathCard />);
     // The ChevronDown icon should be present
-    const container = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const container = screen.getByTestId("cache-path-trigger");
     expect(container).toBeInTheDocument();
   });
 
@@ -117,7 +116,7 @@ describe("CachePathCard", () => {
       render(<CachePathCard />);
     });
     // Click to expand
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     // Wait for data
     await act(async () => {});
@@ -131,7 +130,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.exists")).toBeInTheDocument();
@@ -145,7 +144,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.changePath")).toBeInTheDocument();
@@ -159,7 +158,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     await user.click(screen.getByText("cache.changePath"));
@@ -174,7 +173,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.resetPath")).toBeInTheDocument();
@@ -191,7 +190,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.symlinkTarget")).toBeInTheDocument();
@@ -209,7 +208,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.defaultPath")).toBeInTheDocument();
@@ -223,7 +222,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.missing")).toBeInTheDocument();
@@ -236,7 +235,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     expect(screen.getByText("cache.readOnly")).toBeInTheDocument();
@@ -251,7 +250,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     // Enter edit mode
@@ -283,7 +282,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     await act(async () => {
@@ -305,7 +304,7 @@ describe("CachePathCard", () => {
     await act(async () => {
       render(<CachePathCard />);
     });
-    const trigger = screen.getByText("cache.pathManagement").closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId("cache-path-trigger");
     if (trigger) await user.click(trigger);
     await act(async () => {});
     await user.click(screen.getByText("cache.migration"));

@@ -58,6 +58,7 @@ export const useFeedbackStore = create<FeedbackStore>()(
     {
       name: 'cognia-feedback',
       version: 1,
+      migrate: (persisted) => persisted as FeedbackDialogState,
       partialize: (state) => ({
         draft: state.draft,
       }),

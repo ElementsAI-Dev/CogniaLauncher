@@ -168,9 +168,7 @@ pub struct ExtractProgress {
 // ── Zip-slip protection ──
 
 fn validate_extract_path(dest: &Path, entry_path: &Path) -> CogniaResult<PathBuf> {
-    let canonical_dest = dest
-        .canonicalize()
-        .unwrap_or_else(|_| dest.to_path_buf());
+    let canonical_dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
 
     // Reject paths with parent-directory traversals
     for component in entry_path.components() {
@@ -207,10 +205,7 @@ pub async fn extract_archive_with_progress(
     dest: &Path,
     on_progress: Option<ProgressCallback>,
 ) -> CogniaResult<Vec<PathBuf>> {
-    let filename = archive
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let filename = archive.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let ext = archive.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     fs::create_dir_all(dest).await?;
@@ -273,9 +268,8 @@ fn extract_tar_entries<R: std::io::Read>(
         .map_err(|e| CogniaError::Installation(format!("Failed to read tar entries: {}", e)))?;
 
     for (idx, entry) in entries.enumerate() {
-        let mut entry = entry.map_err(|e| {
-            CogniaError::Installation(format!("Failed to read tar entry: {}", e))
-        })?;
+        let mut entry = entry
+            .map_err(|e| CogniaError::Installation(format!("Failed to read tar entry: {}", e)))?;
 
         let entry_path = entry
             .path()
@@ -288,7 +282,8 @@ fn extract_tar_entries<R: std::io::Read>(
                 if let Some(target) = link_target {
                     let resolved = dest.join(&entry_path).parent().map(|p| p.join(&target));
                     if let Some(resolved) = resolved {
-                        let canonical_dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
+                        let canonical_dest =
+                            dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
                         if !resolved.starts_with(&canonical_dest) && !target.is_relative() {
                             log::warn!("Skipping symlink outside dest: {}", entry_path.display());
                             continue;
@@ -301,11 +296,7 @@ fn extract_tar_entries<R: std::io::Read>(
         let target = validate_extract_path(dest, &entry_path)?;
 
         entry.unpack(&target).map_err(|e| {
-            CogniaError::Installation(format!(
-                "Failed to extract {}: {}",
-                entry_path.display(),
-                e
-            ))
+            CogniaError::Installation(format!("Failed to extract {}: {}", entry_path.display(), e))
         })?;
 
         let display_name = entry_path.display().to_string();
@@ -410,9 +401,8 @@ async fn extract_zip(
         let file = std::fs::File::open(&archive).map_err(|e| {
             CogniaError::Installation(format!("Failed to open {}: {}", archive.display(), e))
         })?;
-        let mut zip = zip::ZipArchive::new(file).map_err(|e| {
-            CogniaError::Installation(format!("Failed to read zip archive: {}", e))
-        })?;
+        let mut zip = zip::ZipArchive::new(file)
+            .map_err(|e| CogniaError::Installation(format!("Failed to read zip archive: {}", e)))?;
 
         let total = zip.len();
         let mut files = Vec::with_capacity(total);
@@ -500,9 +490,8 @@ async fn extract_7z(
     let dest = dest.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
-        sevenz_rust2::decompress_file(&archive, &dest).map_err(|e| {
-            CogniaError::Installation(format!("Failed to extract 7z: {}", e))
-        })?;
+        sevenz_rust2::decompress_file(&archive, &dest)
+            .map_err(|e| CogniaError::Installation(format!("Failed to extract 7z: {}", e)))?;
 
         // Collect extracted files by walking the dest directory
         let mut files = Vec::new();
@@ -515,12 +504,7 @@ async fn extract_7z(
             }
         }
 
-        emit_progress(
-            &on_progress,
-            "complete",
-            files.len(),
-            Some(files.len()),
-        );
+        emit_progress(&on_progress, "complete", files.len(), Some(files.len()));
 
         Ok(files)
     })
@@ -573,9 +557,8 @@ mod extract_tests {
         {
             let file = std::fs::File::create(&zip_path).unwrap();
             let mut writer = zip::ZipWriter::new(file);
-            let options: zip::write::FileOptions<'_, ()> =
-                zip::write::FileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated);
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
             writer.start_file("hello.txt", options).unwrap();
             writer.write_all(b"Hello, world!").unwrap();
             writer.start_file("subdir/nested.txt", options).unwrap();
@@ -645,9 +628,8 @@ mod extract_tests {
         {
             let file = std::fs::File::create(&zip_path).unwrap();
             let mut writer = zip::ZipWriter::new(file);
-            let options: zip::write::FileOptions<'_, ()> =
-                zip::write::FileOptions::default()
-                    .compression_method(zip::CompressionMethod::Deflated);
+            let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
             writer.start_file("a.txt", options).unwrap();
             writer.write_all(b"aaa").unwrap();
             writer.start_file("b.txt", options).unwrap();
@@ -660,12 +642,16 @@ mod extract_tests {
         let log_clone = progress_log.clone();
 
         let callback = move |p: ExtractProgress| {
-            log_clone.lock().unwrap().push((p.files_done, p.total_files));
+            log_clone
+                .lock()
+                .unwrap()
+                .push((p.files_done, p.total_files));
         };
 
-        let files = extract_archive_with_progress(&zip_path, &extract_dir, Some(Arc::new(callback)))
-            .await
-            .unwrap();
+        let files =
+            extract_archive_with_progress(&zip_path, &extract_dir, Some(Arc::new(callback)))
+                .await
+                .unwrap();
         assert_eq!(files.len(), 2);
 
         let log = progress_log.lock().unwrap();
@@ -793,11 +779,7 @@ mod extract_tests {
                 header.set_mode(0o644);
                 header.set_cksum();
                 tar_builder
-                    .append_data(
-                        &mut header,
-                        format!("dir/file{}.txt", i),
-                        data_bytes,
-                    )
+                    .append_data(&mut header, format!("dir/file{}.txt", i), data_bytes)
                     .unwrap();
             }
             tar_builder.finish().unwrap();
@@ -821,7 +803,10 @@ mod extract_tests {
 
         let result = extract_archive(&archive_path, &tmp.path().join("out")).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Standalone .xz not supported"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Standalone .xz not supported"));
     }
 
     #[test]

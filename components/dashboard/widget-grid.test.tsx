@@ -68,7 +68,7 @@ jest.mock("@/components/dashboard/package-list", () => ({
 }));
 
 jest.mock("@/components/dashboard/quick-actions", () => ({
-  QuickActionsInline: () => <div data-testid="quick-actions">QuickActions</div>,
+  QuickActions: () => <div data-testid="quick-actions">QuickActions</div>,
 }));
 
 jest.mock("@/components/dashboard/widgets/environment-chart", () => ({

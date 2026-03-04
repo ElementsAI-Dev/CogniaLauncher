@@ -5,6 +5,7 @@ import { Monitor, Cpu, HardDrive, MemoryStick, Server } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn, formatBytes } from "@/lib/utils";
 import type { PlatformInfo } from "@/lib/tauri";
+import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
 interface SystemInfoWidgetProps {
   platformInfo: PlatformInfo | null;
@@ -17,18 +18,11 @@ export function SystemInfoWidget({ platformInfo, cogniaDir, className }: SystemI
 
   if (!platformInfo) {
     return (
-      <Card className={className}>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-medium">
-            {t("dashboard.widgets.systemInfo")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-            {t("common.loading")}
-          </div>
-        </CardContent>
-      </Card>
+      <WidgetEmptyCard
+        title={t("dashboard.widgets.systemInfo")}
+        message={t("common.loading")}
+        className={className}
+      />
     );
   }
 

@@ -97,7 +97,7 @@ export function CacheDetailExternalView() {
             </Button>
             <Button variant="outline" onClick={fetchExternalCaches} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-              {t('cache.refreshSuccess').split(' ')[0]}
+              {t('common.refresh')}
             </Button>
           </div>
         }
@@ -232,7 +232,7 @@ export function CacheDetailExternalView() {
                             </div>
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
-                            <span className="font-mono text-sm">{cache.sizeHuman}</span>
+                            <span className="font-mono text-sm">{cache.sizePending ? (<Skeleton className="h-3 w-12 inline-block" />) : cache.sizeHuman}</span>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button

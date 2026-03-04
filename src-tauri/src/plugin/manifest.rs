@@ -205,16 +205,19 @@ impl PluginManifest {
     /// Parse a plugin.toml file
     pub fn from_file(path: &Path) -> CogniaResult<Self> {
         let content = std::fs::read_to_string(path).map_err(|e| {
-            CogniaError::Plugin(format!("Failed to read plugin manifest at {}: {}", path.display(), e))
+            CogniaError::Plugin(format!(
+                "Failed to read plugin manifest at {}: {}",
+                path.display(),
+                e
+            ))
         })?;
         Self::from_str(&content)
     }
 
     /// Parse from TOML string
     pub fn from_str(content: &str) -> CogniaResult<Self> {
-        let manifest: Self = toml::from_str(content).map_err(|e| {
-            CogniaError::Plugin(format!("Invalid plugin manifest: {}", e))
-        })?;
+        let manifest: Self = toml::from_str(content)
+            .map_err(|e| CogniaError::Plugin(format!("Invalid plugin manifest: {}", e)))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -231,7 +234,12 @@ impl PluginManifest {
             return Err(CogniaError::Plugin("Plugin version is required".into()));
         }
         // Validate plugin id format (reverse domain notation)
-        if !self.plugin.id.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_') {
+        if !self
+            .plugin
+            .id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_')
+        {
             return Err(CogniaError::Plugin(format!(
                 "Invalid plugin id '{}': must contain only alphanumeric, '.', '-', '_'",
                 self.plugin.id
@@ -609,14 +617,29 @@ entry = "ui/index.html"
     #[test]
     fn test_ui_mode_serialization() {
         assert_eq!(serde_json::to_string(&UiMode::Text).unwrap(), "\"text\"");
-        assert_eq!(serde_json::to_string(&UiMode::Declarative).unwrap(), "\"declarative\"");
-        assert_eq!(serde_json::to_string(&UiMode::Iframe).unwrap(), "\"iframe\"");
+        assert_eq!(
+            serde_json::to_string(&UiMode::Declarative).unwrap(),
+            "\"declarative\""
+        );
+        assert_eq!(
+            serde_json::to_string(&UiMode::Iframe).unwrap(),
+            "\"iframe\""
+        );
     }
 
     #[test]
     fn test_ui_mode_deserialization() {
-        assert_eq!(serde_json::from_str::<UiMode>("\"text\"").unwrap(), UiMode::Text);
-        assert_eq!(serde_json::from_str::<UiMode>("\"declarative\"").unwrap(), UiMode::Declarative);
-        assert_eq!(serde_json::from_str::<UiMode>("\"iframe\"").unwrap(), UiMode::Iframe);
+        assert_eq!(
+            serde_json::from_str::<UiMode>("\"text\"").unwrap(),
+            UiMode::Text
+        );
+        assert_eq!(
+            serde_json::from_str::<UiMode>("\"declarative\"").unwrap(),
+            UiMode::Declarative
+        );
+        assert_eq!(
+            serde_json::from_str::<UiMode>("\"iframe\"").unwrap(),
+            UiMode::Iframe
+        );
     }
 }

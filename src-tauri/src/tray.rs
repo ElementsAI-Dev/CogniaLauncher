@@ -8,11 +8,11 @@
 //! - System notifications
 //! - Autostart management
 
+use crate::SharedSettings;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use crate::SharedSettings;
 use tauri::{
     image::Image,
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
@@ -665,6 +665,7 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
             handle_menu_event(app, event);
         })
         .on_tray_icon_event(move |tray, event| {
+            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
@@ -685,13 +686,18 @@ pub fn setup_tray(app: &AppHandle<Wry>) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-/// Check if the app should start minimized (from TrayState or CLI args)
+/// Check if the app should start minimized (from CLI plugin matches or TrayState)
 pub fn should_start_minimized(app: &AppHandle<Wry>) -> bool {
-    // Check CLI args for --minimized (passed by autostart plugin)
-    if std::env::args().any(|arg| arg == "--minimized") {
-        return true;
+    // Check CLI plugin matches for --minimized flag (used by autostart plugin too)
+    use tauri_plugin_cli::CliExt;
+    if let Ok(matches) = app.cli().matches() {
+        if let Some(arg) = matches.args.get("minimized") {
+            if arg.value == serde_json::Value::Bool(true) {
+                return true;
+            }
+        }
     }
-    // Check TrayState
+    // Fallback: check TrayState
     if let Some(state) = app.try_state::<SharedTrayState>() {
         if let Ok(guard) = state.try_read() {
             return guard.start_minimized;

@@ -1474,9 +1474,21 @@ zipStorePath=wrapper/dists
 
     #[test]
     fn test_display_name_for_tools() {
-        assert_eq!(SdkmanProvider::new("gradle").display_name(), "SDKMAN! (Gradle)");
-        assert_eq!(SdkmanProvider::new("maven").display_name(), "SDKMAN! (Maven)");
-        assert_eq!(SdkmanProvider::new("groovy").display_name(), "SDKMAN! (Groovy)");
-        assert_eq!(SdkmanProvider::new("scala").display_name(), "SDKMAN! (Scala)");
+        assert_eq!(
+            SdkmanProvider::new("gradle").display_name(),
+            "SDKMAN! (Gradle)"
+        );
+        assert_eq!(
+            SdkmanProvider::new("maven").display_name(),
+            "SDKMAN! (Maven)"
+        );
+        assert_eq!(
+            SdkmanProvider::new("groovy").display_name(),
+            "SDKMAN! (Groovy)"
+        );
+        assert_eq!(
+            SdkmanProvider::new("scala").display_name(),
+            "SDKMAN! (Scala)"
+        );
     }
 }

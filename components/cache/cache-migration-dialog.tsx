@@ -16,13 +16,13 @@ import { AlertTriangle, ArrowRight, Check, CheckCircle2, FolderInput, Link2, Loa
 import { toast } from 'sonner';
 import { isTauri } from '@/lib/tauri';
 import type { MigrationValidation, MigrationResult } from '@/lib/tauri';
-import type { CacheMigrationDialogProps } from '@/types/cache';
+import type { CacheMigrationDialogProps, MigrationMode } from '@/types/cache';
 
 export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }: CacheMigrationDialogProps) {
   const { t } = useLocale();
 
   const [destination, setDestination] = useState('');
-  const [mode, setMode] = useState<'move' | 'move_and_link'>('move');
+  const [mode, setMode] = useState<MigrationMode>('move');
   const [validation, setValidation] = useState<MigrationValidation | null>(null);
   const [validating, setValidating] = useState(false);
   const [migrating, setMigrating] = useState(false);
@@ -123,7 +123,7 @@ export function CacheMigrationDialog({ open, onOpenChange, onMigrationComplete }
             <Label>{t('cache.migrationMode')}</Label>
             <RadioGroup
               value={mode}
-              onValueChange={(v) => setMode(v as 'move' | 'move_and_link')}
+              onValueChange={(v) => setMode(v as MigrationMode)}
               disabled={migrating}
             >
               <div className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50">

@@ -121,7 +121,7 @@ export function HealthCheckWidget({ className }: HealthCheckWidgetProps) {
       </CardContent>
       <CardFooter className="border-t pt-4">
         <Button variant="outline" size="sm" className="w-full gap-2" asChild>
-          <Link href="/environments">
+          <Link href="/health">
             <ExternalLink className="h-3.5 w-3.5" />
             {t('dashboard.widgets.healthViewDetails')}
           </Link>

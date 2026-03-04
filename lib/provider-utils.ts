@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   AlertCircle,
   HelpCircle,
+  Info,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { HealthStatus, Severity } from "@/types/tauri";
@@ -49,6 +50,38 @@ export function getAlertVariant(severity: Severity): "default" | "destructive" {
       return "destructive";
     default:
       return "default";
+  }
+}
+
+/**
+ * Map severity to a Lucide icon component.
+ */
+export function getSeverityIcon(severity: Severity): LucideIcon {
+  switch (severity) {
+    case "critical":
+    case "error":
+      return AlertCircle;
+    case "warning":
+      return AlertTriangle;
+    case "info":
+    default:
+      return Info;
+  }
+}
+
+/**
+ * Map health status to a text color class.
+ */
+export function getStatusTextColor(status: HealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "text-green-600";
+    case "warning":
+      return "text-yellow-600";
+    case "error":
+      return "text-red-600";
+    default:
+      return "text-gray-400";
   }
 }
 

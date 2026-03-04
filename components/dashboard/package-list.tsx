@@ -171,7 +171,7 @@ export function PackageList({
                     {expanded ? (
                       <>
                         <ChevronUp className="h-4 w-4" />
-                        {t("dashboard.environmentList.showLess")}
+                        {t("dashboard.packageList.showLess")}
                       </>
                     ) : (
                       <>

@@ -187,11 +187,7 @@ impl AdoptiumProvider {
     /// JDK archives may extract to a nested structure like jdk-21.0.3+9/ or
     /// Contents/Home/ on macOS.
     fn find_java_binary(base: &Path) -> Option<PathBuf> {
-        let binary_name = if cfg!(windows) {
-            "java.exe"
-        } else {
-            "java"
-        };
+        let binary_name = if cfg!(windows) { "java.exe" } else { "java" };
 
         // Direct: base/bin/java
         let direct = base.join("bin").join(binary_name);
@@ -200,7 +196,11 @@ impl AdoptiumProvider {
         }
 
         // macOS: base/Contents/Home/bin/java
-        let macos = base.join("Contents").join("Home").join("bin").join(binary_name);
+        let macos = base
+            .join("Contents")
+            .join("Home")
+            .join("bin")
+            .join(binary_name);
         if macos.exists() {
             return Some(macos);
         }
@@ -215,7 +215,11 @@ impl AdoptiumProvider {
                         return Some(sub_bin);
                     }
                     // macOS nested
-                    let sub_macos = sub.join("Contents").join("Home").join("bin").join(binary_name);
+                    let sub_macos = sub
+                        .join("Contents")
+                        .join("Home")
+                        .join("bin")
+                        .join(binary_name);
                     if sub_macos.exists() {
                         return Some(sub_macos);
                     }
@@ -237,11 +241,7 @@ impl AdoptiumProvider {
         }
 
         // Find the actual JAVA_HOME (may be nested)
-        let bin_name = if cfg!(windows) {
-            "java.exe"
-        } else {
-            "java"
-        };
+        let bin_name = if cfg!(windows) { "java.exe" } else { "java" };
 
         // Direct
         if version_path.join("bin").join(bin_name).exists() {
@@ -308,10 +308,7 @@ impl AdoptiumProvider {
     /// Parse java -version output to extract the version string.
     /// Handles both modern format `"21.0.3+9"` and JDK 8 format `"1.8.0_412"`.
     pub fn parse_java_version_output(text: &str) -> Option<String> {
-        let re = regex::Regex::new(
-            r#"version "(\d+(?:\.\d+)*(?:[_+]\d+)?)""#,
-        )
-        .ok()?;
+        let re = regex::Regex::new(r#"version "(\d+(?:\.\d+)*(?:[_+]\d+)?)""#).ok()?;
         re.captures(text)
             .and_then(|caps| caps.get(1))
             .map(|m| m.as_str().to_string())
@@ -325,9 +322,7 @@ impl AdoptiumProvider {
         }
         // Could be "21", "21.0.3", "21.0.3+9", or "temurin-21.0.3+9.0.LTS"
         // For Adoptium, we care about the numeric part
-        let version = trimmed
-            .strip_prefix("temurin-")
-            .or(Some(trimmed))?;
+        let version = trimmed.strip_prefix("temurin-").or(Some(trimmed))?;
         // Remove trailing LTS/metadata
         let version = version.split(".LTS").next().unwrap_or(version);
         Some(version.trim().to_string())
@@ -423,7 +418,10 @@ pub struct VersionData {
 impl VersionData {
     pub fn full_version(&self) -> String {
         if self.build > 0 {
-            format!("{}.{}.{}+{}", self.major, self.minor, self.security, self.build)
+            format!(
+                "{}.{}.{}+{}",
+                self.major, self.minor, self.security, self.build
+            )
         } else {
             format!("{}.{}.{}", self.major, self.minor, self.security)
         }
@@ -497,7 +495,11 @@ impl Provider for AdoptiumProvider {
                     description: Some(format!(
                         "Eclipse Temurin {} — {}",
                         label,
-                        if is_lts { "Long Term Support" } else { "Feature Release" }
+                        if is_lts {
+                            "Long Term Support"
+                        } else {
+                            "Feature Release"
+                        }
                     )),
                     latest_version: Some(v.to_string()),
                     provider: self.id().to_string(),
@@ -514,9 +516,8 @@ impl Provider for AdoptiumProvider {
             .or_else(|| name.strip_prefix("java@"))
             .unwrap_or(name);
 
-        let feature_version = Self::parse_feature_version(version_str).unwrap_or_else(|| {
-            version_str.parse::<u32>().unwrap_or(21)
-        });
+        let feature_version = Self::parse_feature_version(version_str)
+            .unwrap_or_else(|| version_str.parse::<u32>().unwrap_or(21));
 
         let assets = self.fetch_feature_releases(feature_version).await?;
 
@@ -553,9 +554,8 @@ impl Provider for AdoptiumProvider {
             .or_else(|| name.strip_prefix("java@"))
             .unwrap_or(name);
 
-        let feature_version = Self::parse_feature_version(version_str).unwrap_or_else(|| {
-            version_str.parse::<u32>().unwrap_or(21)
-        });
+        let feature_version = Self::parse_feature_version(version_str)
+            .unwrap_or_else(|| version_str.parse::<u32>().unwrap_or(21));
 
         let assets = self.fetch_feature_releases(feature_version).await?;
 
@@ -574,14 +574,16 @@ impl Provider for AdoptiumProvider {
         let version = req.version.as_deref().unwrap_or("21");
 
         // Parse the feature version number
-        let feature_version = Self::parse_feature_version(version).unwrap_or_else(|| {
-            version.parse::<u32>().unwrap_or(21)
-        });
+        let feature_version = Self::parse_feature_version(version)
+            .unwrap_or_else(|| version.parse::<u32>().unwrap_or(21));
 
         // Get the actual version info from the API
         let assets = self.fetch_feature_releases(feature_version).await?;
         let asset = assets.first().ok_or_else(|| {
-            CogniaError::Provider(format!("No JDK {} releases found for this platform", feature_version))
+            CogniaError::Provider(format!(
+                "No JDK {} releases found for this platform",
+                feature_version
+            ))
         })?;
 
         let actual_version = asset.version.full_version();
@@ -841,8 +843,7 @@ impl EnvironmentProvider for AdoptiumProvider {
             // 1. .java-version
             let java_version_file = current.join(".java-version");
             if java_version_file.exists() {
-                if let Ok(content) =
-                    crate::platform::fs::read_file_string(&java_version_file).await
+                if let Ok(content) = crate::platform::fs::read_file_string(&java_version_file).await
                 {
                     if let Some(version) = Self::parse_java_version_file(&content) {
                         return Ok(Some(VersionDetection {
@@ -906,9 +907,7 @@ impl EnvironmentProvider for AdoptiumProvider {
             for gradle_file in &["build.gradle", "build.gradle.kts"] {
                 let gradle_path = current.join(gradle_file);
                 if gradle_path.exists() {
-                    if let Ok(content) =
-                        crate::platform::fs::read_file_string(&gradle_path).await
-                    {
+                    if let Ok(content) = crate::platform::fs::read_file_string(&gradle_path).await {
                         if let Some(version) = Self::extract_java_version_from_gradle(&content) {
                             return Ok(Some(VersionDetection {
                                 version,

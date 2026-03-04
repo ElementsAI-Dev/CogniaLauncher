@@ -223,8 +223,7 @@ impl Provider for PacmanProvider {
         }
         args.push(&pkg);
 
-        let out =
-            process::execute("sudo", &args, Some(PacmanProvider::make_long_opts())).await?;
+        let out = process::execute("sudo", &args, Some(PacmanProvider::make_long_opts())).await?;
         if !out.success {
             return Err(CogniaError::Installation(out.stderr));
         }
@@ -262,8 +261,7 @@ impl Provider for PacmanProvider {
         args.push("--noconfirm");
         args.push(&req.name);
 
-        let out =
-            process::execute("sudo", &args, Some(PacmanProvider::make_sudo_opts())).await?;
+        let out = process::execute("sudo", &args, Some(PacmanProvider::make_sudo_opts())).await?;
         if out.success {
             Ok(())
         } else {
@@ -406,7 +404,12 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn update_index(&self) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["pacman", "-Sy"], Some(PacmanProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["pacman", "-Sy"],
+            Some(PacmanProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -415,7 +418,12 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn upgrade_package(&self, name: &str) -> CogniaResult<()> {
-        let out = process::execute("sudo", &["pacman", "-S", "--noconfirm", name], Some(PacmanProvider::make_sudo_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["pacman", "-S", "--noconfirm", name],
+            Some(PacmanProvider::make_sudo_opts()),
+        )
+        .await?;
         if out.success {
             Ok(())
         } else {
@@ -424,7 +432,12 @@ impl SystemPackageProvider for PacmanProvider {
     }
 
     async fn upgrade_all(&self) -> CogniaResult<Vec<String>> {
-        let out = process::execute("sudo", &["pacman", "-Syu", "--noconfirm"], Some(PacmanProvider::make_long_opts())).await?;
+        let out = process::execute(
+            "sudo",
+            &["pacman", "-Syu", "--noconfirm"],
+            Some(PacmanProvider::make_long_opts()),
+        )
+        .await?;
         if out.success {
             Ok(vec!["System upgraded".into()])
         } else {

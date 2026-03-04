@@ -16,6 +16,7 @@ import {
   Archive,
   Info,
   Zap,
+  Keyboard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ export const SECTION_ICONS: Record<string, LucideIcon> = {
   Archive,
   Info,
   Zap,
+  Keyboard,
 };
 
 export type SettingsSection =
@@ -46,6 +48,7 @@ export type SettingsSection =
   | 'paths'
   | 'provider'
   | 'backup'
+  | 'shortcuts'
   | 'startup'
   | 'system';
 
@@ -93,6 +96,8 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "general.cache_auto_clean_threshold": "cache-auto-clean-threshold",
   "general.cache_monitor_interval": "cache-monitor-interval",
   "general.cache_monitor_external": "cache-monitor-external",
+  "general.custom_cache_entries": "custom-cache-entries",
+  "general.external_cache_excluded_providers": "external-cache-excluded-providers",
   "general.download_speed_limit": "download-speed-limit",
   "general.update_check_concurrency": "update-check-concurrency",
 
@@ -121,6 +126,7 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "appearance.interface_radius": "interface-radius-label",
   "appearance.interface_density": "interface-density",
   "appearance.reduced_motion": "reduced-motion",
+  "appearance.window_effect": "window-effect",
 
   // Updates
   "updates.check_on_start": "check-updates-on-start",
@@ -148,6 +154,13 @@ const SETTING_FOCUS_IDS: Record<string, string> = {
   "backup.auto_backup_interval_hours": "backup-auto-interval-hours",
   "backup.max_backups": "backup-max-backups",
   "backup.retention_days": "backup-retention-days",
+
+  // Startup
+  // Shortcuts
+  "shortcuts.enabled": "shortcuts-enabled",
+  "shortcuts.toggle_window": "shortcuts-toggle-window",
+  "shortcuts.command_palette": "shortcuts-command-palette",
+  "shortcuts.quick_search": "shortcuts-quick-search",
 
   // Startup
   "startup.scan_environments": "startup-scan-environments",
@@ -211,39 +224,46 @@ export const SETTINGS_SECTIONS: SectionDefinition[] = [
     order: 7,
   },
   {
+    id: 'shortcuts',
+    labelKey: 'settings.shortcuts',
+    descKey: 'settings.shortcutsDesc',
+    icon: 'Keyboard',
+    order: 8,
+  },
+  {
     id: 'paths',
     labelKey: 'settings.paths',
     descKey: 'settings.pathsDesc',
     icon: 'FolderOpen',
-    order: 8,
+    order: 9,
   },
   {
     id: 'provider',
     labelKey: 'settings.providerSettings',
     descKey: 'settings.providerSettingsDesc',
     icon: 'Package',
-    order: 9,
+    order: 10,
   },
   {
     id: 'backup',
     labelKey: 'backup.title',
     descKey: 'backup.description',
     icon: 'Archive',
-    order: 10,
+    order: 11,
   },
   {
     id: 'startup',
     labelKey: 'settings.startup',
     descKey: 'settings.startupDesc',
     icon: 'Zap',
-    order: 11,
+    order: 12,
   },
   {
     id: 'system',
     labelKey: 'settings.systemInfo',
     descKey: 'settings.systemInfoDesc',
     icon: 'Info',
-    order: 12,
+    order: 13,
   },
 ];
 
@@ -526,6 +546,15 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     type: 'switch',
     keywords: ['background', 'image', 'wallpaper', 'picture', '背景', '图片', '壁纸'],
   },
+  {
+    key: 'appearance.window_effect',
+    section: 'appearance',
+    labelKey: 'settings.windowEffect',
+    descKey: 'settings.windowEffectDesc',
+    type: 'select',
+    keywords: ['transparent', 'mica', 'acrylic', 'blur', 'vibrancy', 'glass', 'effect', '透明', '毛玻璃', '磨砂', '效果', '云母'],
+    tauriOnly: true,
+  },
 
   // Update Settings
   {
@@ -730,6 +759,44 @@ const SETTINGS_REGISTRY_BASE: SettingDefinition[] = [
     descKey: 'settings.startupIntegrityCheckDesc',
     type: 'switch',
     keywords: ['startup', 'integrity', 'check', 'cache', 'database', '启动', '完整性', '检查'],
+  },
+
+  // Shortcuts Settings
+  {
+    key: 'shortcuts.enabled',
+    section: 'shortcuts',
+    labelKey: 'settings.shortcutsEnabled',
+    descKey: 'settings.shortcutsEnabledDesc',
+    type: 'switch',
+    keywords: ['shortcut', 'hotkey', 'global', 'keyboard', '快捷键', '热键', '全局', '键盘'],
+    tauriOnly: true,
+  },
+  {
+    key: 'shortcuts.toggle_window',
+    section: 'shortcuts',
+    labelKey: 'settings.shortcutsToggleWindow',
+    descKey: 'settings.shortcutsToggleWindowDesc',
+    type: 'input',
+    keywords: ['shortcut', 'toggle', 'window', 'show', 'hide', '快捷键', '切换', '窗口', '显示', '隐藏'],
+    tauriOnly: true,
+  },
+  {
+    key: 'shortcuts.command_palette',
+    section: 'shortcuts',
+    labelKey: 'settings.shortcutsCommandPalette',
+    descKey: 'settings.shortcutsCommandPaletteDesc',
+    type: 'input',
+    keywords: ['shortcut', 'command', 'palette', 'search', '快捷键', '命令', '面板', '搜索'],
+    tauriOnly: true,
+  },
+  {
+    key: 'shortcuts.quick_search',
+    section: 'shortcuts',
+    labelKey: 'settings.shortcutsQuickSearch',
+    descKey: 'settings.shortcutsQuickSearchDesc',
+    type: 'input',
+    keywords: ['shortcut', 'search', 'quick', 'find', '快捷键', '搜索', '快速', '查找'],
+    tauriOnly: true,
   },
 ];
 

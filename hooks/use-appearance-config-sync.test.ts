@@ -13,6 +13,7 @@ const mockSetChartColorTheme = jest.fn();
 const mockSetInterfaceRadius = jest.fn();
 const mockSetInterfaceDensity = jest.fn();
 const mockSetReducedMotion = jest.fn();
+const mockSetWindowEffect = jest.fn();
 jest.mock('@/lib/stores/appearance', () => ({
   useAppearanceStore: jest.fn(() => ({
     accentColor: 'blue',
@@ -20,11 +21,13 @@ jest.mock('@/lib/stores/appearance', () => ({
     interfaceRadius: 0.625,
     interfaceDensity: 'comfortable',
     reducedMotion: false,
+    windowEffect: 'auto',
     setAccentColor: mockSetAccentColor,
     setChartColorTheme: mockSetChartColorTheme,
     setInterfaceRadius: mockSetInterfaceRadius,
     setInterfaceDensity: mockSetInterfaceDensity,
     setReducedMotion: mockSetReducedMotion,
+    setWindowEffect: mockSetWindowEffect,
   })),
 }));
 
@@ -55,6 +58,7 @@ jest.mock('@/lib/theme', () => ({
     interfaceRadius: config['appearance.interface_radius'] ? parseFloat(config['appearance.interface_radius']) : undefined,
     interfaceDensity: config['appearance.interface_density'],
     reducedMotion: config.reducedMotion === 'true',
+    windowEffect: config['appearance.window_effect'],
     locale: config['appearance.language'],
     invalidKeys: [],
   }),
@@ -147,5 +151,12 @@ describe('useAppearanceConfigSync', () => {
     renderHook(() => useAppearanceConfigSync(config));
 
     expect(mockSetTheme).toHaveBeenCalledWith('dark');
+  });
+
+  it('should sync window effect from config', () => {
+    const config = { 'appearance.window_effect': 'mica' };
+    renderHook(() => useAppearanceConfigSync(config));
+
+    expect(mockSetWindowEffect).toHaveBeenCalledWith('mica');
   });
 });

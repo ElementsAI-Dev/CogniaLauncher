@@ -734,19 +734,16 @@ pub async fn wsl_open_in_terminal(name: String) -> Result<(), String> {
     }
 
     // Fallback: launch wsl.exe -d <name> directly via opener
-    tauri_plugin_opener::open_path(
-        &format!("wsl.exe -d {}", name),
-        None::<&str>,
-    )
-    .map_err(|_| {
-        // Last resort: use cmd /c start
-        std::process::Command::new("cmd")
-            .args(["/c", "start", "wsl.exe", "-d", &name])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to open terminal: {}", e))
-    })
-    .or_else(|r| r)
+    tauri_plugin_opener::open_path(&format!("wsl.exe -d {}", name), None::<&str>)
+        .map_err(|_| {
+            // Last resort: use cmd /c start
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "wsl.exe", "-d", &name])
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("Failed to open terminal: {}", e))
+        })
+        .or_else(|r| r)
 }
 
 /// Get total disk usage across all WSL distributions.
@@ -766,6 +763,112 @@ pub async fn wsl_clone_distro(
     let provider = get_provider();
     provider
         .clone_distro(&name, &new_name, &location)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Launch multiple WSL distributions in parallel.
+#[tauri::command]
+pub async fn wsl_batch_launch(names: Vec<String>) -> Result<Vec<(String, bool, String)>, String> {
+    let provider = get_provider();
+    Ok(provider.batch_launch(&names).await)
+}
+
+/// Terminate multiple WSL distributions in parallel.
+#[tauri::command]
+pub async fn wsl_batch_terminate(
+    names: Vec<String>,
+) -> Result<Vec<(String, bool, String)>, String> {
+    let provider = get_provider();
+    Ok(provider.batch_terminate(&names).await)
+}
+
+/// Backup a WSL distribution to a timestamped tar file.
+#[tauri::command]
+pub async fn wsl_backup_distro(
+    name: String,
+    dest_dir: String,
+) -> Result<crate::provider::wsl::WslBackupEntry, String> {
+    let provider = get_provider();
+    provider
+        .backup_distro(&name, &dest_dir)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List WSL backup files in a directory.
+#[tauri::command]
+pub async fn wsl_list_backups(
+    backup_dir: String,
+) -> Result<Vec<crate::provider::wsl::WslBackupEntry>, String> {
+    Ok(crate::provider::wsl::WslProvider::list_backups(&backup_dir))
+}
+
+/// Restore a WSL distribution from a backup file.
+#[tauri::command]
+pub async fn wsl_restore_backup(
+    backup_path: String,
+    name: String,
+    install_location: String,
+) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .restore_backup(&backup_path, &name, &install_location)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a WSL backup file.
+#[tauri::command]
+pub async fn wsl_delete_backup(backup_path: String) -> Result<(), String> {
+    crate::provider::wsl::WslProvider::delete_backup(&backup_path).map_err(|e| e.to_string())
+}
+
+/// Run a health check on a WSL distribution.
+#[tauri::command]
+pub async fn wsl_distro_health_check(
+    distro: String,
+) -> Result<crate::provider::wsl::WslDistroHealthResult, String> {
+    let provider = get_provider();
+    provider
+        .distro_health_check(&distro)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// List all Windows port forwarding rules (netsh interface portproxy).
+#[tauri::command]
+pub async fn wsl_list_port_forwards() -> Result<Vec<crate::provider::wsl::PortForwardRule>, String>
+{
+    let provider = get_provider();
+    provider
+        .list_port_forwards()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Add a port forwarding rule (netsh interface portproxy add v4tov4).
+/// Requires administrator privileges.
+#[tauri::command]
+pub async fn wsl_add_port_forward(
+    listen_port: u16,
+    connect_port: u16,
+    connect_address: String,
+) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .add_port_forward(listen_port, connect_port, &connect_address)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a port forwarding rule (netsh interface portproxy delete v4tov4).
+/// Requires administrator privileges.
+#[tauri::command]
+pub async fn wsl_remove_port_forward(listen_port: u16) -> Result<(), String> {
+    let provider = get_provider();
+    provider
+        .remove_port_forward(listen_port)
         .await
         .map_err(|e| e.to_string())
 }

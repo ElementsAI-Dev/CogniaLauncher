@@ -222,7 +222,10 @@ impl GitLabProvider {
         status: Option<&str>,
     ) -> CogniaResult<Vec<GitLabPipeline>> {
         let encoded = Self::encode_project(project);
-        let mut query = format!("/projects/{}/pipelines?per_page=20&order_by=updated_at&sort=desc", encoded);
+        let mut query = format!(
+            "/projects/{}/pipelines?per_page=20&order_by=updated_at&sort=desc",
+            encoded
+        );
         if let Some(r) = ref_name {
             query.push_str(&format!("&ref={}", urlencoding::encode(r)));
         }
@@ -247,7 +250,10 @@ impl GitLabProvider {
 
     pub fn get_job_artifacts_url(&self, project: &str, job_id: u64) -> String {
         let encoded = Self::encode_project(project);
-        format!("{}/projects/{}/jobs/{}/artifacts", self.api_base, encoded, job_id)
+        format!(
+            "{}/projects/{}/jobs/{}/artifacts",
+            self.api_base, encoded, job_id
+        )
     }
 
     // ====================================================================
@@ -260,7 +266,10 @@ impl GitLabProvider {
         package_type: Option<&str>,
     ) -> CogniaResult<Vec<GitLabPackage>> {
         let encoded = Self::encode_project(project);
-        let mut query = format!("/projects/{}/packages?per_page=30&order_by=created_at&sort=desc", encoded);
+        let mut query = format!(
+            "/projects/{}/packages?per_page=30&order_by=created_at&sort=desc",
+            encoded
+        );
         if let Some(pt) = package_type {
             query.push_str(&format!("&package_type={}", pt));
         }
@@ -280,16 +289,14 @@ impl GitLabProvider {
         .await
     }
 
-    pub fn get_package_file_url(
-        &self,
-        project: &str,
-        package_id: u64,
-        file_name: &str,
-    ) -> String {
+    pub fn get_package_file_url(&self, project: &str, package_id: u64, file_name: &str) -> String {
         let encoded = Self::encode_project(project);
         format!(
             "{}/projects/{}/packages/{}/package_files/{}/download",
-            self.api_base, encoded, package_id, urlencoding::encode(file_name)
+            self.api_base,
+            encoded,
+            package_id,
+            urlencoding::encode(file_name)
         )
     }
 
@@ -735,7 +742,10 @@ impl Provider for GitLabProvider {
             let pkg_name = entry.file_name().to_string_lossy().to_string();
 
             if let Some(ref name_filter) = filter.name_filter {
-                if !pkg_name.to_lowercase().contains(&name_filter.to_lowercase()) {
+                if !pkg_name
+                    .to_lowercase()
+                    .contains(&name_filter.to_lowercase())
+                {
                     continue;
                 }
             }
@@ -799,7 +809,12 @@ impl Provider for GitLabProvider {
                 .flatten()
                 .flatten()
                 .filter(|e| e.path().is_dir())
-                .map(|e| e.file_name().to_string_lossy().trim_start_matches('v').to_string())
+                .map(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .trim_start_matches('v')
+                        .to_string()
+                })
                 .collect();
 
             if let Some(current) = installed_versions.first() {
@@ -825,57 +840,37 @@ mod tests {
     #[test]
     fn test_parse_project_url_owner_repo() {
         let result = GitLabProvider::parse_project_url("owner/repo");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
     fn test_parse_project_url_https() {
         let result = GitLabProvider::parse_project_url("https://gitlab.com/owner/repo");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
     fn test_parse_project_url_https_trailing_slash() {
         let result = GitLabProvider::parse_project_url("https://gitlab.com/owner/repo/");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
     fn test_parse_project_url_https_with_git_suffix() {
-        let result =
-            GitLabProvider::parse_project_url("https://gitlab.example.com/owner/repo.git");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        let result = GitLabProvider::parse_project_url("https://gitlab.example.com/owner/repo.git");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
     fn test_parse_project_url_https_with_tree_path() {
-        let result =
-            GitLabProvider::parse_project_url("https://gitlab.com/owner/repo/-/tree/main");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        let result = GitLabProvider::parse_project_url("https://gitlab.com/owner/repo/-/tree/main");
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
     fn test_parse_project_url_ssh() {
         let result = GitLabProvider::parse_project_url("git@gitlab.com:owner/repo.git");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
@@ -898,8 +893,7 @@ mod tests {
 
     #[test]
     fn test_parse_project_url_https_nested_subgroup() {
-        let result =
-            GitLabProvider::parse_project_url("https://gitlab.com/group/subgroup/project");
+        let result = GitLabProvider::parse_project_url("https://gitlab.com/group/subgroup/project");
         assert_eq!(
             result,
             Some(("group/subgroup".to_string(), "project".to_string()))
@@ -919,8 +913,7 @@ mod tests {
 
     #[test]
     fn test_parse_project_url_ssh_nested_subgroup() {
-        let result =
-            GitLabProvider::parse_project_url("git@gitlab.com:group/subgroup/project.git");
+        let result = GitLabProvider::parse_project_url("git@gitlab.com:group/subgroup/project.git");
         assert_eq!(
             result,
             Some(("group/subgroup".to_string(), "project".to_string()))
@@ -935,10 +928,7 @@ mod tests {
 
     #[test]
     fn test_encode_project() {
-        assert_eq!(
-            GitLabProvider::encode_project("owner/repo"),
-            "owner%2Frepo"
-        );
+        assert_eq!(GitLabProvider::encode_project("owner/repo"), "owner%2Frepo");
     }
 
     #[test]
@@ -1037,7 +1027,8 @@ mod tests {
 
     #[test]
     fn test_parse_next_link_no_next() {
-        let header = r#"<https://gitlab.com/api/v4/projects/1/branches?page=5&per_page=100>; rel="last""#;
+        let header =
+            r#"<https://gitlab.com/api/v4/projects/1/branches?page=5&per_page=100>; rel="last""#;
         let next = GitLabProvider::parse_next_link(header);
         assert!(next.is_none());
     }

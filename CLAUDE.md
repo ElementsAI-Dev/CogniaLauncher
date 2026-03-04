@@ -1,11 +1,22 @@
 # CLAUDE.md - CogniaLauncher Project Context
 
-> Last Updated: 2026-03-02 | v1.6.0
+> Last Updated: 2026-03-03 | v1.7.0
 > This document provides AI context for the CogniaLauncher codebase.
 
 > **IMPORTANT**: Always start by reading [llmdoc/index.md](./llmdoc/index.md) for the complete documentation navigation index.
 
 ## Changelog
+
+### 2026-03-03 (v1.7.0)
+- **NEW: CLI Support**: Complete command-line interface via `tauri-plugin-cli` for headless operation
+  - 11 subcommands: search, install, uninstall, list, update, info, env, config, cache, doctor, providers
+  - `--json` flag for machine-readable output (scripting integration)
+  - Windows console attachment for release build stdout visibility
+  - Single-instance bypass for independent headless CLI execution
+  - Reuses existing Orchestrator, EnvironmentManager, HealthCheckManager (zero logic duplication)
+  - Migrated `--minimized` from ad-hoc `std::env::args()` to proper CLI plugin match
+  - Frontend `useCliArgs()` hook for GUI-mode arg reading
+  - [CLI Reference](./llmdoc/reference/cli-commands.md)
 
 ### 2026-03-02 (v1.6.0)
 - **NEW: Toolbox Feature**: Built-in developer tools (password generator, UUID generator, color picker, timestamp converter, hash generator, Lorem generator)

@@ -4,12 +4,14 @@ import { ExportImportDialog } from "./export-import-dialog";
 
 const mockExportPackages = jest.fn();
 const mockImportPackages = jest.fn();
+const mockImportFromClipboard = jest.fn();
 const mockExportToClipboard = jest.fn();
 
 jest.mock("@/hooks/use-package-export", () => ({
   usePackageExport: () => ({
     exportPackages: mockExportPackages,
     importPackages: mockImportPackages,
+    importFromClipboard: mockImportFromClipboard,
     exportToClipboard: mockExportToClipboard,
   }),
 }));
@@ -34,6 +36,9 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.selectFile": "Select JSON File",
         "packages.selectFileDesc":
           "Import packages from a previously exported JSON file",
+        "packages.importFromClipboard": "Paste from Clipboard",
+        "packages.importFromClipboardDesc":
+          "Import packages from clipboard (JSON or one package per line)",
         "packages.fileLoaded": "File loaded successfully",
         "packages.packagesLabel": "Packages",
         "packages.selected": `${params?.count || 0} selected`,
@@ -131,5 +136,28 @@ describe("ExportImportDialog", () => {
     await user.click(screen.getByText("Export/Import"));
     await user.click(screen.getByRole("tab", { name: /Import/i }));
     expect(screen.getByText(/previously exported JSON/)).toBeInTheDocument();
+  });
+
+  it("shows paste from clipboard button on import tab", async () => {
+    const user = userEvent.setup();
+    render(<ExportImportDialog />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    expect(screen.getByText("Paste from Clipboard")).toBeInTheDocument();
+  });
+
+  it("calls importFromClipboard when paste button is clicked", async () => {
+    mockImportFromClipboard.mockResolvedValueOnce({
+      version: "1.0",
+      exportedAt: "2025-01-01",
+      packages: [{ name: "react" }],
+      bookmarks: [],
+    });
+    const user = userEvent.setup();
+    render(<ExportImportDialog />);
+    await user.click(screen.getByText("Export/Import"));
+    await user.click(screen.getByRole("tab", { name: /Import/i }));
+    await user.click(screen.getByText("Paste from Clipboard"));
+    expect(mockImportFromClipboard).toHaveBeenCalled();
   });
 });

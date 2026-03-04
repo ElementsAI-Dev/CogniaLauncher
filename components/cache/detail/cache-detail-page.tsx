@@ -174,7 +174,7 @@ function InternalCacheDetailView({ cacheType }: { cacheType: 'download' | 'metad
             </Button>
             <Button variant="outline" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              {t('cache.refreshSuccess').split(' ')[0]}
+              {t('common.refresh')}
             </Button>
           </div>
         }

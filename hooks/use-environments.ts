@@ -439,6 +439,10 @@ export function useEnvironments() {
     setError(null);
     try {
       await tauri.envUseLocal(envType, version, projectPath);
+      emitInvalidations(
+        ['environment_data', 'provider_data'],
+        'environments:set-local',
+      );
     } catch (err) {
       setError(formatError(err));
       throw err;

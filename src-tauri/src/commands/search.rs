@@ -1,4 +1,6 @@
-use crate::provider::{PackageSummary, ProviderRegistry, SearchOptions};
+use crate::cache::MetadataCache;
+use crate::config::Settings;
+use crate::provider::{InstalledPackage, PackageSummary, ProviderRegistry, SearchOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -6,6 +8,51 @@ use tauri::State;
 use tokio::sync::RwLock;
 
 pub type SharedRegistry = Arc<RwLock<ProviderRegistry>>;
+pub type SharedSettings = Arc<RwLock<Settings>>;
+
+/// TTL for installed package cache used by search (matches package.rs)
+const INSTALLED_CACHE_TTL: i64 = 60;
+
+/// Build installed package set, preferring cached data from `package_list`.
+async fn get_installed_set(
+    registry: &ProviderRegistry,
+    settings: &SharedSettings,
+) -> HashMap<String, String> {
+    // Try reading from MetadataCache first (written by package_list)
+    let cache_dir = settings.read().await.get_cache_dir();
+    if let Ok(mut cache) = MetadataCache::open_with_ttl(&cache_dir, INSTALLED_CACHE_TTL).await {
+        if let Ok(Some(cached)) = cache
+            .get::<Vec<InstalledPackage>>("pkg:installed:all")
+            .await
+        {
+            if !cached.is_stale {
+                return cached
+                    .data
+                    .into_iter()
+                    .map(|p| (p.name.to_lowercase(), p.version))
+                    .collect();
+            }
+        }
+    }
+
+    // Fallback: live scan
+    let mut installed_set = HashMap::new();
+    for provider_id in registry.list() {
+        if let Some(p) = registry.get(provider_id) {
+            if p.is_available().await {
+                if let Ok(installed) = p
+                    .list_installed(crate::provider::InstalledFilter::default())
+                    .await
+                {
+                    for pkg in installed {
+                        installed_set.insert(pkg.name.to_lowercase(), pkg.version);
+                    }
+                }
+            }
+        }
+    }
+    installed_set
+}
 
 /// Advanced search options
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -60,6 +107,7 @@ pub struct SearchFacets {
 pub async fn advanced_search(
     options: AdvancedSearchOptions,
     registry: State<'_, SharedRegistry>,
+    settings: State<'_, SharedSettings>,
 ) -> Result<EnhancedSearchResult, String> {
     let reg = registry.read().await;
     let mut all_results = Vec::new();
@@ -75,22 +123,8 @@ pub async fn advanced_search(
         reg.list()
     };
 
-    // Get installed packages for comparison
-    let mut installed_set: HashMap<String, String> = HashMap::new();
-    for provider_id in reg.list() {
-        if let Some(p) = reg.get(provider_id) {
-            if p.is_available().await {
-                if let Ok(installed) = p
-                    .list_installed(crate::provider::InstalledFilter::default())
-                    .await
-                {
-                    for pkg in installed {
-                        installed_set.insert(pkg.name.to_lowercase(), pkg.version);
-                    }
-                }
-            }
-        }
-    }
+    // Get installed packages for comparison (prefer cached data)
+    let installed_set = get_installed_set(&reg, settings.inner()).await;
 
     // Search each provider
     for provider_id in providers_to_search {

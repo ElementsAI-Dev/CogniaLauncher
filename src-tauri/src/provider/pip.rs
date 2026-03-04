@@ -656,10 +656,7 @@ mod tests {
 
         let args = provider.build_pip_args(&["install", "pkg"]);
         // Should have two --extra-index-url and two --trusted-host entries
-        assert_eq!(
-            args.iter().filter(|a| *a == "--extra-index-url").count(),
-            2
-        );
+        assert_eq!(args.iter().filter(|a| *a == "--extra-index-url").count(), 2);
         assert_eq!(args.iter().filter(|a| *a == "--trusted-host").count(), 2);
     }
 }

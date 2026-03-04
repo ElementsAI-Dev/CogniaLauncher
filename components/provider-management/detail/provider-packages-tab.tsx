@@ -316,7 +316,7 @@ export function ProviderPackagesTab({
                 </TableHeader>
                 <TableBody>
                   {searchResults.map((pkg) => (
-                    <TableRow key={pkg.name}>
+                    <TableRow key={`${pkg.provider}:${pkg.name}`}>
                       <TableCell className="font-mono text-sm">
                         <div className="flex items-center gap-2">
                           {pkg.name}
@@ -541,45 +541,47 @@ export function ProviderPackagesTab({
                               {t("providerDetail.uninstallPackage")}
                             </TooltipContent>
                           </Tooltip>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {onViewPackageDetails && (
-                                <DropdownMenuItem onClick={() => onViewPackageDetails(pkg.name)}>
-                                  <Info className="h-4 w-4 mr-2" />
-                                  {t("providerDetail.packageDetails")}
-                                </DropdownMenuItem>
-                              )}
-                              {onPinPackage && onUnpinPackage && (
-                                <>
-                                  {pinnedSet.has(pkg.name) ? (
-                                    <DropdownMenuItem onClick={() => handleUnpin(pkg.name)}>
-                                      <PinOff className="h-4 w-4 mr-2" />
-                                      {t("providerDetail.unpinPackage")}
-                                    </DropdownMenuItem>
-                                  ) : (
-                                    <DropdownMenuItem onClick={() => handlePin(pkg.name)}>
-                                      <Pin className="h-4 w-4 mr-2" />
-                                      {t("providerDetail.pinPackage")}
-                                    </DropdownMenuItem>
-                                  )}
-                                </>
-                              )}
-                              {onRollbackPackage && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleRollback(pkg.name)}>
-                                    <Undo2 className="h-4 w-4 mr-2" />
-                                    {t("providerDetail.rollbackPackage")}
+                          {(onViewPackageDetails || (onPinPackage && onUnpinPackage) || onRollbackPackage) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {onViewPackageDetails && (
+                                  <DropdownMenuItem onClick={() => onViewPackageDetails(pkg.name)}>
+                                    <Info className="h-4 w-4 mr-2" />
+                                    {t("providerDetail.packageDetails")}
                                   </DropdownMenuItem>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                )}
+                                {onPinPackage && onUnpinPackage && (
+                                  <>
+                                    {pinnedSet.has(pkg.name) ? (
+                                      <DropdownMenuItem onClick={() => handleUnpin(pkg.name)}>
+                                        <PinOff className="h-4 w-4 mr-2" />
+                                        {t("providerDetail.unpinPackage")}
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem onClick={() => handlePin(pkg.name)}>
+                                        <Pin className="h-4 w-4 mr-2" />
+                                        {t("providerDetail.pinPackage")}
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
+                                )}
+                                {onRollbackPackage && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => handleRollback(pkg.name)}>
+                                      <Undo2 className="h-4 w-4 mr-2" />
+                                      {t("providerDetail.rollbackPackage")}
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

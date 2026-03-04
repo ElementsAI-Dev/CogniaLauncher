@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { formatEta } from "@/lib/utils";
+import { useDownloadStore } from "@/lib/stores/download";
 import { getStateBadgeVariant } from "@/lib/downloads";
 import type { DownloadTask } from "@/types/tauri";
 
@@ -36,7 +38,7 @@ interface DownloadTaskRowProps {
   t: (key: string) => string;
 }
 
-export function DownloadTaskRow({
+export const DownloadTaskRow = memo(function DownloadTaskRow({
   task,
   selected,
   onSelectedChange,
@@ -49,6 +51,11 @@ export function DownloadTaskRow({
   onDetail,
   t,
 }: DownloadTaskRowProps) {
+  // Use progressMap for real-time progress (avoids full tasks array re-render)
+  const liveProgress = useDownloadStore((s) => s.progressMap[task.id]);
+  const progress = liveProgress ?? task.progress;
+
+
   return (
     <TableRow>
       <TableCell className="w-10">
@@ -91,15 +98,15 @@ export function DownloadTaskRow({
       </TableCell>
       <TableCell className="min-w-[200px]">
         <div className="space-y-2">
-          <Progress value={task.progress.percent} className="h-2" />
+          <Progress value={progress.percent} className="h-2" />
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{task.progress.downloadedHuman}</span>
-            <span>{task.progress.totalHuman ?? "—"}</span>
+            <span>{progress.downloadedHuman}</span>
+            <span>{progress.totalHuman ?? "—"}</span>
           </div>
         </div>
       </TableCell>
-      <TableCell>{task.progress.speedHuman || "—"}</TableCell>
-      <TableCell>{formatEta(task.progress.etaHuman)}</TableCell>
+      <TableCell>{progress.speedHuman || "—"}</TableCell>
+      <TableCell>{formatEta(progress.etaHuman)}</TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-1">
           {task.state === "downloading" || task.state === "queued" ? (
@@ -206,4 +213,4 @@ export function DownloadTaskRow({
       </TableCell>
     </TableRow>
   );
-}
+});

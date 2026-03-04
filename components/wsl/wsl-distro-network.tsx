@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
 import {
   Network,
   RefreshCw,
@@ -23,16 +24,32 @@ import {
   Server,
   Copy,
   Unplug,
+  Plus,
+  Trash2,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import { toast } from 'sonner';
+import { isTauri, wslListPortForwards, wslAddPortForward, wslRemovePortForward } from '@/lib/tauri';
 import { parseListeningPorts, parseInterfaces } from '@/lib/wsl';
 import type { NetworkInfo, ListeningPort, NetworkInterface, WslDistroNetworkProps } from '@/types/wsl';
+
+interface PortForwardRule {
+  listenAddress: string;
+  listenPort: string;
+  connectAddress: string;
+  connectPort: string;
+}
 
 export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, t }: WslDistroNetworkProps) {
   const [info, setInfo] = useState<NetworkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [portForwards, setPortForwards] = useState<PortForwardRule[]>([]);
+  const [pfListenPort, setPfListenPort] = useState('');
+  const [pfConnectPort, setPfConnectPort] = useState('');
+  const [pfConnectAddr, setPfConnectAddr] = useState('');
+  const [pfAdding, setPfAdding] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -90,12 +107,54 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
     }
   }, [distroName, getIpAddress, onExec]);
 
+  const refreshPortForwards = useCallback(async () => {
+    if (!isTauri()) return;
+    try {
+      const rules = await wslListPortForwards();
+      setPortForwards(rules);
+    } catch {
+      setPortForwards([]);
+    }
+  }, []);
+
+  const handleAddPortForward = useCallback(async () => {
+    const lp = parseInt(pfListenPort, 10);
+    const cp = parseInt(pfConnectPort, 10);
+    if (!lp || !cp || !pfConnectAddr.trim()) return;
+    setPfAdding(true);
+    try {
+      await wslAddPortForward(lp, cp, pfConnectAddr.trim());
+      toast.success(t('wsl.detail.portForward.added'));
+      setPfListenPort('');
+      setPfConnectPort('');
+      setPfConnectAddr('');
+      await refreshPortForwards();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setPfAdding(false);
+    }
+  }, [pfListenPort, pfConnectPort, pfConnectAddr, refreshPortForwards, t]);
+
+  const handleRemovePortForward = useCallback(async (listenPort: string) => {
+    const lp = parseInt(listenPort, 10);
+    if (!lp) return;
+    try {
+      await wslRemovePortForward(lp);
+      toast.success(t('wsl.detail.portForward.removed'));
+      await refreshPortForwards();
+    } catch (err) {
+      toast.error(String(err));
+    }
+  }, [refreshPortForwards, t]);
+
   // Auto-load if running
   useEffect(() => {
     if (isRunning && !loaded) {
       refresh();
+      refreshPortForwards();
     }
-  }, [isRunning, loaded, refresh]);
+  }, [isRunning, loaded, refresh, refreshPortForwards]);
 
   const handleCopy = async (text: string) => {
     await writeClipboard(text);
@@ -312,6 +371,132 @@ export function WslDistroNetwork({ distroName, isRunning, getIpAddress, onExec, 
           </CardContent>
         </Card>
       )}
+
+      {/* Port Forwarding */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+            {t('wsl.detail.portForward.title')}
+            {portForwards.length > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {portForwards.length}
+              </Badge>
+            )}
+          </CardTitle>
+          <CardAction>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={refreshPortForwards}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('common.refresh')}</TooltipContent>
+            </Tooltip>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">{t('wsl.detail.portForward.desc')}</p>
+
+          {portForwards.length > 0 && (
+            <ScrollArea className="max-h-[200px]">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('wsl.detail.portForward.listenPort')}</TableHead>
+                    <TableHead>{t('wsl.detail.portForward.connectAddr')}</TableHead>
+                    <TableHead>{t('wsl.detail.portForward.connectPort')}</TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {portForwards.map((rule, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-mono text-xs">{rule.listenPort}</TableCell>
+                      <TableCell className="font-mono text-xs">{rule.connectAddress}</TableCell>
+                      <TableCell className="font-mono text-xs">{rule.connectPort}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => handleRemovePortForward(rule.listenPort)}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.listenPort')}</span>
+              <Input
+                className="h-7 text-xs"
+                type="number"
+                placeholder="3000"
+                value={pfListenPort}
+                onChange={(e) => setPfListenPort(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectAddr')}</span>
+              <Input
+                className="h-7 text-xs"
+                placeholder={info?.ipAddress || '172.x.x.x'}
+                value={pfConnectAddr}
+                onChange={(e) => setPfConnectAddr(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 space-y-1">
+              <span className="text-xs text-muted-foreground">{t('wsl.detail.portForward.connectPort')}</span>
+              <Input
+                className="h-7 text-xs"
+                type="number"
+                placeholder="3000"
+                value={pfConnectPort}
+                onChange={(e) => setPfConnectPort(e.target.value)}
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1"
+              disabled={pfAdding || !pfListenPort || !pfConnectPort || !pfConnectAddr}
+              onClick={handleAddPortForward}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+
+          <div className="flex gap-1 flex-wrap">
+            {[3000, 5432, 8080, 8443].map((port) => (
+              <Button
+                key={port}
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] px-2"
+                onClick={() => {
+                  setPfListenPort(String(port));
+                  setPfConnectPort(String(port));
+                  if (info?.ipAddress) setPfConnectAddr(info.ipAddress);
+                }}
+              >
+                :{port}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

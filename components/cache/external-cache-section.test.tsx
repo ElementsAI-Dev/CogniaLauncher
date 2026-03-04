@@ -117,7 +117,7 @@ describe('ExternalCacheSection', () => {
     const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
 
-    const trigger = screen.getByText('cache.externalCaches').closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId('external-cache-trigger');
     if (trigger) {
       await user.click(trigger);
     }
@@ -129,7 +129,7 @@ describe('ExternalCacheSection', () => {
     const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
 
-    const trigger = screen.getByText('cache.externalCaches').closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId('external-cache-trigger');
     if (trigger) {
       await user.click(trigger);
     }
@@ -144,7 +144,7 @@ describe('ExternalCacheSection', () => {
     const user = userEvent.setup();
     render(<ExternalCacheSection useTrash={false} setUseTrash={jest.fn()} />);
 
-    const trigger = screen.getByText('cache.externalCaches').closest("div[class*='cursor-pointer']");
+    const trigger = screen.getByTestId('external-cache-trigger');
     if (trigger) {
       await user.click(trigger);
     }

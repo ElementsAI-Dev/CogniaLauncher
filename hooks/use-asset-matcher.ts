@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { isTauri } from '@/lib/tauri';
+import { useCallback, useMemo } from 'react';
+import { isTauri, getPlatformOS, getArch } from '@/lib/platform';
 import type { GitHubAssetInfo } from '@/types/github';
 
 export type DetectedPlatform = 'windows' | 'macos' | 'linux' | 'unknown';
@@ -45,26 +45,9 @@ export function detectArch(name: string): DetectedArch {
 }
 
 export function useAssetMatcher() {
-  const [currentPlatform, setCurrentPlatform] = useState<string | null>(null);
-  const [currentArch, setCurrentArch] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadPlatformInfo() {
-      if (isTauri()) {
-        try {
-          const tauri = await import('@/lib/tauri');
-          const info = await tauri.getPlatformInfo();
-          setCurrentPlatform(info.os);
-          setCurrentArch(info.arch);
-        } catch (error) {
-          console.error('Failed to get platform info:', error);
-        }
-      }
-      setIsLoading(false);
-    }
-    loadPlatformInfo();
-  }, []);
+  const currentPlatform = isTauri() ? getPlatformOS() : null;
+  const currentArch = isTauri() ? getArch() : null;
+  const isLoading = false;
 
   const normalizedPlatform = useMemo((): DetectedPlatform => {
     if (!currentPlatform) return 'unknown';

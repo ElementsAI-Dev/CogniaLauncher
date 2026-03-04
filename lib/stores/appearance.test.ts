@@ -33,6 +33,11 @@ describe('useAppearanceStore', () => {
       const { reducedMotion } = useAppearanceStore.getState();
       expect(reducedMotion).toBe(false);
     });
+
+    it('has default window effect as auto', () => {
+      const { windowEffect } = useAppearanceStore.getState();
+      expect(windowEffect).toBe('auto');
+    });
   });
 
   describe('setAccentColor', () => {
@@ -111,6 +116,23 @@ describe('useAppearanceStore', () => {
     });
   });
 
+  describe('setWindowEffect', () => {
+    it('updates window effect to mica', () => {
+      useAppearanceStore.getState().setWindowEffect('mica');
+      expect(useAppearanceStore.getState().windowEffect).toBe('mica');
+    });
+
+    it('updates window effect to vibrancy', () => {
+      useAppearanceStore.getState().setWindowEffect('vibrancy');
+      expect(useAppearanceStore.getState().windowEffect).toBe('vibrancy');
+    });
+
+    it('updates window effect to none', () => {
+      useAppearanceStore.getState().setWindowEffect('none');
+      expect(useAppearanceStore.getState().windowEffect).toBe('none');
+    });
+  });
+
   describe('background settings', () => {
     it('has background disabled by default', () => {
       const state = useAppearanceStore.getState();
@@ -161,7 +183,7 @@ describe('useAppearanceStore', () => {
     const getPersistConfig = () =>
       (useAppearanceStore as unknown as { persist: { getOptions: () => { migrate: (state: unknown, version: number) => unknown } } }).persist.getOptions();
 
-    it('v1 → v6: adds all missing fields', () => {
+    it('v1 → v7: adds all missing fields', () => {
       const v1State = { accentColor: 'rose' };
       const migrated = getPersistConfig().migrate(v1State, 1) as Record<string, unknown>;
 
@@ -173,11 +195,12 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(20);
       expect(migrated.backgroundBlur).toBe(0);
       expect(migrated.backgroundFit).toBe('cover');
+      expect(migrated.windowEffect).toBe('auto');
       // Preserves existing fields
       expect(migrated.accentColor).toBe('rose');
     });
 
-    it('v2 → v6: skips reducedMotion, adds rest', () => {
+    it('v2 → v7: skips reducedMotion, adds rest', () => {
       const v2State = { accentColor: 'blue', reducedMotion: true };
       const migrated = getPersistConfig().migrate(v2State, 2) as Record<string, unknown>;
 
@@ -186,6 +209,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.interfaceRadius).toBe(0.625);
       expect(migrated.interfaceDensity).toBe('comfortable');
       expect(migrated.backgroundEnabled).toBe(false);
+      expect(migrated.windowEffect).toBe('auto');
     });
 
     it('v3 → v6: skips chartColorTheme, adds rest', () => {
@@ -218,12 +242,21 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundFit).toBe('cover');
     });
 
-    it('v6: no migration needed', () => {
+    it('v6 → v7: adds only windowEffect', () => {
       const v6State = { accentColor: 'green', backgroundEnabled: true };
       const migrated = getPersistConfig().migrate(v6State, 6) as Record<string, unknown>;
 
       expect(migrated.accentColor).toBe('green');
       expect(migrated.backgroundEnabled).toBe(true);
+      expect(migrated.windowEffect).toBe('auto');
+    });
+
+    it('v7: no migration needed', () => {
+      const v7State = { accentColor: 'green', windowEffect: 'mica' };
+      const migrated = getPersistConfig().migrate(v7State, 7) as Record<string, unknown>;
+
+      expect(migrated.accentColor).toBe('green');
+      expect(migrated.windowEffect).toBe('mica');
     });
 
     it('does not overwrite existing fields during migration', () => {
@@ -247,6 +280,7 @@ describe('useAppearanceStore', () => {
       expect(migrated.backgroundOpacity).toBe(50);
       expect(migrated.backgroundBlur).toBe(5);
       expect(migrated.backgroundFit).toBe('tile');
+      expect(migrated.windowEffect).toBe('auto');
     });
   });
 
@@ -262,6 +296,7 @@ describe('useAppearanceStore', () => {
       useAppearanceStore.getState().setBackgroundOpacity(50);
       useAppearanceStore.getState().setBackgroundBlur(8);
       useAppearanceStore.getState().setBackgroundFit('tile');
+      useAppearanceStore.getState().setWindowEffect('mica');
 
       // Reset
       useAppearanceStore.getState().reset();
@@ -277,6 +312,7 @@ describe('useAppearanceStore', () => {
       expect(state.backgroundOpacity).toBe(20);
       expect(state.backgroundBlur).toBe(0);
       expect(state.backgroundFit).toBe('cover');
+      expect(state.windowEffect).toBe('auto');
     });
   });
 });

@@ -185,7 +185,12 @@ impl YarnProvider {
 
         let client = crate::platform::proxy::get_shared_client();
 
-        if let Ok(resp) = client.get(&url).timeout(Duration::from_secs(10)).send().await {
+        if let Ok(resp) = client
+            .get(&url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+        {
             if resp.status().is_success() {
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     if let Some(deps) = json["dependencies"].as_object() {

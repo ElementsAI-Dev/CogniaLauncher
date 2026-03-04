@@ -5,6 +5,53 @@ use crate::platform::disk::{format_duration, format_size};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::Instant;
+
+/// Exponential Weighted Moving Average speed tracker.
+///
+/// Produces a smoothed download speed that responds quickly to changes
+/// while filtering out per-chunk jitter.  Not serialized — used only
+/// inside download workers.
+pub(crate) struct SpeedTracker {
+    prev_speed: f64,
+    prev_bytes: u64,
+    prev_time: Instant,
+    alpha: f64,
+}
+
+impl SpeedTracker {
+    /// Create a new tracker.  `alpha` controls responsiveness (0.3 = moderate).
+    pub fn new() -> Self {
+        Self {
+            prev_speed: 0.0,
+            prev_bytes: 0,
+            prev_time: Instant::now(),
+            alpha: 0.3,
+        }
+    }
+
+    /// Feed the current cumulative byte count and get the smoothed speed (bytes/s).
+    pub fn update(&mut self, current_bytes: u64) -> f64 {
+        let now = Instant::now();
+        let dt = now.duration_since(self.prev_time).as_secs_f64();
+        if dt < 0.05 {
+            return self.prev_speed;
+        }
+
+        let delta_bytes = current_bytes.saturating_sub(self.prev_bytes);
+        let instant_speed = delta_bytes as f64 / dt;
+
+        self.prev_speed = if self.prev_speed == 0.0 {
+            instant_speed
+        } else {
+            self.alpha * instant_speed + (1.0 - self.alpha) * self.prev_speed
+        };
+
+        self.prev_bytes = current_bytes;
+        self.prev_time = now;
+        self.prev_speed
+    }
+}
 
 /// Action to perform after a download completes successfully
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +94,16 @@ pub struct DownloadConfig {
     /// Action to perform after download completes
     #[serde(default)]
     pub post_action: PostAction,
+    /// Whether to delete the archive after successful extraction
+    #[serde(default)]
+    pub delete_after_extract: bool,
+    /// Whether to auto-rename the destination file using the server-provided filename
+    #[serde(default = "default_auto_rename")]
+    pub auto_rename: bool,
+}
+
+fn default_auto_rename() -> bool {
+    true
 }
 
 fn default_max_retries() -> u32 {
@@ -77,6 +134,8 @@ impl Default for DownloadConfig {
             extract_dest: None,
             segments: default_segments(),
             post_action: PostAction::None,
+            delete_after_extract: false,
+            auto_rename: default_auto_rename(),
         }
     }
 }
@@ -193,6 +252,9 @@ pub struct DownloadTask {
     /// Mirror/fallback URLs to try if the primary URL fails
     #[serde(default)]
     pub mirror_urls: Vec<String>,
+    /// User-defined tags for categorization and filtering
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl DownloadTask {
@@ -219,6 +281,7 @@ impl DownloadTask {
             headers: std::collections::HashMap::new(),
             server_filename: None,
             mirror_urls: Vec::new(),
+            tags: Vec::new(),
         }
     }
 
@@ -329,6 +392,16 @@ impl DownloadTaskBuilder {
 
     pub fn with_mirror(mut self, url: String) -> Self {
         self.task.mirror_urls.push(url);
+        self
+    }
+
+    pub fn with_tag(mut self, tag: String) -> Self {
+        self.task.tags.push(tag);
+        self
+    }
+
+    pub fn with_tags(mut self, tags: Vec<String>) -> Self {
+        self.task.tags.extend(tags);
         self
     }
 
@@ -676,10 +749,7 @@ mod tests {
             ..Default::default()
         };
         assert!(config.auto_extract);
-        assert_eq!(
-            config.extract_dest,
-            Some(PathBuf::from("/tmp/extracted"))
-        );
+        assert_eq!(config.extract_dest, Some(PathBuf::from("/tmp/extracted")));
     }
 
     #[test]
@@ -728,10 +798,7 @@ mod tests {
         assert_eq!(deserialized.speed_limit, 2048);
         assert!(!deserialized.allow_resume);
         assert!(deserialized.auto_extract);
-        assert_eq!(
-            deserialized.extract_dest,
-            Some(PathBuf::from("/tmp/out"))
-        );
+        assert_eq!(deserialized.extract_dest, Some(PathBuf::from("/tmp/out")));
     }
 
     #[test]
@@ -941,5 +1008,122 @@ mod tests {
         });
         let task: DownloadTask = serde_json::from_value(json).unwrap();
         assert!(task.mirror_urls.is_empty());
+    }
+
+    #[test]
+    fn test_speed_tracker_initial() {
+        let tracker = SpeedTracker::new();
+        assert_eq!(tracker.prev_speed, 0.0);
+    }
+
+    #[test]
+    fn test_speed_tracker_first_update_sets_speed() {
+        let mut tracker = SpeedTracker::new();
+        // Simulate time passing by overriding prev_time
+        tracker.prev_time = Instant::now() - std::time::Duration::from_secs(1);
+        let speed = tracker.update(1024 * 1024); // 1 MB after 1 second
+        assert!(speed > 0.0);
+        assert!(speed > 500_000.0); // Should be close to 1 MB/s
+    }
+
+    #[test]
+    fn test_speed_tracker_ewma_smoothing() {
+        let mut tracker = SpeedTracker::new();
+        // First update: 1 MB over 1 second
+        tracker.prev_time = Instant::now() - std::time::Duration::from_secs(1);
+        let s1 = tracker.update(1_000_000);
+        // Second update: 2 MB more over another second
+        tracker.prev_time = Instant::now() - std::time::Duration::from_secs(1);
+        let s2 = tracker.update(3_000_000);
+        // EWMA should smooth: s2 should be between s1 and instant (2 MB/s)
+        assert!(s2 > s1);
+    }
+
+    #[test]
+    fn test_speed_tracker_skips_tiny_intervals() {
+        let mut tracker = SpeedTracker::new();
+        // Update with no time elapsed should return prev_speed (0)
+        let speed = tracker.update(1024);
+        assert_eq!(speed, 0.0);
+    }
+
+    #[test]
+    fn test_download_config_delete_after_extract_default() {
+        let config = DownloadConfig::default();
+        assert!(!config.delete_after_extract);
+    }
+
+    #[test]
+    fn test_download_config_auto_rename_default() {
+        let config = DownloadConfig::default();
+        assert!(config.auto_rename); // default true
+    }
+
+    #[test]
+    fn test_download_config_new_fields_serde() {
+        let config = DownloadConfig {
+            delete_after_extract: true,
+            auto_rename: false,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("deleteAfterExtract"));
+        assert!(json.contains("autoRename"));
+        let deser: DownloadConfig = serde_json::from_str(&json).unwrap();
+        assert!(deser.delete_after_extract);
+        assert!(!deser.auto_rename);
+    }
+
+    #[test]
+    fn test_download_task_tags_default_empty() {
+        let task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        assert!(task.tags.is_empty());
+    }
+
+    #[test]
+    fn test_download_task_builder_with_tags() {
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_tag("github".to_string())
+        .with_tag("release".to_string())
+        .build();
+
+        assert_eq!(task.tags.len(), 2);
+        assert_eq!(task.tags[0], "github");
+        assert_eq!(task.tags[1], "release");
+    }
+
+    #[test]
+    fn test_download_task_builder_with_tags_vec() {
+        let task = DownloadTask::builder(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        )
+        .with_tags(vec!["a".into(), "b".into()])
+        .build();
+
+        assert_eq!(task.tags, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn test_download_task_tags_serde_roundtrip() {
+        let mut task = DownloadTask::new(
+            "https://example.com/file.zip".to_string(),
+            PathBuf::from("/tmp/file.zip"),
+            "Test".to_string(),
+        );
+        task.tags = vec!["github".into(), "v2".into()];
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains("\"tags\""));
+        let deser: DownloadTask = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.tags, vec!["github", "v2"]);
     }
 }

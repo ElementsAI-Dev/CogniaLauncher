@@ -49,9 +49,11 @@ import {
   SkipForward,
   Copy,
   FileDown,
+  ClipboardPaste,
 } from "lucide-react";
 import { useProfiles } from "@/hooks/use-profiles";
 import { useLocale } from "@/components/providers/locale-provider";
+import { readClipboard } from "@/lib/clipboard";
 import type { EnvironmentProfile, ProfileApplyResult } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -270,6 +272,25 @@ export function ProfileManager({ open, onOpenChange }: ProfileManagerProps) {
             >
               <FileDown className="h-3.5 w-3.5" />
               {t("environments.profiles.importFile")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  const text = await readClipboard();
+                  if (text?.trim()) {
+                    setImportJson(text.trim());
+                    setShowImport(true);
+                  }
+                } catch {
+                  // Clipboard read failed
+                }
+              }}
+              className="gap-1.5"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5" />
+              {t("environments.profiles.pasteFromClipboard")}
             </Button>
             <input
               ref={fileInputRef}

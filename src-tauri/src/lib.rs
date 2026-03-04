@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod core;
@@ -48,17 +49,25 @@ pub fn run() {
 
     let mut builder = tauri::Builder::default();
 
-    // Single-instance must be the first plugin registered (Tauri docs requirement)
+    // Single-instance must be the FIRST plugin registered (Tauri docs requirement).
+    // Skip it when a CLI subcommand is detected so headless commands run independently.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-        }));
+        if !cli::has_cli_subcommand() {
+            builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+                let payload = serde_json::json!({ "args": args, "cwd": cwd });
+                let _ = app.emit("single-instance", payload);
+            }));
+        }
     }
+
+    builder = builder.plugin(tauri_plugin_positioner::init());
+    builder = builder.plugin(tauri_plugin_os::init());
 
     builder
         .setup(|app| {
@@ -119,6 +128,14 @@ pub fn run() {
                     .level_for("wry", log::LevelFilter::Info)
                     .build(),
             )?;
+
+            // Register CLI plugin for argument parsing
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_cli::init())?;
+
+            // Register global shortcut plugin (frontend JS API handles registration)
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_global_shortcut::Builder::new().build())?;
 
             // Initialize provider registry with defaults asynchronously
             let registry = app.state::<SharedRegistry>().inner().clone();
@@ -206,6 +223,14 @@ pub fn run() {
                 }
                 emit_init_progress(&app_handle_for_init, "providers", 40, "splash.loadingProviders");
             });
+
+            // ═══════════════════════════════════════════════════════════════════
+            // CLI HANDLER — if a subcommand was invoked, run it headless and exit.
+            // Settings + ProviderRegistry are initialized at this point.
+            // ═══════════════════════════════════════════════════════════════════
+            if let Some(exit_code) = cli::handle_cli(app.handle()) {
+                std::process::exit(exit_code);
+            }
 
             // ═══════════════════════════════════════════════════════════════════
             // PRE-REGISTER MANAGERS as empty/default placeholders.
@@ -339,6 +364,26 @@ pub fn run() {
                 emit_init_progress(&bg_app, "ready", 100, "splash.ready");
                 info!("Application initialization complete");
             });
+
+            // Apply window effect from persisted settings
+            {
+                let s = tauri::async_runtime::block_on(settings.read());
+                let effect = s.appearance.window_effect.clone();
+                let theme = s.appearance.theme.clone();
+                drop(s);
+                if let Some(window) = app.get_webview_window("main") {
+                    let dark = match theme.as_str() {
+                        "dark" => Some(true),
+                        "light" => Some(false),
+                        _ => None,
+                    };
+                    if let Err(e) =
+                        commands::window_effect::apply_effect_to_window(&window, &effect, dark)
+                    {
+                        info!("Window effect apply failed: {}", e);
+                    }
+                }
+            }
 
             // Initialize system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -529,6 +574,8 @@ pub fn run() {
             commands::cache::get_top_accessed_entries,
             // External cache management
             commands::cache::discover_external_caches,
+            commands::cache::discover_external_caches_fast,
+            commands::cache::calculate_external_cache_size,
             commands::cache::clean_external_cache,
             commands::cache::clean_all_external_caches,
             commands::cache::get_combined_cache_stats,
@@ -681,6 +728,7 @@ pub fn run() {
             commands::download::download_batch_remove,
             commands::download::download_shutdown,
             commands::download::download_set_priority,
+            commands::download::download_set_task_speed_limit,
             commands::download::download_retry,
             commands::download::download_calculate_checksum,
             // Download history commands
@@ -730,6 +778,10 @@ pub fn run() {
             commands::gitlab::gitlab_download_package_file,
             commands::gitlab::gitlab_set_instance_url,
             commands::gitlab::gitlab_get_instance_url,
+            // Window effect commands
+            commands::window_effect::window_effect_apply,
+            commands::window_effect::window_effect_clear,
+            commands::window_effect::window_effect_get_supported,
             // Tray commands
             tray::tray_set_icon_state,
             tray::tray_update_tooltip,
@@ -911,6 +963,16 @@ pub fn run() {
             commands::wsl::wsl_open_in_terminal,
             commands::wsl::wsl_clone_distro,
             commands::wsl::wsl_total_disk_usage,
+            commands::wsl::wsl_batch_launch,
+            commands::wsl::wsl_batch_terminate,
+            commands::wsl::wsl_list_port_forwards,
+            commands::wsl::wsl_add_port_forward,
+            commands::wsl::wsl_remove_port_forward,
+            commands::wsl::wsl_distro_health_check,
+            commands::wsl::wsl_backup_distro,
+            commands::wsl::wsl_list_backups,
+            commands::wsl::wsl_restore_backup,
+            commands::wsl::wsl_delete_backup,
             // Git commands
             commands::git::git_is_available,
             commands::git::git_get_version,
@@ -1215,8 +1277,20 @@ struct InitProgressEvent {
     message: &'static str,
 }
 
-fn emit_init_progress(app: &tauri::AppHandle, phase: &'static str, progress: u8, message: &'static str) {
-    let _ = app.emit("init-progress", InitProgressEvent { phase, progress, message });
+fn emit_init_progress(
+    app: &tauri::AppHandle,
+    phase: &'static str,
+    progress: u8,
+    message: &'static str,
+) {
+    let _ = app.emit(
+        "init-progress",
+        InitProgressEvent {
+            phase,
+            progress,
+            message,
+        },
+    );
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -1276,11 +1350,7 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
                     0
                 };
                 if let Err(e) = download_cache
-                    .record_size_snapshot(
-                        stats.total_size,
-                        stats.entry_count,
-                        md_count,
-                    )
+                    .record_size_snapshot(stats.total_size, stats.entry_count, md_count)
                     .await
                 {
                     debug!("Failed to record size snapshot: {}", e);
@@ -1338,7 +1408,10 @@ async fn cache_cleanup_task(settings: SharedSettings, app: tauri::AppHandle) {
 
             match metadata_cache.clean_expired().await {
                 Ok(count) if count > 0 => {
-                    debug!("Auto-cleanup: removed {} expired metadata entries ({} bytes)", count, expired_size);
+                    debug!(
+                        "Auto-cleanup: removed {} expired metadata entries ({} bytes)",
+                        count, expired_size
+                    );
                     expired_metadata_removed = count;
                     expired_metadata_freed = expired_size;
                 }

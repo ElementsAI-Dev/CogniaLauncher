@@ -13,7 +13,7 @@ export type { DownloadEmptyStateProps } from "./download-empty-state";
 export { DownloadDetailDialog } from "./download-detail-dialog";
 
 export { ArchiveFormatSelector } from "./archive-format-selector";
-export type { ArchiveFormat } from "./archive-format-selector";
+export type { ArchiveFormat } from "@/types/downloads";
 
 export { DestinationPicker } from "./destination-picker";
 
@@ -26,6 +26,8 @@ export { DownloadTaskRow } from "./download-task-row";
 
 export { DownloadSettingsCard } from "./download-settings-card";
 export type { SpeedUnit } from "./download-settings-card";
+
+export { SpeedChart } from "./speed-chart";
 
 export { DownloadHistoryPanel } from "./download-history-panel";
 

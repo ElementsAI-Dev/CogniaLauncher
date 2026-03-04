@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Collapsible,
   CollapsibleContent,
@@ -21,19 +21,23 @@ import {
 } from "@/components/ui/collapsible";
 import {
   AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
   ChevronDown,
-  Copy,
-  HelpCircle,
   Info,
   Loader2,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
 import { useHealthCheck } from "@/hooks/use-health-check";
-import type { HealthIssue, HealthStatus, Severity } from "@/lib/tauri";
+import type { HealthStatus } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+import {
+  getStatusIcon,
+  getStatusColor,
+  getStatusTextColor,
+} from "@/lib/provider-utils";
+import { IssueCard } from "@/components/health/issue-card";
+
+export { IssueCard } from "@/components/health/issue-card";
 
 interface HealthCheckPanelProps {
   className?: string;
@@ -42,7 +46,7 @@ interface HealthCheckPanelProps {
 export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
   const { t: _t } = useLocale();
   const t = (key: string, params?: Record<string, string | number>) => _t(`environments.healthCheck.${key}`, params);
-  const { systemHealth, loading, error, checkAll, getStatusColor } =
+  const { systemHealth, loading, error, checkAll } =
     useHealthCheck();
   const [expandedEnvs, setExpandedEnvs] = useState<Set<string>>(new Set());
 
@@ -58,17 +62,9 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
     });
   };
 
-  const getStatusIcon = (status: HealthStatus) => {
-    switch (status) {
-      case "healthy":
-        return <CheckCircle2 className="h-4 w-4 text-green-600" />;
-      case "warning":
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
-      case "error":
-        return <AlertCircle className="h-4 w-4 text-red-600" />;
-      default:
-        return <HelpCircle className="h-4 w-4 text-gray-400" />;
-    }
+  const renderStatusIcon = (status: HealthStatus) => {
+    const Icon = getStatusIcon(status);
+    return <Icon className={cn("h-4 w-4", getStatusTextColor(status))} />;
   };
 
   const copyToClipboard = (text: string) => {
@@ -128,7 +124,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
               )}
             >
               <div className="flex items-center gap-2">
-                {getStatusIcon(systemHealth.overall_status)}
+                {renderStatusIcon(systemHealth.overall_status)}
                 <span className="font-medium">
                   {t(`status.${systemHealth.overall_status}`)}
                 </span>
@@ -174,7 +170,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                         )}
                       >
                         <div className="flex items-center gap-3">
-                          {getStatusIcon(env.status)}
+                          {renderStatusIcon(env.status)}
                           <div>
                             <span className="font-medium capitalize">
                               {env.env_type}
@@ -196,7 +192,7 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                                   : "destructive"
                             }
                           >
-                            {env.issues.length} {t("issues")}
+                            {env.issues.filter(i => i.severity !== 'info').length} {t("issues")}
                           </Badge>
                           <ChevronDown
                             className={cn(
@@ -251,73 +247,92 @@ export function HealthCheckPanel({ className }: HealthCheckPanelProps) {
                 ))}
               </div>
             </ScrollArea>
+
+            {/* Package Managers */}
+            {systemHealth.package_managers && systemHealth.package_managers.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">{t("packageManagers.title")}</h4>
+                <div className="space-y-2">
+                  {systemHealth.package_managers.map((pm) => (
+                    <Collapsible
+                      key={pm.provider_id}
+                      open={expandedEnvs.has(`pm-${pm.provider_id}`)}
+                      onOpenChange={() => toggleExpanded(`pm-${pm.provider_id}`)}
+                    >
+                      <CollapsibleTrigger asChild>
+                        <div
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-lg border cursor-pointer hover:bg-accent/50 transition-colors",
+                            pm.status === "healthy" && "border-green-200",
+                            pm.status === "warning" && "border-yellow-200",
+                            pm.status === "error" && "border-red-200",
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            {renderStatusIcon(pm.status)}
+                            <div>
+                              <span className="font-medium">
+                                {pm.display_name}
+                              </span>
+                              {pm.version && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  v{pm.version}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                pm.status === "healthy"
+                                  ? "default"
+                                  : pm.status === "warning"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                            >
+                              {pm.issues.filter(i => i.severity !== 'info').length} {t("issues")}
+                            </Badge>
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 transition-transform",
+                                expandedEnvs.has(`pm-${pm.provider_id}`) && "rotate-180",
+                              )}
+                            />
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+
+                      <CollapsibleContent>
+                        <div className="pl-4 pt-2 space-y-2">
+                          {pm.issues.length > 0 && (
+                            <div className="space-y-2">
+                              {pm.issues.map((issue, idx) => (
+                                <IssueCard
+                                  key={idx}
+                                  issue={issue}
+                                  onCopy={copyToClipboard}
+                                  t={t}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {pm.issues.length === 0 && (
+                            <p className="text-sm text-muted-foreground py-2">
+                              {t("noIssues")}
+                            </p>
+                          )}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
     </Card>
-  );
-}
-
-interface IssueCardProps {
-  issue: HealthIssue;
-  onCopy: (text: string) => void;
-  t: (key: string, params?: Record<string, string | number>) => string;
-}
-
-export function IssueCard({ issue, onCopy, t }: IssueCardProps) {
-  const getAlertVariant = (severity: Severity): "default" | "destructive" => {
-    switch (severity) {
-      case "critical":
-      case "error":
-        return "destructive";
-      default:
-        return "default";
-    }
-  };
-
-  const getSeverityIcon = (severity: Severity) => {
-    switch (severity) {
-      case "critical":
-      case "error":
-        return <AlertCircle className="h-4 w-4" />;
-      case "warning":
-        return <AlertTriangle className="h-4 w-4" />;
-      case "info":
-      default:
-        return <Info className="h-4 w-4" />;
-    }
-  };
-
-  return (
-    <Alert variant={getAlertVariant(issue.severity)} className="text-sm">
-      {getSeverityIcon(issue.severity)}
-      <AlertTitle className="text-sm font-medium">{issue.message}</AlertTitle>
-      <AlertDescription>
-        {issue.details && (
-          <p className="text-xs mt-1 opacity-80">{issue.details}</p>
-        )}
-        {issue.fix_command && (
-          <div className="mt-2 flex items-center gap-2">
-            <code className="text-xs bg-black/10 dark:bg-white/10 px-2 py-1 rounded">
-              {issue.fix_command}
-            </code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => onCopy(issue.fix_command!)}
-              title={t("copyCommand")}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-          </div>
-        )}
-        {issue.fix_description && (
-          <p className="text-xs mt-1 text-muted-foreground">
-            {issue.fix_description}
-          </p>
-        )}
-      </AlertDescription>
-    </Alert>
   );
 }

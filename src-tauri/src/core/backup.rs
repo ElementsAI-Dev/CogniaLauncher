@@ -185,11 +185,7 @@ pub async fn create_backup(
                 }
             }
             Err(e) => {
-                log::warn!(
-                    "Backup of {:?} failed, skipping: {}",
-                    content_type,
-                    e
-                );
+                log::warn!("Backup of {:?} failed, skipping: {}", content_type, e);
             }
         }
     }
@@ -329,11 +325,7 @@ async fn backup_content(
                             fs::copy_file(&path, &dest).await?;
                             let checksum = fs::calculate_sha256(&dest).await?;
                             let size = fs::file_size(&dest).await?;
-                            files.push((
-                                format!("env-settings/{}", name),
-                                checksum,
-                                size,
-                            ));
+                            files.push((format!("env-settings/{}", name), checksum, size));
                         }
                     }
                 }
@@ -367,10 +359,7 @@ pub async fn restore_backup(
     .await
     {
         Ok(result) => {
-            log::info!(
-                "Pre-restore safety backup created at: {}",
-                result.path
-            );
+            log::info!("Pre-restore safety backup created at: {}", result.path);
         }
         Err(e) => {
             log::warn!("Failed to create pre-restore safety backup: {}", e);
@@ -445,7 +434,9 @@ async fn restore_content(
         BackupContentType::Config => {
             let src = backup_path.join("config.toml");
             if !fs::exists(&src).await {
-                return Err(CogniaError::Internal("config.toml not found in backup".into()));
+                return Err(CogniaError::Internal(
+                    "config.toml not found in backup".into(),
+                ));
             }
             let content = fs::read_file_string(&src).await?;
             let parsed: Settings = toml::from_str(&content)
@@ -726,8 +717,7 @@ pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult
     let size = tokio::task::spawn_blocking(move || -> CogniaResult<u64> {
         use std::io::Write;
 
-        let file = std::fs::File::create(&dest)
-            .map_err(|e| CogniaError::Io(e))?;
+        let file = std::fs::File::create(&dest).map_err(|e| CogniaError::Io(e))?;
         let mut zip_writer = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
@@ -741,7 +731,8 @@ pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult
             .to_string();
 
         // Add top-level directory entry
-        zip_writer.add_directory(format!("{}/", dir_name), options)
+        zip_writer
+            .add_directory(format!("{}/", dir_name), options)
             .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
 
         // Walk the backup directory
@@ -750,25 +741,35 @@ pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            let relative = path
-                .strip_prefix(&backup_dir)
-                .unwrap_or(path);
+            let relative = path.strip_prefix(&backup_dir).unwrap_or(path);
 
             if path.is_file() {
-                let name = format!("{}/{}", dir_name, relative.to_string_lossy().replace('\\', "/"));
-                zip_writer.start_file(&name, options)
+                let name = format!(
+                    "{}/{}",
+                    dir_name,
+                    relative.to_string_lossy().replace('\\', "/")
+                );
+                zip_writer
+                    .start_file(&name, options)
                     .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
                 let data = std::fs::read(path).map_err(CogniaError::Io)?;
-                zip_writer.write_all(&data)
+                zip_writer
+                    .write_all(&data)
                     .map_err(|e| CogniaError::Internal(format!("ZIP write error: {}", e)))?;
             } else if path.is_dir() && path != backup_dir.as_path() {
-                let name = format!("{}/{}/", dir_name, relative.to_string_lossy().replace('\\', "/"));
-                zip_writer.add_directory(&name, options)
+                let name = format!(
+                    "{}/{}/",
+                    dir_name,
+                    relative.to_string_lossy().replace('\\', "/")
+                );
+                zip_writer
+                    .add_directory(&name, options)
                     .map_err(|e| CogniaError::Internal(format!("ZIP dir error: {}", e)))?;
             }
         }
 
-        zip_writer.finish()
+        zip_writer
+            .finish()
             .map_err(|e| CogniaError::Internal(format!("ZIP finish error: {}", e)))?;
 
         let meta = std::fs::metadata(&dest).map_err(CogniaError::Io)?;
@@ -784,10 +785,7 @@ pub async fn export_backup(backup_path: &Path, dest_path: &Path) -> CogniaResult
 ///
 /// Extracts to the backups directory, validates the manifest, and returns the
 /// resulting `BackupInfo`.
-pub async fn import_backup(
-    zip_path: &Path,
-    settings: &Settings,
-) -> CogniaResult<BackupInfo> {
+pub async fn import_backup(zip_path: &Path, settings: &Settings) -> CogniaResult<BackupInfo> {
     let backup_base = settings.get_root_dir().join("backups");
     fs::create_dir_all(&backup_base).await?;
 
@@ -805,7 +803,8 @@ pub async fn import_backup(
         // Determine the backup directory name from the zip
         // If the zip has a top-level directory, use it; otherwise generate one
         let top_dir = {
-            let first = archive.by_index(0)
+            let first = archive
+                .by_index(0)
                 .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
             let name = first.name().to_string();
             if let Some(slash_pos) = name.find('/') {
@@ -828,7 +827,8 @@ pub async fn import_backup(
 
         // Extract all files
         for i in 0..archive.len() {
-            let mut entry = archive.by_index(i)
+            let mut entry = archive
+                .by_index(i)
                 .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
 
             let out_path = base.join(entry.name());
@@ -846,7 +846,8 @@ pub async fn import_backup(
                 }
                 let mut outfile = std::fs::File::create(&out_path).map_err(CogniaError::Io)?;
                 let mut buf = Vec::new();
-                entry.read_to_end(&mut buf)
+                entry
+                    .read_to_end(&mut buf)
                     .map_err(|e| CogniaError::Internal(format!("ZIP read error: {}", e)))?;
                 std::io::Write::write_all(&mut outfile, &buf)
                     .map_err(|e| CogniaError::Internal(format!("Write error: {}", e)))?;
@@ -951,7 +952,10 @@ pub async fn cleanup_old_backups(
             }
         }
         for path in to_remove {
-            if delete_backup(&std::path::PathBuf::from(&path)).await.unwrap_or(false) {
+            if delete_backup(&std::path::PathBuf::from(&path))
+                .await
+                .unwrap_or(false)
+            {
                 deleted += 1;
             }
         }
@@ -964,14 +968,16 @@ pub async fn cleanup_old_backups(
         let auto_limit = (max_count / 2).max(3) as usize;
 
         // Split into manual and auto backups
-        let (auto_backups, manual_backups): (Vec<_>, Vec<_>) = backups
-            .iter()
-            .partition(|b| b.manifest.auto_generated);
+        let (auto_backups, manual_backups): (Vec<_>, Vec<_>) =
+            backups.iter().partition(|b| b.manifest.auto_generated);
 
         // Trim manual backups (already sorted newest-first)
         if manual_backups.len() > max_count as usize {
             for backup in &manual_backups[max_count as usize..] {
-                if delete_backup(&std::path::PathBuf::from(&backup.path)).await.unwrap_or(false) {
+                if delete_backup(&std::path::PathBuf::from(&backup.path))
+                    .await
+                    .unwrap_or(false)
+                {
                     deleted += 1;
                 }
             }
@@ -980,7 +986,10 @@ pub async fn cleanup_old_backups(
         // Trim auto backups
         if auto_backups.len() > auto_limit {
             for backup in &auto_backups[auto_limit..] {
-                if delete_backup(&std::path::PathBuf::from(&backup.path)).await.unwrap_or(false) {
+                if delete_backup(&std::path::PathBuf::from(&backup.path))
+                    .await
+                    .unwrap_or(false)
+                {
                     deleted += 1;
                 }
             }
@@ -1098,30 +1107,65 @@ mod tests {
     fn test_backup_content_type_from_str_all_variants() {
         let cases = vec![
             ("config", Some(BackupContentType::Config)),
-            ("terminal_profiles", Some(BackupContentType::TerminalProfiles)),
-            ("environment_profiles", Some(BackupContentType::EnvironmentProfiles)),
+            (
+                "terminal_profiles",
+                Some(BackupContentType::TerminalProfiles),
+            ),
+            (
+                "environment_profiles",
+                Some(BackupContentType::EnvironmentProfiles),
+            ),
             ("cache_database", Some(BackupContentType::CacheDatabase)),
             ("download_history", Some(BackupContentType::DownloadHistory)),
             ("cleanup_history", Some(BackupContentType::CleanupHistory)),
-            ("custom_detection_rules", Some(BackupContentType::CustomDetectionRules)),
-            ("environment_settings", Some(BackupContentType::EnvironmentSettings)),
+            (
+                "custom_detection_rules",
+                Some(BackupContentType::CustomDetectionRules),
+            ),
+            (
+                "environment_settings",
+                Some(BackupContentType::EnvironmentSettings),
+            ),
             ("unknown_type", None),
             ("", None),
         ];
 
         for (input, expected) in cases {
-            assert_eq!(BackupContentType::from_str(input), expected, "Failed for input: {}", input);
+            assert_eq!(
+                BackupContentType::from_str(input),
+                expected,
+                "Failed for input: {}",
+                input
+            );
         }
     }
 
     #[test]
     fn test_backup_content_type_filename_all_variants() {
-        assert_eq!(BackupContentType::TerminalProfiles.filename(), "terminal-profiles.json");
-        assert_eq!(BackupContentType::EnvironmentProfiles.filename(), "env-profiles.json");
-        assert_eq!(BackupContentType::DownloadHistory.filename(), "download-history.json");
-        assert_eq!(BackupContentType::CleanupHistory.filename(), "cleanup-history.json");
-        assert_eq!(BackupContentType::CustomDetectionRules.filename(), "custom-rules.json");
-        assert_eq!(BackupContentType::EnvironmentSettings.filename(), "env-settings");
+        assert_eq!(
+            BackupContentType::TerminalProfiles.filename(),
+            "terminal-profiles.json"
+        );
+        assert_eq!(
+            BackupContentType::EnvironmentProfiles.filename(),
+            "env-profiles.json"
+        );
+        assert_eq!(
+            BackupContentType::DownloadHistory.filename(),
+            "download-history.json"
+        );
+        assert_eq!(
+            BackupContentType::CleanupHistory.filename(),
+            "cleanup-history.json"
+        );
+        assert_eq!(
+            BackupContentType::CustomDetectionRules.filename(),
+            "custom-rules.json"
+        );
+        assert_eq!(
+            BackupContentType::EnvironmentSettings.filename(),
+            "env-settings"
+        );
     }
 
     #[test]
@@ -1319,7 +1363,10 @@ mod tests {
 
         let result = validate_backup(dir.path()).await.unwrap();
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("Unsupported backup format")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.contains("Unsupported backup format")));
     }
 
     #[tokio::test]
@@ -1350,7 +1397,10 @@ mod tests {
             "note": null
         }"#;
         let manifest: BackupManifest = serde_json::from_str(json).unwrap();
-        assert!(!manifest.auto_generated, "auto_generated should default to false");
+        assert!(
+            !manifest.auto_generated,
+            "auto_generated should default to false"
+        );
     }
 
     #[test]

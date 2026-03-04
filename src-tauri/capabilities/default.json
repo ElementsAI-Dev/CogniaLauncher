@@ -66,6 +66,17 @@
     "autostart:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
-    "process:default"
+    "clipboard-manager:allow-write-image",
+    "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-clear",
+    "cli:default",
+    "process:default",
+    "positioner:default",
+    "os:default",
+    "os:allow-hostname",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all",
+    "global-shortcut:allow-is-registered"
   ]
 }

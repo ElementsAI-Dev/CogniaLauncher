@@ -15,14 +15,12 @@ import {
   Cpu,
   HardDrive,
   Download,
-  Check,
   Globe,
   ShieldCheck,
-  AlertTriangle,
-  AlertCircle,
   Loader2,
   RefreshCw,
   Terminal,
+  Info,
 } from "lucide-react";
 import type {
   EnvironmentInfo,
@@ -33,6 +31,7 @@ import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { IssueCard } from "@/components/environments/health-check-panel";
 import { formatSize } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { getStatusIcon as getStatusIconComponent, getStatusColor, getStatusTextColor } from "@/lib/provider-utils";
 import { toast } from "sonner";
 
 interface EnvDetailOverviewProps {
@@ -46,7 +45,7 @@ export function EnvDetailOverview({
   env,
   t,
 }: EnvDetailOverviewProps) {
-  const { systemHealth, environmentHealth, loading: healthLoading, checkEnvironment, getStatusColor } =
+  const { systemHealth, environmentHealth, loading: healthLoading, checkEnvironment } =
     useHealthCheck();
 
   // Auto-trigger health check on mount if no cached data for this env
@@ -67,17 +66,9 @@ export function EnvDetailOverview({
     (e) => e.env_type === envType,
   );
 
-  const getStatusIcon = (status: HealthStatus) => {
-    switch (status) {
-      case "healthy":
-        return <Check className="h-4 w-4 text-green-600" />;
-      case "warning":
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
-      case "error":
-        return <AlertCircle className="h-4 w-4 text-red-600" />;
-      default:
-        return <ShieldCheck className="h-4 w-4 text-muted-foreground" />;
-    }
+  const renderStatusIcon = (status: HealthStatus) => {
+    const Icon = getStatusIconComponent(status);
+    return <Icon className={cn("h-4 w-4", getStatusTextColor(status))} />;
   };
 
   if (!env) {
@@ -260,12 +251,12 @@ export function EnvDetailOverview({
                   getStatusColor(envHealth.status),
                 )}
               >
-                {getStatusIcon(envHealth.status)}
+                {renderStatusIcon(envHealth.status)}
                 <span className="font-medium text-sm">
                   {t(`environments.healthCheck.status.${envHealth.status}`)}
                 </span>
                 <Badge variant="secondary" className="ml-auto">
-                  {envHealth.issues.length}{" "}
+                  {envHealth.issues.filter(i => i.severity !== 'info').length}{" "}
                   {t("environments.healthCheck.issues")}
                 </Badge>
               </div>
@@ -277,7 +268,7 @@ export function EnvDetailOverview({
                       key={idx}
                       className="text-sm text-muted-foreground flex items-start gap-2"
                     >
-                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-yellow-500" />
+                      <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
                       {suggestion}
                     </p>
                   ))}

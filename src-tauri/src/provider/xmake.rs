@@ -303,10 +303,7 @@ impl XmakeProvider {
         if let Some(default_start) = s.rfind("(default:") {
             let desc = s[..default_start].trim().to_string();
             let default_part = &s[default_start + 9..];
-            let default_val = default_part
-                .trim_end_matches(')')
-                .trim()
-                .to_string();
+            let default_val = default_part.trim_end_matches(')').trim().to_string();
             (
                 desc,
                 if default_val.is_empty() {
@@ -511,10 +508,7 @@ impl XmakeProvider {
         let mut repos = Vec::new();
         for line in output.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty()
-                || trimmed.starts_with("WARN")
-                || trimmed.starts_with("note:")
-            {
+            if trimmed.is_empty() || trimmed.starts_with("WARN") || trimmed.starts_with("note:") {
                 continue;
             }
             let parts: Vec<&str> = trimmed.split_whitespace().collect();
@@ -851,7 +845,6 @@ impl Provider for XmakeProvider {
 
         Ok(updates)
     }
-
 }
 
 #[async_trait]
@@ -1058,9 +1051,18 @@ mod tests {
             -> values: {"MT","MD"}
 "#;
         let info = XmakeProvider::parse_info_output(output);
-        assert_eq!(info.description.as_deref(), Some("A Massively Spiffy Yet Delicately Unobtrusive Compression Library"));
-        assert_eq!(info.installdir.as_deref(), Some("/Users/ruki/.xmake/packages/z/zlib/1.3.1/abc123"));
-        assert_eq!(info.platforms.as_deref(), Some("iphoneos, mingw@windows, macosx, linux"));
+        assert_eq!(
+            info.description.as_deref(),
+            Some("A Massively Spiffy Yet Delicately Unobtrusive Compression Library")
+        );
+        assert_eq!(
+            info.installdir.as_deref(),
+            Some("/Users/ruki/.xmake/packages/z/zlib/1.3.1/abc123")
+        );
+        assert_eq!(
+            info.platforms.as_deref(),
+            Some("iphoneos, mingw@windows, macosx, linux")
+        );
         assert!(info.configs.len() >= 3);
         assert_eq!(info.configs[0].name, "debug");
         assert_eq!(info.configs[0].default_value.as_deref(), Some("false"));
@@ -1082,7 +1084,8 @@ mod tests {
 
     #[test]
     fn test_parse_config_entry() {
-        let (desc, default) = XmakeProvider::parse_config_entry("Enable debug symbols. (default: false)");
+        let (desc, default) =
+            XmakeProvider::parse_config_entry("Enable debug symbols. (default: false)");
         assert_eq!(desc, "Enable debug symbols.");
         assert_eq!(default.as_deref(), Some("false"));
     }
@@ -1142,7 +1145,10 @@ openssl-3.2.0 ghi789jkl plat: windows, arch: x64
 
     #[test]
     fn test_strip_xmake_colors() {
-        assert_eq!(XmakeProvider::strip_xmake_colors("hello${red}world"), "helloworld");
+        assert_eq!(
+            XmakeProvider::strip_xmake_colors("hello${red}world"),
+            "helloworld"
+        );
         assert_eq!(XmakeProvider::strip_xmake_colors("${clear}text"), "text");
         assert_eq!(XmakeProvider::strip_xmake_colors("no colors"), "no colors");
     }
@@ -1175,7 +1181,10 @@ myrepo https://github.com/mygroup/myrepo.git
     fn test_provider_metadata() {
         let provider = XmakeProvider::new();
         assert_eq!(provider.id(), "xmake");
-        assert_eq!(provider.display_name(), "Xmake/Xrepo (C/C++ Package Manager)");
+        assert_eq!(
+            provider.display_name(),
+            "Xmake/Xrepo (C/C++ Package Manager)"
+        );
         assert_eq!(provider.priority(), 68);
     }
 

@@ -3,7 +3,6 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::sync::RwLock;
 
-
 /// Default registry URLs
 pub const DEFAULT_PYPI_URL: &str = "https://pypi.org";
 pub const DEFAULT_NPM_REGISTRY: &str = "https://registry.npmjs.org";
@@ -178,7 +177,10 @@ impl PackageApiClient {
                         let fuzzy = Self::parse_pypi_search_html(&html, limit);
                         for pkg in fuzzy {
                             // Avoid duplicating the exact match
-                            if !results.iter().any(|r| r.name.eq_ignore_ascii_case(&pkg.name)) {
+                            if !results
+                                .iter()
+                                .any(|r| r.name.eq_ignore_ascii_case(&pkg.name))
+                            {
                                 results.push(pkg);
                                 if results.len() >= limit {
                                     break;

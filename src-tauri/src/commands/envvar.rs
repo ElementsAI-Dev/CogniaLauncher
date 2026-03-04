@@ -212,9 +212,7 @@ pub async fn envvar_export_env_file(
             v.sort_by(|a, b| a.0.cmp(&b.0));
             v
         }
-        _ => {
-            env::list_persistent_vars(scope).await?
-        }
+        _ => env::list_persistent_vars(scope).await?,
     };
 
     Ok(env::generate_env_file(&vars, format))
@@ -243,7 +241,11 @@ pub async fn envvar_list_persistent_typed(
             .map(|(key, value, reg_type)| PersistentEnvVar {
                 key,
                 value,
-                reg_type: if reg_type.is_empty() { None } else { Some(reg_type) },
+                reg_type: if reg_type.is_empty() {
+                    None
+                } else {
+                    Some(reg_type)
+                },
             })
             .collect())
     }
@@ -272,7 +274,10 @@ pub async fn envvar_detect_conflicts() -> Result<Vec<EnvVarConflict>, CogniaErro
     for (key, user_value) in &user_vars {
         let lookup_key = if cfg!(windows) {
             // Windows env var names are case-insensitive
-            system_map.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(k, v)| (k.clone(), v.clone()))
+            system_map
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                .map(|(k, v)| (k.clone(), v.clone()))
         } else {
             system_map.get(key).map(|v| (key.clone(), v.clone()))
         };

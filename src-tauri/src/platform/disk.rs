@@ -290,9 +290,9 @@ mod tests {
     #[test]
     fn test_disk_space_human_methods() {
         let space = DiskSpace {
-            total: 1024 * 1024 * 1024,        // 1 GB
-            available: 512 * 1024 * 1024,      // 512 MB
-            used: 512 * 1024 * 1024,           // 512 MB
+            total: 1024 * 1024 * 1024,    // 1 GB
+            available: 512 * 1024 * 1024, // 512 MB
+            used: 512 * 1024 * 1024,      // 512 MB
             usage_percent: 50.0,
         };
         assert_eq!(space.total_human(), "1.00 GB");

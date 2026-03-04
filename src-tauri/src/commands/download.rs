@@ -41,6 +41,7 @@ pub struct DownloadTaskInfo {
     pub supports_resume: bool,
     pub metadata: std::collections::HashMap<String, String>,
     pub server_filename: Option<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +88,7 @@ impl From<&DownloadTask> for DownloadTaskInfo {
             supports_resume: task.supports_resume,
             metadata: task.metadata.clone(),
             server_filename: task.server_filename.clone(),
+            tags: task.tags.clone(),
         }
     }
 }
@@ -131,6 +133,12 @@ pub struct DownloadRequest {
     pub mirror_urls: Option<Vec<String>>,
     #[serde(default)]
     pub post_action: Option<String>,
+    #[serde(default)]
+    pub delete_after_extract: Option<bool>,
+    #[serde(default)]
+    pub auto_rename: Option<bool>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
 }
 
 /// Initialize the download manager in-place and start event forwarding.
@@ -138,7 +146,11 @@ pub struct DownloadRequest {
 /// The `shared` parameter should be a pre-registered `SharedDownloadManager` (initially
 /// containing a default/empty manager). This function replaces its contents with a fully
 /// initialized manager and spawns the event forwarding task.
-pub async fn setup_download_manager(shared: SharedDownloadManager, app: AppHandle, settings: &Settings) {
+pub async fn setup_download_manager(
+    shared: SharedDownloadManager,
+    app: AppHandle,
+    settings: &Settings,
+) {
     let config = DownloadManagerConfig {
         max_concurrent: settings.general.parallel_downloads as usize,
         speed_limit: settings.general.download_speed_limit,
@@ -150,8 +162,8 @@ pub async fn setup_download_manager(shared: SharedDownloadManager, app: AppHandl
 
     let cache_dir = settings.get_cache_dir();
 
-    let proxy = settings.network.proxy.clone();
-    let mut manager = DownloadManager::new(config, proxy);
+    let client = crate::platform::proxy::build_client(settings);
+    let mut manager = DownloadManager::new(config, client);
     let mut rx = manager.create_event_channel();
 
     // Enable queue persistence for crash recovery
@@ -160,10 +172,7 @@ pub async fn setup_download_manager(shared: SharedDownloadManager, app: AppHandl
     // Restore tasks from previous session
     let restored = manager.load_persisted_tasks().await;
     if restored > 0 {
-        log::info!(
-            "Restored {} download tasks from previous session",
-            restored
-        );
+        log::info!("Restored {} download tasks from previous session", restored);
     }
 
     // Clean up stale partial downloads on startup (older than 7 days)
@@ -472,6 +481,32 @@ pub async fn download_add(
             _ => crate::download::task::PostAction::None,
         };
     }
+    if let Some(delete) = request.delete_after_extract {
+        task.config.delete_after_extract = delete;
+    }
+    if let Some(rename) = request.auto_rename {
+        task.config.auto_rename = rename;
+    }
+    if let Some(tags) = request.tags {
+        if !tags.is_empty() {
+            task.tags = tags;
+        }
+    }
+    // Auto-tag based on provider
+    if let Some(ref provider) = task.provider {
+        let auto_tag = if provider.contains("github") {
+            Some("github")
+        } else if provider.contains("gitlab") {
+            Some("gitlab")
+        } else {
+            None
+        };
+        if let Some(tag) = auto_tag {
+            if !task.tags.iter().any(|t| t == tag) {
+                task.tags.push(tag.to_string());
+            }
+        }
+    }
 
     let mgr = manager.read().await;
     let task_id = mgr.add_task(task).await;
@@ -754,6 +789,19 @@ pub async fn download_set_priority(
         .map_err(|e| e.to_string())
 }
 
+/// Set per-task speed limit (0 = unlimited)
+#[tauri::command]
+pub async fn download_set_task_speed_limit(
+    task_id: String,
+    bytes_per_second: u64,
+    manager: State<'_, SharedDownloadManager>,
+) -> Result<(), String> {
+    let mgr = manager.read().await;
+    mgr.set_task_speed_limit(&task_id, bytes_per_second)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Force-retry a single terminal task (failed/cancelled/completed)
 #[tauri::command]
 pub async fn download_retry(
@@ -761,9 +809,7 @@ pub async fn download_retry(
     manager: State<'_, SharedDownloadManager>,
 ) -> Result<(), String> {
     let mgr = manager.read().await;
-    mgr.retry_task(&task_id)
-        .await
-        .map_err(|e| e.to_string())
+    mgr.retry_task(&task_id).await.map_err(|e| e.to_string())
 }
 
 /// Calculate SHA256 checksum of a file
@@ -1093,10 +1139,7 @@ pub async fn download_extract(
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(files
-        .into_iter()
-        .map(|p| p.display().to_string())
-        .collect())
+    Ok(files.into_iter().map(|p| p.display().to_string()).collect())
 }
 
 #[cfg(test)]
@@ -1461,7 +1504,10 @@ mod tests {
 
         let headers = request.headers.unwrap();
         assert_eq!(headers.len(), 2);
-        assert_eq!(headers.get("Authorization"), Some(&"Bearer token123".to_string()));
+        assert_eq!(
+            headers.get("Authorization"),
+            Some(&"Bearer token123".to_string())
+        );
         assert_eq!(headers.get("X-Custom"), Some(&"value".to_string()));
     }
 

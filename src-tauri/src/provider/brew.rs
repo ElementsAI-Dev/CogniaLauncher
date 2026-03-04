@@ -149,7 +149,11 @@ impl Provider for BrewProvider {
         }
     }
 
-    async fn search(&self, query: &str, options: SearchOptions) -> CogniaResult<Vec<PackageSummary>> {
+    async fn search(
+        &self,
+        query: &str,
+        options: SearchOptions,
+    ) -> CogniaResult<Vec<PackageSummary>> {
         let limit = options.limit.unwrap_or(20);
         let out = self.run_brew(&["search", query]).await?;
         let results = Self::parse_search_output(&out);
@@ -380,11 +384,7 @@ impl Provider for BrewProvider {
         Ok(updates)
     }
 
-    async fn get_dependencies(
-        &self,
-        name: &str,
-        _version: &str,
-    ) -> CogniaResult<Vec<Dependency>> {
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         let out = self.run_brew(&["info", "--json=v2", name]).await?;
         let mut deps = Vec::new();
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&out) {

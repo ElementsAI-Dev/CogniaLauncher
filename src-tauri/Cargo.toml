@@ -17,7 +17,7 @@ tauri-build = { version = "2.5.0", features = [] }
 
 [dependencies]
 # Tauri
-tauri = { version = "2.9.0", features = ["tray-icon", "image-png"] }
+tauri = { version = "2.9.0", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-log = "2.8"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
@@ -28,6 +28,9 @@ tauri-plugin-autostart = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-process = "2"
+tauri-plugin-os = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -53,6 +56,8 @@ anyhow = "1.0"
 
 # Crypto/checksums
 sha2 = "0.10"
+sha1 = "0.10"
+md-5 = "0.10"
 hex = "0.4"
 
 # Cross-platform paths
@@ -95,13 +100,17 @@ notify-rust = "4"
 # System information
 sysinfo = "0.33"
 
+# Window transparency effects (mica, acrylic, vibrancy)
+window-vibrancy = "0.7"
+
 # Windows APIs
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.60", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_System_Console"] }
 winreg = "0.55"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-cli = "2"
 
 [dev-dependencies]
 tokio-test = "0.4"

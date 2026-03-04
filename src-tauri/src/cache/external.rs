@@ -4,11 +4,13 @@
 //! package manager caches (npm, pip, pnpm, yarn, cargo, uv, etc.)
 
 use crate::error::{CogniaError, CogniaResult};
-use crate::platform::{disk::format_size, fs, process};
 use crate::platform::process::ProcessOptions;
+use crate::platform::{disk::format_size, fs, process};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 /// Supported external cache providers
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -492,11 +494,9 @@ impl ExternalCacheProvider {
             #[cfg(target_os = "macos")]
             Self::CocoaPods => "devtools",
             // Terminal framework caches
-            Self::OhMyPosh
-            | Self::Starship
-            | Self::OhMyZsh
-            | Self::Zinit
-            | Self::Powerlevel10k => "terminal",
+            Self::OhMyPosh | Self::Starship | Self::OhMyZsh | Self::Zinit | Self::Powerlevel10k => {
+                "terminal"
+            }
             // Package managers
             _ => "package_manager",
         }
@@ -512,11 +512,9 @@ impl ExternalCacheProvider {
             #[cfg(target_os = "linux")]
             Self::LinuxCache => true,
             // Terminal framework caches - preserve the cache dir
-            Self::OhMyPosh
-            | Self::Starship
-            | Self::OhMyZsh
-            | Self::Zinit
-            | Self::Powerlevel10k => true,
+            Self::OhMyPosh | Self::Starship | Self::OhMyZsh | Self::Zinit | Self::Powerlevel10k => {
+                true
+            }
             _ => false,
         }
     }
@@ -534,7 +532,16 @@ pub struct ExternalCacheInfo {
     pub is_available: bool,
     pub can_clean: bool,
     pub category: String,
+    /// When true, the size field is 0 and a separate size calculation is pending.
+    #[serde(default)]
+    pub size_pending: bool,
 }
+
+/// In-memory cache for fast discovery results with TTL.
+static DISCOVERY_CACHE: Lazy<RwLock<Option<(Instant, Vec<ExternalCacheInfo>)>>> =
+    Lazy::new(|| RwLock::new(None));
+
+const DISCOVERY_CACHE_TTL_SECS: u64 = 60;
 
 /// Result of cleaning external cache
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1267,46 +1274,92 @@ fn get_powerlevel10k_ext_cache_path() -> Option<PathBuf> {
 // Core functions
 // ============================================================================
 
-/// Check if a provider's command is available (with 5s timeout)
-pub async fn is_provider_available(provider: ExternalCacheProvider) -> bool {
-    let cmd = provider.command();
-    let opts = ProcessOptions::new().with_timeout(Duration::from_secs(5));
-    #[cfg(windows)]
-    let result = process::execute("where", &[cmd], Some(opts)).await;
-    #[cfg(not(windows))]
-    let result = process::execute("which", &[cmd], Some(opts)).await;
-    result
-        .ok()
-        .map(|o| o.success)
-        .unwrap_or(false)
+/// Check if a provider's command is available.
+/// Uses pure-Rust PATH lookup via the `which` crate (~1ms) instead of spawning
+/// a subprocess (`where.exe`/`which`) per provider (~200ms each).
+/// System cache providers (WindowsTemp, LinuxCache, etc.) always return true
+/// because they don't depend on any external tool.
+pub fn is_provider_available_sync(provider: ExternalCacheProvider) -> bool {
+    match provider {
+        #[cfg(windows)]
+        ExternalCacheProvider::WindowsTemp | ExternalCacheProvider::WindowsThumbnail => true,
+        #[cfg(target_os = "macos")]
+        ExternalCacheProvider::MacOsCache | ExternalCacheProvider::MacOsLogs => true,
+        #[cfg(target_os = "linux")]
+        ExternalCacheProvider::LinuxCache => true,
+        _ => which::which(provider.command()).is_ok(),
+    }
 }
 
-/// Calculate directory size recursively (with 30s timeout)
+/// Async wrapper for backward compatibility.
+pub async fn is_provider_available(provider: ExternalCacheProvider) -> bool {
+    is_provider_available_sync(provider)
+}
+
+/// Calculate directory size recursively (with timeout).
+/// Returns best-effort partial size on timeout instead of 0.
 pub async fn calculate_dir_size(path: &Path) -> u64 {
     if !path.exists() {
         return 0;
     }
 
     let path = path.to_path_buf();
-    let handle = tokio::task::spawn_blocking(move || calculate_dir_size_sync(&path));
+    let partial = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let partial_clone = partial.clone();
+    let handle = tokio::task::spawn_blocking(move || {
+        calculate_dir_size_sync(&path, &partial_clone, 0, 15, 500_000)
+    });
     match tokio::time::timeout(Duration::from_secs(10), handle).await {
         Ok(Ok(size)) => size,
-        _ => 0,
+        // On timeout or panic, return whatever partial size was accumulated
+        _ => partial.load(std::sync::atomic::Ordering::Relaxed),
     }
 }
 
-fn calculate_dir_size_sync(path: &Path) -> u64 {
+/// Optimized recursive size calculation.
+/// - Uses `entry.metadata()` from `DirEntry` (avoids extra syscall vs `std::fs::metadata`)
+/// - Tracks partial size via `AtomicU64` so timeouts return best-effort data
+/// - `max_depth` prevents pathological recursion (default 15)
+/// - `max_files` is a safety cap (default 500K)
+fn calculate_dir_size_sync(
+    path: &Path,
+    partial: &std::sync::atomic::AtomicU64,
+    depth: u16,
+    max_depth: u16,
+    max_files: u64,
+) -> u64 {
+    if depth >= max_depth {
+        return 0;
+    }
+
     let mut total_size = 0u64;
+    let mut file_count = 0u64;
 
     if let Ok(entries) = std::fs::read_dir(path) {
         for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(metadata) = std::fs::metadata(&path) {
-                    total_size += metadata.len();
-                }
-            } else if path.is_dir() {
-                total_size += calculate_dir_size_sync(&path);
+            if file_count >= max_files {
+                break;
+            }
+            // Use entry.metadata() which reuses cached data from read_dir on most platforms
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_file() {
+                let len = meta.len();
+                total_size += len;
+                partial.fetch_add(len, std::sync::atomic::Ordering::Relaxed);
+                file_count += 1;
+            } else if meta.is_dir() {
+                let sub = calculate_dir_size_sync(
+                    &entry.path(),
+                    partial,
+                    depth + 1,
+                    max_depth,
+                    max_files.saturating_sub(file_count),
+                );
+                total_size += sub;
+                file_count += 1;
             }
         }
     }
@@ -1379,43 +1432,59 @@ pub async fn clean_cache_contents_public(path: &Path, use_trash: bool) -> Cognia
     clean_cache_contents(path, use_trash).await
 }
 
-/// Discover all external caches on the system (parallelized with timeouts)
+/// Discover all external caches on the system (parallelized with timeouts).
+/// This is the full discovery that includes size calculation — use
+/// `discover_all_caches_fast` for the quick first-pass.
 pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
-    let providers = ExternalCacheProvider::all();
+    discover_all_caches_full(&[]).await
+}
 
-    // Run all provider checks concurrently
+/// Full discovery with optional exclusion list.
+pub async fn discover_all_caches_full(excluded: &[String]) -> CogniaResult<Vec<ExternalCacheInfo>> {
+    let providers: Vec<_> = ExternalCacheProvider::all()
+        .into_iter()
+        .filter(|p| !excluded.iter().any(|ex| ex.eq_ignore_ascii_case(p.id())))
+        .collect();
+
+    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+
     let futures: Vec<_> = providers
         .into_iter()
-        .map(|provider| async move {
-            let is_available = is_provider_available(provider).await;
-            let cache_path = provider.cache_path();
+        .map(|provider| {
+            let sem = sem.clone();
+            async move {
+                let _permit = sem.acquire().await.ok();
+                let is_available = is_provider_available_sync(provider);
+                let cache_path = provider.cache_path();
 
-            let (path_str, size) = if let Some(ref path) = cache_path {
-                let size = if path.exists() {
-                    calculate_dir_size(path).await
+                let (path_str, size) = if let Some(ref path) = cache_path {
+                    let size = if path.exists() {
+                        calculate_dir_size(path).await
+                    } else {
+                        0
+                    };
+                    (path.display().to_string(), size)
                 } else {
-                    0
+                    (String::new(), 0)
                 };
-                (path.display().to_string(), size)
-            } else {
-                (String::new(), 0)
-            };
 
-            let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
-            if is_available || has_cache_dir {
-                let has_clean_command = is_available && provider.clean_command().is_some();
-                Some(ExternalCacheInfo {
-                    provider: provider.id().to_string(),
-                    display_name: provider.display_name().to_string(),
-                    cache_path: path_str,
-                    size,
-                    size_human: format_size(size),
-                    is_available,
-                    can_clean: size > 0 || has_clean_command,
-                    category: provider.category().to_string(),
-                })
-            } else {
-                None
+                let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+                if is_available || has_cache_dir {
+                    let has_clean_command = is_available && provider.clean_command().is_some();
+                    Some(ExternalCacheInfo {
+                        provider: provider.id().to_string(),
+                        display_name: provider.display_name().to_string(),
+                        cache_path: path_str,
+                        size,
+                        size_human: format_size(size),
+                        is_available,
+                        can_clean: size > 0 || has_clean_command,
+                        category: provider.category().to_string(),
+                        size_pending: false,
+                    })
+                } else {
+                    None
+                }
             }
         })
         .collect();
@@ -1427,6 +1496,154 @@ pub async fn discover_all_caches() -> CogniaResult<Vec<ExternalCacheInfo>> {
     caches.sort_by(|a, b| b.size.cmp(&a.size));
 
     Ok(caches)
+}
+
+/// Fast discovery: checks availability + path existence only, no size calculation.
+/// Returns instantly (~10ms) with `size_pending: true` for each provider.
+/// Use `calculate_provider_cache_size()` afterward to fill in sizes on demand.
+pub fn discover_all_caches_fast(excluded: &[String]) -> Vec<ExternalCacheInfo> {
+    discover_all_caches_fast_with_custom(excluded, &[])
+}
+
+/// Fast discovery with custom cache entries included.
+pub fn discover_all_caches_fast_with_custom(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> Vec<ExternalCacheInfo> {
+    let providers: Vec<_> = ExternalCacheProvider::all()
+        .into_iter()
+        .filter(|p| !excluded.iter().any(|ex| ex.eq_ignore_ascii_case(p.id())))
+        .collect();
+
+    let mut caches = Vec::new();
+
+    for provider in providers {
+        let is_available = is_provider_available_sync(provider);
+        let cache_path = provider.cache_path();
+        let has_cache_dir = cache_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        let path_str = cache_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+
+        if is_available || has_cache_dir {
+            let has_clean_command = is_available && provider.clean_command().is_some();
+            caches.push(ExternalCacheInfo {
+                provider: provider.id().to_string(),
+                display_name: provider.display_name().to_string(),
+                cache_path: path_str,
+                size: 0,
+                size_human: String::new(),
+                is_available,
+                can_clean: has_clean_command,
+                category: provider.category().to_string(),
+                size_pending: true,
+            });
+        }
+    }
+
+    // Append user-defined custom cache entries
+    for entry in custom_entries {
+        let path = PathBuf::from(&entry.path);
+        let exists = path.exists();
+        if exists {
+            caches.push(ExternalCacheInfo {
+                provider: entry.id.clone(),
+                display_name: entry.display_name.clone(),
+                cache_path: entry.path.clone(),
+                size: 0,
+                size_human: String::new(),
+                is_available: true,
+                can_clean: true,
+                category: entry.category.clone(),
+                size_pending: true,
+            });
+        }
+    }
+
+    caches
+}
+
+/// Calculate size for a single provider by id (also handles custom paths).
+pub async fn calculate_provider_cache_size(
+    provider_id: &str,
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> CogniaResult<u64> {
+    // Check built-in providers first
+    if let Some(provider) = ExternalCacheProvider::parse_str(provider_id) {
+        if let Some(path) = provider.cache_path() {
+            return Ok(calculate_dir_size(&path).await);
+        }
+        return Ok(0);
+    }
+
+    // Check custom entries
+    if let Some(entry) = custom_entries.iter().find(|e| e.id == provider_id) {
+        let path = PathBuf::from(&entry.path);
+        return Ok(calculate_dir_size(&path).await);
+    }
+
+    Err(CogniaError::Provider(format!(
+        "Unknown provider: {}",
+        provider_id
+    )))
+}
+
+/// Cached fast discovery: returns cached results if still fresh, otherwise re-discovers.
+pub async fn discover_all_caches_cached(excluded: &[String]) -> Vec<ExternalCacheInfo> {
+    // Check if cache is fresh
+    {
+        let guard = DISCOVERY_CACHE.read().await;
+        if let Some((ts, ref cached)) = *guard {
+            if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+                return cached.clone();
+            }
+        }
+    }
+
+    // Cache miss or stale — re-discover
+    let result = discover_all_caches_fast(excluded);
+
+    // Store in cache
+    {
+        let mut guard = DISCOVERY_CACHE.write().await;
+        *guard = Some((Instant::now(), result.clone()));
+    }
+
+    result
+}
+
+/// Invalidate the discovery cache (called after clean operations).
+/// Cached fast discovery with custom entries.
+pub async fn discover_all_caches_cached_with_custom(
+    excluded: &[String],
+    custom_entries: &[crate::config::settings::CustomCacheEntry],
+) -> Vec<ExternalCacheInfo> {
+    // Check if cache is fresh
+    {
+        let guard = DISCOVERY_CACHE.read().await;
+        if let Some((ts, ref cached)) = *guard {
+            if ts.elapsed().as_secs() < DISCOVERY_CACHE_TTL_SECS {
+                return cached.clone();
+            }
+        }
+    }
+
+    // Cache miss or stale - re-discover with custom entries
+    let result = discover_all_caches_fast_with_custom(excluded, custom_entries);
+
+    // Store in cache
+    {
+        let mut guard = DISCOVERY_CACHE.write().await;
+        *guard = Some((Instant::now(), result.clone()));
+    }
+
+    result
+}
+
+pub async fn invalidate_discovery_cache() {
+    let mut guard = DISCOVERY_CACHE.write().await;
+    *guard = None;
 }
 
 /// Clean cache for a specific provider
@@ -1787,11 +2004,7 @@ mod tests {
     #[ignore = "Scans real filesystem; can be slow on systems with large cache dirs"]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_discover_caches() {
-        let result = tokio::time::timeout(
-            Duration::from_secs(60),
-            discover_all_caches(),
-        )
-        .await;
+        let result = tokio::time::timeout(Duration::from_secs(60), discover_all_caches()).await;
         assert!(result.is_ok(), "discover_all_caches timed out after 60s");
         assert!(result.unwrap().is_ok());
     }
@@ -1815,8 +2028,14 @@ mod tests {
         assert_eq!(ExternalCacheProvider::Npm.display_name(), "npm (Node.js)");
         assert_eq!(ExternalCacheProvider::Pip.display_name(), "pip (Python)");
         assert_eq!(ExternalCacheProvider::Cargo.display_name(), "Cargo (Rust)");
-        assert_eq!(ExternalCacheProvider::Gradle.display_name(), "Gradle (Java)");
-        assert_eq!(ExternalCacheProvider::Docker.display_name(), "Docker Build Cache");
+        assert_eq!(
+            ExternalCacheProvider::Gradle.display_name(),
+            "Gradle (Java)"
+        );
+        assert_eq!(
+            ExternalCacheProvider::Docker.display_name(),
+            "Docker Build Cache"
+        );
     }
 
     #[test]
@@ -1845,8 +2064,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path().join("size_calc");
         tokio::fs::create_dir_all(&base).await.unwrap();
-        tokio::fs::write(base.join("a.bin"), vec![0u8; 100]).await.unwrap();
-        tokio::fs::write(base.join("b.bin"), vec![0u8; 200]).await.unwrap();
+        tokio::fs::write(base.join("a.bin"), vec![0u8; 100])
+            .await
+            .unwrap();
+        tokio::fs::write(base.join("b.bin"), vec![0u8; 200])
+            .await
+            .unwrap();
 
         let size = calculate_dir_size(&base).await;
         assert_eq!(size, 300);
@@ -1885,7 +2108,10 @@ mod tests {
         assert_eq!(ExternalCacheProvider::Starship.display_name(), "Starship");
         assert_eq!(ExternalCacheProvider::OhMyZsh.display_name(), "Oh My Zsh");
         assert_eq!(ExternalCacheProvider::Zinit.display_name(), "Zinit");
-        assert_eq!(ExternalCacheProvider::Powerlevel10k.display_name(), "Powerlevel10k");
+        assert_eq!(
+            ExternalCacheProvider::Powerlevel10k.display_name(),
+            "Powerlevel10k"
+        );
     }
 
     #[test]
@@ -1921,7 +2147,9 @@ mod tests {
         assert!(ExternalCacheProvider::Starship.clean_command().is_none());
         assert!(ExternalCacheProvider::OhMyZsh.clean_command().is_none());
         assert!(ExternalCacheProvider::Zinit.clean_command().is_none());
-        assert!(ExternalCacheProvider::Powerlevel10k.clean_command().is_none());
+        assert!(ExternalCacheProvider::Powerlevel10k
+            .clean_command()
+            .is_none());
     }
 
     #[test]
@@ -1980,7 +2208,12 @@ mod tests {
     #[test]
     fn test_terminal_providers_in_all() {
         let all = ExternalCacheProvider::all();
-        let terminal_providers: Vec<_> = all.iter().filter(|p| p.category() == "terminal").collect();
-        assert_eq!(terminal_providers.len(), 5, "Expected 5 terminal framework providers");
+        let terminal_providers: Vec<_> =
+            all.iter().filter(|p| p.category() == "terminal").collect();
+        assert_eq!(
+            terminal_providers.len(),
+            5,
+            "Expected 5 terminal framework providers"
+        );
     }
 }

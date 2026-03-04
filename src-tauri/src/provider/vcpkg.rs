@@ -490,11 +490,7 @@ impl Provider for VcpkgProvider {
                         let name_field = left_parts.first()?.trim();
                         let name = name_field.split(':').next()?.to_string();
                         let current = left_parts.get(1).unwrap_or(&"").to_string();
-                        let latest = parts[1]
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or("")
-                            .to_string();
+                        let latest = parts[1].split_whitespace().next().unwrap_or("").to_string();
 
                         Some(UpdateInfo {
                             name,
@@ -611,10 +607,7 @@ mod tests {
     fn test_provider_metadata() {
         let provider = VcpkgProvider::new();
         assert_eq!(provider.id(), "vcpkg");
-        assert_eq!(
-            provider.display_name(),
-            "vcpkg (C++ Package Manager)"
-        );
+        assert_eq!(provider.display_name(), "vcpkg (C++ Package Manager)");
         assert_eq!(provider.priority(), 70);
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useLocale } from "@/components/providers/locale-provider";
 import { DestinationPicker } from "./destination-picker";
 import type { DownloadRequest } from "@/lib/stores/download";
@@ -44,17 +45,19 @@ export function AddDownloadDialog({
   const { t } = useLocale();
   const [form, setForm] = useState(DEFAULT_DOWNLOAD_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const nameManuallyEdited = useRef(false);
 
   useEffect(() => {
     if (!open) {
       setForm(DEFAULT_DOWNLOAD_FORM);
+      nameManuallyEdited.current = false;
     } else if (initialUrl) {
       setForm((prev) => ({ ...prev, url: initialUrl }));
     }
   }, [open, initialUrl]);
 
   useEffect(() => {
-    if (!form.name.trim() && form.url.trim()) {
+    if (!nameManuallyEdited.current && !form.name.trim() && form.url.trim()) {
       setForm((prev) => ({
         ...prev,
         name: inferNameFromUrl(prev.url),
@@ -142,9 +145,10 @@ export function AddDownloadDialog({
             <Input
               id="download-name"
               value={form.name}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, name: event.target.value }))
-              }
+              onChange={(event) => {
+                nameManuallyEdited.current = true;
+                setForm((prev) => ({ ...prev, name: event.target.value }));
+              }}
             />
           </div>
 
@@ -247,14 +251,12 @@ export function AddDownloadDialog({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <input
+                <Checkbox
                   id="auto-extract"
-                  type="checkbox"
                   checked={form.autoExtract}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, autoExtract: event.target.checked }))
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, autoExtract: checked === true }))
                   }
-                  className="h-4 w-4 rounded border-input"
                 />
                 <Label htmlFor="auto-extract" className="text-sm font-normal">
                   {t("downloads.settings.autoExtract")}

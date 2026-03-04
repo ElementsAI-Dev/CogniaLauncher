@@ -1,7 +1,7 @@
 use crate::plugin::manager::{PluginHealth, PluginManager, PluginUpdateInfo};
 use crate::plugin::manifest::PluginManifest;
-use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::permissions::PluginPermissionState;
+use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::scaffold::{ScaffoldConfig, ScaffoldResult, ValidationResult};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -28,9 +28,9 @@ pub async fn plugin_get_info(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<PluginManifest, String> {
     let mgr = manager.read().await;
-    mgr.get_plugin_manifest(&plugin_id).await.ok_or_else(|| {
-        format!("Plugin '{}' not found", plugin_id)
-    })
+    mgr.get_plugin_manifest(&plugin_id)
+        .await
+        .ok_or_else(|| format!("Plugin '{}' not found", plugin_id))
 }
 
 /// List all tools from all enabled plugins
@@ -50,7 +50,10 @@ pub async fn plugin_get_tools(
 ) -> Result<Vec<PluginToolInfo>, String> {
     let mgr = manager.read().await;
     let all = mgr.list_all_tools().await;
-    Ok(all.into_iter().filter(|t| t.plugin_id == plugin_id).collect())
+    Ok(all
+        .into_iter()
+        .filter(|t| t.plugin_id == plugin_id)
+        .collect())
 }
 
 /// Install a plugin from a local directory path
@@ -200,9 +203,7 @@ pub async fn plugin_get_locales(
 
 /// Scaffold a new plugin project
 #[tauri::command]
-pub async fn plugin_scaffold(
-    config: ScaffoldConfig,
-) -> Result<ScaffoldResult, String> {
+pub async fn plugin_scaffold(config: ScaffoldConfig) -> Result<ScaffoldResult, String> {
     crate::plugin::scaffold::scaffold_plugin(&config)
         .await
         .map_err(|e| e.to_string())
@@ -210,9 +211,7 @@ pub async fn plugin_scaffold(
 
 /// Validate a plugin directory
 #[tauri::command]
-pub async fn plugin_validate(
-    path: String,
-) -> Result<ValidationResult, String> {
+pub async fn plugin_validate(path: String) -> Result<ValidationResult, String> {
     crate::plugin::scaffold::validate_plugin(&PathBuf::from(path))
         .await
         .map_err(|e| e.to_string())
@@ -253,8 +252,8 @@ pub struct PluginUiEntry {
 
 /// Allowed file extensions for plugin UI assets
 const ALLOWED_UI_EXTENSIONS: &[&str] = &[
-    "html", "js", "css", "json", "svg", "png", "jpg", "jpeg", "gif", "webp",
-    "woff", "woff2", "ttf", "eot", "ico", "map",
+    "html", "js", "css", "json", "svg", "png", "jpg", "jpeg", "gif", "webp", "woff", "woff2",
+    "ttf", "eot", "ico", "map",
 ];
 
 /// Get the iframe entry HTML for a plugin's custom UI
@@ -341,10 +340,7 @@ pub async fn plugin_get_ui_asset(
     }
 
     // Security: check file extension allowlist
-    let ext = full_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = full_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if !ALLOWED_UI_EXTENSIONS.contains(&ext) {
         return Err(format!("File type not allowed: .{}", ext));
     }
@@ -391,7 +387,8 @@ pub async fn plugin_export_data(
     manager: State<'_, SharedPluginManager>,
 ) -> Result<String, String> {
     let mgr = manager.read().await;
-    let path = mgr.export_plugin_data(&plugin_id)
+    let path = mgr
+        .export_plugin_data(&plugin_id)
         .await
         .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())

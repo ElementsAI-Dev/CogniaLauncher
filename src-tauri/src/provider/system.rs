@@ -203,7 +203,10 @@ impl SystemEnvironmentType {
                 version_pattern: r#"version "(\d+(?:\.\d+)*)""#,
                 version_files: vec![".java-version", ".tool-versions", ".sdkmanrc"],
                 manifest_files: vec![
-                    ("pom.xml", r#"<java\.version>(\d+(?:\.\d+)*)</java\.version>"#),
+                    (
+                        "pom.xml",
+                        r#"<java\.version>(\d+(?:\.\d+)*)</java\.version>"#,
+                    ),
                     ("build.gradle", r#"sourceCompatibility\s*=\s*['"]?(\d+)"#),
                 ],
             },

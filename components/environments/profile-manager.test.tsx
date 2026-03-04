@@ -16,6 +16,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "environments.profiles.importFile": "Import File",
         "environments.profiles.import": "Import",
         "environments.profiles.pasteJson": "Paste JSON here",
+        "environments.profiles.pasteFromClipboard": "Paste from Clipboard",
         "environments.profiles.noProfiles": "No profiles saved",
         "environments.profiles.noProfilesHint": "Save your current setup to get started",
         "environments.profiles.envCount": "envs",
@@ -76,6 +77,7 @@ jest.mock("@/hooks/use-profiles", () => ({
 
 jest.mock("@/lib/clipboard", () => ({
   writeClipboard: jest.fn().mockResolvedValue(undefined),
+  readClipboard: jest.fn().mockResolvedValue(''),
 }));
 
 jest.mock("sonner", () => ({
@@ -345,5 +347,21 @@ describe("ProfileManager", () => {
     ];
     render(<ProfileManager {...defaultProps} />);
     expect(screen.getByText("+1")).toBeInTheDocument();
+  });
+
+  it("renders paste from clipboard button", () => {
+    render(<ProfileManager {...defaultProps} />);
+    expect(screen.getByText("Paste from Clipboard")).toBeInTheDocument();
+  });
+
+  it("fills import textarea when paste from clipboard is clicked", async () => {
+    const clipboardMock = jest.requireMock("@/lib/clipboard");
+    clipboardMock.readClipboard.mockResolvedValueOnce('{"name":"My Profile"}');
+    const user = userEvent.setup();
+    render(<ProfileManager {...defaultProps} />);
+    await user.click(screen.getByText("Paste from Clipboard"));
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('{"name":"My Profile"}')).toBeInTheDocument();
+    });
   });
 });

@@ -63,6 +63,8 @@ const defaultProps = {
   setInterfaceDensity: jest.fn(),
   reducedMotion: false,
   setReducedMotion: jest.fn(),
+  windowEffect: "auto" as const,
+  setWindowEffect: jest.fn(),
   t: (key: string) => {
     const translations: Record<string, string> = {
       "settings.appearance": "Appearance",
@@ -102,6 +104,15 @@ const defaultProps = {
       "settings.backgroundFitTile": "Tile",
       "settings.backgroundSelect": "Select Image",
       "settings.backgroundClear": "Clear Image",
+      "settings.windowEffect": "Window Effect",
+      "settings.windowEffectDesc": "Apply native OS transparency effect",
+      "settings.windowEffectAuto": "Auto (Recommended)",
+      "settings.windowEffectNone": "None",
+      "settings.windowEffectMica": "Mica (Windows 11)",
+      "settings.windowEffectMicaTabbed": "Mica Tabbed (Windows 11)",
+      "settings.windowEffectAcrylic": "Acrylic (Windows)",
+      "settings.windowEffectBlur": "Blur (Windows)",
+      "settings.windowEffectVibrancy": "Vibrancy (macOS)",
     };
     return translations[key] || key;
   },
@@ -189,5 +200,15 @@ describe("AppearanceSettings", () => {
 
     // The theme label should still be present
     expect(screen.getByText("Theme")).toBeInTheDocument();
+  });
+
+  it("renders window effect selector", () => {
+    render(<AppearanceSettings {...defaultProps} />);
+    expect(screen.getByText("Window Effect")).toBeInTheDocument();
+  });
+
+  it("renders window effect with current value", () => {
+    render(<AppearanceSettings {...defaultProps} windowEffect="mica" />);
+    expect(screen.getByText("Window Effect")).toBeInTheDocument();
   });
 });

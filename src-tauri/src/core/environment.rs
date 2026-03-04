@@ -436,7 +436,10 @@ impl EnvironmentManager {
         self.list_environments_with_concurrency(6).await
     }
 
-    pub async fn list_environments_with_concurrency(&self, max_concurrency: u32) -> CogniaResult<Vec<EnvironmentInfo>> {
+    pub async fn list_environments_with_concurrency(
+        &self,
+        max_concurrency: u32,
+    ) -> CogniaResult<Vec<EnvironmentInfo>> {
         let all_types = SystemEnvironmentType::all();
         let mut futures = Vec::with_capacity(all_types.len());
 
@@ -859,11 +862,8 @@ fn compare_semver(a: &str, b: &str) -> i32 {
 
     // Lenient: try parsing as semver::VersionReq won't help here, so fall back to
     // numeric-only comparison for non-semver strings.
-    let parse = |s: &str| -> Vec<u64> {
-        s.split('.')
-            .filter_map(|p| p.parse::<u64>().ok())
-            .collect()
-    };
+    let parse =
+        |s: &str| -> Vec<u64> { s.split('.').filter_map(|p| p.parse::<u64>().ok()).collect() };
     let a_parts = parse(ca);
     let b_parts = parse(cb);
     let len = a_parts.len().max(b_parts.len());
@@ -1067,7 +1067,10 @@ mod tests {
         assert_eq!(env_type_to_default_provider("fnm"), "fnm");
         assert_eq!(env_type_to_default_provider("python"), "pyenv");
         assert_eq!(env_type_to_default_provider("kotlin"), "sdkman-kotlin");
-        assert_eq!(env_type_to_default_provider("sdkman-gradle"), "sdkman-gradle");
+        assert_eq!(
+            env_type_to_default_provider("sdkman-gradle"),
+            "sdkman-gradle"
+        );
         assert_eq!(env_type_to_default_provider("sdkman-maven"), "sdkman-maven");
         assert_eq!(env_type_to_default_provider("unknown"), "unknown");
     }

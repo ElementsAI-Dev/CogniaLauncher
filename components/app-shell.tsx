@@ -27,9 +27,11 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLocale } from "@/components/providers/locale-provider";
 import { useLogStore } from "@/lib/stores/log";
+import { useAppearanceStore } from "@/lib/stores/appearance";
 import { useSettings } from "@/hooks/use-settings";
 import { useAppearanceConfigSync } from "@/hooks/use-appearance-config-sync";
 import { useAutoUpdate } from "@/hooks/use-auto-update";
+import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 import { useAppInit } from "@/hooks/use-app-init";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { isTauri } from "@/lib/platform";
@@ -61,11 +63,39 @@ export function AppShell({ children }: AppShellProps) {
   const autoUpdateReady = !isDesktopMode || Object.keys(config).length > 0;
   useAutoUpdate({ ready: autoUpdateReady });
 
+  // Global shortcuts (OS-level, work even when window is unfocused)
+  useGlobalShortcuts({
+    onToggleWindow: async () => {
+      if (!isTauri()) return;
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const win = getCurrentWindow();
+      const visible = await win.isVisible();
+      if (visible) {
+        await win.hide();
+      } else {
+        await win.show();
+        await win.setFocus();
+      }
+    },
+    onCommandPalette: () => setCommandOpen(true),
+    onQuickSearch: () => setCommandOpen(true),
+  });
+
   // Window controls (Tauri window management, maximize padding, etc.)
   const windowControls = useWindowControls();
   const { maximizePadding, isTauriEnv, isFullscreen } = windowControls;
 
   useAppearanceConfigSync(config);
+
+  // Sync native window effect attribute to <html> for CSS selectors
+  const windowEffect = useAppearanceStore((s) => s.windowEffect);
+  useEffect(() => {
+    const resolved = windowEffect === "auto" ? "mica" : windowEffect;
+    document.documentElement.setAttribute("data-window-effect", resolved);
+    return () => {
+      document.documentElement.removeAttribute("data-window-effect");
+    };
+  }, [windowEffect]);
 
   useEffect(() => {
     if (!isDesktopMode) return;
@@ -175,7 +205,7 @@ export function AppShell({ children }: AppShellProps) {
                   </>
                 )}
               </header>
-              <main className="flex-1 overflow-auto">{children}</main>
+              <main className="flex-1 overflow-auto min-w-0">{children}</main>
             </SidebarInset>
           </SidebarProvider>
         </div>

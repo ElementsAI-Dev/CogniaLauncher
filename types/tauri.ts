@@ -1201,6 +1201,8 @@ export interface EnvironmentHealthResult {
   status: HealthStatus;
   issues: HealthIssue[];
   suggestions: string[];
+  current_version: string | null;
+  installed_count: number | null;
   checked_at: string;
 }
 
@@ -1222,6 +1224,7 @@ export interface SystemHealthResult {
   environments: EnvironmentHealthResult[];
   package_managers: PackageManagerHealthResult[];
   system_issues: HealthIssue[];
+  skipped_providers: string[];
   checked_at: string;
 }
 

@@ -6,11 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,11 +18,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { useLocale } from '@/components/providers/locale-provider';
 import {
   HardDrive,
@@ -35,44 +26,23 @@ import {
   FolderOpen,
   RefreshCw,
   Shield,
-  ShieldCheck,
-  ShieldAlert,
-  Wrench,
-  Settings,
-  ChevronDown,
   CheckCircle2,
   XCircle,
   AlertTriangle,
   Eye,
-  History,
-  Recycle,
-  Clock,
   FileText,
 } from 'lucide-react';
-import type { CacheSettings } from '@/lib/tauri';
 import { useCachePage } from '@/hooks/use-cache-page';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/layout/page-header';
-import { ENTRIES_PER_PAGE } from '@/lib/constants/cache';
 import { ExternalCacheSection } from '@/components/cache/external-cache-section';
 import { CacheMonitorCard } from '@/components/cache/cache-monitor-card';
 import { CachePathCard } from '@/components/cache/cache-path-card';
+import { CacheHealthCard } from '@/components/cache/cache-health-card';
+import { CacheDbCard } from '@/components/cache/cache-db-card';
+import { CacheSettingsCard } from '@/components/cache/cache-settings-card';
+import { CacheHistoryCard } from '@/components/cache/cache-history-card';
+import { CachePreviewDialog } from '@/components/cache/cache-preview-dialog';
+import { CacheBrowserDialog } from '@/components/cache/cache-browser-dialog';
 
 export default function CachePage() {
   const { t } = useLocale();
@@ -230,7 +200,7 @@ export default function CachePage() {
         <Alert variant={usagePercent >= 90 ? 'destructive' : 'default'} className={usagePercent >= 90 ? '' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950'}>
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            {usagePercent >= 90 
+            {usagePercent >= 90
               ? t('cache.warningCritical', { percent: Math.round(usagePercent) })
               : t('cache.warningHigh', { percent: Math.round(usagePercent) })
             }
@@ -253,9 +223,8 @@ export default function CachePage() {
         }}
       />
 
-      {/* Row 0: Hit Rate Stats + Hot Files */}
+      {/* Hit Rate Stats + Hot Files */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-        {/* Hit Rate Card */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center justify-between text-base">
@@ -304,7 +273,6 @@ export default function CachePage() {
           </CardContent>
         </Card>
 
-        {/* Hot Files Card */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -349,9 +317,8 @@ export default function CachePage() {
         </Button>
       </div>
 
-      {/* Row 1: Total Size + Cache Location */}
+      {/* Total Size + Cache Location */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-        {/* Total Size Card */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -378,7 +345,6 @@ export default function CachePage() {
           </CardContent>
         </Card>
 
-        {/* Cache Location Card */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -399,9 +365,8 @@ export default function CachePage() {
         </Card>
       </div>
 
-      {/* Row 2: Download Cache + Metadata Cache */}
+      {/* Download Cache + Metadata Cache */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-        {/* Download Cache Card */}
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -458,9 +423,7 @@ export default function CachePage() {
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t('cache.clearDownload')}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {t('cache.clearDownloadConfirmDesc')}
-                      </AlertDialogDescription>
+                      <AlertDialogDescription>{t('cache.clearDownloadConfirmDesc')}</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
@@ -478,7 +441,6 @@ export default function CachePage() {
           </CardContent>
         </Card>
 
-        {/* Metadata Cache Card */}
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -535,9 +497,7 @@ export default function CachePage() {
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t('cache.clearMetadata')}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {t('cache.clearMetadataConfirmDesc')}
-                      </AlertDialogDescription>
+                      <AlertDialogDescription>{t('cache.clearMetadataConfirmDesc')}</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
@@ -556,787 +516,89 @@ export default function CachePage() {
         </Card>
       </div>
 
-      {/* Row 3: Cache Health */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              <CardTitle className="text-base">{t('cache.cacheHealth')}</CardTitle>
-              {cacheVerification && (
-                <Badge variant={cacheVerification.is_healthy ? 'default' : 'destructive'} className="ml-2">
-                  {cacheVerification.is_healthy ? (
-                    <>
-                      <ShieldCheck className="h-3 w-3 mr-1" />
-                      {t('cache.healthy')}
-                    </>
-                  ) : (
-                    <>
-                      <ShieldAlert className="h-3 w-3 mr-1" />
-                      {t('cache.unhealthy')}
-                    </>
-                  )}
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleVerify}
-                disabled={isLoading}
-              >
-                <Shield className={`h-4 w-4 mr-2 ${isVerifying ? 'animate-pulse' : ''}`} />
-                {isVerifying ? t('cache.verifying') : t('cache.verify')}
-              </Button>
-              {cacheVerification && !cacheVerification.is_healthy && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRepair}
-                  disabled={isLoading}
-                >
-                  <Wrench className={`h-4 w-4 mr-2 ${isRepairing ? 'animate-spin' : ''}`} />
-                  {isRepairing ? t('cache.repairing') : t('cache.repair')}
-                </Button>
-              )}
-            </div>
-          </div>
-          <CardDescription>{t('cache.cacheHealthDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {cacheVerification ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <div>
-                    <p className="text-sm font-medium">{cacheVerification.valid_entries}</p>
-                    <p className="text-xs text-muted-foreground">{t('cache.validEntries')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <XCircle className={`h-4 w-4 ${cacheVerification.missing_files > 0 ? 'text-red-500' : 'text-muted-foreground'}`} />
-                  <div>
-                    <p className="text-sm font-medium">{cacheVerification.missing_files}</p>
-                    <p className="text-xs text-muted-foreground">{t('cache.missingFiles')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className={`h-4 w-4 ${cacheVerification.corrupted_files > 0 ? 'text-orange-500' : 'text-muted-foreground'}`} />
-                  <div>
-                    <p className="text-sm font-medium">{cacheVerification.corrupted_files}</p>
-                    <p className="text-xs text-muted-foreground">{t('cache.corruptedFiles')}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertCircle className={`h-4 w-4 ${cacheVerification.size_mismatches > 0 ? 'text-yellow-500' : 'text-muted-foreground'}`} />
-                  <div>
-                    <p className="text-sm font-medium">{cacheVerification.size_mismatches}</p>
-                    <p className="text-xs text-muted-foreground">{t('cache.sizeMismatches')}</p>
-                  </div>
-                </div>
-              </div>
+      {/* Cache Health */}
+      <CacheHealthCard
+        cacheVerification={cacheVerification}
+        isLoading={isLoading}
+        isVerifying={isVerifying}
+        isRepairing={isRepairing}
+        totalIssues={totalIssues}
+        handleVerify={handleVerify}
+        handleRepair={handleRepair}
+      />
 
-              {cacheVerification.details.length > 0 && (
-                <Collapsible>
-                  <CollapsibleTrigger asChild>
-                    <Button variant="ghost" size="sm" className="w-full justify-between">
-                      {t('cache.issueDetails')} ({totalIssues})
-                      <ChevronDown className="h-4 w-4" />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-2">
-                    <div className="rounded-md border max-h-48 overflow-y-auto">
-                      {cacheVerification.details.map((issue, index) => (
-                        <div key={index} className="flex items-start gap-2 p-2 text-sm border-b last:border-b-0">
-                          <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-medium truncate">{issue.entry_key}</p>
-                            <p className="text-muted-foreground text-xs">{issue.description}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('cache.noIssues')}</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Database Maintenance */}
+      <CacheDbCard
+        dbInfo={dbInfo}
+        dbInfoLoading={dbInfoLoading}
+        optimizeResult={optimizeResult}
+        optimizeLoading={optimizeLoading}
+        isLoading={isLoading}
+        fetchDbInfo={fetchDbInfo}
+        handleOptimize={handleOptimize}
+      />
 
-      {/* Row 3.5: Database Maintenance */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <HardDrive className="h-5 w-5" />
-              <CardTitle className="text-base">{t('cache.optimize')}</CardTitle>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { fetchDbInfo(); }}
-                disabled={dbInfoLoading}
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                {dbInfoLoading ? t('common.loading') : t('cache.dbInfo')}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleOptimize}
-                disabled={optimizeLoading || isLoading}
-              >
-                <Wrench className={`h-4 w-4 mr-2 ${optimizeLoading ? 'animate-spin' : ''}`} />
-                {optimizeLoading ? t('cache.optimizing') : t('cache.optimize')}
-              </Button>
-            </div>
-          </div>
-          <CardDescription>{t('cache.optimizeDesc')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {optimizeResult && (
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-sm font-bold">{optimizeResult.sizeBeforeHuman}</p>
-                  <p className="text-xs text-muted-foreground">{t('cache.sizeBefore')}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-sm font-bold">{optimizeResult.sizeAfterHuman}</p>
-                  <p className="text-xs text-muted-foreground">{t('cache.sizeAfter')}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950">
-                  <p className="text-sm font-bold text-green-600 dark:text-green-400">{optimizeResult.sizeSavedHuman}</p>
-                  <p className="text-xs text-muted-foreground">{t('cache.sizeSaved')}</p>
-                </div>
-              </div>
-            )}
-            {dbInfo && (
-              <Collapsible>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="w-full justify-between">
-                    {t('cache.dbInfo')}
-                    <ChevronDown className="h-4 w-4" />
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-2">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">{t('cache.dbSize')}</p>
-                      <p className="font-medium">{dbInfo.dbSizeHuman}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">{t('cache.walSize')}</p>
-                      <p className="font-medium">{dbInfo.walSizeHuman}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">{t('cache.pageCount')}</p>
-                      <p className="font-medium">{dbInfo.pageCount.toLocaleString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">{t('cache.freePages')}</p>
-                      <p className="font-medium">{dbInfo.freelistCount.toLocaleString()}</p>
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Row 4: External Tool Caches */}
+      {/* External Tool Caches */}
       <ExternalCacheSection useTrash={useTrash} setUseTrash={setUseTrash} />
 
-      {/* Row 5: Cache Settings */}
-      <Card>
-        <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <Settings className="h-5 w-5" />
-                  <CardTitle className="text-base">{t('cache.settings')}</CardTitle>
-                </div>
-                <ChevronDown className={`h-4 w-4 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
-              </div>
-            </CollapsibleTrigger>
-            <CardDescription>{t('cache.settingsDesc')}</CardDescription>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-6">
-              <Separator />
-              
-              {loading && !localSettings ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-6 w-32" />
-                </div>
-              ) : localSettings ? (
-                <>
-                  <div className="grid gap-6 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="maxSize">{t('cache.maxSize')}</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="maxSize"
-                          type="number"
-                          min={100}
-                          max={100000}
-                          value={Math.round(localSettings.max_size / (1024 * 1024))}
-                          onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (!isNaN(val) && val >= 100) {
-                            handleSettingsChange('max_size', val * 1024 * 1024);
-                          }
-                        }}
-                          className="w-32"
-                        />
-                        <span className="text-sm text-muted-foreground">MB</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{t('cache.maxSizeDesc')}</p>
-                    </div>
+      {/* Cache Settings */}
+      <CacheSettingsCard
+        settingsOpen={settingsOpen}
+        setSettingsOpen={setSettingsOpen}
+        localSettings={localSettings}
+        settingsDirty={settingsDirty}
+        loading={loading}
+        isSavingSettings={isSavingSettings}
+        handleSettingsChange={handleSettingsChange}
+        handleSaveSettings={handleSaveSettings}
+      />
 
-                    <div className="space-y-2">
-                      <Label htmlFor="maxAge">{t('cache.maxAge')}</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="maxAge"
-                          type="number"
-                          min={1}
-                          max={365}
-                          value={localSettings.max_age_days}
-                          onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (!isNaN(val) && val >= 1) {
-                            handleSettingsChange('max_age_days', val);
-                          }
-                        }}
-                          className="w-32"
-                        />
-                        <span className="text-sm text-muted-foreground">{t('common.days')}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{t('cache.maxAgeDesc')}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="metadataCacheTtl">{t('cache.metadataCacheTtl')}</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          id="metadataCacheTtl"
-                          type="number"
-                          min={60}
-                          max={604800}
-                          value={localSettings.metadata_cache_ttl}
-                          onChange={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (!isNaN(val) && val >= 60) {
-                            handleSettingsChange('metadata_cache_ttl', val);
-                          }
-                        }}
-                          className="w-32"
-                        />
-                        <span className="text-sm text-muted-foreground">{t('cache.ttlSeconds')}</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">{t('cache.metadataCacheTtlDesc')}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="autoClean">{t('cache.autoClean')}</Label>
-                      <p className="text-xs text-muted-foreground">{t('cache.autoCleanDesc')}</p>
-                    </div>
-                    <Switch
-                      id="autoClean"
-                      checked={localSettings.auto_clean}
-                      onCheckedChange={(checked) => handleSettingsChange('auto_clean', checked)}
-                    />
-                  </div>
-
-                  {localSettings.auto_clean && (
-                    <div className="grid gap-6 md:grid-cols-3 pl-4 border-l-2 border-muted">
-                      <div className="space-y-2">
-                        <Label htmlFor="autoCleanThreshold">{t('cache.autoCleanThreshold')}</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            id="autoCleanThreshold"
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={localSettings.auto_clean_threshold ?? 80}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value);
-                              if (!isNaN(val) && val >= 0 && val <= 100) {
-                                handleSettingsChange('auto_clean_threshold' as keyof CacheSettings, val);
-                              }
-                            }}
-                            className="w-24"
-                          />
-                          <span className="text-sm text-muted-foreground">%</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{t('cache.autoCleanThresholdDesc')}</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="monitorInterval">{t('cache.monitorInterval')}</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            id="monitorInterval"
-                            type="number"
-                            min={0}
-                            max={86400}
-                            value={localSettings.monitor_interval ?? 300}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value);
-                              if (!isNaN(val) && val >= 0) {
-                                handleSettingsChange('monitor_interval' as keyof CacheSettings, val);
-                              }
-                            }}
-                            className="w-24"
-                          />
-                          <span className="text-sm text-muted-foreground">{t('cache.ttlSeconds')}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{t('cache.monitorIntervalDesc')}</p>
-                      </div>
-
-                      <div className="flex items-center justify-between md:col-span-1">
-                        <div className="space-y-0.5">
-                          <Label htmlFor="monitorExternal">{t('cache.monitorExternal')}</Label>
-                          <p className="text-xs text-muted-foreground">{t('cache.monitorExternalDesc')}</p>
-                        </div>
-                        <Switch
-                          id="monitorExternal"
-                          checked={localSettings.monitor_external ?? false}
-                          onCheckedChange={(checked) => handleSettingsChange('monitor_external' as keyof CacheSettings, checked)}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {settingsDirty && (
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={handleSaveSettings}
-                        disabled={isSavingSettings}
-                      >
-                        {isSavingSettings ? t('common.loading') : t('common.save')}
-                      </Button>
-                    </div>
-                  )}
-                </>
-              ) : null}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
-      {/* Row 5: Cleanup History */}
-      <Card>
-        <Collapsible open={historyOpen} onOpenChange={(open) => {
-          setHistoryOpen(open);
-          if (open && cleanupHistory.length === 0) {
-            fetchCleanupHistory();
-          }
-        }}>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <History className="h-5 w-5" />
-                  <CardTitle className="text-base">{t('cache.cleanupHistory')}</CardTitle>
-                  {historySummary && historySummary.total_cleanups > 0 && (
-                    <Badge variant="secondary" className="ml-2">
-                      {historySummary.total_cleanups} {t('cache.cleanups')}
-                    </Badge>
-                  )}
-                </div>
-                <ChevronDown className={`h-4 w-4 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
-              </div>
-            </CollapsibleTrigger>
-            <CardDescription>{t('cache.cleanupHistoryDesc')}</CardDescription>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-4">
-              <Separator />
-              
-              {historyLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              ) : cleanupHistory.length > 0 ? (
-                <>
-                  {historySummary && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold">{historySummary.total_cleanups}</p>
-                        <p className="text-xs text-muted-foreground">{t('cache.totalCleanups')}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-2xl font-bold">{historySummary.total_freed_human}</p>
-                        <p className="text-xs text-muted-foreground">{t('cache.totalFreed')}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-2xl font-bold">{historySummary.trash_cleanups}</p>
-                        <p className="text-xs text-muted-foreground">{t('cache.trashCleanups')}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-2xl font-bold">{historySummary.permanent_cleanups}</p>
-                        <p className="text-xs text-muted-foreground">{t('cache.permanentCleanups')}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <ScrollArea className="h-64">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{t('cache.date')}</TableHead>
-                          <TableHead>{t('cache.type')}</TableHead>
-                          <TableHead>{t('cache.filesCount')}</TableHead>
-                          <TableHead>{t('cache.freedSize')}</TableHead>
-                          <TableHead>{t('cache.method')}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {cleanupHistory.map((record) => (
-                          <TableRow key={record.id}>
-                            <TableCell className="whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                {new Date(record.timestamp).toLocaleString()}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{record.clean_type}</Badge>
-                            </TableCell>
-                            <TableCell>{record.file_count}</TableCell>
-                            <TableCell>{record.freed_human}</TableCell>
-                            <TableCell>
-                              {record.use_trash ? (
-                                <Badge variant="secondary" className="gap-1">
-                                  <Recycle className="h-3 w-3" />
-                                  {t('cache.trash')}
-                                </Badge>
-                              ) : (
-                                <Badge variant="destructive" className="gap-1">
-                                  <Trash2 className="h-3 w-3" />
-                                  {t('cache.permanent')}
-                                </Badge>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                  
-                  <div className="flex justify-end">
-                    <Button variant="outline" size="sm" onClick={handleClearHistory}>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      {t('cache.clearHistory')}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  {t('cache.noHistory')}
-                </p>
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+      {/* Cleanup History */}
+      <CacheHistoryCard
+        historyOpen={historyOpen}
+        setHistoryOpen={setHistoryOpen}
+        cleanupHistory={cleanupHistory}
+        historySummary={historySummary}
+        historyLoading={historyLoading}
+        fetchCleanupHistory={fetchCleanupHistory}
+        handleClearHistory={handleClearHistory}
+      />
 
       {/* Preview Dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              {t('cache.previewTitle')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('cache.previewDesc', { type: previewType })}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {previewLoading ? (
-            <div className="space-y-2 py-4">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-full" />
-            </div>
-          ) : previewData ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                <div>
-                  <p className="text-sm text-muted-foreground">{t('cache.filesToClean')}</p>
-                  <p className="text-2xl font-bold">{previewData.total_count}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">{t('cache.spaceToFree')}</p>
-                  <p className="text-2xl font-bold">{previewData.total_size_human}</p>
-                </div>
-              </div>
-              
-              {previewData.files.length > 0 && (
-                <ScrollArea className="h-48 rounded-md border">
-                  <div className="p-2 space-y-1">
-                    {previewData.files.slice(0, 20).map((file, index) => (
-                      <div key={index} className="flex items-center justify-between text-sm p-2 hover:bg-muted/50 rounded">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="truncate" title={file.path}>
-                            {file.path.split(/[/\\]/).pop()}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge variant="outline" className="text-xs">{file.entry_type}</Badge>
-                          <span className="text-muted-foreground">{file.size_human}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {previewData.files.length > 20 && (
-                      <p className="text-center text-sm text-muted-foreground py-2">
-                        ... {t('cache.andMore', { count: previewData.files.length - 20 })}
-                      </p>
-                    )}
-                  </div>
-                </ScrollArea>
-              )}
-              
-              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Recycle className="h-4 w-4" />
-                  <Label htmlFor="useTrash">{t('cache.useTrash')}</Label>
-                </div>
-                <Switch
-                  id="useTrash"
-                  checked={useTrash}
-                  onCheckedChange={setUseTrash}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {useTrash ? t('cache.useTrashDesc') : t('cache.permanentDeleteDesc')}
-              </p>
-            </div>
-          ) : null}
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleEnhancedClean}
-              disabled={!previewData || previewData.total_count === 0 || operationLoading === 'clean'}
-            >
-              {operationLoading === 'clean' ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  {t('cache.clearing')}
-                </>
-              ) : (
-                <>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {t('cache.confirmClean')}
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CachePreviewDialog
+        previewOpen={previewOpen}
+        setPreviewOpen={setPreviewOpen}
+        previewData={previewData}
+        previewType={previewType}
+        previewLoading={previewLoading}
+        useTrash={useTrash}
+        setUseTrash={setUseTrash}
+        operationLoading={operationLoading}
+        handleEnhancedClean={handleEnhancedClean}
+      />
 
       {/* Cache Entry Browser Dialog */}
-      <Dialog open={browserOpen} onOpenChange={setBrowserOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FolderOpen className="h-5 w-5" />
-              {t('cache.browseEntries')}
-            </DialogTitle>
-            <DialogDescription>
-              {t('cache.browseEntriesDesc')}
-            </DialogDescription>
-          </DialogHeader>
-
-          {/* Filters */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <Input
-              placeholder={t('cache.searchPlaceholder')}
-              value={browserSearch}
-              onChange={(e) => setBrowserSearch(e.target.value)}
-              className="max-w-xs"
-            />
-            <select
-              value={browserTypeFilter}
-              onChange={(e) => setBrowserTypeFilter(e.target.value)}
-              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="">{t('cache.allTypes')}</option>
-              <option value="download">{t('cache.typeDownload')}</option>
-              <option value="metadata">{t('cache.typeMetadata')}</option>
-              <option value="partial">{t('cache.typePartial')}</option>
-            </select>
-            <select
-              value={browserSortBy}
-              onChange={(e) => setBrowserSortBy(e.target.value)}
-              className="h-10 px-3 rounded-md border border-input bg-background text-sm"
-            >
-              <option value="created_desc">{t('cache.sortNewest')}</option>
-              <option value="created_asc">{t('cache.sortOldest')}</option>
-              <option value="size_desc">{t('cache.sortLargest')}</option>
-              <option value="size_asc">{t('cache.sortSmallest')}</option>
-              <option value="hits_desc">{t('cache.sortMostAccessed')}</option>
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchBrowserEntries(true)}
-              disabled={browserLoading}
-            >
-              <RefreshCw className={`h-4 w-4 ${browserLoading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-
-          {/* Entry List */}
-          <ScrollArea className="h-[400px] rounded-md border">
-            {browserLoading ? (
-              <div className="p-4 space-y-2">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-10 w-full" />
-              </div>
-            ) : browserEntries.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">
-                {t('cache.noEntries')}
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <input
-                        type="checkbox"
-                        checked={browserSelectedKeys.size === browserEntries.length && browserEntries.length > 0}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setBrowserSelectedKeys(new Set(browserEntries.map(e => e.key)));
-                          } else {
-                            setBrowserSelectedKeys(new Set());
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                    </TableHead>
-                    <TableHead>{t('cache.entryKey')}</TableHead>
-                    <TableHead>{t('cache.entryType')}</TableHead>
-                    <TableHead>{t('cache.entrySize')}</TableHead>
-                    <TableHead>{t('cache.entryHits')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {browserEntries.map((entry) => (
-                    <TableRow key={entry.key}>
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={browserSelectedKeys.has(entry.key)}
-                          onChange={(e) => {
-                            const newSet = new Set(browserSelectedKeys);
-                            if (e.target.checked) {
-                              newSet.add(entry.key);
-                            } else {
-                              newSet.delete(entry.key);
-                            }
-                            setBrowserSelectedKeys(newSet);
-                          }}
-                          className="h-4 w-4"
-                        />
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate" title={entry.key}>
-                        {entry.key.split('/').pop() || entry.key}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{entry.entry_type}</Badge>
-                      </TableCell>
-                      <TableCell>{entry.size_human}</TableCell>
-                      <TableCell>{entry.hit_count}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </ScrollArea>
-
-          {/* Pagination & Actions */}
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              {t('cache.showingEntries', { 
-                from: browserPage * ENTRIES_PER_PAGE + 1, 
-                to: Math.min((browserPage + 1) * ENTRIES_PER_PAGE, browserTotalCount),
-                total: browserTotalCount 
-              })}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={browserPage === 0}
-                onClick={() => {
-                  const newPage = browserPage - 1;
-                  setBrowserPage(newPage);
-                  fetchBrowserEntries(false, newPage);
-                }}
-              >
-                {t('common.previous')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={(browserPage + 1) * ENTRIES_PER_PAGE >= browserTotalCount}
-                onClick={() => {
-                  const newPage = browserPage + 1;
-                  setBrowserPage(newPage);
-                  fetchBrowserEntries(false, newPage);
-                }}
-              >
-                {t('common.next')}
-              </Button>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="browser-trash"
-                checked={useTrash}
-                onCheckedChange={setUseTrash}
-              />
-              <Label htmlFor="browser-trash" className="text-sm">
-                {t('cache.moveToTrash')}
-              </Label>
-            </div>
-            <Button
-              variant="destructive"
-              disabled={browserSelectedKeys.size === 0}
-              onClick={handleDeleteSelectedEntries}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              {t('cache.deleteSelected', { count: browserSelectedKeys.size })}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CacheBrowserDialog
+        browserOpen={browserOpen}
+        setBrowserOpen={setBrowserOpen}
+        browserEntries={browserEntries}
+        browserTotalCount={browserTotalCount}
+        browserLoading={browserLoading}
+        browserSearch={browserSearch}
+        setBrowserSearch={setBrowserSearch}
+        browserTypeFilter={browserTypeFilter}
+        setBrowserTypeFilter={setBrowserTypeFilter}
+        browserSortBy={browserSortBy}
+        setBrowserSortBy={setBrowserSortBy}
+        browserPage={browserPage}
+        setBrowserPage={setBrowserPage}
+        browserSelectedKeys={browserSelectedKeys}
+        setBrowserSelectedKeys={setBrowserSelectedKeys}
+        useTrash={useTrash}
+        setUseTrash={setUseTrash}
+        fetchBrowserEntries={fetchBrowserEntries}
+        handleDeleteSelectedEntries={handleDeleteSelectedEntries}
+      />
     </div>
   );
 }

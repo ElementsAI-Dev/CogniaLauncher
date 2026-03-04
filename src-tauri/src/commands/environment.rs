@@ -9,7 +9,6 @@ use crate::provider::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::{mpsc, RwLock};
@@ -56,7 +55,8 @@ fn sanitize_detection_sources(
     detection_files: &[DetectionFileConfig],
 ) -> Vec<String> {
     let logical_env_type = EnvironmentManager::logical_env_type(env_type);
-    let allowed_sources = crate::core::project_env_detect::default_detection_sources(&logical_env_type);
+    let allowed_sources =
+        crate::core::project_env_detect::default_detection_sources(&logical_env_type);
     let allowed: HashSet<&str> = allowed_sources.iter().copied().collect();
 
     let mut enabled = Vec::new();
@@ -132,10 +132,15 @@ pub async fn env_list(
 
     let manager = EnvironmentManager::new(registry.inner().clone());
     let max_concurrency = config.read().await.startup.max_concurrent_scans;
-    let result = manager.list_environments_with_concurrency(max_concurrency).await.map_err(|e| e.to_string())?;
+    let result = manager
+        .list_environments_with_concurrency(max_concurrency)
+        .await
+        .map_err(|e| e.to_string())?;
 
     if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_LIST_CACHE_TTL).await {
-        let _ = cache.set_with_ttl(cache_key, &result, ENV_LIST_CACHE_TTL).await;
+        let _ = cache
+            .set_with_ttl(cache_key, &result, ENV_LIST_CACHE_TTL)
+            .await;
     }
 
     Ok(result)
@@ -355,6 +360,7 @@ pub async fn env_use_local(
     project_path: String,
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<(), String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
     manager
@@ -365,7 +371,12 @@ pub async fn env_use_local(
             provider_id.as_deref(),
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate environment caches after local version switch
+    invalidate_env_caches(config.inner()).await;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -413,11 +424,7 @@ pub async fn env_detect_all(
         futures.push(async move {
             let manager = EnvironmentManager::new(reg);
             manager
-                .detect_version_with_sources(
-                    &env_type,
-                    std::path::Path::new(&path),
-                    &sources,
-                )
+                .detect_version_with_sources(&env_type, std::path::Path::new(&path), &sources)
                 .await
         });
     }
@@ -441,7 +448,11 @@ pub async fn env_available_versions(
     config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<Vec<crate::provider::VersionInfo>, String> {
     let cache_key = format!("{}:{}", env_type, provider_id.as_deref().unwrap_or(""));
-    let metadata_key = format!("env:available:{}:{}", env_type, provider_id.as_deref().unwrap_or("auto"));
+    let metadata_key = format!(
+        "env:available:{}:{}",
+        env_type,
+        provider_id.as_deref().unwrap_or("auto")
+    );
 
     // Layer 1: in-memory VersionCache (fastest, survives within session)
     if !force.unwrap_or(false) {
@@ -451,10 +462,15 @@ pub async fn env_available_versions(
 
         // Layer 2: MetadataCache (SQLite, survives across restarts)
         if let Ok(mut md_cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
-            if let Ok(Some(cached)) = md_cache.get::<Vec<crate::provider::VersionInfo>>(&metadata_key).await {
+            if let Ok(Some(cached)) = md_cache
+                .get::<Vec<crate::provider::VersionInfo>>(&metadata_key)
+                .await
+            {
                 if !cached.is_stale {
                     // Warm in-memory cache from disk cache
-                    version_cache.set(cache_key.clone(), cached.data.clone()).await;
+                    version_cache
+                        .set(cache_key.clone(), cached.data.clone())
+                        .await;
                     return Ok(cached.data);
                 }
             }
@@ -470,7 +486,9 @@ pub async fn env_available_versions(
     // Write to both cache layers
     version_cache.set(cache_key, versions.clone()).await;
     if let Ok(mut md_cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
-        let _ = md_cache.set_with_ttl(&metadata_key, &versions, ENV_PROVIDERS_TTL).await;
+        let _ = md_cache
+            .set_with_ttl(&metadata_key, &versions, ENV_PROVIDERS_TTL)
+            .await;
     }
 
     Ok(versions)
@@ -524,7 +542,10 @@ pub async fn env_list_providers(
                 "sdkman-groovy" => ("groovy", "SDKMAN! - Groovy compiler manager"),
                 "sdkman-gradle" => ("gradle", "SDKMAN! - Gradle build tool manager"),
                 "sdkman-maven" => ("maven", "SDKMAN! - Maven build tool manager"),
-                "adoptium" => ("java", "Adoptium Temurin JDK - Cross-platform Java version manager"),
+                "adoptium" => (
+                    "java",
+                    "Adoptium Temurin JDK - Cross-platform Java version manager",
+                ),
                 "phpbrew" => ("php", "PHPBrew - Brew & manage multiple PHP versions"),
                 "dotnet" => ("dotnet", ".NET SDK version management"),
                 "deno" => ("deno", "Deno runtime version management"),
@@ -559,7 +580,9 @@ pub async fn env_list_providers(
     }
 
     if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_PROVIDERS_TTL).await {
-        let _ = cache.set_with_ttl(cache_key, &providers, ENV_PROVIDERS_TTL).await;
+        let _ = cache
+            .set_with_ttl(cache_key, &providers, ENV_PROVIDERS_TTL)
+            .await;
     }
 
     Ok(providers)
@@ -767,7 +790,8 @@ pub async fn env_detect_system_all(
     let cache_key = "env:system_all";
 
     if !force.unwrap_or(false) {
-        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await
+        {
             if let Ok(Some(cached)) = cache.get::<Vec<SystemEnvironmentInfo>>(cache_key).await {
                 if !cached.is_stale {
                     return Ok(cached.data);
@@ -799,7 +823,9 @@ pub async fn env_detect_system_all(
     }
 
     if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
-        let _ = cache.set_with_ttl(cache_key, &results, ENV_SYSTEM_DETECT_TTL).await;
+        let _ = cache
+            .set_with_ttl(cache_key, &results, ENV_SYSTEM_DETECT_TTL)
+            .await;
     }
 
     Ok(results)
@@ -855,7 +881,8 @@ pub async fn env_detect_system(
     let cache_key = format!("env:system:{}", &env_type);
 
     if !force.unwrap_or(false) {
-        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
+        if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await
+        {
             if let Ok(Some(cached)) = cache.get::<Option<SystemEnvironmentInfo>>(&cache_key).await {
                 if !cached.is_stale {
                     return Ok(cached.data);
@@ -885,7 +912,9 @@ pub async fn env_detect_system(
     };
 
     if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_SYSTEM_DETECT_TTL).await {
-        let _ = cache.set_with_ttl(&cache_key, &result, ENV_SYSTEM_DETECT_TTL).await;
+        let _ = cache
+            .set_with_ttl(&cache_key, &result, ENV_SYSTEM_DETECT_TTL)
+            .await;
     }
 
     Ok(result)
@@ -1026,7 +1055,10 @@ pub async fn env_installed_versions(
 
     if !force.unwrap_or(false) {
         if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_INSTALLED_TTL).await {
-            if let Ok(Some(cached)) = cache.get::<Vec<crate::provider::InstalledVersion>>(&cache_key).await {
+            if let Ok(Some(cached)) = cache
+                .get::<Vec<crate::provider::InstalledVersion>>(&cache_key)
+                .await
+            {
                 if !cached.is_stale {
                     return Ok(cached.data);
                 }
@@ -1046,7 +1078,9 @@ pub async fn env_installed_versions(
         .map_err(|e| e.to_string())?;
 
     if let Ok(mut cache) = open_env_metadata_cache(config.inner(), ENV_INSTALLED_TTL).await {
-        let _ = cache.set_with_ttl(&cache_key, &versions, ENV_INSTALLED_TTL).await;
+        let _ = cache
+            .set_with_ttl(&cache_key, &versions, ENV_INSTALLED_TTL)
+            .await;
     }
 
     Ok(versions)
@@ -1075,9 +1109,7 @@ pub async fn env_current_version(
 /// This allows the frontend to query the backend's authoritative list
 /// instead of maintaining a duplicate.
 #[tauri::command]
-pub async fn env_get_detection_sources(
-    env_type: String,
-) -> Result<Vec<String>, String> {
+pub async fn env_get_detection_sources(env_type: String) -> Result<Vec<String>, String> {
     let logical = EnvironmentManager::logical_env_type(&env_type);
     let sources = crate::core::project_env_detect::default_detection_sources(&logical);
     Ok(sources.iter().map(|s| s.to_string()).collect())
@@ -1085,7 +1117,8 @@ pub async fn env_get_detection_sources(
 
 /// Get detection sources for all known environment types at once.
 #[tauri::command]
-pub async fn env_get_all_detection_sources() -> Result<std::collections::HashMap<String, Vec<String>>, String> {
+pub async fn env_get_all_detection_sources(
+) -> Result<std::collections::HashMap<String, Vec<String>>, String> {
     use crate::provider::SystemEnvironmentType;
 
     let mut result = std::collections::HashMap::new();
@@ -1166,12 +1199,18 @@ pub async fn env_cleanup_versions(
     env_type: String,
     versions_to_remove: Vec<String>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
 ) -> Result<EnvCleanupResult, String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
-    manager
+    let result = manager
         .cleanup_versions(&env_type, &versions_to_remove)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Invalidate environment caches after version cleanup
+    invalidate_env_caches(config.inner()).await;
+
+    Ok(result)
 }
 
 /// List global packages installed under a specific environment version
@@ -1214,6 +1253,7 @@ pub async fn env_migrate_packages(
     packages: Vec<String>,
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
+    config: State<'_, crate::commands::config::SharedSettings>,
     app: AppHandle,
 ) -> Result<EnvMigrateResult, String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
@@ -1271,6 +1311,9 @@ pub async fn env_migrate_packages(
             }),
         }
     }
+
+    // Invalidate environment caches after package migration
+    invalidate_env_caches(config.inner()).await;
 
     Ok(EnvMigrateResult {
         migrated,

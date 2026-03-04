@@ -236,11 +236,7 @@ impl Provider for MacPortsProvider {
         Ok(())
     }
 
-    async fn get_dependencies(
-        &self,
-        name: &str,
-        _version: &str,
-    ) -> CogniaResult<Vec<Dependency>> {
+    async fn get_dependencies(&self, name: &str, _version: &str) -> CogniaResult<Vec<Dependency>> {
         let out = self.run_port(&["deps", name]).await?;
         // Output format: "name has build dependencies: dep1 dep2\nname has library dependencies: dep3 dep4"
         let mut deps = Vec::new();

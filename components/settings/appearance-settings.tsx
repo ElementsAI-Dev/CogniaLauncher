@@ -13,6 +13,7 @@ import {
   type ChartColorTheme,
   type InterfaceRadius,
   type InterfaceDensity,
+  type WindowEffect,
 } from "@/lib/theme/types";
 import {
   ToggleGroup,
@@ -34,6 +35,8 @@ interface AppearanceSettingsProps {
   setInterfaceDensity: (density: InterfaceDensity) => void;
   reducedMotion: boolean;
   setReducedMotion: (reduced: boolean) => void;
+  windowEffect: WindowEffect;
+  setWindowEffect: (effect: string) => void;
   t: (key: string, values?: Record<string, string>) => string;
 }
 
@@ -52,6 +55,8 @@ export function AppearanceSettings({
   setInterfaceDensity,
   reducedMotion,
   setReducedMotion,
+  windowEffect,
+  setWindowEffect,
   t,
 }: AppearanceSettingsProps) {
   return (
@@ -180,6 +185,25 @@ export function AppearanceSettings({
         />
         <Separator />
         <BackgroundSettings t={t} />
+        <Separator />
+        <SelectSettingItem
+          id="window-effect"
+          label={t("settings.windowEffect")}
+          description={t("settings.windowEffectDesc")}
+          value={windowEffect}
+          onValueChange={setWindowEffect}
+          options={[
+            { value: "auto", label: t("settings.windowEffectAuto") },
+            { value: "none", label: t("settings.windowEffectNone") },
+            { value: "mica", label: t("settings.windowEffectMica") },
+            { value: "mica-tabbed", label: t("settings.windowEffectMicaTabbed") },
+            { value: "acrylic", label: t("settings.windowEffectAcrylic") },
+            { value: "blur", label: t("settings.windowEffectBlur") },
+            { value: "vibrancy", label: t("settings.windowEffectVibrancy") },
+          ]}
+          placeholder={t("settings.windowEffect")}
+          triggerClassName="w-40"
+        />
     </div>
   );
 }

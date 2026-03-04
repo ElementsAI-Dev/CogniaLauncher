@@ -1,12 +1,13 @@
 import { renderHook, act } from '@testing-library/react';
 import { usePackageExport } from './use-package-export';
 
-// Mock clipboard API
-Object.assign(navigator, {
-  clipboard: {
-    writeText: jest.fn(),
-  },
-});
+// Mock @/lib/clipboard
+jest.mock('@/lib/clipboard', () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+  readClipboard: jest.fn().mockResolvedValue(''),
+}));
+
+const clipboardMock = jest.requireMock('@/lib/clipboard');
 
 // Mock toast
 jest.mock('sonner', () => ({
@@ -61,11 +62,12 @@ describe('usePackageExport', () => {
     jest.restoreAllMocks();
   });
 
-  it('should return export methods', () => {
+  it('should return export and import methods', () => {
     const { result } = renderHook(() => usePackageExport());
 
     expect(result.current).toHaveProperty('exportPackages');
     expect(result.current).toHaveProperty('importPackages');
+    expect(result.current).toHaveProperty('importFromClipboard');
     expect(result.current).toHaveProperty('exportToClipboard');
   });
 
@@ -88,11 +90,11 @@ describe('usePackageExport', () => {
       await result.current.exportToClipboard();
     });
 
-    expect(navigator.clipboard.writeText).toHaveBeenCalled();
+    expect(clipboardMock.writeClipboard).toHaveBeenCalled();
   });
 
   it('should handle copy error', async () => {
-    (navigator.clipboard.writeText as jest.Mock).mockRejectedValueOnce(new Error('Copy failed'));
+    clipboardMock.writeClipboard.mockRejectedValueOnce(new Error('Copy failed'));
     const { result } = renderHook(() => usePackageExport());
 
     await act(async () => {
@@ -100,5 +102,79 @@ describe('usePackageExport', () => {
     });
 
     // Should handle error gracefully (toast.error called)
+  });
+
+  describe('importFromClipboard', () => {
+    it('should return null for empty clipboard', async () => {
+      clipboardMock.readClipboard.mockResolvedValueOnce('');
+      const { result } = renderHook(() => usePackageExport());
+
+      let data: unknown = 'not-null';
+      await act(async () => {
+        data = await result.current.importFromClipboard();
+      });
+
+      expect(data).toBeNull();
+    });
+
+    it('should parse valid JSON ExportedPackageList from clipboard', async () => {
+      const jsonData = JSON.stringify({
+        version: '1.0',
+        exportedAt: '2025-01-01',
+        packages: [{ name: 'react', version: '18.0.0' }],
+        bookmarks: [],
+      });
+      clipboardMock.readClipboard.mockResolvedValueOnce(jsonData);
+      const { result } = renderHook(() => usePackageExport());
+
+      let data: unknown = null;
+      await act(async () => {
+        data = await result.current.importFromClipboard();
+      });
+
+      expect(data).not.toBeNull();
+      expect((data as { packages: unknown[] }).packages).toHaveLength(1);
+      expect((data as { packages: { name: string }[] }).packages[0].name).toBe('react');
+    });
+
+    it('should fall back to plain text parsing (one package per line)', async () => {
+      clipboardMock.readClipboard.mockResolvedValueOnce('react\ntypescript\nlodash');
+      const { result } = renderHook(() => usePackageExport());
+
+      let data: unknown = null;
+      await act(async () => {
+        data = await result.current.importFromClipboard();
+      });
+
+      expect(data).not.toBeNull();
+      expect((data as { packages: unknown[] }).packages).toHaveLength(3);
+      expect((data as { packages: { name: string }[] }).packages[0].name).toBe('react');
+      expect((data as { packages: { name: string }[] }).packages[2].name).toBe('lodash');
+    });
+
+    it('should skip empty lines in plain text mode', async () => {
+      clipboardMock.readClipboard.mockResolvedValueOnce('react\n\n  \ntypescript\n');
+      const { result } = renderHook(() => usePackageExport());
+
+      let data: unknown = null;
+      await act(async () => {
+        data = await result.current.importFromClipboard();
+      });
+
+      expect(data).not.toBeNull();
+      expect((data as { packages: unknown[] }).packages).toHaveLength(2);
+    });
+
+    it('should return null for whitespace-only clipboard', async () => {
+      clipboardMock.readClipboard.mockResolvedValueOnce('   \n  \n  ');
+      const { result } = renderHook(() => usePackageExport());
+
+      let data: unknown = null;
+      await act(async () => {
+        data = await result.current.importFromClipboard();
+      });
+
+      expect(data).toBeNull();
+    });
   });
 });

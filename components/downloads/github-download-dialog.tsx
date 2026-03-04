@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,10 +38,8 @@ import { cn } from "@/lib/utils";
 import { RepoValidationInput } from "./repo-validation-input";
 import { DestinationPicker } from "./destination-picker";
 import { RefListSelector, type RefItem } from "./ref-list-selector";
-import {
-  ArchiveFormatSelector,
-  type ArchiveFormat,
-} from "./archive-format-selector";
+import { ArchiveFormatSelector } from "./archive-format-selector";
+import { AuthSection } from "./auth-section";
 import {
   Github,
   Loader2,
@@ -54,13 +51,8 @@ import {
   FileArchive,
   Calendar,
   Star,
-  KeyRound,
-  ChevronDown,
-  Eye,
-  EyeOff,
   FileText,
-  Save,
-  Trash2,
+  ChevronDown,
 } from "lucide-react";
 import type {
   GitHubAssetInfo,
@@ -119,8 +111,6 @@ export function GitHubDownloadDialog({
   const [archiveFormat, setArchiveFormat] =
     useState<GitHubArchiveFormat>("zip");
   const [isDownloading, setIsDownloading] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
-  const [showToken, setShowToken] = useState(false);
 
   const currentRelease = useMemo(() => {
     return releases.find((r) => r.tagName === selectedRelease);
@@ -140,10 +130,6 @@ export function GitHubDownloadDialog({
     setSelectedTag(null);
     onOpenChange(false);
   }, [reset, onOpenChange]);
-
-  const handleValidate = useCallback(async () => {
-    await validateAndFetch();
-  }, [validateAndFetch]);
 
   const handleAssetToggle = useCallback((asset: GitHubAssetInfo) => {
     setSelectedAssets((prev) => {
@@ -171,14 +157,6 @@ export function GitHubDownloadDialog({
     toast.success(t("downloads.github.tokenCleared"));
   }, [clearSavedToken, t]);
 
-  const checkDiskSpaceForDownload = useCallback(
-    async (path: string, required: number): Promise<boolean> => {
-      if (!checkDiskSpace) return true;
-      return checkDiskSpace(path, required);
-    },
-    [checkDiskSpace],
-  );
-
   const handleDownload = useCallback(async () => {
     if (!destination.trim()) {
       toast.error(t("downloads.github.noDestination"));
@@ -196,7 +174,7 @@ export function GitHubDownloadDialog({
           {
             destinationPath: destination,
             expectedBytes,
-            checkDiskSpace: checkDiskSpaceForDownload,
+            checkDiskSpace: checkDiskSpace ?? (async () => true),
           },
           {
             t,
@@ -263,7 +241,7 @@ export function GitHubDownloadDialog({
     archiveFormat,
     downloadAsset,
     downloadSource,
-    checkDiskSpaceForDownload,
+    checkDiskSpace,
     onDownloadStarted,
     handleClose,
     t,
@@ -293,7 +271,7 @@ export function GitHubDownloadDialog({
           <RepoValidationInput
             value={repoInput}
             onChange={setRepoInput}
-            onValidate={handleValidate}
+            onValidate={validateAndFetch}
             isValidating={isValidating}
             isValid={isValid}
             placeholder={t("downloads.github.repoPlaceholder")}
@@ -335,76 +313,19 @@ export function GitHubDownloadDialog({
           />
 
           {/* Authentication Section */}
-          <Collapsible
-            open={showAuth}
-            onOpenChange={setShowAuth}
-            className="border rounded-md"
-          >
-            <CollapsibleTrigger className="flex items-center gap-2 w-full p-3 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronDown
-                className={cn(
-                  "h-4 w-4 transition-transform duration-200",
-                  !showAuth && "-rotate-90",
-                )}
-              />
-              <KeyRound className="h-4 w-4" />
-              {t("downloads.auth.title")}
-              {token.trim() && (
-                <Badge variant="secondary" className="ml-auto text-xs">
-                  {t("downloads.auth.configured")}
-                </Badge>
-              )}
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-3 pb-3 space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  {t("downloads.auth.githubHint")}
-                </p>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      type={showToken ? "text" : "password"}
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      placeholder={t("downloads.auth.tokenPlaceholder")}
-                      className="pr-10 font-mono text-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                      onClick={() => setShowToken(!showToken)}
-                    >
-                      {showToken ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSaveToken}
-                    disabled={!token.trim() || !isDesktop}
-                  >
-                    <Save className="h-3 w-3 mr-1" />
-                    {t("downloads.github.saveToken")}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleClearToken}
-                    disabled={!isDesktop}
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    {t("downloads.github.clearToken")}
-                  </Button>
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          <AuthSection
+            token={token}
+            onTokenChange={setToken}
+            onSave={handleSaveToken}
+            onClear={handleClearToken}
+            saveDisabled={!token.trim() || !isDesktop}
+            clearDisabled={!isDesktop}
+            saveLabel={t("downloads.github.saveToken")}
+            clearLabel={t("downloads.github.clearToken")}
+            hint={t("downloads.auth.githubHint")}
+            configured={!!token.trim()}
+            t={t}
+          />
 
           {error && (
             <Alert variant="destructive">
@@ -676,7 +597,7 @@ export function GitHubDownloadDialog({
                         onFormatChange={(v) =>
                           setArchiveFormat(v as GitHubArchiveFormat)
                         }
-                        formats={GITHUB_ARCHIVE_FORMATS as ArchiveFormat[]}
+                        formats={GITHUB_ARCHIVE_FORMATS}
                         idPrefix="format"
                         label={t("downloads.github.format")}
                       />
@@ -706,7 +627,7 @@ export function GitHubDownloadDialog({
                         onFormatChange={(v) =>
                           setArchiveFormat(v as GitHubArchiveFormat)
                         }
-                        formats={GITHUB_ARCHIVE_FORMATS as ArchiveFormat[]}
+                        formats={GITHUB_ARCHIVE_FORMATS}
                         idPrefix="tag-format"
                         label={t("downloads.github.format")}
                       />

@@ -59,6 +59,7 @@ export const useToolboxStore = create<ToolboxState>()(
       name: 'cognia-toolbox',
       storage: createJSONStorage(() => localStorage),
       version: 2,
+      migrate: (persisted) => persisted as ToolboxState,
       partialize: (state) => ({
         favorites: state.favorites,
         recentTools: state.recentTools,

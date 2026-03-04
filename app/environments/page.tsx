@@ -12,6 +12,7 @@ import { EnvironmentBatchOperations } from '@/components/environments/batch-oper
 import { EnvironmentToolbar } from '@/components/environments/environment-toolbar';
 import { EnvUpdatesSummary } from '@/components/environments/env-updates-summary';
 import { ProfileManager } from '@/components/environments/profile-manager';
+import { HealthCheckPanel } from '@/components/environments/health-check-panel';
 import { PageHeader } from '@/components/layout/page-header';
 import {
   Empty,
@@ -361,9 +362,11 @@ export default function EnvironmentsPage() {
           results={updateCheckResults}
           loading={loading}
           onCheckAll={checkAllEnvUpdates}
-          onUpgrade={(envType, version) => handleInstallVersion(envType, version)}
+          onUpgrade={(envType: string, version: string, providerId?: string) => handleInstallVersion(envType, version, providerId)}
           t={t}
         />
+
+        <HealthCheckPanel />
 
       {error && (
         <Alert variant="destructive">

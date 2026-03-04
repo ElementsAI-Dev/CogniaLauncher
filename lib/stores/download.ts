@@ -34,6 +34,9 @@ interface DownloadState {
   // Speed history for chart
   speedHistory: number[];
   
+  // Per-task live progress (updated independently of tasks array)
+  progressMap: Record<string, import('@/types/tauri').DownloadProgress>;
+  
   // UI state
   isLoading: boolean;
   error: string | null;
@@ -77,6 +80,7 @@ interface DownloadState {
   getPausedTasks: () => DownloadTask[];
   getCompletedTasks: () => DownloadTask[];
   getFailedTasks: () => DownloadTask[];
+  getTaskProgress: (taskId: string) => import('@/types/tauri').DownloadProgress | undefined;
 }
 
 export const useDownloadStore = create<DownloadState>()(
@@ -91,6 +95,7 @@ export const useDownloadStore = create<DownloadState>()(
       maxConcurrent: 4,
       clipboardMonitor: false,
       speedHistory: [],
+      progressMap: {},
       isLoading: false,
       error: null,
       selectedTaskIds: new Set<string>(),
@@ -118,9 +123,7 @@ export const useDownloadStore = create<DownloadState>()(
       
       updateTaskProgress: (taskId, progress) =>
         set((state) => ({
-          tasks: state.tasks.map((task) =>
-            task.id === taskId ? { ...task, progress } : task
-          ),
+          progressMap: { ...state.progressMap, [taskId]: progress },
         })),
       
       addTask: (task) =>
@@ -207,6 +210,8 @@ export const useDownloadStore = create<DownloadState>()(
       
       getFailedTasks: () =>
         get().tasks.filter((task) => task.state === 'failed'),
+
+      getTaskProgress: (taskId) => get().progressMap[taskId],
     }),
     {
       name: 'download-storage',
@@ -231,3 +236,4 @@ export const selectIsLoading = (state: DownloadState) => state.isLoading;
 export const selectError = (state: DownloadState) => state.error;
 export const selectSelectedTaskIds = (state: DownloadState) => state.selectedTaskIds;
 export const selectShowHistory = (state: DownloadState) => state.showHistory;
+export const selectProgressMap = (state: DownloadState) => state.progressMap;

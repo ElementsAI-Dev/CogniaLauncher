@@ -19,7 +19,7 @@ interface EnvUpdatesSummaryProps {
   results: Record<string, EnvUpdateCheckResult>;
   loading: boolean;
   onCheckAll: () => Promise<unknown>;
-  onUpgrade: (envType: string, version: string) => void;
+  onUpgrade: (envType: string, version: string, providerId?: string) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -136,7 +136,7 @@ export function EnvUpdatesSummary({
                 variant="outline"
                 size="sm"
                 className={cn("gap-1.5 h-7 text-xs shrink-0")}
-                onClick={() => r.latestVersion && onUpgrade(r.envType, r.latestVersion)}
+                onClick={() => r.latestVersion && onUpgrade(r.envType, r.latestVersion, r.providerId)}
               >
                 <Download className="h-3 w-3" />
                 {t("environments.updates.upgradeToVersion")}

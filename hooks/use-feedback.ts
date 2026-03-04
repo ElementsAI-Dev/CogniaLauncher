@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { isTauri } from '@/lib/platform';
+import { isTauri, getOsLabel, getOsVersion, getArch } from '@/lib/platform';
 import * as tauri from '@/lib/tauri';
 import { APP_VERSION } from '@/lib/app-version';
 import { toast } from 'sonner';
@@ -179,22 +179,19 @@ export function useFeedback(): UseFeedbackReturn {
   };
 }
 
-async function getBasicSystemInfo() {
+function getBasicSystemInfo() {
   const currentPage =
     typeof window !== 'undefined' ? window.location.pathname : '/';
 
   if (isTauri()) {
-    try {
-      const info = await tauri.getPlatformInfo();
-      return {
-        appVersion: info.appVersion || APP_VERSION,
-        os: `${info.osName} ${info.osVersion}`,
-        arch: info.cpuArch || info.arch,
-        currentPage,
-      };
-    } catch {
-      // fallback
-    }
+    const version = getOsVersion();
+    const osLabel = getOsLabel();
+    return {
+      appVersion: APP_VERSION,
+      os: version ? `${osLabel} ${version}` : osLabel,
+      arch: getArch(),
+      currentPage,
+    };
   }
 
   return {

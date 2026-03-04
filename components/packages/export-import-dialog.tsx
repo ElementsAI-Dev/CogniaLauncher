@@ -23,6 +23,7 @@ import {
   Check,
   Package,
   Loader2,
+  ClipboardPaste,
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import {
@@ -46,7 +47,7 @@ export function ExportImportDialog({
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { exportPackages, importPackages, exportToClipboard } =
+  const { exportPackages, importPackages, importFromClipboard, exportToClipboard } =
     usePackageExport();
 
   const handleExportJson = useCallback(() => {
@@ -211,6 +212,28 @@ export function ExportImportDialog({
                     </div>
                   </div>
                 </Button>
+
+                <Button
+                  variant="outline"
+                  className="w-full justify-start h-auto py-3"
+                  onClick={async () => {
+                    const data = await importFromClipboard();
+                    if (data) {
+                      setImportedData(data);
+                      setSelectedForImport(data.packages.map((p) => p.name));
+                    }
+                  }}
+                >
+                  <ClipboardPaste className="h-5 w-5 mr-3 text-purple-500" />
+                  <div className="text-left">
+                    <div className="font-medium">
+                      {t("packages.importFromClipboard")}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {t("packages.importFromClipboardDesc")}
+                    </div>
+                  </div>
+                </Button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -244,9 +267,9 @@ export function ExportImportDialog({
 
                 <ScrollArea className="h-[200px] border rounded-md">
                   <div className="p-2 space-y-1">
-                    {importedData.packages.map((pkg) => (
+                    {importedData.packages.map((pkg, i) => (
                       <div
-                        key={pkg.name}
+                        key={`${pkg.name}:${i}`}
                         className="flex items-center gap-2 p-2 rounded hover:bg-accent cursor-pointer"
                         onClick={() => togglePackageSelection(pkg.name)}
                       >

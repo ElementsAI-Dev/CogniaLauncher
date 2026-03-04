@@ -19,7 +19,8 @@ import { DestinationPicker } from "./destination-picker";
 import { inferNameFromUrl, isValidUrl, joinDestinationPath } from "@/lib/downloads";
 import { isTauri } from "@/lib/tauri";
 import type { DownloadRequest } from "@/lib/stores/download";
-import { FileDown, Trash2 } from "lucide-react";
+import { FileDown, Trash2, ClipboardPaste } from "lucide-react";
+import { readClipboard } from "@/lib/clipboard";
 
 interface BatchImportDialogProps {
   open: boolean;
@@ -112,6 +113,20 @@ export function BatchImportDialog({
                       {invalidCount} {t("downloads.batchInvalid")}
                     </Badge>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    title={t("downloads.pasteFromClipboard")}
+                    onClick={async () => {
+                      const text = await readClipboard();
+                      if (text?.trim()) {
+                        setRawText((prev) => prev ? prev + "\n" + text.trim() : text.trim());
+                      }
+                    }}
+                  >
+                    <ClipboardPaste className="h-3 w-3" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"

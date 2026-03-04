@@ -361,12 +361,7 @@ impl WingetProvider {
         ignore_unavailable: bool,
         ignore_versions: bool,
     ) -> CogniaResult<String> {
-        let mut args = vec![
-            "import",
-            "-i",
-            input_path,
-            "--accept-package-agreements",
-        ];
+        let mut args = vec!["import", "-i", input_path, "--accept-package-agreements"];
         if ignore_unavailable {
             args.push("--ignore-unavailable");
         }
@@ -857,7 +852,10 @@ impl SystemPackageProvider for WingetProvider {
     }
 
     fn requires_elevation(&self, op: &str) -> bool {
-        matches!(op, "install" | "uninstall" | "upgrade" | "repair" | "import")
+        matches!(
+            op,
+            "install" | "uninstall" | "upgrade" | "repair" | "import"
+        )
     }
 
     async fn get_version(&self) -> CogniaResult<String> {

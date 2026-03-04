@@ -35,6 +35,7 @@ import {
   Trash2,
   Loader2,
   Eraser,
+  Package,
 } from "lucide-react";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { formatSize } from "@/lib/utils";
@@ -42,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { VersionPinningSection } from "@/components/environments/version-pinning-section";
 import { CleanupDialog } from "@/components/environments/cleanup-dialog";
+import { MigratePackagesDialog } from "@/components/environments/migrate-packages-dialog";
 
 interface EnvDetailVersionsProps {
   envType: string;
@@ -80,6 +82,7 @@ export function EnvDetailVersions({
     null,
   );
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [migrateState, setMigrateState] = useState<{ open: boolean; fromVersion: string }>({ open: false, fromVersion: "" });
 
   if (!env) {
     return (
@@ -303,6 +306,17 @@ export function EnvDetailVersions({
                         {t("environments.setGlobal")}
                       </Button>
                     )}
+                    {!v.is_current && env.current_version && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMigrateState({ open: true, fromVersion: v.version })}
+                        className="h-8 text-xs gap-1.5"
+                      >
+                        <Package className="h-3.5 w-3.5" />
+                        {t("environments.migrate.title")}
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
@@ -374,6 +388,18 @@ export function EnvDetailVersions({
       </Card>
 
       {/* Cleanup Dialog */}
+      {/* Migrate Packages Dialog */}
+      {env && env.current_version && (
+        <MigratePackagesDialog
+          envType={envType}
+          fromVersion={migrateState.fromVersion}
+          toVersion={env.current_version}
+          open={migrateState.open}
+          onOpenChange={(open) => !open && setMigrateState({ open: false, fromVersion: "" })}
+          t={t}
+        />
+      )}
+
       {onCleanup && env && (
         <CleanupDialog
           envType={envType}

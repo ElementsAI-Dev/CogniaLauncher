@@ -580,9 +580,15 @@ pub async fn git_clone(
     }
 
     let result = get_provider()
-        .clone_repo_with_progress_cancellable(&url, &dest_path, opts, move |progress| {
-            let _ = app_clone.emit("git-clone-progress", &progress);
-        }, cancel_rx)
+        .clone_repo_with_progress_cancellable(
+            &url,
+            &dest_path,
+            opts,
+            move |progress| {
+                let _ = app_clone.emit("git-clone-progress", &progress);
+            },
+            cancel_rx,
+        )
         .await
         .map_err(|e| e.to_string());
 
@@ -631,7 +637,12 @@ pub async fn git_get_diff(
     context_lines: Option<u32>,
 ) -> Result<String, String> {
     get_provider()
-        .get_diff(&path, staged.unwrap_or(false), file.as_deref(), context_lines)
+        .get_diff(
+            &path,
+            staged.unwrap_or(false),
+            file.as_deref(),
+            context_lines,
+        )
         .await
         .map_err(|e| e.to_string())
 }
@@ -703,11 +714,7 @@ pub async fn git_reset(
     target: Option<String>,
 ) -> Result<String, String> {
     get_provider()
-        .reset_head(
-            &path,
-            mode.as_deref().unwrap_or("mixed"),
-            target.as_deref(),
-        )
+        .reset_head(&path, mode.as_deref().unwrap_or("mixed"), target.as_deref())
         .await
         .map_err(|e| e.to_string())
 }
@@ -745,11 +752,7 @@ pub async fn git_remote_rename(
 }
 
 #[tauri::command]
-pub async fn git_remote_set_url(
-    path: String,
-    name: String,
-    url: String,
-) -> Result<String, String> {
+pub async fn git_remote_set_url(path: String, name: String, url: String) -> Result<String, String> {
     get_provider()
         .remote_set_url(&path, &name, &url)
         .await
@@ -984,10 +987,7 @@ pub async fn git_check_ignore(path: String, files: Vec<String>) -> Result<Vec<St
 }
 
 #[tauri::command]
-pub async fn git_add_to_gitignore(
-    path: String,
-    patterns: Vec<String>,
-) -> Result<(), String> {
+pub async fn git_add_to_gitignore(path: String, patterns: Vec<String>) -> Result<(), String> {
     let pattern_refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
     get_provider()
         .add_to_gitignore(&path, &pattern_refs)
@@ -1028,11 +1028,7 @@ pub async fn git_set_hook_content(
 }
 
 #[tauri::command]
-pub async fn git_toggle_hook(
-    path: String,
-    name: String,
-    enabled: bool,
-) -> Result<(), String> {
+pub async fn git_toggle_hook(path: String, name: String, enabled: bool) -> Result<(), String> {
     get_provider()
         .toggle_hook(&path, &name, enabled)
         .await
@@ -1257,11 +1253,7 @@ pub async fn git_get_local_config(path: String) -> Result<Vec<GitConfigEntry>, S
 }
 
 #[tauri::command]
-pub async fn git_set_local_config(
-    path: String,
-    key: String,
-    value: String,
-) -> Result<(), String> {
+pub async fn git_set_local_config(path: String, key: String, value: String) -> Result<(), String> {
     get_provider()
         .set_local_config(&path, &key, &value)
         .await
@@ -1329,10 +1321,7 @@ pub async fn git_get_repo_stats(path: String) -> Result<GitRepoStats, String> {
 
 #[tauri::command]
 pub async fn git_fsck(path: String) -> Result<Vec<String>, String> {
-    get_provider()
-        .fsck(&path)
-        .await
-        .map_err(|e| e.to_string())
+    get_provider().fsck(&path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

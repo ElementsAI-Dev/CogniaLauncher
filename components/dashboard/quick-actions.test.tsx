@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QuickActions, QuickActionsInline } from "./quick-actions";
+import { QuickActions } from "./quick-actions";
 
 const mockPush = jest.fn();
 const mockOnRefreshAll = jest.fn();
@@ -32,80 +32,8 @@ describe("QuickActions", () => {
     jest.clearAllMocks();
   });
 
-  it("renders quick actions card with title", () => {
-    render(<QuickActions />);
-
-    expect(screen.getByText("Quick Actions")).toBeInTheDocument();
-  });
-
-  it("renders primary action buttons", () => {
-    render(<QuickActions />);
-
-    expect(
-      screen.getByRole("button", { name: /add environment/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /install package/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /refresh all/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("navigates to environments page when Add Environment is clicked", async () => {
-    const user = userEvent.setup();
-    render(<QuickActions />);
-
-    await user.click(screen.getByRole("button", { name: /add environment/i }));
-
-    expect(mockPush).toHaveBeenCalledWith("/environments");
-  });
-
-  it("navigates to packages page when Install Package is clicked", async () => {
-    const user = userEvent.setup();
-    render(<QuickActions />);
-
-    await user.click(screen.getByRole("button", { name: /install package/i }));
-
-    expect(mockPush).toHaveBeenCalledWith("/packages");
-  });
-
-  it("calls onRefreshAll when Refresh All is clicked", async () => {
-    const user = userEvent.setup();
-    render(<QuickActions onRefreshAll={mockOnRefreshAll} />);
-
-    await user.click(screen.getByRole("button", { name: /refresh all/i }));
-
-    expect(mockOnRefreshAll).toHaveBeenCalledTimes(1);
-  });
-
-  it("disables refresh button when isRefreshing is true", () => {
-    render(<QuickActions isRefreshing={true} />);
-
-    const refreshButton = screen.getByRole("button", { name: /refresh all/i });
-    expect(refreshButton).toBeDisabled();
-  });
-
-  it("shows more actions in dropdown menu", async () => {
-    const user = userEvent.setup();
-    render(<QuickActions />);
-
-    const moreButton = screen.getByRole("button", { name: /more actions/i });
-    await user.click(moreButton);
-
-    expect(screen.getByText("Clear Cache")).toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
-    expect(screen.getByText("View Logs")).toBeInTheDocument();
-  });
-});
-
-describe("QuickActionsInline", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   it("renders inline action buttons", () => {
-    render(<QuickActionsInline />);
+    render(<QuickActions />);
 
     expect(
       screen.getByRole("button", { name: /add environment/i }),
@@ -117,7 +45,7 @@ describe("QuickActionsInline", () => {
 
   it("navigates to environments on Add Environment click", async () => {
     const user = userEvent.setup();
-    render(<QuickActionsInline />);
+    render(<QuickActions />);
 
     await user.click(screen.getByRole("button", { name: /add environment/i }));
 
@@ -126,7 +54,7 @@ describe("QuickActionsInline", () => {
 
   it("calls onRefreshAll when provided", async () => {
     const user = userEvent.setup();
-    render(<QuickActionsInline onRefreshAll={mockOnRefreshAll} />);
+    render(<QuickActions onRefreshAll={mockOnRefreshAll} />);
 
     await user.click(screen.getByRole("button", { name: /refresh all/i }));
 
@@ -135,7 +63,7 @@ describe("QuickActionsInline", () => {
 
   it("applies custom className", () => {
     const { container } = render(
-      <QuickActionsInline className="custom-class" />,
+      <QuickActions className="custom-class" />,
     );
 
     expect(container.firstChild).toHaveClass("custom-class");
@@ -143,7 +71,7 @@ describe("QuickActionsInline", () => {
 
   it("navigates to packages on Install Package click", async () => {
     const user = userEvent.setup();
-    render(<QuickActionsInline />);
+    render(<QuickActions />);
 
     await user.click(screen.getByRole("button", { name: /install package/i }));
 
@@ -151,7 +79,7 @@ describe("QuickActionsInline", () => {
   });
 
   it("disables refresh button when isRefreshing is true", () => {
-    render(<QuickActionsInline isRefreshing={true} />);
+    render(<QuickActions isRefreshing={true} />);
 
     const refreshButton = screen.getByRole("button", { name: /refresh all/i });
     expect(refreshButton).toBeDisabled();
@@ -159,7 +87,7 @@ describe("QuickActionsInline", () => {
 
   it("shows dropdown secondary actions", async () => {
     const user = userEvent.setup();
-    render(<QuickActionsInline />);
+    render(<QuickActions />);
 
     const moreButton = screen.getByRole("button", { name: /more actions/i });
     await user.click(moreButton);

@@ -180,10 +180,7 @@ pub async fn uv_tree(path: String) -> Result<String, String> {
 // ── Virtual environment commands ──
 
 #[tauri::command]
-pub async fn uv_venv_create(
-    path: String,
-    python: Option<String>,
-) -> Result<String, String> {
+pub async fn uv_venv_create(path: String, python: Option<String>) -> Result<String, String> {
     let mut args = vec!["venv"];
     let py_val;
     if let Some(ref py) = python {
@@ -218,9 +215,7 @@ pub async fn uv_python_list(only_installed: bool) -> Result<Vec<UvPythonEntry>, 
     if only_installed {
         args.push("--only-installed");
     }
-    let out = run_uv(&args, None, 30)
-        .await
-        .map_err(|e| e.to_string())?;
+    let out = run_uv(&args, None, 30).await.map_err(|e| e.to_string())?;
 
     let mut entries = Vec::new();
     for line in out.lines() {
@@ -242,7 +237,11 @@ pub async fn uv_python_list(only_installed: bool) -> Result<Vec<UvPythonEntry>, 
                     .find(|c: char| c != '.' && !c.is_ascii_digit())
                     .unwrap_or(rest.len());
                 let v = &rest[..end];
-                if v.is_empty() { None } else { Some(v.to_string()) }
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v.to_string())
+                }
             })
             .unwrap_or_else(|| key.clone());
         let path = parts.get(1).map(|s| s.to_string());
@@ -334,9 +333,7 @@ pub async fn uv_tool_install(name: String, python: Option<String>) -> Result<Str
         args.push("--python");
         args.push(&py_val);
     }
-    run_uv(&args, None, 180)
-        .await
-        .map_err(|e| e.to_string())
+    run_uv(&args, None, 180).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -3,6 +3,7 @@ export { locales, type Locale } from '@/types/i18n';
 
 import type { Locale } from '@/types/i18n';
 import { locales } from '@/types/i18n';
+import { getOsLocale } from '@/lib/platform';
 
 export const defaultLocale: Locale = 'en';
 
@@ -10,6 +11,12 @@ export const localeNames: Record<Locale, string> = {
   en: 'English',
   zh: '中文',
 };
+
+function detectSystemLocale(): Locale {
+  const sysLocale = getOsLocale();
+  if (sysLocale.startsWith('zh')) return 'zh';
+  return defaultLocale;
+}
 
 export function getLocaleFromCookie(): Locale {
   if (typeof document === 'undefined') return defaultLocale;
@@ -21,7 +28,7 @@ export function getLocaleFromCookie(): Locale {
     return locale as Locale;
   }
   
-  return defaultLocale;
+  return detectSystemLocale();
 }
 
 export function setLocaleCookie(locale: Locale): void {

@@ -1,9 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  ArchiveFormatSelector,
-  type ArchiveFormat,
-} from "./archive-format-selector";
+import { ArchiveFormatSelector } from "./archive-format-selector";
+import type { ArchiveFormat } from "@/types/downloads";
 
 const defaultFormats: ArchiveFormat[] = [
   { value: "zip", label: "ZIP" },

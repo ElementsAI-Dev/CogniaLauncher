@@ -383,6 +383,15 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     [refreshTasks]
   );
 
+  // Set per-task speed limit
+  const setTaskSpeedLimit = useCallback(
+    async (taskId: string, bytesPerSecond: number) => {
+      if (!tauri.isTauri()) return;
+      await tauri.downloadSetTaskSpeedLimit(taskId, bytesPerSecond);
+    },
+    []
+  );
+
   // Force-retry a single terminal task (failed/cancelled/completed)
   const retryTask = useCallback(
     async (taskId: string) => {
@@ -560,6 +569,7 @@ export function useDownloads(options: UseDownloadsOptions = {}) {
     // Actions - Task
     retryTask,
     setPriority,
+    setTaskSpeedLimit,
 
     // Actions - Batch
     batchPause,

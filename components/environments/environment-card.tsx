@@ -41,6 +41,7 @@ import {
   ChevronDown,
   List,
   Settings2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale } from "@/components/providers/locale-provider";
@@ -48,6 +49,7 @@ import { UpdateCheckerCard } from "@/components/environments/update-checker";
 import { EolBadge } from "@/components/environments/eol-badge";
 import { DetectedVersionBadge } from "@/components/environments/detected-version-badge";
 import { formatSize, cn } from "@/lib/utils";
+import { LanguageIcon } from "@/components/provider-management/provider-icon";
 import { LANGUAGES } from "@/lib/constants/environments";
 
 interface EnvironmentCardProps {
@@ -80,6 +82,8 @@ export function EnvironmentCard({
   const [customVersion, setCustomVersion] = useState("");
   const [localProjectPath, setLocalProjectPath] = useState("");
   const [isInstalling, setIsInstalling] = useState(false);
+  const [selectedLocalVersion, setSelectedLocalVersion] = useState("");
+  const [settingGlobalVersion, setSettingGlobalVersion] = useState<string | null>(null);
   const [selectedUninstall, setSelectedUninstall] = useState<string | null>(
     null,
   );
@@ -95,6 +99,7 @@ export function EnvironmentCard({
     setIsInstalling(true);
     try {
       await onInstall(version, currentProviderId);
+      setCustomVersion("");
       toast.success(
         t("environments.toast.installing", { type: env.env_type, version }),
       );
@@ -123,7 +128,8 @@ export function EnvironmentCard({
   };
 
   const handleSetGlobal = async (version: string) => {
-    if (!onSetGlobal) return;
+    if (!onSetGlobal || settingGlobalVersion) return;
+    setSettingGlobalVersion(version);
     try {
       await onSetGlobal(version);
       toast.success(
@@ -131,13 +137,16 @@ export function EnvironmentCard({
       );
     } catch (err) {
       toast.error(t("environments.toast.globalFailed", { error: String(err) }));
+    } finally {
+      setSettingGlobalVersion(null);
     }
   };
 
   const handleSetLocal = async () => {
-    if (!onSetLocal || !localProjectPath || !env.current_version) return;
+    const versionToSet = selectedLocalVersion || env.current_version;
+    if (!onSetLocal || !localProjectPath || !versionToSet) return;
     try {
-      await onSetLocal(env.current_version, localProjectPath);
+      await onSetLocal(versionToSet, localProjectPath);
       toast.success(
         t("environments.toast.localSet", { path: localProjectPath }),
       );
@@ -184,11 +193,7 @@ export function EnvironmentCard({
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1 min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                {langInfo && (
-                  <span className="text-lg" role="img" aria-label={langInfo.name}>
-                    {langInfo.icon}
-                  </span>
-                )}
+                <LanguageIcon languageId={logicalType} size={20} />
                 <h3 className="text-lg font-semibold">{langInfo?.name || env.env_type}</h3>
                 {env.available ? (
                   <Badge variant="default" className="text-xs">
@@ -259,10 +264,10 @@ export function EnvironmentCard({
                     <TooltipTrigger asChild>
                       <Badge
                         variant={v.is_current ? "default" : "secondary"}
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        className={cn("cursor-pointer hover:opacity-80 transition-opacity", settingGlobalVersion && "pointer-events-none opacity-50")}
                         onClick={() => handleSetGlobal(v.version)}
                       >
-                        {v.is_current && <Check className="h-3 w-3 mr-1" />}
+                        {settingGlobalVersion === v.version ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : v.is_current && <Check className="h-3 w-3 mr-1" />}
                         {v.version}
                       </Badge>
                     </TooltipTrigger>
@@ -401,6 +406,22 @@ export function EnvironmentCard({
                 {t("environments.setLocalVersion")}
               </Label>
               <div className="flex gap-2">
+                <Select
+                  value={selectedLocalVersion || env.current_version || ""}
+                  onValueChange={setSelectedLocalVersion}
+                  disabled={loading}
+                >
+                  <SelectTrigger className="w-[130px]">
+                    <SelectValue placeholder={t("environments.selectVersion")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {env.installed_versions.map((v) => (
+                      <SelectItem key={v.version} value={v.version}>
+                        {v.version}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <div className="flex-1 flex gap-1">
                   <Input
                     placeholder={t("environments.projectPath")}
@@ -425,7 +446,7 @@ export function EnvironmentCard({
                   variant="outline"
                   onClick={handleSetLocal}
                   disabled={
-                    !localProjectPath || !env.current_version || loading
+                    !localProjectPath || !(selectedLocalVersion || env.current_version) || loading
                   }
                 >
                   {t("environments.setLocal")}

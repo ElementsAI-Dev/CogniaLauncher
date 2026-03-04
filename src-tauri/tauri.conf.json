@@ -20,10 +20,11 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "shadow": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
@@ -32,6 +33,321 @@
     "updater": {
       "pubkey": "",
       "endpoints": []
+    },
+    "cli": {
+      "description": "CogniaLauncher - Unified Environment and Package Manager",
+      "args": [
+        {
+          "name": "verbose",
+          "short": "v",
+          "description": "Increase log verbosity"
+        },
+        {
+          "name": "quiet",
+          "short": "q",
+          "description": "Suppress non-essential output"
+        },
+        {
+          "name": "json",
+          "description": "Output in JSON format for scripting"
+        },
+        {
+          "name": "minimized",
+          "description": "Start minimized to system tray"
+        }
+      ],
+      "subcommands": {
+        "search": {
+          "description": "Search packages across providers",
+          "args": [
+            {
+              "name": "query",
+              "index": 1,
+              "takesValue": true,
+              "description": "Search query string"
+            },
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Filter by provider ID"
+            },
+            {
+              "name": "limit",
+              "short": "l",
+              "takesValue": true,
+              "description": "Maximum number of results (default: 20)"
+            }
+          ]
+        },
+        "install": {
+          "description": "Install one or more packages",
+          "args": [
+            {
+              "name": "packages",
+              "index": 1,
+              "takesValue": true,
+              "multiple": true,
+              "description": "Packages to install (e.g. lodash express@4)"
+            },
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Specify provider ID"
+            },
+            {
+              "name": "force",
+              "short": "f",
+              "description": "Force reinstall"
+            }
+          ]
+        },
+        "uninstall": {
+          "description": "Uninstall one or more packages",
+          "args": [
+            {
+              "name": "packages",
+              "index": 1,
+              "takesValue": true,
+              "multiple": true,
+              "description": "Packages to uninstall"
+            },
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Specify provider ID"
+            },
+            {
+              "name": "force",
+              "short": "f",
+              "description": "Force uninstall"
+            }
+          ]
+        },
+        "list": {
+          "description": "List installed packages",
+          "args": [
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Filter by provider ID"
+            },
+            {
+              "name": "outdated",
+              "description": "Show only outdated packages"
+            }
+          ]
+        },
+        "update": {
+          "description": "Update packages",
+          "args": [
+            {
+              "name": "packages",
+              "index": 1,
+              "takesValue": true,
+              "multiple": true,
+              "description": "Packages to update (omit for --all)"
+            },
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Filter by provider ID"
+            },
+            {
+              "name": "all",
+              "short": "a",
+              "description": "Update all outdated packages"
+            }
+          ]
+        },
+        "info": {
+          "description": "Show detailed package information",
+          "args": [
+            {
+              "name": "package",
+              "index": 1,
+              "takesValue": true,
+              "description": "Package name"
+            },
+            {
+              "name": "provider",
+              "short": "p",
+              "takesValue": true,
+              "description": "Specify provider ID"
+            }
+          ]
+        },
+        "env": {
+          "description": "Manage development environment versions",
+          "subcommands": {
+            "list": {
+              "description": "List installed environment versions",
+              "args": [
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Filter by environment type (node, python, rust, ...)"
+                }
+              ]
+            },
+            "install": {
+              "description": "Install an environment version",
+              "args": [
+                {
+                  "name": "version",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Version to install"
+                },
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Environment type (required)"
+                },
+                {
+                  "name": "provider",
+                  "short": "p",
+                  "takesValue": true,
+                  "description": "Specific provider ID"
+                }
+              ]
+            },
+            "use": {
+              "description": "Set active environment version",
+              "args": [
+                {
+                  "name": "version",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Version to activate"
+                },
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Environment type (required)"
+                },
+                {
+                  "name": "local",
+                  "takesValue": true,
+                  "description": "Set for project directory instead of global"
+                },
+                {
+                  "name": "provider",
+                  "short": "p",
+                  "takesValue": true,
+                  "description": "Specific provider ID"
+                }
+              ]
+            },
+            "detect": {
+              "description": "Detect installed environments",
+              "args": [
+                {
+                  "name": "type",
+                  "short": "t",
+                  "takesValue": true,
+                  "description": "Filter by environment type"
+                },
+                {
+                  "name": "path",
+                  "takesValue": true,
+                  "description": "Start path for detection (default: current directory)"
+                }
+              ]
+            }
+          }
+        },
+        "config": {
+          "description": "View and modify configuration",
+          "subcommands": {
+            "get": {
+              "description": "Get a configuration value",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Configuration key (e.g. appearance.theme)"
+                }
+              ]
+            },
+            "set": {
+              "description": "Set a configuration value",
+              "args": [
+                {
+                  "name": "key",
+                  "index": 1,
+                  "takesValue": true,
+                  "description": "Configuration key"
+                },
+                {
+                  "name": "value",
+                  "index": 2,
+                  "takesValue": true,
+                  "description": "New value"
+                }
+              ]
+            },
+            "list": {
+              "description": "List all configuration keys and values"
+            },
+            "reset": {
+              "description": "Reset configuration to defaults"
+            }
+          }
+        },
+        "cache": {
+          "description": "Manage download and metadata cache",
+          "subcommands": {
+            "info": {
+              "description": "Show cache statistics"
+            },
+            "clean": {
+              "description": "Clean cache entries",
+              "args": [
+                {
+                  "name": "all",
+                  "short": "a",
+                  "description": "Clean all cache entries"
+                },
+                {
+                  "name": "expired",
+                  "short": "e",
+                  "description": "Clean only expired entries"
+                }
+              ]
+            }
+          }
+        },
+        "doctor": {
+          "description": "Run system health checks",
+          "args": [
+            {
+              "name": "type",
+              "short": "t",
+              "takesValue": true,
+              "description": "Check specific environment type"
+            }
+          ]
+        },
+        "providers": {
+          "description": "List available package providers",
+          "args": [
+            {
+              "name": "system",
+              "short": "s",
+              "description": "Show only system package providers"
+            }
+          ]
+        }
+      }
     }
   },
   "bundle": {

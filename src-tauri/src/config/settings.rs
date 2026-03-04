@@ -23,6 +23,7 @@ pub struct Settings {
     pub backup: BackupSettings,
     pub plugin: PluginSettings,
     pub startup: StartupSettings,
+    pub shortcuts: ShortcutSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +134,30 @@ impl Default for PluginSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ShortcutSettings {
+    /// Enable global shortcuts
+    pub enabled: bool,
+    /// Show/hide main window
+    pub toggle_window: String,
+    /// Open command palette
+    pub command_palette: String,
+    /// Quick search
+    pub quick_search: String,
+}
+
+impl Default for ShortcutSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            toggle_window: "CmdOrCtrl+Shift+Space".into(),
+            command_palette: "CmdOrCtrl+Shift+K".into(),
+            quick_search: "CmdOrCtrl+Shift+F".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppearanceSettings {
     pub theme: String,
     pub accent_color: String,
@@ -141,6 +166,7 @@ pub struct AppearanceSettings {
     pub interface_density: String,
     pub language: String,
     pub reduced_motion: bool,
+    pub window_effect: String,
 }
 
 impl Default for AppearanceSettings {
@@ -153,6 +179,7 @@ impl Default for AppearanceSettings {
             interface_density: "comfortable".into(),
             language: "en".into(),
             reduced_motion: false,
+            window_effect: "auto".into(),
         }
     }
 }
@@ -236,6 +263,17 @@ pub struct GlobalProviderSettings {
     pub disabled_providers: Vec<String>,
 }
 
+/// A user-defined custom cache directory to monitor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomCacheEntry {
+    pub id: String,
+    pub display_name: String,
+    pub path: String,
+    /// One of: package_manager, devtools, system, terminal
+    pub category: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GeneralSettings {
@@ -257,6 +295,12 @@ pub struct GeneralSettings {
     pub download_speed_limit: u64,
     /// Max concurrent tasks for update checking (1-32, default 8)
     pub update_check_concurrency: u32,
+    /// External cache provider IDs to exclude from scanning (e.g. ["gradle","maven"])
+    #[serde(default)]
+    pub external_cache_excluded_providers: Vec<String>,
+    /// User-defined custom cache directories
+    #[serde(default)]
+    pub custom_cache_entries: Vec<CustomCacheEntry>,
 }
 
 impl Default for GeneralSettings {
@@ -275,6 +319,8 @@ impl Default for GeneralSettings {
             cache_monitor_external: false,
             download_speed_limit: 0,
             update_check_concurrency: 8,
+            external_cache_excluded_providers: Vec::new(),
+            custom_cache_entries: Vec::new(),
         }
     }
 }
@@ -493,7 +539,11 @@ impl Settings {
                 Vec::new()
             } else {
                 let mut parsed = Vec::new();
-                for item in trimmed.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                for item in trimmed
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                {
                     parsed.push(parse_item(item)?);
                 }
                 parsed
@@ -593,6 +643,7 @@ impl Settings {
             ["appearance", "interface_density"] => Some(self.appearance.interface_density.clone()),
             ["appearance", "language"] => Some(self.appearance.language.clone()),
             ["appearance", "reduced_motion"] => Some(self.appearance.reduced_motion.to_string()),
+            ["appearance", "window_effect"] => Some(self.appearance.window_effect.clone()),
             ["updates", "check_on_start"] => Some(self.updates.check_on_start.to_string()),
             ["updates", "auto_install"] => Some(self.updates.auto_install.to_string()),
             ["updates", "notify"] => Some(self.updates.notify.to_string()),
@@ -632,23 +683,35 @@ impl Settings {
             ["log", "max_total_size_mb"] => Some(self.log.max_total_size_mb.to_string()),
             ["log", "auto_cleanup"] => Some(self.log.auto_cleanup.to_string()),
             ["log", "log_level"] => Some(self.log.log_level.clone()),
-            ["backup", "auto_backup_enabled"] => {
-                Some(self.backup.auto_backup_enabled.to_string())
-            }
+            ["backup", "auto_backup_enabled"] => Some(self.backup.auto_backup_enabled.to_string()),
             ["backup", "auto_backup_interval_hours"] => {
                 Some(self.backup.auto_backup_interval_hours.to_string())
             }
             ["backup", "max_backups"] => Some(self.backup.max_backups.to_string()),
             ["backup", "retention_days"] => Some(self.backup.retention_days.to_string()),
-            ["plugin", "auto_load_on_startup"] => Some(self.plugin.auto_load_on_startup.to_string()),
-            ["plugin", "max_execution_timeout_secs"] => Some(self.plugin.max_execution_timeout_secs.to_string()),
+            ["plugin", "auto_load_on_startup"] => {
+                Some(self.plugin.auto_load_on_startup.to_string())
+            }
+            ["plugin", "max_execution_timeout_secs"] => {
+                Some(self.plugin.max_execution_timeout_secs.to_string())
+            }
             ["plugin", "sandbox_fs"] => Some(self.plugin.sandbox_fs.to_string()),
-            ["plugin", "permission_enforcement_mode"] => Some(self.plugin.permission_enforcement_mode.clone()),
+            ["plugin", "permission_enforcement_mode"] => {
+                Some(self.plugin.permission_enforcement_mode.clone())
+            }
             ["startup", "scan_environments"] => Some(self.startup.scan_environments.to_string()),
             ["startup", "scan_packages"] => Some(self.startup.scan_packages.to_string()),
-            ["startup", "max_concurrent_scans"] => Some(self.startup.max_concurrent_scans.to_string()),
-            ["startup", "startup_timeout_secs"] => Some(self.startup.startup_timeout_secs.to_string()),
+            ["startup", "max_concurrent_scans"] => {
+                Some(self.startup.max_concurrent_scans.to_string())
+            }
+            ["startup", "startup_timeout_secs"] => {
+                Some(self.startup.startup_timeout_secs.to_string())
+            }
             ["startup", "integrity_check"] => Some(self.startup.integrity_check.to_string()),
+            ["shortcuts", "enabled"] => Some(self.shortcuts.enabled.to_string()),
+            ["shortcuts", "toggle_window"] => Some(self.shortcuts.toggle_window.clone()),
+            ["shortcuts", "command_palette"] => Some(self.shortcuts.command_palette.clone()),
+            ["shortcuts", "quick_search"] => Some(self.shortcuts.quick_search.clone()),
             ["providers", provider, "token"] => self
                 .providers
                 .get(*provider)
@@ -753,9 +816,36 @@ impl Settings {
                     CogniaError::Config("Invalid value for update_check_concurrency".into())
                 })?;
                 if v == 0 || v > 32 {
-                    return Err(CogniaError::Config("update_check_concurrency must be 1-32".into()));
+                    return Err(CogniaError::Config(
+                        "update_check_concurrency must be 1-32".into(),
+                    ));
                 }
                 self.general.update_check_concurrency = v;
+            }
+            ["general", "custom_cache_entries"] => {
+                self.general.custom_cache_entries =
+                    serde_json::from_str(value.trim()).map_err(|_| {
+                        CogniaError::Config("Invalid JSON for custom_cache_entries".into())
+                    })?;
+            }
+            ["general", "external_cache_excluded_providers"] => {
+                let trimmed = value.trim();
+                let parsed: Vec<String> = if trimmed.is_empty() {
+                    Vec::new()
+                } else if trimmed.starts_with('[') {
+                    serde_json::from_str(trimmed).map_err(|_| {
+                        CogniaError::Config(
+                            "Invalid JSON array for external_cache_excluded_providers".into(),
+                        )
+                    })?
+                } else {
+                    trimmed
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|item| !item.is_empty())
+                        .collect()
+                };
+                self.general.external_cache_excluded_providers = parsed;
             }
             ["network", "timeout"] => {
                 self.network.timeout = value
@@ -891,6 +981,13 @@ impl Settings {
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
             }
+            ["appearance", "window_effect"] => {
+                let valid = ["auto", "none", "mica", "mica-tabbed", "acrylic", "blur", "vibrancy"];
+                if !valid.contains(&value) {
+                    return Err(CogniaError::Config("Invalid window effect value".into()));
+                }
+                self.appearance.window_effect = value.to_string();
+            }
             ["updates", "check_on_start"] => {
                 self.updates.check_on_start = value
                     .parse()
@@ -926,7 +1023,11 @@ impl Settings {
                     "toggle_window" => TrayClickBehavior::ToggleWindow,
                     "show_menu" => TrayClickBehavior::ShowMenu,
                     "do_nothing" => TrayClickBehavior::DoNothing,
-                    _ => return Err(CogniaError::Config("Invalid tray click behavior value".into())),
+                    _ => {
+                        return Err(CogniaError::Config(
+                            "Invalid tray click behavior value".into(),
+                        ))
+                    }
                 };
             }
             ["tray", "menu_items"] => {
@@ -1006,14 +1107,14 @@ impl Settings {
                 })?;
             }
             ["backup", "max_backups"] => {
-                self.backup.max_backups = value.parse().map_err(|_| {
-                    CogniaError::Config("Invalid value for max_backups".into())
-                })?;
+                self.backup.max_backups = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for max_backups".into()))?;
             }
             ["backup", "retention_days"] => {
-                self.backup.retention_days = value.parse().map_err(|_| {
-                    CogniaError::Config("Invalid value for retention_days".into())
-                })?;
+                self.backup.retention_days = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid value for retention_days".into()))?;
             }
             ["plugin", "auto_load_on_startup"] => {
                 self.plugin.auto_load_on_startup = value
@@ -1064,6 +1165,20 @@ impl Settings {
                 self.startup.integrity_check = value
                     .parse()
                     .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["shortcuts", "enabled"] => {
+                self.shortcuts.enabled = value
+                    .parse()
+                    .map_err(|_| CogniaError::Config("Invalid boolean value".into()))?;
+            }
+            ["shortcuts", "toggle_window"] => {
+                self.shortcuts.toggle_window = value.to_string();
+            }
+            ["shortcuts", "command_palette"] => {
+                self.shortcuts.command_palette = value.to_string();
+            }
+            ["shortcuts", "quick_search"] => {
+                self.shortcuts.quick_search = value.to_string();
             }
             ["providers", provider, "token"] => {
                 let ps = self.providers.entry(provider.to_string()).or_default();
@@ -1278,7 +1393,11 @@ mod tests {
             ("latest", ResolveStrategy::Latest, "latest"),
             ("minimal", ResolveStrategy::Minimal, "minimal"),
             ("locked", ResolveStrategy::Locked, "locked"),
-            ("prefer-locked", ResolveStrategy::PreferLocked, "prefer-locked"),
+            (
+                "prefer-locked",
+                ResolveStrategy::PreferLocked,
+                "prefer-locked",
+            ),
         ] {
             s.set_value("general.resolve_strategy", input).unwrap();
             assert_eq!(s.general.resolve_strategy, expected_enum);
@@ -1292,16 +1411,26 @@ mod tests {
     #[test]
     fn test_get_set_auto_update_metadata() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.auto_update_metadata"), Some("true".into()));
-        s.set_value("general.auto_update_metadata", "false").unwrap();
+        assert_eq!(
+            s.get_value("general.auto_update_metadata"),
+            Some("true".into())
+        );
+        s.set_value("general.auto_update_metadata", "false")
+            .unwrap();
         assert!(!s.general.auto_update_metadata);
-        assert_eq!(s.get_value("general.auto_update_metadata"), Some("false".into()));
+        assert_eq!(
+            s.get_value("general.auto_update_metadata"),
+            Some("false".into())
+        );
     }
 
     #[test]
     fn test_get_set_metadata_cache_ttl() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.metadata_cache_ttl"), Some("3600".into()));
+        assert_eq!(
+            s.get_value("general.metadata_cache_ttl"),
+            Some("3600".into())
+        );
         s.set_value("general.metadata_cache_ttl", "7200").unwrap();
         assert_eq!(s.general.metadata_cache_ttl, 7200);
     }
@@ -1311,7 +1440,10 @@ mod tests {
         let mut s = Settings::default();
         s.set_value("general.cache_max_size", "1073741824").unwrap();
         assert_eq!(s.general.cache_max_size, 1073741824);
-        assert_eq!(s.get_value("general.cache_max_size"), Some("1073741824".into()));
+        assert_eq!(
+            s.get_value("general.cache_max_size"),
+            Some("1073741824".into())
+        );
     }
 
     #[test]
@@ -1334,40 +1466,61 @@ mod tests {
     fn test_get_set_min_install_space_mb() {
         let mut s = Settings::default();
         s.set_value("general.min_install_space_mb", "250").unwrap();
-        assert_eq!(s.get_value("general.min_install_space_mb"), Some("250".into()));
+        assert_eq!(
+            s.get_value("general.min_install_space_mb"),
+            Some("250".into())
+        );
     }
 
     #[test]
     fn test_get_set_cache_auto_clean_threshold() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.cache_auto_clean_threshold"), Some("80".into()));
-        s.set_value("general.cache_auto_clean_threshold", "90").unwrap();
+        assert_eq!(
+            s.get_value("general.cache_auto_clean_threshold"),
+            Some("80".into())
+        );
+        s.set_value("general.cache_auto_clean_threshold", "90")
+            .unwrap();
         assert_eq!(s.general.cache_auto_clean_threshold, 90);
     }
 
     #[test]
     fn test_get_set_cache_monitor_interval() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.cache_monitor_interval"), Some("300".into()));
-        s.set_value("general.cache_monitor_interval", "600").unwrap();
+        assert_eq!(
+            s.get_value("general.cache_monitor_interval"),
+            Some("300".into())
+        );
+        s.set_value("general.cache_monitor_interval", "600")
+            .unwrap();
         assert_eq!(s.general.cache_monitor_interval, 600);
     }
 
     #[test]
     fn test_get_set_cache_monitor_external() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.cache_monitor_external"), Some("false".into()));
-        s.set_value("general.cache_monitor_external", "true").unwrap();
+        assert_eq!(
+            s.get_value("general.cache_monitor_external"),
+            Some("false".into())
+        );
+        s.set_value("general.cache_monitor_external", "true")
+            .unwrap();
         assert!(s.general.cache_monitor_external);
     }
 
     #[test]
     fn test_get_set_download_speed_limit() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("general.download_speed_limit"), Some("0".into()));
-        s.set_value("general.download_speed_limit", "1048576").unwrap();
+        assert_eq!(
+            s.get_value("general.download_speed_limit"),
+            Some("0".into())
+        );
+        s.set_value("general.download_speed_limit", "1048576")
+            .unwrap();
         assert_eq!(s.general.download_speed_limit, 1048576);
-        assert!(s.set_value("general.download_speed_limit", "not_a_number").is_err());
+        assert!(s
+            .set_value("general.download_speed_limit", "not_a_number")
+            .is_err());
     }
 
     // ===== get_value / set_value: network section =====
@@ -1393,7 +1546,10 @@ mod tests {
         let mut s = Settings::default();
         assert_eq!(s.get_value("network.proxy"), None);
         s.set_value("network.proxy", "http://proxy:8080").unwrap();
-        assert_eq!(s.get_value("network.proxy"), Some("http://proxy:8080".into()));
+        assert_eq!(
+            s.get_value("network.proxy"),
+            Some("http://proxy:8080".into())
+        );
         s.set_value("network.proxy", "").unwrap();
         assert!(s.network.proxy.is_none());
     }
@@ -1402,8 +1558,12 @@ mod tests {
     fn test_get_set_network_no_proxy() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("network.no_proxy"), Some(String::new()));
-        s.set_value("network.no_proxy", "localhost,127.0.0.1").unwrap();
-        assert_eq!(s.get_value("network.no_proxy"), Some("localhost,127.0.0.1".into()));
+        s.set_value("network.no_proxy", "localhost,127.0.0.1")
+            .unwrap();
+        assert_eq!(
+            s.get_value("network.no_proxy"),
+            Some("localhost,127.0.0.1".into())
+        );
         s.set_value("network.no_proxy", "").unwrap();
         assert!(s.network.no_proxy.is_none());
     }
@@ -1418,11 +1578,18 @@ mod tests {
         s.set_value("security.allow_http", "true").unwrap();
         assert!(s.security.allow_http);
 
-        assert_eq!(s.get_value("security.verify_certificates"), Some("true".into()));
-        s.set_value("security.verify_certificates", "false").unwrap();
+        assert_eq!(
+            s.get_value("security.verify_certificates"),
+            Some("true".into())
+        );
+        s.set_value("security.verify_certificates", "false")
+            .unwrap();
         assert!(!s.security.verify_certificates);
 
-        assert_eq!(s.get_value("security.allow_self_signed"), Some("false".into()));
+        assert_eq!(
+            s.get_value("security.allow_self_signed"),
+            Some("false".into())
+        );
         s.set_value("security.allow_self_signed", "true").unwrap();
         assert!(s.security.allow_self_signed);
     }
@@ -1481,8 +1648,18 @@ mod tests {
     #[test]
     fn test_get_set_appearance_chart_color_theme() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("appearance.chart_color_theme"), Some("default".into()));
-        for valid in ["default", "vibrant", "pastel", "ocean", "sunset", "monochrome"] {
+        assert_eq!(
+            s.get_value("appearance.chart_color_theme"),
+            Some("default".into())
+        );
+        for valid in [
+            "default",
+            "vibrant",
+            "pastel",
+            "ocean",
+            "sunset",
+            "monochrome",
+        ] {
             s.set_value("appearance.chart_color_theme", valid).unwrap();
             assert_eq!(s.appearance.chart_color_theme, valid);
         }
@@ -1491,7 +1668,10 @@ mod tests {
     #[test]
     fn test_get_set_appearance_interface_radius() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("appearance.interface_radius"), Some("0.625".into()));
+        assert_eq!(
+            s.get_value("appearance.interface_radius"),
+            Some("0.625".into())
+        );
         for valid in ["0", "0.3", "0.5", "0.625", "0.75", "1"] {
             s.set_value("appearance.interface_radius", valid).unwrap();
         }
@@ -1501,7 +1681,10 @@ mod tests {
     #[test]
     fn test_get_set_appearance_interface_density() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("appearance.interface_density"), Some("comfortable".into()));
+        assert_eq!(
+            s.get_value("appearance.interface_density"),
+            Some("comfortable".into())
+        );
         for valid in ["compact", "comfortable", "spacious"] {
             s.set_value("appearance.interface_density", valid).unwrap();
             assert_eq!(s.appearance.interface_density, valid);
@@ -1519,9 +1702,26 @@ mod tests {
     #[test]
     fn test_get_set_appearance_reduced_motion() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("appearance.reduced_motion"), Some("false".into()));
+        assert_eq!(
+            s.get_value("appearance.reduced_motion"),
+            Some("false".into())
+        );
         s.set_value("appearance.reduced_motion", "true").unwrap();
         assert!(s.appearance.reduced_motion);
+    }
+
+    #[test]
+    fn test_get_set_appearance_window_effect() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("appearance.window_effect"),
+            Some("auto".into())
+        );
+        for valid in ["auto", "none", "mica", "mica-tabbed", "acrylic", "blur", "vibrancy"] {
+            s.set_value("appearance.window_effect", valid).unwrap();
+            assert_eq!(s.appearance.window_effect, valid);
+        }
+        assert!(s.set_value("appearance.window_effect", "invalid").is_err());
     }
 
     // ===== get_value / set_value: terminal section =====
@@ -1537,9 +1737,16 @@ mod tests {
     #[test]
     fn test_get_set_terminal_default_profile_id() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("terminal.default_profile_id"), Some(String::new()));
-        s.set_value("terminal.default_profile_id", "my-profile").unwrap();
-        assert_eq!(s.terminal.default_profile_id, Some("my-profile".to_string()));
+        assert_eq!(
+            s.get_value("terminal.default_profile_id"),
+            Some(String::new())
+        );
+        s.set_value("terminal.default_profile_id", "my-profile")
+            .unwrap();
+        assert_eq!(
+            s.terminal.default_profile_id,
+            Some("my-profile".to_string())
+        );
         s.set_value("terminal.default_profile_id", "").unwrap();
         assert!(s.terminal.default_profile_id.is_none());
     }
@@ -1547,7 +1754,10 @@ mod tests {
     #[test]
     fn test_get_set_terminal_shell_integration() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("terminal.shell_integration"), Some("true".into()));
+        assert_eq!(
+            s.get_value("terminal.shell_integration"),
+            Some("true".into())
+        );
         s.set_value("terminal.shell_integration", "false").unwrap();
         assert!(!s.terminal.shell_integration);
     }
@@ -1566,8 +1776,12 @@ mod tests {
     fn test_get_set_terminal_custom_proxy() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("terminal.custom_proxy"), Some(String::new()));
-        s.set_value("terminal.custom_proxy", "socks5://localhost:1080").unwrap();
-        assert_eq!(s.terminal.custom_proxy, Some("socks5://localhost:1080".into()));
+        s.set_value("terminal.custom_proxy", "socks5://localhost:1080")
+            .unwrap();
+        assert_eq!(
+            s.terminal.custom_proxy,
+            Some("socks5://localhost:1080".into())
+        );
         s.set_value("terminal.custom_proxy", "").unwrap();
         assert!(s.terminal.custom_proxy.is_none());
     }
@@ -1589,7 +1803,10 @@ mod tests {
         let mut s = Settings::default();
         assert_eq!(s.get_value("providers.github.token"), None);
         s.set_value("providers.github.token", "ghp_abc123").unwrap();
-        assert_eq!(s.get_value("providers.github.token"), Some("ghp_abc123".into()));
+        assert_eq!(
+            s.get_value("providers.github.token"),
+            Some("ghp_abc123".into())
+        );
         // Clear
         s.set_value("providers.github.token", "").unwrap();
         assert_eq!(s.get_value("providers.github.token"), None);
@@ -1599,8 +1816,12 @@ mod tests {
     fn test_get_set_provider_url() {
         let mut s = Settings::default();
         assert_eq!(s.get_value("providers.gitlab.url"), None);
-        s.set_value("providers.gitlab.url", "https://gitlab.example.com").unwrap();
-        assert_eq!(s.get_value("providers.gitlab.url"), Some("https://gitlab.example.com".into()));
+        s.set_value("providers.gitlab.url", "https://gitlab.example.com")
+            .unwrap();
+        assert_eq!(
+            s.get_value("providers.gitlab.url"),
+            Some("https://gitlab.example.com".into())
+        );
         s.set_value("providers.gitlab.url", "").unwrap();
         assert_eq!(s.get_value("providers.gitlab.url"), None);
     }
@@ -1610,8 +1831,15 @@ mod tests {
     #[test]
     fn test_set_disabled_providers_json_array() {
         let mut s = Settings::default();
-        s.set_value("provider_settings.disabled_providers", r#"["snap","flatpak"]"#).unwrap();
-        assert_eq!(s.provider_settings.disabled_providers, vec!["snap", "flatpak"]);
+        s.set_value(
+            "provider_settings.disabled_providers",
+            r#"["snap","flatpak"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.provider_settings.disabled_providers,
+            vec!["snap", "flatpak"]
+        );
         // get_value returns JSON
         let val = s.get_value("provider_settings.disabled_providers").unwrap();
         assert!(val.contains("snap"));
@@ -1620,7 +1848,11 @@ mod tests {
     #[test]
     fn test_set_disabled_providers_csv() {
         let mut s = Settings::default();
-        s.set_value("provider_settings.disabled_providers", "snap, flatpak, docker").unwrap();
+        s.set_value(
+            "provider_settings.disabled_providers",
+            "snap, flatpak, docker",
+        )
+        .unwrap();
         assert_eq!(
             s.provider_settings.disabled_providers,
             vec!["snap", "flatpak", "docker"]
@@ -1630,9 +1862,11 @@ mod tests {
     #[test]
     fn test_set_disabled_providers_empty() {
         let mut s = Settings::default();
-        s.set_value("provider_settings.disabled_providers", "snap").unwrap();
+        s.set_value("provider_settings.disabled_providers", "snap")
+            .unwrap();
         assert_eq!(s.provider_settings.disabled_providers.len(), 1);
-        s.set_value("provider_settings.disabled_providers", "").unwrap();
+        s.set_value("provider_settings.disabled_providers", "")
+            .unwrap();
         assert!(s.provider_settings.disabled_providers.is_empty());
     }
 
@@ -1653,14 +1887,18 @@ mod tests {
     #[test]
     fn test_set_invalid_chart_color_theme() {
         let mut s = Settings::default();
-        assert!(s.set_value("appearance.chart_color_theme", "rainbow").is_err());
+        assert!(s
+            .set_value("appearance.chart_color_theme", "rainbow")
+            .is_err());
     }
 
     #[test]
     fn test_set_invalid_interface_radius() {
         let mut s = Settings::default();
         assert!(s.set_value("appearance.interface_radius", "0.9").is_err());
-        assert!(s.set_value("appearance.interface_radius", "not_float").is_err());
+        assert!(s
+            .set_value("appearance.interface_radius", "not_float")
+            .is_err());
     }
 
     #[test]
@@ -1690,11 +1928,15 @@ mod tests {
     #[test]
     fn test_set_cache_threshold_over_100() {
         let mut s = Settings::default();
-        assert!(s.set_value("general.cache_auto_clean_threshold", "101").is_err());
+        assert!(s
+            .set_value("general.cache_auto_clean_threshold", "101")
+            .is_err());
         // Edge cases: 0 and 100 are valid
-        s.set_value("general.cache_auto_clean_threshold", "0").unwrap();
+        s.set_value("general.cache_auto_clean_threshold", "0")
+            .unwrap();
         assert_eq!(s.general.cache_auto_clean_threshold, 0);
-        s.set_value("general.cache_auto_clean_threshold", "100").unwrap();
+        s.set_value("general.cache_auto_clean_threshold", "100")
+            .unwrap();
         assert_eq!(s.general.cache_auto_clean_threshold, 100);
     }
 
@@ -1713,7 +1955,8 @@ mod tests {
             s.get_value("general.update_check_concurrency"),
             Some("8".into())
         );
-        s.set_value("general.update_check_concurrency", "16").unwrap();
+        s.set_value("general.update_check_concurrency", "16")
+            .unwrap();
         assert_eq!(
             s.get_value("general.update_check_concurrency"),
             Some("16".into())
@@ -1725,17 +1968,25 @@ mod tests {
     fn test_update_check_concurrency_boundary() {
         let mut s = Settings::default();
         // Min boundary
-        s.set_value("general.update_check_concurrency", "1").unwrap();
+        s.set_value("general.update_check_concurrency", "1")
+            .unwrap();
         assert_eq!(s.general.update_check_concurrency, 1);
         // Max boundary
-        s.set_value("general.update_check_concurrency", "32").unwrap();
+        s.set_value("general.update_check_concurrency", "32")
+            .unwrap();
         assert_eq!(s.general.update_check_concurrency, 32);
         // Below min
-        assert!(s.set_value("general.update_check_concurrency", "0").is_err());
+        assert!(s
+            .set_value("general.update_check_concurrency", "0")
+            .is_err());
         // Above max
-        assert!(s.set_value("general.update_check_concurrency", "33").is_err());
+        assert!(s
+            .set_value("general.update_check_concurrency", "33")
+            .is_err());
         // Invalid string
-        assert!(s.set_value("general.update_check_concurrency", "abc").is_err());
+        assert!(s
+            .set_value("general.update_check_concurrency", "abc")
+            .is_err());
     }
 
     #[test]
@@ -1800,7 +2051,10 @@ mod tests {
     fn test_get_environments_dir_default_fallback() {
         let mut s = Settings::default();
         s.paths.root = Some(PathBuf::from("/my/root"));
-        assert_eq!(s.get_environments_dir(), PathBuf::from("/my/root/environments"));
+        assert_eq!(
+            s.get_environments_dir(),
+            PathBuf::from("/my/root/environments")
+        );
     }
 
     #[test]
@@ -1845,8 +2099,12 @@ mod tests {
     fn test_mirror_get_set() {
         let mut s = Settings::default();
 
-        s.set_value("mirrors.npm", "https://registry.npmmirror.com").unwrap();
-        assert_eq!(s.get_value("mirrors.npm"), Some("https://registry.npmmirror.com".into()));
+        s.set_value("mirrors.npm", "https://registry.npmmirror.com")
+            .unwrap();
+        assert_eq!(
+            s.get_value("mirrors.npm"),
+            Some("https://registry.npmmirror.com".into())
+        );
 
         s.set_value("mirrors.npm.enabled", "true").unwrap();
         assert_eq!(s.get_value("mirrors.npm.enabled"), Some("true".into()));
@@ -1854,7 +2112,10 @@ mod tests {
         s.set_value("mirrors.npm.priority", "10").unwrap();
         assert_eq!(s.get_value("mirrors.npm.priority"), Some("10".into()));
 
-        assert_eq!(s.get_mirror_url("npm"), Some("https://registry.npmmirror.com".into()));
+        assert_eq!(
+            s.get_mirror_url("npm"),
+            Some("https://registry.npmmirror.com".into())
+        );
 
         s.set_value("mirrors.npm.enabled", "false").unwrap();
         assert_eq!(s.get_mirror_url("npm"), None);
@@ -1863,7 +2124,8 @@ mod tests {
     #[test]
     fn test_mirror_verify_ssl_get_set() {
         let mut s = Settings::default();
-        s.set_value("mirrors.npm", "https://registry.npmmirror.com").unwrap();
+        s.set_value("mirrors.npm", "https://registry.npmmirror.com")
+            .unwrap();
         assert_eq!(s.get_value("mirrors.npm.verify_ssl"), Some("true".into()));
         s.set_value("mirrors.npm.verify_ssl", "false").unwrap();
         assert!(!s.mirrors.get("npm").unwrap().verify_ssl);
@@ -1887,10 +2149,12 @@ mod tests {
     fn test_get_enabled_mirrors() {
         let mut s = Settings::default();
 
-        s.set_value("mirrors.npm", "https://registry.npmmirror.com").unwrap();
+        s.set_value("mirrors.npm", "https://registry.npmmirror.com")
+            .unwrap();
         s.set_value("mirrors.npm.priority", "5").unwrap();
 
-        s.set_value("mirrors.pypi", "https://pypi.tuna.tsinghua.edu.cn/simple").unwrap();
+        s.set_value("mirrors.pypi", "https://pypi.tuna.tsinghua.edu.cn/simple")
+            .unwrap();
         s.set_value("mirrors.pypi.priority", "10").unwrap();
 
         let enabled = s.get_enabled_mirrors();
@@ -1903,9 +2167,11 @@ mod tests {
     #[test]
     fn test_get_enabled_mirrors_excludes_disabled() {
         let mut s = Settings::default();
-        s.set_value("mirrors.npm", "https://npm.example.com").unwrap();
+        s.set_value("mirrors.npm", "https://npm.example.com")
+            .unwrap();
         s.set_value("mirrors.npm.enabled", "false").unwrap();
-        s.set_value("mirrors.pypi", "https://pypi.example.com").unwrap();
+        s.set_value("mirrors.pypi", "https://pypi.example.com")
+            .unwrap();
 
         let enabled = s.get_enabled_mirrors();
         assert_eq!(enabled.len(), 1);
@@ -1925,7 +2191,8 @@ mod tests {
     #[test]
     fn test_should_verify_ssl_with_mirror_config() {
         let mut s = Settings::default();
-        s.set_value("mirrors.npm", "https://npm.example.com").unwrap();
+        s.set_value("mirrors.npm", "https://npm.example.com")
+            .unwrap();
         s.set_value("mirrors.npm.verify_ssl", "false").unwrap();
         assert!(!s.should_verify_ssl("npm"));
     }
@@ -1952,31 +2219,51 @@ mod tests {
         let toml_str = toml::to_string(&settings).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
 
-        assert_eq!(settings.general.parallel_downloads, parsed.general.parallel_downloads);
-        assert_eq!(settings.general.resolve_strategy, parsed.general.resolve_strategy);
+        assert_eq!(
+            settings.general.parallel_downloads,
+            parsed.general.parallel_downloads
+        );
+        assert_eq!(
+            settings.general.resolve_strategy,
+            parsed.general.resolve_strategy
+        );
         assert_eq!(settings.appearance.theme, parsed.appearance.theme);
-        assert_eq!(settings.terminal.default_shell, parsed.terminal.default_shell);
-        assert_eq!(settings.security.verify_certificates, parsed.security.verify_certificates);
+        assert_eq!(
+            settings.terminal.default_shell,
+            parsed.terminal.default_shell
+        );
+        assert_eq!(
+            settings.security.verify_certificates,
+            parsed.security.verify_certificates
+        );
     }
 
     #[test]
     fn test_serialize_deserialize_with_custom_values() {
         let mut s = Settings::default();
         s.set_value("general.parallel_downloads", "16").unwrap();
-        s.set_value("general.resolve_strategy", "prefer-locked").unwrap();
+        s.set_value("general.resolve_strategy", "prefer-locked")
+            .unwrap();
         s.set_value("appearance.theme", "dark").unwrap();
         s.set_value("network.proxy", "http://proxy:8080").unwrap();
-        s.set_value("mirrors.npm", "https://npm.example.com").unwrap();
+        s.set_value("mirrors.npm", "https://npm.example.com")
+            .unwrap();
         s.set_value("providers.github.token", "ghp_test").unwrap();
 
         let toml_str = toml::to_string(&s).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
 
         assert_eq!(parsed.general.parallel_downloads, 16);
-        assert_eq!(parsed.general.resolve_strategy, ResolveStrategy::PreferLocked);
+        assert_eq!(
+            parsed.general.resolve_strategy,
+            ResolveStrategy::PreferLocked
+        );
         assert_eq!(parsed.appearance.theme, "dark");
         assert_eq!(parsed.network.proxy, Some("http://proxy:8080".into()));
-        assert_eq!(parsed.mirrors.get("npm").unwrap().url, "https://npm.example.com");
+        assert_eq!(
+            parsed.mirrors.get("npm").unwrap().url,
+            "https://npm.example.com"
+        );
     }
 
     // ===== ResolveStrategy serde =====
@@ -2107,17 +2394,27 @@ mod tests {
     #[test]
     fn test_get_set_backup_auto_backup_enabled() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("backup.auto_backup_enabled"), Some("false".into()));
+        assert_eq!(
+            s.get_value("backup.auto_backup_enabled"),
+            Some("false".into())
+        );
         s.set_value("backup.auto_backup_enabled", "true").unwrap();
         assert!(s.backup.auto_backup_enabled);
-        assert_eq!(s.get_value("backup.auto_backup_enabled"), Some("true".into()));
+        assert_eq!(
+            s.get_value("backup.auto_backup_enabled"),
+            Some("true".into())
+        );
     }
 
     #[test]
     fn test_get_set_backup_auto_backup_interval_hours() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("backup.auto_backup_interval_hours"), Some("24".into()));
-        s.set_value("backup.auto_backup_interval_hours", "12").unwrap();
+        assert_eq!(
+            s.get_value("backup.auto_backup_interval_hours"),
+            Some("24".into())
+        );
+        s.set_value("backup.auto_backup_interval_hours", "12")
+            .unwrap();
         assert_eq!(s.backup.auto_backup_interval_hours, 12);
     }
 
@@ -2141,7 +2438,9 @@ mod tests {
     fn test_set_backup_invalid_values() {
         let mut s = Settings::default();
         assert!(s.set_value("backup.auto_backup_enabled", "yes").is_err());
-        assert!(s.set_value("backup.auto_backup_interval_hours", "abc").is_err());
+        assert!(s
+            .set_value("backup.auto_backup_interval_hours", "abc")
+            .is_err());
         assert!(s.set_value("backup.max_backups", "-1").is_err());
         assert!(s.set_value("backup.retention_days", "xyz").is_err());
     }
@@ -2150,7 +2449,8 @@ mod tests {
     fn test_backup_settings_serialize_roundtrip() {
         let mut s = Settings::default();
         s.set_value("backup.auto_backup_enabled", "true").unwrap();
-        s.set_value("backup.auto_backup_interval_hours", "6").unwrap();
+        s.set_value("backup.auto_backup_interval_hours", "6")
+            .unwrap();
         s.set_value("backup.max_backups", "20").unwrap();
         s.set_value("backup.retention_days", "90").unwrap();
 
@@ -2245,7 +2545,8 @@ mod tests {
     #[test]
     fn test_set_tray_menu_items_keeps_quit() {
         let mut s = Settings::default();
-        s.set_value("tray.menu_items", "show_hide,downloads").unwrap();
+        s.set_value("tray.menu_items", "show_hide,downloads")
+            .unwrap();
         assert!(s.tray.menu_items.contains(&TrayMenuItemId::Quit));
     }
 
@@ -2271,17 +2572,27 @@ mod tests {
     #[test]
     fn test_get_set_plugin_auto_load() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("plugin.auto_load_on_startup"), Some("true".into()));
+        assert_eq!(
+            s.get_value("plugin.auto_load_on_startup"),
+            Some("true".into())
+        );
         s.set_value("plugin.auto_load_on_startup", "false").unwrap();
         assert!(!s.plugin.auto_load_on_startup);
-        assert_eq!(s.get_value("plugin.auto_load_on_startup"), Some("false".into()));
+        assert_eq!(
+            s.get_value("plugin.auto_load_on_startup"),
+            Some("false".into())
+        );
     }
 
     #[test]
     fn test_get_set_plugin_timeout() {
         let mut s = Settings::default();
-        assert_eq!(s.get_value("plugin.max_execution_timeout_secs"), Some("30".into()));
-        s.set_value("plugin.max_execution_timeout_secs", "60").unwrap();
+        assert_eq!(
+            s.get_value("plugin.max_execution_timeout_secs"),
+            Some("30".into())
+        );
+        s.set_value("plugin.max_execution_timeout_secs", "60")
+            .unwrap();
         assert_eq!(s.plugin.max_execution_timeout_secs, 60);
     }
 
@@ -2297,9 +2608,13 @@ mod tests {
     fn test_set_plugin_invalid_values() {
         let mut s = Settings::default();
         assert!(s.set_value("plugin.auto_load_on_startup", "yes").is_err());
-        assert!(s.set_value("plugin.max_execution_timeout_secs", "abc").is_err());
+        assert!(s
+            .set_value("plugin.max_execution_timeout_secs", "abc")
+            .is_err());
         assert!(s.set_value("plugin.sandbox_fs", "maybe").is_err());
-        assert!(s.set_value("plugin.permission_enforcement_mode", "invalid").is_err());
+        assert!(s
+            .set_value("plugin.permission_enforcement_mode", "invalid")
+            .is_err());
     }
 
     #[test]
@@ -2309,7 +2624,8 @@ mod tests {
             s.get_value("plugin.permission_enforcement_mode"),
             Some("compat".into())
         );
-        s.set_value("plugin.permission_enforcement_mode", "strict").unwrap();
+        s.set_value("plugin.permission_enforcement_mode", "strict")
+            .unwrap();
         assert_eq!(s.plugin.permission_enforcement_mode, "strict");
     }
 
@@ -2317,9 +2633,11 @@ mod tests {
     fn test_plugin_settings_serialize_roundtrip() {
         let mut s = Settings::default();
         s.set_value("plugin.auto_load_on_startup", "false").unwrap();
-        s.set_value("plugin.max_execution_timeout_secs", "120").unwrap();
+        s.set_value("plugin.max_execution_timeout_secs", "120")
+            .unwrap();
         s.set_value("plugin.sandbox_fs", "false").unwrap();
-        s.set_value("plugin.permission_enforcement_mode", "strict").unwrap();
+        s.set_value("plugin.permission_enforcement_mode", "strict")
+            .unwrap();
 
         let toml_str = toml::to_string(&s).unwrap();
         let parsed: Settings = toml::from_str(&toml_str).unwrap();
@@ -2328,5 +2646,100 @@ mod tests {
         assert_eq!(parsed.plugin.max_execution_timeout_secs, 120);
         assert!(!parsed.plugin.sandbox_fs);
         assert_eq!(parsed.plugin.permission_enforcement_mode, "strict");
+    }
+
+    // ===== ShortcutSettings defaults and get/set =====
+
+    #[test]
+    fn test_default_shortcut_settings() {
+        let sc = ShortcutSettings::default();
+        assert!(sc.enabled);
+        assert_eq!(sc.toggle_window, "CmdOrCtrl+Shift+Space");
+        assert_eq!(sc.command_palette, "CmdOrCtrl+Shift+K");
+        assert_eq!(sc.quick_search, "CmdOrCtrl+Shift+F");
+    }
+
+    #[test]
+    fn test_get_set_shortcuts_enabled() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_value("shortcuts.enabled"), Some("true".into()));
+        s.set_value("shortcuts.enabled", "false").unwrap();
+        assert!(!s.shortcuts.enabled);
+        assert_eq!(s.get_value("shortcuts.enabled"), Some("false".into()));
+    }
+
+    #[test]
+    fn test_set_shortcuts_enabled_invalid() {
+        let mut s = Settings::default();
+        assert!(s.set_value("shortcuts.enabled", "yes").is_err());
+    }
+
+    #[test]
+    fn test_get_set_shortcuts_toggle_window() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("shortcuts.toggle_window"),
+            Some("CmdOrCtrl+Shift+Space".into())
+        );
+        s.set_value("shortcuts.toggle_window", "Alt+Space").unwrap();
+        assert_eq!(s.shortcuts.toggle_window, "Alt+Space");
+        assert_eq!(
+            s.get_value("shortcuts.toggle_window"),
+            Some("Alt+Space".into())
+        );
+    }
+
+    #[test]
+    fn test_get_set_shortcuts_command_palette() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("shortcuts.command_palette"),
+            Some("CmdOrCtrl+Shift+K".into())
+        );
+        s.set_value("shortcuts.command_palette", "CmdOrCtrl+Shift+P")
+            .unwrap();
+        assert_eq!(s.shortcuts.command_palette, "CmdOrCtrl+Shift+P");
+    }
+
+    #[test]
+    fn test_get_set_shortcuts_quick_search() {
+        let mut s = Settings::default();
+        assert_eq!(
+            s.get_value("shortcuts.quick_search"),
+            Some("CmdOrCtrl+Shift+F".into())
+        );
+        s.set_value("shortcuts.quick_search", "CmdOrCtrl+Alt+S")
+            .unwrap();
+        assert_eq!(s.shortcuts.quick_search, "CmdOrCtrl+Alt+S");
+    }
+
+    #[test]
+    fn test_shortcuts_serialize_roundtrip() {
+        let mut s = Settings::default();
+        s.set_value("shortcuts.enabled", "false").unwrap();
+        s.set_value("shortcuts.toggle_window", "Alt+Space").unwrap();
+        s.set_value("shortcuts.command_palette", "CmdOrCtrl+Shift+P")
+            .unwrap();
+        s.set_value("shortcuts.quick_search", "CmdOrCtrl+Alt+S")
+            .unwrap();
+
+        let toml_str = toml::to_string(&s).unwrap();
+        let parsed: Settings = toml::from_str(&toml_str).unwrap();
+
+        assert!(!parsed.shortcuts.enabled);
+        assert_eq!(parsed.shortcuts.toggle_window, "Alt+Space");
+        assert_eq!(parsed.shortcuts.command_palette, "CmdOrCtrl+Shift+P");
+        assert_eq!(parsed.shortcuts.quick_search, "CmdOrCtrl+Alt+S");
+    }
+
+    #[test]
+    fn test_shortcuts_empty_string_allowed() {
+        let mut s = Settings::default();
+        s.set_value("shortcuts.toggle_window", "").unwrap();
+        assert_eq!(s.shortcuts.toggle_window, "");
+        assert_eq!(
+            s.get_value("shortcuts.toggle_window"),
+            Some("".into())
+        );
     }
 }

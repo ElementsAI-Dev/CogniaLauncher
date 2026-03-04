@@ -38,16 +38,11 @@ pub async fn pipx_inject(app_name: String, packages: Vec<String>) -> Result<Stri
     let mut args = vec!["inject", app_name.as_str()];
     let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
     args.extend(pkg_refs);
-    run_pipx(&args, 180)
-        .await
-        .map_err(|e| e.to_string())
+    run_pipx(&args, 180).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn pipx_run(
-    package: String,
-    run_args: Vec<String>,
-) -> Result<PipxRunResult, String> {
+pub async fn pipx_run(package: String, run_args: Vec<String>) -> Result<PipxRunResult, String> {
     let mut args = vec!["run", package.as_str()];
     let arg_refs: Vec<&str> = run_args.iter().map(|s| s.as_str()).collect();
     args.extend(arg_refs);

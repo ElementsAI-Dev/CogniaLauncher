@@ -977,11 +977,7 @@ pub fn parse_worktree_list(output: &str) -> Vec<GitWorktreeInfo> {
             current_head = h.to_string();
         } else if let Some(b) = line.strip_prefix("branch ") {
             // Strip "refs/heads/" prefix for display
-            current_branch = Some(
-                b.strip_prefix("refs/heads/")
-                    .unwrap_or(b)
-                    .to_string(),
-            );
+            current_branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
         } else if line == "bare" {
             is_bare = true;
         } else if line == "detached" {
@@ -1136,13 +1132,21 @@ pub fn extract_repo_name(url: &str) -> Option<String> {
     if let Some(after_at) = cleaned.strip_prefix("git@") {
         if let Some(colon_pos) = after_at.find(':') {
             let path = &after_at[colon_pos + 1..];
-            return path.rsplit('/').next().map(|s| s.to_string()).filter(|s| !s.is_empty());
+            return path
+                .rsplit('/')
+                .next()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
         }
     }
 
     // URL format: scheme://host/path/repo
     if cleaned.contains("://") {
-        return cleaned.rsplit('/').next().map(|s| s.to_string()).filter(|s| !s.is_empty());
+        return cleaned
+            .rsplit('/')
+            .next()
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
     }
 
     // Local path or bare name: extract basename
@@ -1188,7 +1192,10 @@ pub fn validate_git_url(url: &str) -> bool {
     // Local absolute path — Windows drive letter or Unix absolute path
     #[cfg(windows)]
     {
-        if url.len() >= 3 && url.as_bytes()[1] == b':' && (url.as_bytes()[2] == b'\\' || url.as_bytes()[2] == b'/') {
+        if url.len() >= 3
+            && url.as_bytes()[1] == b':'
+            && (url.as_bytes()[2] == b'\\' || url.as_bytes()[2] == b'/')
+        {
             return true;
         }
     }
@@ -2495,12 +2502,7 @@ impl GitProvider {
     }
 
     /// Set remote URL
-    pub async fn remote_set_url(
-        &self,
-        path: &str,
-        name: &str,
-        url: &str,
-    ) -> CogniaResult<String> {
+    pub async fn remote_set_url(&self, path: &str, name: &str, url: &str) -> CogniaResult<String> {
         run_git_in(path, &["remote", "set-url", name, url]).await?;
         Ok(format!("Remote '{}' URL updated", name))
     }
@@ -2579,11 +2581,7 @@ impl GitProvider {
     }
 
     /// Dry-run clean: preview which untracked files would be removed
-    pub async fn clean_dry_run(
-        &self,
-        path: &str,
-        directories: bool,
-    ) -> CogniaResult<Vec<String>> {
+    pub async fn clean_dry_run(&self, path: &str, directories: bool) -> CogniaResult<Vec<String>> {
         let mut args = vec!["clean", "-n"];
         if directories {
             args.push("-d");
@@ -2890,16 +2888,16 @@ impl GitProvider {
         if enabled {
             // Rename .sample → active
             if sample_path.exists() && !active_path.exists() {
-                tokio::fs::rename(&sample_path, &active_path).await.map_err(|e| {
-                    CogniaError::Provider(format!("Failed to enable hook: {}", e))
-                })?;
+                tokio::fs::rename(&sample_path, &active_path)
+                    .await
+                    .map_err(|e| CogniaError::Provider(format!("Failed to enable hook: {}", e)))?;
             }
         } else {
             // Rename active → .sample
             if active_path.exists() && !sample_path.exists() {
-                tokio::fs::rename(&active_path, &sample_path).await.map_err(|e| {
-                    CogniaError::Provider(format!("Failed to disable hook: {}", e))
-                })?;
+                tokio::fs::rename(&active_path, &sample_path)
+                    .await
+                    .map_err(|e| CogniaError::Provider(format!("Failed to disable hook: {}", e)))?;
             }
         }
         Ok(())
@@ -2919,7 +2917,9 @@ impl GitProvider {
 
     /// Get LFS tracked patterns from .gitattributes
     pub async fn lfs_tracked_patterns(&self, path: &str) -> CogniaResult<Vec<String>> {
-        let output = run_git_in_lenient(path, &["lfs", "track"]).await.unwrap_or_default();
+        let output = run_git_in_lenient(path, &["lfs", "track"])
+            .await
+            .unwrap_or_default();
         Ok(output
             .lines()
             .filter_map(|line| {
@@ -3145,7 +3145,14 @@ impl GitProvider {
     /// Continue cherry-pick after resolving conflicts
     pub async fn cherry_pick_continue(&self, path: &str) -> CogniaResult<String> {
         run_git_with_opts(
-            &["-C", path, "-c", "core.editor=true", "cherry-pick", "--continue"],
+            &[
+                "-C",
+                path,
+                "-c",
+                "core.editor=true",
+                "cherry-pick",
+                "--continue",
+            ],
             make_opts(),
         )
         .await?;
@@ -3190,12 +3197,7 @@ impl GitProvider {
     }
 
     /// Set a local config value
-    pub async fn set_local_config(
-        &self,
-        path: &str,
-        key: &str,
-        value: &str,
-    ) -> CogniaResult<()> {
+    pub async fn set_local_config(&self, path: &str, key: &str, value: &str) -> CogniaResult<()> {
         run_git_in(path, &["config", "--local", key, value]).await?;
         Ok(())
     }
@@ -3357,8 +3359,7 @@ impl GitProvider {
         let format_str = format!("%H{}%s", FIELD_SEP);
         let format_arg = format!("--format={}", format_str);
         let range = format!("{}..HEAD", base);
-        let output =
-            run_git_in_lenient(path, &["log", "--reverse", &format_arg, &range]).await?;
+        let output = run_git_in_lenient(path, &["log", "--reverse", &format_arg, &range]).await?;
 
         Ok(output
             .lines()
@@ -3419,7 +3420,11 @@ impl GitProvider {
         }
         #[cfg(not(windows))]
         {
-            let todo_content: String = todo.iter().map(|item| fmt_item(item)).collect::<Vec<_>>().join("\n");
+            let todo_content: String = todo
+                .iter()
+                .map(|item| fmt_item(item))
+                .collect::<Vec<_>>()
+                .join("\n");
             let todo_escaped = todo_content.replace('\\', "\\\\").replace('"', "\\\"");
             let script = format!(
                 "#!/bin/sh\nprintf '{}\\n' > \"$1\"\n",
@@ -3444,13 +3449,9 @@ impl GitProvider {
         let editor_env = script_path.to_string_lossy().to_string();
         let opts = make_install_opts().with_env("GIT_SEQUENCE_EDITOR", &editor_env);
 
-        let result = process::execute(
-            "git",
-            &["-C", path, "rebase", "-i", base],
-            Some(opts),
-        )
-        .await
-        .map_err(|e| CogniaError::Provider(format!("git rebase -i: {}", e)))?;
+        let result = process::execute("git", &["-C", path, "rebase", "-i", base], Some(opts))
+            .await
+            .map_err(|e| CogniaError::Provider(format!("git rebase -i: {}", e)))?;
 
         // Clean up temp script
         let _ = tokio::fs::remove_file(&script_path).await;
@@ -3581,11 +3582,7 @@ impl GitProvider {
     }
 
     /// Set sparse-checkout patterns (replaces existing)
-    pub async fn sparse_checkout_set(
-        &self,
-        path: &str,
-        patterns: &[&str],
-    ) -> CogniaResult<String> {
+    pub async fn sparse_checkout_set(&self, path: &str, patterns: &[&str]) -> CogniaResult<String> {
         let mut args = vec!["sparse-checkout", "set"];
         args.extend_from_slice(patterns);
         run_git_in(path, &args).await?;
@@ -3593,11 +3590,7 @@ impl GitProvider {
     }
 
     /// Add patterns to sparse-checkout
-    pub async fn sparse_checkout_add(
-        &self,
-        path: &str,
-        patterns: &[&str],
-    ) -> CogniaResult<String> {
+    pub async fn sparse_checkout_add(&self, path: &str, patterns: &[&str]) -> CogniaResult<String> {
         let mut args = vec!["sparse-checkout", "add"];
         args.extend_from_slice(patterns);
         run_git_in(path, &args).await?;
@@ -3660,8 +3653,7 @@ impl GitProvider {
         output_dir: &str,
     ) -> CogniaResult<Vec<String>> {
         let output_arg = format!("-o{}", output_dir);
-        let output =
-            run_git_in_lenient(path, &["format-patch", &output_arg, range]).await?;
+        let output = run_git_in_lenient(path, &["format-patch", &output_arg, range]).await?;
         Ok(output
             .lines()
             .map(|l| l.trim().to_string())
@@ -4254,8 +4246,7 @@ filename src/main.rs\n\
         let input = format!(
             "abc1234{}HEAD@{{0}}{}commit: add feature{}2025-01-15T10:30:00+08:00\n\
              def5678{}HEAD@{{1}}{}checkout: moving from main to dev{}2025-01-14T09:00:00+08:00",
-            FIELD_SEP, FIELD_SEP, FIELD_SEP,
-            FIELD_SEP, FIELD_SEP, FIELD_SEP
+            FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP, FIELD_SEP
         );
         let entries = parse_reflog(&input);
         assert_eq!(entries.len(), 2);
@@ -4317,8 +4308,7 @@ filename src/main.rs\n\
 
     #[test]
     fn test_parse_clone_compressing() {
-        let result =
-            parse_clone_progress("remote: Compressing objects: 100% (30/30), done.");
+        let result = parse_clone_progress("remote: Compressing objects: 100% (30/30), done.");
         assert!(result.is_some());
         let p = result.unwrap();
         assert_eq!(p.phase, "compressing");
@@ -4345,9 +4335,8 @@ filename src/main.rs\n\
 
     #[test]
     fn test_parse_clone_receiving_with_speed() {
-        let result = parse_clone_progress(
-            "Receiving objects:  45% (100/222), 1.20 MiB | 512.00 KiB/s",
-        );
+        let result =
+            parse_clone_progress("Receiving objects:  45% (100/222), 1.20 MiB | 512.00 KiB/s");
         assert!(result.is_some());
         let p = result.unwrap();
         assert_eq!(p.phase, "receiving");
@@ -4359,9 +4348,8 @@ filename src/main.rs\n\
 
     #[test]
     fn test_parse_clone_receiving_mib_speed() {
-        let result = parse_clone_progress(
-            "Receiving objects:  90% (500/555), 50.00 MiB | 10.50 MiB/s",
-        );
+        let result =
+            parse_clone_progress("Receiving objects:  90% (500/555), 50.00 MiB | 10.50 MiB/s");
         assert!(result.is_some());
         let p = result.unwrap();
         assert_eq!(p.speed, Some("10.50 MiB/s".to_string()));
@@ -4475,7 +4463,9 @@ filename src/main.rs\n\
 
     #[test]
     fn test_valid_generic_ssh() {
-        assert!(validate_git_url("deploy@server.example.com:repos/project.git"));
+        assert!(validate_git_url(
+            "deploy@server.example.com:repos/project.git"
+        ));
     }
 
     #[test]
@@ -4533,12 +4523,15 @@ filename src/main.rs\n\
     #[test]
     fn test_parse_alias_output() {
         // git config --global --get-regexp "^alias\." output format
-        let input = "alias.co checkout\nalias.br branch\nalias.lg log --oneline --graph --decorate --all\n";
+        let input =
+            "alias.co checkout\nalias.br branch\nalias.lg log --oneline --graph --decorate --all\n";
         let entries: Vec<GitConfigEntry> = input
             .lines()
             .filter_map(|line| {
                 let line = line.trim();
-                if line.is_empty() { return None; }
+                if line.is_empty() {
+                    return None;
+                }
                 let mut parts = line.splitn(2, ' ');
                 let full_key = parts.next()?.trim();
                 let value = parts.next().unwrap_or("").to_string();
@@ -4565,12 +4558,17 @@ filename src/main.rs\n\
             .lines()
             .filter_map(|line| {
                 let line = line.trim();
-                if line.is_empty() { return None; }
+                if line.is_empty() {
+                    return None;
+                }
                 let mut parts = line.splitn(2, ' ');
                 let full_key = parts.next()?.trim();
                 let value = parts.next().unwrap_or("").to_string();
                 let alias_name = full_key.strip_prefix("alias.")?;
-                Some(GitConfigEntry { key: alias_name.to_string(), value })
+                Some(GitConfigEntry {
+                    key: alias_name.to_string(),
+                    value,
+                })
             })
             .collect();
         assert!(entries.is_empty());
@@ -4720,7 +4718,7 @@ filename src/main.rs\n\
     fn test_parse_status_porcelain_conflicts() {
         let input = "UU conflicted.txt\nAA both_added.txt\nM  normal.rs\n";
         let (staged, modified, untracked) = parse_status_porcelain(input);
-        assert_eq!(staged, 3);   // U (index) + A (index) + M (index)
+        assert_eq!(staged, 3); // U (index) + A (index) + M (index)
         assert_eq!(modified, 2); // U (worktree) + A (worktree)
         assert_eq!(untracked, 0);
     }
@@ -4794,9 +4792,21 @@ filename src/main.rs\n\
         assert!(json.contains("\"hash\":\"abc1234def5678\""));
 
         let items = vec![
-            GitRebaseTodoItem { action: "pick".into(), hash: "aaa1111".into(), message: "First".into() },
-            GitRebaseTodoItem { action: "squash".into(), hash: "bbb2222".into(), message: "Second".into() },
-            GitRebaseTodoItem { action: "drop".into(), hash: "ccc3333".into(), message: "Third".into() },
+            GitRebaseTodoItem {
+                action: "pick".into(),
+                hash: "aaa1111".into(),
+                message: "First".into(),
+            },
+            GitRebaseTodoItem {
+                action: "squash".into(),
+                hash: "bbb2222".into(),
+                message: "Second".into(),
+            },
+            GitRebaseTodoItem {
+                action: "drop".into(),
+                hash: "ccc3333".into(),
+                message: "Third".into(),
+            },
         ];
         let json = serde_json::to_string(&items).unwrap();
         let deserialized: Vec<GitRebaseTodoItem> = serde_json::from_str(&json).unwrap();
@@ -4895,7 +4905,12 @@ filename src/main.rs\n\
             message: "short hash".into(),
         };
         // Ensure formatting doesn't panic on short hashes
-        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        let formatted = format!(
+            "{} {} {}",
+            item.action,
+            &item.hash[..7.min(item.hash.len())],
+            item.message
+        );
         assert_eq!(formatted, "pick abc short hash");
     }
 
@@ -4906,7 +4921,12 @@ filename src/main.rs\n\
             hash: "abc1234".into(),
             message: "exact seven".into(),
         };
-        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        let formatted = format!(
+            "{} {} {}",
+            item.action,
+            &item.hash[..7.min(item.hash.len())],
+            item.message
+        );
         assert_eq!(formatted, "fixup abc1234 exact seven");
     }
 
@@ -4917,7 +4937,12 @@ filename src/main.rs\n\
             hash: "abc1234def5678901234567890123456789012".into(),
             message: "long hash".into(),
         };
-        let formatted = format!("{} {} {}", item.action, &item.hash[..7.min(item.hash.len())], item.message);
+        let formatted = format!(
+            "{} {} {}",
+            item.action,
+            &item.hash[..7.min(item.hash.len())],
+            item.message
+        );
         assert_eq!(formatted, "reword abc1234 long hash");
     }
 }

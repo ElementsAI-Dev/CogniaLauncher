@@ -470,28 +470,19 @@ mod tests {
     #[test]
     fn test_parse_repo_url_https() {
         let result = GitHubProvider::parse_repo_url("https://github.com/denoland/deno");
-        assert_eq!(
-            result,
-            Some(("denoland".to_string(), "deno".to_string()))
-        );
+        assert_eq!(result, Some(("denoland".to_string(), "deno".to_string())));
     }
 
     #[test]
     fn test_parse_repo_url_https_trailing_slash() {
         let result = GitHubProvider::parse_repo_url("https://github.com/rust-lang/rust/");
-        assert_eq!(
-            result,
-            Some(("rust-lang".to_string(), "rust".to_string()))
-        );
+        assert_eq!(result, Some(("rust-lang".to_string(), "rust".to_string())));
     }
 
     #[test]
     fn test_parse_repo_url_http() {
         let result = GitHubProvider::parse_repo_url("http://github.com/owner/repo");
-        assert_eq!(
-            result,
-            Some(("owner".to_string(), "repo".to_string()))
-        );
+        assert_eq!(result, Some(("owner".to_string(), "repo".to_string())));
     }
 
     #[test]
@@ -508,10 +499,7 @@ mod tests {
     #[test]
     fn test_parse_repo_url_owner_repo() {
         let result = GitHubProvider::parse_repo_url("denoland/deno");
-        assert_eq!(
-            result,
-            Some(("denoland".to_string(), "deno".to_string()))
-        );
+        assert_eq!(result, Some(("denoland".to_string(), "deno".to_string())));
     }
 
     #[test]

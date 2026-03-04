@@ -37,7 +37,6 @@ import { cn } from "@/lib/utils";
 import {
   useDashboardStore,
   WIDGET_DEFINITIONS,
-  type WidgetType,
 } from "@/lib/stores/dashboard";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
@@ -92,10 +91,6 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
     () => new Set(widgets.map((w) => w.type)),
     [widgets],
   );
-
-  const handleAddWidget = (type: WidgetType) => {
-    addWidget(type);
-  };
 
   const handleReset = () => {
     resetToDefault();
@@ -162,8 +157,7 @@ export function CustomizeDialog({ open, onOpenChange }: CustomizeDialogProps) {
                   <Button
                     variant={isAdded ? "outline" : "default"}
                     size="sm"
-                    onClick={() => handleAddWidget(def.type)}
-                    disabled={false}
+                    onClick={() => addWidget(def.type)}
                     className="shrink-0"
                   >
                     <Plus className="h-4 w-4 mr-1" />

@@ -92,11 +92,7 @@ pub async fn conda_env_list() -> Result<Vec<CondaEnvInfo>, String> {
                     .unwrap_or_else(|| "base".to_string());
 
                 let is_base = root_prefix.as_deref() == Some(prefix);
-                let display_name = if is_base {
-                    "base".to_string()
-                } else {
-                    name
-                };
+                let display_name = if is_base { "base".to_string() } else { name };
 
                 let is_active = active_prefix.as_deref() == Some(prefix);
 
@@ -165,9 +161,7 @@ pub async fn conda_env_create(
     let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
     args.extend(pkg_refs);
 
-    run_conda(&args, 600)
-        .await
-        .map_err(|e| e.to_string())
+    run_conda(&args, 600).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -190,9 +184,7 @@ pub async fn conda_env_export(name: String, no_builds: bool) -> Result<CondaExpo
     if no_builds {
         args.push("--no-builds");
     }
-    let content = run_conda(&args, 60)
-        .await
-        .map_err(|e| e.to_string())?;
+    let content = run_conda(&args, 60).await.map_err(|e| e.to_string())?;
 
     Ok(CondaExportResult {
         content,
@@ -209,9 +201,7 @@ pub async fn conda_env_import(file_path: String, name: Option<String>) -> Result
         args.push("-n");
         args.push(&name_val);
     }
-    run_conda(&args, 600)
-        .await
-        .map_err(|e| e.to_string())
+    run_conda(&args, 600).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -268,9 +258,7 @@ pub async fn conda_clean(all: bool, packages: bool, tarballs: bool) -> Result<St
             args.push("--tarballs");
         }
     }
-    run_conda(&args, 120)
-        .await
-        .map_err(|e| e.to_string())
+    run_conda(&args, 120).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

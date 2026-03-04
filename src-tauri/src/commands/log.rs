@@ -71,10 +71,8 @@ pub async fn log_export(
         if let Some(entry) = parse_log_line(&line, line_number) {
             if matches_filters(&entry, &query_options, regex.as_ref()) {
                 if is_json {
-                    output_lines.push(
-                        serde_json::to_string(&entry)
-                            .unwrap_or_else(|_| "{}".to_string()),
-                    );
+                    output_lines
+                        .push(serde_json::to_string(&entry).unwrap_or_else(|_| "{}".to_string()));
                 } else if entry.target.is_empty() {
                     output_lines.push(format!(
                         "[{}][{}] {}",
@@ -770,7 +768,10 @@ pub async fn cleanup_logs_with_policy(
         let path = log_dir.join(&file.name);
 
         // Compress uncompressed files older than COMPRESS_AFTER_DAYS
-        if age_days > COMPRESS_AFTER_DAYS && file.name.ends_with(".log") && !file.name.ends_with(".log.gz") {
+        if age_days > COMPRESS_AFTER_DAYS
+            && file.name.ends_with(".log")
+            && !file.name.ends_with(".log.gz")
+        {
             let path_for_compress = path.clone();
             let saved = tokio::task::spawn_blocking(move || compress_log_file(&path_for_compress))
                 .await

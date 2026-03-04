@@ -159,6 +159,45 @@ async fn execute_program(
 /// - Checking WSL status and version info (`wsl --status`, `wsl --version`)
 pub struct WslProvider;
 
+/// Result of a WSL distribution health check.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistroHealthResult {
+    pub status: String,
+    pub issues: Vec<WslDistroHealthIssue>,
+    pub checked_at: String,
+}
+
+/// A single health issue found during a WSL distro health check.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistroHealthIssue {
+    pub severity: String,
+    pub category: String,
+    pub message: String,
+}
+
+/// A WSL backup file entry.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslBackupEntry {
+    pub file_name: String,
+    pub file_path: String,
+    pub size_bytes: u64,
+    pub created_at: String,
+    pub distro_name: String,
+}
+
+/// A port forwarding rule parsed from `netsh interface portproxy show all`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortForwardRule {
+    pub listen_address: String,
+    pub listen_port: String,
+    pub connect_address: String,
+    pub connect_port: String,
+}
+
 /// Parsed information about an installed WSL distribution
 #[derive(Debug, Clone)]
 pub struct WslDistroInfo {
@@ -523,8 +562,7 @@ impl WslProvider {
         for line in out.lines() {
             if let Some(v) = line.split(':').nth(1) {
                 let trimmed = v.trim();
-                if !trimmed.is_empty()
-                    && trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
+                if !trimmed.is_empty() && trimmed.chars().next().is_some_and(|c| c.is_ascii_digit())
                 {
                     return Ok(trimmed.to_string());
                 }
@@ -844,6 +882,376 @@ impl WslProvider {
 
         let out = self.run_wsl_lenient(&["--list", "--running"]).await?;
         Ok(Self::parse_list_running(&out))
+    }
+
+    /// Launch multiple distributions in parallel.
+    /// Returns a list of (name, success, message) tuples.
+    pub async fn batch_launch(&self, names: &[String]) -> Vec<(String, bool, String)> {
+        let futures: Vec<_> = names
+            .iter()
+            .map(|name| {
+                let name = name.clone();
+                async move {
+                    let provider = WslProvider::new();
+                    match provider.launch_distro(&name, None).await {
+                        Ok(()) => (name, true, String::new()),
+                        Err(e) => (name, false, e.to_string()),
+                    }
+                }
+            })
+            .collect();
+        futures::future::join_all(futures).await
+    }
+
+    /// Terminate multiple distributions in parallel.
+    /// Returns a list of (name, success, message) tuples.
+    pub async fn batch_terminate(&self, names: &[String]) -> Vec<(String, bool, String)> {
+        let futures: Vec<_> = names
+            .iter()
+            .map(|name| {
+                let name = name.clone();
+                async move {
+                    let provider = WslProvider::new();
+                    match provider.terminate_distro(&name).await {
+                        Ok(()) => (name, true, String::new()),
+                        Err(e) => (name, false, e.to_string()),
+                    }
+                }
+            })
+            .collect();
+        futures::future::join_all(futures).await
+    }
+
+    // ========================================================================
+    // Distro health check
+    // ========================================================================
+
+    /// Run a health check on a WSL distribution.
+    /// Checks: disk space, failed systemd services, DNS, internet connectivity, systemd status.
+    pub async fn distro_health_check(&self, distro: &str) -> CogniaResult<WslDistroHealthResult> {
+        let mut issues = Vec::new();
+        let mut worst = "healthy";
+
+        let script = concat!(
+            "echo '---DISK---'",
+            "; df / -B1 2>/dev/null | tail -1",
+            "; echo '---SYSTEMD---'",
+            "; cat /proc/1/comm 2>/dev/null || echo 'unknown'",
+            "; echo '---FAILED---'",
+            "; systemctl --failed --no-pager --no-legend 2>/dev/null | wc -l || echo '0'",
+            "; echo '---DNS---'",
+            "; nslookup google.com >/dev/null 2>&1 && echo 'ok' || echo 'fail'",
+            "; echo '---NET---'",
+            "; curl -s --max-time 5 -o /dev/null -w '%{http_code}' https://www.google.com 2>/dev/null || echo 'fail'"
+        );
+
+        let (stdout, _, _) = self.exec_command(distro, script, None).await?;
+        let sections: Vec<&str> = stdout.split("---").collect();
+
+        // Parse disk usage
+        for sec in &sections {
+            let trimmed = sec.trim();
+            if trimmed.starts_with("DISK") {
+                let line = trimmed.strip_prefix("DISK---").unwrap_or("").trim();
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 5 {
+                    if let (Ok(total), Ok(used)) =
+                        (parts[1].parse::<u64>(), parts[2].parse::<u64>())
+                    {
+                        if total > 0 {
+                            let pct = (used as f64 / total as f64) * 100.0;
+                            if pct > 95.0 {
+                                worst = "error";
+                                issues.push(WslDistroHealthIssue {
+                                    severity: "error".into(),
+                                    category: "disk".into(),
+                                    message: format!("Disk usage critical: {:.1}%", pct),
+                                });
+                            } else if pct > 90.0 {
+                                if worst == "healthy" {
+                                    worst = "warning";
+                                }
+                                issues.push(WslDistroHealthIssue {
+                                    severity: "warning".into(),
+                                    category: "disk".into(),
+                                    message: format!("Disk usage high: {:.1}%", pct),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Parse systemd status
+        for sec in &sections {
+            let trimmed = sec.trim();
+            if trimmed.starts_with("SYSTEMD") {
+                let init = trimmed.strip_prefix("SYSTEMD---").unwrap_or("").trim();
+                if init != "systemd" {
+                    if worst == "healthy" {
+                        worst = "warning";
+                    }
+                    issues.push(WslDistroHealthIssue {
+                        severity: "info".into(),
+                        category: "systemd".into(),
+                        message: format!("Systemd not enabled (init: {})", init),
+                    });
+                }
+            }
+        }
+
+        // Parse failed services
+        for sec in &sections {
+            let trimmed = sec.trim();
+            if trimmed.starts_with("FAILED") {
+                let count_str = trimmed.strip_prefix("FAILED---").unwrap_or("0").trim();
+                if let Ok(count) = count_str.parse::<u32>() {
+                    if count > 0 {
+                        if worst == "healthy" {
+                            worst = "warning";
+                        }
+                        issues.push(WslDistroHealthIssue {
+                            severity: "warning".into(),
+                            category: "services".into(),
+                            message: format!("{} failed systemd service(s)", count),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Parse DNS
+        for sec in &sections {
+            let trimmed = sec.trim();
+            if trimmed.starts_with("DNS") {
+                let result = trimmed.strip_prefix("DNS---").unwrap_or("").trim();
+                if result == "fail" {
+                    worst = "error";
+                    issues.push(WslDistroHealthIssue {
+                        severity: "error".into(),
+                        category: "network".into(),
+                        message: "DNS resolution failed".into(),
+                    });
+                }
+            }
+        }
+
+        // Parse internet connectivity
+        for sec in &sections {
+            let trimmed = sec.trim();
+            if trimmed.starts_with("NET") {
+                let result = trimmed.strip_prefix("NET---").unwrap_or("").trim();
+                if result == "fail" || result == "000" {
+                    if worst != "error" {
+                        worst = "warning";
+                    }
+                    issues.push(WslDistroHealthIssue {
+                        severity: "warning".into(),
+                        category: "network".into(),
+                        message: "Internet connectivity check failed".into(),
+                    });
+                }
+            }
+        }
+
+        Ok(WslDistroHealthResult {
+            status: worst.to_string(),
+            issues,
+            checked_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    // ========================================================================
+    // Backup & Restore
+    // ========================================================================
+
+    /// Backup a WSL distribution to a timestamped tar file.
+    /// Returns the backup file path on success.
+    pub async fn backup_distro(&self, name: &str, dest_dir: &str) -> CogniaResult<WslBackupEntry> {
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let filename = format!("{}-{}.tar", name, timestamp);
+        let dest_path = PathBuf::from(dest_dir).join(&filename);
+
+        // Ensure destination directory exists
+        std::fs::create_dir_all(dest_dir).map_err(|e| {
+            CogniaError::Provider(format!("Failed to create backup directory: {}", e))
+        })?;
+
+        self.export_distro(name, &dest_path.to_string_lossy(), false)
+            .await?;
+
+        let size = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
+
+        Ok(WslBackupEntry {
+            file_name: filename,
+            file_path: dest_path.to_string_lossy().to_string(),
+            size_bytes: size,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            distro_name: name.to_string(),
+        })
+    }
+
+    /// List backup files in a directory.
+    pub fn list_backups(backup_dir: &str) -> Vec<WslBackupEntry> {
+        let dir = PathBuf::from(backup_dir);
+        if !dir.exists() {
+            return Vec::new();
+        }
+        let mut entries = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(&dir) {
+            for entry in read_dir.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let is_backup =
+                    name.ends_with(".tar") || name.ends_with(".tar.gz") || name.ends_with(".vhdx");
+                if !is_backup || !path.is_file() {
+                    continue;
+                }
+                let meta = std::fs::metadata(&path).ok();
+                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                let created = meta
+                    .and_then(|m| m.created().ok())
+                    .map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+                    .unwrap_or_default();
+                // Extract distro name from filename pattern: {distro}-{timestamp}.tar
+                let distro = name
+                    .rsplit_once('-')
+                    .map(|(prefix, _)| prefix.to_string())
+                    .unwrap_or_else(|| name.clone());
+                entries.push(WslBackupEntry {
+                    file_name: name,
+                    file_path: path.to_string_lossy().to_string(),
+                    size_bytes: size,
+                    created_at: created,
+                    distro_name: distro,
+                });
+            }
+        }
+        entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        entries
+    }
+
+    /// Restore a WSL distribution from a backup file.
+    pub async fn restore_backup(
+        &self,
+        backup_path: &str,
+        name: &str,
+        install_location: &str,
+    ) -> CogniaResult<()> {
+        self.import_distro(name, install_location, backup_path, Some(2), false)
+            .await
+    }
+
+    /// Delete a backup file.
+    pub fn delete_backup(backup_path: &str) -> CogniaResult<()> {
+        std::fs::remove_file(backup_path)
+            .map_err(|e| CogniaError::Provider(format!("Failed to delete backup: {}", e)))
+    }
+
+    // ========================================================================
+    // Port forwarding (netsh interface portproxy)
+    // ========================================================================
+
+    /// List all port forwarding rules via `netsh interface portproxy show all`.
+    pub async fn list_port_forwards(&self) -> CogniaResult<Vec<PortForwardRule>> {
+        let out = process::execute(
+            "netsh",
+            &["interface", "portproxy", "show", "all"],
+            Some(ProcessOptions::new().with_timeout(Duration::from_secs(15))),
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("netsh portproxy: {}", e)))?;
+
+        Ok(Self::parse_port_forwards(&out.stdout))
+    }
+
+    /// Parse `netsh interface portproxy show all` output.
+    pub fn parse_port_forwards(output: &str) -> Vec<PortForwardRule> {
+        let mut rules = Vec::new();
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // Data lines look like: "192.168.1.1     3000       172.x.x.x     3000"
+            // or "*               3000       172.x.x.x     3000"
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() >= 4 {
+                // Skip header lines that contain non-numeric port values
+                let listen_port_ok = parts[1].parse::<u16>().is_ok();
+                let connect_port_ok = parts[3].parse::<u16>().is_ok();
+                if listen_port_ok && connect_port_ok {
+                    rules.push(PortForwardRule {
+                        listen_address: parts[0].to_string(),
+                        listen_port: parts[1].to_string(),
+                        connect_address: parts[2].to_string(),
+                        connect_port: parts[3].to_string(),
+                    });
+                }
+            }
+        }
+        rules
+    }
+
+    /// Add a port forwarding rule via `netsh interface portproxy add v4tov4`.
+    pub async fn add_port_forward(
+        &self,
+        listen_port: u16,
+        connect_port: u16,
+        connect_address: &str,
+    ) -> CogniaResult<()> {
+        let listen_str = listen_port.to_string();
+        let connect_str = connect_port.to_string();
+        let out = process::execute(
+            "netsh",
+            &[
+                "interface",
+                "portproxy",
+                "add",
+                "v4tov4",
+                &format!("listenport={}", listen_str),
+                &format!("connectport={}", connect_str),
+                &format!("connectaddress={}", connect_address),
+            ],
+            Some(ProcessOptions::new().with_timeout(Duration::from_secs(15))),
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("netsh add portproxy: {}", e)))?;
+
+        if !out.success {
+            return Err(CogniaError::Provider(format!(
+                "Failed to add port forward: {}",
+                out.stderr.trim()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Remove a port forwarding rule via `netsh interface portproxy delete v4tov4`.
+    pub async fn remove_port_forward(&self, listen_port: u16) -> CogniaResult<()> {
+        let listen_str = listen_port.to_string();
+        let out = process::execute(
+            "netsh",
+            &[
+                "interface",
+                "portproxy",
+                "delete",
+                "v4tov4",
+                &format!("listenport={}", listen_str),
+            ],
+            Some(ProcessOptions::new().with_timeout(Duration::from_secs(15))),
+        )
+        .await
+        .map_err(|e| CogniaError::Provider(format!("netsh delete portproxy: {}", e)))?;
+
+        if !out.success {
+            return Err(CogniaError::Provider(format!(
+                "Failed to remove port forward: {}",
+                out.stderr.trim()
+            )));
+        }
+        Ok(())
     }
 
     /// Terminate a specific running distribution
@@ -1257,10 +1665,7 @@ impl WslProvider {
                     if vhdx.exists() {
                         if let Ok(meta) = std::fs::metadata(&vhdx) {
                             let size = meta.len();
-                            let name = entry
-                                .file_name()
-                                .to_string_lossy()
-                                .to_string();
+                            let name = entry.file_name().to_string_lossy().to_string();
                             per_distro.push((name, size));
                             total += size;
                         }
@@ -1760,9 +2165,7 @@ impl WslProvider {
         let docker_socket = parts.get(11).map(|s| s.trim() == "socket").unwrap_or(false);
 
         // 14. Docker container count
-        let docker_container_count = parts
-            .get(12)
-            .and_then(|s| s.trim().parse::<u64>().ok());
+        let docker_container_count = parts.get(12).and_then(|s| s.trim().parse::<u64>().ok());
 
         Ok(WslDistroEnvironment {
             distro_id,
@@ -1802,17 +2205,29 @@ impl WslProvider {
         for line in output.lines() {
             let line = line.trim();
             if let Some(rest) = line.strip_prefix("MemTotal:") {
-                mem_total = rest.split_whitespace().next()
-                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+                mem_total = rest
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
-                mem_available = rest.split_whitespace().next()
-                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+                mem_available = rest
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("SwapTotal:") {
-                swap_total = rest.split_whitespace().next()
-                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+                swap_total = rest
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
             } else if let Some(rest) = line.strip_prefix("SwapFree:") {
-                swap_free = rest.split_whitespace().next()
-                    .and_then(|v| v.parse().ok()).unwrap_or(0);
+                swap_free = rest
+                    .split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
             }
         }
 
@@ -1833,10 +2248,7 @@ impl WslProvider {
     }
 
     /// Get live resource usage from a running WSL distribution.
-    pub async fn get_distro_resources(
-        &self,
-        distro: &str,
-    ) -> CogniaResult<WslDistroResources> {
+    pub async fn get_distro_resources(&self, distro: &str) -> CogniaResult<WslDistroResources> {
         let delim = "---COGNIA_RES---";
         let script = format!(
             concat!(
@@ -1940,7 +2352,11 @@ impl WslProvider {
     /// List non-system users in a WSL distribution.
     pub async fn list_users(&self, distro: &str) -> CogniaResult<Vec<WslUser>> {
         let (stdout, stderr, code) = self
-            .exec_command(distro, "getent passwd 2>/dev/null || cat /etc/passwd 2>/dev/null || echo ''", None)
+            .exec_command(
+                distro,
+                "getent passwd 2>/dev/null || cat /etc/passwd 2>/dev/null || echo ''",
+                None,
+            )
             .await?;
         if code != 0 && stdout.trim().is_empty() {
             return Err(CogniaError::Provider(format!(
@@ -1985,8 +2401,7 @@ impl WslProvider {
             }
         };
 
-        let (stdout, stderr, exit_code) =
-            self.exec_command(distro, cmd, Some("root")).await?;
+        let (stdout, stderr, exit_code) = self.exec_command(distro, cmd, Some("root")).await?;
 
         Ok(WslPackageUpdateResult {
             package_manager: pm.to_string(),
@@ -2491,8 +2906,7 @@ impl Provider for WslProvider {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 let mut found_installed = false;
                 for (i, part) in parts.iter().enumerate() {
-                    if part.contains('.')
-                        && part.chars().next().is_some_and(|c| c.is_ascii_digit())
+                    if part.contains('.') && part.chars().next().is_some_and(|c| c.is_ascii_digit())
                     {
                         if !found_installed {
                             found_installed = true;
@@ -2563,12 +2977,13 @@ impl SystemPackageProvider for WslProvider {
         } else {
             // Detect the distro's package manager, then run the correct upgrade command
             let env = self.detect_distro_environment(name).await?;
-            let commands = Self::get_distro_update_command(&env.package_manager).ok_or_else(|| {
-                CogniaError::Provider(format!(
-                    "No upgrade command known for package manager '{}' in '{}'",
-                    env.package_manager, name
-                ))
-            })?;
+            let commands =
+                Self::get_distro_update_command(&env.package_manager).ok_or_else(|| {
+                    CogniaError::Provider(format!(
+                        "No upgrade command known for package manager '{}' in '{}'",
+                        env.package_manager, name
+                    ))
+                })?;
             // Run update (refresh index) then upgrade (install upgrades)
             let full_cmd = format!("{} && {}", commands.0, commands.1);
             let (_, stderr, code) = self.exec_command(name, &full_cmd, Some("root")).await?;
@@ -3419,8 +3834,7 @@ Inactive:        3000000 kB
 SwapTotal:       4194304 kB
 SwapFree:        3145728 kB
 ";
-        let (mem_total, mem_available, swap_total, swap_free) =
-            WslProvider::parse_meminfo(output);
+        let (mem_total, mem_available, swap_total, swap_free) = WslProvider::parse_meminfo(output);
         assert_eq!(mem_total, 16384000);
         assert_eq!(mem_available, 8192000);
         assert_eq!(swap_total, 4194304);
@@ -3430,8 +3844,7 @@ SwapFree:        3145728 kB
     #[test]
     fn test_parse_meminfo_partial() {
         let output = "MemTotal:       8000000 kB\nSomeOtherLine: 123\n";
-        let (mem_total, mem_available, swap_total, swap_free) =
-            WslProvider::parse_meminfo(output);
+        let (mem_total, mem_available, swap_total, swap_free) = WslProvider::parse_meminfo(output);
         assert_eq!(mem_total, 8000000);
         assert_eq!(mem_available, 0);
         assert_eq!(swap_total, 0);
@@ -3585,7 +3998,9 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
     #[test]
     fn test_is_likely_distro_name_cjk_message_rejected() {
         // CJK "no running distributions" messages should NOT be treated as distro names
-        assert!(!WslProvider::is_likely_distro_name("当前没有正在运行的分发。"));
+        assert!(!WslProvider::is_likely_distro_name(
+            "当前没有正在运行的分发。"
+        ));
     }
 
     // ========================================================================
@@ -3594,25 +4009,41 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
 
     #[test]
     fn test_is_unsupported_option_error_english() {
-        assert!(WslProvider::is_unsupported_option_error("unknown option '--set-sparse'"));
-        assert!(WslProvider::is_unsupported_option_error("Unrecognized option: --manage"));
-        assert!(WslProvider::is_unsupported_option_error("Invalid option: foo"));
-        assert!(WslProvider::is_unsupported_option_error("invalid command line"));
-        assert!(WslProvider::is_unsupported_option_error("Feature not supported"));
+        assert!(WslProvider::is_unsupported_option_error(
+            "unknown option '--set-sparse'"
+        ));
+        assert!(WslProvider::is_unsupported_option_error(
+            "Unrecognized option: --manage"
+        ));
+        assert!(WslProvider::is_unsupported_option_error(
+            "Invalid option: foo"
+        ));
+        assert!(WslProvider::is_unsupported_option_error(
+            "invalid command line"
+        ));
+        assert!(WslProvider::is_unsupported_option_error(
+            "Feature not supported"
+        ));
     }
 
     #[test]
     fn test_is_unsupported_option_error_chinese() {
-        assert!(WslProvider::is_unsupported_option_error("未知选项 '--manage'"));
+        assert!(WslProvider::is_unsupported_option_error(
+            "未知选项 '--manage'"
+        ));
         assert!(WslProvider::is_unsupported_option_error("未识别的选项"));
         assert!(WslProvider::is_unsupported_option_error("不支持该功能"));
-        assert!(WslProvider::is_unsupported_option_error("无效选项: --set-sparse"));
+        assert!(WslProvider::is_unsupported_option_error(
+            "无效选项: --set-sparse"
+        ));
     }
 
     #[test]
     fn test_is_unsupported_option_error_false() {
         assert!(!WslProvider::is_unsupported_option_error("Success"));
-        assert!(!WslProvider::is_unsupported_option_error("Distribution installed"));
+        assert!(!WslProvider::is_unsupported_option_error(
+            "Distribution installed"
+        ));
         assert!(!WslProvider::is_unsupported_option_error(""));
     }
 
@@ -3768,10 +4199,7 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
     #[test]
     fn test_build_move_args() {
         let args = WslProvider::build_move_args("Debian", r"E:\WSL\Debian");
-        assert_eq!(
-            args,
-            vec!["--manage", "Debian", "--move", r"E:\WSL\Debian"]
-        );
+        assert_eq!(args, vec!["--manage", "Debian", "--move", r"E:\WSL\Debian"]);
     }
 
     #[test]
@@ -3859,8 +4287,7 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
 
     #[test]
     fn test_parse_list_verbose_single_distro() {
-        let output =
-            "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n";
+        let output = "  NAME      STATE           VERSION\n* Ubuntu    Running         2\n";
         let distros = WslProvider::parse_list_verbose(output);
         assert_eq!(distros.len(), 1);
         assert_eq!(distros[0].name, "Ubuntu");
@@ -4169,7 +4596,10 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
         // [experimental] should come before [wsl2] (sorted)
         let exp_pos = output.find("[experimental]").unwrap();
         let wsl2_pos = output.find("[wsl2]").unwrap();
-        assert!(exp_pos < wsl2_pos, "Sections should be alphabetically sorted");
+        assert!(
+            exp_pos < wsl2_pos,
+            "Sections should be alphabetically sorted"
+        );
     }
 
     // ========================================================================
@@ -4318,10 +4748,22 @@ alice:x:1000:1000:Alice:/home/alice:/bin/bash
 
     #[test]
     fn test_detect_pm_new_distros() {
-        assert_eq!(WslProvider::detect_package_manager_from_id("void", &[]), Some("xbps-install"));
-        assert_eq!(WslProvider::detect_package_manager_from_id("nixos", &[]), Some("nix"));
-        assert_eq!(WslProvider::detect_package_manager_from_id("clear-linux-os", &[]), Some("swupd"));
-        assert_eq!(WslProvider::detect_package_manager_from_id("solus", &[]), Some("eopkg"));
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("void", &[]),
+            Some("xbps-install")
+        );
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("nixos", &[]),
+            Some("nix")
+        );
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("clear-linux-os", &[]),
+            Some("swupd")
+        );
+        assert_eq!(
+            WslProvider::detect_package_manager_from_id("solus", &[]),
+            Some("eopkg")
+        );
     }
 
     #[test]

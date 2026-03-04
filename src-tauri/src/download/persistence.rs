@@ -1,11 +1,11 @@
 //! Download queue persistence - save/restore incomplete tasks across app restarts
 
-use super::task::DownloadTask;
 use super::state::DownloadState;
+use super::task::DownloadTask;
 use std::path::{Path, PathBuf};
-use tokio::sync::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// Manages persistence of the download queue to a JSON file.
 ///
@@ -41,10 +41,8 @@ impl QueuePersistence {
             }
         }
 
-        let persistable: Vec<&DownloadTask> = tasks
-            .iter()
-            .filter(|t| !t.state.is_terminal())
-            .collect();
+        let persistable: Vec<&DownloadTask> =
+            tasks.iter().filter(|t| !t.state.is_terminal()).collect();
 
         let json = serde_json::to_string_pretty(&persistable)
             .map_err(|e| format!("Failed to serialize queue: {}", e))?;
@@ -145,10 +143,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let persistence = QueuePersistence::new(tmp.path());
 
-        let tasks = vec![
-            create_test_task("file1"),
-            create_test_task("file2"),
-        ];
+        let tasks = vec![create_test_task("file1"), create_test_task("file2")];
 
         persistence.save(&tasks, true).await.unwrap();
         let loaded = persistence.load().await.unwrap();

@@ -12,6 +12,7 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { useDownloadStore } from "@/lib/stores/download";
 import { formatBytes } from "@/lib/utils";
+import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
 import { Download, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 interface DownloadStatsWidgetProps {
@@ -41,21 +42,21 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
     };
 
     const data = [
-      { status: t("dashboard.widgets.dlActive"), count: active, fill: "var(--chart-1)" },
-      { status: t("dashboard.widgets.dlCompleted"), count: summary.completed, fill: "var(--chart-3)" },
-      { status: t("dashboard.widgets.dlFailed"), count: summary.failed, fill: "var(--chart-5)" },
-      { status: t("dashboard.widgets.dlPaused"), count: paused, fill: "var(--chart-4)" },
+      { status: t("dashboard.widgets.dlActive"), count: active, fill: getChartColor(0) },
+      { status: t("dashboard.widgets.dlCompleted"), count: summary.completed, fill: getChartColor(2) },
+      { status: t("dashboard.widgets.dlFailed"), count: summary.failed, fill: getChartColor(4) },
+      { status: t("dashboard.widgets.dlPaused"), count: paused, fill: getChartColor(3) },
     ].filter((d) => d.count > 0);
 
     return { chartData: data, summaryStats: summary };
   }, [tasks, history, t]);
 
   const chartConfig: ChartConfig = {
-    count: { label: t("dashboard.widgets.downloadCount"), color: "var(--chart-1)" },
+    count: { label: t("dashboard.widgets.downloadCount"), color: getChartColor(0) },
   };
 
   const speedChartConfig: ChartConfig = {
-    speed: { label: t("dashboard.widgets.speedChart"), color: "var(--chart-2)" },
+    speed: { label: t("dashboard.widgets.speedChart"), color: getChartColor(1) },
   };
 
   const speedChartData = useMemo(
@@ -136,9 +137,9 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
             <ChartContainer config={speedChartConfig} className="h-[80px] w-full aspect-auto">
               <AreaChart data={speedChartData} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="speedFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
+                  <linearGradient id={getGradientId("speed", 0)} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={getChartColor(1)} stopOpacity={0.4} />
+                    <stop offset="95%" stopColor={getChartColor(1)} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <YAxis
@@ -151,8 +152,8 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
                 <Area
                   type="monotone"
                   dataKey="speed"
-                  stroke="var(--chart-2)"
-                  fill="url(#speedFill)"
+                  stroke={getChartColor(1)}
+                  fill={`url(#${getGradientId("speed", 0)})`}
                   strokeWidth={1.5}
                   isAnimationActive={false}
                 />

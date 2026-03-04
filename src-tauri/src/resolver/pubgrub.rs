@@ -252,8 +252,14 @@ mod tests {
         ]);
 
         let deps = vec![
-            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
-            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+            Dependency {
+                name: "a".into(),
+                constraint: "*".parse().unwrap(),
+            },
+            Dependency {
+                name: "b".into(),
+                constraint: "*".parse().unwrap(),
+            },
         ];
         let result = resolver.resolve(&deps).unwrap();
         assert!(result.get("a").is_some());
@@ -279,8 +285,14 @@ mod tests {
         resolver.add_package(make_pkg("b", "2.0.0", vec![]));
 
         let deps = vec![
-            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
-            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+            Dependency {
+                name: "a".into(),
+                constraint: "*".parse().unwrap(),
+            },
+            Dependency {
+                name: "b".into(),
+                constraint: "*".parse().unwrap(),
+            },
         ];
         let result = resolver.resolve(&deps).unwrap();
         assert_eq!(result.len(), 2);
@@ -294,13 +306,20 @@ mod tests {
     fn test_diamond_dependency() {
         // A -> B, A -> C, B -> D ^1.0, C -> D ^1.0
         let mut resolver = Resolver::new();
-        resolver.add_package(make_pkg("a", "1.0.0", vec![("b", "^1.0.0"), ("c", "^1.0.0")]));
+        resolver.add_package(make_pkg(
+            "a",
+            "1.0.0",
+            vec![("b", "^1.0.0"), ("c", "^1.0.0")],
+        ));
         resolver.add_package(make_pkg("b", "1.0.0", vec![("d", "^1.0.0")]));
         resolver.add_package(make_pkg("c", "1.0.0", vec![("d", "^1.0.0")]));
         resolver.add_package(make_pkg("d", "1.0.0", vec![]));
         resolver.add_package(make_pkg("d", "1.5.0", vec![]));
 
-        let deps = vec![Dependency { name: "a".into(), constraint: "*".parse().unwrap() }];
+        let deps = vec![Dependency {
+            name: "a".into(),
+            constraint: "*".parse().unwrap(),
+        }];
         let result = resolver.resolve(&deps).unwrap();
         assert!(result.get("a").is_some());
         assert!(result.get("b").is_some());
@@ -320,13 +339,21 @@ mod tests {
         resolver.add_package(make_pkg("b", "2.0.0", vec![]));
 
         let deps = vec![
-            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
-            Dependency { name: "c".into(), constraint: "*".parse().unwrap() },
+            Dependency {
+                name: "a".into(),
+                constraint: "*".parse().unwrap(),
+            },
+            Dependency {
+                name: "c".into(),
+                constraint: "*".parse().unwrap(),
+            },
         ];
         let result = resolver.resolve(&deps);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("conflict") || err_msg.contains("Conflict") || err_msg.contains("b"));
+        assert!(
+            err_msg.contains("conflict") || err_msg.contains("Conflict") || err_msg.contains("b")
+        );
     }
 
     #[test]
@@ -414,7 +441,9 @@ mod tests {
 
     #[test]
     fn test_resolution_is_empty() {
-        let r = Resolution { packages: HashMap::new() };
+        let r = Resolution {
+            packages: HashMap::new(),
+        };
         assert!(r.is_empty());
         assert_eq!(r.len(), 0);
     }
@@ -505,8 +534,14 @@ mod tests {
         resolver.add_package(make_pkg("c", "1.5.0", vec![]));
 
         let deps = vec![
-            Dependency { name: "a".into(), constraint: "*".parse().unwrap() },
-            Dependency { name: "b".into(), constraint: "*".parse().unwrap() },
+            Dependency {
+                name: "a".into(),
+                constraint: "*".parse().unwrap(),
+            },
+            Dependency {
+                name: "b".into(),
+                constraint: "*".parse().unwrap(),
+            },
         ];
         let result = resolver.resolve(&deps).unwrap();
         assert!(result.get("c").is_some());
@@ -520,8 +555,14 @@ mod tests {
         resolver.add_package(make_pkg("a", "1.0.0", vec![]));
 
         let deps = vec![
-            Dependency { name: "a".into(), constraint: "^1.0.0".parse().unwrap() },
-            Dependency { name: "a".into(), constraint: "^1.0.0".parse().unwrap() },
+            Dependency {
+                name: "a".into(),
+                constraint: "^1.0.0".parse().unwrap(),
+            },
+            Dependency {
+                name: "a".into(),
+                constraint: "^1.0.0".parse().unwrap(),
+            },
         ];
         let result = resolver.resolve(&deps).unwrap();
         assert_eq!(result.get("a"), Some(&"1.0.0".parse().unwrap()));

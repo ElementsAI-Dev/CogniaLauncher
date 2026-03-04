@@ -732,6 +732,7 @@ export interface ExternalCacheInfo {
   isAvailable: boolean;
   canClean: boolean;
   category: string;
+  sizePending?: boolean;
 }
 
 export interface ExternalCacheCleanResult {
@@ -753,6 +754,10 @@ export interface CombinedCacheStats {
   externalCaches: ExternalCacheInfo[];
 }
 
+export const discoverExternalCachesFast = () =>
+  invoke<ExternalCacheInfo[]>('discover_external_caches_fast');
+export const calculateExternalCacheSize = (provider: string) =>
+  invoke<number>('calculate_external_cache_size', { provider });
 export const discoverExternalCaches = () => 
   invoke<ExternalCacheInfo[]>('discover_external_caches');
 export const cleanExternalCache = (provider: string, useTrash: boolean) => 
@@ -1168,6 +1173,9 @@ export const downloadShutdown = () =>
 
 export const downloadSetPriority = (taskId: string, priority: number) =>
   invoke<void>('download_set_priority', { taskId, priority });
+
+export const downloadSetTaskSpeedLimit = (taskId: string, bytesPerSecond: number) =>
+  invoke<void>('download_set_task_speed_limit', { taskId, bytesPerSecond });
 
 export const downloadRetry = (taskId: string) =>
   invoke<void>('download_retry', { taskId });
@@ -1963,6 +1971,46 @@ export const wslCloneDistro = (name: string, newName: string, location: string) 
 /** Get total disk usage across all WSL distributions */
 export const wslTotalDiskUsage = () =>
   invoke<[number, [string, number][]]>('wsl_total_disk_usage');
+
+/** Launch multiple WSL distributions in parallel */
+export const wslBatchLaunch = (names: string[]) =>
+  invoke<[string, boolean, string][]>('wsl_batch_launch', { names });
+
+/** Terminate multiple WSL distributions in parallel */
+export const wslBatchTerminate = (names: string[]) =>
+  invoke<[string, boolean, string][]>('wsl_batch_terminate', { names });
+
+/** List all Windows port forwarding rules (netsh portproxy) */
+export const wslListPortForwards = () =>
+  invoke<{ listenAddress: string; listenPort: string; connectAddress: string; connectPort: string }[]>('wsl_list_port_forwards');
+
+/** Add a port forwarding rule (requires admin) */
+export const wslAddPortForward = (listenPort: number, connectPort: number, connectAddress: string) =>
+  invoke<void>('wsl_add_port_forward', { listenPort, connectPort, connectAddress });
+
+/** Remove a port forwarding rule (requires admin) */
+export const wslRemovePortForward = (listenPort: number) =>
+  invoke<void>('wsl_remove_port_forward', { listenPort });
+
+/** Run a health check on a WSL distribution */
+export const wslDistroHealthCheck = (distro: string) =>
+  invoke<{ status: string; issues: { severity: string; category: string; message: string }[]; checkedAt: string }>('wsl_distro_health_check', { distro });
+
+/** Backup a WSL distribution to a timestamped tar file */
+export const wslBackupDistro = (name: string, destDir: string) =>
+  invoke<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string; distroName: string }>('wsl_backup_distro', { name, destDir });
+
+/** List WSL backup files in a directory */
+export const wslListBackups = (backupDir: string) =>
+  invoke<{ fileName: string; filePath: string; sizeBytes: number; createdAt: string; distroName: string }[]>('wsl_list_backups', { backupDir });
+
+/** Restore a WSL distribution from a backup file */
+export const wslRestoreBackup = (backupPath: string, name: string, installLocation: string) =>
+  invoke<void>('wsl_restore_backup', { backupPath, name, installLocation });
+
+/** Delete a WSL backup file */
+export const wslDeleteBackup = (backupPath: string) =>
+  invoke<void>('wsl_delete_backup', { backupPath });
 
 // ============================================================================
 // Launch Commands
@@ -3395,3 +3443,14 @@ export const pipxReinstallAll = () =>
   invoke<string>('pipx_reinstall_all');
 export const pipxListJson = () =>
   invoke<string>('pipx_list_json');
+
+// ============================================================================
+// Window Effect Commands
+// ============================================================================
+
+export const windowEffectApply = (effect: string, dark?: boolean) =>
+  invoke<void>('window_effect_apply', { effect, dark: dark ?? null });
+export const windowEffectClear = () =>
+  invoke<void>('window_effect_clear');
+export const windowEffectGetSupported = () =>
+  invoke<string[]>('window_effect_get_supported');

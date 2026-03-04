@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Layers,
   Package,
   Trash2,
   RefreshCw,
@@ -22,7 +20,6 @@ import {
 } from "lucide-react";
 import { useLocale } from "@/components/providers/locale-provider";
 import { cn } from "@/lib/utils";
-import type { QuickAction } from "@/types/dashboard";
 
 interface QuickActionsProps {
   onRefreshAll?: () => void;
@@ -35,131 +32,6 @@ export function QuickActions({
   isRefreshing = false,
   className,
 }: QuickActionsProps) {
-  const router = useRouter();
-  const { t } = useLocale();
-
-  const primaryActions: QuickAction[] = [
-    {
-      id: "add-environment",
-      label: t("dashboard.quickActions.addEnvironment"),
-      icon: <Layers className="h-4 w-4" />,
-      href: "/environments",
-      variant: "default",
-    },
-    {
-      id: "install-package",
-      label: t("dashboard.quickActions.installPackage"),
-      icon: <Package className="h-4 w-4" />,
-      href: "/packages",
-      variant: "secondary",
-    },
-    {
-      id: "refresh-all",
-      label: t("dashboard.quickActions.refreshAll"),
-      icon: (
-        <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
-      ),
-      action: onRefreshAll,
-      variant: "outline",
-    },
-  ];
-
-  const secondaryActions: QuickAction[] = [
-    {
-      id: "clear-cache",
-      label: t("dashboard.quickActions.clearCache"),
-      icon: <Trash2 className="h-4 w-4" />,
-      href: "/cache",
-    },
-    {
-      id: "settings",
-      label: t("dashboard.quickActions.openSettings"),
-      icon: <Settings className="h-4 w-4" />,
-      href: "/settings",
-    },
-    {
-      id: "view-logs",
-      label: t("dashboard.quickActions.viewLogs"),
-      icon: <FileText className="h-4 w-4" />,
-      href: "/logs",
-    },
-  ];
-
-  const handleAction = useCallback(
-    (action: QuickAction) => {
-      if (action.action) {
-        action.action();
-      } else if (action.href) {
-        router.push(action.href);
-      }
-    },
-    [router],
-  );
-
-  return (
-    <Card className={cn("", className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base font-medium">
-          {t("dashboard.quickActions.title")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Primary Actions */}
-          {primaryActions.map((action) => (
-            <Button
-              key={action.id}
-              variant={action.variant || "outline"}
-              size="sm"
-              onClick={() => handleAction(action)}
-              disabled={action.id === "refresh-all" && isRefreshing}
-              className="gap-2"
-            >
-              {action.icon}
-              <span className="hidden sm:inline">{action.label}</span>
-            </Button>
-          ))}
-
-          {/* Secondary Actions Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">
-                  {t("dashboard.quickActions.moreActions")}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {secondaryActions.map((action) => (
-                <DropdownMenuItem
-                  key={action.id}
-                  onClick={() => handleAction(action)}
-                  className="gap-2"
-                >
-                  {action.icon}
-                  {action.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-interface QuickActionsInlineProps {
-  onRefreshAll?: () => void;
-  isRefreshing?: boolean;
-  className?: string;
-}
-
-export function QuickActionsInline({
-  onRefreshAll,
-  isRefreshing = false,
-  className,
-}: QuickActionsInlineProps) {
   const router = useRouter();
   const { t } = useLocale();
 

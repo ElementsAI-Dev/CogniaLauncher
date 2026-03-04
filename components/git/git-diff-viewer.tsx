@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback, useRef } from 'react';
+import { writeClipboard } from '@/lib/clipboard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -332,7 +333,7 @@ export function GitDiffViewer({
   const handleCopy = useCallback(async () => {
     if (!diff) return;
     try {
-      await navigator.clipboard.writeText(diff);
+      await writeClipboard(diff);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

@@ -119,6 +119,98 @@ export const NETWORK_PRESETS: WslNetworkPreset[] = [
   },
 ];
 
+/** Resource configuration profiles for .wslconfig (full system profiles) */
+export const CONFIG_PROFILES: WslNetworkPreset[] = [
+  {
+    id: 'lightweight',
+    labelKey: 'wsl.profile.lightweight',
+    descKey: 'wsl.profile.lightweightDesc',
+    settings: [
+      { section: 'wsl2', key: 'memory', value: '2GB' },
+      { section: 'wsl2', key: 'processors', value: '2' },
+      { section: 'wsl2', key: 'swap', value: '2GB' },
+      { section: 'experimental', key: 'autoMemoryReclaim', value: 'gradual' },
+      { section: 'experimental', key: 'sparseVhd', value: 'true' },
+    ],
+  },
+  {
+    id: 'standard-dev',
+    labelKey: 'wsl.profile.standardDev',
+    descKey: 'wsl.profile.standardDevDesc',
+    settings: [
+      { section: 'wsl2', key: 'memory', value: '4GB' },
+      { section: 'wsl2', key: 'processors', value: '4' },
+      { section: 'wsl2', key: 'swap', value: '8GB' },
+      { section: 'wsl2', key: 'localhostForwarding', value: 'true' },
+      { section: 'experimental', key: 'sparseVhd', value: 'true' },
+    ],
+  },
+  {
+    id: 'heavy-dev',
+    labelKey: 'wsl.profile.heavyDev',
+    descKey: 'wsl.profile.heavyDevDesc',
+    settings: [
+      { section: 'wsl2', key: 'memory', value: '8GB' },
+      { section: 'wsl2', key: 'processors', value: '8' },
+      { section: 'wsl2', key: 'swap', value: '8GB' },
+      { section: 'wsl2', key: 'nestedVirtualization', value: 'true' },
+      { section: 'wsl2', key: 'networkingMode', value: 'mirrored' },
+      { section: 'experimental', key: 'dnsTunneling', value: 'true' },
+      { section: 'experimental', key: 'autoProxy', value: 'true' },
+      { section: 'experimental', key: 'sparseVhd', value: 'true' },
+      { section: 'experimental', key: 'autoMemoryReclaim', value: 'gradual' },
+    ],
+  },
+  {
+    id: 'ai-ml',
+    labelKey: 'wsl.profile.aiMl',
+    descKey: 'wsl.profile.aiMlDesc',
+    settings: [
+      { section: 'wsl2', key: 'memory', value: '16GB' },
+      { section: 'wsl2', key: 'processors', value: '12' },
+      { section: 'wsl2', key: 'swap', value: '16GB' },
+      { section: 'wsl2', key: 'nestedVirtualization', value: 'true' },
+      { section: 'wsl2', key: 'guiApplications', value: 'true' },
+      { section: 'experimental', key: 'sparseVhd', value: 'true' },
+      { section: 'experimental', key: 'autoMemoryReclaim', value: 'gradual' },
+    ],
+  },
+  {
+    id: 'minimal-ci',
+    labelKey: 'wsl.profile.minimalCi',
+    descKey: 'wsl.profile.minimalCiDesc',
+    settings: [
+      { section: 'wsl2', key: 'memory', value: '1GB' },
+      { section: 'wsl2', key: 'processors', value: '1' },
+      { section: 'wsl2', key: 'swap', value: '0' },
+      { section: 'experimental', key: 'autoMemoryReclaim', value: 'dropcache' },
+      { section: 'experimental', key: 'sparseVhd', value: 'true' },
+    ],
+  },
+];
+
+/** Preset commands for WSL terminal quick execution */
+export interface WslSavedCommandDef {
+  id: string;
+  name: string;
+  command: string;
+  user?: string;
+  isPreset: true;
+}
+
+export const PRESET_COMMANDS: WslSavedCommandDef[] = [
+  { id: 'preset-update-apt', name: 'System Update (apt)', command: 'sudo apt update && sudo apt upgrade -y', isPreset: true },
+  { id: 'preset-update-pacman', name: 'System Update (pacman)', command: 'sudo pacman -Syu --noconfirm', isPreset: true },
+  { id: 'preset-update-dnf', name: 'System Update (dnf)', command: 'sudo dnf upgrade -y', isPreset: true },
+  { id: 'preset-cleanup-apt', name: 'Cleanup (apt)', command: 'sudo apt autoremove -y && sudo apt clean', isPreset: true },
+  { id: 'preset-disk', name: 'Disk Usage', command: 'df -h', isPreset: true },
+  { id: 'preset-memory', name: 'Memory Usage', command: 'free -h', isPreset: true },
+  { id: 'preset-processes', name: 'Top Processes', command: 'top -b -n 1 | head -20', isPreset: true },
+  { id: 'preset-network', name: 'Network Info', command: 'ip addr && echo "---" && cat /etc/resolv.conf', isPreset: true },
+  { id: 'preset-dns-test', name: 'DNS Test', command: 'nslookup google.com', isPreset: true },
+  { id: 'preset-uptime', name: 'Uptime & Load', command: 'uptime', isPreset: true },
+];
+
 /** Boot command presets for wsl.conf [boot] command */
 export interface BootCommandPreset {
   id: string;
@@ -131,6 +223,12 @@ export const BOOT_COMMAND_PRESETS: BootCommandPreset[] = [
   { id: 'ssh', labelKey: 'wsl.bootPreset.ssh', command: 'service ssh start' },
   { id: 'cron', labelKey: 'wsl.bootPreset.cron', command: 'service cron start' },
   { id: 'docker-ssh', labelKey: 'wsl.bootPreset.dockerSsh', command: 'service docker start && service ssh start' },
+  { id: 'mysql', labelKey: 'wsl.bootPreset.mysql', command: 'service mysql start' },
+  { id: 'postgresql', labelKey: 'wsl.bootPreset.postgresql', command: 'service postgresql start' },
+  { id: 'redis', labelKey: 'wsl.bootPreset.redis', command: 'service redis-server start' },
+  { id: 'nginx', labelKey: 'wsl.bootPreset.nginx', command: 'service nginx start' },
+  { id: 'apache', labelKey: 'wsl.bootPreset.apache', command: 'service apache2 start' },
+  { id: 'all-dev', labelKey: 'wsl.bootPreset.allDev', command: 'service docker start && service ssh start && service cron start && service redis-server start' },
 ];
 
 /** Networking mode descriptions for status display */

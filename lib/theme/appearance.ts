@@ -1,7 +1,7 @@
 import { locales, type Locale } from '@/lib/i18n';
-import { isAccentColor, isChartColorTheme, isInterfaceDensity, isInterfaceRadius, isThemeMode, type AccentColor, type ChartColorTheme, type InterfaceDensity, type InterfaceRadius, type ThemeMode } from './types';
+import { isAccentColor, isChartColorTheme, isInterfaceDensity, isInterfaceRadius, isThemeMode, isWindowEffect, type AccentColor, type ChartColorTheme, type InterfaceDensity, type InterfaceRadius, type ThemeMode, type WindowEffect } from './types';
 
-export type AppearanceConfigKey = 'theme' | 'accentColor' | 'chartColorTheme' | 'interfaceRadius' | 'interfaceDensity' | 'reducedMotion' | 'language';
+export type AppearanceConfigKey = 'theme' | 'accentColor' | 'chartColorTheme' | 'interfaceRadius' | 'interfaceDensity' | 'reducedMotion' | 'language' | 'windowEffect';
 
 export interface ParsedAppearanceConfig {
   theme?: ThemeMode;
@@ -10,6 +10,7 @@ export interface ParsedAppearanceConfig {
   interfaceRadius?: InterfaceRadius;
   interfaceDensity?: InterfaceDensity;
   reducedMotion?: boolean;
+  windowEffect?: WindowEffect;
   locale?: Locale;
   invalidKeys: AppearanceConfigKey[];
 }
@@ -56,6 +57,10 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
   const locale = languageValue && isLocale(languageValue) ? languageValue : undefined;
   if (languageValue && !locale) invalidKeys.push('language');
 
+  const windowEffectValue = config['appearance.window_effect'];
+  const windowEffect = windowEffectValue && isWindowEffect(windowEffectValue) ? windowEffectValue : undefined;
+  if (windowEffectValue && !windowEffect) invalidKeys.push('windowEffect');
+
   return {
     theme,
     accentColor,
@@ -63,6 +68,7 @@ export function parseAppearanceConfig(config: Record<string, string>): ParsedApp
     interfaceRadius,
     interfaceDensity,
     reducedMotion,
+    windowEffect,
     locale,
     invalidKeys,
   };

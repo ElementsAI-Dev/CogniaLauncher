@@ -107,15 +107,14 @@ pub async fn custom_rule_import_presets(
     let mut imported = Vec::new();
 
     for preset in presets {
-        if preset_ids.contains(&preset.id)
-            && manager.get_rule(&preset.id).is_none() {
-                let mut rule = preset.clone();
-                rule.enabled = true;
-                rule.created_at = Some(chrono::Utc::now().to_rfc3339());
-                if manager.add_rule(rule).is_ok() {
-                    imported.push(preset.id);
-                }
+        if preset_ids.contains(&preset.id) && manager.get_rule(&preset.id).is_none() {
+            let mut rule = preset.clone();
+            rule.enabled = true;
+            rule.created_at = Some(chrono::Utc::now().to_rfc3339());
+            if manager.add_rule(rule).is_ok() {
+                imported.push(preset.id);
             }
+        }
     }
 
     manager.save().await.map_err(|e| e.to_string())?;

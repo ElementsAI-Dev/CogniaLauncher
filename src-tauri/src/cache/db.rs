@@ -127,8 +127,8 @@ mod tests {
 
     #[test]
     fn test_cache_entry_is_expired() {
-        let expired = CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download)
-            .with_ttl(-1);
+        let expired =
+            CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download).with_ttl(-1);
         assert!(expired.is_expired());
 
         let valid = CacheEntry::new("k2", PathBuf::from("f2"), 0, "c2", CacheEntryType::Download)
@@ -143,16 +143,21 @@ mod tests {
     #[test]
     fn test_cache_entry_with_expiry() {
         let future_time = Utc::now() + chrono::Duration::hours(1);
-        let entry =
-            CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download)
-                .with_expiry(future_time);
+        let entry = CacheEntry::new("k", PathBuf::from("f"), 0, "c", CacheEntryType::Download)
+            .with_expiry(future_time);
         assert!(!entry.is_expired());
         assert_eq!(entry.expires_at, Some(future_time));
     }
 
     #[test]
     fn test_cache_entry_new() {
-        let entry = CacheEntry::new("key", PathBuf::from("file"), 1024, "checksum", CacheEntryType::Download);
+        let entry = CacheEntry::new(
+            "key",
+            PathBuf::from("file"),
+            1024,
+            "checksum",
+            CacheEntryType::Download,
+        );
         assert_eq!(entry.key, "key");
         assert_eq!(entry.size, 1024);
         assert_eq!(entry.checksum, "checksum");

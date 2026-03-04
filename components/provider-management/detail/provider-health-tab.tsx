@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Empty,
@@ -22,12 +21,8 @@ import {
   EmptyDescription,
 } from "@/components/ui/empty";
 import {
-  AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   Copy,
-  HelpCircle,
-  Info,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -35,9 +30,10 @@ import {
   MapPin,
   ClipboardCopy,
 } from "lucide-react";
-import type { PackageManagerHealthResult, HealthStatus, Severity, HealthIssue } from "@/types/tauri";
+import type { PackageManagerHealthResult, HealthStatus } from "@/types/tauri";
 import { cn } from "@/lib/utils";
-import { getStatusColor, getAlertVariant } from "@/lib/provider-utils";
+import { getStatusIcon, getStatusColor, getStatusTextColor } from "@/lib/provider-utils";
+import { IssueCard } from "@/components/environments/health-check-panel";
 import { toast } from "sonner";
 
 interface ProviderHealthTabProps {
@@ -47,75 +43,9 @@ interface ProviderHealthTabProps {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-function getStatusIcon(status: HealthStatus) {
-  switch (status) {
-    case "healthy":
-      return <CheckCircle2 className="h-5 w-5 text-green-600" />;
-    case "warning":
-      return <AlertTriangle className="h-5 w-5 text-yellow-600" />;
-    case "error":
-      return <AlertCircle className="h-5 w-5 text-red-600" />;
-    default:
-      return <HelpCircle className="h-5 w-5 text-gray-400" />;
-  }
-}
-
-function getSeverityIcon(severity: Severity) {
-  switch (severity) {
-    case "critical":
-    case "error":
-      return <AlertCircle className="h-4 w-4" />;
-    case "warning":
-      return <AlertTriangle className="h-4 w-4" />;
-    case "info":
-    default:
-      return <Info className="h-4 w-4" />;
-  }
-}
-
-function IssueCard({
-  issue,
-  t,
-}: {
-  issue: HealthIssue;
-  t: (key: string) => string;
-}) {
-  const copyToClipboard = (text: string) => {
-    writeClipboard(text);
-  };
-
-  return (
-    <Alert variant={getAlertVariant(issue.severity)} className="text-sm">
-      {getSeverityIcon(issue.severity)}
-      <AlertTitle className="text-sm font-medium">{issue.message}</AlertTitle>
-      <AlertDescription>
-        {issue.details && (
-          <p className="text-xs mt-1 opacity-80">{issue.details}</p>
-        )}
-        {issue.fix_command && (
-          <div className="mt-2 flex items-center gap-2">
-            <code className="text-xs bg-black/10 dark:bg-white/10 px-2 py-1 rounded font-mono">
-              {issue.fix_command}
-            </code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={() => copyToClipboard(issue.fix_command!)}
-              title={t("providerDetail.copyCommand")}
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-          </div>
-        )}
-        {issue.fix_description && (
-          <p className="text-xs mt-1 text-muted-foreground">
-            {issue.fix_description}
-          </p>
-        )}
-      </AlertDescription>
-    </Alert>
-  );
+function renderStatusIcon(status: HealthStatus) {
+  const Icon = getStatusIcon(status);
+  return <Icon className={cn("h-5 w-5", getStatusTextColor(status))} />;
 }
 
 export function ProviderHealthTab({
@@ -220,7 +150,7 @@ export function ProviderHealthTab({
               )}
             >
               <div className="flex items-center gap-3">
-                {getStatusIcon(healthResult.status)}
+                {renderStatusIcon(healthResult.status)}
                 <div>
                   <span className="font-medium text-lg">
                     {healthResult.display_name}

@@ -27,8 +27,11 @@ import {
   FolderOpen,
   TerminalSquare,
   Copy,
+  Tag,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { formatBytes } from '@/lib/utils';
+import { useWslStore } from '@/lib/stores/wsl';
 import type { WslDistroCardProps } from '@/types/wsl';
 import type { WslDiskUsage } from '@/types/tauri';
 
@@ -51,6 +54,8 @@ export function WslDistroCard({
   const wslVer = parseInt(distro.wslVersion, 10);
   const targetVersion = wslVer === 1 ? 2 : 1;
   const [diskUsage, setDiskUsage] = useState<WslDiskUsage | null>(null);
+  const { distroTags, availableTags, setDistroTags } = useWslStore();
+  const tags = distroTags[distro.name] ?? [];
 
   useEffect(() => {
     if (getDiskUsage) {
@@ -93,6 +98,11 @@ export function WslDistroCard({
                     {t('wsl.defaultBadge')}
                   </Badge>
                 )}
+                {tags.map((tag) => (
+                  <Badge key={tag} variant="outline" className="text-[10px]">
+                    {tag}
+                  </Badge>
+                ))}
               </div>
               {diskUsage && diskUsage.totalBytes > 0 && (
                 <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
@@ -175,6 +185,39 @@ export function WslDistroCard({
                     {t('wsl.changeDefaultUser')}
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                      <Tag className="h-4 w-4 mr-2" />
+                      {t('wsl.tags.manage')}
+                    </DropdownMenuItem>
+                  </PopoverTrigger>
+                  <PopoverContent side="left" align="start" className="w-48 p-2">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">{t('wsl.tags.title')}</p>
+                    <div className="space-y-1">
+                      {availableTags.map((tag) => {
+                        const isActive = tags.includes(tag);
+                        return (
+                          <Button
+                            key={tag}
+                            variant={isActive ? 'default' : 'outline'}
+                            size="sm"
+                            className="w-full justify-start h-7 text-xs"
+                            onClick={() => {
+                              const next = isActive
+                                ? tags.filter((t2) => t2 !== tag)
+                                : [...tags, tag];
+                              setDistroTags(distro.name, next);
+                            }}
+                          >
+                            {tag}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => onUnregister(distro.name)}

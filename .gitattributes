@@ -1,0 +1,212 @@
+# ==============================================================================
+# Git Attributes for CogniaLauncher (Next.js + Tauri/Rust)
+# ==============================================================================
+
+# --- Default behavior ---
+# Auto-detect text files and normalize line endings to LF on commit
+* text=auto eol=lf
+
+# ==============================================================================
+# Source Code
+# ==============================================================================
+
+# TypeScript / JavaScript (frontend)
+*.ts          text eol=lf diff=typescript
+*.tsx         text eol=lf diff=typescript
+*.js          text eol=lf
+*.jsx         text eol=lf
+*.mjs         text eol=lf
+*.mts         text eol=lf
+*.cjs         text eol=lf
+
+# Rust (backend)
+*.rs          text eol=lf diff=rust
+
+# CSS / Styling
+*.css         text eol=lf diff=css
+*.scss        text eol=lf diff=css
+*.less        text eol=lf diff=css
+
+# HTML / Templates
+*.html        text eol=lf diff=html
+*.htm         text eol=lf diff=html
+
+# ==============================================================================
+# Data / Config
+# ==============================================================================
+
+*.json        text eol=lf
+*.jsonc       text eol=lf
+*.json5       text eol=lf
+*.toml        text eol=lf
+*.yaml        text eol=lf
+*.yml         text eol=lf
+*.xml         text eol=lf
+
+# ==============================================================================
+# Documentation
+# ==============================================================================
+
+*.md          text eol=lf diff=markdown
+*.mdx         text eol=lf diff=markdown
+*.txt         text eol=lf
+LICENSE       text eol=lf
+AUTHORS       text eol=lf
+CHANGELOG     text eol=lf
+
+# ==============================================================================
+# Shell / Scripts
+# ==============================================================================
+
+# Unix scripts - always LF
+*.sh          text eol=lf
+*.bash        text eol=lf
+*.zsh         text eol=lf
+*.fish        text eol=lf
+Makefile      text eol=lf
+*.mk          text eol=lf
+
+# Windows scripts - always CRLF
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+*.psm1        text eol=crlf
+*.psd1        text eol=crlf
+
+# ==============================================================================
+# Config / Dotfiles
+# ==============================================================================
+
+.gitattributes text eol=lf
+.gitignore     text eol=lf
+.gitmodules    text eol=lf
+.editorconfig  text eol=lf
+.prettierrc    text eol=lf
+.prettierignore text eol=lf
+.lintstagedrc  text eol=lf
+.browserslistrc text eol=lf
+.env*          text eol=lf
+Dockerfile     text eol=lf
+*.dockerfile   text eol=lf
+
+# ==============================================================================
+# Binary Files (no line ending conversion, no diff)
+# ==============================================================================
+
+# Images
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.bmp         binary
+*.ico         binary
+*.icns        binary
+*.webp        binary
+*.avif        binary
+*.tiff        binary
+*.tif         binary
+
+# SVG - text for diffs but treat as auto for line endings
+*.svg         text eol=lf
+
+# Fonts
+*.woff        binary
+*.woff2       binary
+*.ttf         binary
+*.otf         binary
+*.eot         binary
+
+# Audio / Video
+*.mp3         binary
+*.mp4         binary
+*.ogg         binary
+*.wav         binary
+*.webm        binary
+
+# Archives
+*.zip         binary
+*.gz          binary
+*.tar         binary
+*.tgz         binary
+*.bz2         binary
+*.xz          binary
+*.7z          binary
+*.rar         binary
+
+# Compiled / Runtime
+*.wasm        binary
+*.exe         binary
+*.dll         binary
+*.so          binary
+*.dylib       binary
+*.a           binary
+*.lib         binary
+*.o           binary
+*.obj         binary
+*.pdb         binary
+*.msi         binary
+*.dmg         binary
+*.deb         binary
+*.rpm         binary
+*.AppImage    binary
+
+# Design files
+*.pen         binary
+
+# ==============================================================================
+# Lock Files (auto-generated, no manual merge)
+# ==============================================================================
+
+pnpm-lock.yaml    text eol=lf -diff linguist-generated=true
+Cargo.lock        text eol=lf -diff linguist-generated=true
+
+# ==============================================================================
+# GitHub Linguist Overrides
+# ==============================================================================
+
+# Vendor / generated - exclude from language stats
+out/**              linguist-vendored
+src-tauri/target/** linguist-vendored
+src-tauri/gen/**    linguist-generated=true
+src-tauri/icons/**  linguist-vendored
+public/icons/**     linguist-vendored
+__mocks__/**        linguist-vendored
+*.snap              linguist-generated=true
+
+# Documentation
+docs/**             linguist-documentation
+llmdoc/**           linguist-documentation
+*.md                linguist-documentation
+
+# Ensure primary languages are counted correctly
+*.ts                linguist-detectable=true
+*.tsx               linguist-detectable=true
+*.rs                linguist-detectable=true
+
+# ==============================================================================
+# Export Ignore (excluded from `git archive`)
+# ==============================================================================
+
+.github/          export-ignore
+.vscode/          export-ignore
+.windsurf/        export-ignore
+.claude/          export-ignore
+.husky/           export-ignore
+__mocks__/        export-ignore
+e2e/              export-ignore
+docs/             export-ignore
+llmdoc/           export-ignore
+scripts/          export-ignore
+design/           export-ignore
+*.test.ts         export-ignore
+*.test.tsx        export-ignore
+*.spec.ts         export-ignore
+jest.config.*     export-ignore
+jest.setup.*      export-ignore
+playwright.config.* export-ignore
+.prettierrc       export-ignore
+.prettierignore   export-ignore
+.lintstagedrc     export-ignore
+.editorconfig     export-ignore
+AGENTS.md         export-ignore
+CLAUDE.md         export-ignore

@@ -21,8 +21,9 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { Upload, Download, Copy, Check, Loader2 } from 'lucide-react';
+import { Upload, Download, Copy, Check, Loader2, ClipboardPaste } from 'lucide-react';
 import { toast } from 'sonner';
+import { writeClipboard, readClipboard } from '@/lib/clipboard';
 import { downloadEnvFile } from '@/lib/envvar';
 import type { EnvVarScope, EnvFileFormat, EnvVarImportResult } from '@/types/tauri';
 
@@ -81,12 +82,11 @@ export function EnvVarImportExport({
     }
   };
 
-  const handleCopyExport = () => {
-    navigator.clipboard.writeText(exportContent).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success(t('envvar.table.copied'));
-    });
+  const handleCopyExport = async () => {
+    await writeClipboard(exportContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success(t('envvar.table.copied'));
   };
 
   const handleDownloadExport = () => {
@@ -153,6 +153,17 @@ export function EnvVarImportExport({
                 <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={() => fileInputRef.current?.click()}>
                   <Upload className="h-3 w-3" />
                   {t('common.file')}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 gap-1" onClick={async () => {
+                  try {
+                    const text = await readClipboard();
+                    if (text?.trim()) setImportContent(text);
+                  } catch {
+                    // Clipboard read failed
+                  }
+                }}>
+                  <ClipboardPaste className="h-3 w-3" />
+                  {t('envvar.importExport.paste')}
                 </Button>
               </div>
               <Textarea

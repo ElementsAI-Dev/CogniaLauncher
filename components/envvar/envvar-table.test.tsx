@@ -32,14 +32,11 @@ const mockT = (key: string) => {
   return translations[key] || key;
 };
 
-const mockClipboard = {
-  writeText: jest.fn().mockResolvedValue(undefined),
-};
+jest.mock('@/lib/clipboard', () => ({
+  writeClipboard: jest.fn().mockResolvedValue(undefined),
+}));
 
-Object.defineProperty(navigator, 'clipboard', {
-  value: mockClipboard,
-  writable: true,
-});
+const clipboardMock = jest.requireMock('@/lib/clipboard');
 
 describe('EnvVarTable', () => {
   const baseRows = [
@@ -139,7 +136,7 @@ describe('EnvVarTable', () => {
     );
     expect(copyButtons.length).toBeGreaterThanOrEqual(1);
     await userEvent.click(copyButtons[0]);
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith('my_value');
+    expect(clipboardMock.writeClipboard).toHaveBeenCalledWith('my_value');
   });
 
   it('enters inline edit mode via pencil button', async () => {

@@ -12,7 +12,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -88,7 +93,7 @@ export function ExternalCacheSection({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CardHeader className="pb-2">
           <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between cursor-pointer">
+            <div className="flex items-center justify-between cursor-pointer" data-testid="external-cache-trigger">
               <div className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
                 <CardTitle className="text-base">
@@ -195,75 +200,76 @@ export function ExternalCacheSection({
                   <EmptyMedia variant="icon">
                     <Package />
                   </EmptyMedia>
-                  <EmptyTitle className="text-sm font-normal text-muted-foreground">{t("cache.noExternalCaches")}</EmptyTitle>
+                  <EmptyTitle className="text-sm font-normal text-muted-foreground">
+                    {t("cache.noExternalCaches")}
+                  </EmptyTitle>
                 </EmptyHeader>
               </Empty>
             ) : (
               <div className="space-y-4">
-                {orderedCategories
-                  .map((cat) => (
-                    <div key={cat} className="space-y-2">
-                      <h4 className="text-sm font-medium text-muted-foreground px-1">
-                        {getCategoryLabel(cat, t)}
-                      </h4>
-                      {grouped[cat].map((cache) => (
-                        <div
-                          key={cache.provider}
-                          className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <CacheProviderIcon provider={cache.provider} size={24} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium">
-                                  {cache.displayName}
-                                </p>
-                                {cache.isAvailable ? (
-                                  <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <XCircle className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <FolderOpen className="h-3 w-3" />
-                                <span className="truncate">
-                                  {cache.cachePath || t("cache.managedByTool")}
-                                </span>
-                              </div>
+                {orderedCategories.map((cat) => (
+                  <div key={cat} className="space-y-2">
+                    <h4 className="text-sm font-medium text-muted-foreground px-1">
+                      {getCategoryLabel(cat, t)}
+                    </h4>
+                    {grouped[cat].map((cache) => (
+                      <div
+                        key={cache.provider}
+                        className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                      >
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <CacheProviderIcon
+                            provider={cache.provider}
+                            size={24}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{cache.displayName}</p>
+                              {cache.isAvailable ? (
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <XCircle className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <FolderOpen className="h-3 w-3" />
+                              <span className="truncate">
+                                {cache.cachePath || t("cache.managedByTool")}
+                              </span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 ml-4">
-                            <Badge
-                              variant={cache.size > 0 ? "default" : "secondary"}
-                            >
-                              {cache.sizeHuman}
-                            </Badge>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={
-                                    !cache.canClean ||
-                                    cleaning === cache.provider
-                                  }
-                                  onClick={() =>
-                                    handleCleanSingle(cache.provider)
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  {cleaning === cache.provider
-                                    ? t("cache.clearing")
-                                    : t("cache.clean")}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>{t("cache.clean")}</TooltipContent>
-                            </Tooltip>
-                          </div>
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-3 ml-4">
+                          <Badge
+                            variant={cache.size > 0 ? "default" : "secondary"}
+                          >
+                            {cache.sizeHuman}
+                          </Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                  !cache.canClean || cleaning === cache.provider
+                                }
+                                onClick={() =>
+                                  handleCleanSingle(cache.provider)
+                                }
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                {cleaning === cache.provider
+                                  ? t("cache.clearing")
+                                  : t("cache.clean")}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("cache.clean")}</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>

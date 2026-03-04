@@ -491,8 +491,12 @@ mod tests {
         let json = r#"{"node":[{"version":"20.10.0","install_path":"/home/user/.local/share/mise/installs/node/20.10.0","active":true}],"python":[{"version":"3.12.1","install_path":"/home/user/.local/share/mise/installs/python/3.12.1","active":false}]}"#;
         let result = MiseProvider::parse_ls_json(json);
         assert_eq!(result.len(), 2);
-        assert!(result.iter().any(|(t, v, _, _)| t == "node" && v == "20.10.0"));
-        assert!(result.iter().any(|(t, v, _, a)| t == "python" && v == "3.12.1" && !a));
+        assert!(result
+            .iter()
+            .any(|(t, v, _, _)| t == "node" && v == "20.10.0"));
+        assert!(result
+            .iter()
+            .any(|(t, v, _, a)| t == "python" && v == "3.12.1" && !a));
     }
 
     #[test]

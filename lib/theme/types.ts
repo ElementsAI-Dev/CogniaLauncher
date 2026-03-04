@@ -95,3 +95,11 @@ export const INTERFACE_DENSITIES: InterfaceDensity[] = ['compact', 'comfortable'
 export function isInterfaceDensity(value?: string): value is InterfaceDensity {
   return typeof value === 'string' && (INTERFACE_DENSITIES as readonly string[]).includes(value);
 }
+
+export type WindowEffect = 'auto' | 'none' | 'mica' | 'mica-tabbed' | 'acrylic' | 'blur' | 'vibrancy';
+
+export const WINDOW_EFFECTS: WindowEffect[] = ['auto', 'none', 'mica', 'mica-tabbed', 'acrylic', 'blur', 'vibrancy'];
+
+export function isWindowEffect(value?: string): value is WindowEffect {
+  return typeof value === 'string' && (WINDOW_EFFECTS as readonly string[]).includes(value);
+}

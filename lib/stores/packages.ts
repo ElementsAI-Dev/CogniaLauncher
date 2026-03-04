@@ -125,6 +125,7 @@ export const usePackageStore = create<PackageState>()(
     {
       name: 'cognia-packages',
       version: 1,
+      migrate: (persisted) => persisted as PackageState,
       partialize: (state) => ({
         pinnedPackages: state.pinnedPackages,
         selectedProvider: state.selectedProvider,

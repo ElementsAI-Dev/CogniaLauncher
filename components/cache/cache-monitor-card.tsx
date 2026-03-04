@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { useLocale } from '@/components/providers/locale-provider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -21,7 +21,7 @@ import type { CacheMonitorCardProps } from '@/types/cache';
 
 export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: CacheMonitorCardProps) {
   const { t } = useLocale();
-  const [open, setOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(true);
   const [monitor, setMonitor] = useState<CacheSizeMonitor | null>(null);
   const [loading, setLoading] = useState(false);
   const [sizeHistory, setSizeHistory] = useState<CacheSizeSnapshot[]>([]);
@@ -34,8 +34,8 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
       const { cacheSizeMonitor } = await import('@/lib/tauri');
       const data = await cacheSizeMonitor();
       setMonitor(data);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch cache monitor:', err);
     } finally {
       setLoading(false);
     }
@@ -48,8 +48,8 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
       const { getCacheSizeHistory } = await import('@/lib/tauri');
       const data = await getCacheSizeHistory(30);
       setSizeHistory(data);
-    } catch {
-      // silently fail
+    } catch (err) {
+      console.error('Failed to fetch cache size history:', err);
     } finally {
       setHistoryLoading(false);
     }
@@ -70,12 +70,25 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
     return () => clearInterval(timer);
   }, [autoRefreshInterval, fetchMonitor]);
 
+  const gradientId = useId();
+  const chartData = useMemo(
+    () =>
+      sizeHistory.map((s) => ({
+        date: new Date(s.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        size: s.internalSize,
+        sizeHuman: s.internalSizeHuman,
+        downloads: s.downloadCount,
+        metadata: s.metadataCount,
+      })),
+    [sizeHistory],
+  );
+
   return (
     <Card>
-      <Collapsible open={open} onOpenChange={setOpen}>
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CardHeader className="pb-2">
           <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between cursor-pointer">
+            <div className="flex items-center justify-between cursor-pointer" data-testid="cache-monitor-trigger">
               <div className="flex items-center gap-2">
                 <Activity className="h-5 w-5" />
                 <CardTitle className="text-base">{t('cache.sizeMonitor')}</CardTitle>
@@ -101,7 +114,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                   </TooltipTrigger>
                   <TooltipContent>{t('common.refresh')}</TooltipContent>
                 </Tooltip>
-                <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
               </div>
             </div>
           </CollapsibleTrigger>
@@ -127,7 +140,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>{monitor.internalSizeHuman} / {monitor.maxSizeHuman}</span>
                     {monitor.threshold > 0 && (
-                      <span>Threshold: {monitor.threshold}%</span>
+                      <span>{t('cache.threshold', { value: monitor.threshold })}</span>
                     )}
                   </div>
                 </div>
@@ -180,17 +193,11 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                     <div className="h-40 w-full">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart
-                          data={sizeHistory.map(s => ({
-                            date: new Date(s.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-                            size: s.internalSize,
-                            sizeHuman: s.internalSizeHuman,
-                            downloads: s.downloadCount,
-                            metadata: s.metadataCount,
-                          }))}
+                          data={chartData}
                           margin={{ top: 4, right: 4, left: 4, bottom: 0 }}
                         >
                           <defs>
-                            <linearGradient id="cacheSizeGradient" x1="0" y1="0" x2="0" y2="1">
+                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                               <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
                               <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                             </linearGradient>
@@ -219,7 +226,7 @@ export function CacheMonitorCard({ refreshTrigger, autoRefreshInterval = 0 }: Ca
                             type="monotone"
                             dataKey="size"
                             stroke="hsl(var(--primary))"
-                            fill="url(#cacheSizeGradient)"
+                            fill={`url(#${gradientId})`}
                             strokeWidth={2}
                           />
                         </AreaChart>

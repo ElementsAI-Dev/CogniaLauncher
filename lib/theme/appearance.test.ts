@@ -9,6 +9,7 @@ describe('parseAppearanceConfig', () => {
       'appearance.interface_radius': '0.75',
       'appearance.interface_density': 'compact',
       'appearance.reduced_motion': 'true',
+      'appearance.window_effect': 'mica',
       'appearance.language': 'zh',
     });
 
@@ -18,6 +19,7 @@ describe('parseAppearanceConfig', () => {
     expect(parsed.interfaceRadius).toBe(0.75);
     expect(parsed.interfaceDensity).toBe('compact');
     expect(parsed.reducedMotion).toBe(true);
+    expect(parsed.windowEffect).toBe('mica');
     expect(parsed.locale).toBe('zh');
     expect(parsed.invalidKeys).toEqual([]);
   });
@@ -30,6 +32,7 @@ describe('parseAppearanceConfig', () => {
       'appearance.interface_radius': '0.4',
       'appearance.interface_density': 'tiny',
       'appearance.reduced_motion': 'maybe',
+      'appearance.window_effect': 'invalid-effect',
       'appearance.language': 'fr',
     });
 
@@ -39,6 +42,7 @@ describe('parseAppearanceConfig', () => {
     expect(parsed.interfaceRadius).toBeUndefined();
     expect(parsed.interfaceDensity).toBeUndefined();
     expect(parsed.reducedMotion).toBeUndefined();
+    expect(parsed.windowEffect).toBeUndefined();
     expect(parsed.locale).toBeUndefined();
     expect(parsed.invalidKeys).toEqual([
       'theme',
@@ -48,6 +52,7 @@ describe('parseAppearanceConfig', () => {
       'interfaceDensity',
       'reducedMotion',
       'language',
+      'windowEffect',
     ]);
   });
 
@@ -60,8 +65,23 @@ describe('parseAppearanceConfig', () => {
     expect(parsed.interfaceRadius).toBeUndefined();
     expect(parsed.interfaceDensity).toBeUndefined();
     expect(parsed.reducedMotion).toBeUndefined();
+    expect(parsed.windowEffect).toBeUndefined();
     expect(parsed.locale).toBeUndefined();
     expect(parsed.invalidKeys).toEqual([]);
+  });
+
+  it('parses valid window_effect values', () => {
+    for (const effect of ['auto', 'none', 'mica', 'mica-tabbed', 'acrylic', 'blur', 'vibrancy']) {
+      const parsed = parseAppearanceConfig({ 'appearance.window_effect': effect });
+      expect(parsed.windowEffect).toBe(effect);
+      expect(parsed.invalidKeys).toEqual([]);
+    }
+  });
+
+  it('rejects invalid window_effect', () => {
+    const parsed = parseAppearanceConfig({ 'appearance.window_effect': 'frosted' });
+    expect(parsed.windowEffect).toBeUndefined();
+    expect(parsed.invalidKeys).toContain('windowEffect');
   });
 
   it('parses interface_radius with valid numeric strings', () => {

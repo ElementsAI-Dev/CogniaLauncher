@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import {
   DndContext,
   closestCenter,
@@ -15,7 +15,7 @@ import {
   sortableKeyboardCoordinates,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { useDashboardStore, type WidgetSize } from "@/lib/stores/dashboard";
+import { useDashboardStore, type WidgetSize, type WidgetType } from "@/lib/stores/dashboard";
 import { WidgetWrapper } from "@/components/dashboard/widget-wrapper";
 import { StatsCard, StatsCardSkeleton } from "@/components/dashboard/stats-card";
 import { QuickSearch } from "@/components/dashboard/quick-search";
@@ -32,10 +32,89 @@ import { HealthCheckWidget } from "@/components/dashboard/widgets/health-check-w
 import { UpdatesWidget } from "@/components/dashboard/widgets/updates-widget";
 import { WelcomeWidget } from "@/components/dashboard/widgets/welcome-widget";
 import { ToolboxFavoritesWidget } from "@/components/dashboard/widgets/toolbox-favorites-widget";
-import { QuickActionsInline } from "@/components/dashboard/quick-actions";
+import { QuickActions } from "@/components/dashboard/quick-actions";
 import { useLocale } from "@/components/providers/locale-provider";
 import { Layers, Package, HardDrive, Activity } from "lucide-react";
 import type { EnvironmentInfo, InstalledPackage, CacheInfo, PlatformInfo, ProviderInfo } from "@/lib/tauri";
+
+interface WidgetRenderProps {
+  environments: EnvironmentInfo[];
+  packages: InstalledPackage[];
+  providers: ProviderInfo[];
+  cacheInfo: CacheInfo | null;
+  platformInfo: PlatformInfo | null;
+  cogniaDir: string | null;
+  isLoading: boolean;
+  onRefreshAll: () => void;
+  isRefreshing: boolean;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  activeEnvs: number;
+  totalVersions: number;
+}
+
+function renderStatsOverview(p: WidgetRenderProps): ReactNode {
+  if (p.isLoading) {
+    return (
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+        <StatsCardSkeleton />
+        <StatsCardSkeleton />
+        <StatsCardSkeleton />
+        <StatsCardSkeleton />
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <StatsCard
+        title={p.t("dashboard.environments")}
+        value={p.activeEnvs}
+        description={p.t("dashboard.versionsInstalled", { count: p.totalVersions })}
+        icon={<Layers className="h-4 w-4" />}
+        href="/environments"
+      />
+      <StatsCard
+        title={p.t("dashboard.packages")}
+        value={p.packages.length}
+        description={p.t("dashboard.fromProviders", { count: p.providers.length })}
+        icon={<Package className="h-4 w-4" />}
+        href="/packages"
+      />
+      <StatsCard
+        title={p.t("dashboard.cache")}
+        value={p.cacheInfo?.total_size_human || "0 B"}
+        description={p.t("dashboard.cachedItems", { count: p.cacheInfo?.download_cache.entry_count || 0 })}
+        icon={<HardDrive className="h-4 w-4" />}
+        href="/cache"
+      />
+      <StatsCard
+        title={p.t("dashboard.platform")}
+        value={p.platformInfo?.osLongVersion || (p.platformInfo?.osVersion ? `${p.platformInfo.os} ${p.platformInfo.osVersion}` : p.platformInfo?.os) || p.t("common.unknown")}
+        description={p.platformInfo?.arch || ""}
+        icon={<Activity className="h-4 w-4" />}
+        href="/settings"
+      />
+    </div>
+  );
+}
+
+const WIDGET_RENDERERS: Record<WidgetType, (p: WidgetRenderProps) => ReactNode> = {
+  "stats-overview": renderStatsOverview,
+  "quick-search": (p) => <QuickSearch environments={p.environments} packages={p.packages} />,
+  "environment-chart": (p) => <EnvironmentChart environments={p.environments} />,
+  "package-chart": (p) => <PackageChart packages={p.packages} providers={p.providers} />,
+  "cache-usage": (p) => <CacheChart cacheInfo={p.cacheInfo} />,
+  "activity-timeline": (p) => <ActivityChart environments={p.environments} packages={p.packages} />,
+  "system-info": (p) => <SystemInfoWidget platformInfo={p.platformInfo} cogniaDir={p.cogniaDir} />,
+  "download-stats": () => <DownloadStatsWidget />,
+  "environment-list": (p) => <EnvironmentList environments={p.environments} initialLimit={4} />,
+  "package-list": (p) => <PackageList packages={p.packages} initialLimit={5} />,
+  "wsl-status": () => <WslStatusWidget />,
+  "quick-actions": (p) => <QuickActions onRefreshAll={p.onRefreshAll} isRefreshing={p.isRefreshing} />,
+  "health-check": () => <HealthCheckWidget />,
+  "updates-available": () => <UpdatesWidget />,
+  "welcome": (p) => <WelcomeWidget hasEnvironments={p.environments.length > 0} hasPackages={p.packages.length > 0} />,
+  "toolbox-favorites": () => <ToolboxFavoritesWidget />,
+};
 
 interface WidgetGridProps {
   environments: EnvironmentInfo[];
@@ -101,106 +180,28 @@ export function WidgetGrid({
   const activeEnvs = environments.filter((e) => e.available).length;
   const totalVersions = environments.reduce((acc, e) => acc + e.installed_versions.length, 0);
 
+  const renderProps = useMemo<WidgetRenderProps>(
+    () => ({
+      environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions,
+    }),
+    [
+      environments, packages, providers, cacheInfo, platformInfo, cogniaDir,
+      isLoading, onRefreshAll, isRefreshing, t, activeEnvs, totalVersions,
+    ],
+  );
+
   const renderWidgetContent = useCallback(
     (widgetType: string) => {
-      switch (widgetType) {
-        case "stats-overview":
-          return isLoading ? (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              <StatsCardSkeleton />
-              <StatsCardSkeleton />
-              <StatsCardSkeleton />
-              <StatsCardSkeleton />
-            </div>
-          ) : (
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-              <StatsCard
-                title={t("dashboard.environments")}
-                value={activeEnvs}
-                description={t("dashboard.versionsInstalled", { count: totalVersions })}
-                icon={<Layers className="h-4 w-4" />}
-                href="/environments"
-              />
-              <StatsCard
-                title={t("dashboard.packages")}
-                value={packages.length}
-                description={t("dashboard.fromProviders", { count: providers.length })}
-                icon={<Package className="h-4 w-4" />}
-                href="/packages"
-              />
-              <StatsCard
-                title={t("dashboard.cache")}
-                value={cacheInfo?.total_size_human || "0 B"}
-                description={t("dashboard.cachedItems", { count: cacheInfo?.download_cache.entry_count || 0 })}
-                icon={<HardDrive className="h-4 w-4" />}
-                href="/cache"
-              />
-              <StatsCard
-                title={t("dashboard.platform")}
-                value={platformInfo?.osLongVersion || (platformInfo?.osVersion ? `${platformInfo.os} ${platformInfo.osVersion}` : platformInfo?.os) || t("common.unknown")}
-                description={platformInfo?.arch || ""}
-                icon={<Activity className="h-4 w-4" />}
-                href="/settings"
-              />
-            </div>
-          );
-        case "quick-search":
-          return (
-            <QuickSearch
-              environments={environments}
-              packages={packages}
-            />
-          );
-        case "environment-chart":
-          return <EnvironmentChart environments={environments} />;
-        case "package-chart":
-          return <PackageChart packages={packages} providers={providers} />;
-        case "cache-usage":
-          return <CacheChart cacheInfo={cacheInfo} />;
-        case "activity-timeline":
-          return <ActivityChart environments={environments} packages={packages} />;
-        case "system-info":
-          return <SystemInfoWidget platformInfo={platformInfo} cogniaDir={cogniaDir} />;
-        case "download-stats":
-          return <DownloadStatsWidget />;
-        case "environment-list":
-          return <EnvironmentList environments={environments} initialLimit={4} />;
-        case "package-list":
-          return <PackageList packages={packages} initialLimit={5} />;
-        case "wsl-status":
-          return <WslStatusWidget />;
-        case "quick-actions":
-          return (
-            <QuickActionsInline
-              onRefreshAll={onRefreshAll}
-              isRefreshing={isRefreshing}
-            />
-          );
-        case "health-check":
-          return <HealthCheckWidget />;
-        case "updates-available":
-          return <UpdatesWidget />;
-        case "welcome":
-          return (
-            <WelcomeWidget
-              hasEnvironments={environments.length > 0}
-              hasPackages={packages.length > 0}
-            />
-          );
-        case "toolbox-favorites":
-          return <ToolboxFavoritesWidget />;
-        default:
-          return (
-            <div className="p-4 text-center text-sm text-muted-foreground">
-              {t("dashboard.widgets.unknownWidget")}
-            </div>
-          );
-      }
+      const renderer = WIDGET_RENDERERS[widgetType as WidgetType];
+      if (renderer) return renderer(renderProps);
+      return (
+        <div className="p-4 text-center text-sm text-muted-foreground">
+          {t("dashboard.widgets.unknownWidget")}
+        </div>
+      );
     },
-    [
-      isLoading, t, activeEnvs, totalVersions, packages, providers, cacheInfo,
-      platformInfo, cogniaDir, environments, onRefreshAll, isRefreshing,
-    ],
+    [renderProps, t],
   );
 
   const widgetIds = widgets.map((w) => w.id);

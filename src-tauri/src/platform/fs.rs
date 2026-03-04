@@ -1,4 +1,6 @@
-use sha2::{Digest, Sha256};
+use md5::Md5;
+use sha1::Sha1;
+use sha2::{Digest, Sha256, Sha512};
 use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -317,6 +319,83 @@ pub async fn calculate_sha256(path: impl AsRef<Path>) -> FsResult<String> {
     }
 
     Ok(hex::encode(hasher.finalize()))
+}
+
+/// Calculate a checksum using the specified algorithm.
+///
+/// Supported algorithms: "md5", "sha1", "sha256", "sha512".
+/// Falls back to SHA256 for unrecognized algorithms.
+pub async fn calculate_checksum(path: impl AsRef<Path>, algorithm: &str) -> FsResult<String> {
+    let path = path.as_ref();
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| match e.kind() {
+            io::ErrorKind::NotFound => FsError::NotFound(path.to_path_buf()),
+            _ => FsError::Io(e),
+        })?;
+
+    let mut buffer = vec![0u8; 8192];
+
+    match algorithm.to_lowercase().as_str() {
+        "md5" => {
+            let mut hasher = Md5::new();
+            loop {
+                let n = file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            Ok(hex::encode(hasher.finalize()))
+        }
+        "sha1" => {
+            let mut hasher = Sha1::new();
+            loop {
+                let n = file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            Ok(hex::encode(hasher.finalize()))
+        }
+        "sha512" => {
+            let mut hasher = Sha512::new();
+            loop {
+                let n = file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            Ok(hex::encode(hasher.finalize()))
+        }
+        _ => {
+            // Default to SHA256
+            let mut hasher = Sha256::new();
+            loop {
+                let n = file.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            Ok(hex::encode(hasher.finalize()))
+        }
+    }
+}
+
+/// Infer the checksum algorithm from the hex string length.
+///
+/// Returns "md5", "sha1", "sha256", or "sha512".
+pub fn infer_checksum_algorithm(hex_str: &str) -> &'static str {
+    match hex_str.len() {
+        32 => "md5",
+        40 => "sha1",
+        64 => "sha256",
+        128 => "sha512",
+        _ => "sha256",
+    }
 }
 
 pub fn get_home_dir() -> Option<PathBuf> {
@@ -680,5 +759,85 @@ mod tests {
 
         let err = FsError::InvalidPath("bad".to_string());
         assert!(format!("{}", err).contains("bad"));
+    }
+
+    #[test]
+    fn test_infer_checksum_algorithm_md5() {
+        assert_eq!(infer_checksum_algorithm("d41d8cd98f00b204e9800998ecf8427e"), "md5");
+    }
+
+    #[test]
+    fn test_infer_checksum_algorithm_sha1() {
+        assert_eq!(infer_checksum_algorithm("da39a3ee5e6b4b0d3255bfef95601890afd80709"), "sha1");
+    }
+
+    #[test]
+    fn test_infer_checksum_algorithm_sha256() {
+        assert_eq!(infer_checksum_algorithm("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"), "sha256");
+    }
+
+    #[test]
+    fn test_infer_checksum_algorithm_sha512() {
+        let sha512 = "a]".repeat(64); // 128 chars
+        assert_eq!(infer_checksum_algorithm(&sha512), "sha512");
+    }
+
+    #[test]
+    fn test_infer_checksum_algorithm_unknown_defaults_sha256() {
+        assert_eq!(infer_checksum_algorithm("abc"), "sha256");
+        assert_eq!(infer_checksum_algorithm(""), "sha256");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_sha256() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("check.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_checksum(&path, "sha256").await.unwrap();
+        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_md5() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("check.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_checksum(&path, "md5").await.unwrap();
+        assert_eq!(hash, "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_sha1() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("check.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_checksum(&path, "sha1").await.unwrap();
+        assert_eq!(hash, "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_sha512() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("check.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_checksum(&path, "sha512").await.unwrap();
+        assert_eq!(hash, "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_unknown_defaults_to_sha256() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("check.txt");
+        write_file_string(&path, "hello").await.unwrap();
+        let hash = calculate_checksum(&path, "unknown_algo").await.unwrap();
+        // Should fall back to SHA256
+        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    }
+
+    #[tokio::test]
+    async fn test_calculate_checksum_not_found() {
+        let result = calculate_checksum("/nonexistent/file.txt", "sha256").await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), FsError::NotFound(_)));
     }
 }

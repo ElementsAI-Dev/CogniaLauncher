@@ -75,27 +75,19 @@ impl SqliteCacheDb {
         sqlx::query("PRAGMA synchronous=NORMAL")
             .execute(&pool)
             .await
-            .map_err(|e| {
-                CogniaError::Internal(format!("Failed to set synchronous mode: {}", e))
-            })?;
+            .map_err(|e| CogniaError::Internal(format!("Failed to set synchronous mode: {}", e)))?;
         sqlx::query("PRAGMA busy_timeout = 5000")
             .execute(&pool)
             .await
-            .map_err(|e| {
-                CogniaError::Internal(format!("Failed to set busy_timeout: {}", e))
-            })?;
+            .map_err(|e| CogniaError::Internal(format!("Failed to set busy_timeout: {}", e)))?;
         sqlx::query("PRAGMA temp_store = memory")
             .execute(&pool)
             .await
-            .map_err(|e| {
-                CogniaError::Internal(format!("Failed to set temp_store: {}", e))
-            })?;
+            .map_err(|e| CogniaError::Internal(format!("Failed to set temp_store: {}", e)))?;
         sqlx::query("PRAGMA cache_size = -2000")
             .execute(&pool)
             .await
-            .map_err(|e| {
-                CogniaError::Internal(format!("Failed to set cache_size: {}", e))
-            })?;
+            .map_err(|e| CogniaError::Internal(format!("Failed to set cache_size: {}", e)))?;
 
         // Run migrations for cache_entries table
         sqlx::query(
@@ -172,18 +164,14 @@ impl SqliteCacheDb {
         )
         .execute(&pool)
         .await
-        .map_err(|e| {
-            CogniaError::Internal(format!("Failed to create snapshots table: {}", e))
-        })?;
+        .map_err(|e| CogniaError::Internal(format!("Failed to create snapshots table: {}", e)))?;
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_snapshot_ts ON cache_size_snapshots(timestamp)",
         )
         .execute(&pool)
         .await
-        .map_err(|e| {
-            CogniaError::Internal(format!("Failed to create snapshot index: {}", e))
-        })?;
+        .map_err(|e| CogniaError::Internal(format!("Failed to create snapshot index: {}", e)))?;
 
         // Load persisted stats
         let (hits, misses) = Self::load_stats_from_db(&pool).await.unwrap_or((0, 0));
@@ -689,7 +677,10 @@ impl SqliteCacheDb {
 
     /// Get aggregated stats for a specific entry type.
     /// Returns (total_size, entry_count, expired_count).
-    pub async fn stats_by_type(&self, entry_type: CacheEntryType) -> CogniaResult<(u64, usize, usize)> {
+    pub async fn stats_by_type(
+        &self,
+        entry_type: CacheEntryType,
+    ) -> CogniaResult<(u64, usize, usize)> {
         #[derive(FromRow)]
         struct TypeStatsRow {
             total_size: Option<i64>,
@@ -726,14 +717,13 @@ impl SqliteCacheDb {
         entry_type: CacheEntryType,
         before: DateTime<Utc>,
     ) -> CogniaResult<Vec<CacheEntry>> {
-        let rows: Vec<CacheEntryRow> = sqlx::query_as(
-            "SELECT * FROM cache_entries WHERE entry_type = ? AND created_at < ?",
-        )
-        .bind(Self::entry_type_to_str(entry_type))
-        .bind(before.to_rfc3339())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| CogniaError::Internal(e.to_string()))?;
+        let rows: Vec<CacheEntryRow> =
+            sqlx::query_as("SELECT * FROM cache_entries WHERE entry_type = ? AND created_at < ?")
+                .bind(Self::entry_type_to_str(entry_type))
+                .bind(before.to_rfc3339())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(rows.into_iter().map(Self::row_to_entry).collect())
     }
@@ -772,7 +762,10 @@ impl SqliteCacheDb {
                 .await
                 .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
-        Ok(rows.into_iter().map(|r| PathBuf::from(r.file_path)).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| PathBuf::from(r.file_path))
+            .collect())
     }
 
     // Helper: Convert row to CacheEntry
@@ -907,7 +900,11 @@ impl SqliteCacheDb {
 
         // Row counts per table
         let mut table_counts = HashMap::new();
-        for table in &["cache_entries", "cache_access_stats", "cache_size_snapshots"] {
+        for table in &[
+            "cache_entries",
+            "cache_access_stats",
+            "cache_size_snapshots",
+        ] {
             let query = format!("SELECT COUNT(*) FROM {}", table);
             let count: i64 = sqlx::query_scalar(&query)
                 .fetch_one(&self.pool)
@@ -1007,12 +1004,11 @@ impl SqliteCacheDb {
     pub async fn prune_old_snapshots(&self, max_age_days: u32) -> CogniaResult<usize> {
         let cutoff = Utc::now() - ChronoDuration::days(max_age_days as i64);
 
-        let result =
-            sqlx::query("DELETE FROM cache_size_snapshots WHERE timestamp < ?")
-                .bind(cutoff.to_rfc3339())
-                .execute(&self.pool)
-                .await
-                .map_err(|e| CogniaError::Internal(e.to_string()))?;
+        let result = sqlx::query("DELETE FROM cache_size_snapshots WHERE timestamp < ?")
+            .bind(cutoff.to_rfc3339())
+            .execute(&self.pool)
+            .await
+            .map_err(|e| CogniaError::Internal(e.to_string()))?;
 
         Ok(result.rows_affected() as usize)
     }
@@ -1701,8 +1697,7 @@ mod tests {
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
 
         // Insert a snapshot with old timestamp manually
-        let old_ts =
-            (Utc::now() - ChronoDuration::days(100)).to_rfc3339();
+        let old_ts = (Utc::now() - ChronoDuration::days(100)).to_rfc3339();
         sqlx::query(
             "INSERT INTO cache_size_snapshots (timestamp, internal_size, download_count, metadata_count) VALUES (?, ?, ?, ?)",
         )
@@ -1874,7 +1869,11 @@ mod tests {
                 }
             ]
         });
-        std::fs::write(&json_path, serde_json::to_string_pretty(&json_content).unwrap()).unwrap();
+        std::fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&json_content).unwrap(),
+        )
+        .unwrap();
 
         let db = SqliteCacheDb::open(dir.path()).await.unwrap();
         // Migration happens automatically in open() if JSON exists and DB is empty

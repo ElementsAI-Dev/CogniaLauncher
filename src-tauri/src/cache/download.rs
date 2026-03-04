@@ -2,7 +2,6 @@ use super::{
     sqlite_db::{CacheAccessStats, CacheSizeSnapshot, DatabaseInfo, IntegrityCheckResult},
     CacheEntry, CacheEntryType, SharedCacheDb, SqliteCacheDb,
 };
-use std::sync::Arc;
 use crate::error::{CogniaError, CogniaResult};
 use crate::platform::{
     disk::format_size,
@@ -11,6 +10,7 @@ use crate::platform::{
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct DownloadCache {
@@ -186,8 +186,11 @@ impl DownloadCache {
 
     /// Get list of expired download entries (for preview)
     pub async fn preview_expired(&self, max_age: Duration) -> CogniaResult<Vec<CacheEntry>> {
-        let cutoff = Utc::now() - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
-        self.db.list_by_type_before(CacheEntryType::Download, cutoff).await
+        let cutoff = Utc::now()
+            - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
+        self.db
+            .list_by_type_before(CacheEntryType::Download, cutoff)
+            .await
     }
 
     pub async fn clean_expired(&mut self, max_age: Duration) -> CogniaResult<u64> {
@@ -200,8 +203,12 @@ impl DownloadCache {
         max_age: Duration,
         use_trash: bool,
     ) -> CogniaResult<u64> {
-        let cutoff = Utc::now() - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
-        let entries = self.db.list_by_type_before(CacheEntryType::Download, cutoff).await?;
+        let cutoff = Utc::now()
+            - ChronoDuration::from_std(max_age).unwrap_or_else(|_| ChronoDuration::zero());
+        let entries = self
+            .db
+            .list_by_type_before(CacheEntryType::Download, cutoff)
+            .await?;
         let mut total_freed = 0u64;
 
         for entry in entries {
@@ -221,7 +228,10 @@ impl DownloadCache {
             return Ok(0);
         }
 
-        let entries = self.db.list_by_type_lru(CacheEntryType::Download, 100).await?;
+        let entries = self
+            .db
+            .list_by_type_lru(CacheEntryType::Download, 100)
+            .await?;
         let mut remaining = total_download_size;
         let mut removed = 0usize;
 
@@ -715,7 +725,10 @@ mod tests {
         assert!(retrieved.is_none());
 
         // Removing non-existent key should return false
-        let removed = cache.remove_with_option("nonexistent", false).await.unwrap();
+        let removed = cache
+            .remove_with_option("nonexistent", false)
+            .await
+            .unwrap();
         assert!(!removed);
     }
 
@@ -734,18 +747,12 @@ mod tests {
         }
 
         // List all with limit
-        let (entries, total) = cache
-            .list_filtered(None, None, None, 2, 0)
-            .await
-            .unwrap();
+        let (entries, total) = cache.list_filtered(None, None, None, 2, 0).await.unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(total, 3);
 
         // Pagination offset
-        let (entries, _) = cache
-            .list_filtered(None, None, None, 10, 2)
-            .await
-            .unwrap();
+        let (entries, _) = cache.list_filtered(None, None, None, 10, 2).await.unwrap();
         assert_eq!(entries.len(), 1);
 
         // Filter by type (all are downloads)
