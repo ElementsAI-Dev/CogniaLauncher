@@ -56,9 +56,14 @@ import {
   Settings2,
   Download,
   AlertTriangle,
+  FolderOpen,
+  Code2,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { PluginInfo, PluginPermissionState, PluginLanguage, ScaffoldConfig, PluginUpdateInfo, PluginHealth, PluginSettingDeclaration } from '@/types/plugin';
+import type { PluginInfo, PluginPermissionState, PluginLanguage, ScaffoldConfig, PluginUpdateInfo, PluginHealth, PluginSettingDeclaration, ScaffoldResult } from '@/types/plugin';
 
 export default function PluginsPage() {
   const { t, locale } = useLocale();
@@ -78,6 +83,8 @@ export default function PluginsPage() {
     grantPermission,
     revokePermission,
     scaffoldPlugin,
+    openScaffoldFolder,
+    openScaffoldInVscode,
     checkUpdate,
     updatePlugin,
     getHealth,
@@ -112,9 +119,16 @@ export default function PluginsPage() {
   const [settingsDialogPlugin, setSettingsDialogPlugin] = useState<string | null>(null);
   const [settingsSchema, setSettingsSchema] = useState<PluginSettingDeclaration[]>([]);
   const [settingsValues, setSettingsValues] = useState<Record<string, unknown>>({});
+  const [scaffoldFormError, setScaffoldFormError] = useState<string | null>(null);
+  const [showScaffoldAdvanced, setShowScaffoldAdvanced] = useState(false);
+  const [lastScaffoldResult, setLastScaffoldResult] = useState<ScaffoldResult | null>(null);
+  const [openingScaffoldFolder, setOpeningScaffoldFolder] = useState(false);
+  const [openingScaffoldVscode, setOpeningScaffoldVscode] = useState(false);
   const hasFetchedPluginsRef = useRef(false);
   const [scaffoldForm, setScaffoldForm] = useState({
     name: '', id: '', description: '', author: '', outputDir: '',
+    license: '', repository: '', homepage: '', additionalKeywords: '',
+    includeCi: false, includeVscode: true,
     language: 'typescript' as PluginLanguage,
     permConfigRead: true, permEnvRead: true, permPkgSearch: false,
     permClipboard: false, permNotification: false, permProcessExec: false,
@@ -178,16 +192,52 @@ export default function PluginsPage() {
     }
   }, [updatePlugin]);
 
+  const getScaffoldValidationError = useCallback(() => {
+    if (!scaffoldForm.name.trim()) return t('toolbox.plugin.scaffoldValidationNameRequired');
+    if (!scaffoldForm.id.trim()) return t('toolbox.plugin.scaffoldValidationIdRequired');
+    if (!scaffoldForm.outputDir.trim()) return t('toolbox.plugin.scaffoldValidationOutputRequired');
+    if (!scaffoldForm.description.trim()) return t('toolbox.plugin.scaffoldValidationDescriptionRequired');
+    if (!scaffoldForm.author.trim()) return t('toolbox.plugin.scaffoldValidationAuthorRequired');
+    if (!/^[A-Za-z0-9._-]+$/.test(scaffoldForm.id.trim())) {
+      return t('toolbox.plugin.scaffoldValidationIdInvalid');
+    }
+    const repository = scaffoldForm.repository.trim();
+    if (repository && !/^https?:\/\//.test(repository)) {
+      return t('toolbox.plugin.scaffoldValidationRepoUrl');
+    }
+    const homepage = scaffoldForm.homepage.trim();
+    if (homepage && !/^https?:\/\//.test(homepage)) {
+      return t('toolbox.plugin.scaffoldValidationHomepageUrl');
+    }
+    return null;
+  }, [scaffoldForm, t]);
+
   const handleScaffold = useCallback(async () => {
-    if (!scaffoldForm.name.trim() || !scaffoldForm.id.trim() || !scaffoldForm.outputDir.trim()) return;
+    const validationError = getScaffoldValidationError();
+    if (validationError) {
+      setScaffoldFormError(validationError);
+      return;
+    }
+    setScaffoldFormError(null);
+    setLastScaffoldResult(null);
     setScaffolding(true);
     try {
+      const additionalKeywords = scaffoldForm.additionalKeywords
+        .split(',')
+        .map((kw) => kw.trim())
+        .filter(Boolean);
       const config: ScaffoldConfig = {
         name: scaffoldForm.name.trim(),
         id: scaffoldForm.id.trim(),
         description: scaffoldForm.description.trim(),
         author: scaffoldForm.author.trim(),
         outputDir: scaffoldForm.outputDir.trim(),
+        license: scaffoldForm.license.trim() || undefined,
+        repository: scaffoldForm.repository.trim() || undefined,
+        homepage: scaffoldForm.homepage.trim() || undefined,
+        includeCi: scaffoldForm.includeCi,
+        includeVscode: scaffoldForm.includeVscode,
+        additionalKeywords: additionalKeywords.length > 0 ? additionalKeywords : undefined,
         language: scaffoldForm.language,
         permissions: {
           configRead: scaffoldForm.permConfigRead,
@@ -201,12 +251,34 @@ export default function PluginsPage() {
           http: [],
         },
       };
-      await scaffoldPlugin(config);
-      setScaffoldOpen(false);
+      const result = await scaffoldPlugin(config);
+      if (result) {
+        setLastScaffoldResult(result);
+      }
     } finally {
       setScaffolding(false);
     }
-  }, [scaffoldForm, scaffoldPlugin]);
+  }, [getScaffoldValidationError, scaffoldForm, scaffoldPlugin]);
+
+  const handleOpenScaffoldFolder = useCallback(async () => {
+    if (!isDesktop || !lastScaffoldResult?.pluginDir) return;
+    setOpeningScaffoldFolder(true);
+    try {
+      await openScaffoldFolder(lastScaffoldResult.pluginDir);
+    } finally {
+      setOpeningScaffoldFolder(false);
+    }
+  }, [isDesktop, lastScaffoldResult, openScaffoldFolder]);
+
+  const handleOpenScaffoldInVscode = useCallback(async () => {
+    if (!isDesktop || !lastScaffoldResult?.pluginDir) return;
+    setOpeningScaffoldVscode(true);
+    try {
+      await openScaffoldInVscode(lastScaffoldResult.pluginDir);
+    } finally {
+      setOpeningScaffoldVscode(false);
+    }
+  }, [isDesktop, lastScaffoldResult, openScaffoldInVscode]);
 
   const handleOpenPermissions = useCallback(async (pluginId: string) => {
     setPermDialogPlugin(pluginId);
@@ -339,7 +411,16 @@ export default function PluginsPage() {
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               {t('common.refresh')}
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setScaffoldOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                setScaffoldFormError(null);
+                setLastScaffoldResult(null);
+                setScaffoldOpen(true);
+              }}
+            >
               <Hammer className="h-3.5 w-3.5" />
               {t('toolbox.plugin.createPlugin')}
             </Button>
@@ -493,7 +574,16 @@ export default function PluginsPage() {
       </Dialog>
 
       {/* Scaffold Dialog */}
-      <Dialog open={scaffoldOpen} onOpenChange={setScaffoldOpen}>
+      <Dialog
+        open={scaffoldOpen}
+        onOpenChange={(open) => {
+          setScaffoldOpen(open);
+          if (!open) {
+            setScaffoldFormError(null);
+            setLastScaffoldResult(null);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[540px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -509,7 +599,10 @@ export default function PluginsPage() {
                   <Label className="text-xs">{t('toolbox.plugin.scaffoldName')}</Label>
                   <Input
                     value={scaffoldForm.name}
-                    onChange={(e) => setScaffoldForm(p => ({ ...p, name: e.target.value }))}
+                    onChange={(e) => {
+                      setScaffoldFormError(null);
+                      setScaffoldForm(p => ({ ...p, name: e.target.value }));
+                    }}
                     placeholder={t('toolbox.plugin.scaffoldNamePlaceholder')}
                   />
                 </div>
@@ -517,7 +610,10 @@ export default function PluginsPage() {
                   <Label className="text-xs">{t('toolbox.plugin.scaffoldId')}</Label>
                   <Input
                     value={scaffoldForm.id}
-                    onChange={(e) => setScaffoldForm(p => ({ ...p, id: e.target.value }))}
+                    onChange={(e) => {
+                      setScaffoldFormError(null);
+                      setScaffoldForm(p => ({ ...p, id: e.target.value }));
+                    }}
                     placeholder={t('toolbox.plugin.scaffoldIdPlaceholder')}
                   />
                 </div>
@@ -526,7 +622,10 @@ export default function PluginsPage() {
                 <Label className="text-xs">{t('toolbox.plugin.scaffoldDescription')}</Label>
                 <Input
                   value={scaffoldForm.description}
-                  onChange={(e) => setScaffoldForm(p => ({ ...p, description: e.target.value }))}
+                  onChange={(e) => {
+                    setScaffoldFormError(null);
+                    setScaffoldForm(p => ({ ...p, description: e.target.value }));
+                  }}
                   placeholder={t('toolbox.plugin.scaffoldDescPlaceholder')}
                 />
               </div>
@@ -535,7 +634,10 @@ export default function PluginsPage() {
                   <Label className="text-xs">{t('toolbox.plugin.scaffoldAuthor')}</Label>
                   <Input
                     value={scaffoldForm.author}
-                    onChange={(e) => setScaffoldForm(p => ({ ...p, author: e.target.value }))}
+                    onChange={(e) => {
+                      setScaffoldFormError(null);
+                      setScaffoldForm(p => ({ ...p, author: e.target.value }));
+                    }}
                     placeholder={t('toolbox.plugin.scaffoldAuthorPlaceholder')}
                   />
                 </div>
@@ -556,12 +658,87 @@ export default function PluginsPage() {
               </div>
               <DestinationPicker
                 value={scaffoldForm.outputDir}
-                onChange={(v) => setScaffoldForm(p => ({ ...p, outputDir: v }))}
+                onChange={(v) => {
+                  setScaffoldFormError(null);
+                  setScaffoldForm(p => ({ ...p, outputDir: v }));
+                }}
                 placeholder="C:\\Users\\you\\plugins"
                 label={t('toolbox.plugin.scaffoldOutputDir')}
                 isDesktop={isDesktop}
                 browseTooltip={t('common.browse')}
               />
+              <div className="rounded-md border p-3 space-y-3">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between text-left text-xs font-medium"
+                  onClick={() => setShowScaffoldAdvanced((prev) => !prev)}
+                >
+                  <span>{t('toolbox.plugin.scaffoldAdvanced')}</span>
+                  {showScaffoldAdvanced ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+                {showScaffoldAdvanced && (
+                  <div className="grid gap-3 pt-1">
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">{t('toolbox.plugin.scaffoldLicense')}</Label>
+                      <Input
+                        value={scaffoldForm.license}
+                        onChange={(e) => {
+                          setScaffoldFormError(null);
+                          setScaffoldForm(p => ({ ...p, license: e.target.value }));
+                        }}
+                        placeholder={t('toolbox.plugin.scaffoldLicensePlaceholder')}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">{t('toolbox.plugin.scaffoldRepository')}</Label>
+                      <Input
+                        value={scaffoldForm.repository}
+                        onChange={(e) => {
+                          setScaffoldFormError(null);
+                          setScaffoldForm(p => ({ ...p, repository: e.target.value }));
+                        }}
+                        placeholder={t('toolbox.plugin.scaffoldRepositoryPlaceholder')}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">{t('toolbox.plugin.scaffoldHomepage')}</Label>
+                      <Input
+                        value={scaffoldForm.homepage}
+                        onChange={(e) => {
+                          setScaffoldFormError(null);
+                          setScaffoldForm(p => ({ ...p, homepage: e.target.value }));
+                        }}
+                        placeholder={t('toolbox.plugin.scaffoldHomepagePlaceholder')}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label className="text-xs">{t('toolbox.plugin.scaffoldAdditionalKeywords')}</Label>
+                      <Input
+                        value={scaffoldForm.additionalKeywords}
+                        onChange={(e) => {
+                          setScaffoldFormError(null);
+                          setScaffoldForm(p => ({ ...p, additionalKeywords: e.target.value }));
+                        }}
+                        placeholder={t('toolbox.plugin.scaffoldAdditionalKeywordsPlaceholder')}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border p-2">
+                      <Label className="text-xs cursor-pointer">{t('toolbox.plugin.scaffoldIncludeVscode')}</Label>
+                      <Switch
+                        checked={scaffoldForm.includeVscode}
+                        onCheckedChange={(checked) => setScaffoldForm(p => ({ ...p, includeVscode: checked }))}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border p-2">
+                      <Label className="text-xs cursor-pointer">{t('toolbox.plugin.scaffoldIncludeCi')}</Label>
+                      <Switch
+                        checked={scaffoldForm.includeCi}
+                        onCheckedChange={(checked) => setScaffoldForm(p => ({ ...p, includeCi: checked }))}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
               <Separator />
               <div className="space-y-2">
                 <Label className="text-xs font-medium">{t('toolbox.plugin.scaffoldPermissions')}</Label>
@@ -591,6 +768,46 @@ export default function PluginsPage() {
                   ))}
                 </div>
               </div>
+              {scaffoldFormError && (
+                <p className="text-xs text-destructive">{scaffoldFormError}</p>
+              )}
+              {isDesktop && lastScaffoldResult && (
+                <div className="space-y-3 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-800 dark:bg-emerald-950/40">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{t('toolbox.plugin.scaffoldCreatedTitle')}</p>
+                      <p className="text-xs text-muted-foreground break-all">
+                        {lastScaffoldResult.pluginDir}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleOpenScaffoldFolder}
+                      disabled={openingScaffoldFolder}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" />
+                      {openingScaffoldFolder ? t('toolbox.plugin.scaffoldOpening') : t('toolbox.plugin.scaffoldOpenFolder')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleOpenScaffoldInVscode}
+                      disabled={openingScaffoldVscode}
+                    >
+                      <Code2 className="h-3.5 w-3.5" />
+                      {openingScaffoldVscode ? t('toolbox.plugin.scaffoldOpening') : t('toolbox.plugin.scaffoldOpenInVscode')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </ScrollArea>
           <DialogFooter>
@@ -599,7 +816,7 @@ export default function PluginsPage() {
             </Button>
             <Button
               onClick={handleScaffold}
-              disabled={scaffolding || !scaffoldForm.name.trim() || !scaffoldForm.id.trim() || !scaffoldForm.outputDir.trim()}
+              disabled={scaffolding || !!getScaffoldValidationError()}
             >
               {scaffolding ? t('toolbox.plugin.scaffoldCreating') : t('toolbox.plugin.scaffoldCreate')}
             </Button>

@@ -90,6 +90,14 @@ describe('WslConfigCard', () => {
     expect(screen.getByText('Quick Settings')).toBeInTheDocument();
   });
 
+  it('uses responsive quick settings grid classes', () => {
+    render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
+
+    const grid = screen.getByTestId('wsl-config-quick-settings-grid');
+    expect(grid.className).toContain('grid-cols-1');
+    expect(grid.className).toContain('sm:grid-cols-2');
+  });
+
   it('shows add custom setting section', () => {
     render(<WslConfigCard config={emptyConfig} {...defaultProps} />);
 

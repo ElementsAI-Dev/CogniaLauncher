@@ -12,6 +12,8 @@ pub fn get(key: &str) -> Result<Option<String>, Error> {
 /// Write a configuration value.
 pub fn set(key: &str, value: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "key": key, "value": value }).to_string();
-    unsafe { host::cognia_config_set(input)?; }
+    unsafe {
+        host::cognia_config_set(input)?;
+    }
     Ok(())
 }

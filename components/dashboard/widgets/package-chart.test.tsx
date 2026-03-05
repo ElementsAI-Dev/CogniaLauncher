@@ -25,6 +25,19 @@ jest.mock("@/components/ui/chart", () => ({
 jest.mock("@/lib/theme/chart-utils", () => ({
   getChartColor: (i: number) => `color-${i}`,
   getGradientId: (prefix: string, i: number) => `${prefix}-${i}`,
+  getChartGradientDefinition: jest.fn(() => ({
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1",
+    stops: [
+      { offset: "0%", opacity: 0.95 },
+      { offset: "100%", opacity: 0.75 },
+    ],
+  })),
+  getChartAxisTickStyle: jest.fn((fontSize = 10) => ({ fontSize, fill: "var(--foreground)" })),
+  getChartGridStyle: jest.fn(() => ({ stroke: "var(--border)", strokeOpacity: 0.3 })),
+  getChartTooltipCursorStyle: jest.fn(() => ({ fill: "var(--muted)", opacity: 0.3 })),
 }));
 
 const mockPackages: InstalledPackage[] = [
@@ -69,6 +82,14 @@ describe("PackageChart", () => {
   it("does not show empty state when packages exist", () => {
     render(<PackageChart packages={mockPackages} providers={mockProviders} />);
     expect(screen.queryByText("dashboard.noPackages")).not.toBeInTheDocument();
+  });
+
+  it("uses shared chart theme helpers", () => {
+    const chartUtils = jest.requireMock("@/lib/theme/chart-utils");
+    render(<PackageChart packages={mockPackages} providers={mockProviders} />);
+    expect(chartUtils.getChartAxisTickStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartGridStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartTooltipCursorStyle).toHaveBeenCalled();
   });
 
   it("accepts className prop", () => {

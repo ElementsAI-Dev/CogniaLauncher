@@ -29,6 +29,20 @@ jest.mock("@/components/ui/chart", () => ({
 jest.mock("@/lib/theme/chart-utils", () => ({
   getChartColor: (i: number) => `color-${i}`,
   getGradientId: (prefix: string, i: number) => `${prefix}-${i}`,
+  getChartGradientDefinition: jest.fn(() => ({
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1",
+    stops: [
+      { offset: "0%", opacity: 0.95 },
+      { offset: "100%", opacity: 0.7 },
+    ],
+  })),
+  getChartAxisTickStyle: jest.fn((fontSize = 11) => ({ fontSize, fill: "var(--foreground)" })),
+  getChartGridStyle: jest.fn(() => ({ stroke: "var(--border)", strokeOpacity: 0.3 })),
+  getChartSegmentStrokeStyle: jest.fn(() => ({ stroke: "var(--background)", strokeWidth: 2 })),
+  getChartTooltipCursorStyle: jest.fn(() => ({ fill: "var(--muted)", opacity: 0.3 })),
 }));
 
 const mockEnvironments: EnvironmentInfo[] = [
@@ -87,6 +101,15 @@ describe("EnvironmentChart", () => {
   it("shows installed versions section for environments with versions", () => {
     render(<EnvironmentChart environments={mockEnvironments} />);
     expect(screen.getByText("dashboard.widgets.installedVersions")).toBeInTheDocument();
+  });
+
+  it("uses shared chart theme helpers", () => {
+    const chartUtils = jest.requireMock("@/lib/theme/chart-utils");
+    render(<EnvironmentChart environments={mockEnvironments} />);
+    expect(chartUtils.getChartAxisTickStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartGridStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartTooltipCursorStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartSegmentStrokeStyle).toHaveBeenCalled();
   });
 
   it("accepts className prop", () => {

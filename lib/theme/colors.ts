@@ -182,11 +182,11 @@ export const CHART_COLOR_PALETTES: Record<ChartColorTheme, ChartColorPalette> = 
       'oklch(0.769 0.188 70.08)',
     ],
     dark: [
-      'oklch(0.488 0.243 264.376)',
-      'oklch(0.696 0.17 162.48)',
-      'oklch(0.769 0.188 70.08)',
-      'oklch(0.627 0.265 303.9)',
-      'oklch(0.645 0.246 16.439)',
+      'oklch(0.58 0.24 264.376)',
+      'oklch(0.72 0.18 162.48)',
+      'oklch(0.78 0.19 70.08)',
+      'oklch(0.69 0.25 303.9)',
+      'oklch(0.7 0.24 16.439)',
     ],
   },
   vibrant: {

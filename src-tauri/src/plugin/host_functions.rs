@@ -5,6 +5,7 @@ use crate::provider::registry::ProviderRegistry;
 use extism::{host_fn, Error as ExtismError, UserData, ValType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -75,6 +76,134 @@ impl HostContext {
     }
 }
 
+enum CapturedRuntime {
+    MultiThread(tokio::runtime::Handle),
+    CurrentThread,
+}
+
+struct HostRuntimeBridge {
+    captured_runtime: Option<CapturedRuntime>,
+}
+
+impl HostRuntimeBridge {
+    fn capture() -> Result<Self, ExtismError> {
+        let captured_runtime = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => match handle.runtime_flavor() {
+                tokio::runtime::RuntimeFlavor::CurrentThread => Some(CapturedRuntime::CurrentThread),
+                _ => Some(CapturedRuntime::MultiThread(handle)),
+            },
+            Err(_) => None,
+        };
+
+        Ok(Self {
+            captured_runtime,
+        })
+    }
+
+    #[track_caller]
+    fn block_on<T, Fut>(&self, fut: Fut) -> Result<T, ExtismError>
+    where
+        Fut: Future<Output = Result<T, ExtismError>>,
+    {
+        match &self.captured_runtime {
+            Some(CapturedRuntime::MultiThread(handle)) => {
+                let boundary_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    tokio::task::block_in_place(|| handle.block_on(fut))
+                }));
+                match boundary_result {
+                    Ok(result) => result,
+                    Err(_) => Err(log_boundary_error(
+                        None,
+                        "runtime",
+                        "runtime bridge panic while executing host async section",
+                    )),
+                }
+            }
+            Some(CapturedRuntime::CurrentThread) => Err(log_boundary_error(
+                None,
+                "runtime",
+                "current-thread Tokio runtime is not supported for synchronous plugin host bridge",
+            )),
+            None => {
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    log_boundary_error(
+                        None,
+                        "runtime",
+                        format!("failed to create fallback runtime: {}", e),
+                    )
+                })?;
+                runtime.block_on(fut)
+            }
+        }
+    }
+}
+
+#[track_caller]
+fn log_boundary_error(
+    plugin_id: Option<&str>,
+    stage: &str,
+    message: impl AsRef<str>,
+) -> ExtismError {
+    let location = std::panic::Location::caller();
+    let plugin = plugin_id.unwrap_or("unknown");
+    let detail = message.as_ref();
+    log::warn!(
+        "[plugin-runtime][plugin:{}][operation:{}:{}][stage:{}] {}",
+        plugin,
+        location.file(),
+        location.line(),
+        stage,
+        detail
+    );
+    ExtismError::msg(detail.to_string())
+}
+
+async fn require_current_plugin_id(ctx: &HostContext) -> Result<String, ExtismError> {
+    let plugin_id = ctx.current_plugin_id.read().await.clone();
+    if plugin_id.trim().is_empty() {
+        return Err(log_boundary_error(
+            Some("unknown"),
+            "context",
+            "missing current plugin execution context",
+        ));
+    }
+    Ok(plugin_id)
+}
+
+#[track_caller]
+fn check_permission(
+    perms: &PermissionManager,
+    plugin_id: &str,
+    permission: &str,
+) -> Result<(), ExtismError> {
+    perms
+        .check_permission(plugin_id, permission)
+        .map_err(|e| log_boundary_error(Some(plugin_id), "permission", e.to_string()))
+}
+
+#[track_caller]
+fn check_fs_access(
+    perms: &PermissionManager,
+    plugin_id: &str,
+    path: &std::path::Path,
+    write: bool,
+) -> Result<(), ExtismError> {
+    perms
+        .check_fs_access(plugin_id, path, write)
+        .map_err(|e| log_boundary_error(Some(plugin_id), "permission", e.to_string()))
+}
+
+#[track_caller]
+fn check_http_access(
+    perms: &PermissionManager,
+    plugin_id: &str,
+    url: &str,
+) -> Result<(), ExtismError> {
+    perms
+        .check_http_access(plugin_id, url)
+        .map_err(|e| log_boundary_error(Some(plugin_id), "permission", e.to_string()))
+}
+
 // ============================================================================
 // Host Function Implementations
 // ============================================================================
@@ -86,16 +215,17 @@ impl HostContext {
 // Output: JSON { "value": "..." } or { "value": null }
 host_fn!(pub cognia_config_get(user_data: HostContext; key: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "config_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "config_read")?;
         drop(perms);
 
         let settings = ctx.settings.read().await;
@@ -111,7 +241,10 @@ host_fn!(pub cognia_config_get(user_data: HostContext; key: String) -> String {
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_config_set(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     let parsed: HashMap<String, String> = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
@@ -119,14 +252,12 @@ host_fn!(pub cognia_config_set(user_data: HostContext; input: String) -> String 
     let key = parsed.get("key").ok_or_else(|| ExtismError::msg("Missing 'key'"))?;
     let value = parsed.get("value").ok_or_else(|| ExtismError::msg("Missing 'value'"))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "config_write")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "config_write")?;
         drop(perms);
 
         let mut settings = ctx.settings.write().await;
@@ -144,16 +275,17 @@ host_fn!(pub cognia_config_set(user_data: HostContext; input: String) -> String 
 // Output: JSON array of { id, display_name }
 host_fn!(pub cognia_env_list(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -181,16 +313,17 @@ host_fn!(pub cognia_env_list(user_data: HostContext; _input: String) -> String {
 // Output: JSON array of ProviderInfo { id, displayName, capabilities, platforms, priority }
 host_fn!(pub cognia_provider_list(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -209,7 +342,10 @@ host_fn!(pub cognia_provider_list(user_data: HostContext; _input: String) -> Str
 // Output: JSON array of PackageSummary
 host_fn!(pub cognia_pkg_search(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct SearchInput {
@@ -220,14 +356,12 @@ host_fn!(pub cognia_pkg_search(user_data: HostContext; input: String) -> String 
     let search: SearchInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -270,7 +404,10 @@ host_fn!(pub cognia_pkg_search(user_data: HostContext; input: String) -> String 
 // Output: file contents as string
 host_fn!(pub cognia_fs_read(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsInput { path: String }
@@ -278,16 +415,14 @@ host_fn!(pub cognia_fs_read(user_data: HostContext; input: String) -> String {
     let fs_input: FsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, false)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, false)?;
         drop(perms);
 
         tokio::fs::read_to_string(&full_path).await
@@ -302,7 +437,10 @@ host_fn!(pub cognia_fs_read(user_data: HostContext; input: String) -> String {
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_fs_write(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsWriteInput { path: String, content: String }
@@ -310,16 +448,14 @@ host_fn!(pub cognia_fs_write(user_data: HostContext; input: String) -> String {
     let fs_input: FsWriteInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, true)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, true)?;
         drop(perms);
 
         // Ensure parent directory exists
@@ -342,7 +478,10 @@ host_fn!(pub cognia_fs_write(user_data: HostContext; input: String) -> String {
 // Output: JSON { "status": 200, "body": "..." }
 host_fn!(pub cognia_http_get(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct HttpInput { url: String }
@@ -350,14 +489,12 @@ host_fn!(pub cognia_http_get(user_data: HostContext; input: String) -> String {
     let http_input: HttpInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_http_access(&plugin_id, &http_input.url)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_http_access(&perms, &plugin_id, &http_input.url)?;
         drop(perms);
 
         let client = reqwest::Client::new();
@@ -387,10 +524,12 @@ host_fn!(pub cognia_http_get(user_data: HostContext; input: String) -> String {
 // Output: JSON { "locale": "en" | "zh" }
 host_fn!(pub cognia_get_locale(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
         let settings = ctx.settings.read().await;
@@ -428,7 +567,10 @@ host_fn!(pub cognia_platform_info(user_data: HostContext; _input: String) -> Str
 // Output: JSON { "available": bool, "currentVersion": ..., "installedVersions": [...] }
 host_fn!(pub cognia_env_detect(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -437,14 +579,12 @@ host_fn!(pub cognia_env_detect(user_data: HostContext; input: String) -> String 
     let detect: DetectInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -493,7 +633,10 @@ host_fn!(pub cognia_env_detect(user_data: HostContext; input: String) -> String 
 // Output: JSON PackageInfo
 host_fn!(pub cognia_pkg_info(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct PkgInput { name: String, provider: Option<String> }
@@ -501,14 +644,12 @@ host_fn!(pub cognia_pkg_info(user_data: HostContext; input: String) -> String {
     let pkg: PkgInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -540,7 +681,10 @@ host_fn!(pub cognia_pkg_info(user_data: HostContext; input: String) -> String {
 // Output: JSON array of InstalledPackage
 host_fn!(pub cognia_pkg_list_installed(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct ListInput { provider: Option<String> }
@@ -548,14 +692,12 @@ host_fn!(pub cognia_pkg_list_installed(user_data: HostContext; input: String) ->
     let list_input: ListInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -581,7 +723,10 @@ host_fn!(pub cognia_pkg_list_installed(user_data: HostContext; input: String) ->
 // Output: JSON { "ok": true, "receipt": ... }
 host_fn!(pub cognia_pkg_install(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct InstallInput { name: String, version: Option<String>, provider: Option<String> }
@@ -589,14 +734,12 @@ host_fn!(pub cognia_pkg_install(user_data: HostContext; input: String) -> String
     let install: InstallInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_install")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_install")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -629,16 +772,17 @@ host_fn!(pub cognia_pkg_install(user_data: HostContext; input: String) -> String
 // Output: JSON with cache stats
 host_fn!(pub cognia_cache_info(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let settings = ctx.settings.read().await;
@@ -679,7 +823,10 @@ host_fn!(pub cognia_cache_info(user_data: HostContext; _input: String) -> String
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_log(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct LogInput { level: String, message: String }
@@ -687,12 +834,9 @@ host_fn!(pub cognia_log(user_data: HostContext; input: String) -> String {
     let log_input: LogInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
-    let plugin_id = rt.block_on(async {
-        ctx.current_plugin_id.read().await.clone()
-    });
+    let plugin_id = rt.block_on(async { require_current_plugin_id(&ctx).await })?;
 
     match log_input.level.as_str() {
         "error" => log::error!("[plugin:{}] {}", plugin_id, log_input.message),
@@ -711,7 +855,10 @@ host_fn!(pub cognia_log(user_data: HostContext; input: String) -> String {
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_pkg_uninstall(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct UninstallInput { name: String, version: Option<String>, provider: Option<String> }
@@ -719,14 +866,12 @@ host_fn!(pub cognia_pkg_uninstall(user_data: HostContext; input: String) -> Stri
     let req: UninstallInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_install")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_install")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -755,7 +900,10 @@ host_fn!(pub cognia_pkg_uninstall(user_data: HostContext; input: String) -> Stri
 // Output: JSON array of VersionInfo
 host_fn!(pub cognia_pkg_versions(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct VersionsInput { name: String, provider: Option<String> }
@@ -763,14 +911,12 @@ host_fn!(pub cognia_pkg_versions(user_data: HostContext; input: String) -> Strin
     let req: VersionsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -795,7 +941,10 @@ host_fn!(pub cognia_pkg_versions(user_data: HostContext; input: String) -> Strin
 // Output: JSON array of Dependency
 host_fn!(pub cognia_pkg_dependencies(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct DepsInput { name: String, version: String, provider: Option<String> }
@@ -803,14 +952,12 @@ host_fn!(pub cognia_pkg_dependencies(user_data: HostContext; input: String) -> S
     let req: DepsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -835,7 +982,10 @@ host_fn!(pub cognia_pkg_dependencies(user_data: HostContext; input: String) -> S
 // Output: JSON array of UpdateInfo
 host_fn!(pub cognia_pkg_check_updates(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct UpdatesInput { packages: Vec<String>, provider: String }
@@ -843,14 +993,12 @@ host_fn!(pub cognia_pkg_check_updates(user_data: HostContext; input: String) -> 
     let req: UpdatesInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_search")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_search")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -875,7 +1023,10 @@ host_fn!(pub cognia_pkg_check_updates(user_data: HostContext; input: String) -> 
 // Output: JSON { "version": "18.0.0" | null }
 host_fn!(pub cognia_env_get_current(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -884,14 +1035,12 @@ host_fn!(pub cognia_env_get_current(user_data: HostContext; input: String) -> St
     let req: EnvInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -915,7 +1064,10 @@ host_fn!(pub cognia_env_get_current(user_data: HostContext; input: String) -> St
 // Output: JSON array of { version, current }
 host_fn!(pub cognia_env_list_versions(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -924,14 +1076,12 @@ host_fn!(pub cognia_env_list_versions(user_data: HostContext; input: String) -> 
     let req: EnvInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "env_read")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "env_read")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -966,7 +1116,10 @@ host_fn!(pub cognia_env_list_versions(user_data: HostContext; input: String) -> 
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_env_install_version(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -975,14 +1128,12 @@ host_fn!(pub cognia_env_install_version(user_data: HostContext; input: String) -
     let req: InstallEnvInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_install")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_install")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -1014,7 +1165,10 @@ host_fn!(pub cognia_env_install_version(user_data: HostContext; input: String) -
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_env_set_version(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -1023,14 +1177,12 @@ host_fn!(pub cognia_env_set_version(user_data: HostContext; input: String) -> St
     let req: SetVersionInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "pkg_install")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "pkg_install")?;
         drop(perms);
 
         let registry = ctx.registry.read().await;
@@ -1057,7 +1209,10 @@ host_fn!(pub cognia_env_set_version(user_data: HostContext; input: String) -> St
 // Output: JSON { "exitCode": 0, "stdout": "...", "stderr": "..." }
 host_fn!(pub cognia_process_exec(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct ExecInput {
@@ -1070,14 +1225,12 @@ host_fn!(pub cognia_process_exec(user_data: HostContext; input: String) -> Strin
     let req: ExecInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "process_exec")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "process_exec")?;
         drop(perms);
 
         let mut cmd = tokio::process::Command::new(&req.command);
@@ -1116,16 +1269,17 @@ host_fn!(pub cognia_process_exec(user_data: HostContext; input: String) -> Strin
 // Output: JSON { "text": "..." }
 host_fn!(pub cognia_clipboard_read(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "clipboard")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "clipboard")?;
         drop(perms);
 
         let text = tokio::task::spawn_blocking(|| {
@@ -1147,7 +1301,10 @@ host_fn!(pub cognia_clipboard_read(user_data: HostContext; _input: String) -> St
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_clipboard_write(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct ClipInput { text: String }
@@ -1155,14 +1312,12 @@ host_fn!(pub cognia_clipboard_write(user_data: HostContext; input: String) -> St
     let req: ClipInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "clipboard")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "clipboard")?;
         drop(perms);
 
         let text = req.text.clone();
@@ -1187,7 +1342,10 @@ host_fn!(pub cognia_clipboard_write(user_data: HostContext; input: String) -> St
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_notification_send(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct NotifInput { title: String, body: String }
@@ -1195,14 +1353,12 @@ host_fn!(pub cognia_notification_send(user_data: HostContext; input: String) -> 
     let req: NotifInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_permission(&plugin_id, "notification")
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_permission(&perms, &plugin_id, "notification")?;
         drop(perms);
 
         // Use notify-rust for cross-platform notifications
@@ -1232,7 +1388,10 @@ host_fn!(pub cognia_notification_send(user_data: HostContext; input: String) -> 
 // Output: JSON { "status": 200, "body": "..." }
 host_fn!(pub cognia_http_post(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -1248,14 +1407,12 @@ host_fn!(pub cognia_http_post(user_data: HostContext; input: String) -> String {
     let req: HttpPostInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
-        perms.check_http_access(&plugin_id, &req.url)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_http_access(&perms, &plugin_id, &req.url)?;
         drop(perms);
 
         let client = reqwest::Client::new();
@@ -1287,7 +1444,10 @@ host_fn!(pub cognia_http_post(user_data: HostContext; input: String) -> String {
 // Output: JSON array of { name, isDir, size }
 host_fn!(pub cognia_fs_list_dir(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsInput { path: String }
@@ -1295,16 +1455,14 @@ host_fn!(pub cognia_fs_list_dir(user_data: HostContext; input: String) -> String
     let fs_input: FsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, false)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, false)?;
         drop(perms);
 
         let mut entries = tokio::fs::read_dir(&full_path).await
@@ -1336,7 +1494,10 @@ host_fn!(pub cognia_fs_list_dir(user_data: HostContext; input: String) -> String
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_fs_delete(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsInput { path: String }
@@ -1344,16 +1505,14 @@ host_fn!(pub cognia_fs_delete(user_data: HostContext; input: String) -> String {
     let fs_input: FsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, true)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, true)?;
         drop(perms);
 
         let meta = tokio::fs::metadata(&full_path).await
@@ -1378,7 +1537,10 @@ host_fn!(pub cognia_fs_delete(user_data: HostContext; input: String) -> String {
 // Output: JSON { "exists": true, "isDir": false }
 host_fn!(pub cognia_fs_exists(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsInput { path: String }
@@ -1386,16 +1548,14 @@ host_fn!(pub cognia_fs_exists(user_data: HostContext; input: String) -> String {
     let fs_input: FsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, false)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, false)?;
         drop(perms);
 
         let exists = full_path.exists();
@@ -1415,7 +1575,10 @@ host_fn!(pub cognia_fs_exists(user_data: HostContext; input: String) -> String {
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_fs_mkdir(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct FsInput { path: String }
@@ -1423,16 +1586,14 @@ host_fn!(pub cognia_fs_mkdir(user_data: HostContext; input: String) -> String {
     let fs_input: FsInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         let perms = ctx.permissions.read().await;
         let data_dir = perms.get_plugin_data_dir(&plugin_id);
         let full_path = data_dir.join(&fs_input.path);
-        perms.check_fs_access(&plugin_id, &full_path, true)
-            .map_err(|e| ExtismError::msg(e.to_string()))?;
+        check_fs_access(&perms, &plugin_id, &full_path, true)?;
         drop(perms);
 
         tokio::fs::create_dir_all(&full_path).await
@@ -1452,7 +1613,10 @@ host_fn!(pub cognia_fs_mkdir(user_data: HostContext; input: String) -> String {
 // Falls back to: current locale -> "en" -> raw key
 host_fn!(pub cognia_i18n_translate(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct TranslateInput {
@@ -1464,11 +1628,10 @@ host_fn!(pub cognia_i18n_translate(user_data: HostContext; input: String) -> Str
     let req: TranslateInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
 
         // Get current locale from settings
         let settings = ctx.settings.read().await;
@@ -1507,13 +1670,15 @@ host_fn!(pub cognia_i18n_translate(user_data: HostContext; input: String) -> Str
 // Output: JSON { "locale": "en", "strings": { "key": "value", ... } }
 host_fn!(pub cognia_i18n_get_all(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
 
         let settings = ctx.settings.read().await;
         let locale = settings.get_value("language").unwrap_or_else(|| "en".to_string());
@@ -1548,7 +1713,10 @@ host_fn!(pub cognia_i18n_get_all(user_data: HostContext; _input: String) -> Stri
 // Output: JSON { "ok": true }
 host_fn!(pub cognia_event_emit(user_data: HostContext; input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
     #[derive(Deserialize)]
     struct EventInput { name: String, payload: serde_json::Value }
@@ -1556,11 +1724,10 @@ host_fn!(pub cognia_event_emit(user_data: HostContext; input: String) -> String 
     let req: EventInput = serde_json::from_str(&input)
         .map_err(|e| ExtismError::msg(format!("Invalid input: {}", e)))?;
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         ctx.push_emitted_event(EmittedPluginEvent {
             source_plugin_id: plugin_id.clone(),
             event_name: req.name.clone(),
@@ -1579,13 +1746,15 @@ host_fn!(pub cognia_event_emit(user_data: HostContext; input: String) -> String 
 // Output: JSON { "pluginId": "com.example.my-plugin" }
 host_fn!(pub cognia_get_plugin_id(user_data: HostContext; _input: String) -> String {
     let ctx = user_data.get()?;
-    let ctx = ctx.lock().unwrap();
+    let ctx = ctx
+        .lock()
+        .map_err(|_| log_boundary_error(None, "context", "failed to acquire host context lock"))?
+        .clone();
 
-    let rt = tokio::runtime::Handle::try_current()
-        .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+    let rt = HostRuntimeBridge::capture()?;
 
     let result = rt.block_on(async {
-        let plugin_id = ctx.current_plugin_id.read().await.clone();
+        let plugin_id = require_current_plugin_id(&ctx).await?;
         Ok::<_, ExtismError>(serde_json::json!({ "pluginId": plugin_id }).to_string())
     })?;
 
@@ -1965,4 +2134,95 @@ mod tests {
             assert!(empty.is_empty());
         });
     }
+
+    #[test]
+    fn test_runtime_bridge_outside_runtime() {
+        let bridge = HostRuntimeBridge::capture().unwrap();
+        let value = bridge
+            .block_on(async { Ok::<_, ExtismError>("ok".to_string()) })
+            .unwrap();
+        assert_eq!(value, "ok");
+    }
+
+    #[test]
+    fn test_runtime_bridge_inside_tokio_runtime_worker() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let value = rt
+            .block_on(async {
+                tokio::spawn(async {
+                    let bridge = HostRuntimeBridge::capture().unwrap();
+                    bridge.block_on(async { Ok::<_, ExtismError>("ok".to_string()) })
+                })
+                .await
+                .unwrap()
+            })
+            .unwrap();
+
+        assert_eq!(value, "ok");
+    }
+
+    #[test]
+    fn test_runtime_bridge_rejects_current_thread_runtime() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let err = rt.block_on(async {
+            let bridge = HostRuntimeBridge::capture().unwrap();
+            bridge
+                .block_on(async { Ok::<_, ExtismError>("ok".to_string()) })
+                .unwrap_err()
+        });
+
+        assert!(err
+            .to_string()
+            .contains("current-thread Tokio runtime is not supported"));
+    }
+
+    #[test]
+    fn test_runtime_bridge_multi_thread_concurrent_calls() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let values = rt.block_on(async {
+            let mut handles = Vec::new();
+            for idx in 0..32usize {
+                handles.push(tokio::spawn(async move {
+                    let bridge = HostRuntimeBridge::capture().unwrap();
+                    bridge.block_on(async move { Ok::<_, ExtismError>(format!("ok-{idx}")) })
+                }));
+            }
+
+            let mut out = Vec::new();
+            for handle in handles {
+                out.push(handle.await.unwrap().unwrap());
+            }
+            out
+        });
+
+        assert_eq!(values.len(), 32);
+        assert!(values.contains(&"ok-0".to_string()));
+        assert!(values.contains(&"ok-31".to_string()));
+    }
+
+    #[test]
+    fn test_require_current_plugin_id_rejects_missing_context() {
+        let ctx = make_host_context();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt
+            .block_on(async { require_current_plugin_id(&ctx).await })
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("missing current plugin execution context"));
+    }
 }
+

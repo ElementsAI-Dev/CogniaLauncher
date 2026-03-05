@@ -15,7 +15,8 @@ pub fn post(url: &str, body: &str, content_type: Option<&str>) -> Result<HttpRes
         "url": url,
         "body": body,
         "contentType": content_type.unwrap_or("application/json"),
-    }).to_string();
+    })
+    .to_string();
     let result = unsafe { host::cognia_http_post(input)? };
     Ok(serde_json::from_str(&result)?)
 }

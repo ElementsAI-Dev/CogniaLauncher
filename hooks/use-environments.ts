@@ -478,7 +478,13 @@ export function useEnvironments() {
   const setGlobalVersion = useCallback(async (envType: string, version: string) => {
     setError(null);
     try {
-      await tauri.envUseGlobal(envType, version);
+      const mutation = await tauri.envUseGlobal(envType, version);
+      if (mutation?.success === false) {
+        throw new Error(
+          mutation.message ||
+            `Failed to switch global ${envType} version to ${version}`,
+        );
+      }
       const env = await tauri.envGet(envType);
       updateEnvironment(env);
       tauri.pluginDispatchEvent('env_version_switched', { envType, version }).catch(() => {});
@@ -495,7 +501,13 @@ export function useEnvironments() {
   const setLocalVersion = useCallback(async (envType: string, version: string, projectPath: string) => {
     setError(null);
     try {
-      await tauri.envUseLocal(envType, version, projectPath);
+      const mutation = await tauri.envUseLocal(envType, version, projectPath);
+      if (mutation?.success === false) {
+        throw new Error(
+          mutation.message ||
+            `Failed to switch local ${envType} version to ${version}`,
+        );
+      }
       emitInvalidations(
         ['environment_data', 'provider_data'],
         'environments:set-local',

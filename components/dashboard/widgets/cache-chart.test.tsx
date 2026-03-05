@@ -26,6 +26,18 @@ jest.mock("@/components/ui/chart", () => ({
 jest.mock("@/lib/theme/chart-utils", () => ({
   getChartColor: (i: number) => `color-${i}`,
   getGradientId: (prefix: string, i: number) => `${prefix}-${i}`,
+  getChartGradientDefinition: jest.fn(() => ({
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1",
+    stops: [
+      { offset: "0%", opacity: 0.95 },
+      { offset: "100%", opacity: 0.7 },
+    ],
+  })),
+  getChartSegmentStrokeStyle: jest.fn(() => ({ stroke: "var(--background)", strokeWidth: 2 })),
+  getChartRadialTrackStyle: jest.fn(() => ({ fill: "var(--muted)", opacity: 0.3 })),
 }));
 
 const mockCacheInfo: CacheInfo = {
@@ -95,6 +107,18 @@ describe("CacheChart", () => {
   it("renders with empty cache (zero entries)", () => {
     render(<CacheChart cacheInfo={emptyCacheInfo} />);
     expect(screen.getByText("0 B")).toBeInTheDocument();
+  });
+
+  it("uses shared radial and segment style helpers", () => {
+    const chartUtils = jest.requireMock("@/lib/theme/chart-utils");
+    render(<CacheChart cacheInfo={mockCacheInfo} />);
+    expect(chartUtils.getChartSegmentStrokeStyle).toHaveBeenCalled();
+  });
+
+  it("uses shared radial track style helper for zero-size cache charts", () => {
+    const chartUtils = jest.requireMock("@/lib/theme/chart-utils");
+    render(<CacheChart cacheInfo={emptyCacheInfo} />);
+    expect(chartUtils.getChartRadialTrackStyle).toHaveBeenCalled();
   });
 
   it("accepts className prop", () => {

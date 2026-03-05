@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { LogPanel } from '@/components/log';
 import { LogFileViewer } from '@/components/log/log-file-viewer';
 import { LogManagementCard } from '@/components/log/log-management-card';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/layout/page-header';
@@ -20,6 +21,10 @@ import { formatBytes, formatDate } from '@/lib/utils';
 import { formatSessionLabel } from '@/lib/log';
 import { ScrollText, FolderOpen, FileText, RefreshCw, Trash2, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+const PAGE_SIZE_PRESETS = [20, 50, 100] as const;
+const MIN_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 500;
 
 export default function LogsPage() {
   const { t } = useLocale();
@@ -36,7 +41,21 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
   const [totalSize, setTotalSize] = useState(0);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_PRESETS[0]);
+  const [customPageSize, setCustomPageSize] = useState<string>(String(PAGE_SIZE_PRESETS[0]));
   const stats = getLogStats();
+  const totalPages = Math.max(1, Math.ceil(logFiles.length / pageSize));
+  const pagedLogFiles = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return logFiles.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, logFiles, pageSize]);
+
+  const applyPageSize = useCallback((value: number) => {
+    const normalized = Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Math.floor(value)));
+    setPageSize(normalized);
+    setCustomPageSize(String(normalized));
+  }, []);
 
   const loadLogFiles = useCallback(async () => {
     if (!isTauri()) return;
@@ -63,6 +82,10 @@ export default function LogsPage() {
   useEffect(() => {
     loadLogFiles();
   }, [loadLogFiles]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   const handleOpenLogDir = async () => {
     if (!logDir || !isTauri()) return;
@@ -99,6 +122,16 @@ export default function LogsPage() {
       loadLogFiles();
     }
   }, [selectedFiles, deleteLogFiles, t, loadLogFiles]);
+
+  const handleCustomPageSizeCommit = useCallback(() => {
+    const parsed = Number.parseInt(customPageSize, 10);
+    if (Number.isNaN(parsed)) {
+      setCustomPageSize(String(pageSize));
+      return;
+    }
+    setCurrentPage(1);
+    applyPageSize(parsed);
+  }, [applyPageSize, customPageSize, pageSize]);
 
   return (
     <div className="flex flex-col h-full">
@@ -171,10 +204,14 @@ export default function LogsPage() {
         </TabsContent>
 
         {/* Log files tab */}
-        <TabsContent value="files" className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 overflow-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full">
+        <TabsContent
+          value="files"
+          data-testid="logs-files-tab-content"
+          className="flex-1 mt-0 p-4 sm:p-6 pt-3 sm:pt-4 min-h-0 overflow-hidden"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-full min-h-0">
             {/* File list */}
-            <Card className="flex flex-col">
+            <Card className="flex flex-col min-h-0">
               <CardHeader className="shrink-0 pb-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -217,65 +254,132 @@ export default function LogsPage() {
                     <p className="text-sm sm:text-base font-medium text-foreground/70">{t('logs.noFiles')}</p>
                   </div>
                 ) : (
-                  <ScrollArea className="h-full max-h-[calc(100vh-320px)]">
-                    <div className="space-y-2 pr-4">
-                      {logFiles.map((file, index) => {
-                        const sessionLabel = formatSessionLabel(file.name);
-                        const isCurrent = index === 0;
-                        const isSelected = selectedFiles.has(file.name);
-                        return (
-                          <div
-                            key={file.name}
-                            className={`group flex items-center gap-3 p-3 sm:p-4 rounded-lg border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-primary/5 border-primary/30'
-                                : 'bg-card hover:bg-muted/30 hover:border-primary/20'
-                            }`}
-                            onClick={() => setSelectedLogFile(file.name)}
-                          >
-                            {!isCurrent && (
-                              <Checkbox
-                                checked={isSelected}
-                                onCheckedChange={() => toggleFileSelection(file.name)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="shrink-0"
-                              />
-                            )}
-                            <div className="shrink-0 p-2 rounded-lg bg-muted/50 group-hover:bg-primary/10 transition-colors">
-                              <FileText className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium text-sm truncate">
-                                  {sessionLabel ?? file.name}
-                                </p>
-                                {isCurrent && (
-                                  <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
-                                    {t('logs.currentSession')}
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {formatBytes(file.size)} • {formatDate(file.modified)}
-                              </p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedLogFile(file.name);
-                              }}
-                              title={t('logs.viewFile')}
+                  <>
+                    <ScrollArea data-testid="logs-files-list-scroll-area" className="h-full min-h-0">
+                      <div className="space-y-2 pr-4">
+                        {pagedLogFiles.map((file) => {
+                          const sessionLabel = formatSessionLabel(file.name);
+                          const isCurrent = file.name === logFiles[0]?.name;
+                          const isSelected = selectedFiles.has(file.name);
+                          return (
+                            <div
+                              key={file.name}
+                              data-testid="log-file-row"
+                              className={`group flex items-center gap-3 p-3 sm:p-4 rounded-lg border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-primary/5 border-primary/30'
+                                  : 'bg-card hover:bg-muted/30 hover:border-primary/20'
+                              }`}
+                              onClick={() => setSelectedLogFile(file.name)}
                             >
-                              <FolderOpen className="h-4 w-4" />
+                              {!isCurrent && (
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleFileSelection(file.name)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="shrink-0"
+                                />
+                              )}
+                              <div className="shrink-0 p-2 rounded-lg bg-muted/50 group-hover:bg-primary/10 transition-colors">
+                                <FileText className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="font-medium text-sm truncate">
+                                    {sessionLabel ?? file.name}
+                                  </p>
+                                  {isCurrent && (
+                                    <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+                                      {t('logs.currentSession')}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {formatBytes(file.size)} • {formatDate(file.modified)}
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedLogFile(file.name);
+                                }}
+                                title={t('logs.viewFile')}
+                              >
+                                <FolderOpen className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{t('logs.pageSize')}</span>
+                        <div className="flex items-center gap-1">
+                          {PAGE_SIZE_PRESETS.map((preset) => (
+                            <Button
+                              key={preset}
+                              type="button"
+                              size="sm"
+                              variant={pageSize === preset ? 'secondary' : 'outline'}
+                              className="h-7 px-2 text-[11px]"
+                              onClick={() => {
+                                setCurrentPage(1);
+                                applyPageSize(preset);
+                              }}
+                            >
+                              {preset}
                             </Button>
-                          </div>
-                        );
-                      })}
+                          ))}
+                        </div>
+                        <Input
+                          type="number"
+                          min={MIN_PAGE_SIZE}
+                          max={MAX_PAGE_SIZE}
+                          step={1}
+                          value={customPageSize}
+                          onChange={(event) => setCustomPageSize(event.target.value)}
+                          onBlur={handleCustomPageSizeCommit}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              handleCustomPageSizeCommit();
+                            }
+                          }}
+                          aria-label={t('logs.pageSize')}
+                          className="h-7 w-20 text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {t('logs.pageInfo', { current: currentPage, total: totalPages })}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                          disabled={currentPage <= 1}
+                        >
+                          {t('common.previous')}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                          disabled={currentPage >= totalPages}
+                        >
+                          {t('common.next')}
+                        </Button>
+                      </div>
                     </div>
-                  </ScrollArea>
+                  </>
                 )}
               </CardContent>
             </Card>

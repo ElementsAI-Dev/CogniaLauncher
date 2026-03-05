@@ -70,8 +70,12 @@ const mockMonitorFromPoint = jest.fn(() => Promise.resolve(defaultMonitor));
 const mockScaleFactor = jest.fn(() => Promise.resolve(1));
 
 let closeCallback: ((ev: { preventDefault: () => void }) => Promise<void>) | null = null;
+let resizedCallback: (() => Promise<void>) | null = null;
 
-const mockOnResized = jest.fn(() => Promise.resolve(jest.fn()));
+const mockOnResized = jest.fn((cb: () => Promise<void>) => {
+  resizedCallback = cb;
+  return Promise.resolve(jest.fn());
+});
 const mockOnMoved = jest.fn(() => Promise.resolve(jest.fn()));
 const mockOnScaleChanged = jest.fn(() => Promise.resolve(jest.fn()));
 const mockOnFocusChanged = jest.fn(() => Promise.resolve(jest.fn()));
@@ -111,6 +115,7 @@ jest.mock('@tauri-apps/api/window', () => ({
 describe('useWindowControls', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resizedCallback = null;
     mockIsTauri.mockReturnValue(false);
     mockIsWindows.mockReturnValue(false);
     mockOuterPosition.mockResolvedValue({ x: 0, y: 0 });
@@ -326,6 +331,7 @@ describe('useWindowControls', () => {
       mockIsFullscreen.mockResolvedValue(false);
       mockIsAlwaysOnTop.mockResolvedValue(false);
       closeCallback = null;
+      resizedCallback = null;
     });
 
     it('should initialize Tauri window and read initial state', async () => {
@@ -435,7 +441,7 @@ describe('useWindowControls', () => {
       mockMinimizeToTray = false;
     });
 
-    it('should compute maximizePadding=8 on Windows maximized', async () => {
+    it('should zero normal symmetric maximize insets on Windows maximized', async () => {
       mockIsWindows.mockReturnValue(true);
       mockIsMaximized.mockResolvedValue(true);
       mockOuterPosition.mockResolvedValue({ x: -8, y: -8 });
@@ -468,12 +474,54 @@ describe('useWindowControls', () => {
 
       const { result } = await renderHookWithTauriInit();
 
-      expect(result.current.maximizePadding).toBe(8);
+      expect(result.current.maximizePadding).toBe(0);
       expect(result.current.maximizeInsets).toEqual({
-        top: 8,
-        right: 8,
-        bottom: 8,
-        left: 8,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      });
+    });
+
+    it('should zero symmetric maximize insets when all edges are uniformly larger than 8px', async () => {
+      mockIsWindows.mockReturnValue(true);
+      mockIsMaximized.mockResolvedValue(true);
+      mockOuterPosition.mockResolvedValue({ x: -12, y: -12 });
+      mockInnerPosition.mockResolvedValue({ x: -12, y: -12 });
+      mockOuterSize.mockResolvedValue({ width: 1944, height: 1104 });
+      mockInnerSize.mockResolvedValue({ width: 1944, height: 1104 });
+      mockCurrentMonitor.mockResolvedValue({
+        name: 'Monitor-1',
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+        workArea: {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+        scaleFactor: 1,
+      });
+      mockAvailableMonitors.mockResolvedValue([
+        {
+          name: 'Monitor-1',
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+          workArea: {
+            position: { x: 0, y: 0 },
+            size: { width: 1920, height: 1080 },
+          },
+          scaleFactor: 1,
+        },
+      ]);
+      mockScaleFactor.mockResolvedValue(1);
+
+      const { result } = await renderHookWithTauriInit();
+
+      expect(result.current.maximizePadding).toBe(0);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       });
     });
 
@@ -585,7 +633,39 @@ describe('useWindowControls', () => {
       });
     });
 
-    it('should derive insets from inner/outer frame diff when monitor is unavailable', async () => {
+    it('should ignore right-only outer overshoot when inner bounds still fit monitor', async () => {
+      mockIsWindows.mockReturnValue(true);
+      mockIsMaximized.mockResolvedValue(true);
+      mockOuterPosition.mockResolvedValue({ x: 0, y: 0 });
+      mockOuterSize.mockResolvedValue({ width: 1936, height: 1080 });
+      mockInnerPosition.mockResolvedValue({ x: 0, y: 0 });
+      mockInnerSize.mockResolvedValue({ width: 1920, height: 1080 });
+      mockCurrentMonitor.mockResolvedValue({
+        name: 'Primary',
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+      });
+      mockAvailableMonitors.mockResolvedValue([
+        {
+          name: 'Primary',
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+      ]);
+      mockScaleFactor.mockResolvedValue(1);
+
+      const { result } = await renderHookWithTauriInit();
+
+      expect(result.current.maximizePadding).toBe(0);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      });
+    });
+
+    it('should keep fallback insets at zero when monitor is unavailable but all edges are positive', async () => {
       mockIsWindows.mockReturnValue(true);
       mockIsMaximized.mockResolvedValue(true);
       mockOuterPosition.mockResolvedValue({ x: 100, y: 100 });
@@ -599,12 +679,12 @@ describe('useWindowControls', () => {
 
       const { result } = await renderHookWithTauriInit();
 
-      expect(result.current.maximizePadding).toBe(8);
+      expect(result.current.maximizePadding).toBe(0);
       expect(result.current.maximizeInsets).toEqual({
-        top: 8,
-        right: 8,
-        bottom: 8,
-        left: 8,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       });
     });
 
@@ -631,7 +711,7 @@ describe('useWindowControls', () => {
       });
     });
 
-    it('should clamp abnormal monitor insets to avoid excessive layout shrink', async () => {
+    it('should keep maximize insets at zero when all four edges are positive, even for abnormal geometry', async () => {
       mockIsWindows.mockReturnValue(true);
       mockIsMaximized.mockResolvedValue(true);
       mockOuterPosition.mockResolvedValue({ x: -1200, y: -900 });
@@ -664,16 +744,58 @@ describe('useWindowControls', () => {
 
       const { result } = await renderHookWithTauriInit();
 
-      expect(result.current.maximizePadding).toBe(32);
+      expect(result.current.maximizePadding).toBe(0);
       expect(result.current.maximizeInsets).toEqual({
-        top: 32,
-        right: 32,
-        bottom: 20,
-        left: 32,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       });
     });
 
-    it('should pick the correct monitor by overlap in dual-monitor setup', async () => {
+    it('should apply directional insets when only part of edges exceed monitor bounds', async () => {
+      mockIsWindows.mockReturnValue(true);
+      mockIsMaximized.mockResolvedValue(true);
+      mockOuterPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockInnerPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockOuterSize.mockResolvedValue({ width: 1928, height: 1088 });
+      mockInnerSize.mockResolvedValue({ width: 1928, height: 1088 });
+      mockCurrentMonitor.mockResolvedValue({
+        name: 'Monitor-1',
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+        workArea: {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+        scaleFactor: 1,
+      });
+      mockAvailableMonitors.mockResolvedValue([
+        {
+          name: 'Monitor-1',
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+          workArea: {
+            position: { x: 0, y: 0 },
+            size: { width: 1920, height: 1080 },
+          },
+          scaleFactor: 1,
+        },
+      ]);
+      mockScaleFactor.mockResolvedValue(1);
+
+      const { result } = await renderHookWithTauriInit();
+
+      expect(result.current.maximizePadding).toBe(8);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 8,
+        right: 0,
+        bottom: 0,
+        left: 8,
+      });
+    });
+
+    it('should zero normal symmetric insets after selecting best monitor by overlap', async () => {
       mockIsWindows.mockReturnValue(true);
       mockIsMaximized.mockResolvedValue(true);
 
@@ -710,12 +832,121 @@ describe('useWindowControls', () => {
 
       const { result } = await renderHookWithTauriInit();
 
-      expect(result.current.maximizePadding).toBe(8);
+      expect(result.current.maximizePadding).toBe(0);
       expect(result.current.maximizeInsets).toEqual({
-        top: 8,
-        right: 8,
-        bottom: 8,
-        left: 8,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      });
+    });
+
+    it('should avoid reintroducing symmetric fallback insets after monitor lookup temporarily fails', async () => {
+      mockIsWindows.mockReturnValue(true);
+      mockIsMaximized.mockResolvedValue(true);
+      mockOuterPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockInnerPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockOuterSize.mockResolvedValue({ width: 1936, height: 1096 });
+      mockInnerSize.mockResolvedValue({ width: 1936, height: 1096 });
+      mockCurrentMonitor.mockResolvedValue({
+        name: 'Monitor-1',
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+        workArea: {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+        scaleFactor: 1,
+      });
+      mockAvailableMonitors.mockResolvedValue([
+        {
+          name: 'Monitor-1',
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+          workArea: {
+            position: { x: 0, y: 0 },
+            size: { width: 1920, height: 1080 },
+          },
+          scaleFactor: 1,
+        },
+      ]);
+      mockScaleFactor.mockResolvedValue(1);
+
+      const { result } = await renderHookWithTauriInit();
+
+      expect(result.current.maximizePadding).toBe(0);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      });
+
+      mockCurrentMonitor.mockResolvedValue(null);
+      mockAvailableMonitors.mockResolvedValue([]);
+      mockMonitorFromPoint.mockResolvedValue(null);
+      mockOuterPosition.mockResolvedValue({ x: 100, y: 100 });
+      mockInnerPosition.mockResolvedValue({ x: 100, y: 100 });
+      mockOuterSize.mockResolvedValue({ width: 1936, height: 1096 });
+      mockInnerSize.mockResolvedValue({ width: 1920, height: 1080 });
+
+      if (!resizedCallback) {
+        throw new Error('expected resize callback to be registered');
+      }
+
+      await act(async () => {
+        await resizedCallback!();
+      });
+
+      expect(result.current.maximizePadding).toBe(0);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      });
+    });
+
+    it('should reset maximize insets to zero in fullscreen mode', async () => {
+      mockIsWindows.mockReturnValue(true);
+      mockIsMaximized.mockResolvedValue(true);
+      mockIsFullscreen.mockResolvedValue(true);
+      mockOuterPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockInnerPosition.mockResolvedValue({ x: -8, y: -8 });
+      mockOuterSize.mockResolvedValue({ width: 1936, height: 1096 });
+      mockInnerSize.mockResolvedValue({ width: 1936, height: 1096 });
+      mockCurrentMonitor.mockResolvedValue({
+        name: 'Monitor-1',
+        position: { x: 0, y: 0 },
+        size: { width: 1920, height: 1080 },
+        workArea: {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+        scaleFactor: 1,
+      });
+      mockAvailableMonitors.mockResolvedValue([
+        {
+          name: 'Monitor-1',
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+          workArea: {
+            position: { x: 0, y: 0 },
+            size: { width: 1920, height: 1080 },
+          },
+          scaleFactor: 1,
+        },
+      ]);
+      mockScaleFactor.mockResolvedValue(1);
+
+      const { result } = await renderHookWithTauriInit();
+
+      expect(result.current.maximizePadding).toBe(0);
+      expect(result.current.maximizeInsets).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       });
     });
 

@@ -12,7 +12,15 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartAxisTickStyle,
+  getChartGridStyle,
+  getChartSegmentStrokeStyle,
+  getChartTooltipCursorStyle,
+  getGradientId,
+} from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
@@ -23,6 +31,8 @@ interface EnvironmentChartProps {
 
 export function EnvironmentChart({ environments, className }: EnvironmentChartProps) {
   const { t } = useLocale();
+  const pieGradient = getChartGradientDefinition("pie");
+  const barGradient = getChartGradientDefinition("bar-horizontal");
 
   const { pieData, barData, chartConfig } = useMemo(() => {
     const availableCount = environments.filter((e) => e.available).length;
@@ -85,13 +95,19 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
                   <linearGradient
                     key={getGradientId("envPie", index)}
                     id={getGradientId("envPie", index)}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
+                    x1={pieGradient.x1}
+                    y1={pieGradient.y1}
+                    x2={pieGradient.x2}
+                    y2={pieGradient.y2}
                   >
-                    <stop offset="0%" stopColor={getChartColor(index)} stopOpacity={0.95} />
-                    <stop offset="100%" stopColor={getChartColor(index)} stopOpacity={0.7} />
+                    {pieGradient.stops.map((stop, stopIndex) => (
+                      <stop
+                        key={`${stop.offset}-${stopIndex}`}
+                        offset={stop.offset}
+                        stopColor={getChartColor(index)}
+                        stopOpacity={stop.opacity}
+                      />
+                    ))}
                   </linearGradient>
                 ))}
               </defs>
@@ -103,8 +119,7 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
                 innerRadius={45}
                 outerRadius={70}
                 paddingAngle={3}
-                strokeWidth={2}
-                stroke="var(--background)"
+                {...getChartSegmentStrokeStyle(2)}
                 dataKey="value"
                 nameKey="name"
               >
@@ -130,29 +145,35 @@ export function EnvironmentChart({ environments, className }: EnvironmentChartPr
                     <linearGradient
                       key={getGradientId("envBar", index)}
                       id={getGradientId("envBar", index)}
-                      x1="0"
-                      y1="0"
-                      x2="1"
-                      y2="0"
+                      x1={barGradient.x1}
+                      y1={barGradient.y1}
+                      x2={barGradient.x2}
+                      y2={barGradient.y2}
                     >
-                      <stop offset="0%" stopColor={getChartColor(index)} stopOpacity={0.9} />
-                      <stop offset="100%" stopColor={getChartColor(index)} stopOpacity={0.7} />
+                      {barGradient.stops.map((stop, stopIndex) => (
+                        <stop
+                          key={`${stop.offset}-${stopIndex}`}
+                          offset={stop.offset}
+                          stopColor={getChartColor(index)}
+                          stopOpacity={stop.opacity}
+                        />
+                      ))}
                     </linearGradient>
                   ))}
                 </defs>
-                <CartesianGrid horizontal={false} stroke="var(--border)" strokeOpacity={0.3} />
+                <CartesianGrid horizontal={false} {...getChartGridStyle()} />
                 <YAxis
                   dataKey="name"
                   type="category"
                   tickLine={false}
                   axisLine={false}
                   width={60}
-                  tick={{ fontSize: 11, fill: "var(--foreground)" }}
+                  tick={getChartAxisTickStyle(11)}
                 />
                 <XAxis type="number" hide />
                 <ChartTooltip
                   content={<ChartTooltipContent />}
-                  cursor={{ fill: "var(--muted)", opacity: 0.3 }}
+                  cursor={getChartTooltipCursorStyle()}
                 />
                 <Bar dataKey="versions" radius={[0, 6, 6, 0]} barSize={20}>
                   {barData.map((_, index) => (

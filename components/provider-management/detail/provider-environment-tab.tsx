@@ -125,7 +125,10 @@ export function ProviderEnvironmentTab({
     async (version: string) => {
       setSettingGlobal(version);
       try {
-        await tauri.envUseGlobal(envType, version);
+        const mutation = await tauri.envUseGlobal(envType, version);
+        if (mutation?.success === false) {
+          throw new Error(mutation.message || "verification failed");
+        }
         toast.success(
           t("providerDetail.versionSetGlobal", { version }),
         );

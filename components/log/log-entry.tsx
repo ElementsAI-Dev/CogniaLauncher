@@ -11,7 +11,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import { Copy, ChevronDown, ChevronUp, Star } from "lucide-react";
-import { useState, useCallback, useMemo, type ReactNode } from "react";
+import { memo, useState, useCallback, useMemo, type ReactNode } from "react";
 import { useLocale } from "@/components/providers/locale-provider";
 import type { LogEntry as LogEntryType } from "@/types/log";
 import { useLogStore } from "@/lib/stores/log";
@@ -28,7 +28,35 @@ interface LogEntryProps {
   singleLine?: boolean;
 }
 
-export function LogEntry({
+function areLogEntryPropsEqual(prev: LogEntryProps, next: LogEntryProps): boolean {
+  if (
+    prev.showTimestamp !== next.showTimestamp ||
+    prev.showTarget !== next.showTarget ||
+    prev.highlightText !== next.highlightText ||
+    prev.highlightRegex !== next.highlightRegex ||
+    prev.allowCollapse !== next.allowCollapse ||
+    prev.singleLine !== next.singleLine
+  ) {
+    return false;
+  }
+
+  if (prev.entry === next.entry) {
+    return true;
+  }
+
+  return (
+    prev.entry.id === next.entry.id &&
+    prev.entry.timestamp === next.entry.timestamp &&
+    prev.entry.level === next.entry.level &&
+    prev.entry.message === next.entry.message &&
+    prev.entry.target === next.entry.target &&
+    prev.entry.file === next.entry.file &&
+    prev.entry.line === next.entry.line &&
+    prev.entry.context === next.entry.context
+  );
+}
+
+function LogEntryComponent({
   entry,
   showTimestamp = true,
   showTarget = true,
@@ -38,8 +66,10 @@ export function LogEntry({
   singleLine = false,
 }: LogEntryProps) {
   const { t } = useLocale();
-  const { bookmarkedIds, toggleBookmark } = useLogStore();
-  const isBookmarked = bookmarkedIds.includes(entry.id);
+  const toggleBookmark = useLogStore((state) => state.toggleBookmark);
+  const isBookmarked = useLogStore(
+    useCallback((state) => state.bookmarkedIds.includes(entry.id), [entry.id]),
+  );
   const [expanded, setExpanded] = useState(false);
   const style = LEVEL_STYLES[entry.level];
   const isExpandable =
@@ -235,3 +265,6 @@ export function LogEntry({
     </div>
   );
 }
+
+export const LogEntry = memo(LogEntryComponent, areLogEntryPropsEqual);
+LogEntry.displayName = "LogEntry";

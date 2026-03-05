@@ -307,7 +307,7 @@ export function EnvVarTable({
   }
 
   return (
-    <ScrollArea className="max-h-[600px]" data-testid="envvar-table-desktop">
+    <ScrollArea className="h-full min-h-0" data-testid="envvar-table-desktop">
       <div className="rounded-md border">
         <Table>
           <TableHeader>

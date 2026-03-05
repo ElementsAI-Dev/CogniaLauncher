@@ -4,7 +4,9 @@ use extism_pdk::*;
 /// Emit an event that can be observed by the host and other plugins.
 pub fn emit(name: &str, payload: &serde_json::Value) -> Result<(), Error> {
     let input = serde_json::json!({ "name": name, "payload": payload }).to_string();
-    unsafe { host::cognia_event_emit(input)?; }
+    unsafe {
+        host::cognia_event_emit(input)?;
+    }
     Ok(())
 }
 

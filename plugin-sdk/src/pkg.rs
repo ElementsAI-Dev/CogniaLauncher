@@ -24,8 +24,13 @@ pub fn versions(name: &str, provider: Option<&str>) -> Result<Vec<VersionInfo>, 
 }
 
 /// Get dependencies for a specific package version.
-pub fn dependencies(name: &str, version: &str, provider: Option<&str>) -> Result<Vec<Dependency>, Error> {
-    let input = serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
+pub fn dependencies(
+    name: &str,
+    version: &str,
+    provider: Option<&str>,
+) -> Result<Vec<Dependency>, Error> {
+    let input =
+        serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
     let result = unsafe { host::cognia_pkg_dependencies(input)? };
     Ok(serde_json::from_str(&result)?)
 }
@@ -45,15 +50,23 @@ pub fn check_updates(packages: &[&str], provider: &str) -> Result<Vec<UpdateInfo
 }
 
 /// Install a package.
-pub fn install(name: &str, version: Option<&str>, provider: Option<&str>) -> Result<InstallReceipt, Error> {
-    let input = serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
+pub fn install(
+    name: &str,
+    version: Option<&str>,
+    provider: Option<&str>,
+) -> Result<InstallReceipt, Error> {
+    let input =
+        serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
     let result = unsafe { host::cognia_pkg_install(input)? };
     Ok(serde_json::from_str(&result)?)
 }
 
 /// Uninstall a package.
 pub fn uninstall(name: &str, version: Option<&str>, provider: Option<&str>) -> Result<(), Error> {
-    let input = serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
-    unsafe { host::cognia_pkg_uninstall(input)?; }
+    let input =
+        serde_json::json!({ "name": name, "version": version, "provider": provider }).to_string();
+    unsafe {
+        host::cognia_pkg_uninstall(input)?;
+    }
     Ok(())
 }

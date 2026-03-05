@@ -28,6 +28,7 @@ import { AlertCircle, RefreshCw, ArrowUp, GitBranch, GitCompare, History, Pin, C
 import { toast } from 'sonner';
 import type { PackageSummary, InstalledPackage, ResolutionResult, BatchResult } from '@/lib/tauri';
 import type { ExportedPackageList } from '@/hooks/use-package-export';
+import type { DependencyLookupContext, DependencyResolveRequest } from '@/types/packages';
 
 export default function PackagesPage() {
   const {
@@ -55,6 +56,7 @@ export default function PackagesPage() {
     unpinPackage,
     rollbackPackage,
     getInstallHistory,
+    clearInstallHistory,
   } = usePackages();
   
   const { 
@@ -79,6 +81,12 @@ export default function PackagesPage() {
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [dependencyResolution, setDependencyResolution] = useState<ResolutionResult | null>(null);
   const [resolvingDeps, setResolvingDeps] = useState(false);
+  const [selectedDependencyContext, setSelectedDependencyContext] =
+    useState<DependencyLookupContext | null>(null);
+  const [activeDependencyRequest, setActiveDependencyRequest] =
+    useState<DependencyResolveRequest | null>(null);
+  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [resolvingDependencyKey, setResolvingDependencyKey] = useState<string | null>(null);
   const [installHistory, setInstallHistory] = useState<Array<{
     id: string;
     name: string;
@@ -87,8 +95,12 @@ export default function PackagesPage() {
     timestamp: string;
     provider: string;
     success: boolean;
+    error_message?: string | null;
   }>>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const historyDirtyRef = useRef(true);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Installed packages filter
@@ -115,16 +127,31 @@ export default function PackagesPage() {
     ],
   });
 
+  const loadInstallHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const entries = await getInstallHistory({ limit: 200 });
+      setInstallHistory(entries);
+      historyDirtyRef.current = false;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setHistoryError(message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [getInstallHistory]);
+
   useEffect(() => {
     fetchProviders();
     fetchInstalledPackages();
   }, [fetchProviders, fetchInstalledPackages]);
 
   useEffect(() => {
-    if (showHistory) {
-      getInstallHistory(20).then(setInstallHistory);
+    if (activeTab === 'history' && historyDirtyRef.current) {
+      void loadInstallHistory();
     }
-  }, [showHistory, getInstallHistory]);
+  }, [activeTab, loadInstallHistory]);
 
   const availableUpdates = useMemo(() => 
     updates.filter(u => !pinnedPackages.includes(u.name)),
@@ -141,10 +168,16 @@ export default function PackagesPage() {
     [updateCheckProviderOutcomes]
   );
 
+  const refreshHistoryIfVisible = useCallback(async () => {
+    historyDirtyRef.current = true;
+    if (activeTab === 'history') {
+      await loadInstallHistory();
+    }
+  }, [activeTab, loadInstallHistory]);
+
   const handleCheckUpdates = async () => {
     try {
-      const packageNames = installedPackages.map(p => p.name);
-      const foundUpdates = await checkForUpdates(packageNames);
+      const foundUpdates = await checkForUpdates();
       if (foundUpdates.length > 0) {
         toast.success(t('packages.updatesFound', { count: foundUpdates.length }));
       } else {
@@ -160,8 +193,8 @@ export default function PackagesPage() {
       const packageId = provider ? `${provider}:${name}` : name;
       await installPackages([`${packageId}@${version}`]);
       toast.success(t('packages.updateSuccess', { name, version }));
-      await fetchInstalledPackages();
       await handleCheckUpdates();
+      await refreshHistoryIfVisible();
     } catch (err) {
       toast.error(t('packages.updateFailed', { name, error: String(err) }));
     }
@@ -198,6 +231,7 @@ export default function PackagesPage() {
         toast.error(t('packages.batchUpdateFailed', { count: result.failed.length }));
       }
       await handleCheckUpdates();
+      await refreshHistoryIfVisible();
     } catch (err) {
       toast.error(t('packages.batchUpdateError', { error: String(err) }));
     }
@@ -207,6 +241,7 @@ export default function PackagesPage() {
     try {
       await installPackages([name]);
       toast.success(t('packages.installSuccess', { name }));
+      await refreshHistoryIfVisible();
     } catch (err) {
       toast.error(t('packages.installFailed', { error: String(err) }));
     }
@@ -216,10 +251,26 @@ export default function PackagesPage() {
     try {
       await uninstallPackages([name]);
       toast.success(t('packages.uninstallSuccess', { name }));
+      await refreshHistoryIfVisible();
     } catch (err) {
       toast.error(t('packages.uninstallFailed', { name, error: String(err) }));
     }
   };
+
+  const handleClearHistory = useCallback(async () => {
+    setClearingHistory(true);
+    try {
+      await clearInstallHistory();
+      setInstallHistory([]);
+      setHistoryError(null);
+      historyDirtyRef.current = false;
+      toast.success(t('packages.historyCleared'));
+    } catch (err) {
+      toast.error(t('packages.historyClearFailed', { error: String(err) }));
+    } finally {
+      setClearingHistory(false);
+    }
+  }, [clearInstallHistory, t]);
 
   const handleSelectPackage = (pkg: PackageSummary | InstalledPackage) => {
     const summary: PackageSummary = {
@@ -252,54 +303,131 @@ export default function PackagesPage() {
     const result = await batchInstall(packages, options?.dryRun, options?.force);
     if (result.successful.length > 0) {
       toast.success(t('packages.batchInstallSuccess', { count: result.successful.length }));
-      await fetchInstalledPackages();
+      await refreshHistoryIfVisible();
     }
     if (result.failed.length > 0) {
       toast.error(t('packages.batchInstallFailed', { count: result.failed.length }));
     }
     return result;
-  }, [batchInstall, fetchInstalledPackages, t]);
+  }, [batchInstall, refreshHistoryIfVisible, t]);
 
   const handleBatchUninstall = useCallback(async (packages: string[], force?: boolean): Promise<BatchResult> => {
     const result = await batchUninstall(packages, force);
     if (result.successful.length > 0) {
       toast.success(t('packages.batchUninstallSuccess', { count: result.successful.length }));
-      await fetchInstalledPackages();
+      await refreshHistoryIfVisible();
     }
     if (result.failed.length > 0) {
       toast.error(t('packages.batchUninstallFailed', { count: result.failed.length }));
     }
     return result;
-  }, [batchUninstall, fetchInstalledPackages, t]);
+  }, [batchUninstall, refreshHistoryIfVisible, t]);
 
   const handleBatchUpdate = useCallback(async (packages?: string[]): Promise<BatchResult> => {
     const result = await batchUpdate(packages);
     if (result.successful.length > 0) {
       toast.success(t('packages.batchUpdateSuccess', { count: result.successful.length }));
-      await fetchInstalledPackages();
-      // Refresh updates after batch update completes
-      const packageNames = installedPackages.map(p => p.name);
-      await checkForUpdates(packageNames);
+      await checkForUpdates();
+      await refreshHistoryIfVisible();
     }
     if (result.failed.length > 0) {
       toast.error(t('packages.batchUpdateFailed', { count: result.failed.length }));
     }
     return result;
-  }, [batchUpdate, fetchInstalledPackages, checkForUpdates, installedPackages, t]);
+  }, [batchUpdate, checkForUpdates, refreshHistoryIfVisible, t]);
 
-  const handleResolveDependencies = useCallback(async (packageId: string): Promise<ResolutionResult> => {
-    setResolvingDeps(true);
-    try {
-      const result = await resolveDependencies(packageId);
-      if (result) {
-        setDependencyResolution(result);
-        return result;
+  const handleResolveDependencies = useCallback(
+    async (request: DependencyResolveRequest): Promise<ResolutionResult | null> => {
+      const packageName = request.packageName.trim();
+      if (!packageName) {
+        const emptyInputError = t('packages.enterPackageToResolve');
+        setDependencyError(emptyInputError);
+        return null;
       }
-      throw new Error('Failed to resolve dependencies');
-    } finally {
-      setResolvingDeps(false);
+
+      const normalizedRequest: DependencyResolveRequest = {
+        packageName,
+        providerId: request.providerId ?? null,
+        version: request.version ?? null,
+        source: request.source,
+      };
+      const dependencyLookupKey = `${normalizedRequest.source}:${normalizedRequest.providerId ?? ''}:${normalizedRequest.packageName.toLowerCase()}`;
+      const packageBaseId = normalizedRequest.providerId
+        ? `${normalizedRequest.providerId}:${normalizedRequest.packageName}`
+        : normalizedRequest.packageName;
+      const packageSpec = normalizedRequest.version
+        ? `${packageBaseId}@${normalizedRequest.version}`
+        : packageBaseId;
+
+      setResolvingDeps(true);
+      setDependencyError(null);
+      setActiveDependencyRequest(normalizedRequest);
+      setResolvingDependencyKey(dependencyLookupKey);
+      setDependencyResolution(null);
+
+      try {
+        const result = await resolveDependencies(packageSpec);
+        if (result) {
+          setDependencyResolution(result);
+          return result;
+        }
+        throw new Error(t('common.unknown'));
+      } catch (err) {
+        const hasPartialContext =
+          normalizedRequest.source !== 'manual' &&
+          (!normalizedRequest.providerId || !normalizedRequest.version);
+        const errorMessage = hasPartialContext
+          ? t('packages.dependencyResolveFailedWithManualHint', {
+              name: normalizedRequest.packageName,
+              error: String(err),
+            })
+          : t('packages.dependencyResolveFailedFor', {
+              name: normalizedRequest.packageName,
+              error: String(err),
+            });
+        setDependencyError(errorMessage);
+        toast.error(errorMessage);
+        return null;
+      } finally {
+        setResolvingDeps(false);
+        setResolvingDependencyKey(null);
+      }
+    },
+    [resolveDependencies, t],
+  );
+
+  const handleResolveFromPackageList = useCallback(
+    async (pkg: PackageSummary | InstalledPackage, source: 'installed' | 'search') => {
+      const contextVersion = source === 'installed'
+        ? ('version' in pkg ? pkg.version : null)
+        : ('latest_version' in pkg ? pkg.latest_version : null);
+      const normalizedVersion = contextVersion?.trim() ? contextVersion.trim() : null;
+
+      const selectedContext: DependencyLookupContext = {
+        packageName: pkg.name,
+        providerId: pkg.provider,
+        version: normalizedVersion,
+        source,
+      };
+
+      setSelectedDependencyContext(selectedContext);
+      setActiveTab('dependencies');
+      await handleResolveDependencies({
+        packageName: selectedContext.packageName,
+        providerId: selectedContext.providerId,
+        version: selectedContext.version,
+        source: selectedContext.source,
+      });
+    },
+    [handleResolveDependencies],
+  );
+
+  const handleRetryDependencyResolution = useCallback(async () => {
+    if (!activeDependencyRequest) {
+      return;
     }
-  }, [resolveDependencies]);
+    await handleResolveDependencies(activeDependencyRequest);
+  }, [activeDependencyRequest, handleResolveDependencies]);
 
   const handleImportPackages = useCallback(async (data: ExportedPackageList) => {
     const packageIds = data.packages.map((p) => {
@@ -413,7 +541,6 @@ export default function PackagesPage() {
           <TabsTrigger 
             value="history" 
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-3 flex items-center gap-1.5"
-            onClick={() => setShowHistory(true)}
           >
             <History className="h-3.5 w-3.5" />
             {t('packages.history')}
@@ -439,8 +566,10 @@ export default function PackagesPage() {
               type="installed"
               pinnedPackages={pinnedPackages}
               bookmarkedPackages={bookmarkedPackages}
+              resolvingDependencyKey={resolvingDependencyKey}
               onUninstall={handleUninstall}
               onSelect={handleSelectPackage}
+              onResolveDependencies={handleResolveFromPackageList}
               onPin={handlePinPackage}
               onUnpin={handleUnpinPackage}
               onBookmark={handleBookmarkToggle}
@@ -706,8 +835,10 @@ export default function PackagesPage() {
               packages={searchResults}
               type="search"
               installing={installing}
+              resolvingDependencyKey={resolvingDependencyKey}
               onInstall={handleInstall}
               onSelect={handleSelectPackage}
+              onResolveDependencies={handleResolveFromPackageList}
               showSelectAll={false}
             />
           )}
@@ -715,9 +846,16 @@ export default function PackagesPage() {
 
         <TabsContent value="dependencies" className="mt-4">
           <DependencyTree
+            key={selectedDependencyContext
+              ? `${selectedDependencyContext.source}:${selectedDependencyContext.providerId ?? ''}:${selectedDependencyContext.packageName}:${selectedDependencyContext.version ?? ''}`
+              : 'dependency-manual'}
+            selectedContext={selectedDependencyContext}
+            activeRequest={activeDependencyRequest}
             resolution={dependencyResolution ?? undefined}
+            error={dependencyError}
             loading={resolvingDeps}
             onResolve={handleResolveDependencies}
+            onRetry={handleRetryDependencyResolution}
           />
         </TabsContent>
 
@@ -734,10 +872,43 @@ export default function PackagesPage() {
                     {t('packages.installHistoryDesc')}
                   </CardDescription>
                 </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      historyDirtyRef.current = true;
+                      void loadInstallHistory();
+                    }}
+                    disabled={historyLoading || clearingHistory}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${historyLoading ? 'animate-spin' : ''}`} />
+                    {t('providers.refresh')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleClearHistory()}
+                    disabled={historyLoading || clearingHistory || installHistory.length === 0}
+                  >
+                    {t('packages.clearHistory')}
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="min-h-0 flex-1">
-              {installHistory.length === 0 ? (
+              {historyError ? (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{historyError}</AlertDescription>
+                </Alert>
+              ) : historyLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
+                </div>
+              ) : installHistory.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">
                   {t('packages.noHistory')}
                 </div>
@@ -772,6 +943,11 @@ export default function PackagesPage() {
                             <div className="text-xs text-muted-foreground break-all">
                               {entry.action} • {entry.version} • {entry.provider}
                             </div>
+                            {entry.error_message && (
+                              <div className="text-xs text-destructive break-all">
+                                {entry.error_message}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="text-xs text-muted-foreground shrink-0 sm:text-right">
@@ -813,12 +989,13 @@ export default function PackagesPage() {
           const packageId = provider ? `${provider}:${name}` : name;
           const pkgWithVersion = version ? `${packageId}@${version}` : packageId;
           await installPackages([pkgWithVersion]);
+          await refreshHistoryIfVisible();
         }}
         onRollback={async (name, version) => {
           try {
             await rollbackPackage(name, version);
             toast.success(t('packages.rollbackSuccess', { name, version }));
-            await fetchInstalledPackages();
+            await refreshHistoryIfVisible();
           } catch (err) {
             toast.error(t('packages.rollbackFailed', { error: String(err) }));
           }

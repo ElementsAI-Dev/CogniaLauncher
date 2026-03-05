@@ -11,7 +11,9 @@ pub fn read(path: &str) -> Result<String, Error> {
 /// Write content to a file in the plugin's data directory.
 pub fn write(path: &str, content: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "path": path, "content": content }).to_string();
-    unsafe { host::cognia_fs_write(input)?; }
+    unsafe {
+        host::cognia_fs_write(input)?;
+    }
     Ok(())
 }
 
@@ -32,13 +34,17 @@ pub fn exists(path: &str) -> Result<FileExistsResult, Error> {
 /// Delete a file or directory in the plugin's data directory.
 pub fn delete(path: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "path": path }).to_string();
-    unsafe { host::cognia_fs_delete(input)?; }
+    unsafe {
+        host::cognia_fs_delete(input)?;
+    }
     Ok(())
 }
 
 /// Create a directory in the plugin's data directory.
 pub fn mkdir(path: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "path": path }).to_string();
-    unsafe { host::cognia_fs_mkdir(input)?; }
+    unsafe {
+        host::cognia_fs_mkdir(input)?;
+    }
     Ok(())
 }

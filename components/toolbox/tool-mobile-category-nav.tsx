@@ -51,11 +51,14 @@ export function ToolMobileCategoryNav({
           {t('toolbox.plugin.mobileMenu')}
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-0">
+      <SheetContent side="left" className="flex w-64 min-h-0 flex-col overflow-hidden p-0">
         <SheetHeader className="border-b border-border px-4 py-3">
           <SheetTitle className="text-sm">{t('toolbox.plugin.mobileMenu')}</SheetTitle>
         </SheetHeader>
-        <div className="p-2">
+        <div
+          data-testid="tool-mobile-category-scroll-area"
+          className="min-h-0 flex-1 overflow-y-auto p-2"
+        >
           <ToolCategoryNavContent
             selectedCategory={selectedCategory}
             onSelectCategory={handleSelect}

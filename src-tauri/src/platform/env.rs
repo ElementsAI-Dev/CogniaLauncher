@@ -809,11 +809,20 @@ fn open_env_regkey(scope: EnvVarScope, write: bool) -> CogniaResult<winreg::RegK
     if write {
         predefined
             .open_subkey_with_flags(subkey, KEY_READ | KEY_WRITE)
-            .map_err(|e| CogniaError::Internal(format!("Registry open failed: {}", e)))
+            .map_err(|e| map_registry_io_error("Registry open failed", e))
     } else {
         predefined
             .open_subkey(subkey)
-            .map_err(|e| CogniaError::Internal(format!("Registry open failed: {}", e)))
+            .map_err(|e| map_registry_io_error("Registry open failed", e))
+    }
+}
+
+#[cfg(windows)]
+fn map_registry_io_error(context: &str, err: std::io::Error) -> CogniaError {
+    if err.kind() == std::io::ErrorKind::PermissionDenied {
+        CogniaError::PermissionDenied(format!("{}: {}", context, err))
+    } else {
+        CogniaError::Internal(format!("{}: {}", context, err))
     }
 }
 
@@ -832,6 +841,179 @@ fn broadcast_env_change() {
             5000,
             std::ptr::null_mut(),
         );
+    }
+}
+
+#[cfg(windows)]
+enum ElevatedWindowsEnvAction<'a> {
+    SetVar { key: &'a str, value: &'a str },
+    RemoveVar { key: &'a str },
+    SetPath { value: &'a str },
+}
+
+#[cfg(windows)]
+impl ElevatedWindowsEnvAction<'_> {
+    fn operation(&self) -> &'static str {
+        match self {
+            Self::SetVar { .. } => "set",
+            Self::RemoveVar { .. } => "remove",
+            Self::SetPath { .. } => "set_path",
+        }
+    }
+
+    fn key(&self) -> &str {
+        match self {
+            Self::SetVar { key, .. } => key,
+            Self::RemoveVar { key } => key,
+            Self::SetPath { .. } => "Path",
+        }
+    }
+
+    fn value(&self) -> Option<&str> {
+        match self {
+            Self::SetVar { value, .. } => Some(value),
+            Self::SetPath { value } => Some(value),
+            Self::RemoveVar { .. } => None,
+        }
+    }
+}
+
+#[cfg(windows)]
+const WINDOWS_ENV_ELEVATION_SCRIPT: &str = r#"
+param(
+    [Parameter(Mandatory=$true)]
+    [ValidateSet('set','remove','set_path')]
+    [string]$Operation,
+    [Parameter(Mandatory=$true)]
+    [string]$Key,
+    [AllowEmptyString()]
+    [string]$Value,
+    [switch]$Elevated
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not $Elevated) {
+    try {
+        $argList = @(
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $PSCommandPath,
+            '-Elevated',
+            '-Operation', $Operation,
+            '-Key', $Key
+        )
+        if ($PSBoundParameters.ContainsKey('Value')) {
+            $argList += @('-Value', $Value)
+        }
+
+        $proc = Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $argList -Wait -PassThru
+        if ($null -eq $proc) {
+            exit 1
+        }
+        exit $proc.ExitCode
+    } catch {
+        if ($_.Exception -and $_.Exception.HResult -eq -2147023673) {
+            exit 1223
+        }
+        Write-Error $_
+        exit 1
+    }
+}
+
+$target = [EnvironmentVariableTarget]::Machine
+switch ($Operation) {
+    'set'      { [Environment]::SetEnvironmentVariable($Key, $Value, $target) }
+    'remove'   { [Environment]::SetEnvironmentVariable($Key, $null, $target) }
+    'set_path' { [Environment]::SetEnvironmentVariable('Path', $Value, $target) }
+    default    { throw "Unsupported operation: $Operation" }
+}
+"#;
+
+#[cfg(windows)]
+fn run_windows_env_operation_elevated(action: ElevatedWindowsEnvAction<'_>) -> CogniaResult<()> {
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let script_path =
+        env::temp_dir().join(format!("cognia-env-elevate-{}-{}.ps1", std::process::id(), unique));
+
+    std::fs::write(&script_path, WINDOWS_ENV_ELEVATION_SCRIPT).map_err(CogniaError::Io)?;
+
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&script_path)
+        .arg("-Operation")
+        .arg(action.operation())
+        .arg("-Key")
+        .arg(action.key());
+
+    if let Some(value) = action.value() {
+        command.arg("-Value").arg(value);
+    }
+
+    let output = command.output().map_err(|e| {
+        CogniaError::Internal(format!(
+            "Failed to start elevated environment operation: {}",
+            e
+        ))
+    });
+
+    let _ = std::fs::remove_file(&script_path);
+
+    let output = output?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    match output.status.code() {
+        Some(1223) => Err(CogniaError::Cancelled),
+        Some(code) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if stderr.is_empty() {
+                Err(CogniaError::Internal(format!(
+                    "Elevated environment operation failed with exit code {}",
+                    code
+                )))
+            } else {
+                Err(CogniaError::Internal(format!(
+                    "Elevated environment operation failed with exit code {}: {}",
+                    code, stderr
+                )))
+            }
+        }
+        None => Err(CogniaError::Internal(
+            "Elevated environment operation terminated unexpectedly".to_string(),
+        )),
+    }
+}
+
+#[cfg(windows)]
+fn apply_with_system_elevation_fallback<F, G>(
+    scope: EnvVarScope,
+    operation: F,
+    elevated_fallback: G,
+) -> CogniaResult<()>
+where
+    F: FnOnce() -> CogniaResult<()>,
+    G: FnOnce() -> CogniaResult<()>,
+{
+    match operation() {
+        Ok(()) => Ok(()),
+        Err(CogniaError::PermissionDenied(_)) if scope == EnvVarScope::System => {
+            elevated_fallback()
+        }
+        Err(err) => Err(err),
     }
 }
 
@@ -949,34 +1131,43 @@ async fn set_persistent_var_platform(
 ) -> CogniaResult<()> {
     use winreg::enums::RegType;
 
-    let regkey = open_env_regkey(scope, true)?;
+    apply_with_system_elevation_fallback(
+        scope,
+        || {
+            let regkey = open_env_regkey(scope, true)?;
 
-    // Preserve the original registry type (REG_EXPAND_SZ vs REG_SZ).
-    // Many system variables (PATH, TEMP, USERPROFILE) use REG_EXPAND_SZ
-    // for %Variable% expansion; writing them back as REG_SZ breaks this.
-    let original_type = regkey
-        .get_raw_value(key)
-        .map(|v| v.vtype)
-        .unwrap_or(RegType::REG_SZ);
+            // Preserve the original registry type (REG_EXPAND_SZ vs REG_SZ).
+            // Many system variables (PATH, TEMP, USERPROFILE) use REG_EXPAND_SZ
+            // for %Variable% expansion; writing them back as REG_SZ breaks this.
+            let original_type = regkey
+                .get_raw_value(key)
+                .map(|v| v.vtype)
+                .unwrap_or(RegType::REG_SZ);
 
-    let use_expand = original_type == RegType::REG_EXPAND_SZ || value.contains('%');
+            let use_expand = original_type == RegType::REG_EXPAND_SZ || value.contains('%');
 
-    if use_expand {
-        let mut encoded: Vec<u8> = value.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
-        encoded.push(0);
-        encoded.push(0);
-        let reg_value = winreg::RegValue {
-            vtype: RegType::REG_EXPAND_SZ,
-            bytes: encoded,
-        };
-        regkey
-            .set_raw_value(key, &reg_value)
-            .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
-    } else {
-        regkey
-            .set_value(key, &value)
-            .map_err(|e| CogniaError::Internal(format!("Registry write failed: {}", e)))?;
-    }
+            if use_expand {
+                let mut encoded: Vec<u8> =
+                    value.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+                encoded.push(0);
+                encoded.push(0);
+                let reg_value = winreg::RegValue {
+                    vtype: RegType::REG_EXPAND_SZ,
+                    bytes: encoded,
+                };
+                regkey
+                    .set_raw_value(key, &reg_value)
+                    .map_err(|e| map_registry_io_error("Registry write failed", e))?;
+            } else {
+                regkey
+                    .set_value(key, &value)
+                    .map_err(|e| map_registry_io_error("Registry write failed", e))?;
+            }
+
+            Ok(())
+        },
+        || run_windows_env_operation_elevated(ElevatedWindowsEnvAction::SetVar { key, value }),
+    )?;
 
     broadcast_env_change();
     Ok(())
@@ -1003,17 +1194,19 @@ async fn set_persistent_var_platform(
 
 #[cfg(windows)]
 async fn remove_persistent_var_platform(key: &str, scope: EnvVarScope) -> CogniaResult<()> {
-    let regkey = open_env_regkey(scope, true)?;
-    match regkey.delete_value(key) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => {
-            return Err(CogniaError::Internal(format!(
-                "Registry delete failed: {}",
-                e
-            )));
-        }
-    }
+    apply_with_system_elevation_fallback(
+        scope,
+        || {
+            let regkey = open_env_regkey(scope, true)?;
+            match regkey.delete_value(key) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(map_registry_io_error("Registry delete failed", e)),
+            }
+        },
+        || run_windows_env_operation_elevated(ElevatedWindowsEnvAction::RemoveVar { key }),
+    )?;
+
     broadcast_env_change();
     Ok(())
 }
@@ -1143,23 +1336,30 @@ async fn get_persistent_path_platform(scope: EnvVarScope) -> CogniaResult<Vec<St
 async fn set_persistent_path_platform(entries: &[String], scope: EnvVarScope) -> CogniaResult<()> {
     use winreg::enums::RegType;
 
-    let regkey = open_env_regkey(scope, true)?;
     let joined = entries.join(";");
 
-    // PATH is always REG_EXPAND_SZ in the Windows registry
-    let mut encoded: Vec<u8> = joined
-        .encode_utf16()
-        .flat_map(|c| c.to_le_bytes())
-        .collect();
-    encoded.push(0);
-    encoded.push(0);
-    let reg_value = winreg::RegValue {
-        vtype: RegType::REG_EXPAND_SZ,
-        bytes: encoded,
-    };
-    regkey
-        .set_raw_value("Path", &reg_value)
-        .map_err(|e| CogniaError::Internal(format!("Registry write PATH failed: {}", e)))?;
+    apply_with_system_elevation_fallback(
+        scope,
+        || {
+            let regkey = open_env_regkey(scope, true)?;
+            // PATH is always REG_EXPAND_SZ in the Windows registry
+            let mut encoded: Vec<u8> = joined
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect();
+            encoded.push(0);
+            encoded.push(0);
+            let reg_value = winreg::RegValue {
+                vtype: RegType::REG_EXPAND_SZ,
+                bytes: encoded,
+            };
+            regkey
+                .set_raw_value("Path", &reg_value)
+                .map_err(|e| map_registry_io_error("Registry write PATH failed", e))?;
+            Ok(())
+        },
+        || run_windows_env_operation_elevated(ElevatedWindowsEnvAction::SetPath { value: &joined }),
+    )?;
 
     broadcast_env_change();
     Ok(())
@@ -2086,5 +2286,69 @@ mod tests {
         assert_ne!(scopes[0], scopes[1]);
         assert_ne!(scopes[1], scopes[2]);
         assert_ne!(scopes[0], scopes[2]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_map_registry_io_error_permission_denied() {
+        let err = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let mapped = map_registry_io_error("Registry write failed", err);
+        match mapped {
+            CogniaError::PermissionDenied(msg) => {
+                assert!(msg.contains("Registry write failed"));
+            }
+            other => panic!("expected PermissionDenied, got {other:?}"),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_apply_with_system_elevation_fallback_uses_fallback_for_system_scope() {
+        let fallback_called = std::cell::Cell::new(false);
+        let result = apply_with_system_elevation_fallback(
+            EnvVarScope::System,
+            || Err(CogniaError::PermissionDenied("denied".into())),
+            || {
+                fallback_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(fallback_called.get());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_apply_with_system_elevation_fallback_skips_fallback_for_user_scope() {
+        let fallback_called = std::cell::Cell::new(false);
+        let result = apply_with_system_elevation_fallback(
+            EnvVarScope::User,
+            || Err(CogniaError::PermissionDenied("denied".into())),
+            || {
+                fallback_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(matches!(result, Err(CogniaError::PermissionDenied(_))));
+        assert!(!fallback_called.get());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_apply_with_system_elevation_fallback_does_not_mask_internal_errors() {
+        let fallback_called = std::cell::Cell::new(false);
+        let result = apply_with_system_elevation_fallback(
+            EnvVarScope::System,
+            || Err(CogniaError::Internal("boom".into())),
+            || {
+                fallback_called.set(true);
+                Ok(())
+            },
+        );
+
+        assert!(matches!(result, Err(CogniaError::Internal(_))));
+        assert!(!fallback_called.get());
     }
 }

@@ -10,7 +10,13 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartRadialTrackStyle,
+  getChartSegmentStrokeStyle,
+  getGradientId,
+} from "@/lib/theme/chart-utils";
 import type { CacheInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
@@ -21,6 +27,7 @@ interface CacheChartProps {
 
 export function CacheChart({ cacheInfo, className }: CacheChartProps) {
   const { t } = useLocale();
+  const pieGradient = getChartGradientDefinition("pie");
 
   const { pieData, radialData, chartConfig } = useMemo(() => {
     if (!cacheInfo) {
@@ -101,14 +108,25 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
           <ChartContainer config={chartConfig} className="h-[160px] w-full aspect-auto">
             <PieChart>
               <defs>
-                <linearGradient id={getGradientId("cache", 0)} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={getChartColor(0)} stopOpacity={0.95} />
-                  <stop offset="100%" stopColor={getChartColor(0)} stopOpacity={0.7} />
-                </linearGradient>
-                <linearGradient id={getGradientId("cache", 1)} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={getChartColor(3)} stopOpacity={0.95} />
-                  <stop offset="100%" stopColor={getChartColor(3)} stopOpacity={0.7} />
-                </linearGradient>
+                {[0, 1].map((index) => (
+                  <linearGradient
+                    key={getGradientId("cache", index)}
+                    id={getGradientId("cache", index)}
+                    x1={pieGradient.x1}
+                    y1={pieGradient.y1}
+                    x2={pieGradient.x2}
+                    y2={pieGradient.y2}
+                  >
+                    {pieGradient.stops.map((stop, stopIndex) => (
+                      <stop
+                        key={`${stop.offset}-${stopIndex}`}
+                        offset={stop.offset}
+                        stopColor={index === 0 ? getChartColor(0) : getChartColor(3)}
+                        stopOpacity={stop.opacity}
+                      />
+                    ))}
+                  </linearGradient>
+                ))}
               </defs>
               <ChartTooltip content={<ChartTooltipContent />} />
               <Pie
@@ -118,8 +136,7 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
                 innerRadius={45}
                 outerRadius={70}
                 paddingAngle={3}
-                strokeWidth={2}
-                stroke="var(--background)"
+                {...getChartSegmentStrokeStyle(2)}
                 dataKey="value"
                 nameKey="name"
               >
@@ -141,13 +158,29 @@ export function CacheChart({ cacheInfo, className }: CacheChartProps) {
               cy="50%"
             >
               <defs>
-                <linearGradient id={getGradientId("cache", 0)} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={getChartColor(0)} stopOpacity={0.95} />
-                  <stop offset="100%" stopColor={getChartColor(0)} stopOpacity={0.7} />
+                <linearGradient
+                  id={getGradientId("cache", 0)}
+                  x1={pieGradient.x1}
+                  y1={pieGradient.y1}
+                  x2={pieGradient.x2}
+                  y2={pieGradient.y2}
+                >
+                  {pieGradient.stops.map((stop, stopIndex) => (
+                    <stop
+                      key={`${stop.offset}-${stopIndex}`}
+                      offset={stop.offset}
+                      stopColor={getChartColor(0)}
+                      stopOpacity={stop.opacity}
+                    />
+                  ))}
                 </linearGradient>
               </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-              <RadialBar dataKey="value" cornerRadius={10} background={{ fill: "var(--muted)", opacity: 0.3 }} />
+              <RadialBar
+                dataKey="value"
+                cornerRadius={10}
+                background={getChartRadialTrackStyle()}
+              />
               <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="text-2xl font-bold fill-foreground">
                 {t("dashboard.widgets.empty")}
               </text>

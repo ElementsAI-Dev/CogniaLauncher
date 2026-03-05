@@ -4,6 +4,7 @@ import SettingsPage from './page';
 import { LocaleProvider } from '@/components/providers/locale-provider';
 import { toast } from 'sonner';
 import type { AppSettings } from '@/lib/stores/settings';
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from '@/lib/sidebar/order';
 
 const mockUpdateConfigValue = jest.fn();
 const mockResetConfig = jest.fn();
@@ -260,6 +261,12 @@ function setupMocks(overrides?: Partial<{ config: Record<string, string>; appSet
     checkUpdatesOnStart: true,
     autoInstallUpdates: false,
     notifyOnUpdates: true,
+    minimizeToTray: true,
+    startMinimized: false,
+    autostart: false,
+    trayClickBehavior: 'toggle_window',
+    showNotifications: true,
+    sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
   useSettings.mockReturnValue({

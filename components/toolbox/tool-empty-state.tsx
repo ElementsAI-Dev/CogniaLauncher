@@ -26,7 +26,10 @@ export function ToolEmptyState({ type }: ToolEmptyStateProps) {
   }[type];
 
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
+    <div
+      data-testid="tool-empty-state"
+      className="flex min-h-full flex-col items-center justify-center px-4 py-16 text-center"
+    >
       <SearchX className="h-12 w-12 text-muted-foreground/40 mb-4" />
       <h3 className="text-lg font-medium text-muted-foreground">{t(config.titleKey)}</h3>
       <p className="text-sm text-muted-foreground/70 mt-1 max-w-sm">{t(config.descKey)}</p>

@@ -3,7 +3,9 @@ use extism_pdk::*;
 
 fn log_with_level(level: &str, message: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "level": level, "message": message }).to_string();
-    unsafe { host::cognia_log(input)?; }
+    unsafe {
+        host::cognia_log(input)?;
+    }
     Ok(())
 }
 

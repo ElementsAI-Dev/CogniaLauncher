@@ -59,11 +59,18 @@ describe('useEnvVar', () => {
     expect(result.current.envVars).toEqual({});
     expect(result.current.persistentVars).toEqual([]);
     expect(result.current.persistentVarsTyped).toEqual([]);
+    expect(result.current.userPersistentVarsTyped).toEqual([]);
+    expect(result.current.systemPersistentVarsTyped).toEqual([]);
     expect(result.current.pathEntries).toEqual([]);
     expect(result.current.shellProfiles).toEqual([]);
     expect(result.current.conflicts).toEqual([]);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+    expect(result.current.detectionState).toBe('idle');
+    expect(result.current.detectionFromCache).toBe(false);
+    expect(result.current.detectionError).toBeNull();
+    expect(result.current.detectionCanRetry).toBe(false);
+    expect(result.current.detectionLastUpdated).toBeNull();
   });
 
   it('should fetch all vars and update state', async () => {
@@ -272,6 +279,7 @@ describe('useEnvVar', () => {
     });
 
     expect(result.current.persistentVarsTyped).toEqual(mockTyped);
+    expect(result.current.userPersistentVarsTyped).toEqual(mockTyped);
     expect(mockEnvvarListPersistentTyped).toHaveBeenCalledWith('user');
   });
 
@@ -571,12 +579,133 @@ describe('useEnvVar', () => {
       await result.current.fetchPersistentVarsTyped('user');
     });
     expect(result.current.persistentVarsTyped).toEqual([{ key: 'USER_VAR', value: '1', regType: 'REG_SZ' }]);
+    expect(result.current.userPersistentVarsTyped).toEqual([{ key: 'USER_VAR', value: '1', regType: 'REG_SZ' }]);
 
     await act(async () => {
       await result.current.fetchPersistentVarsTyped('system');
     });
     expect(result.current.persistentVarsTyped).toEqual([{ key: 'SYSTEM_VAR', value: '2', regType: 'REG_EXPAND_SZ' }]);
+    expect(result.current.systemPersistentVarsTyped).toEqual([{ key: 'SYSTEM_VAR', value: '2', regType: 'REG_EXPAND_SZ' }]);
     expect(mockEnvvarListPersistentTyped).toHaveBeenNthCalledWith(1, 'user');
     expect(mockEnvvarListPersistentTyped).toHaveBeenNthCalledWith(2, 'system');
+  });
+
+  it('loads detection from fresh data on cache miss', async () => {
+    mockEnvvarListAll.mockResolvedValue({ PATH: '/usr/bin' });
+    mockEnvvarListPersistentTyped
+      .mockResolvedValueOnce([{ key: 'USER_KEY', value: 'u', regType: 'REG_SZ' }])
+      .mockResolvedValueOnce([{ key: 'SYSTEM_KEY', value: 's', regType: 'REG_SZ' }]);
+    mockEnvvarDetectConflicts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('all');
+    });
+
+    expect(result.current.detectionState).toBe('showing-fresh');
+    expect(result.current.detectionFromCache).toBe(false);
+    expect(result.current.detectionError).toBeNull();
+    expect(result.current.envVars).toEqual({ PATH: '/usr/bin' });
+    expect(result.current.userPersistentVarsTyped).toEqual([{ key: 'USER_KEY', value: 'u', regType: 'REG_SZ' }]);
+    expect(result.current.systemPersistentVarsTyped).toEqual([{ key: 'SYSTEM_KEY', value: 's', regType: 'REG_SZ' }]);
+  });
+
+  it('shows cached detection immediately and refreshes in background', async () => {
+    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/cache' });
+    mockEnvvarListPersistentTyped
+      .mockResolvedValueOnce([{ key: 'U', value: 'cache', regType: 'REG_SZ' }])
+      .mockResolvedValueOnce([{ key: 'S', value: 'cache', regType: 'REG_SZ' }]);
+    mockEnvvarDetectConflicts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('all');
+    });
+
+    let resolveFresh: ((value: Record<string, string>) => void) | null = null;
+    const freshPromise = new Promise<Record<string, string>>((resolve) => {
+      resolveFresh = resolve;
+    });
+
+    mockEnvvarListAll.mockImplementationOnce(() => freshPromise);
+    mockEnvvarListPersistentTyped
+      .mockResolvedValueOnce([{ key: 'U', value: 'fresh', regType: 'REG_SZ' }])
+      .mockResolvedValueOnce([{ key: 'S', value: 'fresh', regType: 'REG_SZ' }]);
+    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+
+    await act(async () => {
+      void result.current.loadDetection('all');
+    });
+
+    expect(result.current.detectionState).toBe('showing-cache-refreshing');
+    expect(result.current.detectionFromCache).toBe(true);
+    expect(result.current.envVars).toEqual({ PATH: '/cache' });
+
+    await act(async () => {
+      resolveFresh?.({ PATH: '/fresh' });
+      await freshPromise;
+    });
+
+    expect(result.current.detectionState).toBe('showing-fresh');
+    expect(result.current.detectionFromCache).toBe(false);
+    expect(result.current.envVars).toEqual({ PATH: '/fresh' });
+  });
+
+  it('keeps cached data and exposes retry metadata on refresh failure', async () => {
+    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/cache' });
+    mockEnvvarListPersistentTyped
+      .mockResolvedValueOnce([{ key: 'U', value: 'cache', regType: 'REG_SZ' }])
+      .mockResolvedValueOnce([{ key: 'S', value: 'cache', regType: 'REG_SZ' }]);
+    mockEnvvarDetectConflicts.mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      await result.current.loadDetection('all');
+    });
+
+    mockEnvvarListAll.mockRejectedValueOnce(new Error('refresh failed'));
+
+    await act(async () => {
+      await result.current.loadDetection('all');
+    });
+
+    expect(result.current.detectionState).toBe('error');
+    expect(result.current.detectionFromCache).toBe(true);
+    expect(result.current.detectionError).toBe('Error: refresh failed');
+    expect(result.current.detectionCanRetry).toBe(true);
+    expect(result.current.envVars).toEqual({ PATH: '/cache' });
+  });
+
+  it('ignores stale detection responses when newer request finishes first', async () => {
+    let resolveFirst: ((value: Record<string, string>) => void) | null = null;
+    const firstPromise = new Promise<Record<string, string>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    mockEnvvarListAll.mockImplementationOnce(() => firstPromise);
+
+    const { result } = renderHook(() => useEnvVar());
+
+    await act(async () => {
+      void result.current.loadDetection('process', { forceRefresh: true });
+    });
+
+    mockEnvvarListAll.mockResolvedValueOnce({ PATH: '/newest' });
+
+    await act(async () => {
+      await result.current.loadDetection('process', { forceRefresh: true });
+    });
+
+    expect(result.current.envVars).toEqual({ PATH: '/newest' });
+
+    await act(async () => {
+      resolveFirst?.({ PATH: '/stale' });
+      await firstPromise;
+    });
+
+    expect(result.current.envVars).toEqual({ PATH: '/newest' });
+    expect(result.current.detectionState).toBe('showing-fresh');
   });
 });

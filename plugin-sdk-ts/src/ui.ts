@@ -100,8 +100,14 @@ export interface UiFormBlock {
 
 export type FormField =
   | { type: 'input'; id: string; label: string; placeholder?: string; defaultValue?: string; required?: boolean }
+  | { type: 'number'; id: string; label: string; placeholder?: string; defaultValue?: number; min?: number; max?: number; step?: number; required?: boolean }
+  | { type: 'password'; id: string; label: string; placeholder?: string; defaultValue?: string; required?: boolean }
   | { type: 'textarea'; id: string; label: string; placeholder?: string; rows?: number }
   | { type: 'select'; id: string; label: string; options: { label: string; value: string }[]; defaultValue?: string }
+  | { type: 'radio-group'; id: string; label: string; options: { label: string; value: string }[]; defaultValue?: string; required?: boolean }
+  | { type: 'switch'; id: string; label: string; defaultChecked?: boolean }
+  | { type: 'date-time'; id: string; label: string; defaultValue?: string; min?: string; max?: string; required?: boolean }
+  | { type: 'multi-select'; id: string; label: string; options: { label: string; value: string }[]; defaultValues?: string[]; required?: boolean }
   | { type: 'checkbox'; id: string; label: string; defaultChecked?: boolean }
   | { type: 'slider'; id: string; label: string; min: number; max: number; step?: number; defaultValue?: number };
 
@@ -148,6 +154,38 @@ export interface UiFileInputBlock {
   label: string;
   accept?: string;
   multiple?: boolean;
+  includeDataUrl?: boolean;
+}
+
+export interface UiJsonViewBlock {
+  type: 'json-view';
+  data: unknown;
+  label?: string;
+  expanded?: boolean;
+}
+
+export interface UiDescriptionListBlock {
+  type: 'description-list';
+  items: { term: string; description: string }[];
+}
+
+export interface UiStatCardsBlock {
+  type: 'stat-cards';
+  stats: {
+    id: string;
+    label: string;
+    value: string | number;
+    helpText?: string;
+    status?: 'default' | 'success' | 'warning' | 'error';
+  }[];
+}
+
+export interface UiResultBlock {
+  type: 'result';
+  message: string;
+  title?: string;
+  details?: string;
+  status?: 'info' | 'success' | 'warning' | 'error';
 }
 
 export type UiBlock =
@@ -155,7 +193,8 @@ export type UiBlock =
   | UiAlertBlock | UiBadgeBlock | UiProgressBlock | UiImageBlock
   | UiCodeBlock | UiTableBlock | UiKeyValueBlock
   | UiFormBlock | UiActionsBlock | UiGroupBlock
-  | UiTabsBlock | UiAccordionBlock | UiCopyButtonBlock | UiFileInputBlock;
+  | UiTabsBlock | UiAccordionBlock | UiCopyButtonBlock | UiFileInputBlock
+  | UiJsonViewBlock | UiDescriptionListBlock | UiStatCardsBlock | UiResultBlock;
 
 // ============================================================================
 // Action Payload (parsed from input when user interacts)
@@ -163,11 +202,15 @@ export type UiBlock =
 
 export interface UiAction {
   action: 'button_click' | 'form_submit' | 'file_selected' | 'tab_change' | string;
+  version?: 1 | 2;
+  sourceType?: string;
+  sourceId?: string;
   buttonId?: string;
   formId?: string;
   formData?: Record<string, unknown>;
+  formDataTypes?: Record<string, string>;
   fileInputId?: string;
-  files?: { name: string; size: number; type: string; dataUrl: string }[];
+  files?: { name: string; size: number; type: string; dataUrl?: string; lastModified?: number }[];
   tabId?: string;
   state?: Record<string, unknown>;
 }
@@ -237,6 +280,16 @@ export function actions(buttons: ActionButton[]): UiActionsBlock {
   return { type: 'actions', buttons };
 }
 
+export function form(
+  id: string,
+  fields: FormField[],
+  submitLabel?: string,
+): UiFormBlock {
+  const block: UiFormBlock = { type: 'form', id, fields };
+  if (submitLabel) block.submitLabel = submitLabel;
+  return block;
+}
+
 export function button(id: string, label: string, variant?: string, icon?: string): ActionButton {
   const btn: ActionButton = { id, label };
   if (variant) btn.variant = variant;
@@ -279,11 +332,133 @@ export function fileInput(
   label: string,
   accept?: string,
   multiple?: boolean,
+  includeDataUrl?: boolean,
 ): UiFileInputBlock {
   const block: UiFileInputBlock = { type: 'file-input', id, label };
   if (accept) block.accept = accept;
   if (multiple !== undefined) block.multiple = multiple;
+  if (includeDataUrl !== undefined) block.includeDataUrl = includeDataUrl;
   return block;
+}
+
+export function jsonView(
+  data: unknown,
+  label?: string,
+  expanded?: boolean,
+): UiJsonViewBlock {
+  const block: UiJsonViewBlock = { type: 'json-view', data };
+  if (label) block.label = label;
+  if (expanded !== undefined) block.expanded = expanded;
+  return block;
+}
+
+export function descriptionList(
+  items: { term: string; description: string }[],
+): UiDescriptionListBlock {
+  return { type: 'description-list', items };
+}
+
+export function statCards(
+  stats: {
+    id: string;
+    label: string;
+    value: string | number;
+    helpText?: string;
+    status?: 'default' | 'success' | 'warning' | 'error';
+  }[],
+): UiStatCardsBlock {
+  return { type: 'stat-cards', stats };
+}
+
+export function result(
+  message: string,
+  status?: 'info' | 'success' | 'warning' | 'error',
+  title?: string,
+  details?: string,
+): UiResultBlock {
+  const block: UiResultBlock = { type: 'result', message };
+  if (status) block.status = status;
+  if (title) block.title = title;
+  if (details) block.details = details;
+  return block;
+}
+
+export function numberField(
+  id: string,
+  label: string,
+  options?: {
+    placeholder?: string;
+    defaultValue?: number;
+    min?: number;
+    max?: number;
+    step?: number;
+    required?: boolean;
+  },
+): FormField {
+  return { type: 'number', id, label, ...(options ?? {}) };
+}
+
+export function passwordField(
+  id: string,
+  label: string,
+  options?: { placeholder?: string; defaultValue?: string; required?: boolean },
+): FormField {
+  return { type: 'password', id, label, ...(options ?? {}) };
+}
+
+export function radioGroupField(
+  id: string,
+  label: string,
+  options: { label: string; value: string }[],
+  defaultValue?: string,
+  required?: boolean,
+): FormField {
+  return {
+    type: 'radio-group',
+    id,
+    label,
+    options,
+    ...(defaultValue !== undefined ? { defaultValue } : {}),
+    ...(required !== undefined ? { required } : {}),
+  };
+}
+
+export function switchField(
+  id: string,
+  label: string,
+  defaultChecked?: boolean,
+): FormField {
+  return {
+    type: 'switch',
+    id,
+    label,
+    ...(defaultChecked !== undefined ? { defaultChecked } : {}),
+  };
+}
+
+export function dateTimeField(
+  id: string,
+  label: string,
+  options?: { defaultValue?: string; min?: string; max?: string; required?: boolean },
+): FormField {
+  return { type: 'date-time', id, label, ...(options ?? {}) };
+}
+
+export function multiSelectField(
+  id: string,
+  label: string,
+  options: { label: string; value: string }[],
+  defaultValues?: string[],
+  required?: boolean,
+): FormField {
+  return {
+    type: 'multi-select',
+    id,
+    label,
+    options,
+    ...(defaultValues ? { defaultValues } : {}),
+    ...(required !== undefined ? { required } : {}),
+  };
 }
 
 // ============================================================================

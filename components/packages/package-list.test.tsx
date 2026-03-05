@@ -21,6 +21,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.deselectAll": "Deselect all",
         "packages.pinVersion": "Pin version",
         "packages.unpinVersion": "Unpin version",
+        "packages.resolveDependencies": "Resolve Dependencies",
         "packages.addBookmark": "Add bookmark",
         "packages.removeBookmark": "Remove bookmark",
         "packages.installConfirm": `Install ${params?.name ?? ""}?`,
@@ -183,13 +184,33 @@ describe("PackageList", () => {
   });
 
   it("calls onSelect when info button is clicked", async () => {
+  const user = userEvent.setup();
+  const onSelect = jest.fn();
+  render(<PackageList {...defaultProps} onSelect={onSelect} />);
+  // Info buttons are icon buttons
+  const infoButtons = screen.getAllByRole("button");
+  // Click an info button (stopPropagation prevents navigation)
+  await user.click(infoButtons[0]);
+});
+
+  it("calls onResolveDependencies when dependency action is clicked", async () => {
     const user = userEvent.setup();
-    const onSelect = jest.fn();
-    render(<PackageList {...defaultProps} onSelect={onSelect} />);
-    // Info buttons are icon buttons
-    const infoButtons = screen.getAllByRole("button");
-    // Click an info button (stopPropagation prevents navigation)
-    await user.click(infoButtons[0]);
+    const onResolveDependencies = jest.fn();
+    render(
+      <PackageList
+        {...defaultProps}
+        onResolveDependencies={onResolveDependencies}
+      />,
+    );
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Resolve Dependencies" })[0],
+    );
+
+    expect(onResolveDependencies).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "numpy" }),
+      "search",
+    );
   });
 
   it("renders description for packages that have it", () => {

@@ -1,6 +1,7 @@
 import { useSettingsStore } from './settings';
 import type { AppSettings } from './settings';
 import type { CacheInfo, CacheSettings, CacheVerificationResult, PlatformInfo } from '../tauri';
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from '@/lib/sidebar/order';
 
 // Helper to create mock CacheStats
 function createMockCacheStats(overrides?: Partial<{ entry_count: number; size: number; size_human: string; location: string }>) {
@@ -23,6 +24,7 @@ describe('useSettingsStore', () => {
     autostart: false,
     trayClickBehavior: 'toggle_window',
     showNotifications: true,
+    sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
   beforeEach(() => {
@@ -63,6 +65,7 @@ describe('useSettingsStore', () => {
       expect(appSettings.autostart).toBe(false);
       expect(appSettings.trayClickBehavior).toBe('toggle_window');
       expect(appSettings.showNotifications).toBe(true);
+      expect(appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
     });
   });
 
@@ -269,6 +272,13 @@ describe('useSettingsStore', () => {
         expect(useSettingsStore.getState().appSettings.showNotifications).toBe(false);
       });
 
+      it('should update sidebarItemOrder', () => {
+        useSettingsStore.getState().setAppSettings({
+          sidebarItemOrder: ['packages', ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== 'packages')],
+        });
+        expect(useSettingsStore.getState().appSettings.sidebarItemOrder[0]).toBe('packages');
+      });
+
       it('should update multiple settings at once', () => {
         useSettingsStore.getState().setAppSettings({
           checkUpdatesOnStart: false,
@@ -319,6 +329,53 @@ describe('useSettingsStore', () => {
       // This test verifies the partialize function works correctly
       const state = useSettingsStore.getState();
       expect(state.appSettings.autostart).toBe(true);
+      expect(state.appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
+    });
+  });
+
+  describe('persistence migration', () => {
+    it('should migrate legacy state by filling sidebarItemOrder defaults', () => {
+      const persistApi = (useSettingsStore as unknown as {
+        persist?: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
+      }).persist;
+      const migrate = persistApi?.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = migrate?.(
+        {
+          appSettings: {
+            checkUpdatesOnStart: false,
+          },
+        },
+        2,
+      ) as { appSettings: AppSettings };
+
+      expect(migrated.appSettings.checkUpdatesOnStart).toBe(false);
+      expect(migrated.appSettings.sidebarItemOrder).toEqual(DEFAULT_SIDEBAR_ITEM_ORDER);
+    });
+
+    it('should normalize invalid sidebarItemOrder entries during migration', () => {
+      const persistApi = (useSettingsStore as unknown as {
+        persist?: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
+      }).persist;
+      const migrate = persistApi?.getOptions().migrate;
+      expect(migrate).toBeDefined();
+
+      const migrated = migrate?.(
+        {
+          appSettings: {
+            sidebarItemOrder: ['downloads', 'unknown', 'downloads'],
+          },
+        },
+        3,
+      ) as { appSettings: AppSettings };
+
+      expect(migrated.appSettings.sidebarItemOrder[0]).toBe('downloads');
+      expect(migrated.appSettings.sidebarItemOrder).toEqual([
+        'downloads',
+        ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== 'downloads'),
+      ]);
+      expect(migrated.appSettings.sidebarItemOrder).not.toContain('unknown');
     });
   });
 });

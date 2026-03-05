@@ -1,6 +1,7 @@
 use crate::config::Settings;
 use crate::core::{
-    BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryManager, PackageSpec,
+    BatchInstallRequest, BatchManager, BatchProgress, BatchResult, HistoryAction, HistoryManager,
+    HistoryQuery, PackageSpec,
 };
 use crate::platform::env::{current_platform, Platform};
 use crate::provider::{Capability, ProviderRegistry};
@@ -1109,46 +1110,66 @@ pub struct InstallHistoryEntry {
 }
 
 #[tauri::command]
-pub async fn get_install_history(limit: Option<usize>) -> Result<Vec<InstallHistoryEntry>, String> {
-    let entries = HistoryManager::get_history(limit)
+pub async fn get_install_history(
+    limit: Option<usize>,
+    provider: Option<String>,
+    name: Option<String>,
+    action: Option<String>,
+    success: Option<bool>,
+) -> Result<Vec<InstallHistoryEntry>, String> {
+    let action_filter = match action {
+        Some(action_value) => Some(
+            action_value
+                .parse::<HistoryAction>()
+                .map_err(|err| err.to_string())?,
+        ),
+        None => None,
+    };
+
+    let entries = HistoryManager::query_history(HistoryQuery {
+        limit,
+        provider,
+        name,
+        action: action_filter,
+        success,
+    })
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(entries
-        .into_iter()
-        .map(|e| InstallHistoryEntry {
-            id: e.id,
-            name: e.name,
-            version: e.version,
-            action: e.action.to_string(),
-            timestamp: e.timestamp,
-            provider: e.provider,
-            success: e.success,
-            error_message: e.error_message,
-        })
-        .collect())
+    Ok(to_install_history_entries(entries))
 }
 
 /// Get installation history for a specific package
 #[tauri::command]
-pub async fn get_package_history(name: String) -> Result<Vec<InstallHistoryEntry>, String> {
-    let entries = HistoryManager::get_package_history(&name)
+pub async fn get_package_history(
+    name: String,
+    limit: Option<usize>,
+    provider: Option<String>,
+    action: Option<String>,
+    success: Option<bool>,
+) -> Result<Vec<InstallHistoryEntry>, String> {
+    let action_filter = match action {
+        Some(action_value) => Some(
+            action_value
+                .parse::<HistoryAction>()
+                .map_err(|err| err.to_string())?,
+        ),
+        None => None,
+    };
+
+    let effective_limit = Some(limit.unwrap_or(200).min(1000));
+
+    let entries = HistoryManager::query_history(HistoryQuery {
+        limit: effective_limit,
+        provider,
+        name: Some(name),
+        action: action_filter,
+        success,
+    })
         .await
         .map_err(|e| e.to_string())?;
 
-    Ok(entries
-        .into_iter()
-        .map(|e| InstallHistoryEntry {
-            id: e.id,
-            name: e.name,
-            version: e.version,
-            action: e.action.to_string(),
-            timestamp: e.timestamp,
-            provider: e.provider,
-            success: e.success,
-            error_message: e.error_message,
-        })
-        .collect())
+    Ok(to_install_history_entries(entries))
 }
 
 /// Clear installation history
@@ -1157,6 +1178,24 @@ pub async fn clear_install_history() -> Result<(), String> {
     HistoryManager::clear_history()
         .await
         .map_err(|e| e.to_string())
+}
+
+fn to_install_history_entries(
+    entries: Vec<crate::core::InstallHistoryEntry>,
+) -> Vec<InstallHistoryEntry> {
+    entries
+        .into_iter()
+        .map(|e| InstallHistoryEntry {
+            id: e.id,
+            name: e.name,
+            version: e.version,
+            action: e.action.to_string(),
+            timestamp: e.timestamp,
+            provider: e.provider,
+            success: e.success,
+            error_message: e.error_message,
+        })
+        .collect()
 }
 
 #[cfg(test)]

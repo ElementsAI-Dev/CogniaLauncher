@@ -81,6 +81,12 @@ export default function ToolboxPage() {
     [activeToolId, allTools],
   );
 
+  useEffect(() => {
+    if (activeToolId && !activeTool) {
+      setActiveToolId(null);
+    }
+  }, [activeToolId, activeTool, setActiveToolId]);
+
   const emptyType =
     selectedCategory === 'favorites'
       ? 'no-favorites'
@@ -89,60 +95,43 @@ export default function ToolboxPage() {
         : 'no-results';
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <PageHeader
-        title={t('toolbox.title')}
-        description={t('toolbox.description')}
-        actions={
-          <div className="flex items-center gap-2">
-            {isDesktop && (
-              <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                <Link href="/toolbox/plugins">
-                  <Plug className="h-3.5 w-3.5" />
-                  {t('toolbox.plugin.title')}
-                </Link>
-              </Button>
-            )}
-            <ToggleGroup
-              type="single"
-              value={viewMode}
-              onValueChange={(v) => { if (v) setViewMode(v as 'grid' | 'list'); }}
-              className="bg-muted rounded-lg p-0.5"
-            >
-              <ToggleGroupItem value="grid" aria-label={t('toolbox.viewMode.grid')} className="h-8 w-8 p-0">
-                <LayoutGrid className="h-4 w-4" />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="list" aria-label={t('toolbox.viewMode.list')} className="h-8 w-8 p-0">
-                <List className="h-4 w-4" />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        }
-      />
-
-      <div className="flex items-center gap-2">
-        <ToolMobileCategoryNav
-          selectedCategory={selectedCategory}
-          onSelectCategory={setCategory}
-          categoryToolCounts={categoryToolCounts}
-          totalToolCount={totalToolCount}
-          favoritesCount={favorites.length}
-          recentCount={recentTools.length}
-          mostUsedCount={mostUsedCount}
-          dynamicCategories={dynamicCategories}
+    <div
+      data-testid="toolbox-page-root"
+      className="h-full min-h-0 overflow-hidden p-4 md:p-6"
+    >
+      <div className="flex h-full min-h-0 flex-col gap-6">
+        <PageHeader
+          title={t('toolbox.title')}
+          description={t('toolbox.description')}
+          actions={
+            <div className="flex items-center gap-2">
+              {isDesktop && (
+                <Button variant="outline" size="sm" className="gap-1.5" asChild>
+                  <Link href="/toolbox/plugins">
+                    <Plug className="h-3.5 w-3.5" />
+                    {t('toolbox.plugin.title')}
+                  </Link>
+                </Button>
+              )}
+              <ToggleGroup
+                type="single"
+                value={viewMode}
+                onValueChange={(v) => { if (v) setViewMode(v as 'grid' | 'list'); }}
+                className="bg-muted rounded-lg p-0.5"
+              >
+                <ToggleGroupItem value="grid" aria-label={t('toolbox.viewMode.grid')} className="h-8 w-8 p-0">
+                  <LayoutGrid className="h-4 w-4" />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="list" aria-label={t('toolbox.viewMode.list')} className="h-8 w-8 p-0">
+                  <List className="h-4 w-4" />
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          }
         />
-        <ToolSearchBar
-          ref={searchRef}
-          value={searchQuery}
-          onChange={setSearchQuery}
-          resultCount={filteredTools.length}
-          className="flex-1"
-        />
-      </div>
 
-      <div className="flex gap-6">
-        <div className="hidden md:block w-48 shrink-0">
-          <ToolCategoryNav
+        <div className="flex shrink-0 items-center gap-2">
+          <ToolMobileCategoryNav
             selectedCategory={selectedCategory}
             onSelectCategory={setCategory}
             categoryToolCounts={categoryToolCounts}
@@ -152,21 +141,49 @@ export default function ToolboxPage() {
             mostUsedCount={mostUsedCount}
             dynamicCategories={dynamicCategories}
           />
+          <ToolSearchBar
+            ref={searchRef}
+            value={searchQuery}
+            onChange={setSearchQuery}
+            resultCount={filteredTools.length}
+            className="flex-1"
+          />
         </div>
 
-        <div className="flex-1 min-w-0">
-          {filteredTools.length > 0 ? (
-            <ToolGrid
-              tools={filteredTools}
-              favorites={favorites}
-              viewMode={viewMode}
-              onToggleFavorite={toggleFavorite}
-              onOpen={handleOpenTool}
-              toolUseCounts={toolUseCounts}
+        <div
+          data-testid="toolbox-content-shell"
+          className="flex min-h-0 flex-1 gap-6 overflow-hidden"
+        >
+          <div className="hidden w-48 min-h-0 shrink-0 overflow-hidden md:flex md:flex-col">
+            <ToolCategoryNav
+              selectedCategory={selectedCategory}
+              onSelectCategory={setCategory}
+              categoryToolCounts={categoryToolCounts}
+              totalToolCount={totalToolCount}
+              favoritesCount={favorites.length}
+              recentCount={recentTools.length}
+              mostUsedCount={mostUsedCount}
+              dynamicCategories={dynamicCategories}
             />
-          ) : (
-            <ToolEmptyState type={emptyType} />
-          )}
+          </div>
+
+          <div
+            data-testid="toolbox-list-scroll-area"
+            className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1"
+          >
+            {filteredTools.length > 0 ? (
+              <ToolGrid
+                tools={filteredTools}
+                favorites={favorites}
+                viewMode={viewMode}
+                onToggleFavorite={toggleFavorite}
+                onOpen={handleOpenTool}
+                toolUseCounts={toolUseCounts}
+              />
+            ) : (
+              <ToolEmptyState type={emptyType} />
+            )}
+          </div>
         </div>
       </div>
 

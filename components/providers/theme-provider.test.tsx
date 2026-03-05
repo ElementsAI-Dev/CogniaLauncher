@@ -197,6 +197,56 @@ describe("ThemeProvider", () => {
     expect(applyChartColorTheme).toHaveBeenCalledWith("ocean", true);
   });
 
+  it("re-applies chart colors when theme mode changes", async () => {
+    const { rerender } = render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    mockTheme = "dark";
+    rerender(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(applyChartColorTheme).toHaveBeenLastCalledWith("default", true);
+  });
+
+  it("re-applies chart colors when chart theme changes", async () => {
+    const { rerender } = render(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    mockChartColorTheme = "sunset";
+    rerender(
+      <ThemeProvider>
+        <div>Content</div>
+      </ThemeProvider>,
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(applyChartColorTheme).toHaveBeenLastCalledWith("sunset", false);
+  });
+
   it("sets --radius CSS variable on mount", async () => {
     mockInterfaceRadius = 0.75;
 

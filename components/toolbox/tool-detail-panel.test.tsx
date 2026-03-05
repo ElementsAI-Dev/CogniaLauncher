@@ -77,6 +77,14 @@ describe('ToolDetailPanel', () => {
     expect(screen.getByText('Open Full Page')).toBeInTheDocument();
   });
 
+  it('routes Open Full Page action to canonical tool detail path', () => {
+    render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
+    expect(screen.getByRole('link', { name: 'Open Full Page' })).toHaveAttribute(
+      'href',
+      '/toolbox/tool?id=builtin%3Ajson-formatter',
+    );
+  });
+
   it('renders BuiltInToolRenderer for built-in tools', () => {
     render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
     expect(screen.getByTestId('built-in-renderer-json-formatter')).toBeInTheDocument();
@@ -115,5 +123,32 @@ describe('ToolDetailPanel', () => {
     };
     render(<ToolDetailPanel tool={pluginTool} open={true} onOpenChange={jest.fn()} />);
     expect(screen.getByText('Plugin')).toBeInTheDocument();
+  });
+
+  it('renders dedicated header, actions, and body regions', () => {
+    render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
+    expect(screen.getByTestId('tool-detail-panel-header')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-detail-panel-actions')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-detail-panel-body')).toBeInTheDocument();
+  });
+
+  it('uses bounded responsive width classes for the side panel', () => {
+    render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
+    expect(screen.getByTestId('tool-detail-panel-content')).toHaveClass('w-[min(94vw,980px)]');
+    expect(screen.getByTestId('tool-detail-panel-content')).toHaveClass('sm:w-[min(88vw,980px)]');
+    expect(screen.getByTestId('tool-detail-panel-content')).toHaveClass('md:w-[min(82vw,980px)]');
+  });
+
+  it('renders as a right-side panel instead of a centered modal', () => {
+    render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
+    const panel = screen.getByTestId('tool-detail-panel-content');
+    expect(panel).toHaveClass('inset-y-0');
+    expect(panel).toHaveClass('right-0');
+    expect(panel.className).not.toContain('top-[50%]');
+  });
+
+  it('keeps the tool body scrollable for long content', () => {
+    render(<ToolDetailPanel tool={mockTool} open={true} onOpenChange={jest.fn()} />);
+    expect(screen.getByTestId('tool-detail-panel-body')).toHaveClass('overflow-y-auto');
   });
 });

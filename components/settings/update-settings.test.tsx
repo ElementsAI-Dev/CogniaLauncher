@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { UpdateSettings } from "./update-settings";
 import type { AppSettings } from "@/lib/stores/settings";
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
 
 const mockT = (key: string) => {
   const translations: Record<string, string> = {
@@ -27,6 +28,7 @@ describe("UpdateSettings", () => {
     autostart: false,
     trayClickBehavior: "toggle_window",
     showNotifications: true,
+    sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
   it("should render update settings content", () => {

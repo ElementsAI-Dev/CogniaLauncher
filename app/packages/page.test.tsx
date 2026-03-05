@@ -12,6 +12,26 @@ const mockBatchInstall = jest.fn().mockResolvedValue({ successful: [], failed: [
 const mockBatchUpdate = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockBatchUninstall = jest.fn().mockResolvedValue({ successful: [], failed: [] });
 const mockGetInstallHistory = jest.fn().mockResolvedValue([]);
+const mockClearInstallHistory = jest.fn().mockResolvedValue(undefined);
+const mockResolveDependencies = jest.fn().mockResolvedValue({
+  success: true,
+  packages: [],
+  tree: [],
+  conflicts: [],
+  install_order: [],
+  total_packages: 0,
+  total_size: null,
+});
+const mockInstalledPackages = [
+  { name: 'typescript', version: '5.0.0', provider: 'npm', description: 'TypeScript language' },
+  { name: 'lodash', version: '4.17.21', provider: 'npm', description: 'Utility library' },
+];
+let mockSearchResults: Array<{
+  name: string;
+  provider: string;
+  description: string | null;
+  latest_version: string | null;
+}> = [];
 const mockPackageStoreState = {
   selectedPackages: [] as string[],
   clearPackageSelection: jest.fn(),
@@ -45,11 +65,8 @@ const mockPackageStoreState = {
 
 jest.mock('@/hooks/use-packages', () => ({
   usePackages: () => ({
-    searchResults: [],
-    installedPackages: [
-      { name: 'typescript', version: '5.0.0', provider: 'npm', description: 'TypeScript language' },
-      { name: 'lodash', version: '4.17.21', provider: 'npm', description: 'Utility library' },
-    ],
+    searchResults: mockSearchResults,
+    installedPackages: mockInstalledPackages,
     providers: [
       { id: 'npm', display_name: 'npm' },
       { id: 'pip', display_name: 'pip' },
@@ -69,12 +86,13 @@ jest.mock('@/hooks/use-packages', () => ({
     batchInstall: mockBatchInstall,
     batchUpdate: mockBatchUpdate,
     batchUninstall: mockBatchUninstall,
-    resolveDependencies: jest.fn(),
+    resolveDependencies: mockResolveDependencies,
     comparePackages: jest.fn(),
     pinPackage: jest.fn(),
     unpinPackage: jest.fn(),
     rollbackPackage: jest.fn(),
     getInstallHistory: mockGetInstallHistory,
+    clearInstallHistory: mockClearInstallHistory,
   }),
 }));
 
@@ -104,9 +122,15 @@ jest.mock('@/components/providers/locale-provider', () => ({
         'packages.installHistory': 'Install History',
         'packages.installHistoryDesc': 'Recent package operations',
         'packages.noHistory': 'No history entries',
+        'packages.clearHistory': 'Clear History',
+        'packages.historyCleared': 'History cleared',
+        'packages.historyClearFailed': `Failed to clear history: ${params?.error ?? ''}`,
         'packages.updatesFound': `${params?.count ?? 0} updates found`,
         'packages.updateCheckCoverage': `${params?.supported ?? 0}/${params?.partial ?? 0}/${params?.unsupported ?? 0}/${params?.error ?? 0}`,
         'packages.updateCheckUnsupported': `${params?.count ?? 0} providers unsupported`,
+        'packages.dependencyResolveFailedFor': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
+        'packages.dependencyResolveFailedWithManualHint': `Failed to resolve dependencies for ${params?.name ?? ""}: ${params?.error ?? ""}`,
+        'providers.refresh': 'Refresh',
         'common.unknown': 'unknown',
       };
       return translations[key] || key;
@@ -123,12 +147,13 @@ jest.mock('@/components/packages/search-bar', () => ({
 }));
 
 jest.mock('@/components/packages/package-list', () => ({
-  PackageList: ({ packages, type, onUninstall, onInstall, onSelect, onPin, onUnpin, onBookmark }: {
+  PackageList: ({ packages, type, onUninstall, onInstall, onSelect, onResolveDependencies, onPin, onUnpin, onBookmark }: {
     packages: { name: string }[];
     type: string;
     onUninstall?: (n: string) => void;
     onInstall?: (n: string) => void;
     onSelect?: (p: { name: string }) => void;
+    onResolveDependencies?: (p: { name: string; provider?: string; version?: string; latest_version?: string }, source: 'installed' | 'search') => void;
     onPin?: (n: string) => void;
     onUnpin?: (n: string) => void;
     onBookmark?: (n: string) => void;
@@ -138,6 +163,14 @@ jest.mock('@/components/packages/package-list', () => ({
       {onUninstall && <button data-testid={`uninstall-${type}`} onClick={() => onUninstall('typescript')}>Uninstall</button>}
       {onInstall && <button data-testid={`install-${type}`} onClick={() => onInstall('lodash')}>Install</button>}
       {onSelect && packages[0] && <button data-testid={`select-${type}`} onClick={() => onSelect(packages[0])}>Select</button>}
+      {onResolveDependencies && packages[0] && (
+        <button
+          data-testid={`resolve-${type}`}
+          onClick={() => onResolveDependencies(packages[0], type as 'installed' | 'search')}
+        >
+          Resolve
+        </button>
+      )}
       {onPin && <button data-testid={`pin-${type}`} onClick={() => onPin('typescript')}>Pin</button>}
       {onUnpin && <button data-testid={`unpin-${type}`} onClick={() => onUnpin('typescript')}>Unpin</button>}
       {onBookmark && <button data-testid={`bookmark-${type}`} onClick={() => onBookmark('typescript')}>Bookmark</button>}
@@ -186,6 +219,17 @@ describe('PackagesPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetInstallHistory.mockResolvedValue([]);
+    mockClearInstallHistory.mockResolvedValue(undefined);
+    mockResolveDependencies.mockResolvedValue({
+      success: true,
+      packages: [],
+      tree: [],
+      conflicts: [],
+      install_order: [],
+      total_packages: 0,
+      total_size: null,
+    });
+    mockSearchResults = [];
     mockPackageStoreState.selectedPackages = [];
     mockPackageStoreState.bookmarkedPackages = [];
     mockPackageStoreState.availableUpdates = [];
@@ -250,6 +294,46 @@ describe('PackagesPage', () => {
     await user.click(screen.getByText(/History/));
     await waitFor(() => {
       expect(screen.getByText('Install History')).toBeInTheDocument();
+    });
+  });
+
+  it('shows history error state when load fails', async () => {
+    mockGetInstallHistory.mockRejectedValueOnce(new Error('history unavailable'));
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.getByText(/history unavailable/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+    });
+  });
+
+  it('clears history from history tab', async () => {
+    mockGetInstallHistory.mockResolvedValueOnce([
+      {
+        id: '1',
+        name: 'react',
+        version: '18.0.0',
+        action: 'install',
+        timestamp: '2026-03-04T08:00:00.000Z',
+        provider: 'npm',
+        success: true,
+        error_message: null,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/History/));
+    await waitFor(() => {
+      expect(screen.getByText('react')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: /clear history/i }));
+    await waitFor(() => {
+      expect(mockClearInstallHistory).toHaveBeenCalled();
     });
   });
 
@@ -358,6 +442,36 @@ describe('PackagesPage', () => {
     await user.click(screen.getByText(/Dependencies/));
     await waitFor(() => {
       expect(screen.getByTestId('dependency-tree')).toBeInTheDocument();
+    });
+  });
+
+  it('resolves dependencies directly from installed list context', async () => {
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByTestId('resolve-installed'));
+    await waitFor(() => {
+      expect(mockResolveDependencies).toHaveBeenCalledWith('npm:typescript@5.0.0');
+    });
+  });
+
+  it('falls back to provider:name lookup when selected context has no version', async () => {
+    mockSearchResults = [
+      {
+        name: 'vite',
+        provider: 'npm',
+        description: 'Build tool',
+        latest_version: null,
+      },
+    ];
+    const user = userEvent.setup();
+    render(<PackagesPage />);
+
+    await user.click(screen.getByText(/Search Results/));
+    await user.click(screen.getByTestId('resolve-search'));
+
+    await waitFor(() => {
+      expect(mockResolveDependencies).toHaveBeenCalledWith('npm:vite');
     });
   });
 

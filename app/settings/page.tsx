@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -26,7 +26,7 @@ import { useSettings } from '@/hooks/use-settings';
 import { useLocale } from '@/components/providers/locale-provider';
 import { useTheme } from 'next-themes';
 import { useAppearanceStore, type AccentColor } from '@/lib/stores/appearance';
-import { useSettingsStore } from '@/lib/stores/settings';
+import { useSettingsStore, type AppSettings } from '@/lib/stores/settings';
 import { isTauri } from '@/lib/tauri';
 import { isThemeMode } from '@/lib/theme';
 import { useSettingsShortcuts, useSectionNavigation } from '@/hooks/use-settings-shortcuts';
@@ -41,6 +41,7 @@ import {
   AppearanceSettings,
   UpdateSettings,
   TraySettings,
+  SidebarOrderCustomizer,
   PathsSettings,
   ProviderSettings,
   BackupSettings,
@@ -67,6 +68,14 @@ import { BUBBLE_HINTS } from '@/lib/constants/onboarding';
 import { toast } from 'sonner';
 import { readClipboard, writeClipboard } from '@/lib/clipboard';
 import { type SettingsSection } from '@/lib/constants/settings-registry';
+import {
+  DEFAULT_SIDEBAR_ITEM_ORDER,
+  moveSidebarItem,
+  normalizeSidebarItemOrder,
+  splitSidebarItemOrder,
+  type PrimarySidebarItemId,
+  type SecondarySidebarItemId,
+} from '@/lib/sidebar/order';
 
 interface SaveProgress {
   current: number;
@@ -276,6 +285,37 @@ export default function SettingsPage() {
     };
   }, [localConfig, appSettings]);
 
+  const normalizeImportedAppSettings = useCallback((value: unknown): Partial<AppSettings> | null => {
+    if (!value || typeof value !== 'object') return null;
+
+    const raw = value as Record<string, unknown>;
+    const normalized: Partial<AppSettings> = {};
+
+    if (typeof raw.checkUpdatesOnStart === 'boolean') normalized.checkUpdatesOnStart = raw.checkUpdatesOnStart;
+    if (typeof raw.autoInstallUpdates === 'boolean') normalized.autoInstallUpdates = raw.autoInstallUpdates;
+    if (typeof raw.notifyOnUpdates === 'boolean') normalized.notifyOnUpdates = raw.notifyOnUpdates;
+    if (typeof raw.minimizeToTray === 'boolean') normalized.minimizeToTray = raw.minimizeToTray;
+    if (typeof raw.startMinimized === 'boolean') normalized.startMinimized = raw.startMinimized;
+    if (typeof raw.autostart === 'boolean') normalized.autostart = raw.autostart;
+    if (
+      raw.trayClickBehavior === 'toggle_window'
+      || raw.trayClickBehavior === 'show_menu'
+      || raw.trayClickBehavior === 'do_nothing'
+    ) {
+      normalized.trayClickBehavior = raw.trayClickBehavior;
+    }
+    if (typeof raw.showNotifications === 'boolean') normalized.showNotifications = raw.showNotifications;
+
+    if (Array.isArray(raw.sidebarItemOrder)) {
+      const rawOrder = raw.sidebarItemOrder.filter((item): item is string => typeof item === 'string');
+      normalized.sidebarItemOrder = normalizeSidebarItemOrder(
+        rawOrder.length > 0 ? rawOrder : DEFAULT_SIDEBAR_ITEM_ORDER,
+      );
+    }
+
+    return normalized;
+  }, []);
+
   const applyImportedSettings = useCallback(async (content: string) => {
     const data = JSON.parse(content);
 
@@ -283,8 +323,9 @@ export default function SettingsPage() {
     if (data.version === '2.0' && data.backendConfig && isTauri()) {
       const { configImport } = await import('@/lib/tauri');
       await configImport(data.backendConfig);
-      if (data.appSettings && typeof data.appSettings === 'object') {
-        setAppSettings(data.appSettings);
+      const importedAppSettings = normalizeImportedAppSettings(data.appSettings);
+      if (importedAppSettings && Object.keys(importedAppSettings).length > 0) {
+        setAppSettings(importedAppSettings);
       }
       // Refresh config from backend
       await fetchConfig();
@@ -303,8 +344,9 @@ export default function SettingsPage() {
     setLocalConfig((prev) => ({ ...prev, ...data.settings }));
     setHasChanges(true);
 
-    if (data.appSettings && typeof data.appSettings === 'object') {
-      setAppSettings(data.appSettings);
+    const importedAppSettings = normalizeImportedAppSettings(data.appSettings);
+    if (importedAppSettings && Object.keys(importedAppSettings).length > 0) {
+      setAppSettings(importedAppSettings);
     }
 
     const errors: Record<string, string | null> = {};
@@ -316,7 +358,7 @@ export default function SettingsPage() {
     setValidationErrors((prev) => ({ ...prev, ...errors }));
 
     toast.success(t('settings.importSuccess'));
-  }, [setAppSettings, fetchConfig, t]);
+  }, [normalizeImportedAppSettings, setAppSettings, fetchConfig, t]);
 
   const handleExport = useCallback(async () => {
     try {
@@ -593,6 +635,34 @@ export default function SettingsPage() {
   const handleAppSettingsChange = useCallback(<K extends keyof typeof appSettings>(key: K, value: typeof appSettings[K]) => {
     setAppSettings({ [key]: value });
   }, [setAppSettings]);
+
+  const sidebarOrder = useMemo(
+    () => splitSidebarItemOrder(appSettings.sidebarItemOrder),
+    [appSettings.sidebarItemOrder],
+  );
+
+  const handleMovePrimarySidebarItem = useCallback(
+    (itemId: PrimarySidebarItemId, direction: 'up' | 'down') => {
+      setAppSettings({
+        sidebarItemOrder: moveSidebarItem(appSettings.sidebarItemOrder, itemId, direction),
+      });
+    },
+    [appSettings.sidebarItemOrder, setAppSettings],
+  );
+
+  const handleMoveSecondarySidebarItem = useCallback(
+    (itemId: SecondarySidebarItemId, direction: 'up' | 'down') => {
+      setAppSettings({
+        sidebarItemOrder: moveSidebarItem(appSettings.sidebarItemOrder, itemId, direction),
+      });
+    },
+    [appSettings.sidebarItemOrder, setAppSettings],
+  );
+
+  const handleResetSidebarOrder = useCallback(() => {
+    setAppSettings({ sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER] });
+    toast.success(t('settings.sidebarOrderResetSuccess'));
+  }, [setAppSettings, t]);
 
   const canSave = hasChanges && !loading && !saving && !hasValidationErrors();
   const canReset = !loading && !saving;
@@ -877,6 +947,15 @@ export default function SettingsPage() {
                 t={t}
               />
             </CollapsibleSection>
+
+            <SidebarOrderCustomizer
+              t={t}
+              primaryOrder={sidebarOrder.primary}
+              secondaryOrder={sidebarOrder.secondary}
+              onMovePrimary={handleMovePrimarySidebarItem}
+              onMoveSecondary={handleMoveSecondarySidebarItem}
+              onReset={handleResetSidebarOrder}
+            />
 
             <CollapsibleSection
               id="shortcuts"

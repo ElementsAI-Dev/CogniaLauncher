@@ -31,6 +31,23 @@ function normalizeInset(value: number): number {
   return clamped <= MAXIMIZE_INSET_TOLERANCE_DIP ? 0 : clamped;
 }
 
+function shouldZeroSymmetricInsets(insets: MaximizeInsets): boolean {
+  const values = [insets.top, insets.right, insets.bottom, insets.left];
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+
+  return max > 0 && min > 0 && max - min <= MAXIMIZE_INSET_TOLERANCE_DIP;
+}
+
+function shouldZeroFourEdgeInsets(insets: MaximizeInsets): boolean {
+  return (
+    insets.top > 0 &&
+    insets.right > 0 &&
+    insets.bottom > 0 &&
+    insets.left > 0
+  );
+}
+
 type Rect = {
   left: number;
   top: number;
@@ -154,6 +171,7 @@ export function useWindowControls(): WindowControlsState {
   const unlistenScaleRef = useRef<(() => void) | null>(null);
   const unlistenFocusRef = useRef<(() => void) | null>(null);
   const unlistenCloseRef = useRef<(() => void) | null>(null);
+  const hasResolvedMonitorRef = useRef(false);
 
   // Handle hydration
   useEffect(() => {
@@ -174,17 +192,18 @@ export function useWindowControls(): WindowControlsState {
 
         if (!active) return;
 
-        const syncMaximizePadding = async (maximized: boolean) => {
+        const syncMaximizePadding = async (maximized: boolean, fullscreen: boolean) => {
           if (!active) return;
-          if (!isWindowsOS() || !maximized) {
+          if (!isWindowsOS() || !maximized || fullscreen) {
             setMaximizeInsets(ZERO_MAXIMIZE_INSETS);
             setMaximizePadding(0);
             return;
           }
 
           try {
-            const [outerPosition, outerSize, innerSize, monitor, monitors, scaleFactor] = await Promise.all([
+            const [outerPosition, innerPosition, outerSize, innerSize, monitor, monitors, scaleFactor] = await Promise.all([
               win.outerPosition(),
+              win.innerPosition(),
               win.outerSize(),
               win.innerSize(),
               currentMonitor(),
@@ -218,6 +237,9 @@ export function useWindowControls(): WindowControlsState {
                 resolvedMonitor = null;
               }
             }
+            if (resolvedMonitor) {
+              hasResolvedMonitorRef.current = true;
+            }
 
             const monitorRect = resolvedMonitor
               ? getMonitorRect(resolvedMonitor)
@@ -228,6 +250,10 @@ export function useWindowControls(): WindowControlsState {
             const monitorBottom = monitorRect.bottom;
 
             const safeScaleFactor = scaleFactor > 0 ? scaleFactor : 1;
+            const innerLeft = innerPosition.x;
+            const innerTop = innerPosition.y;
+            const innerRight = innerLeft + innerSize.width;
+            const innerBottom = innerTop + innerSize.height;
             const frameInsetX = Math.max(
               0,
               Math.round(((outerSize.width - innerSize.width) / 2) / safeScaleFactor),
@@ -241,6 +267,12 @@ export function useWindowControls(): WindowControlsState {
               right: normalizeInset(Math.round(Math.max(0, windowRight - monitorRight) / safeScaleFactor)),
               bottom: normalizeInset(Math.round(Math.max(0, windowBottom - monitorBottom) / safeScaleFactor)),
               left: normalizeInset(Math.round(Math.max(0, monitorLeft - windowLeft) / safeScaleFactor)),
+            };
+            const innerOvershootInsets: MaximizeInsets = {
+              top: normalizeInset(Math.round(Math.max(0, monitorTop - innerTop) / safeScaleFactor)),
+              right: normalizeInset(Math.round(Math.max(0, innerRight - monitorRight) / safeScaleFactor)),
+              bottom: normalizeInset(Math.round(Math.max(0, innerBottom - monitorBottom) / safeScaleFactor)),
+              left: normalizeInset(Math.round(Math.max(0, monitorLeft - innerLeft) / safeScaleFactor)),
             };
 
             const frameInsetsFallback: MaximizeInsets =
@@ -258,9 +290,27 @@ export function useWindowControls(): WindowControlsState {
                     left: 0,
                   };
 
-            const nextInsets: MaximizeInsets = resolvedMonitor
-              ? overshootInsets
+            const hasInnerOvershoot =
+              innerOvershootInsets.top > 0 ||
+              innerOvershootInsets.right > 0 ||
+              innerOvershootInsets.bottom > 0 ||
+              innerOvershootInsets.left > 0;
+            const resolvedInsets: MaximizeInsets = resolvedMonitor
+              ? (hasInnerOvershoot ? innerOvershootInsets : ZERO_MAXIMIZE_INSETS)
               : frameInsetsFallback;
+            const shouldZeroInsetsFromGeometry =
+              resolvedMonitor &&
+              (shouldZeroSymmetricInsets(resolvedInsets) ||
+                shouldZeroFourEdgeInsets(resolvedInsets));
+            const shouldZeroInsetsFromTransientFallback =
+              !resolvedMonitor &&
+              (shouldZeroFourEdgeInsets(frameInsetsFallback) ||
+                (hasResolvedMonitorRef.current &&
+                  shouldZeroSymmetricInsets(frameInsetsFallback)));
+            const nextInsets =
+              shouldZeroInsetsFromGeometry || shouldZeroInsetsFromTransientFallback
+                ? ZERO_MAXIMIZE_INSETS
+                : resolvedInsets;
             const nextPadding = clampInset(Math.max(
               nextInsets.top,
               nextInsets.right,
@@ -291,7 +341,7 @@ export function useWindowControls(): WindowControlsState {
           setIsFullscreen(full);
           setStoreMaximized(max);
           setStoreFullscreen(full);
-          await syncMaximizePadding(max);
+          await syncMaximizePadding(max, full);
         };
 
         setAppWindow(win);
@@ -309,7 +359,7 @@ export function useWindowControls(): WindowControlsState {
         setIsAlwaysOnTop(alwaysOnTop);
         setStoreMaximized(maximized);
         setStoreFullscreen(fullscreen);
-        await syncMaximizePadding(maximized);
+        await syncMaximizePadding(maximized, fullscreen);
 
         unlistenResizeRef.current = await win.onResized(refreshWindowState);
         unlistenMovedRef.current = await win.onMoved(refreshWindowState);

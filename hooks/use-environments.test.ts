@@ -267,6 +267,25 @@ describe('useEnvironments', () => {
     expect(mockStoreActions.updateEnvironment).toHaveBeenCalledWith(updatedEnv);
   });
 
+  it('should surface global version verification failure from backend mutation result', async () => {
+    mockEnvUseGlobal.mockResolvedValue({
+      success: false,
+      message: 'Global version verification failed: expected `3.11`, got `3.10`',
+    });
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await expect(result.current.setGlobalVersion('python', '3.11')).rejects.toThrow(
+        'Global version verification failed: expected `3.11`, got `3.10`',
+      );
+    });
+
+    expect(mockStoreActions.setError).toHaveBeenCalledWith(
+      'Global version verification failed: expected `3.11`, got `3.10`',
+    );
+    expect(mockEnvGet).not.toHaveBeenCalled();
+  });
+
   it('should set local version and emit cache invalidation', async () => {
     mockEnvUseLocal.mockResolvedValue(undefined);
     const { result } = renderHook(() => useEnvironments());
@@ -280,6 +299,27 @@ describe('useEnvironments', () => {
       ['environment_data', 'provider_data'],
       'environments:set-local',
     );
+  });
+
+  it('should surface local version verification failure from backend mutation result', async () => {
+    mockEnvUseLocal.mockResolvedValue({
+      success: false,
+      message: 'Local version verification failed: expected local `21`, got `17` (manifest)',
+    });
+    const { result } = renderHook(() => useEnvironments());
+
+    await act(async () => {
+      await expect(
+        result.current.setLocalVersion('java', '21', '/project/path'),
+      ).rejects.toThrow(
+        'Local version verification failed: expected local `21`, got `17` (manifest)',
+      );
+    });
+
+    expect(mockStoreActions.setError).toHaveBeenCalledWith(
+      'Local version verification failed: expected local `21`, got `17` (manifest)',
+    );
+    expect(mockEmitInvalidations).not.toHaveBeenCalled();
   });
 
   it('should not emit invalidation when set local version fails', async () => {

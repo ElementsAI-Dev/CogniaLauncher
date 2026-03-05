@@ -4,20 +4,29 @@ import { DependencyTree } from "./dependency-tree";
 
 jest.mock("@/components/providers/locale-provider", () => ({
   useLocale: () => ({
-    t: (key: string) => {
+    t: (key: string, params?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         "packages.dependencyTree": "Dependency Tree",
         "packages.dependencyTreeDesc": "Resolve and visualize dependencies",
+        "packages.resolveDependencies": "Resolve Dependencies",
         "packages.enterPackageName": "Enter package name",
         "packages.resolve": "Resolve",
+        "packages.selectedDependencyPackage": `Selected package: ${params?.name ?? ""}`,
+        "packages.dependencyContextPartialHint":
+          "Provider or version is missing. You can retry, or edit package name for manual lookup.",
+        "packages.useSelectedPackage": "Use Selected Package",
         "packages.resolvingDependencies": "Resolving dependencies...",
         "packages.noDependenciesFound": "No dependencies found",
+        "packages.noDependenciesFoundFor": `No dependencies found for ${params?.name ?? ""}`,
         "packages.enterPackageToResolve": "Enter a package name to resolve",
+        "packages.readyToResolveDependenciesFor": `Ready to resolve dependencies for ${params?.name ?? ""}`,
         "packages.totalPackages": "Total packages",
         "packages.conflicts": "Conflicts",
         "packages.installed": "Installed",
         "packages.toInstall": "To Install",
         "packages.conflict": "Conflict",
+        "packages.featureProvider": "Provider",
+        "packages.version": "Version",
         "packages.searchDependencies": "Search dependencies...",
         "packages.expandAll": "Expand All",
         "packages.collapseAll": "Collapse All",
@@ -29,6 +38,7 @@ jest.mock("@/components/providers/locale-provider", () => ({
         "packages.requiredBy": "Required by:",
         "packages.suggestion": "Suggestion:",
         "packages.totalDownload": "Total download:",
+        "common.retry": "Retry",
       };
       return translations[key] || key;
     },
@@ -95,7 +105,9 @@ describe("DependencyTree", () => {
 
   it("shows empty state when no resolution", () => {
     render(<DependencyTree {...defaultProps} />);
-    expect(screen.getByText("Enter a package name to resolve")).toBeInTheDocument();
+    expect(
+      screen.getByText("Ready to resolve dependencies for numpy"),
+    ).toBeInTheDocument();
   });
 
   it("shows resolve button", () => {
@@ -107,7 +119,10 @@ describe("DependencyTree", () => {
     const user = userEvent.setup();
     render(<DependencyTree {...defaultProps} />);
     await user.click(screen.getByRole("button", { name: /resolve/i }));
-    expect(mockOnResolve).toHaveBeenCalledWith("numpy");
+    expect(mockOnResolve).toHaveBeenCalledWith({
+      packageName: "numpy",
+      source: "manual",
+    });
   });
 
   it("renders package input field", () => {
@@ -183,6 +198,32 @@ describe("DependencyTree", () => {
     const input = screen.getByPlaceholderText("Enter package name");
     await user.clear(input);
     await user.type(input, "scipy{Enter}");
-    expect(mockOnResolve).toHaveBeenCalledWith("scipy");
+    expect(mockOnResolve).toHaveBeenCalledWith({
+      packageName: "scipy",
+      source: "manual",
+    });
+  });
+
+  it("prioritizes selected package context when manual input is not overriding", async () => {
+    const user = userEvent.setup();
+    render(
+      <DependencyTree
+        {...defaultProps}
+        selectedContext={{
+          packageName: "requests",
+          providerId: "pip",
+          version: "2.31.0",
+          source: "search",
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /resolve/i }));
+    expect(mockOnResolve).toHaveBeenCalledWith({
+      packageName: "requests",
+      providerId: "pip",
+      version: "2.31.0",
+      source: "search",
+    });
   });
 });

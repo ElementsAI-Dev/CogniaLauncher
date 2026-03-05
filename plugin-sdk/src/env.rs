@@ -39,13 +39,17 @@ pub fn list_versions(env_type: &str) -> Result<Vec<EnvVersionEntry>, Error> {
 /// Install a specific version of an environment.
 pub fn install_version(env_type: &str, version: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "envType": env_type, "version": version }).to_string();
-    unsafe { host::cognia_env_install_version(input)?; }
+    unsafe {
+        host::cognia_env_install_version(input)?;
+    }
     Ok(())
 }
 
 /// Switch to a specific version of an environment.
 pub fn set_version(env_type: &str, version: &str) -> Result<(), Error> {
     let input = serde_json::json!({ "envType": env_type, "version": version }).to_string();
-    unsafe { host::cognia_env_set_version(input)?; }
+    unsafe {
+        host::cognia_env_set_version(input)?;
+    }
     Ok(())
 }

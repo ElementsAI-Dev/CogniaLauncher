@@ -5,10 +5,12 @@ use crate::platform::{
     process::{self, ProcessOptions},
 };
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// MSVC / Visual Studio Build Tools Provider
 ///
@@ -22,6 +24,18 @@ use std::time::Duration;
 pub struct MsvcProvider {
     vswhere_path: Option<PathBuf>,
 }
+
+const MSVC_SUCCESS_CACHE_TTL: Duration = Duration::from_secs(30);
+const MSVC_FAILURE_CACHE_TTL: Duration = Duration::from_secs(10);
+
+#[derive(Clone)]
+struct CachedMsvcToolchainResult {
+    value: Result<ResolvedMsvcToolchain, MsvcDetectionIssue>,
+    cached_at: Instant,
+}
+
+static MSVC_TOOLCHAIN_CACHE: Lazy<Mutex<Option<CachedMsvcToolchainResult>>> =
+    Lazy::new(|| Mutex::new(None));
 
 /// A Visual Studio instance as reported by vswhere
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +51,163 @@ struct VsInstance {
     is_prerelease: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MsvcDetectionReason {
+    VswhereMissing,
+    NoVcInstance,
+    ToolsetMissing,
+    CompilerMissing,
+    CompilerNotRunnable,
+}
+
+impl MsvcDetectionReason {
+    fn code(self) -> &'static str {
+        match self {
+            Self::VswhereMissing => "vswhere-missing",
+            Self::NoVcInstance => "no-vc-instance",
+            Self::ToolsetMissing => "toolset-missing",
+            Self::CompilerMissing => "compiler-missing",
+            Self::CompilerNotRunnable => "compiler-not-runnable",
+        }
+    }
+
+    fn message(self) -> &'static str {
+        match self {
+            Self::VswhereMissing => "vswhere.exe not found",
+            Self::NoVcInstance => "No Visual Studio instance with VC tools was found",
+            Self::ToolsetMissing => "MSVC toolset metadata is missing",
+            Self::CompilerMissing => "cl.exe could not be resolved from the discovered toolset",
+            Self::CompilerNotRunnable => "Resolved cl.exe exists but failed runtime probe",
+        }
+    }
+
+    fn severity(self) -> u8 {
+        match self {
+            Self::VswhereMissing => 100,
+            Self::NoVcInstance => 90,
+            Self::CompilerNotRunnable => 80,
+            Self::CompilerMissing => 70,
+            Self::ToolsetMissing => 60,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MsvcDetectionIssue {
+    reason: MsvcDetectionReason,
+    instance: Option<String>,
+    detail: Option<String>,
+}
+
+impl MsvcDetectionIssue {
+    fn new(reason: MsvcDetectionReason) -> Self {
+        Self {
+            reason,
+            instance: None,
+            detail: None,
+        }
+    }
+
+    fn with_instance(mut self, instance: impl Into<String>) -> Self {
+        self.instance = Some(instance.into());
+        self
+    }
+
+    fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+
+    fn to_error(&self) -> CogniaError {
+        let mut msg = format!("[{}] {}", self.reason.code(), self.reason.message());
+        if let Some(instance) = &self.instance {
+            msg.push_str(&format!(" (instance: {})", instance));
+        }
+        if let Some(detail) = &self.detail {
+            if !detail.trim().is_empty() {
+                msg.push_str(&format!(": {}", detail));
+            }
+        }
+        CogniaError::Provider(msg)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedMsvcToolchain {
+    instance: VsInstance,
+    toolset_version: String,
+    cl_exe_path: PathBuf,
+}
+
+fn choose_more_actionable_issue(
+    current: Option<MsvcDetectionIssue>,
+    candidate: MsvcDetectionIssue,
+) -> Option<MsvcDetectionIssue> {
+    match current {
+        None => Some(candidate),
+        Some(existing) => {
+            if candidate.reason.severity() > existing.reason.severity() {
+                Some(candidate)
+            } else {
+                Some(existing)
+            }
+        }
+    }
+}
+
+fn probe_output_indicates_usable_compiler(success: bool, stdout: &str, stderr: &str) -> bool {
+    if success {
+        return true;
+    }
+
+    let merged = format!("{}\n{}", stdout, stderr).to_lowercase();
+    merged.contains("microsoft")
+        && (merged.contains("c/c++") || merged.contains("c++") || merged.contains("compiler"))
+}
+
+fn resolve_instance_toolchain(
+    instance: &VsInstance,
+) -> Result<(String, PathBuf), MsvcDetectionIssue> {
+    let install_path = Path::new(&instance.installation_path);
+    let instance_name = instance.display_name.clone();
+    let toolset = read_toolset_version(install_path).ok_or_else(|| {
+        MsvcDetectionIssue::new(MsvcDetectionReason::ToolsetMissing).with_instance(&instance_name)
+    })?;
+    let cl_path = find_cl_exe(install_path, &toolset).ok_or_else(|| {
+        MsvcDetectionIssue::new(MsvcDetectionReason::CompilerMissing).with_instance(&instance_name)
+    })?;
+
+    Ok((toolset, cl_path))
+}
+
+fn toolchain_cache_ttl(result: &Result<ResolvedMsvcToolchain, MsvcDetectionIssue>) -> Duration {
+    if result.is_ok() {
+        MSVC_SUCCESS_CACHE_TTL
+    } else {
+        MSVC_FAILURE_CACHE_TTL
+    }
+}
+
+fn read_cached_toolchain_result() -> Option<Result<ResolvedMsvcToolchain, MsvcDetectionIssue>> {
+    let mut guard = MSVC_TOOLCHAIN_CACHE.lock().ok()?;
+    if let Some(cached) = guard.as_ref() {
+        if cached.cached_at.elapsed() <= toolchain_cache_ttl(&cached.value) {
+            return Some(cached.value.clone());
+        }
+    }
+    *guard = None;
+    None
+}
+
+fn write_cached_toolchain_result(result: &Result<ResolvedMsvcToolchain, MsvcDetectionIssue>) {
+    if let Ok(mut guard) = MSVC_TOOLCHAIN_CACHE.lock() {
+        *guard = Some(CachedMsvcToolchainResult {
+            value: result.clone(),
+            cached_at: Instant::now(),
+        });
+    }
+}
+
 impl MsvcProvider {
     pub fn new() -> Self {
         let vswhere_path = find_vswhere();
@@ -45,6 +216,10 @@ impl MsvcProvider {
 
     fn make_opts(&self) -> ProcessOptions {
         ProcessOptions::new().with_timeout(Duration::from_secs(30))
+    }
+
+    fn make_probe_opts(&self) -> ProcessOptions {
+        ProcessOptions::new().with_timeout(Duration::from_secs(10))
     }
 
     /// Run vswhere with given arguments and return stdout
@@ -80,6 +255,87 @@ impl MsvcProvider {
             .await?;
 
         parse_vswhere_json(&json_str)
+    }
+
+    async fn probe_cl_executable(&self, cl_path: &Path) -> bool {
+        let exe = cl_path.to_string_lossy().to_string();
+        let opts = self.make_probe_opts();
+
+        for args in [&["/Bv"][..], &["/?"][..]] {
+            if let Ok(out) = process::execute(&exe, args, Some(opts.clone())).await {
+                if probe_output_indicates_usable_compiler(out.success, &out.stdout, &out.stderr) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    async fn validate_instance(
+        &self,
+        instance: VsInstance,
+    ) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
+        let (toolset_version, cl_exe_path) = resolve_instance_toolchain(&instance)?;
+        if !self.probe_cl_executable(&cl_exe_path).await {
+            return Err(
+                MsvcDetectionIssue::new(MsvcDetectionReason::CompilerNotRunnable)
+                    .with_instance(&instance.display_name)
+                    .with_detail(cl_exe_path.display().to_string()),
+            );
+        }
+
+        Ok(ResolvedMsvcToolchain {
+            instance,
+            toolset_version,
+            cl_exe_path,
+        })
+    }
+
+    async fn resolve_usable_toolchain_uncached(
+        &self,
+    ) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
+        if self.vswhere_path.is_none() {
+            return Err(MsvcDetectionIssue::new(MsvcDetectionReason::VswhereMissing));
+        }
+
+        let instances = self.query_vc_instances().await.map_err(|err| {
+            MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance).with_detail(err.to_string())
+        })?;
+
+        if instances.is_empty() {
+            return Err(MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance));
+        }
+
+        let mut best_issue: Option<MsvcDetectionIssue> = None;
+        for instance in instances {
+            match self.validate_instance(instance).await {
+                Ok(validated) => return Ok(validated),
+                Err(issue) => {
+                    best_issue = choose_more_actionable_issue(best_issue, issue);
+                }
+            }
+        }
+
+        Err(best_issue.unwrap_or_else(|| {
+            MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance)
+        }))
+    }
+
+    async fn resolve_usable_toolchain(&self) -> Result<ResolvedMsvcToolchain, MsvcDetectionIssue> {
+        if let Some(cached) = read_cached_toolchain_result() {
+            return cached;
+        }
+
+        let resolved = self.resolve_usable_toolchain_uncached().await;
+        write_cached_toolchain_result(&resolved);
+        resolved
+    }
+
+    async fn get_usable_toolchain(&self) -> CogniaResult<ResolvedMsvcToolchain> {
+        self.resolve_usable_toolchain()
+            .await
+            .map_err(|issue| issue.to_error())
     }
 }
 
@@ -222,16 +478,7 @@ impl Provider for MsvcProvider {
     }
 
     async fn is_available(&self) -> bool {
-        // vswhere_path must be resolved for run_vswhere() to work
-        if self.vswhere_path.is_none() {
-            return false;
-        }
-
-        // Verify at least one VC instance exists
-        match self.query_vc_instances().await {
-            Ok(instances) => !instances.is_empty(),
-            Err(_) => false,
-        }
+        self.resolve_usable_toolchain().await.is_ok()
     }
 
     async fn search(
@@ -247,9 +494,9 @@ impl Provider for MsvcProvider {
         let instances = self.query_vc_instances().await?;
 
         // Match by displayName, instanceId, or productId
-        let instance = instances
-            .iter()
-            .find(|i| {
+        let matched: Vec<VsInstance> = instances
+            .into_iter()
+            .filter(|i| {
                 i.display_name.to_lowercase().contains(&name.to_lowercase())
                     || i.instance_id == name
                     || i.product_id
@@ -257,48 +504,62 @@ impl Provider for MsvcProvider {
                         .map(|pid| pid.to_lowercase().contains(&name.to_lowercase()))
                         .unwrap_or(false)
             })
-            .ok_or_else(|| {
-                CogniaError::Provider(format!("No Visual Studio instance matching '{}'", name))
-            })?;
+            .collect();
 
-        let install_path = Path::new(&instance.installation_path);
-        let toolset_version = read_toolset_version(install_path);
+        if matched.is_empty() {
+            return Err(CogniaError::Provider(format!(
+                "No Visual Studio instance matching '{}'",
+                name
+            )));
+        }
 
-        let versions = toolset_version
-            .map(|v| {
-                vec![VersionInfo {
-                    version: v,
-                    release_date: None,
-                    deprecated: false,
-                    yanked: false,
-                }]
-            })
-            .unwrap_or_default();
+        let mut last_issue: Option<MsvcDetectionIssue> = None;
+        for instance in matched {
+            match self.validate_instance(instance).await {
+                Ok(validated) => {
+                    let versions = vec![VersionInfo {
+                        version: validated.toolset_version.clone(),
+                        release_date: None,
+                        deprecated: false,
+                        yanked: false,
+                    }];
 
-        Ok(PackageInfo {
-            name: instance.display_name.clone(),
-            display_name: Some(instance.display_name.clone()),
-            description: Some(format!(
-                "Visual Studio {} ({})",
-                instance.installation_version, instance.instance_id
-            )),
-            homepage: Some("https://visualstudio.microsoft.com/vs/features/cplusplus/".to_string()),
-            license: Some("Proprietary".to_string()),
-            repository: None,
-            versions,
-            provider: self.id().into(),
-        })
+                    return Ok(PackageInfo {
+                        name: validated.instance.display_name.clone(),
+                        display_name: Some(validated.instance.display_name.clone()),
+                        description: Some(format!(
+                            "Visual Studio {} ({})",
+                            validated.instance.installation_version,
+                            validated.instance.instance_id
+                        )),
+                        homepage: Some(
+                            "https://visualstudio.microsoft.com/vs/features/cplusplus/".to_string(),
+                        ),
+                        license: Some("Proprietary".to_string()),
+                        repository: None,
+                        versions,
+                        provider: self.id().into(),
+                    });
+                }
+                Err(issue) => {
+                    last_issue = choose_more_actionable_issue(last_issue, issue);
+                }
+            }
+        }
+
+        Err(last_issue
+            .unwrap_or_else(|| MsvcDetectionIssue::new(MsvcDetectionReason::NoVcInstance))
+            .to_error())
     }
 
     async fn get_versions(&self, _name: &str) -> CogniaResult<Vec<VersionInfo>> {
         let instances = self.query_vc_instances().await?;
         let mut versions = Vec::new();
 
-        for instance in &instances {
-            let install_path = Path::new(&instance.installation_path);
-            if let Some(toolset) = read_toolset_version(install_path) {
+        for instance in instances {
+            if let Ok(validated) = self.validate_instance(instance).await {
                 versions.push(VersionInfo {
-                    version: toolset,
+                    version: validated.toolset_version,
                     release_date: None,
                     deprecated: false,
                     yanked: false,
@@ -330,11 +591,7 @@ impl Provider for MsvcProvider {
         let instances = self.query_vc_instances().await?;
         let mut packages = Vec::new();
 
-        for instance in &instances {
-            let install_path = Path::new(&instance.installation_path);
-            let toolset_version =
-                read_toolset_version(install_path).unwrap_or_else(|| "unknown".into());
-
+        for instance in instances {
             let name = instance.display_name.clone();
 
             if let Some(ref name_filter) = filter.name_filter {
@@ -343,11 +600,15 @@ impl Provider for MsvcProvider {
                 }
             }
 
+            let Ok(validated) = self.validate_instance(instance).await else {
+                continue;
+            };
+
             packages.push(InstalledPackage {
-                name,
-                version: toolset_version,
+                name: validated.instance.display_name.clone(),
+                version: validated.toolset_version,
                 provider: self.id().into(),
-                install_path: PathBuf::from(&instance.installation_path),
+                install_path: PathBuf::from(&validated.instance.installation_path),
                 installed_at: String::new(),
                 is_global: true,
             });
@@ -365,7 +626,7 @@ impl Provider for MsvcProvider {
 #[async_trait]
 impl SystemPackageProvider for MsvcProvider {
     async fn check_system_requirements(&self) -> CogniaResult<bool> {
-        Ok(self.is_available().await)
+        Ok(self.resolve_usable_toolchain().await.is_ok())
     }
 
     fn requires_elevation(&self, _operation: &str) -> bool {
@@ -373,34 +634,13 @@ impl SystemPackageProvider for MsvcProvider {
     }
 
     async fn get_version(&self) -> CogniaResult<String> {
-        let instances = self.query_vc_instances().await?;
-
-        // Return the toolset version of the latest (first) instance
-        if let Some(instance) = instances.first() {
-            let install_path = Path::new(&instance.installation_path);
-            if let Some(toolset) = read_toolset_version(install_path) {
-                return Ok(toolset);
-            }
-            // Fallback to VS installation version
-            return Ok(instance.installation_version.clone());
-        }
-
-        Err(CogniaError::Provider("No MSVC installation found".into()))
+        let resolved = self.get_usable_toolchain().await?;
+        Ok(resolved.toolset_version)
     }
 
     async fn get_executable_path(&self) -> CogniaResult<PathBuf> {
-        let instances = self.query_vc_instances().await?;
-
-        for instance in &instances {
-            let install_path = Path::new(&instance.installation_path);
-            if let Some(toolset) = read_toolset_version(install_path) {
-                if let Some(cl_path) = find_cl_exe(install_path, &toolset) {
-                    return Ok(cl_path);
-                }
-            }
-        }
-
-        Err(CogniaError::Provider("cl.exe not found".into()))
+        let resolved = self.get_usable_toolchain().await?;
+        Ok(resolved.cl_exe_path)
     }
 
     fn get_install_instructions(&self) -> Option<String> {
@@ -413,9 +653,17 @@ impl SystemPackageProvider for MsvcProvider {
 
     async fn is_package_installed(&self, name: &str) -> CogniaResult<bool> {
         let instances = self.query_vc_instances().await?;
-        Ok(instances.iter().any(|i| {
+        let mut matched = instances.into_iter().filter(|i| {
             i.display_name.to_lowercase().contains(&name.to_lowercase()) || i.instance_id == name
-        }))
+        });
+
+        while let Some(instance) = matched.next() {
+            if self.validate_instance(instance).await.is_ok() {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }
 
@@ -426,6 +674,18 @@ impl SystemPackageProvider for MsvcProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    fn make_instance(install_path: &Path) -> VsInstance {
+        VsInstance {
+            instance_id: "inst-test".to_string(),
+            installation_path: install_path.to_string_lossy().to_string(),
+            installation_version: "17.9.0".to_string(),
+            display_name: "Visual Studio Build Tools 2022".to_string(),
+            product_id: Some("Microsoft.VisualStudio.Product.BuildTools".to_string()),
+            is_prerelease: Some(false),
+        }
+    }
 
     #[test]
     fn test_find_vswhere_path_construction() {
@@ -499,6 +759,176 @@ mod tests {
     fn test_parse_vswhere_json_malformed() {
         let result = parse_vswhere_json("{not valid json}");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detection_reason_codes_are_stable() {
+        assert_eq!(
+            MsvcDetectionReason::VswhereMissing.code(),
+            "vswhere-missing"
+        );
+        assert_eq!(MsvcDetectionReason::NoVcInstance.code(), "no-vc-instance");
+        assert_eq!(MsvcDetectionReason::ToolsetMissing.code(), "toolset-missing");
+        assert_eq!(MsvcDetectionReason::CompilerMissing.code(), "compiler-missing");
+        assert_eq!(
+            MsvcDetectionReason::CompilerNotRunnable.code(),
+            "compiler-not-runnable"
+        );
+    }
+
+    #[test]
+    fn test_choose_more_actionable_issue_prefers_higher_severity() {
+        let low = MsvcDetectionIssue::new(MsvcDetectionReason::ToolsetMissing);
+        let high = MsvcDetectionIssue::new(MsvcDetectionReason::CompilerNotRunnable);
+        let chosen = choose_more_actionable_issue(Some(low), high).unwrap();
+        assert_eq!(chosen.reason, MsvcDetectionReason::CompilerNotRunnable);
+    }
+
+    #[test]
+    fn test_probe_output_usable_with_success_exit() {
+        assert!(probe_output_indicates_usable_compiler(true, "", ""));
+    }
+
+    #[test]
+    fn test_probe_output_usable_with_compiler_banner() {
+        let stderr = "Microsoft (R) C/C++ Optimizing Compiler Version 19.40.33811 for x64";
+        assert!(probe_output_indicates_usable_compiler(false, "", stderr));
+    }
+
+    #[test]
+    fn test_probe_output_rejects_unrelated_failure() {
+        let stderr = "The system cannot find the path specified.";
+        assert!(!probe_output_indicates_usable_compiler(false, "", stderr));
+    }
+
+    #[test]
+    fn test_resolve_instance_toolchain_missing_toolset() {
+        let dir = tempdir().unwrap();
+        let instance = make_instance(dir.path());
+        let err = resolve_instance_toolchain(&instance).unwrap_err();
+        assert_eq!(err.reason, MsvcDetectionReason::ToolsetMissing);
+    }
+
+    #[test]
+    fn test_resolve_instance_toolchain_missing_compiler() {
+        let dir = tempdir().unwrap();
+        let toolset_version = "14.40.33807";
+        let version_file = dir
+            .path()
+            .join("VC")
+            .join("Auxiliary")
+            .join("Build")
+            .join("Microsoft.VCToolsVersion.default.txt");
+        std::fs::create_dir_all(version_file.parent().unwrap()).unwrap();
+        std::fs::write(&version_file, format!("{}\r\n", toolset_version)).unwrap();
+
+        let instance = make_instance(dir.path());
+        let err = resolve_instance_toolchain(&instance).unwrap_err();
+        assert_eq!(err.reason, MsvcDetectionReason::CompilerMissing);
+    }
+
+    #[test]
+    fn test_resolve_instance_toolchain_prefers_x64_compiler() {
+        let dir = tempdir().unwrap();
+        let toolset_version = "14.40.33807";
+        let version_file = dir
+            .path()
+            .join("VC")
+            .join("Auxiliary")
+            .join("Build")
+            .join("Microsoft.VCToolsVersion.default.txt");
+        std::fs::create_dir_all(version_file.parent().unwrap()).unwrap();
+        std::fs::write(&version_file, format!("{}\r\n", toolset_version)).unwrap();
+
+        let cl_x64 = dir
+            .path()
+            .join("VC")
+            .join("Tools")
+            .join("MSVC")
+            .join(toolset_version)
+            .join("bin")
+            .join("HostX64")
+            .join("x64")
+            .join("cl.exe");
+        std::fs::create_dir_all(cl_x64.parent().unwrap()).unwrap();
+        std::fs::write(&cl_x64, "").unwrap();
+
+        let cl_x86 = dir
+            .path()
+            .join("VC")
+            .join("Tools")
+            .join("MSVC")
+            .join(toolset_version)
+            .join("bin")
+            .join("Hostx86")
+            .join("x86")
+            .join("cl.exe");
+        std::fs::create_dir_all(cl_x86.parent().unwrap()).unwrap();
+        std::fs::write(&cl_x86, "").unwrap();
+
+        let instance = make_instance(dir.path());
+        let (toolset, cl_path) = resolve_instance_toolchain(&instance).unwrap();
+        assert_eq!(toolset, toolset_version);
+        assert_eq!(cl_path, cl_x64);
+    }
+
+    #[test]
+    fn test_resolve_instance_toolchain_falls_back_to_x86_compiler() {
+        let dir = tempdir().unwrap();
+        let toolset_version = "14.40.33807";
+        let version_file = dir
+            .path()
+            .join("VC")
+            .join("Auxiliary")
+            .join("Build")
+            .join("Microsoft.VCToolsVersion.default.txt");
+        std::fs::create_dir_all(version_file.parent().unwrap()).unwrap();
+        std::fs::write(&version_file, format!("{}\r\n", toolset_version)).unwrap();
+
+        let cl_x86 = dir
+            .path()
+            .join("VC")
+            .join("Tools")
+            .join("MSVC")
+            .join(toolset_version)
+            .join("bin")
+            .join("Hostx86")
+            .join("x86")
+            .join("cl.exe");
+        std::fs::create_dir_all(cl_x86.parent().unwrap()).unwrap();
+        std::fs::write(&cl_x86, "").unwrap();
+
+        let instance = make_instance(dir.path());
+        let (toolset, cl_path) = resolve_instance_toolchain(&instance).unwrap();
+        assert_eq!(toolset, toolset_version);
+        assert_eq!(cl_path, cl_x86);
+    }
+
+    #[tokio::test]
+    async fn test_is_available_false_when_vswhere_missing() {
+        let p = MsvcProvider { vswhere_path: None };
+        assert!(!p.is_available().await);
+    }
+
+    #[tokio::test]
+    async fn test_check_system_requirements_false_when_vswhere_missing() {
+        let p = MsvcProvider { vswhere_path: None };
+        let ok = p.check_system_requirements().await.unwrap();
+        assert!(!ok);
+    }
+
+    #[tokio::test]
+    async fn test_get_version_error_includes_reason_code() {
+        let p = MsvcProvider { vswhere_path: None };
+        let err = p.get_version().await.unwrap_err();
+        assert!(format!("{}", err).contains("[vswhere-missing]"));
+    }
+
+    #[tokio::test]
+    async fn test_get_executable_path_error_includes_reason_code() {
+        let p = MsvcProvider { vswhere_path: None };
+        let err = p.get_executable_path().await.unwrap_err();
+        assert!(format!("{}", err).contains("[vswhere-missing]"));
     }
 
     #[test]

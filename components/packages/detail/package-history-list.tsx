@@ -4,11 +4,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
   History,
   Download,
   CheckCircle2,
   XCircle,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Empty,
@@ -23,6 +27,8 @@ import type { PackageHistoryListProps } from '@/types/packages';
 export function PackageHistoryList({
   history,
   loading,
+  error,
+  onRetry,
 }: PackageHistoryListProps) {
   const { t } = useLocale();
 
@@ -68,7 +74,20 @@ export function PackageHistoryList({
         </CardDescription>
       </CardHeader>
       <CardContent className="min-h-0 flex-1">
-        {history.length === 0 ? (
+        {error ? (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between gap-3">
+              <span>{error}</span>
+              {onRetry && (
+                <Button size="sm" variant="outline" onClick={onRetry}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {t('packages.detail.retry')}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : history.length === 0 ? (
           <Empty className="border-none py-12">
             <EmptyHeader>
               <EmptyMedia>

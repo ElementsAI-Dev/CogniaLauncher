@@ -83,6 +83,7 @@ export function EnvDetailHeader({
                 <DetectedVersionBadge
                   version={detectedVersion.version}
                   source={detectedVersion.source}
+                  sourceType={detectedVersion.source_type}
                   t={t}
                   compact
                 />

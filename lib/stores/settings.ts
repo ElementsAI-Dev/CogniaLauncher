@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { CacheInfo, CacheSettings, CacheVerificationResult, PlatformInfo, TrayClickBehavior } from '../tauri';
+import {
+  DEFAULT_SIDEBAR_ITEM_ORDER,
+  normalizeSidebarItemOrder,
+  type SidebarItemId,
+} from '@/lib/sidebar/order';
 
 export interface AppSettings {
   checkUpdatesOnStart: boolean;
@@ -11,6 +16,7 @@ export interface AppSettings {
   autostart: boolean;
   trayClickBehavior: TrayClickBehavior;
   showNotifications: boolean;
+  sidebarItemOrder: SidebarItemId[];
 }
 
 interface SettingsState {
@@ -45,6 +51,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autostart: false,
   trayClickBehavior: 'toggle_window',
   showNotifications: true,
+  sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -78,13 +85,15 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'cognia-settings',
       storage: createJSONStorage(() => localStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => {
         const state = (persistedState ?? {}) as Partial<SettingsState> & {
           appSettings?: Partial<AppSettings>;
         };
 
         const appSettings: Partial<AppSettings> = state.appSettings ?? {};
+        const rawSidebarItemOrder = (appSettings as Record<string, unknown>)
+          .sidebarItemOrder;
 
         // Keep backward compatibility with older persisted payloads.
         // New keys always fall back to defaults.
@@ -104,9 +113,14 @@ export const useSettingsStore = create<SettingsState>()(
             appSettings.trayClickBehavior ?? DEFAULT_APP_SETTINGS.trayClickBehavior,
           showNotifications:
             appSettings.showNotifications ?? DEFAULT_APP_SETTINGS.showNotifications,
+          sidebarItemOrder: normalizeSidebarItemOrder(
+            Array.isArray(rawSidebarItemOrder)
+              ? (rawSidebarItemOrder as string[])
+              : DEFAULT_APP_SETTINGS.sidebarItemOrder,
+          ),
         };
 
-        if (version < 2) {
+        if (version < 3) {
           return { ...state, appSettings: migrated } as SettingsState;
         }
 

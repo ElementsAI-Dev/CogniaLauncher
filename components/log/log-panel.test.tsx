@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { LogPanel } from "./log-panel";
 import { useLogStore } from "@/lib/stores/log";
 
@@ -53,6 +53,8 @@ jest.mock("@/components/providers/locale-provider", () => ({
 }));
 
 describe("LogPanel", () => {
+  const baseGetFilteredLogs = useLogStore.getState().getFilteredLogs;
+
   beforeEach(() => {
     // Reset store state
     useLogStore.setState({
@@ -70,6 +72,9 @@ describe("LogPanel", () => {
       drawerOpen: false,
       logFiles: [],
       selectedLogFile: null,
+      bookmarkedIds: [],
+      showBookmarksOnly: false,
+      getFilteredLogs: baseGetFilteredLogs,
     });
   });
 
@@ -252,6 +257,48 @@ describe("LogPanel", () => {
 
       render(<LogPanel />);
       expect(screen.getByText("No scroll message")).toBeInTheDocument();
+    });
+
+    it("keeps mounted virtual rows bounded under high log volume", () => {
+      useLogStore.getState().addLogs(
+        Array.from({ length: 1200 }, (_, index) => ({
+          timestamp: Date.now() + index,
+          level: "info" as const,
+          message: `Large message ${index + 1}`,
+        })),
+      );
+
+      render(<LogPanel />);
+
+      const mountedRows = screen.getAllByTestId("log-panel-virtual-row");
+      expect(mountedRows.length).toBeGreaterThan(0);
+      expect(mountedRows.length).toBeLessThan(1200);
+    });
+
+    it("does not recompute filtered logs for scroll-only updates", () => {
+      useLogStore.getState().addLogs(
+        Array.from({ length: 300 }, (_, index) => ({
+          timestamp: Date.now() + index,
+          level: "info" as const,
+          message: `Scroll message ${index + 1}`,
+        })),
+      );
+
+      const originalGetFilteredLogs = useLogStore.getState().getFilteredLogs;
+      const recomputeSpy = jest.fn(() => originalGetFilteredLogs());
+      useLogStore.setState({ getFilteredLogs: recomputeSpy });
+
+      render(<LogPanel />);
+      expect(recomputeSpy).toHaveBeenCalledTimes(1);
+
+      const scrollContainer = screen.getByTestId("log-panel-scroll-container");
+      fireEvent.scroll(scrollContainer, { target: { scrollTop: 200 } });
+      expect(recomputeSpy).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        useLogStore.getState().setSearch("Scroll message 42");
+      });
+      expect(recomputeSpy).toHaveBeenCalledTimes(2);
     });
   });
 });

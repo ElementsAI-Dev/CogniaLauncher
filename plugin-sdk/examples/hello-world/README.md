@@ -6,6 +6,10 @@ A minimal example plugin demonstrating the Cognia Plugin SDK.
 
 - **hello** — Greets the user with platform info and i18n translation
 - **env-check** — Detects installed development environments (Node.js, Python, Rust)
+- **env-dashboard** — Declarative dashboard with:
+  - Extended input fields (`radio-group`, `number`, `switch`, `multi-select`, `date-time`, `password`)
+  - Structured output blocks (`result`, `stat-cards`, `description-list`, `json-view`)
+  - Action payload metadata handling (`version`, `sourceType`, `sourceId`, `formDataTypes`)
 
 ## Build
 
@@ -27,3 +31,4 @@ Copy this directory into CogniaLauncher's plugins folder, or use the "Install Pl
 - `cognia::log::info(msg)` — Write to launcher log
 - `cognia::event::emit_str(name, data)` — Emit plugin events
 - `cognia::event::get_plugin_id()` — Get own plugin ID
+- `cognia_plugin_sdk::ui::*` — Declarative UI builders, including extended form/output blocks and action parsing

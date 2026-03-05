@@ -46,12 +46,18 @@ export function LogPanel({
 }: LogPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScroll = useLogStore((state) => state.autoScroll);
+  const logs = useLogStore((state) => state.logs);
   const filter = useLogStore((state) => state.filter);
+  const bookmarkedIds = useLogStore((state) => state.bookmarkedIds);
+  const showBookmarksOnly = useLogStore((state) => state.showBookmarksOnly);
   const getFilteredLogs = useLogStore((state) => state.getFilteredLogs);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(600);
 
-  const filteredLogs = getFilteredLogs();
+  const filteredLogs = useMemo(
+    () => getFilteredLogs(),
+    [bookmarkedIds, filter, getFilteredLogs, logs, showBookmarksOnly],
+  );
   const totalHeight = filteredLogs.length * ROW_HEIGHT;
 
   const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
@@ -103,6 +109,7 @@ export function LogPanel({
       ) : (
         <div
           ref={scrollRef}
+          data-testid="log-panel-scroll-container"
           className="flex-1 min-h-0 overflow-auto"
           onScroll={handleScroll}
         >
@@ -110,6 +117,7 @@ export function LogPanel({
             {visibleLogs.map((entry, i) => (
               <div
                 key={entry.id}
+                data-testid="log-panel-virtual-row"
                 style={{
                   position: "absolute",
                   top: (startIdx + i) * ROW_HEIGHT,

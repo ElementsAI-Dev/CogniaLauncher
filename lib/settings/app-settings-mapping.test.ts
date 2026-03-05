@@ -1,4 +1,5 @@
 import type { AppSettings } from "@/lib/stores/settings";
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
 import {
   appSettingKeyToConfigKey,
   appSettingValueToConfigValue,
@@ -15,6 +16,7 @@ const fallback: AppSettings = {
   autostart: false,
   trayClickBehavior: "toggle_window",
   showNotifications: true,
+  sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
 };
 
 describe("app-settings-mapping", () => {
@@ -47,10 +49,14 @@ describe("app-settings-mapping", () => {
       "updates.check_on_start",
     );
     expect(appSettingKeyToConfigKey("autostart")).toBeUndefined();
+    expect(appSettingKeyToConfigKey("sidebarItemOrder")).toBeUndefined();
   });
 
   it("returns null config value for autostart", () => {
     expect(appSettingValueToConfigValue("autostart", true)).toBeNull();
+    expect(
+      appSettingValueToConfigValue("sidebarItemOrder", [...DEFAULT_SIDEBAR_ITEM_ORDER]),
+    ).toBeNull();
     expect(appSettingValueToConfigValue("notifyOnUpdates", false)).toBe("false");
   });
 

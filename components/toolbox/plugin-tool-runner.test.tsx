@@ -27,8 +27,24 @@ jest.mock('@/lib/clipboard', () => ({
 }));
 
 jest.mock('@/components/plugin/plugin-ui-renderer', () => ({
-  PluginUiRenderer: ({ blocks }: { blocks: unknown[] }) => (
-    <div data-testid="plugin-ui-renderer">blocks: {blocks.length}</div>
+  PluginUiRenderer: ({
+    blocks,
+    onAction,
+    state,
+  }: {
+    blocks: unknown[];
+    onAction: (action: Record<string, unknown>) => void;
+    state?: Record<string, unknown>;
+  }) => (
+    <div data-testid="plugin-ui-renderer">
+      blocks: {blocks.length}
+      <button
+        type="button"
+        onClick={() => onAction({ action: 'button_click', buttonId: 'mock-button', state })}
+      >
+        trigger-action
+      </button>
+    </div>
   ),
 }));
 
@@ -98,6 +114,57 @@ describe('PluginToolRunner', () => {
     const tool = { ...baseTool, uiMode: 'declarative' };
     render(<PluginToolRunner tool={tool} />);
     expect(screen.getByText('toolbox.plugin.uiModeDeclarative')).toBeInTheDocument();
+  });
+
+  it('normalizes declarative action payload before calling plugin runtime', async () => {
+    mockCallTool
+      .mockResolvedValueOnce(JSON.stringify({ ui: [{ type: 'text', content: 'hello' }] }))
+      .mockResolvedValueOnce(JSON.stringify({ ui: [{ type: 'text', content: 'after-action' }] }));
+
+    const tool = { ...baseTool, uiMode: 'declarative' };
+    render(<PluginToolRunner tool={tool} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-ui-renderer')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('trigger-action'));
+    });
+
+    await waitFor(() => {
+      expect(mockCallTool).toHaveBeenCalledTimes(2);
+    });
+
+    const payload = JSON.parse(String(mockCallTool.mock.calls[1][2]));
+    expect(payload.action).toBe('button_click');
+    expect(payload.buttonId).toBe('mock-button');
+    expect(payload.version).toBe(2);
+    expect(payload.sourceType).toBe('declarative');
+    expect(payload.sourceId).toBe(baseTool.toolId);
+  });
+
+  it('shows declarative action error and keeps panel responsive', async () => {
+    mockCallTool
+      .mockResolvedValueOnce(JSON.stringify({ ui: [{ type: 'text', content: 'hello' }] }))
+      .mockRejectedValueOnce(new Error('Action execution failed'));
+
+    const tool = { ...baseTool, uiMode: 'declarative' };
+    render(<PluginToolRunner tool={tool} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('plugin-ui-renderer')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('trigger-action'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Action execution failed')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('plugin-ui-renderer')).toBeInTheDocument();
   });
 
   it('renders iframe mode', () => {

@@ -30,6 +30,8 @@
 //! }
 //! ```
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -135,6 +137,30 @@ pub enum UiBlock {
         accept: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         multiple: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "includeDataUrl")]
+        include_data_url: Option<bool>,
+    },
+    #[serde(rename = "json-view")]
+    JsonView {
+        data: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expanded: Option<bool>,
+    },
+    #[serde(rename = "description-list")]
+    DescriptionList { items: Vec<DescriptionItem> },
+    #[serde(rename = "stat-cards")]
+    StatCards { stats: Vec<StatCard> },
+    #[serde(rename = "result")]
+    Result {
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
     },
     #[serde(rename = "group")]
     Group {
@@ -153,10 +179,55 @@ pub struct KeyValueItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DescriptionItem {
+    pub term: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatCard {
+    pub id: String,
+    pub label: String,
+    pub value: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "helpText")]
+    pub help_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum FormField {
     #[serde(rename = "input")]
     Input {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
+        default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+    },
+    #[serde(rename = "number")]
+    Number {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        placeholder: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
+        default_value: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        step: Option<f64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+    },
+    #[serde(rename = "password")]
+    Password {
         id: String,
         label: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,6 +253,46 @@ pub enum FormField {
         options: Vec<SelectOption>,
         #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
         default_value: Option<String>,
+    },
+    #[serde(rename = "radio-group")]
+    RadioGroup {
+        id: String,
+        label: String,
+        options: Vec<SelectOption>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
+        default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+    },
+    #[serde(rename = "switch")]
+    Switch {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultChecked")]
+        default_checked: Option<bool>,
+    },
+    #[serde(rename = "date-time")]
+    DateTime {
+        id: String,
+        label: String,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValue")]
+        default_value: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        min: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        max: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
+    },
+    #[serde(rename = "multi-select")]
+    MultiSelect {
+        id: String,
+        label: String,
+        options: Vec<SelectOption>,
+        #[serde(skip_serializing_if = "Option::is_none", rename = "defaultValues")]
+        default_values: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        required: Option<bool>,
     },
     #[serde(rename = "checkbox")]
     Checkbox {
@@ -242,6 +353,8 @@ pub struct UiSelectedFile {
     pub file_type: Option<String>,
     #[serde(default)]
     pub data_url: Option<String>,
+    #[serde(default)]
+    pub last_modified: Option<u64>,
 }
 
 // ============================================================================
@@ -253,11 +366,19 @@ pub struct UiSelectedFile {
 pub struct UiAction {
     pub action: String,
     #[serde(default)]
+    pub version: Option<u8>,
+    #[serde(default)]
+    pub source_type: Option<String>,
+    #[serde(default)]
+    pub source_id: Option<String>,
+    #[serde(default)]
     pub button_id: Option<String>,
     #[serde(default)]
     pub form_id: Option<String>,
     #[serde(default)]
     pub form_data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub form_data_types: Option<HashMap<String, String>>,
     #[serde(default)]
     pub file_input_id: Option<String>,
     #[serde(default)]
@@ -345,6 +466,187 @@ pub fn key_value(items: &[(&str, &str)]) -> UiBlock {
     }
 }
 
+pub fn form(id: &str, fields: Vec<FormField>, submit_label: Option<&str>) -> UiBlock {
+    UiBlock::Form {
+        id: id.to_string(),
+        fields,
+        submit_label: submit_label.map(|v| v.to_string()),
+    }
+}
+
+pub fn select_option(label: &str, value: &str) -> SelectOption {
+    SelectOption {
+        label: label.to_string(),
+        value: value.to_string(),
+    }
+}
+
+pub fn input_field(
+    id: &str,
+    label: &str,
+    placeholder: Option<&str>,
+    default_value: Option<&str>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::Input {
+        id: id.to_string(),
+        label: label.to_string(),
+        placeholder: placeholder.map(|v| v.to_string()),
+        default_value: default_value.map(|v| v.to_string()),
+        required,
+    }
+}
+
+pub fn number_field(
+    id: &str,
+    label: &str,
+    placeholder: Option<&str>,
+    default_value: Option<f64>,
+    min: Option<f64>,
+    max: Option<f64>,
+    step: Option<f64>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::Number {
+        id: id.to_string(),
+        label: label.to_string(),
+        placeholder: placeholder.map(|v| v.to_string()),
+        default_value,
+        min,
+        max,
+        step,
+        required,
+    }
+}
+
+pub fn password_field(
+    id: &str,
+    label: &str,
+    placeholder: Option<&str>,
+    default_value: Option<&str>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::Password {
+        id: id.to_string(),
+        label: label.to_string(),
+        placeholder: placeholder.map(|v| v.to_string()),
+        default_value: default_value.map(|v| v.to_string()),
+        required,
+    }
+}
+
+pub fn textarea_field(
+    id: &str,
+    label: &str,
+    placeholder: Option<&str>,
+    rows: Option<u32>,
+) -> FormField {
+    FormField::Textarea {
+        id: id.to_string(),
+        label: label.to_string(),
+        placeholder: placeholder.map(|v| v.to_string()),
+        rows,
+    }
+}
+
+pub fn select_field(
+    id: &str,
+    label: &str,
+    options: Vec<SelectOption>,
+    default_value: Option<&str>,
+) -> FormField {
+    FormField::Select {
+        id: id.to_string(),
+        label: label.to_string(),
+        options,
+        default_value: default_value.map(|v| v.to_string()),
+    }
+}
+
+pub fn radio_group_field(
+    id: &str,
+    label: &str,
+    options: Vec<SelectOption>,
+    default_value: Option<&str>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::RadioGroup {
+        id: id.to_string(),
+        label: label.to_string(),
+        options,
+        default_value: default_value.map(|v| v.to_string()),
+        required,
+    }
+}
+
+pub fn switch_field(id: &str, label: &str, default_checked: Option<bool>) -> FormField {
+    FormField::Switch {
+        id: id.to_string(),
+        label: label.to_string(),
+        default_checked,
+    }
+}
+
+pub fn date_time_field(
+    id: &str,
+    label: &str,
+    default_value: Option<&str>,
+    min: Option<&str>,
+    max: Option<&str>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::DateTime {
+        id: id.to_string(),
+        label: label.to_string(),
+        default_value: default_value.map(|v| v.to_string()),
+        min: min.map(|v| v.to_string()),
+        max: max.map(|v| v.to_string()),
+        required,
+    }
+}
+
+pub fn multi_select_field(
+    id: &str,
+    label: &str,
+    options: Vec<SelectOption>,
+    default_values: Option<Vec<String>>,
+    required: Option<bool>,
+) -> FormField {
+    FormField::MultiSelect {
+        id: id.to_string(),
+        label: label.to_string(),
+        options,
+        default_values,
+        required,
+    }
+}
+
+pub fn checkbox_field(id: &str, label: &str, default_checked: Option<bool>) -> FormField {
+    FormField::Checkbox {
+        id: id.to_string(),
+        label: label.to_string(),
+        default_checked,
+    }
+}
+
+pub fn slider_field(
+    id: &str,
+    label: &str,
+    min: f64,
+    max: f64,
+    step: Option<f64>,
+    default_value: Option<f64>,
+) -> FormField {
+    FormField::Slider {
+        id: id.to_string(),
+        label: label.to_string(),
+        min,
+        max,
+        step,
+        default_value,
+    }
+}
+
 pub fn actions(buttons: &[ActionButton]) -> UiBlock {
     UiBlock::Actions {
         buttons: buttons.to_vec(),
@@ -402,12 +704,73 @@ pub fn copy_button(content: &str, label: Option<&str>) -> UiBlock {
     }
 }
 
-pub fn file_input(id: &str, label: &str, accept: Option<&str>, multiple: Option<bool>) -> UiBlock {
+pub fn file_input(
+    id: &str,
+    label: &str,
+    accept: Option<&str>,
+    multiple: Option<bool>,
+    include_data_url: Option<bool>,
+) -> UiBlock {
     UiBlock::FileInput {
         id: id.to_string(),
         label: label.to_string(),
         accept: accept.map(|v| v.to_string()),
         multiple,
+        include_data_url,
+    }
+}
+
+pub fn json_view(data: &serde_json::Value, label: Option<&str>, expanded: Option<bool>) -> UiBlock {
+    UiBlock::JsonView {
+        data: data.clone(),
+        label: label.map(|v| v.to_string()),
+        expanded,
+    }
+}
+
+pub fn description_list(items: &[(&str, &str)]) -> UiBlock {
+    UiBlock::DescriptionList {
+        items: items
+            .iter()
+            .map(|(term, description)| DescriptionItem {
+                term: term.to_string(),
+                description: description.to_string(),
+            })
+            .collect(),
+    }
+}
+
+pub fn stat_card(
+    id: &str,
+    label: &str,
+    value: serde_json::Value,
+    help_text: Option<&str>,
+    status: Option<&str>,
+) -> StatCard {
+    StatCard {
+        id: id.to_string(),
+        label: label.to_string(),
+        value,
+        help_text: help_text.map(|v| v.to_string()),
+        status: status.map(|v| v.to_string()),
+    }
+}
+
+pub fn stat_cards(stats: Vec<StatCard>) -> UiBlock {
+    UiBlock::StatCards { stats }
+}
+
+pub fn result(
+    message: &str,
+    status: Option<&str>,
+    title: Option<&str>,
+    details: Option<&str>,
+) -> UiBlock {
+    UiBlock::Result {
+        message: message.to_string(),
+        title: title.map(|v| v.to_string()),
+        details: details.map(|v| v.to_string()),
+        status: status.map(|v| v.to_string()),
     }
 }
 
@@ -457,10 +820,7 @@ mod tests {
 
     #[test]
     fn test_table_block() {
-        let block = table(
-            &["Name", "Version"],
-            &[vec!["Node".into(), "20.0".into()]],
-        );
+        let block = table(&["Name", "Version"], &[vec!["Node".into(), "20.0".into()]]);
         let json = serde_json::to_string(&block).unwrap();
         assert!(json.contains("\"type\":\"table\""));
         assert!(json.contains("\"headers\":[\"Name\",\"Version\"]"));
@@ -498,6 +858,20 @@ mod tests {
         let action = parse_action(input).unwrap();
         assert_eq!(action.action, "form_submit");
         assert_eq!(action.form_id.as_deref(), Some("settings"));
+    }
+
+    #[test]
+    fn test_parse_action_with_v2_metadata() {
+        let input = r#"{"action":"form_submit","version":2,"sourceType":"form","sourceId":"dashboard-controls","formDataTypes":{"retryCount":"number"}}"#;
+        let action = parse_action(input).unwrap();
+        assert_eq!(action.version, Some(2));
+        assert_eq!(action.source_type.as_deref(), Some("form"));
+        assert_eq!(action.source_id.as_deref(), Some("dashboard-controls"));
+        let form_types = action.form_data_types.unwrap();
+        assert_eq!(
+            form_types.get("retryCount").map(String::as_str),
+            Some("number")
+        );
     }
 
     #[test]
@@ -547,9 +921,88 @@ mod tests {
 
     #[test]
     fn test_file_input_block() {
-        let block = file_input("upload", "Upload File", Some(".json"), Some(true));
+        let block = file_input(
+            "upload",
+            "Upload File",
+            Some(".json"),
+            Some(true),
+            Some(false),
+        );
         let json = serde_json::to_string(&block).unwrap();
         assert!(json.contains("\"type\":\"file-input\""));
         assert!(json.contains("\"id\":\"upload\""));
+        assert!(json.contains("\"includeDataUrl\":false"));
+    }
+
+    #[test]
+    fn test_extended_form_fields() {
+        let fields = vec![
+            number_field(
+                "retry",
+                "Retry",
+                None,
+                Some(1.0),
+                Some(0.0),
+                Some(5.0),
+                Some(1.0),
+                Some(true),
+            ),
+            password_field("token", "Token", None, None, Some(false)),
+            radio_group_field(
+                "channel",
+                "Channel",
+                vec![
+                    select_option("Stable", "stable"),
+                    select_option("Canary", "canary"),
+                ],
+                Some("stable"),
+                Some(true),
+            ),
+            switch_field("includePrerelease", "Include Pre-release", Some(false)),
+            date_time_field("scheduleAt", "Schedule At", None, None, None, None),
+            multi_select_field(
+                "targets",
+                "Targets",
+                vec![
+                    select_option("Node", "node"),
+                    select_option("Python", "python"),
+                ],
+                Some(vec!["node".into()]),
+                Some(true),
+            ),
+        ];
+        let block = form("dashboard-controls", fields, Some("Apply"));
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains("\"type\":\"form\""));
+        assert!(json.contains("\"type\":\"number\""));
+        assert!(json.contains("\"type\":\"password\""));
+        assert!(json.contains("\"type\":\"radio-group\""));
+        assert!(json.contains("\"type\":\"switch\""));
+        assert!(json.contains("\"type\":\"date-time\""));
+        assert!(json.contains("\"type\":\"multi-select\""));
+    }
+
+    #[test]
+    fn test_structured_output_blocks() {
+        let blocks = vec![
+            result("Conversion complete", Some("success"), Some("Result"), None),
+            json_view(&serde_json::json!({"ok": true}), Some("Payload"), None),
+            description_list(&[("Provider", "pnpm"), ("Version", "9.0.0")]),
+            stat_cards(vec![
+                stat_card("total", "Total", serde_json::json!(12), None, None),
+                stat_card(
+                    "passed",
+                    "Passed",
+                    serde_json::json!(12),
+                    None,
+                    Some("success"),
+                ),
+            ]),
+        ];
+        let json = serde_json::to_string(&blocks).unwrap();
+        assert!(json.contains("\"type\":\"result\""));
+        assert!(json.contains("\"type\":\"json-view\""));
+        assert!(json.contains("\"type\":\"description-list\""));
+        assert!(json.contains("\"type\":\"stat-cards\""));
     }
 }

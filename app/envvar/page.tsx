@@ -24,9 +24,10 @@ import {
   EmptyDescription,
 } from '@/components/ui/empty';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { AlertCircle, Variable, Route, Terminal, Plus, Upload, Download, RefreshCw, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { toast } from 'sonner';
-import type { EnvVarScope, PersistentEnvVar } from '@/types/tauri';
+import type { EnvVarScope } from '@/types/tauri';
 
 type EnvVarAction =
   | 'refresh'
@@ -41,15 +42,37 @@ type EnvVarAction =
   | 'path-deduplicate'
   | null;
 
+const DEFAULT_CONFLICT_IGNORED_KEYS = ['PATH', 'PATHEXT', 'TEMP', 'TMP', 'PSMODULEPATH'] as const;
+const CONFLICT_CUSTOM_IGNORED_STORAGE_KEY = 'envvar.customIgnoredConflictKeys';
+
+function normalizeEnvKey(key: string): string {
+  return key.trim().toUpperCase();
+}
+
+function normalizeEnvKeyList(keys: string[]): string[] {
+  return Array.from(new Set(keys.map(normalizeEnvKey).filter(Boolean)));
+}
+
+function parseEnvKeyInput(input: string): string[] {
+  return normalizeEnvKeyList(input.split(/[\s,;]+/));
+}
+
 export default function EnvVarPage() {
   const {
     envVars,
+    userPersistentVarsTyped,
+    systemPersistentVarsTyped,
     pathEntries,
     shellProfiles,
     conflicts,
-    loading,
+    detectionLoading,
+    pathLoading,
+    importExportLoading,
     error,
-    fetchAllVars,
+    detectionState,
+    detectionFromCache,
+    detectionError,
+    detectionCanRetry,
     setVar,
     removeVar,
     fetchPath,
@@ -60,9 +83,8 @@ export default function EnvVarPage() {
     readShellProfile,
     importEnvFile,
     exportEnvFile,
-    fetchPersistentVarsTyped,
     deduplicatePath,
-    detectConflicts,
+    loadDetection,
   } = useEnvVar();
 
   const { t } = useLocale();
@@ -76,50 +98,41 @@ export default function EnvVarPage() {
   const [importExportOpen, setImportExportOpen] = useState(false);
   const [importExportTab, setImportExportTab] = useState<'import' | 'export'>('import');
   const [pathScope, setPathScope] = useState<EnvVarScope>('process');
-  const [userPersistentVars, setUserPersistentVars] = useState<PersistentEnvVar[]>([]);
-  const [systemPersistentVars, setSystemPersistentVars] = useState<PersistentEnvVar[]>([]);
   const [activeTab, setActiveTab] = useState<'variables' | 'path' | 'shells'>('variables');
   const [activeAction, setActiveAction] = useState<EnvVarAction>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [compactConflictView, setCompactConflictView] = useState(false);
+  const [customIgnoredConflictKeys, setCustomIgnoredConflictKeys] = useState<string[]>([]);
+  const [conflictIgnoreInput, setConflictIgnoreInput] = useState('');
+  const [conflictsPanelCollapsed, setConflictsPanelCollapsed] = useState(false);
+  const [conflictsPanelDismissed, setConflictsPanelDismissed] = useState(false);
 
-  const refreshVariables = useCallback(async (scope: EnvVarScope | 'all') => {
+  const refreshVariables = useCallback(async (
+    scope: EnvVarScope | 'all',
+    options?: { forceRefresh?: boolean },
+  ) => {
     if (!isTauri()) return;
-
-    if (scope === 'all') {
-      const [, userVars, systemVars] = await Promise.all([
-        fetchAllVars(),
-        fetchPersistentVarsTyped('user'),
-        fetchPersistentVarsTyped('system'),
-        detectConflicts(),
-      ]);
-      setUserPersistentVars(userVars);
-      setSystemPersistentVars(systemVars);
-      return;
-    }
-
-    if (scope === 'process') {
-      await fetchAllVars();
-      return;
-    }
-
-    const [typedVars] = await Promise.all([
-      fetchPersistentVarsTyped(scope),
-      detectConflicts(),
-    ]);
-
-    if (scope === 'user') {
-      setUserPersistentVars(typedVars);
-    } else {
-      setSystemPersistentVars(typedVars);
-    }
-  }, [detectConflicts, fetchAllVars, fetchPersistentVarsTyped]);
+    await loadDetection(scope, options);
+  }, [loadDetection]);
 
   useEffect(() => {
     const syncViewport = () => setCompactConflictView(window.innerWidth < 768);
     syncViewport();
     window.addEventListener('resize', syncViewport);
     return () => window.removeEventListener('resize', syncViewport);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CONFLICT_CUSTOM_IGNORED_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setCustomIgnoredConflictKeys(normalizeEnvKeyList(parsed.filter((item): item is string => typeof item === 'string')));
+      }
+    } catch {
+      // Ignore malformed persisted settings and fallback to defaults.
+    }
   }, []);
 
   const resolveRefreshScope = useCallback((scope: EnvVarScope): EnvVarScope | 'all' => {
@@ -155,18 +168,67 @@ export default function EnvVarPage() {
     }
   }, [activeAction, t]);
 
+  const detectionStatusText = useMemo(() => {
+    switch (detectionState) {
+      case 'loading-no-cache':
+        return t('envvar.detection.loading');
+      case 'showing-cache-refreshing':
+        return t('envvar.detection.cacheRefreshing');
+      case 'showing-fresh':
+        return t('envvar.detection.fresh');
+      case 'empty':
+        return t('envvar.detection.empty');
+      case 'error':
+        return detectionFromCache
+          ? t('envvar.detection.errorWithCache')
+          : t('envvar.detection.error');
+      case 'idle':
+      default:
+        return t('envvar.detection.idle');
+    }
+  }, [detectionFromCache, detectionState, t]);
+
+  const defaultIgnoredConflictKeys = useMemo(
+    () => normalizeEnvKeyList([...DEFAULT_CONFLICT_IGNORED_KEYS]),
+    [],
+  );
+
+  const allIgnoredConflictKeySet = useMemo(
+    () => new Set([...defaultIgnoredConflictKeys, ...customIgnoredConflictKeys]),
+    [customIgnoredConflictKeys, defaultIgnoredConflictKeys],
+  );
+
+  const visibleConflicts = useMemo(
+    () => conflicts.filter((conflict) => !allIgnoredConflictKeySet.has(normalizeEnvKey(conflict.key))),
+    [allIgnoredConflictKeySet, conflicts],
+  );
+
+  const hiddenConflictCount = conflicts.length - visibleConflicts.length;
+
   const envRows = useMemo(() => buildEnvVarRows({
     processVars: envVars,
-    userPersistentVars,
-    systemPersistentVars,
+    userPersistentVars: userPersistentVarsTyped,
+    systemPersistentVars: systemPersistentVarsTyped,
     scopeFilter,
-    conflicts,
-  }), [conflicts, envVars, scopeFilter, systemPersistentVars, userPersistentVars]);
+    conflicts: visibleConflicts,
+  }), [envVars, scopeFilter, systemPersistentVarsTyped, userPersistentVarsTyped, visibleConflicts]);
+
+  const persistCustomIgnoredConflictKeys = useCallback((nextKeys: string[]) => {
+    const normalized = normalizeEnvKeyList(nextKeys);
+    setCustomIgnoredConflictKeys(normalized);
+    try {
+      window.localStorage.setItem(CONFLICT_CUSTOM_IGNORED_STORAGE_KEY, JSON.stringify(normalized));
+    } catch {
+      // Ignore storage write errors.
+    }
+  }, []);
 
   useEffect(() => {
     if (!initializedRef.current && isTauri()) {
       initializedRef.current = true;
-      const timer = setTimeout(() => refreshVariables('all'), 0);
+      const timer = setTimeout(() => {
+        void refreshVariables('all');
+      }, 0);
       return () => clearTimeout(timer);
     }
   }, [refreshVariables]);
@@ -215,7 +277,7 @@ export default function EnvVarPage() {
         setActionError(t('common.error'));
         return false;
       }
-      await refreshVariables(resolveRefreshScope(scope));
+      await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
       toast.success(successMessage);
       return true;
     } catch (err) {
@@ -244,7 +306,7 @@ export default function EnvVarPage() {
     setActionError(null);
     setActiveAction('refresh');
     try {
-      await refreshVariables(scopeFilter);
+      await refreshVariables(scopeFilter, { forceRefresh: true });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -292,7 +354,33 @@ export default function EnvVarPage() {
     setEditDialogOpen(true);
   }, []);
 
-  const busy = loading || activeAction !== null;
+  const handleAddIgnoredConflictKeys = useCallback(() => {
+    const nextKeys = parseEnvKeyInput(conflictIgnoreInput);
+    if (nextKeys.length === 0) return;
+    const filtered = nextKeys.filter(
+      (key) => !defaultIgnoredConflictKeys.includes(key) && !customIgnoredConflictKeys.includes(key),
+    );
+    if (filtered.length === 0) {
+      setConflictIgnoreInput('');
+      return;
+    }
+    persistCustomIgnoredConflictKeys([...customIgnoredConflictKeys, ...filtered]);
+    setConflictIgnoreInput('');
+  }, [
+    conflictIgnoreInput,
+    customIgnoredConflictKeys,
+    defaultIgnoredConflictKeys,
+    persistCustomIgnoredConflictKeys,
+  ]);
+
+  const handleRemoveIgnoredConflictKey = useCallback((key: string) => {
+    persistCustomIgnoredConflictKeys(customIgnoredConflictKeys.filter((item) => item !== key));
+  }, [customIgnoredConflictKeys, persistCustomIgnoredConflictKeys]);
+
+  const variableBusy = activeAction !== null || detectionLoading;
+  const pathBusy = activeAction !== null || pathLoading;
+  const importExportBusy = activeAction !== null || importExportLoading;
+  const headerBusy = activeAction !== null || detectionLoading || importExportLoading;
 
   if (!isTauri()) {
     return (
@@ -315,13 +403,16 @@ export default function EnvVarPage() {
   }
 
   return (
-    <div className="p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
-      <PageHeader
-        title={t('envvar.title')}
-        description={t('envvar.description')}
-        actions={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end" data-testid="envvar-header-actions">
-            <div className="flex flex-wrap items-center justify-end gap-2" data-testid="envvar-header-actions-secondary">
+    <div data-testid="envvar-page-root" className="h-full min-h-0 overflow-hidden p-3 sm:p-4 md:p-6">
+      <div className="flex h-full min-h-0 flex-col gap-4 sm:gap-6">
+        <PageHeader
+          title={t('envvar.title')}
+          description={t('envvar.description')}
+          actions={
+            <div
+              className="flex w-full flex-wrap items-center justify-end gap-2 md:w-auto md:flex-nowrap"
+              data-testid="envvar-header-actions"
+            >
               <Button
                 variant="outline"
                 size="sm"
@@ -330,7 +421,7 @@ export default function EnvVarPage() {
                   setImportExportOpen(true);
                 }}
                 className="gap-1.5"
-                disabled={busy}
+                disabled={headerBusy}
               >
                 <Upload className="h-3.5 w-3.5" />
                 {t('envvar.importExport.import')}
@@ -343,165 +434,342 @@ export default function EnvVarPage() {
                   setImportExportOpen(true);
                 }}
                 className="gap-1.5"
-                disabled={busy}
+                disabled={headerBusy}
               >
                 <Download className="h-3.5 w-3.5" />
                 {t('envvar.importExport.export')}
               </Button>
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2" data-testid="envvar-header-actions-primary">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleRefresh}
-                disabled={busy}
+                disabled={headerBusy}
                 className="gap-1.5"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${(loading || activeAction === 'refresh') ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${(
+                    detectionLoading
+                    || activeAction === 'refresh'
+                    || detectionState === 'loading-no-cache'
+                    || detectionState === 'showing-cache-refreshing'
+                  ) ? 'animate-spin' : ''}`}
+                />
                 {t('envvar.actions.refresh')}
               </Button>
-              <Button size="sm" onClick={handleOpenAdd} className="gap-1.5" disabled={busy}>
+              <Button size="sm" onClick={handleOpenAdd} className="gap-1.5" disabled={headerBusy}>
                 <Plus className="h-3.5 w-3.5" />
                 {t('envvar.actions.add')}
               </Button>
             </div>
-          </div>
-        }
-      />
+          }
+        />
 
-      {activeAction && (
-        <Alert data-testid="envvar-operation-status">
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <AlertDescription>{t('common.loading')} {actionLabel ? `· ${actionLabel}` : ''}</AlertDescription>
-        </Alert>
-      )}
+        {activeAction && (
+          <Alert data-testid="envvar-operation-status">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <AlertDescription>{t('common.loading')} {actionLabel ? `· ${actionLabel}` : ''}</AlertDescription>
+          </Alert>
+        )}
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-      {actionError && (
-        <Alert variant="destructive" data-testid="envvar-operation-error">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{actionError}</AlertDescription>
-        </Alert>
-      )}
+        {actionError && (
+          <Alert variant="destructive" data-testid="envvar-operation-error">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        )}
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="grid w-full grid-cols-3 sm:w-fit">
-          <TabsTrigger value="variables" className="justify-center gap-1.5 sm:justify-start">
-            <Variable className="h-3.5 w-3.5" />
-            {t('envvar.tabs.variables')}
-          </TabsTrigger>
-          <TabsTrigger value="path" className="justify-center gap-1.5 sm:justify-start">
-            <Route className="h-3.5 w-3.5" />
-            {t('envvar.tabs.pathEditor')}
-          </TabsTrigger>
-          <TabsTrigger value="shells" className="justify-center gap-1.5 sm:justify-start">
-            <Terminal className="h-3.5 w-3.5" />
-            {t('envvar.tabs.shellProfiles')}
-          </TabsTrigger>
-        </TabsList>
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+          className="flex min-h-0 flex-1 flex-col"
+          data-testid="envvar-tabs"
+        >
+          <TabsList className="grid w-full shrink-0 grid-cols-3 sm:w-fit">
+            <TabsTrigger value="variables" className="justify-center gap-1.5 sm:justify-start">
+              <Variable className="h-3.5 w-3.5" />
+              {t('envvar.tabs.variables')}
+            </TabsTrigger>
+            <TabsTrigger value="path" className="justify-center gap-1.5 sm:justify-start">
+              <Route className="h-3.5 w-3.5" />
+              {t('envvar.tabs.pathEditor')}
+            </TabsTrigger>
+            <TabsTrigger value="shells" className="justify-center gap-1.5 sm:justify-start">
+              <Terminal className="h-3.5 w-3.5" />
+              {t('envvar.tabs.shellProfiles')}
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="variables" className="mt-3 space-y-3 sm:mt-4 sm:space-y-4">
-          <EnvVarToolbar
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            scopeFilter={scopeFilter}
-            onScopeFilterChange={handleScopeFilterChange}
-            disabled={busy}
-            t={t}
-          />
-          {scopeFilter === 'all' && (
-            <div className="rounded-md border bg-muted/30 px-3 py-3 space-y-2.5" data-testid="envvar-conflicts-summary">
-              <div className="text-sm font-medium">{t('envvar.conflicts.title')}</div>
-              {conflicts.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {t('envvar.conflicts.noConflicts')}
-                </p>
+          <TabsContent
+            value="variables"
+            className="mt-3 flex min-h-0 flex-1 flex-col gap-3 sm:mt-4 sm:gap-4"
+            data-testid="envvar-variables-content"
+          >
+            <Alert
+              variant={detectionState === 'error' ? 'destructive' : 'default'}
+              data-testid="envvar-detection-status"
+              data-detection-state={detectionState}
+            >
+              {detectionState === 'loading-no-cache' || detectionState === 'showing-cache-refreshing' ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
               ) : (
-                <>
-                  <p className="text-xs text-muted-foreground">
-                    {t('envvar.conflicts.description', { count: conflicts.length })}
-                  </p>
-                  {compactConflictView ? (
-                    <div className="space-y-2" data-testid="envvar-conflicts-compact-list">
-                      {conflicts.map((conflict) => (
-                        <div key={conflict.key} className="rounded-md border bg-background/80 p-2 text-xs">
-                          <div className="font-mono font-medium">{conflict.key}</div>
-                          <div className="mt-1 grid gap-1 text-muted-foreground">
-                            <p>{t('envvar.conflicts.userValue')}: <span className="font-mono">{conflict.userValue}</span></p>
-                            <p>{t('envvar.conflicts.systemValue')}: <span className="font-mono">{conflict.systemValue}</span></p>
-                            <p>{t('envvar.conflicts.effectiveValue')}: <span className="font-mono text-foreground">{conflict.effectiveValue}</span></p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto" data-testid="envvar-conflicts-table">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="text-muted-foreground border-b">
-                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.key')}</th>
-                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.userValue')}</th>
-                            <th className="text-left font-medium py-1.5 pr-3">{t('envvar.conflicts.systemValue')}</th>
-                            <th className="text-left font-medium py-1.5">{t('envvar.conflicts.effectiveValue')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {conflicts.map((conflict) => (
-                            <tr key={conflict.key} className="border-b last:border-b-0">
-                              <td className="font-mono py-1.5 pr-3">{conflict.key}</td>
-                              <td className="font-mono py-1.5 pr-3">{conflict.userValue}</td>
-                              <td className="font-mono py-1.5 pr-3">{conflict.systemValue}</td>
-                              <td className="font-mono py-1.5">{conflict.effectiveValue}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </>
+                <Variable className="h-4 w-4" />
               )}
+              <div className="flex w-full items-center justify-between gap-2">
+                <div>
+                  <AlertDescription>{detectionStatusText}</AlertDescription>
+                  {detectionError && (
+                    <p className="mt-1 text-xs" data-testid="envvar-detection-error">{detectionError}</p>
+                  )}
+                </div>
+                {(detectionCanRetry || detectionState === 'empty' || detectionState === 'error') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    disabled={variableBusy}
+                    data-testid="envvar-detection-retry"
+                  >
+                    {t('common.retry')}
+                  </Button>
+                )}
+              </div>
+            </Alert>
+
+            <EnvVarToolbar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              scopeFilter={scopeFilter}
+              onScopeFilterChange={handleScopeFilterChange}
+              disabled={variableBusy}
+              t={t}
+            />
+            {scopeFilter === 'all' && conflictsPanelDismissed ? (
+              <div className="shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setConflictsPanelDismissed(false)}
+                  data-testid="envvar-conflicts-restore"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  {t('envvar.conflicts.restore')}
+                </Button>
+              </div>
+            ) : null}
+            {scopeFilter === 'all' && !conflictsPanelDismissed && (
+              <div className="shrink-0 space-y-3 rounded-md border bg-muted/30 px-3 py-3" data-testid="envvar-conflicts-summary">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-medium">{t('envvar.conflicts.title')}</div>
+                  <div className="flex items-center gap-1">
+                    {visibleConflicts.length > 0 && (
+                      <span
+                        className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                        data-testid="envvar-conflicts-count"
+                      >
+                        {visibleConflicts.length}
+                      </span>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setConflictsPanelCollapsed((prev) => !prev)}
+                      aria-label={conflictsPanelCollapsed ? t('envvar.conflicts.show') : t('envvar.conflicts.hide')}
+                      data-testid="envvar-conflicts-toggle"
+                    >
+                      {conflictsPanelCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setConflictsPanelDismissed(true)}
+                      aria-label={t('envvar.conflicts.dismiss')}
+                      data-testid="envvar-conflicts-dismiss"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                {!conflictsPanelCollapsed && (
+                  <>
+                    <div className="space-y-2 rounded-md border bg-background/70 p-2.5" data-testid="envvar-conflicts-ignore-settings">
+                      <p className="text-xs text-muted-foreground">
+                        {t('envvar.conflicts.ignoreDefaults', { keys: defaultIgnoredConflictKeys.join(', ') })}
+                      </p>
+                      {customIgnoredConflictKeys.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5" data-testid="envvar-conflicts-custom-ignore-list">
+                          {customIgnoredConflictKeys.map((key) => (
+                            <span key={key} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px]">
+                              <span className="font-mono">{key}</span>
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground"
+                                onClick={() => handleRemoveIgnoredConflictKey(key)}
+                                aria-label={`${t('common.delete')} ${key}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={conflictIgnoreInput}
+                          onChange={(event) => setConflictIgnoreInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              handleAddIgnoredConflictKeys();
+                            }
+                          }}
+                          placeholder={t('envvar.conflicts.ignorePlaceholder')}
+                          className="h-8 text-xs"
+                          data-testid="envvar-conflicts-ignore-input"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2.5 text-xs"
+                          onClick={handleAddIgnoredConflictKeys}
+                          data-testid="envvar-conflicts-ignore-add"
+                        >
+                          {t('envvar.conflicts.ignoreAdd')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2.5 text-xs"
+                          onClick={() => persistCustomIgnoredConflictKeys([])}
+                          disabled={customIgnoredConflictKeys.length === 0}
+                          data-testid="envvar-conflicts-ignore-clear"
+                        >
+                          {t('common.clear')}
+                        </Button>
+                      </div>
+                      {hiddenConflictCount > 0 && (
+                        <p className="text-xs text-muted-foreground" data-testid="envvar-conflicts-hidden-count">
+                          {t('envvar.conflicts.hiddenByIgnore', { count: hiddenConflictCount })}
+                        </p>
+                      )}
+                    </div>
+
+                    {visibleConflicts.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        {t('envvar.conflicts.noConflicts')}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          {t('envvar.conflicts.description', { count: visibleConflicts.length })}
+                        </p>
+                        <div className="max-h-[32vh] overflow-y-auto pr-1" data-testid="envvar-conflicts-scroll-area">
+                          {compactConflictView ? (
+                            <div className="space-y-2" data-testid="envvar-conflicts-compact-list">
+                              {visibleConflicts.map((conflict) => (
+                                <div key={conflict.key} className="rounded-md border bg-background/90 p-2.5 text-xs" data-testid="envvar-conflict-item">
+                                  <div className="font-mono text-xs font-semibold">{conflict.key}</div>
+                                  <dl className="mt-2 space-y-1.5">
+                                    <div className="grid grid-cols-[auto_1fr] items-start gap-2">
+                                      <dt className="text-muted-foreground">{t('envvar.conflicts.userValue')}:</dt>
+                                      <dd className="font-mono break-all">{conflict.userValue}</dd>
+                                    </div>
+                                    <div className="grid grid-cols-[auto_1fr] items-start gap-2">
+                                      <dt className="text-muted-foreground">{t('envvar.conflicts.systemValue')}:</dt>
+                                      <dd className="font-mono break-all">{conflict.systemValue}</dd>
+                                    </div>
+                                    <div className="grid grid-cols-[auto_1fr] items-start gap-2">
+                                      <dt className="text-muted-foreground">{t('envvar.conflicts.effectiveValue')}:</dt>
+                                      <dd className="font-mono font-semibold text-foreground break-all" data-testid="envvar-conflict-effective-value">
+                                        {conflict.effectiveValue}
+                                      </dd>
+                                    </div>
+                                  </dl>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto" data-testid="envvar-conflicts-table">
+                              <table className="w-full table-fixed text-xs">
+                                <thead>
+                                  <tr className="border-b text-muted-foreground">
+                                    <th className="w-28 py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.key')}</th>
+                                    <th className="py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.userValue')}</th>
+                                    <th className="py-1.5 pr-3 text-left font-medium">{t('envvar.conflicts.systemValue')}</th>
+                                    <th className="py-1.5 text-left font-medium">{t('envvar.conflicts.effectiveValue')}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {visibleConflicts.map((conflict) => (
+                                    <tr key={conflict.key} className="border-b align-top last:border-b-0">
+                                      <td className="py-2 pr-3 font-mono font-medium">{conflict.key}</td>
+                                      <td className="py-2 pr-3 font-mono break-all text-muted-foreground">{conflict.userValue}</td>
+                                      <td className="py-2 pr-3 font-mono break-all text-muted-foreground">{conflict.systemValue}</td>
+                                      <td className="py-2">
+                                        <span className="font-mono font-semibold text-foreground break-all" data-testid="envvar-conflict-effective-value">
+                                          {conflict.effectiveValue}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            <div className="min-h-0 flex-1" data-testid="envvar-variables-list-shell">
+              <EnvVarTable
+                rows={envRows}
+                scopeFilter={scopeFilter}
+                searchQuery={searchQuery}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                busy={variableBusy}
+                t={t}
+              />
             </div>
-          )}
-          <EnvVarTable
-            rows={envRows}
-            scopeFilter={scopeFilter}
-            searchQuery={searchQuery}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            busy={busy}
-            t={t}
-          />
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="path" className="mt-3 sm:mt-4">
-          <EnvVarPathEditor
-            pathEntries={pathEntries}
-            pathScope={pathScope}
-            onPathScopeChange={handlePathScopeChange}
-            onAdd={(path, position) => runPathMutation('path-add', () => addPathEntry(path, pathScope, position))}
-            onRemove={(path) => runPathMutation('path-remove', () => removePathEntry(path, pathScope))}
-            onReorder={(entries) => runPathMutation('path-reorder', () => reorderPath(entries, pathScope))}
-            onDeduplicate={handlePathDeduplicate}
-            onRefresh={() => fetchPath(pathScope)}
-            loading={busy}
-            t={t}
-          />
-        </TabsContent>
+          <TabsContent value="path" className="mt-3 min-h-0 flex-1 overflow-auto sm:mt-4">
+            <EnvVarPathEditor
+              pathEntries={pathEntries}
+              pathScope={pathScope}
+              onPathScopeChange={handlePathScopeChange}
+              onAdd={(path, position) => runPathMutation('path-add', () => addPathEntry(path, pathScope, position))}
+              onRemove={(path) => runPathMutation('path-remove', () => removePathEntry(path, pathScope))}
+              onReorder={(entries) => runPathMutation('path-reorder', () => reorderPath(entries, pathScope))}
+              onDeduplicate={handlePathDeduplicate}
+              onRefresh={() => fetchPath(pathScope)}
+              loading={pathBusy}
+              t={t}
+            />
+          </TabsContent>
 
-        <TabsContent value="shells" className="mt-3 sm:mt-4">
-          <EnvVarShellProfiles
-            profiles={shellProfiles}
-            onReadProfile={readShellProfile}
-            t={t}
-          />
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="shells" className="mt-3 min-h-0 flex-1 overflow-auto sm:mt-4">
+            <EnvVarShellProfiles
+              profiles={shellProfiles}
+              onReadProfile={readShellProfile}
+              t={t}
+            />
+          </TabsContent>
+        </Tabs>
+      </div>
 
       {/* Dialogs */}
       <EnvVarEditDialog
@@ -523,7 +791,7 @@ export default function EnvVarPage() {
           try {
             const result = await importEnvFile(content, scope);
             if (result) {
-              await refreshVariables(resolveRefreshScope(scope));
+              await refreshVariables(resolveRefreshScope(scope), { forceRefresh: true });
             } else {
               setActionError(t('common.error'));
             }
@@ -552,7 +820,7 @@ export default function EnvVarPage() {
           }
         }}
         defaultTab={importExportTab}
-        busy={busy}
+        busy={importExportBusy}
         t={t}
       />
     </div>

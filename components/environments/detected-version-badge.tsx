@@ -10,6 +10,7 @@ import {
 interface DetectedVersionBadgeProps {
   version: string;
   source: string;
+  sourceType?: string;
   currentVersion?: string | null;
   t: (key: string, params?: Record<string, string | number>) => string;
   compact?: boolean;
@@ -18,11 +19,12 @@ interface DetectedVersionBadgeProps {
 export function DetectedVersionBadge({
   version,
   source,
+  sourceType,
   currentVersion,
   t,
   compact = false,
 }: DetectedVersionBadgeProps) {
-  const formattedSource = formatDetectionSource(source);
+  const formattedSource = formatDetectionSource(source, sourceType);
   const isMismatch =
     currentVersion != null &&
     !isDetectedVersionCompatible(currentVersion, version);

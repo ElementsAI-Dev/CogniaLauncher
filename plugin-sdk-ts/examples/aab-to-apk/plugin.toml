@@ -9,10 +9,10 @@ authors = ["CogniaLauncher Team"]
 id = "aab-to-apk"
 name_en = "AAB to APK"
 name_zh = "AAB 转 APK"
-description_en = "Convert .aab files into universal .apk using Java + bundletool"
-description_zh = "使用 Java + bundletool 将 .aab 转换为通用 .apk"
+description_en = "Preflight + convert .aab into universal .apk using Java + bundletool"
+description_zh = "先预检再转换：使用 Java + bundletool 将 .aab 转换为通用 .apk"
 category = "mobile"
-keywords = ["android", "aab", "apk", "bundletool", "convert"]
+keywords = ["android", "aab", "apk", "bundletool", "convert", "preflight", "diagnostics"]
 icon = "Smartphone"
 entry = "convert_aab_to_apk"
 

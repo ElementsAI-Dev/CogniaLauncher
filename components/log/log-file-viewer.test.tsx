@@ -86,6 +86,15 @@ const sampleEntries = [
   { timestamp: "2026-02-02T12:02:00Z", level: "ERROR", target: "", message: "Third log entry", lineNumber: 3 },
 ];
 
+const buildEntries = (count: number, startLine = 1, prefix = "Virtualized entry") =>
+  Array.from({ length: count }, (_, index) => ({
+    timestamp: `2026-02-02T12:${String(index % 60).padStart(2, "0")}:00Z`,
+    level: "INFO",
+    target: "app",
+    message: `${prefix} ${startLine + index}`,
+    lineNumber: startLine + index,
+  }));
+
 describe("LogFileViewer", () => {
   beforeEach(() => {
     mockQueryLogFile.mockReset();
@@ -188,6 +197,102 @@ describe("LogFileViewer", () => {
     render(<LogFileViewer open fileName="my-app.log" onOpenChange={() => undefined} />);
     await waitFor(() => expect(screen.getByText("Log File Viewer")).toBeInTheDocument());
     expect(screen.getByText("my-app.log")).toBeInTheDocument();
+  });
+
+  it("uses responsive bounded dialog container classes", async () => {
+    mockQueryLogFile.mockResolvedValue({ entries: [], totalCount: 0, hasMore: false });
+    render(<LogFileViewer open fileName="layout.log" onOpenChange={() => undefined} />);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveClass("max-h-[85dvh]");
+    expect(dialog).toHaveClass("w-[min(96vw,72rem)]");
+    expect(dialog).toHaveClass("min-h-0");
+    expect(dialog).toHaveClass("overflow-hidden");
+    expect(dialog).not.toHaveClass("h-[80vh]");
+  });
+
+  it("keeps log entries in a single primary scroll region", async () => {
+    mockQueryLogFile.mockResolvedValue({ entries: sampleEntries, totalCount: 3, hasMore: false });
+    render(<LogFileViewer open fileName="app.log" onOpenChange={() => undefined} />);
+    await waitFor(() => expect(screen.getByText("First log entry")).toBeInTheDocument());
+    const body = screen.getByTestId("log-file-viewer-body");
+    expect(body).toHaveClass("overflow-hidden");
+    const scrollArea = screen.getByTestId("log-file-viewer-scroll-area");
+    expect(scrollArea).toBeInTheDocument();
+    expect(scrollArea).toHaveClass("h-full");
+    expect(scrollArea).toHaveClass("min-h-0");
+    expect(scrollArea).toHaveClass("flex-1");
+    expect(document.querySelectorAll("[data-testid='log-file-viewer-scroll-area']")).toHaveLength(1);
+  });
+
+  it("keeps toolbar actions reachable for long historical logs", async () => {
+    const longEntries = Array.from({ length: 260 }, (_, i) => ({
+      timestamp: `2026-02-02T12:${String(i % 60).padStart(2, "0")}:00Z`,
+      level: "INFO",
+      target: "app",
+      message: `Long history entry ${i + 1}`,
+      lineNumber: i + 1,
+    }));
+
+    mockQueryLogFile.mockResolvedValue({ entries: longEntries, totalCount: 260, hasMore: false });
+    render(<LogFileViewer open fileName="history.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() => expect(screen.getByText("Long history entry 1")).toBeInTheDocument());
+
+    const refreshButton = screen.getByRole("button", { name: "Refresh" });
+    const scrollArea = screen.getByTestId("log-file-viewer-scroll-area");
+
+    expect(refreshButton).toBeVisible();
+    expect(scrollArea.contains(refreshButton)).toBe(false);
+  });
+
+  it("bounds mounted rows when historical entries are large", async () => {
+    mockQueryLogFile.mockResolvedValue({
+      entries: buildEntries(1200),
+      totalCount: 1200,
+      hasMore: false,
+    });
+
+    render(<LogFileViewer open fileName="huge.log" onOpenChange={() => undefined} />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Virtualized entry 1")).toBeInTheDocument(),
+    );
+
+    const mountedRows = document.querySelectorAll(
+      "[data-testid='log-file-viewer-virtual-row']",
+    );
+    expect(mountedRows.length).toBeGreaterThan(0);
+    expect(mountedRows.length).toBeLessThan(1200);
+  });
+
+  it("keeps mounted rows bounded after load-more accumulation", async () => {
+    const user = userEvent.setup();
+    mockQueryLogFile
+      .mockResolvedValueOnce({
+        entries: buildEntries(200, 1, "Current chunk"),
+        totalCount: 400,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        entries: buildEntries(200, 201, "Older chunk"),
+        totalCount: 400,
+        hasMore: false,
+      });
+
+    render(<LogFileViewer open fileName="history.log" onOpenChange={() => undefined} />);
+    await waitFor(() => expect(screen.getByText("Load More")).toBeInTheDocument());
+
+    await user.click(screen.getByText("Load More"));
+    await waitFor(() => expect(mockQueryLogFile).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByText("Older chunk 201")).toBeInTheDocument(),
+    );
+
+    const mountedRows = document.querySelectorAll(
+      "[data-testid='log-file-viewer-virtual-row']",
+    );
+    expect(mountedRows.length).toBeGreaterThan(0);
+    expect(mountedRows.length).toBeLessThan(400);
   });
 
   it("displays total entry count", async () => {

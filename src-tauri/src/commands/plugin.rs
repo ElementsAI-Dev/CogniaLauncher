@@ -5,7 +5,7 @@ use crate::plugin::registry::{PluginInfo, PluginToolInfo};
 use crate::plugin::scaffold::{ScaffoldConfig, ScaffoldResult, ValidationResult};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
@@ -250,6 +250,15 @@ pub struct PluginUiEntry {
     pub permissions: Vec<String>,
 }
 
+/// Result of opening scaffold output paths/folders
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScaffoldOpenResult {
+    pub opened_with: String,
+    pub fallback_used: bool,
+    pub message: String,
+}
+
 /// Allowed file extensions for plugin UI assets
 const ALLOWED_UI_EXTENSIONS: &[&str] = &[
     "html", "js", "css", "json", "svg", "png", "jpg", "jpeg", "gif", "webp", "woff", "woff2",
@@ -394,6 +403,32 @@ pub async fn plugin_export_data(
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Open a scaffold output folder in system file manager
+#[tauri::command]
+pub async fn plugin_open_scaffold_folder(path: String) -> Result<ScaffoldOpenResult, String> {
+    let validated = validate_scaffold_open_path(&path)?;
+    open_folder_path(&validated)?;
+    Ok(ScaffoldOpenResult {
+        opened_with: "folder".to_string(),
+        fallback_used: false,
+        message: format!("Opened folder: {}", validated.display()),
+    })
+}
+
+/// Open a scaffold output folder in VSCode, fallback to opening folder on failure
+#[tauri::command]
+pub async fn plugin_open_scaffold_in_vscode(path: String) -> Result<ScaffoldOpenResult, String> {
+    let validated = validate_scaffold_open_path(&path)?;
+    let vscode_result = open_path_with_vscode(&validated);
+    let folder_result = if vscode_result.is_err() {
+        open_folder_path(&validated)
+    } else {
+        Ok(())
+    };
+
+    compose_vscode_open_result(&validated, vscode_result, folder_result)
+}
+
 /// Get settings schema for a plugin
 #[tauri::command]
 pub async fn plugin_get_settings_schema(
@@ -460,4 +495,144 @@ pub async fn plugin_dispatch_event(
     let mut mgr = manager.write().await;
     mgr.dispatch_event(&event_name, &payload).await;
     Ok(())
+}
+
+fn validate_scaffold_open_path(path: &str) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("Scaffold path must not be empty".to_string());
+    }
+
+    let candidate = PathBuf::from(trimmed);
+    if !candidate.exists() {
+        return Err(format!("Scaffold path does not exist: {}", trimmed));
+    }
+    if !candidate.is_dir() {
+        return Err(format!("Scaffold path is not a directory: {}", trimmed));
+    }
+
+    candidate
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve scaffold path '{}': {}", trimmed, e))
+}
+
+fn open_folder_path(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    tauri_plugin_opener::open_path(&path_str, None::<&str>)
+        .map_err(|e| format!("Failed to open folder '{}': {}", path.display(), e))
+}
+
+fn open_path_with_vscode(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy().to_string();
+    tauri_plugin_opener::open_path(&path_str, Some("code"))
+        .map_err(|e| format!("Failed to open in VSCode '{}': {}", path.display(), e))
+}
+
+fn compose_vscode_open_result(
+    path: &Path,
+    vscode_result: Result<(), String>,
+    folder_result: Result<(), String>,
+) -> Result<ScaffoldOpenResult, String> {
+    match vscode_result {
+        Ok(()) => Ok(ScaffoldOpenResult {
+            opened_with: "vscode".to_string(),
+            fallback_used: false,
+            message: format!("Opened in VSCode: {}", path.display()),
+        }),
+        Err(vscode_err) => match folder_result {
+            Ok(()) => Ok(ScaffoldOpenResult {
+                opened_with: "folder".to_string(),
+                fallback_used: true,
+                message: format!(
+                    "{}. Opened folder fallback: {}",
+                    vscode_err,
+                    path.display()
+                ),
+            }),
+            Err(folder_err) => Err(format!(
+                "{}; fallback folder open failed: {}",
+                vscode_err, folder_err
+            )),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_path(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{}_{}", prefix, nanos))
+    }
+
+    #[test]
+    fn validate_scaffold_open_path_accepts_existing_directory() {
+        let dir = unique_temp_path("cognia_scaffold_dir");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        let result = validate_scaffold_open_path(dir.to_string_lossy().as_ref());
+        assert!(result.is_ok());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validate_scaffold_open_path_rejects_non_directory() {
+        let file_path = unique_temp_path("cognia_scaffold_file");
+        fs::write(&file_path, "x").expect("create temp file");
+
+        let result = validate_scaffold_open_path(file_path.to_string_lossy().as_ref());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not a directory"));
+
+        let _ = fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn validate_scaffold_open_path_rejects_missing_path() {
+        let missing = unique_temp_path("cognia_missing_dir");
+        let result = validate_scaffold_open_path(missing.to_string_lossy().as_ref());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("does not exist"));
+    }
+
+    #[test]
+    fn compose_vscode_open_result_success_without_fallback() {
+        let path = PathBuf::from("C:/tmp/example");
+        let result = compose_vscode_open_result(&path, Ok(()), Ok(())).expect("result");
+        assert_eq!(result.opened_with, "vscode");
+        assert!(!result.fallback_used);
+    }
+
+    #[test]
+    fn compose_vscode_open_result_uses_folder_fallback() {
+        let path = PathBuf::from("C:/tmp/example");
+        let result = compose_vscode_open_result(&path, Err("vscode failed".to_string()), Ok(()))
+            .expect("fallback result");
+        assert_eq!(result.opened_with, "folder");
+        assert!(result.fallback_used);
+        assert!(result.message.contains("vscode failed"));
+    }
+
+    #[test]
+    fn compose_vscode_open_result_returns_combined_error_when_both_fail() {
+        let path = PathBuf::from("C:/tmp/example");
+        let result = compose_vscode_open_result(
+            &path,
+            Err("vscode failed".to_string()),
+            Err("folder failed".to_string()),
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("fallback folder open failed: folder failed")
+        );
+    }
 }

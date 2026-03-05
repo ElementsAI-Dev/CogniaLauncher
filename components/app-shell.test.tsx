@@ -213,6 +213,25 @@ describe("AppShell", () => {
     expect(searchButton).toBeInTheDocument();
   });
 
+  it("does not apply content padding when maximize insets are all zero", () => {
+    mockWindowControls.maximizeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+
+    const { container } = render(
+      <AppShell>
+        <div>Content</div>
+      </AppShell>,
+    );
+
+    const contentContainer = container.querySelector(
+      "div.flex.flex-1.overflow-hidden",
+    ) as HTMLDivElement;
+
+    expect(contentContainer.style.paddingTop).toBe("");
+    expect(contentContainer.style.paddingRight).toBe("");
+    expect(contentContainer.style.paddingBottom).toBe("");
+    expect(contentContainer.style.paddingLeft).toBe("");
+  });
+
   it("applies per-edge maximize insets to the content container", () => {
     mockWindowControls.maximizeInsets = { top: 8, right: 6, bottom: 4, left: 2 };
 

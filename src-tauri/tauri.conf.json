@@ -90,6 +90,10 @@
               "name": "force",
               "short": "f",
               "description": "Force reinstall"
+            },
+            {
+              "name": "continue-on-error",
+              "description": "Continue processing remaining packages when one install fails"
             }
           ]
         },
@@ -113,6 +117,10 @@
               "name": "force",
               "short": "f",
               "description": "Force uninstall"
+            },
+            {
+              "name": "continue-on-error",
+              "description": "Continue processing remaining packages when one uninstall fails"
             }
           ]
         },
@@ -151,6 +159,10 @@
               "name": "all",
               "short": "a",
               "description": "Update all outdated packages"
+            },
+            {
+              "name": "continue-on-error",
+              "description": "Continue checking other providers when one update check fails"
             }
           ]
         },

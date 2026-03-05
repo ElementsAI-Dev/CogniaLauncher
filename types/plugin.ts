@@ -185,13 +185,25 @@ export interface ScaffoldConfig {
   description: string;
   author: string;
   outputDir: string;
+  license?: string;
+  repository?: string;
+  homepage?: string;
   language: PluginLanguage;
   permissions: ScaffoldPermissions;
+  includeCi?: boolean;
+  includeVscode?: boolean;
+  additionalKeywords?: string[];
 }
 
 export interface ScaffoldResult {
   pluginDir: string;
   filesCreated: string[];
+}
+
+export interface ScaffoldOpenResult {
+  openedWith: 'vscode' | 'folder';
+  fallbackUsed: boolean;
+  message: string;
 }
 
 export interface ValidationResult {

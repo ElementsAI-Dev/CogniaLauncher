@@ -66,12 +66,14 @@ describe('ToolGrid', () => {
     const { container } = render(<ToolGrid {...defaultProps} viewMode="grid" />);
     const grid = container.firstChild as HTMLElement;
     expect(grid.className).toContain('grid');
+    expect(grid.className).toContain('pb-4');
   });
 
   it('renders in list layout', () => {
     const { container } = render(<ToolGrid {...defaultProps} viewMode="list" />);
     const list = container.firstChild as HTMLElement;
     expect(list.className).toContain('flex-col');
+    expect(list.className).toContain('pb-4');
   });
 
   it('renders empty grid when no tools', () => {
@@ -90,5 +92,10 @@ describe('ToolGrid', () => {
     render(<ToolGrid {...defaultProps} favorites={['builtin:json-formatter']} />);
     // The favorite tool should have a filled star icon (tested via ToolCard)
     expect(screen.getByText('JSON Formatter')).toBeInTheDocument();
+  });
+
+  it('exposes a stable root test id for scroll-boundary assertions', () => {
+    render(<ToolGrid {...defaultProps} />);
+    expect(screen.getByTestId('tool-grid-root')).toBeInTheDocument();
   });
 });

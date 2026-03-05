@@ -229,6 +229,7 @@ jest.mock('@/components/wsl', () => ({
   WslImportInPlaceDialog: () => null,
   WslInstallLocationDialog: () => null,
   WslCloneDialog: () => null,
+  WslBackupCard: () => <div data-testid="backup-card">Backup</div>,
 }));
 
 
@@ -269,6 +270,25 @@ describe('WslPage', () => {
   it('renders exec terminal', () => {
     render(<WslPage />);
     expect(screen.getByTestId('exec-terminal')).toBeInTheDocument();
+  });
+
+  it('renders grouped primary and supporting layout regions', () => {
+    render(<WslPage />);
+    expect(screen.getByTestId('wsl-layout-grid')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-primary-region')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-supporting-region')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-runtime-support-section')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-operations-support-section')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-config-support-section')).toBeInTheDocument();
+  });
+
+  it('uses xl-first two-column reflow classes while keeping core actions visible', () => {
+    render(<WslPage />);
+    const layout = screen.getByTestId('wsl-layout-grid');
+    expect(layout.className).toContain('xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)]');
+    expect(layout.className).not.toContain('lg:grid-cols');
+    expect(screen.getByRole('button', { name: /update/i })).toBeInTheDocument();
+    expect(screen.getByTestId('distro-Ubuntu')).toBeInTheDocument();
   });
 
   it('renders update button', () => {
@@ -493,6 +513,9 @@ describe('WslPage - WSL Not Installed', () => {
   it('installs WSL and refreshes availability and metadata', async () => {
     const user = userEvent.setup();
     render(<WslPage />);
+
+    expect(screen.getByTestId('wsl-page-content')).toBeInTheDocument();
+    expect(screen.getByTestId('wsl-not-available')).toBeInTheDocument();
 
     await user.click(screen.getByTestId('install-wsl'));
 

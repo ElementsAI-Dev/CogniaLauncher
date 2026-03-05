@@ -30,6 +30,20 @@ Or use mirror URLs:
 EXTISM_JS_URL=https://mirror.example.com/extism-js.gz BINARYEN_URL=https://mirror.example.com/binaryen.tar.gz pnpm build
 ```
 
+Build output now includes phase markers:
+- `[build][hello-world][preflight]`
+- `[build][hello-world][bundle]`
+- `[build][hello-world][wasm-compile]`
+
+## Troubleshooting
+
+- `BUNDLE_SCRIPT_NOT_FOUND`: `esbuild.config.mjs` is missing or renamed.
+- `OUTPUT_NOT_WRITABLE`: plugin folder or `dist/` is not writable.
+- `BUNDLE_SPAWN_PERMISSION_DENIED`: host sandbox/security policy blocked process spawn (often shows `spawn EPERM`).
+  - Run build in a non-restricted shell or allow escalated permissions for the command.
+- `WASM_COMPILE_EXECUTABLE_NOT_FOUND`: `extism-js` is not available.
+  - Set `EXTISM_JS_PATH` or run `pnpm setup:toolchain`.
+
 ## Install
 
 Copy this directory into CogniaLauncher's plugins folder, or use the "Install Plugin" button in Toolbox > Plugins.

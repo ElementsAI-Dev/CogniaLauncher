@@ -12,7 +12,14 @@ import {
 import { useLocale } from "@/components/providers/locale-provider";
 import { useDownloadStore } from "@/lib/stores/download";
 import { formatBytes } from "@/lib/utils";
-import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartAxisTickStyle,
+  getChartGridStyle,
+  getChartTooltipCursorStyle,
+  getGradientId,
+} from "@/lib/theme/chart-utils";
 import { Download, CheckCircle2, XCircle, Clock } from "lucide-react";
 
 interface DownloadStatsWidgetProps {
@@ -21,6 +28,7 @@ interface DownloadStatsWidgetProps {
 
 export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
   const { t } = useLocale();
+  const sparklineGradient = getChartGradientDefinition("sparkline");
   const tasks = useDownloadStore((s) => s.tasks);
   const history = useDownloadStore((s) => s.history);
   const stats = useDownloadStore((s) => s.stats);
@@ -115,15 +123,15 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
         {chartData.length > 0 && (
           <ChartContainer config={chartConfig} className="h-[120px] w-full aspect-auto">
             <BarChart data={chartData} margin={{ left: 0, right: 0 }}>
-              <CartesianGrid vertical={false} />
+              <CartesianGrid vertical={false} {...getChartGridStyle()} />
               <XAxis
                 dataKey="status"
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fontSize: 10 }}
+                tick={getChartAxisTickStyle(10)}
               />
-              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartTooltip content={<ChartTooltipContent />} cursor={getChartTooltipCursorStyle()} />
               <Bar dataKey="count" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartContainer>
@@ -137,9 +145,21 @@ export function DownloadStatsWidget({ className }: DownloadStatsWidgetProps) {
             <ChartContainer config={speedChartConfig} className="h-[80px] w-full aspect-auto">
               <AreaChart data={speedChartData} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
                 <defs>
-                  <linearGradient id={getGradientId("speed", 0)} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={getChartColor(1)} stopOpacity={0.4} />
-                    <stop offset="95%" stopColor={getChartColor(1)} stopOpacity={0} />
+                  <linearGradient
+                    id={getGradientId("speed", 0)}
+                    x1={sparklineGradient.x1}
+                    y1={sparklineGradient.y1}
+                    x2={sparklineGradient.x2}
+                    y2={sparklineGradient.y2}
+                  >
+                    {sparklineGradient.stops.map((stop, index) => (
+                      <stop
+                        key={`${stop.offset}-${index}`}
+                        offset={stop.offset}
+                        stopColor={getChartColor(1)}
+                        stopOpacity={stop.opacity}
+                      />
+                    ))}
                   </linearGradient>
                 </defs>
                 <YAxis

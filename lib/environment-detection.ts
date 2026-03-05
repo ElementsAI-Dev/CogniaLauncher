@@ -66,7 +66,12 @@ export function isDetectedVersionCompatible(
   return hasBoundaryPrefix(installed, detected) || hasBoundaryPrefix(detected, installed);
 }
 
-export function formatDetectionSource(source: string): string {
+export function formatDetectionSource(source: string, sourceType?: string): string {
+  if (sourceType === 'global') {
+    return 'global default';
+  }
+  if (sourceType === 'manifest') {
+    return 'project manifest';
+  }
   return source.replaceAll('_', ' ').trim();
 }
-

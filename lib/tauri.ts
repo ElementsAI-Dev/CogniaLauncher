@@ -6,6 +6,7 @@ import { isTauri } from '@/lib/platform';
 export type {
   EnvInstallProgressEvent,
   EnvVerifyResult,
+  EnvVersionMutationResult,
   EnvUpdateCheckResult,
   EnvCleanupResult,
   CleanedVersion,
@@ -83,6 +84,8 @@ export type {
   SelfUpdateInfo,
   SelfUpdateProgressEvent,
   InstallHistoryEntry,
+  InstallHistoryQuery,
+  PackageHistoryQuery,
   DependencyNode,
   ResolutionResult,
   ResolvedPackage,
@@ -237,6 +240,7 @@ import type {
   EnvironmentInfo,
   InstalledVersion,
   DetectedEnvironment,
+  EnvVersionMutationResult,
   EnvironmentProviderInfo,
   EnvironmentSettingsConfig,
   SystemEnvironmentInfo,
@@ -289,6 +293,8 @@ import type {
   SelfUpdateInfo,
   SelfUpdateProgressEvent,
   InstallHistoryEntry,
+  InstallHistoryQuery,
+  PackageHistoryQuery,
   ResolutionResult,
   AdvancedSearchOptions,
   EnhancedSearchResult,
@@ -499,8 +505,8 @@ export const envList = (force?: boolean) => invoke<EnvironmentInfo[]>('env_list'
 export const envGet = (envType: string) => invoke<EnvironmentInfo>('env_get', { envType });
 export const envInstall = (envType: string, version: string, providerId?: string) => invoke<void>('env_install', { envType, version, providerId });
 export const envUninstall = (envType: string, version: string) => invoke<void>('env_uninstall', { envType, version });
-export const envUseGlobal = (envType: string, version: string) => invoke<void>('env_use_global', { envType, version });
-export const envUseLocal = (envType: string, version: string, projectPath: string) => invoke<void>('env_use_local', { envType, version, projectPath });
+export const envUseGlobal = (envType: string, version: string) => invoke<EnvVersionMutationResult>('env_use_global', { envType, version });
+export const envUseLocal = (envType: string, version: string, projectPath: string) => invoke<EnvVersionMutationResult>('env_use_local', { envType, version, projectPath });
 export const envDetect = (envType: string, startPath: string) => invoke<DetectedEnvironment | null>('env_detect', { envType, startPath });
 export const envDetectAll = (startPath: string) => invoke<DetectedEnvironment[]>('env_detect_all', { startPath });
 export const envAvailableVersions = (envType: string, providerId?: string, force?: boolean) => invoke<VersionInfo[]>('env_available_versions', { envType, providerId, force });
@@ -1025,11 +1031,15 @@ export const packageRollback = (name: string, toVersion: string) =>
   invoke<void>('package_rollback', { name, toVersion });
 
 // Install history
-export const getInstallHistory = (limit?: number) =>
-  invoke<InstallHistoryEntry[]>('get_install_history', { limit });
+export const getInstallHistory = (queryOrLimit?: number | InstallHistoryQuery) => {
+  const query: Record<string, unknown> = typeof queryOrLimit === 'number'
+    ? { limit: queryOrLimit }
+    : { ...(queryOrLimit ?? {}) };
+  return invoke<InstallHistoryEntry[]>('get_install_history', query);
+};
 
-export const getPackageHistory = (name: string) =>
-  invoke<InstallHistoryEntry[]>('get_package_history', { name });
+export const getPackageHistory = (name: string, query?: PackageHistoryQuery) =>
+  invoke<InstallHistoryEntry[]>('get_package_history', { name, ...(query ?? {}) });
 
 export const clearInstallHistory = () =>
   invoke<void>('clear_install_history');
@@ -3099,6 +3109,14 @@ export const pluginGetLocales = (pluginId: string) =>
 /** Scaffold a new plugin project */
 export const pluginScaffold = (config: import('@/types/plugin').ScaffoldConfig) =>
   invoke<import('@/types/plugin').ScaffoldResult>('plugin_scaffold', { config });
+
+/** Open scaffold output folder in system file manager */
+export const pluginOpenScaffoldFolder = (path: string) =>
+  invoke<import('@/types/plugin').ScaffoldOpenResult>('plugin_open_scaffold_folder', { path });
+
+/** Open scaffold output folder in VSCode, fallback to folder open */
+export const pluginOpenScaffoldInVscode = (path: string) =>
+  invoke<import('@/types/plugin').ScaffoldOpenResult>('plugin_open_scaffold_in_vscode', { path });
 
 /** Validate a plugin directory */
 export const pluginValidate = (path: string) =>

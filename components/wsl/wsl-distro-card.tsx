@@ -64,10 +64,10 @@ export function WslDistroCard({
   }, [distro.name, getDiskUsage]);
 
   return (
-    <Card className="group relative">
+    <Card className="group relative overflow-hidden">
       <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <Terminal className="h-5 w-5 text-primary" />
             </div>
@@ -117,13 +117,16 @@ export function WslDistroCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div
+            data-testid="wsl-distro-actions"
+            className="flex w-full flex-wrap items-center justify-end gap-1.5 md:w-auto md:flex-nowrap"
+          >
             {isRunning ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => onTerminate(distro.name)}
-                className="gap-1.5"
+                className="gap-1.5 whitespace-nowrap"
               >
                 <Square className="h-3.5 w-3.5" />
                 {t('wsl.terminate')}
@@ -133,7 +136,7 @@ export function WslDistroCard({
                 variant="default"
                 size="sm"
                 onClick={() => onLaunch(distro.name)}
-                className="gap-1.5"
+                className="gap-1.5 whitespace-nowrap"
               >
                 <Play className="h-3.5 w-3.5" />
                 {t('wsl.launch')}
@@ -142,7 +145,7 @@ export function WslDistroCard({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" title={t('common.more')}>
+                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" title={t('common.more')}>
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>

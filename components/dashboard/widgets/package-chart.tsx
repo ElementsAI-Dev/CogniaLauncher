@@ -10,7 +10,14 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartAxisTickStyle,
+  getChartGridStyle,
+  getChartTooltipCursorStyle,
+  getGradientId,
+} from "@/lib/theme/chart-utils";
 import type { InstalledPackage } from "@/lib/tauri";
 import type { ProviderInfo } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
@@ -23,6 +30,7 @@ interface PackageChartProps {
 
 export function PackageChart({ packages, providers, className }: PackageChartProps) {
   const { t } = useLocale();
+  const barGradient = getChartGradientDefinition("bar-vertical");
 
   const { chartData, chartConfig } = useMemo(() => {
     const byProvider = new Map<string, number>();
@@ -92,23 +100,29 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
                   <linearGradient
                     key={getGradientId("pkg", index)}
                     id={getGradientId("pkg", index)}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
+                    x1={barGradient.x1}
+                    y1={barGradient.y1}
+                    x2={barGradient.x2}
+                    y2={barGradient.y2}
                   >
-                    <stop offset="0%" stopColor={getChartColor(index)} stopOpacity={0.95} />
-                    <stop offset="100%" stopColor={getChartColor(index)} stopOpacity={0.75} />
+                    {barGradient.stops.map((stop, stopIndex) => (
+                      <stop
+                        key={`${stop.offset}-${stopIndex}`}
+                        offset={stop.offset}
+                        stopColor={getChartColor(index)}
+                        stopOpacity={stop.opacity}
+                      />
+                    ))}
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.3} />
+              <CartesianGrid vertical={false} {...getChartGridStyle()} />
               <XAxis
                 dataKey="provider"
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
-                tick={{ fontSize: 10, fill: "var(--foreground)" }}
+                tick={getChartAxisTickStyle(10)}
                 interval={0}
                 angle={-30}
                 textAnchor="end"
@@ -116,7 +130,7 @@ export function PackageChart({ packages, providers, className }: PackageChartPro
               />
               <ChartTooltip
                 content={<ChartTooltipContent />}
-                cursor={{ fill: "var(--muted)", opacity: 0.3 }}
+                cursor={getChartTooltipCursorStyle()}
               />
               <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={45}>
                 {chartData.map((entry, index) => (

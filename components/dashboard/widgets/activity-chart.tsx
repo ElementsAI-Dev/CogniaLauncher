@@ -10,7 +10,13 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { useLocale } from "@/components/providers/locale-provider";
-import { getChartColor, getGradientId } from "@/lib/theme/chart-utils";
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartAxisTickStyle,
+  getChartGridStyle,
+  getGradientId,
+} from "@/lib/theme/chart-utils";
 import type { EnvironmentInfo, InstalledPackage } from "@/lib/tauri";
 import { WidgetEmptyCard } from "@/components/dashboard/widgets/widget-empty-card";
 
@@ -22,6 +28,7 @@ interface ActivityChartProps {
 
 export function ActivityChart({ environments, packages, className }: ActivityChartProps) {
   const { t } = useLocale();
+  const areaGradient = getChartGradientDefinition("area");
 
   const chartData = useMemo(() => {
     const envsByType = new Map<string, number>();
@@ -83,26 +90,53 @@ export function ActivityChart({ environments, packages, className }: ActivityCha
         <ChartContainer config={chartConfig} className="h-[200px] w-full aspect-auto">
           <AreaChart data={chartData} margin={{ left: 0, right: 12 }}>
             <defs>
-              <linearGradient id={getGradientId("actEnv", 0)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={getChartColor(0)} stopOpacity={0.6} />
-                <stop offset="60%" stopColor={getChartColor(0)} stopOpacity={0.2} />
-                <stop offset="95%" stopColor={getChartColor(0)} stopOpacity={0.05} />
+              <linearGradient
+                id={getGradientId("actEnv", 0)}
+                x1={areaGradient.x1}
+                y1={areaGradient.y1}
+                x2={areaGradient.x2}
+                y2={areaGradient.y2}
+              >
+                {areaGradient.stops.map((stop, index) => (
+                  <stop
+                    key={`${stop.offset}-${index}`}
+                    offset={stop.offset}
+                    stopColor={getChartColor(0)}
+                    stopOpacity={stop.opacity}
+                  />
+                ))}
               </linearGradient>
-              <linearGradient id={getGradientId("actPkg", 0)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={getChartColor(1)} stopOpacity={0.6} />
-                <stop offset="60%" stopColor={getChartColor(1)} stopOpacity={0.2} />
-                <stop offset="95%" stopColor={getChartColor(1)} stopOpacity={0.05} />
+              <linearGradient
+                id={getGradientId("actPkg", 0)}
+                x1={areaGradient.x1}
+                y1={areaGradient.y1}
+                x2={areaGradient.x2}
+                y2={areaGradient.y2}
+              >
+                {areaGradient.stops.map((stop, index) => (
+                  <stop
+                    key={`${stop.offset}-${index}`}
+                    offset={stop.offset}
+                    stopColor={getChartColor(1)}
+                    stopOpacity={stop.opacity}
+                  />
+                ))}
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.3} />
+            <CartesianGrid vertical={false} {...getChartGridStyle()} />
             <XAxis
               dataKey="name"
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              tick={{ fontSize: 10, fill: "var(--foreground)" }}
+              tick={getChartAxisTickStyle(10)}
             />
-            <YAxis tickLine={false} axisLine={false} width={30} tick={{ fill: "var(--foreground)" }} />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              width={30}
+              tick={getChartAxisTickStyle(11)}
+            />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Area
               type="monotone"

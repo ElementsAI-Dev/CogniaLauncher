@@ -1207,6 +1207,8 @@ pub fn run() {
             commands::plugin::plugin_get_data_dir,
             commands::plugin::plugin_get_locales,
             commands::plugin::plugin_scaffold,
+            commands::plugin::plugin_open_scaffold_folder,
+            commands::plugin::plugin_open_scaffold_in_vscode,
             commands::plugin::plugin_validate,
             commands::plugin::plugin_check_update,
             commands::plugin::plugin_update,

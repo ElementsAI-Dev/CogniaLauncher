@@ -53,6 +53,13 @@ describe('WslStatusCard', () => {
     expect(screen.getByText('2')).toBeInTheDocument(); // count badge
   });
 
+  it('keeps running distro badges in a scroll-safe container', () => {
+    render(<WslStatusCard status={statusWithRunning} {...defaultProps} />);
+
+    const badgesContainer = screen.getByText('Ubuntu').parentElement;
+    expect(badgesContainer).toHaveClass('overflow-y-auto');
+  });
+
   it('shows no running message when runningDistros is empty', () => {
     render(<WslStatusCard status={statusNoRunning} {...defaultProps} />);
 

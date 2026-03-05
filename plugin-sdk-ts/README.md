@@ -201,9 +201,56 @@ import { cognia } from '@cognia/plugin-sdk';
 | Function | Description |
 |----------|-------------|
 | `text`, `heading`, `markdown`, `divider`, `alert`, `badge`, `progress`, `code`, `table`, `keyValue` | Display blocks |
-| `actions`, `button`, `group` | Interactive/layout blocks |
+| `actions`, `button`, `form`, `group` | Interactive/layout blocks |
+| `numberField`, `passwordField`, `radioGroupField`, `switchField`, `dateTimeField`, `multiSelectField` | Extended form field builders |
+| `jsonView`, `descriptionList`, `statCards`, `result` | Structured output blocks |
 | `tabs`, `accordion`, `copyButton`, `fileInput` | Extended interactive blocks |
 | `renderWithState`, `parseAction` | Stateful rendering and action parsing |
+
+#### Action payload contract
+
+`parseAction(input)` returns `UiAction | null`. For compatibility, existing actions are unchanged (`button_click`, `form_submit`, `file_selected`, `tab_change`), and newer runtimes may include normalized metadata:
+
+- `version`: action schema version (for current normalized payloads this is `2`)
+- `sourceType`: origin type such as `form`, `actions`, `file-input`, `tabs`, or generic `declarative`
+- `sourceId`: source control/block identifier
+- `formDataTypes`: map of form field id to field type (on `form_submit`)
+
+Plugins should treat these metadata fields as optional and keep fallback logic for older payloads.
+
+#### Example: Extended declarative form + structured output
+
+```typescript
+const blocks = [
+  cognia.ui.heading('Build Pipeline', 2),
+  cognia.ui.form(
+    'build-form',
+    [
+      cognia.ui.radioGroupField('channel', 'Channel', [
+        { label: 'Stable', value: 'stable' },
+        { label: 'Canary', value: 'canary' },
+      ], 'stable'),
+      cognia.ui.numberField('retryCount', 'Retries', { min: 0, max: 5, defaultValue: 1 }),
+      cognia.ui.switchField('includePrerelease', 'Include pre-release', false),
+      cognia.ui.multiSelectField('targets', 'Targets', [
+        { label: 'Node', value: 'node' },
+        { label: 'Python', value: 'python' },
+      ], ['node']),
+      cognia.ui.dateTimeField('scheduleAt', 'Schedule at'),
+      cognia.ui.passwordField('token', 'Access token'),
+    ],
+    'Run'
+  ),
+  cognia.ui.result('Build completed', 'success', 'Build result'),
+  cognia.ui.statCards([
+    { id: 'total', label: 'Total', value: 12 },
+    { id: 'passed', label: 'Passed', value: 12, status: 'success' },
+  ]),
+  cognia.ui.jsonView({ artifact: 'plugin.wasm', elapsedMs: 4820 }, 'Output'),
+];
+
+Host.outputString(cognia.ui.render(blocks));
+```
 
 ## Rust SDK Comparison
 

@@ -51,6 +51,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
     loadingHealth,
     installHistory,
     loadingHistory,
+    historyError,
     environmentInfo,
     environmentProviderInfo,
     availableVersions,
@@ -263,6 +264,7 @@ export function ProviderDetailPageClient({ providerId }: ProviderDetailPageClien
           <ProviderHistoryTab
             installHistory={installHistory}
             loadingHistory={loadingHistory}
+            historyError={historyError}
             onRefreshHistory={fetchHistory}
             t={t}
           />

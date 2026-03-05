@@ -88,13 +88,40 @@ export interface UiFormBlock {
 
 export type FormField =
   | FormInputField
+  | FormNumberField
+  | FormPasswordField
   | FormTextareaField
   | FormSelectField
+  | FormRadioGroupField
+  | FormSwitchField
+  | FormDateTimeField
+  | FormMultiSelectField
   | FormCheckboxField
   | FormSliderField;
 
 export interface FormInputField {
   type: 'input';
+  id: string;
+  label: string;
+  placeholder?: string;
+  defaultValue?: string;
+  required?: boolean;
+}
+
+export interface FormNumberField {
+  type: 'number';
+  id: string;
+  label: string;
+  placeholder?: string;
+  defaultValue?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  required?: boolean;
+}
+
+export interface FormPasswordField {
+  type: 'password';
   id: string;
   label: string;
   placeholder?: string;
@@ -117,6 +144,41 @@ export interface FormSelectField {
   label: string;
   options: { label: string; value: string }[];
   defaultValue?: string;
+}
+
+export interface FormRadioGroupField {
+  type: 'radio-group';
+  id: string;
+  label: string;
+  options: { label: string; value: string }[];
+  defaultValue?: string;
+  required?: boolean;
+}
+
+export interface FormSwitchField {
+  type: 'switch';
+  id: string;
+  label: string;
+  defaultChecked?: boolean;
+}
+
+export interface FormDateTimeField {
+  type: 'date-time';
+  id: string;
+  label: string;
+  defaultValue?: string;
+  min?: string;
+  max?: string;
+  required?: boolean;
+}
+
+export interface FormMultiSelectField {
+  type: 'multi-select';
+  id: string;
+  label: string;
+  options: { label: string; value: string }[];
+  defaultValues?: string[];
+  required?: boolean;
 }
 
 export interface FormCheckboxField {
@@ -176,6 +238,38 @@ export interface UiFileInputBlock {
   label: string;
   accept?: string;
   multiple?: boolean;
+  includeDataUrl?: boolean;
+}
+
+export interface UiJsonViewBlock {
+  type: 'json-view';
+  data: unknown;
+  label?: string;
+  expanded?: boolean;
+}
+
+export interface UiDescriptionListBlock {
+  type: 'description-list';
+  items: { term: string; description: string }[];
+}
+
+export interface UiStatCardsBlock {
+  type: 'stat-cards';
+  stats: {
+    id: string;
+    label: string;
+    value: string | number;
+    helpText?: string;
+    status?: 'default' | 'success' | 'warning' | 'error';
+  }[];
+}
+
+export interface UiResultBlock {
+  type: 'result';
+  message: string;
+  title?: string;
+  details?: string;
+  status?: 'info' | 'success' | 'warning' | 'error';
 }
 
 // ============================================================================
@@ -211,6 +305,10 @@ export type UiBlock =
   | UiAccordionBlock
   | UiCopyButtonBlock
   | UiFileInputBlock
+  | UiJsonViewBlock
+  | UiDescriptionListBlock
+  | UiStatCardsBlock
+  | UiResultBlock
   | UiGroupBlock;
 
 // ============================================================================
@@ -223,12 +321,16 @@ export interface PluginUiResponse {
 }
 
 export interface PluginUiAction {
-  action: 'button_click' | 'form_submit' | 'file_selected' | 'tab_change';
+  action: 'button_click' | 'form_submit' | 'file_selected' | 'tab_change' | string;
+  version?: 1 | 2;
+  sourceType?: string;
+  sourceId?: string;
   buttonId?: string;
   formId?: string;
-  formData?: Record<string, string | boolean | number>;
+  formData?: Record<string, unknown>;
+  formDataTypes?: Record<string, string>;
   fileInputId?: string;
-  files?: { name: string; size: number; type: string; dataUrl: string }[];
+  files?: { name: string; size: number; type: string; dataUrl?: string; lastModified?: number }[];
   tabId?: string;
   state?: Record<string, unknown>;
 }

@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { ToolCategoryNavContent } from './tool-category-nav';
+import { ToolCategoryNav, ToolCategoryNavContent } from './tool-category-nav';
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -128,5 +128,14 @@ describe('ToolCategoryNavContent', () => {
     render(<ToolCategoryNavContent {...defaultProps} selectedCategory="formatters" />);
     const btn = screen.getByText('Formatters').closest('button');
     expect(btn?.className).toContain('secondary');
+  });
+
+  it('uses container-relative scroll wrapper for desktop sidebar', () => {
+    render(<ToolCategoryNav {...defaultProps} />);
+    const wrapper = screen.getByTestId('tool-category-nav-scroll');
+    expect(wrapper.className).toContain('min-h-0');
+    expect(wrapper.className).toContain('flex-1');
+    expect(wrapper.className).toContain('overflow-y-auto');
+    expect(wrapper.className).not.toContain('100vh');
   });
 });

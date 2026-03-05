@@ -1,4 +1,13 @@
-import { getChartColor, getGradientId } from './chart-utils';
+import {
+  getChartColor,
+  getChartGradientDefinition,
+  getChartAxisTickStyle,
+  getChartGridStyle,
+  getChartTooltipCursorStyle,
+  getChartSegmentStrokeStyle,
+  getChartRadialTrackStyle,
+  getGradientId,
+} from './chart-utils';
 
 describe('getChartColor', () => {
   it('returns correct CSS variable for index 0-4', () => {
@@ -32,5 +41,60 @@ describe('getGradientId', () => {
     const id1 = getGradientId('pie', 0);
     const id2 = getGradientId('bar', 0);
     expect(id1).not.toBe(id2);
+  });
+});
+
+describe('shared chart style helpers', () => {
+  it('returns axis tick style using theme token', () => {
+    expect(getChartAxisTickStyle(12)).toEqual({
+      fontSize: 12,
+      fill: 'var(--foreground)',
+    });
+  });
+
+  it('returns shared grid style', () => {
+    expect(getChartGridStyle()).toEqual({
+      stroke: 'var(--border)',
+      strokeOpacity: 0.3,
+    });
+  });
+
+  it('returns shared tooltip cursor style', () => {
+    expect(getChartTooltipCursorStyle()).toEqual({
+      fill: 'var(--muted)',
+      opacity: 0.24,
+    });
+  });
+
+  it('returns shared segment stroke style', () => {
+    expect(getChartSegmentStrokeStyle()).toEqual({
+      stroke: 'var(--background)',
+      strokeWidth: 2,
+    });
+  });
+
+  it('returns shared radial track style', () => {
+    expect(getChartRadialTrackStyle()).toEqual({
+      fill: 'var(--muted)',
+      opacity: 0.28,
+    });
+  });
+});
+
+describe('getChartGradientDefinition', () => {
+  it('returns expected preset structure', () => {
+    const definition = getChartGradientDefinition('pie');
+    expect(definition).toMatchObject({
+      x1: '0',
+      y1: '0',
+      x2: '0',
+      y2: '1',
+    });
+    expect(definition.stops.length).toBeGreaterThan(0);
+  });
+
+  it('returns area preset with three stops', () => {
+    const definition = getChartGradientDefinition('area');
+    expect(definition.stops).toHaveLength(3);
   });
 });

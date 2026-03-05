@@ -96,8 +96,12 @@ function env_dashboard(): number {
         cognia.log.info('Dashboard refresh requested');
     }
 
+    if (action && action.action === 'form_submit') {
+        cognia.log.info(`Dashboard form submitted with fields: ${JSON.stringify(action.formDataTypes ?? {})}`);
+    }
+
     const platform = cognia.platform.info();
-    const envTypes = ['node', 'python', 'rust'];
+    const envTypes = ['node', 'python', 'rust', 'go'];
 
     const tableRows: string[][] = [];
     let detectedCount = 0;
@@ -116,6 +120,17 @@ function env_dashboard(): number {
         ]);
     }
 
+    const activeTargets = Array.isArray(action?.formData?.targets)
+        ? (action?.formData?.targets as string[])
+        : envTypes;
+
+    const summary = {
+        action: action?.action ?? 'initial_render',
+        activeTargets,
+        sourceType: action?.sourceType ?? 'none',
+        version: action?.version ?? 1,
+    };
+
     const blocks = [
         cognia.ui.heading('Environment Dashboard', 1),
         cognia.ui.group('horizontal', [
@@ -124,15 +139,52 @@ function env_dashboard(): number {
             cognia.ui.badge(`${detectedCount}/${envTypes.length} detected`, 'secondary'),
         ], 3),
         cognia.ui.divider(),
+        cognia.ui.result(
+            detectedCount === envTypes.length
+                ? 'All tracked environments are available.'
+                : 'Some environments are missing.',
+            detectedCount === envTypes.length ? 'success' : 'warning',
+            'Environment readiness',
+            `Detected ${detectedCount} out of ${envTypes.length}.`,
+        ),
         cognia.ui.progress(detectedCount, envTypes.length, 'Detection progress'),
         cognia.ui.table(
             ['Environment', 'Version', 'Status', 'Installed'],
             tableRows,
         ),
+        cognia.ui.statCards([
+            { id: 'detected', label: 'Detected', value: detectedCount, status: detectedCount > 0 ? 'success' : 'warning' },
+            { id: 'total', label: 'Tracked', value: envTypes.length },
+            { id: 'targeted', label: 'Selected Targets', value: activeTargets.length },
+        ]),
+        cognia.ui.descriptionList([
+            { term: 'Hostname', description: platform.hostname },
+            { term: 'OS Version', description: platform.osVersion },
+            { term: 'Last Action', description: summary.action },
+        ]),
+        cognia.ui.jsonView(summary, 'Action Payload Snapshot'),
         cognia.ui.keyValue([
             ['Hostname', platform.hostname],
             ['OS Version', platform.osVersion],
         ]),
+        cognia.ui.form(
+            'dashboard-controls',
+            [
+                cognia.ui.radioGroupField('channel', 'Channel', [
+                    { label: 'Stable', value: 'stable' },
+                    { label: 'Canary', value: 'canary' },
+                ], 'stable'),
+                cognia.ui.numberField('retryCount', 'Retry Count', { defaultValue: 1, min: 0, max: 5, step: 1 }),
+                cognia.ui.switchField('includePrerelease', 'Include Pre-release', false),
+                cognia.ui.multiSelectField('targets', 'Targets', envTypes.map((env) => ({
+                    label: env,
+                    value: env,
+                })), ['node', 'python']),
+                cognia.ui.dateTimeField('scheduleAt', 'Schedule At'),
+                cognia.ui.passwordField('token', 'Access Token', { placeholder: 'Optional token' }),
+            ],
+            'Apply Filters',
+        ),
         cognia.ui.divider(),
         cognia.ui.actions([
             cognia.ui.button('refresh', 'Refresh', 'default', 'RefreshCw'),

@@ -35,4 +35,11 @@ describe('ToolEmptyState', () => {
     expect(screen.getByText('No Recent Tools')).toBeInTheDocument();
     expect(screen.getByText('Tools you use will appear here')).toBeInTheDocument();
   });
+
+  it('uses full-height layout classes so empty content stays reachable in scroll area', () => {
+    render(<ToolEmptyState type="no-results" />);
+    const wrapper = screen.getByTestId('tool-empty-state');
+    expect(wrapper.className).toContain('min-h-full');
+    expect(wrapper.className).toContain('justify-center');
+  });
 });

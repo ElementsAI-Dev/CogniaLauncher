@@ -64,9 +64,11 @@ nul
 
 # Tauri debug artifacts
 src-tauri/check_output.txt
+src-tauri/target-*/
 
 # Plugin SDK build artifacts
 plugin-sdk/**/target/
+plugin-sdk/**/plugin.wasm
 plugin-sdk-ts/**/node_modules/
 plugin-sdk-ts/**/dist/
 plugin-sdk-ts/**/*.wasm

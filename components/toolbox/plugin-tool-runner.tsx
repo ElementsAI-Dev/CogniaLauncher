@@ -198,6 +198,18 @@ function SmartOutput({ output, label }: { output: string; label: string }) {
   );
 }
 
+function normalizeDeclarativeAction(
+  action: PluginUiAction,
+  toolId: string,
+): PluginUiAction {
+  return {
+    ...action,
+    version: action.version ?? 2,
+    sourceType: action.sourceType ?? 'declarative',
+    sourceId: action.sourceId ?? toolId,
+  };
+}
+
 // ============================================================================
 // Declarative Mode (JSON UI blocks)
 // ============================================================================
@@ -237,10 +249,11 @@ function DeclarativeToolRunner({ tool, className }: PluginToolRunnerProps) {
     async (action: PluginUiAction) => {
       setProcessing(true);
       try {
+        const normalized = normalizeDeclarativeAction(action, tool.toolId);
         const result = await callTool(
           tool.pluginId,
           tool.entry,
-          JSON.stringify(action),
+          JSON.stringify(normalized),
         );
         const parsed: PluginUiResponse = JSON.parse(result ?? '{}');
         if (parsed.ui) {

@@ -8,7 +8,8 @@ pub fn exec(command: &str, args: &[&str], cwd: Option<&str>) -> Result<ProcessRe
         "command": command,
         "args": args,
         "cwd": cwd,
-    }).to_string();
+    })
+    .to_string();
     let result = unsafe { host::cognia_process_exec(input)? };
     Ok(serde_json::from_str(&result)?)
 }

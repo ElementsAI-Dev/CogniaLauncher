@@ -19,10 +19,11 @@ export function ToolGrid({ tools, favorites, viewMode, onToggleFavorite, onOpen,
 
   return (
     <div
+      data-testid="tool-grid-root"
       className={cn(
         viewMode === 'grid'
-          ? 'grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-          : 'flex flex-col gap-2',
+          ? 'grid grid-cols-1 content-start gap-4 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+          : 'flex flex-col gap-2 pb-4',
       )}
     >
       {tools.map((tool) => (

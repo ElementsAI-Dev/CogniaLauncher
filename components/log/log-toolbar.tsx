@@ -243,9 +243,9 @@ export function LogToolbar({
     <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
     <div className="flex flex-col gap-2 p-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       {/* Primary row - Search and main actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {/* Search input */}
-        <div className="relative flex-1 min-w-0">
+        <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
             placeholder={t("logs.searchPlaceholder")}

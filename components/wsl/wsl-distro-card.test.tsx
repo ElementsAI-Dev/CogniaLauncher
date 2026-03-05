@@ -109,6 +109,14 @@ describe('WslDistroCard', () => {
     expect(defaultProps.onTerminate).toHaveBeenCalledWith('Ubuntu');
   });
 
+  it('keeps action controls responsive without collapsing button labels', () => {
+    render(<WslDistroCard distro={stoppedDistro} {...defaultProps} />);
+
+    const actions = screen.getByTestId('wsl-distro-actions');
+    expect(actions.className).toContain('flex-wrap');
+    expect(screen.getByText('Launch')).toHaveClass('whitespace-nowrap');
+  });
+
   it('uses camelCase fields correctly (wslVersion, isDefault)', () => {
     const distro: WslDistroStatus = {
       name: 'Alpine',

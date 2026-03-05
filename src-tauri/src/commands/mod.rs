@@ -196,6 +196,7 @@ pub use plugin::{
     plugin_call_tool, plugin_check_all_updates, plugin_disable, plugin_dispatch_event,
     plugin_enable, plugin_export_data, plugin_get_all_health, plugin_get_data_dir,
     plugin_get_health, plugin_get_info, plugin_get_locales, plugin_get_permissions,
+    plugin_open_scaffold_folder, plugin_open_scaffold_in_vscode,
     plugin_get_settings_schema, plugin_get_settings_values, plugin_get_tools, plugin_get_ui_asset,
     plugin_get_ui_entry, plugin_grant_permission, plugin_import_local, plugin_install, plugin_list,
     plugin_list_all_tools, plugin_reload, plugin_reset_health, plugin_revoke_permission,

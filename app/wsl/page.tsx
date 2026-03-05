@@ -476,6 +476,8 @@ export default function WslPage() {
         .replace('{feature}', t('wsl.importInPlace'))
         .replace('{version}', capabilities?.version ?? 'Unknown')
     : null;
+  const desktopLayoutClass =
+    'grid gap-6 xl:gap-8 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)] 2xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,1fr)]';
 
   // Non-Tauri fallback
   if (!isDesktop) {
@@ -490,32 +492,36 @@ export default function WslPage() {
     );
   }
 
-  // Availability check
-  if (available === false) {
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        <PageHeader title={t('wsl.title')} description={t('wsl.description')} />
-        <WslNotAvailable t={t} onInstallWsl={handleInstallWslOnly} />
-      </div>
-    );
-  }
-
   return (
     <div className="p-4 md:p-6 space-y-6">
       <PageHeader
         title={t('wsl.title')}
         description={t('wsl.description')}
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleUpdate} className="gap-2">
+          <div
+            data-testid="wsl-header-actions"
+            className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap"
+          >
+            <Button variant="outline" size="sm" onClick={handleUpdate} className="gap-2 whitespace-nowrap">
               <ArrowUpCircle className="h-4 w-4" />
               {t('wsl.update')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setImportOpen(true)} className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+              className="gap-2 whitespace-nowrap"
+            >
               <Upload className="h-4 w-4" />
               {t('wsl.import')}
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={loading} className="h-8 w-8">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={loading || available !== true}
+              className="h-8 w-8 shrink-0"
+            >
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
@@ -529,289 +535,335 @@ export default function WslPage() {
         </Alert>
       )}
 
-      {/* Loading skeleton when not yet loaded */}
-      {available === null && (
-        <div className="grid gap-4 md:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
-              <CardContent><Skeleton className="h-16 w-full" /></CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <div data-testid="wsl-page-content" className="space-y-6">
+        {available === false && (
+          <section data-testid="wsl-not-available" className="rounded-xl border border-border/60 bg-card/40 p-4 sm:p-5">
+            <WslNotAvailable t={t} onInstallWsl={handleInstallWslOnly} />
+          </section>
+        )}
 
-      {available && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_350px]">
-          {/* Main content */}
-          <div className="space-y-4">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'installed' | 'available')}>
-              <TabsList>
-                <TabsTrigger value="installed">
-                  {t('wsl.installed')} ({distros.length})
-                </TabsTrigger>
-                <TabsTrigger value="available">
-                  {t('wsl.available')} ({onlineDistros.length})
-                </TabsTrigger>
-              </TabsList>
-
-              {distros.length > 0 && availableTags.length > 0 && (
-                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-                  <Badge
-                    variant={activeTagFilter === null ? 'default' : 'outline'}
-                    className="text-xs cursor-pointer"
-                    onClick={() => setActiveTagFilter(null)}
-                  >
-                    {t('wsl.tags.all')}
-                  </Badge>
-                  {availableTags.map((tag) => (
-                    <Badge
-                      key={tag}
-                      variant={activeTagFilter === tag ? 'default' : 'outline'}
-                      className="text-xs cursor-pointer"
-                      onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
-                    >
-                      {tag}
-                    </Badge>
+        {/* Loading skeleton before WSL availability is resolved */}
+        {available === null && (
+          <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
+            <section data-testid="wsl-primary-region" className="space-y-4">
+              <Card className="border-dashed">
+                <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
+                <CardContent className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-3 rounded-md border p-3">
+                      <Skeleton className="h-10 w-10 rounded-lg" />
+                      <div className="w-full space-y-2">
+                        <Skeleton className="h-5 w-28" />
+                        <Skeleton className="h-4 w-36" />
+                      </div>
+                    </div>
                   ))}
-                </div>
-              )}
+                </CardContent>
+              </Card>
+            </section>
+            <aside data-testid="wsl-supporting-region" className="space-y-4">
+              {[1, 2].map((i) => (
+                <Card key={i}>
+                  <CardHeader><Skeleton className="h-6 w-32" /></CardHeader>
+                  <CardContent><Skeleton className="h-20 w-full" /></CardContent>
+                </Card>
+              ))}
+            </aside>
+          </div>
+        )}
 
-              <TabsContent value="installed" className="space-y-3 mt-4">
-                {loading && distros.length === 0 ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <Card key={i}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-3">
-                            <Skeleton className="h-10 w-10 rounded-lg" />
-                            <div className="space-y-2">
-                              <Skeleton className="h-5 w-28" />
-                              <Skeleton className="h-4 w-36" />
+        {available === true && (
+          <div data-testid="wsl-layout-grid" className={desktopLayoutClass}>
+            {/* Primary workflow region */}
+            <section data-testid="wsl-primary-region" className="space-y-5">
+              <section
+                data-testid="wsl-distro-workflow-section"
+                className="rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4"
+              >
+                <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'installed' | 'available')}>
+                  <TabsList>
+                    <TabsTrigger value="installed">
+                      {t('wsl.installed')} ({distros.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="available">
+                      {t('wsl.available')} ({onlineDistros.length})
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {distros.length > 0 && availableTags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        variant={activeTagFilter === null ? 'default' : 'outline'}
+                        className="cursor-pointer text-xs"
+                        onClick={() => setActiveTagFilter(null)}
+                      >
+                        {t('wsl.tags.all')}
+                      </Badge>
+                      {availableTags.map((tag) => (
+                        <Badge
+                          key={tag}
+                          variant={activeTagFilter === tag ? 'default' : 'outline'}
+                          className="cursor-pointer text-xs"
+                          onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                        >
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  <TabsContent value="installed" className="mt-4 space-y-3">
+                    {loading && distros.length === 0 ? (
+                      <div className="space-y-3">
+                        {[1, 2, 3].map((i) => (
+                          <Card key={i}>
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-3">
+                                <Skeleton className="h-10 w-10 rounded-lg" />
+                                <div className="space-y-2">
+                                  <Skeleton className="h-5 w-28" />
+                                  <Skeleton className="h-4 w-36" />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : distros.length === 0 ? (
+                      <WslEmptyState t={t} />
+                    ) : (
+                      <>
+                        {filteredDistros.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-2 pb-1">
+                            <Checkbox
+                              checked={selectedDistros.size === filteredDistros.length && filteredDistros.length > 0}
+                              onCheckedChange={toggleSelectAll}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {selectedDistros.size > 0
+                                ? `${selectedDistros.size} ${t('wsl.batch.selected')}`
+                                : t('wsl.batch.selectAll')}
+                            </span>
+                            {selectedDistros.size > 0 && (
+                              <div className="flex w-full items-center gap-1 sm:ml-auto sm:w-auto">
+                                <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 text-xs sm:flex-none" onClick={handleBatchLaunch}>
+                                  {t('wsl.batch.launch')}
+                                </Button>
+                                <Button variant="outline" size="sm" className="h-7 flex-1 gap-1 text-xs sm:flex-none" onClick={handleBatchTerminate}>
+                                  {t('wsl.batch.terminate')}
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {filteredDistros.map((distro) => (
+                          <div key={distro.name} className="flex items-start gap-2">
+                            {filteredDistros.length > 1 && (
+                              <Checkbox
+                                className="mt-5"
+                                checked={selectedDistros.has(distro.name)}
+                                onCheckedChange={() => toggleSelectDistro(distro.name)}
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <WslDistroCard
+                                distro={distro}
+                                onLaunch={handleLaunch}
+                                onTerminate={handleTerminate}
+                                onSetDefault={handleSetDefault}
+                                onSetVersion={handleSetVersion}
+                                onExport={handleExportOpen}
+                                onUnregister={(name) =>
+                                  setConfirmAction({ type: 'unregister', name })
+                                }
+                                onChangeDefaultUser={handleChangeDefaultUserOpen}
+                                onOpenInExplorer={handleOpenInExplorer}
+                                onOpenInTerminal={handleOpenInTerminal}
+                                onClone={handleCloneOpen}
+                                getDiskUsage={getDiskUsage}
+                                t={t}
+                              />
                             </div>
                           </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                ) : distros.length === 0 ? (
-                  <WslEmptyState t={t} />
-                ) : (
-                  <>
-                    {filteredDistros.length > 1 && (
-                      <div className="flex items-center gap-2 pb-1">
-                        <Checkbox
-                          checked={selectedDistros.size === filteredDistros.length && filteredDistros.length > 0}
-                          onCheckedChange={toggleSelectAll}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          {selectedDistros.size > 0
-                            ? `${selectedDistros.size} ${t('wsl.batch.selected')}`
-                            : t('wsl.batch.selectAll')}
-                        </span>
-                        {selectedDistros.size > 0 && (
-                          <div className="flex items-center gap-1 ml-auto">
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleBatchLaunch}>
-                              {t('wsl.batch.launch')}
-                            </Button>
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleBatchTerminate}>
-                              {t('wsl.batch.terminate')}
-                            </Button>
-                          </div>
-                        )}
-                      </div>
+                        ))}
+                      </>
                     )}
-                    {filteredDistros.map((distro) => (
-                      <div key={distro.name} className="flex items-start gap-2">
-                        {filteredDistros.length > 1 && (
-                          <Checkbox
-                            className="mt-5"
-                            checked={selectedDistros.has(distro.name)}
-                            onCheckedChange={() => toggleSelectDistro(distro.name)}
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <WslDistroCard
-                            distro={distro}
-                            onLaunch={handleLaunch}
-                            onTerminate={handleTerminate}
-                            onSetDefault={handleSetDefault}
-                            onSetVersion={handleSetVersion}
-                            onExport={handleExportOpen}
-                            onUnregister={(name) =>
-                              setConfirmAction({ type: 'unregister', name })
-                            }
-                            onChangeDefaultUser={handleChangeDefaultUserOpen}
-                            onOpenInExplorer={handleOpenInExplorer}
-                            onOpenInTerminal={handleOpenInTerminal}
-                            onClone={handleCloneOpen}
-                            getDiskUsage={getDiskUsage}
-                            t={t}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </TabsContent>
+                  </TabsContent>
 
-              <TabsContent value="available" className="mt-4">
-                <WslOnlineList
-                  distros={onlineDistros}
-                  installedNames={distros.map((d) => d.name)}
+                  <TabsContent value="available" className="mt-4">
+                    <WslOnlineList
+                      distros={onlineDistros}
+                      installedNames={distros.map((d) => d.name)}
+                      loading={loading}
+                      onInstall={handleInstallOnline}
+                      onInstallWithLocation={handleOpenInstallWithLocation}
+                      t={t}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </section>
+
+              {distros.length > 0 && (
+                <section
+                  data-testid="wsl-terminal-workflow-section"
+                  className="rounded-xl border border-border/60 bg-card/40 p-3 sm:p-4"
+                >
+                  <WslExecTerminal
+                    distros={distros}
+                    onExec={execCommand}
+                    t={t}
+                  />
+                </section>
+              )}
+            </section>
+
+            {/* Supporting region */}
+            <aside data-testid="wsl-supporting-region" className="space-y-5">
+              <section data-testid="wsl-runtime-support-section" className="space-y-4">
+                <WslStatusCard
+                  status={status}
                   loading={loading}
-                  onInstall={handleInstallOnline}
-                  onInstallWithLocation={handleOpenInstallWithLocation}
+                  onRefresh={() => refreshStatus()}
+                  onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
+                  getIpAddress={() => getIpAddress()}
+                  config={config}
                   t={t}
                 />
-              </TabsContent>
-            </Tabs>
-
-            {distros.length > 0 && (
-              <WslExecTerminal
-                distros={distros}
-                onExec={execCommand}
-                t={t}
-              />
-            )}
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-4">
-            <WslStatusCard
-              status={status}
-              loading={loading}
-              onRefresh={() => refreshStatus()}
-              onShutdownAll={() => setConfirmAction({ type: 'shutdown' })}
-              getIpAddress={() => getIpAddress()}
-              config={config}
-              t={t}
-            />
-            <Card>
-              <CardHeader className="pb-3">
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Info className="h-4 w-4" />
-                  {t('wsl.versionInfo')}
-                </h3>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{t('wsl.wslVersion')}</span>
-                  <span className="font-mono">{versionInfo?.wslVersion ?? status?.version ?? '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{t('wsl.kernelVersion')}</span>
-                  <span className="font-mono">{versionInfo?.kernelVersion ?? status?.kernelVersion ?? '—'}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{t('wsl.wslgVersion')}</span>
-                  <span className="font-mono">{versionInfo?.wslgVersion ?? status?.wslgVersion ?? '—'}</span>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <HardDrive className="h-3.5 w-3.5" />
-                    {t('wsl.totalDiskUsage')}
-                  </span>
-                  <span className="font-mono">
-                    {totalDiskUsage ? formatBytes(totalDiskUsage.totalBytes) : '—'}
-                  </span>
-                </div>
-                {totalDiskUsage && totalDiskUsage.perDistro.length > 0 && (
-                  <div className="space-y-1">
-                    {totalDiskUsage.perDistro.slice(0, 3).map(([name, bytes]) => (
-                      <div key={name} className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground truncate">{name}</span>
-                        <span className="font-mono">{formatBytes(bytes)}</span>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold">
+                      <Info className="h-4 w-4" />
+                      {t('wsl.versionInfo')}
+                    </h3>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{t('wsl.wslVersion')}</span>
+                      <span className="font-mono">{versionInfo?.wslVersion ?? status?.version ?? '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{t('wsl.kernelVersion')}</span>
+                      <span className="font-mono">{versionInfo?.kernelVersion ?? status?.kernelVersion ?? '—'}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{t('wsl.wslgVersion')}</span>
+                      <span className="font-mono">{versionInfo?.wslgVersion ?? status?.wslgVersion ?? '—'}</span>
+                    </div>
+                    <Separator />
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <HardDrive className="h-3.5 w-3.5" />
+                        {t('wsl.totalDiskUsage')}
+                      </span>
+                      <span className="font-mono">
+                        {totalDiskUsage ? formatBytes(totalDiskUsage.totalBytes) : '—'}
+                      </span>
+                    </div>
+                    {totalDiskUsage && totalDiskUsage.perDistro.length > 0 && (
+                      <div className="space-y-1">
+                        {totalDiskUsage.perDistro.slice(0, 3).map(([name, bytes]) => (
+                          <div key={name} className="flex items-center justify-between text-xs">
+                            <span className="truncate text-muted-foreground">{name}</span>
+                            <span className="font-mono">{formatBytes(bytes)}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                    {sidebarMetaLoading && (
+                      <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </section>
+
+              <section data-testid="wsl-operations-support-section" className="space-y-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <h3 className="text-sm font-semibold">{t('wsl.advancedOps')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('wsl.advancedOpsDesc')}</p>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-center whitespace-nowrap"
+                        onClick={() => handleSetDefaultVersion(1)}
+                      >
+                        {t('wsl.defaultVersion')} 1
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-center whitespace-nowrap"
+                        onClick={() => handleSetDefaultVersion(2)}
+                      >
+                        {t('wsl.defaultVersion')} 2
+                      </Button>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={() => setImportInPlaceOpen(true)}
+                      disabled={importInPlaceUnsupported}
+                      title={importInPlaceHint ?? undefined}
+                    >
+                      {t('wsl.importInPlace')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={() => setMountDialogOpen(true)}
+                    >
+                      {t('wsl.mount')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={handleUnmountPrompt}
+                    >
+                      {t('wsl.unmount')}
+                    </Button>
+                    {importInPlaceHint && (
+                      <p className="text-xs text-muted-foreground">{importInPlaceHint}</p>
+                    )}
+                    {capabilities?.mountOptions === false && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('wsl.mountOptionsFallback')}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+                <WslBackupCard
+                  distroNames={distros.map((d) => d.name)}
+                  t={t}
+                />
+              </section>
+
+              <section data-testid="wsl-config-support-section" className="space-y-4">
+                <WslConfigCard
+                  config={config}
+                  loading={loading}
+                  onRefresh={refreshConfig}
+                  onSetConfig={setConfigValue}
+                  t={t}
+                />
+                {selectedDistroForConfig && (
+                  <WslDistroConfigCard
+                    distroName={selectedDistroForConfig}
+                    getDistroConfig={getDistroConfig}
+                    setDistroConfigValue={setDistroConfigValue}
+                    t={t}
+                  />
                 )}
-                {sidebarMetaLoading && (
-                  <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-3">
-                <h3 className="text-sm font-semibold">{t('wsl.advancedOps')}</h3>
-                <p className="text-xs text-muted-foreground">{t('wsl.advancedOpsDesc')}</p>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSetDefaultVersion(1)}
-                  >
-                    {t('wsl.defaultVersion')} 1
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSetDefaultVersion(2)}
-                  >
-                    {t('wsl.defaultVersion')} 2
-                  </Button>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={() => setImportInPlaceOpen(true)}
-                  disabled={importInPlaceUnsupported}
-                  title={importInPlaceHint ?? undefined}
-                >
-                  {t('wsl.importInPlace')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={() => setMountDialogOpen(true)}
-                >
-                  {t('wsl.mount')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={handleUnmountPrompt}
-                >
-                  {t('wsl.unmount')}
-                </Button>
-                {importInPlaceHint && (
-                  <p className="text-xs text-muted-foreground">{importInPlaceHint}</p>
-                )}
-                {capabilities?.mountOptions === false && (
-                  <p className="text-xs text-muted-foreground">
-                    {t('wsl.mountOptionsFallback')}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-            <WslConfigCard
-              config={config}
-              loading={loading}
-              onRefresh={refreshConfig}
-              onSetConfig={setConfigValue}
-              t={t}
-            />
-            {selectedDistroForConfig && (
-              <WslDistroConfigCard
-                distroName={selectedDistroForConfig}
-                getDistroConfig={getDistroConfig}
-                setDistroConfigValue={setDistroConfigValue}
-                t={t}
-              />
-            )}
-            <WslBackupCard
-              distroNames={distros.map((d) => d.name)}
-              t={t}
-            />
+              </section>
+            </aside>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Import Dialog */}
       <WslImportDialog

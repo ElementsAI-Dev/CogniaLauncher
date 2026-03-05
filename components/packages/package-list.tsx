@@ -27,6 +27,7 @@ import {
   Info,
   Loader2,
   Package,
+  GitBranch,
   Pin,
   Star,
   Copy,
@@ -60,9 +61,11 @@ export function PackageList({
   installing = [],
   pinnedPackages = [],
   bookmarkedPackages = [],
+  resolvingDependencyKey = null,
   onInstall,
   onUninstall,
   onSelect,
+  onResolveDependencies,
   onPin,
   onUnpin,
   onBookmark,
@@ -151,6 +154,9 @@ export function PackageList({
             const version = isInstalled
               ? (pkg as InstalledPackage).version
               : (pkg as PackageSummary).latest_version;
+            const dependencyLookupKey = `${type}:${pkg.provider ?? ""}:${pkg.name.toLowerCase()}`;
+            const isResolvingDependencies =
+              resolvingDependencyKey === dependencyLookupKey;
             const versionLabel =
               typeof version === "string" && version.trim().length > 0
                 ? version.trim()
@@ -218,6 +224,31 @@ export function PackageList({
                     <Badge className="text-xs px-2 py-1 bg-muted text-muted-foreground hover:bg-muted">
                       {pkg.provider}
                     </Badge>
+                  )}
+
+                  {onResolveDependencies && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          aria-label={t("packages.resolveDependencies")}
+                          disabled={isResolvingDependencies}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onResolveDependencies(pkg, type);
+                          }}
+                        >
+                          {isResolvingDependencies ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            <GitBranch className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("packages.resolveDependencies")}</TooltipContent>
+                    </Tooltip>
                   )}
 
                   <Tooltip>
@@ -400,6 +431,15 @@ export function PackageList({
                     <Info className="h-4 w-4" />
                     {t("packages.quickView")}
                   </ContextMenuItem>
+                  {onResolveDependencies && (
+                    <ContextMenuItem
+                      onClick={() => onResolveDependencies(pkg, type)}
+                      disabled={isResolvingDependencies}
+                    >
+                      <GitBranch className="h-4 w-4" />
+                      {t("packages.resolveDependencies")}
+                    </ContextMenuItem>
+                  )}
                   <ContextMenuSeparator />
                   {isInstalled ? (
                     <ContextMenuItem

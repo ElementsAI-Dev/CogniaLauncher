@@ -184,6 +184,7 @@ export function EnvironmentCard({
             <DetectedVersionBadge
               version={detectedVersion.version}
               source={detectedVersion.source}
+              sourceType={detectedVersion.source_type}
               currentVersion={env.current_version}
               t={t}
             />

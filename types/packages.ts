@@ -37,11 +37,31 @@ export interface BatchOperationsProps {
 // Dependency Tree
 // ============================================================================
 
+export type DependencyLookupSource = 'installed' | 'search' | 'manual';
+
+export interface DependencyLookupContext {
+  packageName: string;
+  providerId?: string | null;
+  version?: string | null;
+  source: 'installed' | 'search';
+}
+
+export interface DependencyResolveRequest {
+  packageName: string;
+  providerId?: string | null;
+  version?: string | null;
+  source: DependencyLookupSource;
+}
+
 export interface DependencyTreeProps {
   packageId?: string;
+  selectedContext?: DependencyLookupContext | null;
+  activeRequest?: DependencyResolveRequest | null;
   resolution?: ResolutionResult;
+  error?: string | null;
   loading: boolean;
-  onResolve: (packageId: string) => Promise<ResolutionResult>;
+  onResolve: (request: DependencyResolveRequest) => Promise<ResolutionResult | null>;
+  onRetry?: () => Promise<void>;
 }
 
 // ============================================================================
@@ -115,9 +135,14 @@ export interface PackageListProps {
   installing?: string[];
   pinnedPackages?: string[];
   bookmarkedPackages?: string[];
+  resolvingDependencyKey?: string | null;
   onInstall?: (name: string) => void;
   onUninstall?: (name: string) => void;
   onSelect?: (pkg: PackageSummary | InstalledPackage) => void;
+  onResolveDependencies?: (
+    pkg: PackageSummary | InstalledPackage,
+    source: 'search' | 'installed',
+  ) => void;
   onPin?: (name: string) => void;
   onUnpin?: (name: string) => void;
   onBookmark?: (name: string) => void;
@@ -262,4 +287,6 @@ export interface PackageDependencyViewProps {
 export interface PackageHistoryListProps {
   history: InstallHistoryEntry[];
   loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }

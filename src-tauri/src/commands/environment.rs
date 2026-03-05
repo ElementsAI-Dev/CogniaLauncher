@@ -1075,6 +1075,42 @@ pub async fn env_uninstall(
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVersionMutationResult {
+    pub env_type: String,
+    pub operation: String,
+    pub requested_version: String,
+    pub effective_version: Option<String>,
+    pub source_type: String,
+    pub success: bool,
+    pub status: String,
+    pub message: Option<String>,
+}
+
+fn normalize_version_token(raw: &str) -> String {
+    let mut normalized = raw.trim().to_ascii_lowercase();
+    if let Some(stripped) = normalized.strip_prefix('v') {
+        normalized = stripped.to_string();
+    }
+    if normalized.starts_with("go") && normalized[2..].chars().next().is_some_and(|c| c.is_ascii_digit())
+    {
+        normalized = normalized[2..].to_string();
+    }
+    normalized
+}
+
+fn versions_compatible(expected: &str, actual: &str) -> bool {
+    let expected = normalize_version_token(expected);
+    let actual = normalize_version_token(actual);
+    if expected.is_empty() || actual.is_empty() {
+        return false;
+    }
+    expected == actual
+        || actual.starts_with(&expected)
+        || expected.starts_with(&actual)
+}
+
 #[tauri::command]
 pub async fn env_use_global(
     env_type: String,
@@ -1082,17 +1118,53 @@ pub async fn env_use_global(
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
     config: State<'_, crate::commands::config::SharedSettings>,
-) -> Result<(), String> {
+) -> Result<EnvVersionMutationResult, String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
-    manager
-        .set_global_version(&env_type, &version, provider_id.as_deref())
+    let logical_env_type = EnvironmentManager::logical_env_type(&env_type);
+    let (_logical, _provider_key, provider) = manager
+        .resolve_provider(&logical_env_type, provider_id.as_deref(), Some(&version))
         .await
         .map_err(|e| e.to_string())?;
+    provider
+        .set_global_version(&version)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let effective_version = provider
+        .get_current_version()
+        .await
+        .map_err(|e| e.to_string())?;
+    let success = effective_version
+        .as_deref()
+        .map(|effective| versions_compatible(&version, effective))
+        .unwrap_or(false);
+    let message = if success {
+        None
+    } else {
+        Some(format!(
+            "Global version verification failed: expected `{}`, got `{}`",
+            version,
+            effective_version.as_deref().unwrap_or("none")
+        ))
+    };
 
     // Invalidate environment caches after version switch
     invalidate_env_caches(config.inner()).await;
 
-    Ok(())
+    Ok(EnvVersionMutationResult {
+        env_type: logical_env_type,
+        operation: "set_global".to_string(),
+        requested_version: version,
+        effective_version,
+        source_type: "global".to_string(),
+        success,
+        status: if success {
+            "verified".to_string()
+        } else {
+            "verification_failed".to_string()
+        },
+        message,
+    })
 }
 
 #[tauri::command]
@@ -1103,22 +1175,60 @@ pub async fn env_use_local(
     provider_id: Option<String>,
     registry: State<'_, SharedRegistry>,
     config: State<'_, crate::commands::config::SharedSettings>,
-) -> Result<(), String> {
+) -> Result<EnvVersionMutationResult, String> {
     let manager = EnvironmentManager::new(registry.inner().clone());
-    manager
-        .set_local_version(
-            &env_type,
-            std::path::Path::new(&project_path),
-            &version,
-            provider_id.as_deref(),
-        )
+    let logical_env_type = EnvironmentManager::logical_env_type(&env_type);
+    let (_logical, _provider_key, provider) = manager
+        .resolve_provider(&logical_env_type, provider_id.as_deref(), Some(&version))
         .await
         .map_err(|e| e.to_string())?;
+    provider
+        .set_local_version(std::path::Path::new(&project_path), &version)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let sources = enabled_detection_sources_for_env_type(&logical_env_type, config.inner()).await;
+    let detected = manager
+        .detect_version_with_sources(&logical_env_type, std::path::Path::new(&project_path), &sources)
+        .await
+        .map_err(|e| e.to_string())?;
+    let effective_version = detected.as_ref().map(|d| d.version.clone());
+    let source_type = detected
+        .as_ref()
+        .map(|d| d.source_type.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    let success = detected
+        .as_ref()
+        .map(|d| d.source_type == "local" && versions_compatible(&version, &d.version))
+        .unwrap_or(false);
+    let message = if success {
+        None
+    } else {
+        Some(format!(
+            "Local version verification failed: expected local `{}`, got `{}` ({})",
+            version,
+            effective_version.as_deref().unwrap_or("none"),
+            source_type
+        ))
+    };
 
     // Invalidate environment caches after local version switch
     invalidate_env_caches(config.inner()).await;
 
-    Ok(())
+    Ok(EnvVersionMutationResult {
+        env_type: logical_env_type,
+        operation: "set_local".to_string(),
+        requested_version: version,
+        effective_version,
+        source_type,
+        success,
+        status: if success {
+            "verified".to_string()
+        } else {
+            "verification_failed".to_string()
+        },
+        message,
+    })
 }
 
 #[tauri::command]

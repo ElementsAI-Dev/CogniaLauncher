@@ -1,9 +1,44 @@
 import React from 'react';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import ToolboxPage from './page';
 
 let mockIsDesktop = true;
 let mockFetchPlugins = jest.fn();
+const createTool = (index: number) => ({
+  id: `builtin:tool-${index}`,
+  name: `Tool ${index}`,
+  description: `Tool description ${index}`,
+  icon: 'Wrench',
+  category: 'developer',
+  keywords: [],
+  isBuiltIn: true,
+  isNew: false,
+  isBeta: false,
+});
+const createToolboxState = (overrides: Record<string, unknown> = {}) => ({
+  filteredTools: [],
+  allTools: [],
+  categoryToolCounts: new Map<string, number>(),
+  totalToolCount: 0,
+  dynamicCategories: [],
+  isDesktop: mockIsDesktop,
+  favorites: [],
+  recentTools: [],
+  mostUsedCount: 0,
+  toolUseCounts: {},
+  viewMode: 'grid' as const,
+  selectedCategory: 'all' as const,
+  searchQuery: '',
+  activeToolId: null,
+  toggleFavorite: jest.fn(),
+  addRecent: jest.fn(),
+  setViewMode: jest.fn(),
+  setCategory: jest.fn(),
+  setSearchQuery: jest.fn(),
+  setActiveToolId: jest.fn(),
+  ...overrides,
+});
+let mockToolboxState = createToolboxState();
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({ t: (key: string) => key }),
@@ -20,28 +55,7 @@ jest.mock('@/hooks/use-plugins', () => ({
 }));
 
 jest.mock('@/hooks/use-toolbox', () => ({
-  useToolbox: () => ({
-    filteredTools: [],
-    allTools: [],
-    categoryToolCounts: {},
-    totalToolCount: 0,
-    dynamicCategories: [],
-    isDesktop: mockIsDesktop,
-    favorites: [],
-    recentTools: [],
-    mostUsedCount: 0,
-    toolUseCounts: {},
-    viewMode: 'grid',
-    selectedCategory: 'all',
-    searchQuery: '',
-    activeToolId: null,
-    toggleFavorite: jest.fn(),
-    addRecent: jest.fn(),
-    setViewMode: jest.fn(),
-    setCategory: jest.fn(),
-    setSearchQuery: jest.fn(),
-    setActiveToolId: jest.fn(),
-  }),
+  useToolbox: () => mockToolboxState,
 }));
 
 jest.mock('@/components/layout/page-header', () => ({
@@ -82,11 +96,15 @@ jest.mock('@/components/toolbox', () => {
   ToolSearchBar.displayName = 'ToolSearchBar';
 
   return {
-    ToolGrid: () => <div data-testid="tool-grid" />,
+    ToolGrid: ({ tools }: { tools: Array<{ id: string }> }) => (
+      <div data-testid="tool-grid" data-tool-count={tools.length} />
+    ),
     ToolCategoryNav: () => <div data-testid="category-nav" />,
     ToolSearchBar,
     ToolDetailPanel: () => <div data-testid="detail-panel" />,
-    ToolEmptyState: () => <div data-testid="empty-state" />,
+    ToolEmptyState: ({ type }: { type: string }) => (
+      <div data-testid="empty-state" data-empty-type={type} />
+    ),
   };
 });
 
@@ -106,6 +124,7 @@ describe('ToolboxPage plugin bootstrap', () => {
   beforeEach(() => {
     mockIsDesktop = true;
     mockFetchPlugins = jest.fn();
+    mockToolboxState = createToolboxState();
     jest.clearAllMocks();
   });
 
@@ -126,7 +145,57 @@ describe('ToolboxPage plugin bootstrap', () => {
 
   it('does not auto-fetch plugins outside desktop mode', () => {
     mockIsDesktop = false;
+    mockToolboxState = createToolboxState({ isDesktop: false });
     render(<ToolboxPage />);
     expect(mockFetchPlugins).not.toHaveBeenCalled();
+  });
+
+  it('keeps page container non-scrollable and list container scrollable', () => {
+    render(<ToolboxPage />);
+
+    const pageRoot = screen.getByTestId('toolbox-page-root');
+    const contentShell = screen.getByTestId('toolbox-content-shell');
+    const listScrollArea = screen.getByTestId('toolbox-list-scroll-area');
+
+    expect(pageRoot.className).toContain('h-full');
+    expect(pageRoot.className).toContain('overflow-hidden');
+    expect(pageRoot.className).not.toContain('overflow-y-auto');
+
+    expect(contentShell.className).toContain('min-h-0');
+    expect(contentShell.className).toContain('overflow-hidden');
+
+    expect(listScrollArea.className).toContain('min-h-0');
+    expect(listScrollArea.className).toContain('overflow-y-auto');
+  });
+
+  it('keeps empty state reachable inside the list scroll area', () => {
+    mockToolboxState = createToolboxState({ selectedCategory: 'favorites' });
+    render(<ToolboxPage />);
+
+    const listScrollArea = screen.getByTestId('toolbox-list-scroll-area');
+    const emptyState = screen.getByTestId('empty-state');
+
+    expect(emptyState).toBeInTheDocument();
+    expect(emptyState).toHaveAttribute('data-empty-type', 'no-favorites');
+    expect(listScrollArea).toContainElement(emptyState);
+  });
+
+  it('keeps long tool lists inside the dedicated list scroll area', () => {
+    const manyTools = Array.from({ length: 120 }, (_, index) => createTool(index + 1));
+    mockToolboxState = createToolboxState({
+      filteredTools: manyTools,
+      allTools: manyTools,
+      totalToolCount: manyTools.length,
+      categoryToolCounts: new Map([['developer', manyTools.length]]),
+    });
+
+    render(<ToolboxPage />);
+
+    const listScrollArea = screen.getByTestId('toolbox-list-scroll-area');
+    const toolGrid = screen.getByTestId('tool-grid');
+
+    expect(toolGrid).toHaveAttribute('data-tool-count', String(manyTools.length));
+    expect(listScrollArea.className).toContain('overflow-y-auto');
+    expect(screen.queryByTestId('empty-state')).not.toBeInTheDocument();
   });
 });

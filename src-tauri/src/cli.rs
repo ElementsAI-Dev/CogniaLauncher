@@ -85,10 +85,7 @@ pub fn handle_cli(app: &tauri::AppHandle) -> Option<i32> {
             "cache" => cmd_cache(&ctx, &subcmd.matches, json_mode).await,
             "doctor" => cmd_doctor(&ctx, &subcmd.matches, json_mode).await,
             "providers" => cmd_providers(&ctx, &subcmd.matches, json_mode).await,
-            other => {
-                eprintln!("Unknown subcommand: {}", other);
-                EXIT_USAGE_ERROR
-            }
+            other => usage_error(other, json_mode, format!("Unknown subcommand: {}", other)),
         }
     });
 
@@ -141,6 +138,50 @@ fn print_json<T: Serialize>(data: &T) {
     }
 }
 
+fn cli_success_envelope(command: &str, data: serde_json::Value) -> serde_json::Value {
+    json!({
+        "ok": true,
+        "command": command,
+        "data": data,
+    })
+}
+
+fn cli_error_envelope(
+    command: &str,
+    kind: &str,
+    message: impl Into<String>,
+) -> serde_json::Value {
+    json!({
+        "ok": false,
+        "command": command,
+        "error": {
+            "kind": kind,
+            "message": message.into(),
+        }
+    })
+}
+
+fn batch_summary(success: usize, failed: usize) -> serde_json::Value {
+    json!({
+        "total": success + failed,
+        "success": success,
+        "failed": failed,
+    })
+}
+
+fn print_command_json<T: Serialize>(command: &str, data: &T) {
+    match serde_json::to_value(data) {
+        Ok(value) => print_json(&cli_success_envelope(command, value)),
+        Err(e) => {
+            print_json(&cli_error_envelope(
+                command,
+                "runtime",
+                format!("JSON serialization error: {}", e),
+            ));
+        }
+    }
+}
+
 fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     if rows.is_empty() {
         return;
@@ -182,13 +223,23 @@ fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     }
 }
 
-fn usage_error(message: impl AsRef<str>) -> i32 {
-    eprintln!("Error: {}", message.as_ref());
+fn usage_error(command: &str, json_mode: bool, message: impl AsRef<str>) -> i32 {
+    let message = message.as_ref();
+    if json_mode {
+        print_json(&cli_error_envelope(command, "usage", message));
+    } else {
+        eprintln!("Error: {}", message);
+    }
     EXIT_USAGE_ERROR
 }
 
-fn runtime_error(message: impl AsRef<str>) -> i32 {
-    eprintln!("Error: {}", message.as_ref());
+fn runtime_error(command: &str, json_mode: bool, message: impl AsRef<str>) -> i32 {
+    let message = message.as_ref();
+    if json_mode {
+        print_json(&cli_error_envelope(command, "runtime", message));
+    } else {
+        eprintln!("Error: {}", message);
+    }
     EXIT_ERROR
 }
 
@@ -200,9 +251,10 @@ fn parse_config_import_content(file_path: &str, content: &str) -> Result<Setting
 // ── Subcommand: search ───────────────────────────────────────────
 
 async fn cmd_search(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "search";
     let query = match get_string(&matches.args, "query") {
         Some(q) => q,
-        None => return usage_error("search query is required"),
+        None => return usage_error(COMMAND, json_mode, "search query is required"),
     };
     let provider_filter = get_string(&matches.args, "provider");
     let limit: usize = get_string(&matches.args, "limit")
@@ -223,7 +275,7 @@ async fn cmd_search(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 .await
                 .unwrap_or_default(),
             None => {
-                return usage_error(format!("Provider not found: {}", pid));
+                return usage_error(COMMAND, json_mode, format!("Provider not found: {}", pid));
             }
         }
     } else {
@@ -252,7 +304,7 @@ async fn cmd_search(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
     };
 
     if json_mode {
-        print_json(&results);
+        print_command_json(COMMAND, &results);
     } else if results.is_empty() {
         println!("No results found for '{}'", query);
     } else {
@@ -280,21 +332,32 @@ async fn cmd_install(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "install";
     let packages = get_string_list(&matches.args, "packages");
     if packages.is_empty() {
-        return usage_error("at least one package name is required");
+        return usage_error(COMMAND, json_mode, "at least one package name is required");
     }
     let provider_filter = get_string(&matches.args, "provider");
     let force = get_flag(&matches.args, "force");
+    let continue_on_error = get_flag(&matches.args, "continue-on-error");
 
     info!("CLI: installing packages: {:?}", packages);
 
-    if provider_filter.is_none() && !force {
+    if provider_filter.is_none() && !force && !continue_on_error {
         let orchestrator = Orchestrator::new(ctx.registry.clone(), ctx.settings.clone());
         return match orchestrator.install(&packages).await {
             Ok(receipts) => {
                 if json_mode {
-                    print_json(&receipts);
+                    print_command_json(
+                        COMMAND,
+                        &json!({
+                            "installed": receipts,
+                            "failures": [],
+                            "summary": batch_summary(packages.len(), 0),
+                            "force": force,
+                            "continue_on_error": continue_on_error,
+                        }),
+                    );
                 } else {
                     for r in &receipts {
                         println!("Installed {}@{} (via {})", r.name, r.version, r.provider);
@@ -302,48 +365,78 @@ async fn cmd_install(
                 }
                 EXIT_OK
             }
-            Err(e) => runtime_error(format!("Install error: {}", e)),
+            Err(e) => runtime_error(COMMAND, json_mode, format!("Install error: {}", e)),
         };
     }
 
     let requested_specs: Vec<PackageSpec> =
         packages.iter().map(|p| PackageSpec::parse(p)).collect();
-    let mut installed = Vec::new();
+    let mut installed: Vec<serde_json::Value> = Vec::new();
+    let mut failures: Vec<serde_json::Value> = Vec::new();
 
     for spec in &requested_specs {
         let provider = if let Some(ref provider_id) = provider_filter {
             let reg = ctx.registry.read().await;
             match reg.get(provider_id) {
                 Some(p) => p,
-                None => return usage_error(format!("Provider not found: {}", provider_id)),
+                None => {
+                    return usage_error(COMMAND, json_mode, format!("Provider not found: {}", provider_id));
+                }
             }
         } else {
             let reg = ctx.registry.read().await;
             match reg.find_for_package(&spec.name).await {
                 Ok(Some(p)) => p,
                 Ok(None) => {
-                    return runtime_error(format!(
-                        "No provider available for package {}",
-                        spec.name
-                    ));
+                    let message = format!("No provider available for package {}", spec.name);
+                    if continue_on_error {
+                        failures.push(json!({
+                            "name": spec.name,
+                            "provider": serde_json::Value::Null,
+                            "error": message,
+                        }));
+                        continue;
+                    }
+                    return runtime_error(COMMAND, json_mode, message);
                 }
                 Err(e) => {
-                    return runtime_error(format!(
-                        "Provider resolution failed for {}: {}",
-                        spec.name, e
-                    ));
+                    let message = format!("Provider resolution failed for {}: {}", spec.name, e);
+                    if continue_on_error {
+                        failures.push(json!({
+                            "name": spec.name,
+                            "provider": serde_json::Value::Null,
+                            "error": message,
+                        }));
+                        continue;
+                    }
+                    return runtime_error(COMMAND, json_mode, message);
                 }
             }
         };
 
         if !provider.is_available().await {
-            return usage_error(format!("Provider {} is not available", provider.id()));
+            let message = format!("Provider {} is not available", provider.id());
+            if continue_on_error {
+                failures.push(json!({
+                    "name": spec.name,
+                    "provider": provider.id(),
+                    "error": message,
+                }));
+                continue;
+            }
+            return usage_error(COMMAND, json_mode, message);
         }
         if !provider.capabilities().contains(&Capability::Install) {
-            return runtime_error(format!(
-                "Provider {} does not support install operation",
-                provider.id()
-            ));
+            let message = format!("Provider {} does not support install operation", provider.id());
+            if continue_on_error {
+                failures.push(json!({
+                    "name": spec.name,
+                    "provider": provider.id(),
+                    "error": message,
+                }));
+                continue;
+            }
+            return runtime_error(COMMAND, json_mode, message);
         }
 
         match provider
@@ -362,16 +455,28 @@ async fn cmd_install(
                 "force": force,
             })),
             Err(e) => {
-                return runtime_error(format!("Install error for {}: {}", spec.name, e));
+                let message = format!("Install error for {}: {}", spec.name, e);
+                if continue_on_error {
+                    failures.push(json!({
+                        "name": spec.name,
+                        "provider": provider.id(),
+                        "error": message,
+                    }));
+                    continue;
+                }
+                return runtime_error(COMMAND, json_mode, message);
             }
         }
     }
 
+    let summary = batch_summary(installed.len(), failures.len());
     if json_mode {
-        print_json(&json!({
+        print_command_json(COMMAND, &json!({
             "installed": installed,
-            "count": installed.len(),
+            "failures": failures,
+            "summary": summary,
             "force": force,
+            "continue_on_error": continue_on_error,
         }));
     } else {
         for item in &installed {
@@ -396,9 +501,25 @@ async fn cmd_install(
                 println!("Installed {}@{} (via {})", name, version, provider);
             }
         }
+        for item in &failures {
+            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let provider = item
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let error = item
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            eprintln!("Failed to install {} (via {}): {}", name, provider, error);
+        }
     }
 
-    EXIT_OK
+    if failures.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_ERROR
+    }
 }
 
 // ── Subcommand: uninstall ────────────────────────────────────────
@@ -408,21 +529,32 @@ async fn cmd_uninstall(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "uninstall";
     let packages = get_string_list(&matches.args, "packages");
     if packages.is_empty() {
-        return usage_error("at least one package name is required");
+        return usage_error(COMMAND, json_mode, "at least one package name is required");
     }
     let provider_filter = get_string(&matches.args, "provider");
     let force = get_flag(&matches.args, "force");
+    let continue_on_error = get_flag(&matches.args, "continue-on-error");
 
     info!("CLI: uninstalling packages: {:?}", packages);
 
-    if provider_filter.is_none() && !force {
+    if provider_filter.is_none() && !force && !continue_on_error {
         let orchestrator = Orchestrator::new(ctx.registry.clone(), ctx.settings.clone());
         return match orchestrator.uninstall(&packages).await {
             Ok(()) => {
                 if json_mode {
-                    print_json(&json!({ "uninstalled": packages }));
+                    print_command_json(
+                        COMMAND,
+                        &json!({
+                            "uninstalled": packages,
+                            "failures": [],
+                            "summary": batch_summary(packages.len(), 0),
+                            "force": force,
+                            "continue_on_error": continue_on_error,
+                        }),
+                    );
                 } else {
                     for name in &packages {
                         println!("Uninstalled {}", name);
@@ -430,48 +562,78 @@ async fn cmd_uninstall(
                 }
                 EXIT_OK
             }
-            Err(e) => runtime_error(format!("Uninstall error: {}", e)),
+            Err(e) => runtime_error(COMMAND, json_mode, format!("Uninstall error: {}", e)),
         };
     }
 
     let requested_specs: Vec<PackageSpec> =
         packages.iter().map(|p| PackageSpec::parse(p)).collect();
-    let mut removed = Vec::new();
+    let mut removed: Vec<serde_json::Value> = Vec::new();
+    let mut failures: Vec<serde_json::Value> = Vec::new();
 
     for spec in &requested_specs {
         let provider = if let Some(ref provider_id) = provider_filter {
             let reg = ctx.registry.read().await;
             match reg.get(provider_id) {
                 Some(p) => p,
-                None => return usage_error(format!("Provider not found: {}", provider_id)),
+                None => {
+                    return usage_error(COMMAND, json_mode, format!("Provider not found: {}", provider_id));
+                }
             }
         } else {
             let reg = ctx.registry.read().await;
             match reg.find_for_package(&spec.name).await {
                 Ok(Some(p)) => p,
                 Ok(None) => {
-                    return runtime_error(format!(
-                        "No provider available for package {}",
-                        spec.name
-                    ));
+                    let message = format!("No provider available for package {}", spec.name);
+                    if continue_on_error {
+                        failures.push(json!({
+                            "name": spec.name,
+                            "provider": serde_json::Value::Null,
+                            "error": message,
+                        }));
+                        continue;
+                    }
+                    return runtime_error(COMMAND, json_mode, message);
                 }
                 Err(e) => {
-                    return runtime_error(format!(
-                        "Provider resolution failed for {}: {}",
-                        spec.name, e
-                    ));
+                    let message = format!("Provider resolution failed for {}: {}", spec.name, e);
+                    if continue_on_error {
+                        failures.push(json!({
+                            "name": spec.name,
+                            "provider": serde_json::Value::Null,
+                            "error": message,
+                        }));
+                        continue;
+                    }
+                    return runtime_error(COMMAND, json_mode, message);
                 }
             }
         };
 
         if !provider.is_available().await {
-            return usage_error(format!("Provider {} is not available", provider.id()));
+            let message = format!("Provider {} is not available", provider.id());
+            if continue_on_error {
+                failures.push(json!({
+                    "name": spec.name,
+                    "provider": provider.id(),
+                    "error": message,
+                }));
+                continue;
+            }
+            return usage_error(COMMAND, json_mode, message);
         }
         if !provider.capabilities().contains(&Capability::Uninstall) {
-            return runtime_error(format!(
-                "Provider {} does not support uninstall operation",
-                provider.id()
-            ));
+            let message = format!("Provider {} does not support uninstall operation", provider.id());
+            if continue_on_error {
+                failures.push(json!({
+                    "name": spec.name,
+                    "provider": provider.id(),
+                    "error": message,
+                }));
+                continue;
+            }
+            return runtime_error(COMMAND, json_mode, message);
         }
 
         match provider
@@ -488,16 +650,28 @@ async fn cmd_uninstall(
                 "force": force,
             })),
             Err(e) => {
-                return runtime_error(format!("Uninstall error for {}: {}", spec.name, e));
+                let message = format!("Uninstall error for {}: {}", spec.name, e);
+                if continue_on_error {
+                    failures.push(json!({
+                        "name": spec.name,
+                        "provider": provider.id(),
+                        "error": message,
+                    }));
+                    continue;
+                }
+                return runtime_error(COMMAND, json_mode, message);
             }
         }
     }
 
+    let summary = batch_summary(removed.len(), failures.len());
     if json_mode {
-        print_json(&json!({
+        print_command_json(COMMAND, &json!({
             "uninstalled": removed,
-            "count": removed.len(),
+            "failures": failures,
+            "summary": summary,
             "force": force,
+            "continue_on_error": continue_on_error,
         }));
     } else {
         for item in &removed {
@@ -515,21 +689,38 @@ async fn cmd_uninstall(
                 println!("Uninstalled {} (via {})", name, provider);
             }
         }
+        for item in &failures {
+            let name = item.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let provider = item
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let error = item
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            eprintln!("Failed to uninstall {} (via {}): {}", name, provider, error);
+        }
     }
 
-    EXIT_OK
+    if failures.is_empty() {
+        EXIT_OK
+    } else {
+        EXIT_ERROR
+    }
 }
 
 // ── Subcommand: list ─────────────────────────────────────────────
 
 async fn cmd_list(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "list";
     let provider_filter = get_string(&matches.args, "provider");
     let outdated_only = get_flag(&matches.args, "outdated");
 
     if let Some(ref provider_id) = provider_filter {
         let reg = ctx.registry.read().await;
         if reg.get(provider_id).is_none() {
-            return usage_error(format!("Provider not found: {}", provider_id));
+            return usage_error(COMMAND, json_mode, format!("Provider not found: {}", provider_id));
         }
     }
 
@@ -558,7 +749,10 @@ async fn cmd_list(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
         }
 
         if json_mode {
-            print_json(&json!({ "outdated": outdated, "count": outdated.len() }));
+            print_command_json(
+                COMMAND,
+                &json!({ "outdated": outdated, "count": outdated.len() }),
+            );
         } else if outdated.is_empty() {
             println!("No outdated packages found");
         } else {
@@ -595,7 +789,7 @@ async fn cmd_list(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
     }
 
     if json_mode {
-        print_json(&all);
+        print_command_json(COMMAND, &all);
     } else if all.is_empty() {
         println!("No installed packages found");
     } else {
@@ -612,18 +806,24 @@ async fn cmd_list(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
 // ── Subcommand: update ───────────────────────────────────────────
 
 async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "update";
     let packages = get_string_list(&matches.args, "packages");
     let update_all = get_flag(&matches.args, "all");
     let provider_filter = get_string(&matches.args, "provider");
+    let continue_on_error = get_flag(&matches.args, "continue-on-error");
 
     if packages.is_empty() && !update_all {
-        return usage_error("specify packages to update or use --all");
+        return usage_error(
+            COMMAND,
+            json_mode,
+            "specify packages to update or use --all",
+        );
     }
 
     if let Some(ref provider_id) = provider_filter {
         let reg = ctx.registry.read().await;
         if reg.get(provider_id).is_none() {
-            return usage_error(format!("Provider not found: {}", provider_id));
+            return usage_error(COMMAND, json_mode, format!("Provider not found: {}", provider_id));
         }
     }
 
@@ -701,6 +901,13 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                     "updates": 0,
                     "errors": 1,
                 }));
+                if !continue_on_error {
+                    return runtime_error(
+                        COMMAND,
+                        json_mode,
+                        format!("Update check failed for provider {}: {}", p.id(), e),
+                    );
+                }
             }
         }
     }
@@ -721,11 +928,22 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
         }
     }
 
+    let provider_successes = provider_outcomes
+        .iter()
+        .filter(|item| item.get("status").and_then(|v| v.as_str()) != Some("error"))
+        .count();
+    let provider_failures = provider_outcomes
+        .iter()
+        .filter(|item| item.get("status").and_then(|v| v.as_str()) == Some("error"))
+        .count();
+
     if json_mode {
-        print_json(&serde_json::json!({
+        print_command_json(COMMAND, &serde_json::json!({
             "updates": updates,
             "provider_outcomes": provider_outcomes,
             "coverage": coverage,
+            "summary": batch_summary(provider_successes, provider_failures),
+            "continue_on_error": continue_on_error,
         }));
     } else if updates.is_empty() {
         println!("All packages are up to date");
@@ -765,15 +983,20 @@ async fn cmd_update(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
             }
         }
     }
-    EXIT_OK
+    if provider_failures > 0 {
+        EXIT_ERROR
+    } else {
+        EXIT_OK
+    }
 }
 
 // ── Subcommand: info ─────────────────────────────────────────────
 
 async fn cmd_info(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "info";
     let package = match get_string(&matches.args, "package") {
         Some(p) => p,
-        None => return usage_error("package name is required"),
+        None => return usage_error(COMMAND, json_mode, "package name is required"),
     };
     let provider_filter = get_string(&matches.args, "provider");
     let reg = ctx.registry.read().await;
@@ -782,14 +1005,14 @@ async fn cmd_info(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
         match reg.get(pid) {
             Some(p) => p.get_package_info(&package).await,
             None => {
-                return usage_error(format!("Provider not found: {}", pid));
+                return usage_error(COMMAND, json_mode, format!("Provider not found: {}", pid));
             }
         }
     } else {
         match reg.find_for_package(&package).await {
             Ok(Some(p)) => p.get_package_info(&package).await,
             _ => {
-                return runtime_error(format!("Package not found: {}", package));
+                return runtime_error(COMMAND, json_mode, format!("Package not found: {}", package));
             }
         }
     };
@@ -797,7 +1020,7 @@ async fn cmd_info(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
     match result {
         Ok(info) => {
             if json_mode {
-                print_json(&info);
+                print_command_json(COMMAND, &info);
             } else {
                 println!("Name:        {}", info.name);
                 println!(
@@ -820,20 +1043,22 @@ async fn cmd_info(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mo
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(e.to_string()),
+        Err(e) => runtime_error(COMMAND, json_mode, e.to_string()),
     }
 }
 
 // ── Subcommand: env ──────────────────────────────────────────────
 
 async fn cmd_env(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "env";
     let subcmd = match matches.subcommand.as_ref() {
         Some(s) => s,
         None => {
-            return usage_error(format!(
-                "env subcommand required ({})",
-                ENV_SUBCOMMANDS.join(", ")
-            ));
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("env subcommand required ({})", ENV_SUBCOMMANDS.join(", ")),
+            );
         }
     };
 
@@ -844,7 +1069,7 @@ async fn cmd_env(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mod
         "detect" => cmd_env_detect(ctx, &subcmd.matches, json_mode).await,
         "remove" => cmd_env_remove(ctx, &subcmd.matches, json_mode).await,
         "resolve" => cmd_env_resolve(ctx, &subcmd.matches, json_mode).await,
-        other => usage_error(format!("Unknown env subcommand: {}", other)),
+        other => usage_error("env", json_mode, format!("Unknown env subcommand: {}", other)),
     }
 }
 
@@ -853,6 +1078,7 @@ async fn cmd_env_list(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.list";
     let type_filter = get_string(&matches.args, "type");
     let manager = EnvironmentManager::new(ctx.registry.clone());
     match manager.list_environments_with_concurrency(4).await {
@@ -864,7 +1090,7 @@ async fn cmd_env_list(
             };
 
             if json_mode {
-                print_json(&filtered);
+                print_command_json(COMMAND, &filtered);
             } else if filtered.is_empty() {
                 println!("No environments found");
             } else {
@@ -887,7 +1113,7 @@ async fn cmd_env_list(
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(e.to_string()),
+        Err(e) => runtime_error(COMMAND, json_mode, e.to_string()),
     }
 }
 
@@ -896,13 +1122,14 @@ async fn cmd_env_install(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.install";
     let version = match get_string(&matches.args, "version") {
         Some(v) => v,
-        None => return usage_error("version is required"),
+        None => return usage_error(COMMAND, json_mode, "version is required"),
     };
     let env_type = match get_string(&matches.args, "type") {
         Some(t) => t,
-        None => return usage_error("--type is required (e.g. --type node)"),
+        None => return usage_error(COMMAND, json_mode, "--type is required (e.g. --type node)"),
     };
     let provider_id = get_string(&matches.args, "provider");
 
@@ -913,7 +1140,11 @@ async fn cmd_env_install(
     {
         Ok(r) => r,
         Err(e) => {
-            return runtime_error(format!("Error resolving provider: {}", e));
+            return runtime_error(
+                COMMAND,
+                json_mode,
+                format!("Error resolving provider: {}", e),
+            );
         }
     };
 
@@ -932,7 +1163,7 @@ async fn cmd_env_install(
     match provider.install(request).await {
         Ok(receipt) => {
             if json_mode {
-                print_json(&receipt);
+                print_command_json(COMMAND, &receipt);
             } else {
                 println!(
                     "Successfully installed {} {} (via {})",
@@ -941,7 +1172,7 @@ async fn cmd_env_install(
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(format!("Install error: {}", e)),
+        Err(e) => runtime_error(COMMAND, json_mode, format!("Install error: {}", e)),
     }
 }
 
@@ -950,13 +1181,14 @@ async fn cmd_env_use(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.use";
     let version = match get_string(&matches.args, "version") {
         Some(v) => v,
-        None => return usage_error("version is required"),
+        None => return usage_error(COMMAND, json_mode, "version is required"),
     };
     let env_type = match get_string(&matches.args, "type") {
         Some(t) => t,
-        None => return usage_error("--type is required"),
+        None => return usage_error(COMMAND, json_mode, "--type is required"),
     };
     let local_path = get_string(&matches.args, "local");
     let provider_id = get_string(&matches.args, "provider");
@@ -985,7 +1217,8 @@ async fn cmd_env_use(
                 "global"
             };
             if json_mode {
-                print_json(
+                print_command_json(
+                    COMMAND,
                     &serde_json::json!({ "env_type": env_type, "version": version, "scope": scope }),
                 );
             } else {
@@ -993,7 +1226,7 @@ async fn cmd_env_use(
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(e.to_string()),
+        Err(e) => runtime_error(COMMAND, json_mode, e.to_string()),
     }
 }
 
@@ -1002,6 +1235,7 @@ async fn cmd_env_detect(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.detect";
     let type_filter = get_string(&matches.args, "type");
     let start_path = get_string(&matches.args, "path").unwrap_or_else(|| ".".into());
     let manager = EnvironmentManager::new(ctx.registry.clone());
@@ -1014,20 +1248,24 @@ async fn cmd_env_detect(
         {
             Ok(Some(d)) => {
                 if json_mode {
-                    print_json(&d);
+                    print_command_json(COMMAND, &d);
                 } else {
                     println!("{} {} (detected via {})", d.env_type, d.version, d.source);
                 }
             }
             Ok(None) => {
                 if json_mode {
-                    print_json(&serde_json::Value::Null);
+                    print_command_json(COMMAND, &serde_json::Value::Null);
                 } else {
                     println!("No {} environment detected", env_type);
                 }
             }
             Err(e) => {
-                return runtime_error(format!("Detection error: {}", e));
+                return runtime_error(
+                    COMMAND,
+                    json_mode,
+                    format!("Detection error: {}", e),
+                );
             }
         }
     } else {
@@ -1044,7 +1282,7 @@ async fn cmd_env_detect(
             }
         }
         if json_mode {
-            print_json(&detected);
+            print_command_json(COMMAND, &detected);
         } else if detected.is_empty() {
             println!("No environments detected in {}", start_path);
         } else {
@@ -1063,13 +1301,14 @@ async fn cmd_env_remove(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.remove";
     let version = match get_string(&matches.args, "version") {
         Some(v) => v,
-        None => return usage_error("version is required"),
+        None => return usage_error(COMMAND, json_mode, "version is required"),
     };
     let env_type = match get_string(&matches.args, "type") {
         Some(t) => t,
-        None => return usage_error("--type is required (e.g. --type node)"),
+        None => return usage_error(COMMAND, json_mode, "--type is required (e.g. --type node)"),
     };
     let provider_id = get_string(&matches.args, "provider");
 
@@ -1080,7 +1319,8 @@ async fn cmd_env_remove(
     {
         Ok(()) => {
             if json_mode {
-                print_json(
+                print_command_json(
+                    COMMAND,
                     &json!({ "env_type": env_type, "version": version, "status": "removed" }),
                 );
             } else {
@@ -1088,7 +1328,7 @@ async fn cmd_env_remove(
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(format!("Remove error: {}", e)),
+        Err(e) => runtime_error(COMMAND, json_mode, format!("Remove error: {}", e)),
     }
 }
 
@@ -1097,9 +1337,10 @@ async fn cmd_env_resolve(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "env.resolve";
     let env_type = match get_string(&matches.args, "type") {
         Some(t) => t,
-        None => return usage_error("--type is required"),
+        None => return usage_error(COMMAND, json_mode, "--type is required"),
     };
     let start_path = get_string(&matches.args, "path").unwrap_or_else(|| ".".into());
     let manager = EnvironmentManager::new(ctx.registry.clone());
@@ -1111,7 +1352,7 @@ async fn cmd_env_resolve(
     {
         Ok(Some(detected)) => {
             if json_mode {
-                print_json(&json!({
+                print_command_json(COMMAND, &json!({
                     "env_type": detected.env_type,
                     "version": detected.version,
                     "source": detected.source,
@@ -1128,7 +1369,7 @@ async fn cmd_env_resolve(
         }
         Ok(None) => {
             if json_mode {
-                print_json(&json!({
+                print_command_json(COMMAND, &json!({
                     "env_type": env_type,
                     "version": serde_json::Value::Null,
                     "source": serde_json::Value::Null,
@@ -1142,71 +1383,76 @@ async fn cmd_env_resolve(
             }
             EXIT_OK
         }
-        Err(e) => runtime_error(format!("Resolve error: {}", e)),
+        Err(e) => runtime_error(COMMAND, json_mode, format!("Resolve error: {}", e)),
     }
 }
 
 // ── Subcommand: config ───────────────────────────────────────────
 
 async fn cmd_config(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "config";
     let subcmd = match matches.subcommand.as_ref() {
         Some(s) => s,
         None => {
-            return usage_error(format!(
-                "config subcommand required ({})",
-                CONFIG_SUBCOMMANDS.join(", ")
-            ));
+            return usage_error(
+                COMMAND,
+                json_mode,
+                format!("config subcommand required ({})", CONFIG_SUBCOMMANDS.join(", ")),
+            );
         }
     };
     match subcmd.name.as_str() {
         "get" => {
+            let command = "config.get";
             let key = match get_string(&subcmd.matches.args, "key") {
                 Some(k) => k,
-                None => return usage_error("key is required"),
+                None => return usage_error(command, json_mode, "key is required"),
             };
             match ctx.settings.get_value(&key) {
                 Some(v) => {
                     if json_mode {
-                        print_json(&serde_json::json!({ "key": key, "value": v }));
+                        print_command_json(command, &serde_json::json!({ "key": key, "value": v }));
                     } else {
                         println!("{}", v);
                     }
                     EXIT_OK
                 }
-                None => runtime_error(format!("Unknown key: {}", key)),
+                None => runtime_error(command, json_mode, format!("Unknown key: {}", key)),
             }
         }
         "set" => {
+            let command = "config.set";
             let key = match get_string(&subcmd.matches.args, "key") {
                 Some(k) => k,
-                None => return usage_error("key is required"),
+                None => return usage_error(command, json_mode, "key is required"),
             };
             let value = match get_string(&subcmd.matches.args, "value") {
                 Some(v) => v,
-                None => return usage_error("value is required"),
+                None => return usage_error(command, json_mode, "value is required"),
             };
             let mut settings = ctx.settings.clone();
             if let Err(e) = settings.set_value(&key, &value) {
-                return runtime_error(e.to_string());
+                return runtime_error(command, json_mode, e.to_string());
             }
             if let Err(e) = settings.save().await {
-                return runtime_error(format!("Error saving: {}", e));
+                return runtime_error(command, json_mode, format!("Error saving: {}", e));
             }
             if json_mode {
-                print_json(&serde_json::json!({ "key": key, "value": value }));
+                print_command_json(command, &serde_json::json!({ "key": key, "value": value }));
             } else {
                 println!("Set {} = {}", key, value);
             }
             EXIT_OK
         }
         "list" => {
+            let command = "config.list";
             let entries = collect_config_list(&ctx.settings);
             if json_mode {
                 let map: serde_json::Map<String, serde_json::Value> = entries
                     .into_iter()
                     .map(|(k, v)| (k, serde_json::Value::String(v)))
                     .collect();
-                print_json(&map);
+                print_command_json(command, &map);
             } else {
                 let rows: Vec<Vec<String>> = entries
                     .iter()
@@ -1217,89 +1463,110 @@ async fn cmd_config(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
             EXIT_OK
         }
         "reset" => {
+            let command = "config.reset";
             let defaults = Settings::default();
             if let Err(e) = defaults.save().await {
-                return runtime_error(e.to_string());
+                return runtime_error(command, json_mode, e.to_string());
             }
             if json_mode {
-                print_json(&serde_json::json!({ "status": "reset" }));
+                print_command_json(command, &serde_json::json!({ "status": "reset" }));
             } else {
                 println!("Configuration reset to defaults");
             }
             EXIT_OK
         }
         "export" => {
+            let command = "config.export";
             let file_path = match get_string(&subcmd.matches.args, "file") {
                 Some(p) => p,
-                None => return usage_error("file path is required"),
+                None => return usage_error(command, json_mode, "file path is required"),
             };
 
             let toml_content = match toml::to_string_pretty(&ctx.settings) {
                 Ok(content) => content,
-                Err(e) => return runtime_error(format!("Failed to serialize config: {}", e)),
+                Err(e) => {
+                    return runtime_error(
+                        command,
+                        json_mode,
+                        format!("Failed to serialize config: {}", e),
+                    )
+                }
             };
             if let Err(e) =
                 crate::platform::fs::write_file_atomic(&file_path, toml_content.as_bytes()).await
             {
-                return runtime_error(format!(
-                    "Failed to write config export '{}': {}",
-                    file_path, e
-                ));
+                return runtime_error(
+                    command,
+                    json_mode,
+                    format!("Failed to write config export '{}': {}", file_path, e),
+                );
             }
 
             if json_mode {
-                print_json(&json!({ "status": "exported", "file": file_path }));
+                print_command_json(command, &json!({ "status": "exported", "file": file_path }));
             } else {
                 println!("Configuration exported to {}", file_path);
             }
             EXIT_OK
         }
         "import" => {
+            let command = "config.import";
             let file_path = match get_string(&subcmd.matches.args, "file") {
                 Some(p) => p,
-                None => return usage_error("file path is required"),
+                None => return usage_error(command, json_mode, "file path is required"),
             };
 
             let content = match crate::platform::fs::read_file_string(&file_path).await {
                 Ok(c) => c,
                 Err(e) => {
-                    return runtime_error(format!(
-                        "Failed to read import file '{}': {}",
-                        file_path, e
-                    ))
+                    return runtime_error(
+                        command,
+                        json_mode,
+                        format!("Failed to read import file '{}': {}", file_path, e),
+                    )
                 }
             };
             let parsed = match parse_config_import_content(&file_path, &content) {
                 Ok(settings) => settings,
-                Err(e) => return runtime_error(e),
+                Err(e) => return runtime_error(command, json_mode, e),
             };
 
             if let Err(e) = parsed.save().await {
-                return runtime_error(format!("Failed to persist imported config: {}", e));
+                return runtime_error(
+                    command,
+                    json_mode,
+                    format!("Failed to persist imported config: {}", e),
+                );
             }
 
             if json_mode {
-                print_json(&json!({ "status": "imported", "file": file_path }));
+                print_command_json(command, &json!({ "status": "imported", "file": file_path }));
             } else {
                 println!("Configuration imported from {}", file_path);
             }
             EXIT_OK
         }
-        other => usage_error(format!("Unknown config subcommand: {}", other)),
+        other => usage_error(
+            COMMAND,
+            json_mode,
+            format!("Unknown config subcommand: {}", other),
+        ),
     }
 }
 
 // ── Subcommand: cache ────────────────────────────────────────────
 
 async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "cache";
     let subcmd = match matches.subcommand.as_ref() {
         Some(s) => s,
-        None => return usage_error("cache subcommand required (info, clean)"),
+        None => return usage_error(COMMAND, json_mode, "cache subcommand required (info, clean)"),
     };
     let cache_dir = ctx.settings.get_cache_dir();
 
     match subcmd.name.as_str() {
         "info" => {
+            let command = "cache.info";
             let dl = DownloadCache::open(&cache_dir)
                 .await
                 .ok()
@@ -1319,7 +1586,7 @@ async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_m
             let total = dl_size + md_size;
 
             if json_mode {
-                print_json(&serde_json::json!({
+                print_command_json(command, &serde_json::json!({
                     "download_cache": { "size": dl_size, "entries": dl_count },
                     "metadata_cache": { "size": md_size, "entries": md_count },
                     "total_size": total, "total_size_human": format_size(total),
@@ -1341,6 +1608,7 @@ async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_m
             EXIT_OK
         }
         "clean" => {
+            let command = "cache.clean";
             let clean_all = get_flag(&subcmd.matches.args, "all");
             let clean_expired = get_flag(&subcmd.matches.args, "expired");
             let mut total_freed: u64 = 0;
@@ -1370,7 +1638,8 @@ async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_m
             }
 
             if json_mode {
-                print_json(
+                print_command_json(
+                    command,
                     &serde_json::json!({ "freed_bytes": total_freed, "freed_human": format_size(total_freed) }),
                 );
             } else {
@@ -1378,13 +1647,18 @@ async fn cmd_cache(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_m
             }
             EXIT_OK
         }
-        other => usage_error(format!("Unknown cache subcommand: {}", other)),
+        other => usage_error(
+            COMMAND,
+            json_mode,
+            format!("Unknown cache subcommand: {}", other),
+        ),
     }
 }
 
 // ── Subcommand: doctor ───────────────────────────────────────────
 
 async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_mode: bool) -> i32 {
+    const COMMAND: &str = "doctor";
     let type_filter = get_string(&matches.args, "type");
     let manager = HealthCheckManager::new(ctx.registry.clone());
 
@@ -1392,7 +1666,7 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
         match manager.check_environment(env_type).await {
             Ok(result) => {
                 if json_mode {
-                    print_json(&result);
+                    print_command_json(COMMAND, &result);
                 } else {
                     println!("Health check for {}:", env_type);
                     let is_healthy = result.issues.is_empty();
@@ -1415,8 +1689,7 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 }
             }
             Err(e) => {
-                eprintln!("Health check error: {}", e);
-                1
+                runtime_error(COMMAND, json_mode, format!("Health check error: {}", e))
             }
         }
     } else {
@@ -1433,7 +1706,7 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                         .map(|p| p.issues.len())
                         .sum::<usize>();
                 if json_mode {
-                    print_json(&result);
+                    print_command_json(COMMAND, &result);
                 } else if total == 0 {
                     println!("All health checks passed");
                 } else {
@@ -1466,8 +1739,7 @@ async fn cmd_doctor(ctx: &CliContext, matches: &tauri_plugin_cli::Matches, json_
                 }
             }
             Err(e) => {
-                eprintln!("Health check error: {}", e);
-                1
+                runtime_error(COMMAND, json_mode, format!("Health check error: {}", e))
             }
         }
     }
@@ -1480,13 +1752,14 @@ async fn cmd_providers(
     matches: &tauri_plugin_cli::Matches,
     json_mode: bool,
 ) -> i32 {
+    const COMMAND: &str = "providers";
     let system_only = get_flag(&matches.args, "system");
     let reg = ctx.registry.read().await;
 
     if system_only {
         let ids = reg.get_system_provider_ids();
         if json_mode {
-            print_json(&ids);
+            print_command_json(COMMAND, &ids);
         } else {
             println!("System providers:\n");
             for id in &ids {
@@ -1496,7 +1769,7 @@ async fn cmd_providers(
     } else {
         let providers = reg.list_all_info();
         if json_mode {
-            print_json(&providers);
+            print_command_json(COMMAND, &providers);
         } else {
             println!("{} provider(s) available:\n", providers.len());
             let rows: Vec<Vec<String>> = providers
@@ -1654,6 +1927,7 @@ mod tests {
         assert!(install_names.contains(&"packages"));
         assert!(install_names.contains(&"provider"));
         assert!(install_names.contains(&"force"));
+        assert!(install_names.contains(&"continue-on-error"));
 
         let uninstall_args = subcommands_obj["uninstall"]["args"]
             .as_array()
@@ -1665,6 +1939,19 @@ mod tests {
         assert!(uninstall_names.contains(&"packages"));
         assert!(uninstall_names.contains(&"provider"));
         assert!(uninstall_names.contains(&"force"));
+        assert!(uninstall_names.contains(&"continue-on-error"));
+
+        let update_args = subcommands_obj["update"]["args"]
+            .as_array()
+            .expect("update args");
+        let update_names: Vec<&str> = update_args
+            .iter()
+            .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(update_names.contains(&"packages"));
+        assert!(update_names.contains(&"provider"));
+        assert!(update_names.contains(&"all"));
+        assert!(update_names.contains(&"continue-on-error"));
 
         let list_args = subcommands_obj["list"]["args"]
             .as_array()
@@ -1910,6 +2197,35 @@ mod tests {
             "cache": { "size": 1024, "entries": 5 },
             "total": 1024,
         }));
+    }
+
+    #[test]
+    fn test_cli_success_envelope_contains_command_and_data() {
+        let data = serde_json::json!({ "count": 2, "items": ["a", "b"] });
+        let payload = cli_success_envelope("install", data.clone());
+        assert_eq!(payload["ok"], serde_json::json!(true));
+        assert_eq!(payload["command"], serde_json::json!("install"));
+        assert_eq!(payload["data"], data);
+    }
+
+    #[test]
+    fn test_cli_error_envelope_contains_kind_and_message() {
+        let payload = cli_error_envelope("config.import", "usage", "file path is required");
+        assert_eq!(payload["ok"], serde_json::json!(false));
+        assert_eq!(payload["command"], serde_json::json!("config.import"));
+        assert_eq!(payload["error"]["kind"], serde_json::json!("usage"));
+        assert_eq!(
+            payload["error"]["message"],
+            serde_json::json!("file path is required")
+        );
+    }
+
+    #[test]
+    fn test_batch_summary_counts() {
+        let summary = batch_summary(3, 2);
+        assert_eq!(summary["total"], serde_json::json!(5));
+        assert_eq!(summary["success"], serde_json::json!(3));
+        assert_eq!(summary["failed"], serde_json::json!(2));
     }
 
     #[test]

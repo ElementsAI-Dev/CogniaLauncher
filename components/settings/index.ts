@@ -7,6 +7,7 @@ export { MirrorsSettings } from "./mirrors-settings";
 export { AppearanceSettings } from "./appearance-settings";
 export { UpdateSettings } from "./update-settings";
 export { TraySettings } from "./tray-settings";
+export { SidebarOrderCustomizer } from "./sidebar-order-customizer";
 export { PathsSettings } from "./paths-settings";
 export { ProviderSettings } from "./provider-settings";
 export { BackupPolicySettings } from "./backup-policy-settings";

@@ -240,6 +240,14 @@ describe('EnvVarTable', () => {
     });
   });
 
+  it('uses flexible desktop scroll container without fixed max-height cap', () => {
+    render(<EnvVarTable {...defaultProps} />);
+    const desktopScrollArea = screen.getByTestId('envvar-table-desktop');
+    expect(desktopScrollArea.className).toContain('h-full');
+    expect(desktopScrollArea.className).toContain('min-h-0');
+    expect(desktopScrollArea.className).not.toContain('max-h-[600px]');
+  });
+
   it('shows row actions without hover dependency in compact list', () => {
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 640 });
     render(<EnvVarTable {...defaultProps} rows={[{ key: 'MY_KEY', value: 'my_value', scope: 'process' }]} />);

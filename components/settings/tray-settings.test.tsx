@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TraySettings } from "./tray-settings";
 import type { AppSettings } from "@/lib/stores/settings";
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
 
 const mockIsTauri = jest.fn(() => false);
 const mockTraySetMinimizeToTray = jest.fn().mockResolvedValue(undefined);
@@ -53,6 +54,7 @@ describe("TraySettings", () => {
     autostart: false,
     trayClickBehavior: "toggle_window",
     showNotifications: true,
+    sidebarItemOrder: [...DEFAULT_SIDEBAR_ITEM_ORDER],
   };
 
   it("should render tray settings content", () => {

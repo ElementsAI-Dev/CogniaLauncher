@@ -87,6 +87,18 @@ export interface DetectedEnvironment {
   version: string;
   source: string;
   source_path: string | null;
+  source_type?: 'local' | 'manifest' | 'global' | 'unknown';
+}
+
+export interface EnvVersionMutationResult {
+  envType: string;
+  operation: string;
+  requestedVersion: string;
+  effectiveVersion: string | null;
+  sourceType: 'local' | 'manifest' | 'global' | 'unknown';
+  success: boolean;
+  status: 'verified' | 'verification_failed';
+  message: string | null;
 }
 
 /** System-detected environment information (not managed by version managers) */
@@ -771,6 +783,23 @@ export interface InstallHistoryEntry {
   provider: string;
   success: boolean;
   error_message: string | null;
+}
+
+export type InstallHistoryAction = 'install' | 'uninstall' | 'update' | 'rollback';
+
+export interface InstallHistoryQuery {
+  limit?: number;
+  name?: string;
+  provider?: string;
+  action?: InstallHistoryAction | string;
+  success?: boolean;
+}
+
+export interface PackageHistoryQuery {
+  limit?: number;
+  provider?: string;
+  action?: InstallHistoryAction | string;
+  success?: boolean;
 }
 
 // ============================================================================

@@ -75,6 +75,11 @@ describe("ProviderHistoryTab", () => {
     expect(screen.queryByText("No history")).not.toBeInTheDocument();
   });
 
+  it("shows error message when history fails to load", () => {
+    render(<ProviderHistoryTab {...defaultProps} historyError="load failed" />);
+    expect(screen.getByText("load failed")).toBeInTheDocument();
+  });
+
   it("renders history entries in a table", () => {
     const history = [
       makeEntry({ id: "1", name: "lodash", action: "install" }),

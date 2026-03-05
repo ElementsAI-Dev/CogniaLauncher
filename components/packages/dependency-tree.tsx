@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -31,6 +31,7 @@ import {
   Layers,
   ArrowRight,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import {
   Empty,
@@ -42,7 +43,7 @@ import { useLocale } from "@/components/providers/locale-provider";
 import { formatSize } from "@/lib/utils";
 import { DEPTH_COLORS } from "@/lib/constants/packages";
 import type { DependencyNode } from "@/lib/tauri";
-import type { DependencyTreeProps } from "@/types/packages";
+import type { DependencyResolveRequest, DependencyTreeProps } from "@/types/packages";
 
 function DependencyNodeItem({
   node,
@@ -155,14 +156,34 @@ function DependencyNodeItem({
 
 export function DependencyTree({
   packageId,
+  selectedContext,
+  activeRequest,
   resolution,
+  error,
   loading,
   onResolve,
+  onRetry,
 }: DependencyTreeProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [inputPackage, setInputPackage] = useState(packageId || "");
+  const [inputPackage, setInputPackage] = useState(
+    selectedContext?.packageName ?? packageId ?? "",
+  );
+  const [useManualInput, setUseManualInput] = useState(false);
   const { t } = useLocale();
+
+  const activePackageLabel = useMemo(() => {
+    const requestName = activeRequest?.packageName?.trim();
+    if (requestName) {
+      return requestName;
+    }
+    const selectedName = selectedContext?.packageName?.trim();
+    if (selectedName) {
+      return selectedName;
+    }
+    const manualName = inputPackage.trim();
+    return manualName.length > 0 ? manualName : null;
+  }, [activeRequest?.packageName, inputPackage, selectedContext?.packageName]);
 
   const toggleNode = useCallback((nodeId: string) => {
     setExpandedNodes((prev) => {
@@ -193,11 +214,32 @@ export function DependencyTree({
     setExpandedNodes(new Set());
   }, []);
 
+  const canResolveUsingSelectedContext = Boolean(
+    selectedContext?.packageName?.trim().length && !useManualInput,
+  );
+  const canResolveUsingManualInput = inputPackage.trim().length > 0;
+  const canResolve = canResolveUsingSelectedContext || canResolveUsingManualInput;
+
   const handleResolve = useCallback(async () => {
-    if (inputPackage) {
-      await onResolve(inputPackage);
+    if (selectedContext?.packageName?.trim().length && !useManualInput) {
+      const request: DependencyResolveRequest = {
+        packageName: selectedContext.packageName.trim(),
+        providerId: selectedContext.providerId ?? null,
+        version: selectedContext.version ?? null,
+        source: selectedContext.source,
+      };
+      await onResolve(request);
+      return;
     }
-  }, [inputPackage, onResolve]);
+
+    const manualPackageName = inputPackage.trim();
+    if (manualPackageName.length > 0) {
+      await onResolve({
+        packageName: manualPackageName,
+        source: "manual",
+      });
+    }
+  }, [inputPackage, onResolve, selectedContext, useManualInput]);
 
   return (
     <Card>
@@ -209,15 +251,54 @@ export function DependencyTree({
         <CardDescription>{t("packages.dependencyTreeDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {selectedContext && (
+          <Alert className="border-muted bg-muted/30">
+            <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-0.5 text-sm">
+                <p className="font-medium">
+                  {t("packages.selectedDependencyPackage", {
+                    name: selectedContext.packageName,
+                  })}
+                </p>
+                {!selectedContext.providerId || !selectedContext.version ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("packages.dependencyContextPartialHint")}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t("packages.featureProvider")}: {selectedContext.providerId} ·{" "}
+                    {t("packages.version")}: {selectedContext.version}
+                  </p>
+                )}
+              </div>
+              {useManualInput && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setInputPackage(selectedContext.packageName);
+                    setUseManualInput(false);
+                  }}
+                >
+                  {t("packages.useSelectedPackage")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Package Input */}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             placeholder={t("packages.enterPackageName")}
             value={inputPackage}
-            onChange={(e) => setInputPackage(e.target.value)}
+            onChange={(e) => {
+              setInputPackage(e.target.value);
+              setUseManualInput(true);
+            }}
             onKeyDown={(e) => e.key === "Enter" && handleResolve()}
           />
-          <Button onClick={handleResolve} disabled={loading || !inputPackage}>
+          <Button onClick={handleResolve} disabled={loading || !canResolve}>
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -226,6 +307,28 @@ export function DependencyTree({
             <span className="ml-2">{t("packages.resolve")}</span>
           </Button>
         </div>
+
+        {/* Resolution Error */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span>{error}</span>
+              {onRetry && activePackageLabel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void onRetry();
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                  {t("common.retry")}
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Loading State */}
         {loading && (
@@ -371,7 +474,11 @@ export function DependencyTree({
                       <Layers className="h-12 w-12 opacity-50" />
                     </EmptyMedia>
                     <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                      {t("packages.noDependenciesFound")}
+                      {activePackageLabel
+                        ? t("packages.noDependenciesFoundFor", {
+                            name: activePackageLabel,
+                          })
+                        : t("packages.noDependenciesFound")}
                     </EmptyTitle>
                   </EmptyHeader>
                 </Empty>
@@ -420,7 +527,11 @@ export function DependencyTree({
                 <GitBranch className="h-12 w-12 opacity-50" />
               </EmptyMedia>
               <EmptyTitle className="text-sm font-normal text-muted-foreground">
-                {t("packages.enterPackageToResolve")}
+                {activePackageLabel
+                  ? t("packages.readyToResolveDependenciesFor", {
+                      name: activePackageLabel,
+                    })
+                  : t("packages.enterPackageToResolve")}
               </EmptyTitle>
             </EmptyHeader>
           </Empty>

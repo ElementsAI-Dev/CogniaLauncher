@@ -1,10 +1,13 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PluginsPage from './page';
 
 let mockIsDesktop = true;
 let mockFetchPlugins = jest.fn();
 let mockGetAllHealth = jest.fn();
+let mockScaffoldPlugin = jest.fn();
+let mockOpenScaffoldFolder = jest.fn();
+let mockOpenScaffoldInVscode = jest.fn();
 
 jest.mock('@/components/providers/locale-provider', () => ({
   useLocale: () => ({
@@ -32,7 +35,9 @@ jest.mock('@/hooks/use-plugins', () => ({
     getPermissions: jest.fn(),
     grantPermission: jest.fn(),
     revokePermission: jest.fn(),
-    scaffoldPlugin: jest.fn(),
+    scaffoldPlugin: mockScaffoldPlugin,
+    openScaffoldFolder: mockOpenScaffoldFolder,
+    openScaffoldInVscode: mockOpenScaffoldInVscode,
     checkUpdate: jest.fn(),
     updatePlugin: jest.fn(),
     getHealth: jest.fn(),
@@ -146,7 +151,27 @@ jest.mock('@/components/ui/tabs', () => ({
 }));
 
 jest.mock('@/components/downloads/destination-picker', () => ({
-  DestinationPicker: () => <div />,
+  DestinationPicker: ({
+    value,
+    onChange,
+    label,
+    placeholder,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+    label: string;
+    placeholder?: string;
+  }) => (
+    <label>
+      {label}
+      <input
+        aria-label={label}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  ),
 }));
 
 jest.mock('@/components/ui/select', () => ({
@@ -174,6 +199,9 @@ describe('PluginsPage plugin bootstrap', () => {
     mockIsDesktop = true;
     mockFetchPlugins = jest.fn();
     mockGetAllHealth = jest.fn();
+    mockScaffoldPlugin = jest.fn();
+    mockOpenScaffoldFolder = jest.fn();
+    mockOpenScaffoldInVscode = jest.fn();
     jest.clearAllMocks();
   });
 
@@ -206,5 +234,60 @@ describe('PluginsPage plugin bootstrap', () => {
     render(<PluginsPage />);
     expect(mockFetchPlugins).not.toHaveBeenCalled();
     expect(mockGetAllHealth).not.toHaveBeenCalled();
+    expect(screen.queryByText('toolbox.plugin.createPlugin')).not.toBeInTheDocument();
+  });
+
+  it('shows scaffold success action panel and allows open actions', async () => {
+    mockScaffoldPlugin.mockResolvedValue({
+      pluginDir: 'C:\\tmp\\plugin-sample',
+      filesCreated: ['plugin.toml'],
+    });
+    mockOpenScaffoldFolder.mockResolvedValue({
+      openedWith: 'folder',
+      fallbackUsed: false,
+      message: 'ok',
+    });
+    mockOpenScaffoldInVscode.mockResolvedValue({
+      openedWith: 'vscode',
+      fallbackUsed: false,
+      message: 'ok',
+    });
+
+    render(<PluginsPage />);
+
+    fireEvent.click(screen.getByText('toolbox.plugin.createPlugin'));
+
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldNamePlaceholder'), {
+      target: { value: 'Sample Plugin' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldIdPlaceholder'), {
+      target: { value: 'com.example.sample' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldDescPlaceholder'), {
+      target: { value: 'desc' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('toolbox.plugin.scaffoldAuthorPlaceholder'), {
+      target: { value: 'author' },
+    });
+    fireEvent.change(screen.getByLabelText('toolbox.plugin.scaffoldOutputDir'), {
+      target: { value: 'C:\\tmp' },
+    });
+
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldCreate'));
+
+    await waitFor(() => {
+      expect(mockScaffoldPlugin).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText('toolbox.plugin.scaffoldCreatedTitle')).toBeInTheDocument();
+    expect(screen.getByText('C:\\tmp\\plugin-sample')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldOpenFolder'));
+    fireEvent.click(screen.getByText('toolbox.plugin.scaffoldOpenInVscode'));
+
+    await waitFor(() => {
+      expect(mockOpenScaffoldFolder).toHaveBeenCalledWith('C:\\tmp\\plugin-sample');
+      expect(mockOpenScaffoldInVscode).toHaveBeenCalledWith('C:\\tmp\\plugin-sample');
+    });
   });
 });

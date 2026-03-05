@@ -36,6 +36,13 @@ pub struct DetectedEnvironment {
     /// Concrete source label (e.g. `.nvmrc`, `global.json (sdk.version)`).
     pub source: String,
     pub source_path: Option<PathBuf>,
+    /// Stable source category used by frontend mapping (`local`, `manifest`, `global`).
+    #[serde(default = "default_detected_source_type")]
+    pub source_type: String,
+}
+
+fn default_detected_source_type() -> String {
+    "local".to_string()
 }
 
 /// TTL-cached available versions to avoid repeated network requests.
@@ -521,7 +528,8 @@ impl EnvironmentManager {
     ) -> CogniaResult<Option<DetectedEnvironment>> {
         let logical = normalize_env_type(env_type);
         let sources = super::project_env_detect::default_enabled_detection_sources(&logical);
-        super::project_env_detect::detect_env_version(&logical, start_path, &sources).await
+        self.detect_version_with_sources(&logical, start_path, &sources)
+            .await
     }
 
     pub async fn detect_version_with_sources(
@@ -531,8 +539,33 @@ impl EnvironmentManager {
         sources_in_priority: &[String],
     ) -> CogniaResult<Option<DetectedEnvironment>> {
         let logical = normalize_env_type(env_type);
-        super::project_env_detect::detect_env_version(&logical, start_path, sources_in_priority)
-            .await
+        if let Some(mut detected) =
+            super::project_env_detect::detect_env_version(&logical, start_path, sources_in_priority)
+                .await?
+        {
+            if detected.source_type.is_empty() {
+                detected.source_type =
+                    super::project_env_detect::classify_detection_source(&logical, &detected.source);
+            }
+            return Ok(Some(detected));
+        }
+
+        // Deterministic fallback: when no project-local or manifest pin is found,
+        // fall back to the provider's global/default current version.
+        if let Ok((_logical, _provider_id, provider)) = self.resolve_provider(&logical, None, None).await
+        {
+            if let Ok(Some(version)) = provider.get_current_version().await {
+                return Ok(Some(DetectedEnvironment {
+                    env_type: logical,
+                    version,
+                    source: "global".to_string(),
+                    source_path: None,
+                    source_type: "global".to_string(),
+                }));
+            }
+        }
+
+        Ok(None)
     }
 
     pub async fn detect_all_versions(
@@ -540,24 +573,18 @@ impl EnvironmentManager {
         start_path: &Path,
     ) -> CogniaResult<Vec<DetectedEnvironment>> {
         let all_types = SystemEnvironmentType::all();
-        let mut futures = Vec::with_capacity(all_types.len());
-
+        let mut detected = Vec::with_capacity(all_types.len());
         for env in &all_types {
-            let env_type = env.env_type().to_string();
-            let path = start_path.to_path_buf();
-            futures.push(async move {
-                let logical = normalize_env_type(&env_type);
-                let sources =
-                    super::project_env_detect::default_enabled_detection_sources(&logical);
-                super::project_env_detect::detect_env_version(&logical, &path, &sources).await
-            });
+            let env_type = env.env_type();
+            let logical = normalize_env_type(env_type);
+            let sources = super::project_env_detect::default_enabled_detection_sources(&logical);
+            if let Some(item) = self
+                .detect_version_with_sources(&logical, start_path, &sources)
+                .await?
+            {
+                detected.push(item);
+            }
         }
-
-        let results = futures::future::join_all(futures).await;
-        let detected: Vec<DetectedEnvironment> = results
-            .into_iter()
-            .filter_map(|r| r.ok().flatten())
-            .collect();
 
         Ok(detected)
     }
@@ -889,6 +916,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use std::collections::HashSet;
+    use tempfile::tempdir;
 
     #[test]
     fn version_matches_is_strict_enough_to_avoid_false_positives() {
@@ -910,11 +938,21 @@ mod tests {
     struct DummyEnvProvider {
         id: &'static str,
         available: bool,
+        current_version: Option<String>,
     }
 
     impl DummyEnvProvider {
         fn new(id: &'static str, available: bool) -> Self {
-            Self { id, available }
+            Self {
+                id,
+                available,
+                current_version: None,
+            }
+        }
+
+        fn with_current_version(mut self, version: &str) -> Self {
+            self.current_version = Some(version.to_string());
+            self
         }
     }
 
@@ -987,7 +1025,7 @@ mod tests {
         }
 
         async fn get_current_version(&self) -> CogniaResult<Option<String>> {
-            Ok(None)
+            Ok(self.current_version.clone())
         }
 
         async fn set_global_version(&self, _version: &str) -> CogniaResult<()> {
@@ -1112,6 +1150,24 @@ mod tests {
             manager.resolve_provider("deno", None, None).await.unwrap();
         assert_eq!(logical, "deno");
         assert_eq!(provider_id, "system-deno");
+    }
+
+    #[tokio::test]
+    async fn detect_version_falls_back_to_global_when_no_project_source_matches() {
+        let mut registry = ProviderRegistry::new();
+        registry.register_environment_provider(Arc::new(
+            DummyEnvProvider::new("deno", true).with_current_version("1.40.5"),
+        ));
+
+        let manager = EnvironmentManager::new(Arc::new(RwLock::new(registry)));
+        let dir = tempdir().unwrap();
+
+        let detected = manager.detect_version("deno", dir.path()).await.unwrap().unwrap();
+        assert_eq!(detected.env_type, "deno");
+        assert_eq!(detected.version, "1.40.5");
+        assert_eq!(detected.source, "global");
+        assert_eq!(detected.source_type, "global");
+        assert!(detected.source_path.is_none());
     }
 
     #[test]

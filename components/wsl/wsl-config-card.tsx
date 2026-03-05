@@ -314,7 +314,10 @@ export function WslConfigCard({
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
           </CollapsibleTrigger>
           <CollapsibleContent>
-          <div className="grid grid-cols-2 gap-3 mt-3">
+          <div
+            data-testid="wsl-config-quick-settings-grid"
+            className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"
+          >
             {COMMON_WSL2_SETTINGS.map((setting) => {
               const sec = setting.section ?? 'wsl2';
               const sectionConfig = sec === 'experimental' ? experimentalConfig : wsl2Config;

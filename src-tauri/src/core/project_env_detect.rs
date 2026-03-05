@@ -175,11 +175,54 @@ pub fn default_detection_sources(env_type: &str) -> &'static [&'static str] {
 
 /// Default enabled sources (first two) used when the user has no saved settings yet.
 pub fn default_enabled_detection_sources(env_type: &str) -> Vec<String> {
+    let take_count = match env_type {
+        // Java defaults include local + manifest sources to preserve
+        // deterministic local -> manifest -> global resolution when combined
+        // with EnvironmentManager global fallback.
+        "java" => 5,
+        _ => 2,
+    };
+
     default_detection_sources(env_type)
         .iter()
-        .take(2)
+        .take(take_count)
         .map(|s| (*s).to_string())
         .collect()
+}
+
+pub fn classify_detection_source(env_type: &str, source: &str) -> String {
+    if matches!(source, "global" | "global_default" | "system") {
+        return "global".to_string();
+    }
+
+    if env_type == "java" {
+        if matches!(
+            source,
+            "pom.xml (java.version)" | "build.gradle (sourceCompatibility)"
+        ) {
+            return "manifest".to_string();
+        }
+
+        if matches!(source, ".java-version" | ".sdkmanrc" | ".tool-versions" | "mise.toml") {
+            return "local".to_string();
+        }
+    }
+
+    if source.contains("pom.xml")
+        || source.contains("build.gradle")
+        || source.contains("package.json")
+        || source.contains("Cargo.toml")
+        || source.contains("go.mod")
+        || source.contains("Pipfile")
+        || source.contains("pyproject.toml")
+        || source.contains("pubspec.yaml")
+        || source.contains("Gemfile")
+        || source.contains("manifest")
+    {
+        "manifest".to_string()
+    } else {
+        "local".to_string()
+    }
 }
 
 /// Detect a pinned version for a logical environment type by traversing the directory tree
@@ -204,6 +247,7 @@ pub async fn detect_env_version(
                     version: version.value,
                     source: version.source,
                     source_path: Some(version.path),
+                    source_type: classify_detection_source(env_type, source),
                 }));
             }
         }
@@ -2594,6 +2638,7 @@ ThisBuild / organization := "com.example"
         assert_eq!(detected.env_type, "java");
         assert_eq!(detected.version, "17");
         assert_eq!(detected.source, "pom.xml (java.version)");
+        assert_eq!(detected.source_type, "manifest");
     }
 
     #[tokio::test]
@@ -2724,6 +2769,7 @@ java {
         // .java-version is listed first, so it wins
         assert_eq!(detected.version, "21");
         assert_eq!(detected.source, ".java-version");
+        assert_eq!(detected.source_type, "local");
     }
 
     // ── Dart detection tests ──
@@ -3988,11 +4034,26 @@ rust-version = "1.70"
     }
 
     #[tokio::test]
-    async fn default_enabled_returns_first_two() {
+    async fn default_enabled_returns_first_two_for_non_java() {
         let enabled = default_enabled_detection_sources("node");
         assert_eq!(enabled.len(), 2);
         assert_eq!(enabled[0], ".nvmrc");
         assert_eq!(enabled[1], ".node-version");
+    }
+
+    #[tokio::test]
+    async fn default_enabled_java_includes_manifest_sources() {
+        let enabled = default_enabled_detection_sources("java");
+        assert_eq!(
+            enabled,
+            vec![
+                ".java-version".to_string(),
+                ".sdkmanrc".to_string(),
+                ".tool-versions".to_string(),
+                "pom.xml (java.version)".to_string(),
+                "build.gradle (sourceCompatibility)".to_string(),
+            ]
+        );
     }
 
     // ── meson.build C/C++ detection tests ──

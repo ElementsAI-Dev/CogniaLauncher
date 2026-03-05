@@ -88,6 +88,8 @@ const PROVIDER_ID = 'npm';
 describe('useProviderDetail', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetInstallHistory.mockResolvedValue([]);
+    mockGetPackageHistory.mockResolvedValue([]);
   });
 
   it('should initialize with default state', () => {
@@ -238,6 +240,7 @@ describe('useProviderDetail', () => {
   it('should install package', async () => {
     mockPackageInstall.mockResolvedValue(undefined);
     mockFetchSharedInstalledPackages.mockResolvedValue([]);
+    mockGetInstallHistory.mockResolvedValue([]);
 
     const { result } = renderHook(() => useProviderDetail(PROVIDER_ID));
 
@@ -246,6 +249,7 @@ describe('useProviderDetail', () => {
     });
 
     expect(mockPackageInstall).toHaveBeenCalledWith(['npm:express@4.18.0']);
+    expect(mockGetInstallHistory).toHaveBeenCalledWith({ limit: 200, provider: PROVIDER_ID });
   });
 
   it('should install package without version', async () => {
@@ -383,6 +387,10 @@ describe('useProviderDetail', () => {
     });
 
     expect(fetched).toEqual(history);
+    expect(mockGetPackageHistory).toHaveBeenCalledWith('express', {
+      provider: PROVIDER_ID,
+      limit: 200,
+    });
   });
 
   it('should check updates filtered by provider', async () => {
@@ -466,10 +474,9 @@ describe('useProviderDetail', () => {
     expect(mockHealthCheckPackageManager).toHaveBeenCalledWith(PROVIDER_ID);
   });
 
-  it('should fetch history filtered by provider', async () => {
+  it('should fetch history scoped by provider query', async () => {
     const history = [
       { provider: 'npm', action: 'install', name: 'express' },
-      { provider: 'pip', action: 'install', name: 'flask' },
     ];
     mockGetInstallHistory.mockResolvedValue(history);
 
@@ -482,6 +489,7 @@ describe('useProviderDetail', () => {
 
     expect(fetched).toHaveLength(1);
     expect(fetched![0].name).toBe('express');
+    expect(mockGetInstallHistory).toHaveBeenCalledWith({ limit: 200, provider: PROVIDER_ID });
   });
 
   it('should fetch environment info for env provider', async () => {

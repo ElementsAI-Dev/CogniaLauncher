@@ -74,28 +74,28 @@ export function WslStatusCard({
           </Tooltip>
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between">
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
           <span className="text-sm text-muted-foreground">{t('wsl.wslVersion')}</span>
-          <span className="text-sm font-mono">{status?.version ?? '—'}</span>
+          <span className="truncate text-sm font-mono">{status?.version ?? '—'}</span>
         </div>
 
         {status?.kernelVersion && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">{t('wsl.kernelVersion')}</span>
-            <span className="text-sm font-mono">{status.kernelVersion}</span>
+            <span className="truncate text-sm font-mono">{status.kernelVersion}</span>
           </div>
         )}
 
         {status?.wslgVersion && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">{t('wsl.wslgVersion')}</span>
-            <span className="text-sm font-mono">{status.wslgVersion}</span>
+            <span className="truncate text-sm font-mono">{status.wslgVersion}</span>
           </div>
         )}
 
         {status?.defaultDistribution && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground">{t('wsl.defaultDistribution')}</span>
             <Badge variant="outline" className="text-xs font-mono">
               {status.defaultDistribution}
@@ -104,12 +104,12 @@ export function WslStatusCard({
         )}
 
         {ipToShow && (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground flex items-center gap-1.5">
               <Network className="h-3.5 w-3.5" />
               {t('wsl.ipAddress')}
             </span>
-            <span className="text-sm font-mono">{ipToShow}</span>
+            <span className="truncate text-sm font-mono">{ipToShow}</span>
           </div>
         )}
 
@@ -139,7 +139,7 @@ export function WslStatusCard({
         <Separator />
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-muted-foreground flex items-center gap-1.5">
               <Activity className="h-3.5 w-3.5" />
               {t('wsl.runningDistros')}
@@ -150,7 +150,7 @@ export function WslStatusCard({
           </div>
 
           {status?.runningDistros.length ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
               {status.runningDistros.map((name) => (
                 <Badge key={name} variant="outline" className="text-xs">
                   {name}

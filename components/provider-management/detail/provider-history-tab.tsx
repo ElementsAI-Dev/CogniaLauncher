@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import {
@@ -73,6 +74,7 @@ const PAGE_SIZE = 20;
 interface ProviderHistoryTabProps {
   installHistory: InstallHistoryEntry[];
   loadingHistory: boolean;
+  historyError?: string | null;
   onRefreshHistory: () => Promise<unknown>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
@@ -97,6 +99,7 @@ function getActionIcon(action: string) {
 export function ProviderHistoryTab({
   installHistory,
   loadingHistory,
+  historyError,
   onRefreshHistory,
   t,
 }: ProviderHistoryTabProps) {
@@ -166,6 +169,12 @@ export function ProviderHistoryTab({
         </CardAction>
       </CardHeader>
       <CardContent>
+        {historyError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{historyError}</AlertDescription>
+          </Alert>
+        )}
+
         {installHistory.length > 0 && (
           <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center">
             <div className="relative flex-1 max-w-xs">

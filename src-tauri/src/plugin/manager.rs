@@ -320,7 +320,7 @@ impl PluginManager {
                 .await
                 .map_err(|e| CogniaError::Plugin(format!("Failed to clean install dir: {}", e)))?;
         }
-        copy_dir_recursive(source_path, &dest_dir).await?;
+        copy_plugin_runtime_files(source_path, &dest_dir, &manifest).await?;
 
         let wasm_path = dest_dir.join("plugin.wasm");
         if !wasm_path.exists() {
@@ -694,6 +694,19 @@ impl PluginManager {
                 break;
             }
 
+            if let Some(source_id) = queued_source.as_deref() {
+                let source_known = {
+                    let reg = self.registry.read().await;
+                    reg.contains(source_id)
+                };
+                if !source_known {
+                    log::warn!(
+                        "[plugin-runtime][plugin:{}][operation:dispatch_event][stage:source-context] source plugin id not found in registry; continuing dispatch with isolated boundary",
+                        source_id
+                    );
+                }
+            }
+
             let listeners: Vec<(String, PathBuf)> = {
                 let reg = self.registry.read().await;
                 reg.iter()
@@ -714,7 +727,7 @@ impl PluginManager {
                 if !self.loader.is_loaded(plugin_id) {
                     if let Err(e) = self.loader.load(plugin_id, wasm_path) {
                         log::warn!(
-                            "Failed to lazy-load plugin '{}' for event dispatch: {}",
+                            "[plugin-runtime][plugin:{}][operation:dispatch_event][stage:listener-load] failed to lazy-load listener plugin: {}",
                             plugin_id,
                             e
                         );
@@ -732,9 +745,17 @@ impl PluginManager {
                 })
                 .to_string();
 
-                self.loader
+                let callback_output = self.loader
                     .call_if_exists(plugin_id, "cognia_on_event", &input)
                     .await;
+                if callback_output.is_none() {
+                    log::warn!(
+                        "[plugin-runtime][plugin:{}][operation:dispatch_event][stage:listener-callback] listener callback failed or missing export for event '{}' (source={})",
+                        plugin_id,
+                        queued_event,
+                        queued_source.as_deref().unwrap_or("system")
+                    );
+                }
             }
 
             if !listeners.is_empty() {
@@ -1170,6 +1191,47 @@ impl PluginManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Settings;
+    use crate::plugin::manifest::{
+        PluginDependencies, PluginManifest, PluginMeta, PluginPermissions,
+    };
+    use crate::plugin::registry::PluginSource;
+    use crate::provider::registry::ProviderRegistry;
+    use std::collections::HashMap;
+    use tokio::sync::RwLock;
+
+    fn make_test_manager(temp_root: &Path) -> PluginManager {
+        let deps = PluginDeps {
+            registry: Arc::new(RwLock::new(ProviderRegistry::new())),
+            settings: Arc::new(RwLock::new(Settings::default())),
+        };
+        PluginManager::new(temp_root, deps)
+    }
+
+    fn make_listener_manifest(plugin_id: &str, events: Vec<&str>) -> PluginManifest {
+        PluginManifest {
+            plugin: PluginMeta {
+                id: plugin_id.to_string(),
+                name: "Listener".to_string(),
+                version: "1.0.0".to_string(),
+                description: "listener test plugin".to_string(),
+                authors: vec![],
+                license: None,
+                repository: None,
+                homepage: None,
+                min_cognia_version: None,
+                icon: None,
+                update_url: None,
+                listen_events: events.into_iter().map(|e| e.to_string()).collect(),
+            },
+            tools: vec![],
+            permissions: PluginPermissions::default(),
+            locales: HashMap::new(),
+            ui: None,
+            dependencies: PluginDependencies::default(),
+            settings: vec![],
+        }
+    }
 
     #[test]
     fn test_persisted_state_default() {
@@ -1244,35 +1306,363 @@ mod tests {
             std::path::PathBuf::from("/cognia/plugins/plugin-state.json")
         );
     }
+
+    #[tokio::test]
+    async fn test_dispatch_event_no_listeners_is_noop() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+
+        manager
+            .dispatch_event("unit.event.no_listeners", &serde_json::json!({ "ok": true }))
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_event_listener_load_failure_isolated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_id = "com.example.listener";
+
+        {
+            let mut reg = manager.registry.write().await;
+            reg.register(
+                make_listener_manifest(plugin_id, vec!["unit.event"]),
+                temp_dir.path().join("missing").join("plugin.wasm"),
+                temp_dir.path().join("missing"),
+                PluginSource::BuiltIn,
+            );
+        }
+
+        manager
+            .dispatch_event("unit.event", &serde_json::json!({ "x": 1 }))
+            .await;
+
+        assert!(!manager.loader.is_loaded(plugin_id));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_event_unknown_source_context_isolated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_id = "com.example.listener";
+
+        {
+            let mut reg = manager.registry.write().await;
+            reg.register(
+                make_listener_manifest(plugin_id, vec!["unit.event"]),
+                temp_dir.path().join("missing").join("plugin.wasm"),
+                temp_dir.path().join("missing"),
+                PluginSource::BuiltIn,
+            );
+        }
+
+        manager
+            .dispatch_event_with_meta(
+                "unit.event",
+                &serde_json::json!({ "x": 1 }),
+                Some("com.example.unknown-source"),
+                Some("2026-03-04T00:00:00Z"),
+            )
+            .await;
+
+        assert!(!manager.loader.is_loaded(plugin_id));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_event_multiple_listener_failures_are_isolated() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut manager = make_test_manager(temp_dir.path());
+        let plugin_a = "com.example.listener-a";
+        let plugin_b = "com.example.listener-b";
+
+        {
+            let mut reg = manager.registry.write().await;
+            reg.register(
+                make_listener_manifest(plugin_a, vec!["unit.event"]),
+                temp_dir.path().join("missing-a").join("plugin.wasm"),
+                temp_dir.path().join("missing-a"),
+                PluginSource::BuiltIn,
+            );
+            reg.register(
+                make_listener_manifest(plugin_b, vec!["unit.event"]),
+                temp_dir.path().join("missing-b").join("plugin.wasm"),
+                temp_dir.path().join("missing-b"),
+                PluginSource::BuiltIn,
+            );
+        }
+
+        manager
+            .dispatch_event("unit.event", &serde_json::json!({ "x": 1 }))
+            .await;
+
+        assert!(!manager.loader.is_loaded(plugin_a));
+        assert!(!manager.loader.is_loaded(plugin_b));
+    }
+
+    #[tokio::test]
+    async fn test_copy_plugin_runtime_files_only_required_artifacts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src = temp_dir.path().join("src");
+        let dst = temp_dir.path().join("dst");
+
+        tokio::fs::create_dir_all(src.join("node_modules").join("pkg"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(src.join(".tools").join("cache"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(src.join("target").join("debug"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(src.join("ui")).await.unwrap();
+        tokio::fs::create_dir_all(src.join("dist")).await.unwrap();
+        tokio::fs::create_dir_all(src.join(".bin")).await.unwrap();
+
+        tokio::fs::write(
+            src.join("plugin.toml"),
+            "[plugin]\nid=\"p\"\nname=\"P\"\nversion=\"1.0.0\"\ndescription=\"d\"\nauthors=[]\n\n[[tools]]\nid=\"view\"\nname_en=\"View\"\ndescription_en=\"View\"\nentry=\"render_view\"\nui_mode=\"iframe\"\n\n[ui]\nentry=\"ui/index.html\"\n",
+        )
+        .await
+        .unwrap();
+        tokio::fs::write(src.join("plugin.wasm"), b"\0asm").await.unwrap();
+        tokio::fs::write(src.join("node_modules").join("pkg").join("index.js"), "x")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join(".tools").join("cache").join("binary"), "x")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("target").join("debug").join("artifact"), "x")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("ui").join("index.html"), "<html></html>")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join("dist").join("plugin.js"), "bundle")
+            .await
+            .unwrap();
+        tokio::fs::write(src.join(".bin").join("tool"), "bin")
+            .await
+            .unwrap();
+
+        let manifest = PluginManifest::from_file(&src.join("plugin.toml")).unwrap();
+        copy_plugin_runtime_files(&src, &dst, &manifest)
+            .await
+            .unwrap();
+
+        assert!(dst.join("plugin.toml").exists());
+        assert!(dst.join("plugin.wasm").exists());
+        assert!(dst.join("ui").join("index.html").exists());
+
+        assert!(!dst.join("node_modules").exists());
+        assert!(!dst.join(".tools").exists());
+        assert!(!dst.join("target").exists());
+        assert!(!dst.join("dist").exists());
+        assert!(!dst.join(".bin").exists());
+    }
+
+    #[tokio::test]
+    async fn test_copy_dir_recursive_rejects_destination_inside_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src = temp_dir.path().join("src");
+        let nested_dst = src.join("nested").join("dst");
+        tokio::fs::create_dir_all(&src).await.unwrap();
+        tokio::fs::write(src.join("plugin.toml"), "x").await.unwrap();
+
+        let err = copy_dir_recursive(&src, &nested_dst).await.unwrap_err();
+        assert!(err.to_string().contains("inside source"));
+    }
 }
 
-/// Recursively copy a directory
-async fn copy_dir_recursive(src: &Path, dst: &Path) -> CogniaResult<()> {
-    tokio::fs::create_dir_all(dst).await.map_err(|e| {
-        CogniaError::Plugin(format!("Failed to create dir {}: {}", dst.display(), e))
-    })?;
+async fn copy_plugin_runtime_files(
+    source_root: &Path,
+    dest_root: &Path,
+    manifest: &PluginManifest,
+) -> CogniaResult<()> {
+    copy_required_relative_file(source_root, dest_root, Path::new("plugin.toml")).await?;
+    copy_required_relative_file(source_root, dest_root, Path::new("plugin.wasm")).await?;
 
-    let mut entries = tokio::fs::read_dir(src)
-        .await
-        .map_err(|e| CogniaError::Plugin(format!("Failed to read dir {}: {}", src.display(), e)))?;
+    let locales_src = source_root.join("locales");
+    if locales_src.is_dir() {
+        copy_dir_recursive(&locales_src, &dest_root.join("locales")).await?;
+    }
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
+    if let Some(ui) = &manifest.ui {
+        let ui_entry = Path::new(&ui.entry);
+        validate_safe_relative_path(ui_entry, "ui.entry")?;
+        copy_required_relative_file(source_root, dest_root, ui_entry).await?;
 
-        if src_path.is_dir() {
-            Box::pin(copy_dir_recursive(&src_path, &dst_path)).await?;
-        } else {
-            tokio::fs::copy(&src_path, &dst_path).await.map_err(|e| {
-                CogniaError::Plugin(format!(
-                    "Failed to copy {} -> {}: {}",
-                    src_path.display(),
-                    dst_path.display(),
-                    e
-                ))
-            })?;
+        if let Some(ui_parent) = ui_entry.parent() {
+            if !ui_parent.as_os_str().is_empty() {
+                copy_dir_recursive(&source_root.join(ui_parent), &dest_root.join(ui_parent)).await?;
+            }
         }
     }
 
     Ok(())
+}
+
+fn validate_safe_relative_path(path: &Path, field: &str) -> CogniaResult<()> {
+    use std::path::Component;
+
+    if path.is_absolute() {
+        return Err(CogniaError::Plugin(format!(
+            "Invalid {} path (must be relative): {}",
+            field,
+            path.display()
+        )));
+    }
+
+    if path.components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(CogniaError::Plugin(format!(
+            "Invalid {} path (path traversal not allowed): {}",
+            field,
+            path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+async fn copy_required_relative_file(
+    source_root: &Path,
+    dest_root: &Path,
+    relative_path: &Path,
+) -> CogniaResult<()> {
+    validate_safe_relative_path(relative_path, "plugin file")?;
+
+    let src = source_root.join(relative_path);
+    if !src.exists() {
+        return Err(CogniaError::Plugin(format!(
+            "Required plugin file not found: {}",
+            src.display()
+        )));
+    }
+
+    let metadata = tokio::fs::metadata(&src).await.map_err(|e| {
+        CogniaError::Plugin(format!(
+            "Failed to read metadata for {}: {}",
+            src.display(),
+            e
+        ))
+    })?;
+
+    if !metadata.is_file() {
+        return Err(CogniaError::Plugin(format!(
+            "Expected file but found directory: {}",
+            src.display()
+        )));
+    }
+
+    let dst = dest_root.join(relative_path);
+    if let Some(parent) = dst.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            CogniaError::Plugin(format!(
+                "Failed to create dir {}: {}",
+                parent.display(),
+                e
+            ))
+        })?;
+    }
+
+    tokio::fs::copy(&src, &dst).await.map_err(|e| {
+        CogniaError::Plugin(format!(
+            "Failed to copy {} -> {}: {}",
+            src.display(),
+            dst.display(),
+            e
+        ))
+    })?;
+
+    Ok(())
+}
+
+/// Recursively copy a directory
+async fn copy_dir_recursive(src: &Path, dst: &Path) -> CogniaResult<()> {
+    if dst.starts_with(src) {
+        return Err(CogniaError::Plugin(format!(
+            "Refusing to copy directory with destination inside source: {} -> {}",
+            src.display(),
+            dst.display()
+        )));
+    }
+
+    let mut visited_dirs = HashSet::new();
+    copy_dir_recursive_impl(src, dst, 0, &mut visited_dirs).await
+}
+
+fn copy_dir_recursive_impl<'a>(
+    src: &'a Path,
+    dst: &'a Path,
+    depth: usize,
+    visited_dirs: &'a mut HashSet<PathBuf>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = CogniaResult<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let canonical_src = src.canonicalize().map_err(|e| {
+            CogniaError::Plugin(format!(
+                "Failed to resolve source dir {}: {}",
+                src.display(),
+                e
+            ))
+        })?;
+
+        if !visited_dirs.insert(canonical_src) {
+            return Ok(());
+        }
+
+        tokio::fs::create_dir_all(dst).await.map_err(|e| {
+            CogniaError::Plugin(format!("Failed to create dir {}: {}", dst.display(), e))
+        })?;
+
+        let mut entries = tokio::fs::read_dir(src).await.map_err(|e| {
+            CogniaError::Plugin(format!("Failed to read dir {}: {}", src.display(), e))
+        })?;
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let src_path = entry.path();
+            let file_name = entry.file_name();
+            let dst_path = dst.join(&file_name);
+            let file_type = entry.file_type().await.map_err(|e| {
+                CogniaError::Plugin(format!(
+                    "Failed to inspect {}: {}",
+                    src_path.display(),
+                    e
+                ))
+            })?;
+
+            if file_type.is_symlink() {
+                continue;
+            }
+
+            if file_type.is_dir() {
+                let name = file_name.to_string_lossy();
+                if should_skip_plugin_copy_dir(name.as_ref(), depth) {
+                    continue;
+                }
+                copy_dir_recursive_impl(&src_path, &dst_path, depth + 1, visited_dirs).await?;
+            } else if file_type.is_file() {
+                tokio::fs::copy(&src_path, &dst_path).await.map_err(|e| {
+                    CogniaError::Plugin(format!(
+                        "Failed to copy {} -> {}: {}",
+                        src_path.display(),
+                        dst_path.display(),
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        Ok(())
+    })
+}
+
+fn should_skip_plugin_copy_dir(name: &str, depth: usize) -> bool {
+    if depth != 0 {
+        return false;
+    }
+    matches!(name, "node_modules" | ".tools" | "target" | ".git")
 }

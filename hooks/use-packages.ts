@@ -310,6 +310,10 @@ export function usePackages() {
     const dispose = subscribeInvalidation(
       ['package_data', 'provider_data'],
       withThrottle((event: CacheInvalidationEvent) => {
+        if (event.reason.startsWith('packages:')) {
+          return;
+        }
+
         if (event.domain === 'provider_data') {
           providerCacheTimestampRef.current = null;
           void fetchProviders();
@@ -416,22 +420,22 @@ export function usePackages() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getInstallHistory = useCallback(async (limit?: number) => {
+  const getInstallHistory = useCallback(async (queryOrLimit?: number | tauri.InstallHistoryQuery) => {
     try {
-      return await tauri.getInstallHistory(limit);
+      return await tauri.getInstallHistory(queryOrLimit);
     } catch (err) {
       store.setError(formatError(err));
-      return [];
+      throw err;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const getPackageHistory = useCallback(async (name: string) => {
+  const getPackageHistory = useCallback(async (name: string, query?: tauri.PackageHistoryQuery) => {
     try {
-      return await tauri.getPackageHistory(name);
+      return await tauri.getPackageHistory(name, query);
     } catch (err) {
       store.setError(formatError(err));
-      return [];
+      throw err;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

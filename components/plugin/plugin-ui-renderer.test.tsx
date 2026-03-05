@@ -183,11 +183,13 @@ describe('PluginUiRenderer', () => {
     expect(screen.getByText('Delete')).toBeInTheDocument();
 
     await user.click(screen.getByText('Refresh'));
-    expect(mockOnAction).toHaveBeenCalledWith({
-      action: 'button_click',
-      buttonId: 'refresh',
-      state: undefined,
-    });
+    expect(mockOnAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'button_click',
+        buttonId: 'refresh',
+        state: undefined,
+      }),
+    );
   });
 
   it('passes state through action callback', async () => {
@@ -203,11 +205,13 @@ describe('PluginUiRenderer', () => {
       <PluginUiRenderer blocks={blocks} onAction={mockOnAction} state={state} />,
     );
     await user.click(screen.getByText('Increment'));
-    expect(mockOnAction).toHaveBeenCalledWith({
-      action: 'button_click',
-      buttonId: 'inc',
-      state: { counter: 42 },
-    });
+    expect(mockOnAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'button_click',
+        buttonId: 'inc',
+        state: { counter: 42 },
+      }),
+    );
   });
 
   it('renders form block with input field', () => {
@@ -292,6 +296,90 @@ describe('PluginUiRenderer', () => {
     expect(screen.getByText('Theme')).toBeInTheDocument();
   });
 
+  it('renders extended number/password/date-time fields', () => {
+    const blocks = [
+      {
+        type: 'form',
+        id: 'extended-basic',
+        fields: [
+          { type: 'number', id: 'retries', label: 'Retries', defaultValue: 2, min: 0, max: 5 },
+          { type: 'password', id: 'token', label: 'Token' },
+          { type: 'date-time', id: 'scheduleAt', label: 'Schedule At' },
+        ],
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getByLabelText('Retries')).toBeInTheDocument();
+    expect(screen.getByLabelText('Token')).toBeInTheDocument();
+    expect(screen.getByLabelText('Schedule At')).toBeInTheDocument();
+  });
+
+  it('renders extended radio/switch/multi-select fields', () => {
+    const blocks = [
+      {
+        type: 'form',
+        id: 'extended-choice',
+        fields: [
+          {
+            type: 'radio-group',
+            id: 'channel',
+            label: 'Channel',
+            options: [
+              { label: 'Stable', value: 'stable' },
+              { label: 'Canary', value: 'canary' },
+            ],
+            defaultValue: 'stable',
+          },
+          { type: 'switch', id: 'autoApply', label: 'Auto Apply', defaultChecked: true },
+          {
+            type: 'multi-select',
+            id: 'targets',
+            label: 'Targets',
+            options: [
+              { label: 'Node', value: 'node' },
+              { label: 'Python', value: 'python' },
+            ],
+            defaultValues: ['node'],
+          },
+        ],
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getByText('Channel')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toBeInTheDocument();
+    expect(screen.getByText('Targets')).toBeInTheDocument();
+  });
+
+  it('submits normalized form payload with formDataTypes metadata', async () => {
+    const user = userEvent.setup();
+    const blocks = [
+      {
+        type: 'form',
+        id: 'normalize-test',
+        fields: [
+          { type: 'number', id: 'retries', label: 'Retries', defaultValue: 1 },
+          { type: 'switch', id: 'enabled', label: 'Enabled', defaultChecked: false },
+        ],
+        submitLabel: 'Run',
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    await user.click(screen.getByRole('switch'));
+    await user.click(screen.getByText('Run'));
+
+    expect(mockOnAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'form_submit',
+        formId: 'normalize-test',
+        formData: expect.objectContaining({ retries: 1, enabled: true }),
+        formDataTypes: expect.objectContaining({ retries: 'number', enabled: 'switch' }),
+      }),
+    );
+  });
+
   it('renders group block horizontally', () => {
     const blocks: UiBlock[] = [
       {
@@ -355,7 +443,47 @@ describe('PluginUiRenderer', () => {
     expect(screen.getByText('Refresh')).toBeInTheDocument();
   });
 
-  it('silently ignores unknown block types', () => {
+  it('renders structured output blocks', () => {
+    const blocks = [
+      {
+        type: 'result',
+        status: 'success',
+        title: 'Conversion Result',
+        message: 'Conversion completed',
+      },
+      {
+        type: 'json-view',
+        label: 'Payload',
+        data: { ok: true, artifact: 'plugin.wasm' },
+      },
+      {
+        type: 'description-list',
+        items: [
+          { term: 'Provider', description: 'pnpm' },
+          { term: 'Version', description: '9.0.0' },
+        ],
+      },
+      {
+        type: 'stat-cards',
+        stats: [
+          { id: 'total', label: 'Total', value: '12' },
+          { id: 'passed', label: 'Passed', value: '12', status: 'success' },
+        ],
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getByText('Conversion Result')).toBeInTheDocument();
+    expect(screen.getByText('Conversion completed')).toBeInTheDocument();
+    expect(screen.getByText('Payload')).toBeInTheDocument();
+    expect(screen.getByText(/"artifact":\s*"plugin\.wasm"/)).toBeInTheDocument();
+    expect(screen.getByText('Provider')).toBeInTheDocument();
+    expect(screen.getByText('pnpm')).toBeInTheDocument();
+    expect(screen.getByText('Total')).toBeInTheDocument();
+    expect(screen.getAllByText('12').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders warning fallback for unknown block types', () => {
     const blocks = [
       { type: 'text', content: 'Known' },
       { type: 'unknown_block_type' as 'text', content: 'x' },
@@ -364,6 +492,24 @@ describe('PluginUiRenderer', () => {
     render(<PluginUiRenderer blocks={blocks as UiBlock[]} onAction={mockOnAction} />);
     expect(screen.getByText('Known')).toBeInTheDocument();
     expect(screen.getByText('Also known')).toBeInTheDocument();
+    expect(screen.getByText(/unsupported block type/i)).toBeInTheDocument();
+  });
+
+  it('renders warning fallback for unknown form field types', () => {
+    const blocks = [
+      {
+        type: 'form',
+        id: 'unknown-field',
+        fields: [
+          { type: 'input', id: 'name', label: 'Name' },
+          { type: 'unknown-field' as 'input', id: 'x', label: 'Unknown' },
+        ],
+      },
+    ] as unknown as UiBlock[];
+
+    render(<PluginUiRenderer blocks={blocks} onAction={mockOnAction} />);
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    expect(screen.getByText(/unsupported field type/i)).toBeInTheDocument();
   });
 
   it('renders image block', () => {

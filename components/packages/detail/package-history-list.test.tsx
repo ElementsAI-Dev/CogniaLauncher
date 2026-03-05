@@ -103,4 +103,19 @@ describe("PackageHistoryList", () => {
     render(<PackageHistoryList history={history} loading={false} />);
     expect(screen.getByText("History of actions for this package")).toBeInTheDocument();
   });
+
+  it("renders error state with retry action", () => {
+    const onRetry = jest.fn();
+    render(
+      <PackageHistoryList
+        history={[]}
+        loading={false}
+        error="history load failed"
+        onRetry={onRetry}
+      />,
+    );
+    expect(screen.getByText("history load failed")).toBeInTheDocument();
+    const retryBtn = screen.getByRole("button", { name: /packages\.detail\.retry/i });
+    expect(retryBtn).toBeInTheDocument();
+  });
 });

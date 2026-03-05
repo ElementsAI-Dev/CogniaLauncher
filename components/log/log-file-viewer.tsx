@@ -32,6 +32,26 @@ interface LogFileViewerProps {
 
 const PAGE_SIZE = 200;
 const FOLLOW_MODE_MAX_SCAN_LINES = 20_000;
+const VIRTUAL_ESTIMATED_ROW_HEIGHT = 56;
+const VIRTUAL_OVERSCAN_PX = 640;
+
+function findNearestEntryIndex(offsets: number[], targetOffset: number): number {
+  if (offsets.length <= 1) return 0;
+
+  let low = 0;
+  let high = offsets.length - 1;
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (offsets[mid] <= targetOffset) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return Math.max(0, Math.min(offsets.length - 2, low - 1));
+}
 
 export function LogFileViewer({
   open,
@@ -46,7 +66,12 @@ export function LogFileViewer({
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+  const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
   const requestSequenceRef = useRef(0);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const rowObserversRef = useRef<Map<string, ResizeObserver>>(new Map());
 
   const queryOptions = useMemo(
     () => ({
@@ -136,6 +161,76 @@ export function LogFileViewer({
     [fileName, mapEntry, queryLogFile, queryOptions, t],
   );
 
+  const setMeasuredRowRef = useCallback(
+    (entryId: string) => (node: HTMLDivElement | null) => {
+      const existingObserver = rowObserversRef.current.get(entryId);
+      if (existingObserver) {
+        existingObserver.disconnect();
+        rowObserversRef.current.delete(entryId);
+      }
+
+      if (!node || typeof ResizeObserver === "undefined") return;
+
+      const updateHeight = () => {
+        const nextHeight = Math.ceil(node.getBoundingClientRect().height);
+        if (nextHeight <= 0) return;
+        setRowHeights((prev) =>
+          prev[entryId] === nextHeight ? prev : { ...prev, [entryId]: nextHeight },
+        );
+      };
+
+      updateHeight();
+      const observer = new ResizeObserver(() => updateHeight());
+      observer.observe(node);
+      rowObserversRef.current.set(entryId, observer);
+    },
+    [],
+  );
+
+  const rowOffsets = useMemo(() => {
+    const offsets = new Array(entries.length + 1);
+    offsets[0] = 0;
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      offsets[index + 1] =
+        offsets[index] + (rowHeights[entry.id] ?? VIRTUAL_ESTIMATED_ROW_HEIGHT);
+    }
+    return offsets;
+  }, [entries, rowHeights]);
+
+  const totalVirtualHeight = rowOffsets[entries.length] ?? 0;
+
+  const visibleRange = useMemo(() => {
+    if (entries.length === 0) {
+      return { startIndex: 0, endIndex: -1 };
+    }
+
+    const viewportBottom = scrollTop + Math.max(1, viewportHeight);
+    const startIndex = findNearestEntryIndex(
+      rowOffsets,
+      Math.max(0, scrollTop - VIRTUAL_OVERSCAN_PX),
+    );
+    const endIndex = Math.min(
+      entries.length - 1,
+      findNearestEntryIndex(rowOffsets, viewportBottom + VIRTUAL_OVERSCAN_PX),
+    );
+
+    return { startIndex, endIndex: Math.max(startIndex, endIndex) };
+  }, [entries.length, rowOffsets, scrollTop, viewportHeight]);
+
+  const visibleRows = useMemo(() => {
+    const { startIndex, endIndex } = visibleRange;
+    if (endIndex < startIndex) return [];
+
+    return entries.slice(startIndex, endIndex + 1).map((entry, localIndex) => {
+      const index = startIndex + localIndex;
+      return {
+        entry,
+        top: rowOffsets[index] ?? 0,
+      };
+    });
+  }, [entries, rowOffsets, visibleRange]);
+
   const handleRefresh = useCallback(() => {
     loadEntries(0, false);
   }, [loadEntries]);
@@ -188,6 +283,8 @@ export function LogFileViewer({
       requestSequenceRef.current += 1;
       setLoading(false);
       setFollowing(false);
+      setScrollTop(0);
+      setRowHeights({});
       return;
     }
     loadEntries(0, false);
@@ -196,6 +293,67 @@ export function LogFileViewer({
   useEffect(
     () => () => {
       requestSequenceRef.current += 1;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const scrollRoot = scrollAreaRef.current;
+    if (!scrollRoot) return;
+
+    const viewport = scrollRoot.querySelector(
+      "[data-slot='scroll-area-viewport']",
+    ) as HTMLDivElement | null;
+
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      setScrollTop(viewport.scrollTop);
+    };
+
+    handleScroll();
+    setViewportHeight(viewport.clientHeight || 600);
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    const resizeObserver = new ResizeObserver(() => {
+      setViewportHeight(viewport.clientHeight || 600);
+    });
+    resizeObserver.observe(viewport);
+
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, [open, entries.length]);
+
+  useEffect(() => {
+    if (!open || !fileName) return;
+    setScrollTop(0);
+    setRowHeights({});
+  }, [fileName, open]);
+
+  useEffect(() => {
+    const knownIds = new Set(entries.map((entry) => entry.id));
+    setRowHeights((prev) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [id, height] of Object.entries(prev)) {
+        if (knownIds.has(id)) {
+          next[id] = height;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [entries]);
+
+  useEffect(
+    () => () => {
+      rowObserversRef.current.forEach((observer) => observer.disconnect());
+      rowObserversRef.current.clear();
     },
     [],
   );
@@ -218,25 +376,30 @@ export function LogFileViewer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl h-[80vh]">
-        <DialogHeader>
+      <DialogContent className="w-[min(96vw,72rem)] max-w-5xl max-h-[85dvh] min-h-0 overflow-hidden p-0 gap-0 flex flex-col">
+        <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4">
           <DialogTitle>{t("logs.fileViewerTitle")}</DialogTitle>
           <DialogDescription className="font-mono text-xs">
             {fileName}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex h-full flex-col gap-3">
-          <LogToolbar
-            onExport={handleExport}
-            showRealtimeControls={false}
-            showMaxLogs={false}
-            showQueryScanLimit
-          />
+        <div
+          data-testid="log-file-viewer-body"
+          className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:px-6 sm:py-4"
+        >
+          <div className="shrink-0">
+            <LogToolbar
+              onExport={handleExport}
+              showRealtimeControls={false}
+              showMaxLogs={false}
+              showQueryScanLimit
+            />
+          </div>
 
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{t("logs.fileEntries", { count: totalCount })}</span>
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               {isCurrentSession && (
                 <Toggle
                   pressed={following}
@@ -256,7 +419,11 @@ export function LogFileViewer({
             </div>
           </div>
 
-          <ScrollArea className="flex-1 rounded-lg border">
+          <ScrollArea
+            ref={scrollAreaRef}
+            data-testid="log-file-viewer-scroll-area"
+            className="h-full min-h-0 flex-1 rounded-lg border"
+          >
             {loading && entries.length === 0 ? (
               <div className="divide-y divide-border/50 p-1">
                 {Array.from({ length: 8 }).map((_, i) => (
@@ -299,15 +466,28 @@ export function LogFileViewer({
                     </Button>
                   </div>
                 )}
-                {entries.map((entry) => (
-                  <LogEntry
-                    key={entry.id}
-                    entry={entry}
-                    highlightText={filter.search}
-                    highlightRegex={Boolean(filter.useRegex)}
-                    allowCollapse
-                  />
-                ))}
+                <div
+                  data-testid="log-file-viewer-virtual-list"
+                  className="relative"
+                  style={{ height: totalVirtualHeight }}
+                >
+                  {visibleRows.map(({ entry, top }) => (
+                    <div
+                      key={entry.id}
+                      ref={setMeasuredRowRef(entry.id)}
+                      data-testid="log-file-viewer-virtual-row"
+                      className="absolute left-0 right-0 border-b border-border/50"
+                      style={{ top }}
+                    >
+                      <LogEntry
+                        entry={entry}
+                        highlightText={filter.search}
+                        highlightRegex={Boolean(filter.useRegex)}
+                        allowCollapse
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </ScrollArea>

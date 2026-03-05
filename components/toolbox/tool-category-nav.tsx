@@ -137,7 +137,7 @@ export function ToolCategoryNavContent({
 
 export function ToolCategoryNav(props: ToolCategoryNavProps) {
   return (
-    <div className="h-[calc(100vh-14rem)] overflow-y-auto">
+    <div data-testid="tool-category-nav-scroll" className="min-h-0 flex-1 overflow-y-auto">
       <ToolCategoryNavContent {...props} />
     </div>
   );

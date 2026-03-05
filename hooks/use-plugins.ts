@@ -15,6 +15,8 @@ import {
   pluginRevokePermission,
   pluginGetLocales,
   pluginScaffold,
+  pluginOpenScaffoldFolder,
+  pluginOpenScaffoldInVscode,
   pluginValidate,
   pluginCheckUpdate,
   pluginUpdate,
@@ -34,6 +36,7 @@ import {
 import type {
   ScaffoldConfig,
   ScaffoldResult,
+  ScaffoldOpenResult,
   ValidationResult,
   PluginUpdateInfo,
   PluginHealth,
@@ -253,6 +256,36 @@ export function usePlugins() {
     }
   }, []);
 
+  const openScaffoldFolder = useCallback(async (path: string): Promise<ScaffoldOpenResult | null> => {
+    if (!isTauri()) return null;
+    try {
+      const result = await pluginOpenScaffoldFolder(path);
+      toast.success(result.message);
+      return result;
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      toast.error(`Open folder failed: ${msg}`);
+      return null;
+    }
+  }, []);
+
+  const openScaffoldInVscode = useCallback(async (path: string): Promise<ScaffoldOpenResult | null> => {
+    if (!isTauri()) return null;
+    try {
+      const result = await pluginOpenScaffoldInVscode(path);
+      if (result.fallbackUsed) {
+        toast.info(result.message);
+      } else {
+        toast.success(result.message);
+      }
+      return result;
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      toast.error(`Open in VSCode failed: ${msg}`);
+      return null;
+    }
+  }, []);
+
   const checkUpdate = useCallback(async (pluginId: string): Promise<PluginUpdateInfo | null> => {
     if (!isTauri()) return null;
     try {
@@ -429,6 +462,8 @@ export function usePlugins() {
     getLocales,
     translatePluginKey,
     scaffoldPlugin,
+    openScaffoldFolder,
+    openScaffoldInVscode,
     validatePlugin,
     checkUpdate,
     updatePlugin,

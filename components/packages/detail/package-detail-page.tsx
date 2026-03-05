@@ -65,6 +65,8 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   // History state
   const [history, setHistory] = useState<InstallHistoryEntry[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Derived state
   const installedPkg = useMemo(() =>
@@ -83,6 +85,10 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
 
   const latestVersion = packageInfo?.versions?.[0]?.version ?? null;
   const hasUpdate = isInstalled && latestVersion && installedPkg?.version !== latestVersion;
+  const markHistoryDirty = useCallback(() => {
+    setHistoryLoaded(false);
+    setHistoryError(null);
+  }, []);
 
   // Load package info
   const loadPackageInfo = useCallback(async () => {
@@ -104,15 +110,23 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
 
   // Load history when tab is activated
   const loadHistory = useCallback(async () => {
-    if (historyLoaded) return;
+    if (historyLoaded || historyLoading) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
     try {
-      const entries = await getPackageHistory(packageName);
+      const entries = await getPackageHistory(packageName, {
+        limit: 200,
+        provider: providerId ?? undefined,
+      });
       setHistory(entries);
+    } catch (err) {
+      setHistoryError(String(err));
+      setHistory([]);
+    } finally {
       setHistoryLoaded(true);
-    } catch {
-      // History load failure is non-critical
+      setHistoryLoading(false);
     }
-  }, [packageName, getPackageHistory, historyLoaded]);
+  }, [packageName, providerId, getPackageHistory, historyLoaded, historyLoading]);
 
   useEffect(() => {
     loadPackageInfo();
@@ -132,34 +146,33 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
     try {
       await installPackages([pkgWithVersion]);
       toast.success(t('packages.detail.installSuccessDetail', { name: packageName, version: version || 'latest' }));
-      await fetchInstalledPackages();
+      markHistoryDirty();
       await loadPackageInfo();
     } catch (err) {
       toast.error(t('packages.installFailed', { error: String(err) }));
     }
-  }, [packageName, providerId, installPackages, fetchInstalledPackages, loadPackageInfo, t]);
+  }, [packageName, providerId, installPackages, markHistoryDirty, loadPackageInfo, t]);
 
   const handleUninstall = useCallback(async () => {
     const pkgId = providerId ? `${providerId}:${packageName}` : packageName;
     try {
       await uninstallPackages([pkgId]);
       toast.success(t('packages.detail.uninstallSuccessDetail', { name: packageName }));
-      await fetchInstalledPackages();
+      markHistoryDirty();
     } catch (err) {
       toast.error(t('packages.uninstallFailed', { name: packageName, error: String(err) }));
     }
-  }, [packageName, providerId, uninstallPackages, fetchInstalledPackages, t]);
+  }, [packageName, providerId, uninstallPackages, markHistoryDirty, t]);
 
   const handleRollback = useCallback(async (version: string) => {
     try {
       await rollbackPackage(packageName, version);
       toast.success(t('packages.rollbackSuccess', { name: packageName, version }));
-      await fetchInstalledPackages();
-      setHistoryLoaded(false); // Refresh history
+      markHistoryDirty();
     } catch (err) {
       toast.error(t('packages.rollbackFailed', { error: String(err) }));
     }
-  }, [packageName, rollbackPackage, fetchInstalledPackages, t]);
+  }, [packageName, rollbackPackage, markHistoryDirty, t]);
 
   const handlePin = useCallback(async () => {
     try {
@@ -204,11 +217,11 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
   }, [packageName, isBookmarked, toggleBookmark, t]);
 
   const handleRefresh = useCallback(async () => {
-    setHistoryLoaded(false);
+    markHistoryDirty();
     await loadPackageInfo();
     await fetchInstalledPackages();
     toast.success(t('providers.refreshed'));
-  }, [loadPackageInfo, fetchInstalledPackages, t]);
+  }, [markHistoryDirty, loadPackageInfo, fetchInstalledPackages, t]);
 
   // Loading state
   if (loading && !packageInfo) {
@@ -379,7 +392,12 @@ export function PackageDetailPage({ packageName, providerId }: PackageDetailPage
         <TabsContent value="history" className="min-h-0">
           <PackageHistoryList
             history={history}
-            loading={!historyLoaded}
+            loading={historyLoading || !historyLoaded}
+            error={historyError}
+            onRetry={() => {
+              setHistoryLoaded(false);
+              void loadHistory();
+            }}
           />
         </TabsContent>
       </Tabs>

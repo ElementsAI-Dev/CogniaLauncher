@@ -1,7 +1,10 @@
 import type { TrayClickBehavior } from "@/lib/tauri";
 import type { AppSettings } from "@/lib/stores/settings";
 
-type ConfigBackedAppSettingKey = Exclude<keyof AppSettings, "autostart">;
+type ConfigBackedAppSettingKey = Exclude<
+  keyof AppSettings,
+  "autostart" | "sidebarItemOrder"
+>;
 
 export const APP_SETTINGS_CONFIG_KEY_MAP = {
   checkUpdatesOnStart: "updates.check_on_start",
@@ -77,7 +80,7 @@ export function configToAppSettings(
 export function appSettingKeyToConfigKey(
   key: keyof AppSettings,
 ): string | undefined {
-  if (key === "autostart") return undefined;
+  if (key === "autostart" || key === "sidebarItemOrder") return undefined;
   return APP_SETTINGS_CONFIG_KEY_MAP[key as ConfigBackedAppSettingKey];
 }
 
@@ -85,7 +88,7 @@ export function appSettingValueToConfigValue(
   key: keyof AppSettings,
   value: AppSettings[keyof AppSettings],
 ): string | null {
-  if (key === "autostart") return null;
+  if (key === "autostart" || key === "sidebarItemOrder") return null;
   if (key === "trayClickBehavior") return String(value);
   if (typeof value === "boolean") return String(value);
   return null;

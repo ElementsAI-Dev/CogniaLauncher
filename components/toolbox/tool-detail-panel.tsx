@@ -27,30 +27,37 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[600px] sm:w-[700px] md:w-[800px] overflow-y-auto">
+      <SheetContent
+        side="right"
+        data-testid="tool-detail-panel-content"
+        className="w-[min(94vw,980px)] max-w-none gap-0 overflow-hidden p-0 sm:w-[min(88vw,980px)] sm:max-w-none md:w-[min(82vw,980px)]"
+      >
         {tool ? (
-          <>
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                {tool.name}
-                {!tool.isBuiltIn && (
-                  <Badge variant="outline" className="text-[10px] gap-0.5">
-                    <Plug className="h-2.5 w-2.5" />
-                    {t('toolbox.plugin.external')}
-                  </Badge>
-                )}
-              </SheetTitle>
-              <SheetDescription>{tool.description}</SheetDescription>
-            </SheetHeader>
-            <div className="mt-2">
-              <Button variant="outline" size="sm" className="gap-1.5" asChild onClick={() => onOpenChange(false)}>
-                <Link href={`/toolbox/tool?id=${encodeURIComponent(tool.id)}`}>
-                  <Maximize2 className="h-3.5 w-3.5" />
-                  {t('toolbox.actions.openFullPage')}
-                </Link>
-              </Button>
+          <div className="flex h-full min-h-0 flex-col">
+            <div data-testid="tool-detail-panel-header" className="border-b bg-muted/20">
+              <SheetHeader className="gap-2 px-6 pb-3 pt-6">
+                <SheetTitle className="flex items-center gap-2 text-base leading-tight">
+                  {tool.name}
+                  {!tool.isBuiltIn && (
+                    <Badge variant="outline" className="gap-1 text-xs">
+                      <Plug className="h-3 w-3" />
+                      {t('toolbox.plugin.external')}
+                    </Badge>
+                  )}
+                </SheetTitle>
+                <SheetDescription className="leading-relaxed">{tool.description}</SheetDescription>
+              </SheetHeader>
+              <div data-testid="tool-detail-panel-actions" className="px-6 pb-4">
+                <Button variant="outline" size="sm" className="gap-1.5" asChild>
+                  <Link href={`/toolbox/tool?id=${encodeURIComponent(tool.id)}`} onClick={() => onOpenChange(false)}>
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    {t('toolbox.actions.openFullPage')}
+                  </Link>
+                </Button>
+              </div>
             </div>
-            <div className="mt-6">
+
+            <div data-testid="tool-detail-panel-body" className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">
               {tool.isBuiltIn && tool.builtInDef ? (
                 <BuiltInToolRenderer builtInId={tool.builtInDef.id} />
               ) : tool.pluginTool ? (
@@ -61,9 +68,9 @@ export function ToolDetailPanel({ tool, open, onOpenChange }: ToolDetailPanelPro
                 </div>
               )}
             </div>
-          </>
+          </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
+          <div className="flex h-full items-center justify-center px-6 text-muted-foreground">
             {t('toolbox.search.noResults')}
           </div>
         )}

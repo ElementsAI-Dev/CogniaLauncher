@@ -24,6 +24,19 @@ jest.mock("@/components/ui/chart", () => ({
 jest.mock("@/lib/theme/chart-utils", () => ({
   getChartColor: (i: number) => `color-${i}`,
   getGradientId: (prefix: string, i: number) => `${prefix}-${i}`,
+  getChartGradientDefinition: jest.fn(() => ({
+    x1: "0",
+    y1: "0",
+    x2: "0",
+    y2: "1",
+    stops: [
+      { offset: "5%", opacity: 0.6 },
+      { offset: "60%", opacity: 0.2 },
+      { offset: "95%", opacity: 0.05 },
+    ],
+  })),
+  getChartAxisTickStyle: jest.fn((fontSize = 11) => ({ fontSize, fill: "var(--foreground)" })),
+  getChartGridStyle: jest.fn(() => ({ stroke: "var(--border)", strokeOpacity: 0.3 })),
 }));
 
 const mockEnvironments: EnvironmentInfo[] = [
@@ -67,6 +80,14 @@ describe("ActivityChart", () => {
   it("does not show empty state message when data exists", () => {
     render(<ActivityChart environments={mockEnvironments} packages={mockPackages} />);
     expect(screen.queryByText("dashboard.widgets.noActivity")).not.toBeInTheDocument();
+  });
+
+  it("uses shared chart gradient and axis/grid style helpers", () => {
+    const chartUtils = jest.requireMock("@/lib/theme/chart-utils");
+    render(<ActivityChart environments={mockEnvironments} packages={mockPackages} />);
+    expect(chartUtils.getChartGradientDefinition).toHaveBeenCalled();
+    expect(chartUtils.getChartAxisTickStyle).toHaveBeenCalled();
+    expect(chartUtils.getChartGridStyle).toHaveBeenCalled();
   });
 
   it("accepts className prop", () => {

@@ -1,10 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import { AppSidebar } from "./app-sidebar";
+import { DEFAULT_SIDEBAR_ITEM_ORDER } from "@/lib/sidebar/order";
 
 const mockPathname = jest.fn(() => "/");
+const mockSearchParamGet = jest.fn((_key: string) => null as string | null);
 
 jest.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
+  useSearchParams: () => ({
+    get: (key: string) => mockSearchParamGet(key),
+  }),
 }));
 
 jest.mock("@/components/providers/locale-provider", () => ({
@@ -125,9 +130,20 @@ const mockEnvironments = [
   { env_type: "rust", provider_id: "rustup", provider: "rustup", current_version: null, installed_versions: [], available: false },
 ];
 
+let mockSidebarItemOrder = [...DEFAULT_SIDEBAR_ITEM_ORDER];
+
 jest.mock("@/lib/stores/environment", () => ({
   useEnvironmentStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({ environments: mockEnvironments }),
+}));
+
+jest.mock("@/lib/stores/settings", () => ({
+  useSettingsStore: (selector: (s: Record<string, unknown>) => unknown) =>
+    selector({
+      appSettings: {
+        sidebarItemOrder: mockSidebarItemOrder,
+      },
+    }),
 }));
 
 jest.mock("@/hooks/use-wsl", () => ({
@@ -177,6 +193,8 @@ describe("AppSidebar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPathname.mockReturnValue("/");
+    mockSearchParamGet.mockReturnValue(null);
+    mockSidebarItemOrder = [...DEFAULT_SIDEBAR_ITEM_ORDER];
   });
 
   it("renders sidebar with app name", () => {
@@ -252,5 +270,28 @@ describe("AppSidebar", () => {
     expect(document.querySelector('[data-tour="nav-cache"]')).toBeInTheDocument();
     expect(document.querySelector('[data-tour="nav-downloads"]')).toBeInTheDocument();
     expect(document.querySelector('[data-tour="nav-settings"]')).toBeInTheDocument();
+  });
+
+  it("renders primary items using customized persisted order", () => {
+    mockSidebarItemOrder = [
+      "downloads",
+      ...DEFAULT_SIDEBAR_ITEM_ORDER.filter((id) => id !== "downloads"),
+    ];
+
+    render(<AppSidebar />);
+
+    const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(hrefs.indexOf("/downloads")).toBeLessThan(hrefs.indexOf("/packages"));
+  });
+
+  it("normalizes invalid persisted sidebar order values", () => {
+    mockSidebarItemOrder = ["downloads", "invalid", "downloads"] as unknown as typeof mockSidebarItemOrder;
+
+    render(<AppSidebar />);
+
+    const links = screen.getAllByRole("link");
+    expect(links.filter((link) => link.getAttribute("href") === "/downloads")).toHaveLength(1);
+    expect(links.some((link) => link.getAttribute("href") === "/packages")).toBe(true);
+    expect(links.some((link) => link.getAttribute("href") === "/settings")).toBe(true);
   });
 });

@@ -16,6 +16,16 @@ pub struct PluginLoader {
 }
 
 impl PluginLoader {
+    fn log_runtime_boundary(plugin_id: &str, operation: &str, stage: &str, detail: impl AsRef<str>) {
+        log::warn!(
+            "[plugin-runtime][plugin:{}][operation:{}][stage:{}] {}",
+            plugin_id,
+            operation,
+            stage,
+            detail.as_ref()
+        );
+    }
+
     pub fn new(host_context: HostContext) -> Self {
         Self {
             instances: HashMap::new(),
@@ -88,16 +98,40 @@ impl PluginLoader {
             )));
         }
 
-        let result = plugin
-            .call::<&str, &str>(function_name, input)
-            .map_err(|e| {
-                CogniaError::Plugin(format!(
+        let call_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            plugin
+                .call::<&str, &str>(function_name, input)
+                .map(|result| result.to_string())
+        }));
+        let result = match call_result {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                Self::log_runtime_boundary(
+                    plugin_id,
+                    function_name,
+                    "wasm-call",
+                    format!("plugin call returned error: {}", e),
+                );
+                return Err(CogniaError::Plugin(format!(
                     "Plugin '{}' function '{}' failed: {}",
                     plugin_id, function_name, e
-                ))
-            })?;
+                )));
+            }
+            Err(_) => {
+                Self::log_runtime_boundary(
+                    plugin_id,
+                    function_name,
+                    "wasm-call",
+                    "plugin call panicked while executing function",
+                );
+                return Err(CogniaError::Plugin(format!(
+                    "Plugin '{}' function '{}' panicked while executing",
+                    plugin_id, function_name
+                )));
+            }
+        };
 
-        Ok(result.to_string())
+        Ok(result)
     }
 
     pub async fn clear_emitted_events(&self) {
@@ -132,14 +166,28 @@ impl PluginLoader {
         if !plugin.function_exists(function_name) {
             return None;
         }
-        match plugin.call::<&str, &str>(function_name, input) {
-            Ok(result) => Some(result.to_string()),
-            Err(e) => {
-                log::warn!(
-                    "Plugin '{}' lifecycle hook '{}' failed: {}",
+        let call_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            plugin
+                .call::<&str, &str>(function_name, input)
+                .map(|result| result.to_string())
+        }));
+        match call_result {
+            Ok(Ok(result)) => Some(result),
+            Ok(Err(e)) => {
+                Self::log_runtime_boundary(
                     plugin_id,
                     function_name,
-                    e
+                    "lifecycle-hook",
+                    format!("lifecycle hook failed: {}", e),
+                );
+                None
+            }
+            Err(_) => {
+                Self::log_runtime_boundary(
+                    plugin_id,
+                    function_name,
+                    "lifecycle-hook",
+                    "lifecycle hook panicked while executing",
                 );
                 None
             }
@@ -210,5 +258,13 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("not loaded"));
+    }
+
+    #[test]
+    fn test_call_if_exists_not_loaded_returns_none() {
+        let mut loader = make_loader();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(loader.call_if_exists("not-loaded", "hook", "{}"));
+        assert!(result.is_none());
     }
 }
